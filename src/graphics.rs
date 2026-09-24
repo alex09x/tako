@@ -340,10 +340,19 @@ impl GraphicsState {
             };
         }
 
-        let transfer = self
+        let mut transfer = self
             .pending
             .remove(&key)
             .expect("pending entry inserted immediately above");
+        // A PNG carries its own size, and senders leave `s`/`v` out for it
+        // (kitty's `icat` does). Without this the image was stored as 0x0 and
+        // never drawn.
+        if transfer.format == ImageFormat::Png
+            && let Some((width, height)) = png_dimensions(&transfer.data)
+        {
+            transfer.width = width;
+            transfer.height = height;
+        }
 
         let image_id = match explicit_id {
             Some(id) => id,
@@ -453,6 +462,24 @@ impl Default for GraphicsState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The largest PNG side taken from its own header: Metal's texture limit on
+/// Apple GPUs. A few hundred bytes of PNG can claim any size, and everything
+/// downstream allocates width x height x 4 before it can refuse.
+const MAX_PNG_SIDE: u32 = 16_384;
+
+/// Width and height from a PNG's IHDR chunk, which the format puts first:
+/// the 8-byte signature, the chunk length, "IHDR", then width and height as
+/// big-endian u32s. None for anything that is not a PNG of a drawable size.
+fn png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 24 || &data[..8] != b"\x89PNG\r\n\x1a\n" || &data[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(data[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(data[20..24].try_into().ok()?);
+    let drawable = |side: u32| (1..=MAX_PNG_SIDE).contains(&side);
+    (drawable(width) && drawable(height)).then_some((width, height))
 }
 
 #[cfg(test)]
@@ -622,6 +649,59 @@ mod tests {
         let img = state.image(2).expect("png image stored");
         assert_eq!(img.format, ImageFormat::Png);
         assert_eq!(img.pixels, png.to_vec());
+    }
+
+    /// A PNG's first 33 bytes: signature, then the IHDR chunk with the size.
+    /// Enough for the header read; nothing here decodes pixels.
+    fn png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        png.extend_from_slice(&width.to_be_bytes());
+        png.extend_from_slice(&height.to_be_bytes());
+        png.extend_from_slice(b"\x08\x06\x00\x00\x00\x00\x00\x00\x00");
+        png
+    }
+
+    #[test]
+    fn a_png_sent_without_its_size_takes_it_from_its_header() {
+        // What `kitten icat` sends: f=100 and no s/v.
+        let mut state = GraphicsState::new();
+        state.handle("a=T,t=d,f=100,i=5", b64(&png_header(256, 128)).as_bytes());
+        let img = state.image(5).expect("png stored");
+        assert_eq!((img.width, img.height), (256, 128));
+    }
+
+    #[test]
+    fn a_pngs_own_header_wins_over_a_wrong_size() {
+        let mut state = GraphicsState::new();
+        state.handle("a=T,t=d,f=100,s=1,v=1,i=5", b64(&png_header(40, 30)).as_bytes());
+        let img = state.image(5).expect("png stored");
+        assert_eq!((img.width, img.height), (40, 30));
+    }
+
+    #[test]
+    fn a_chunked_png_is_sized_from_the_whole_transfer() {
+        // The header straddles the chunk boundary. (The continuation repeats
+        // a, t and i: the engine does not yet accept the key-less
+        // continuation chunks the protocol allows.)
+        let png = png_header(640, 480);
+        let mut state = GraphicsState::new();
+        state.handle("a=T,t=d,f=100,i=6,m=1", b64(&png[..18]).as_bytes());
+        state.handle("a=T,t=d,i=6,m=0", b64(&png[18..]).as_bytes());
+        let img = state.image(6).expect("png stored");
+        assert_eq!((img.width, img.height), (640, 480));
+    }
+
+    #[test]
+    fn a_png_header_claiming_an_undrawable_size_is_not_believed() {
+        let mut state = GraphicsState::new();
+        for (i, (w, h)) in [(100_000, 10), (10, 0), (MAX_PNG_SIDE + 1, 1)].into_iter().enumerate() {
+            let id = 10 + i as u32;
+            state.handle(&format!("a=t,t=d,f=100,i={id}"), b64(&png_header(w, h)).as_bytes());
+            let img = state.image(id).expect("png stored");
+            assert_eq!((img.width, img.height), (0, 0), "{w}x{h}");
+        }
+        state.handle("a=t,t=d,f=100,i=20", b64(&png_header(MAX_PNG_SIDE, 1)).as_bytes());
+        assert_eq!(state.image(20).map(|img| img.width), Some(MAX_PNG_SIDE));
     }
 
     #[test]
