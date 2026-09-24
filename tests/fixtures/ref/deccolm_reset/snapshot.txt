@@ -1,0 +1,60 @@
+106x30 cursor=(29,33) screen=primary offset=0
+ 0 "[kchibisov@NightLord alacritty]$ printf "\e[31;1;7;4;9mTEST asd\n""
+ 1 "TEST asd"
+ 2 "[kchibisov@NightLord alacritty]$"
+ 3 "[kchibisov@NightLord alacritty]$"
+ 4 "[kchibisov@NightLord alacritty]$"
+ 5 "[kchibisov@NightLord alacritty]$"
+ 6 "[kchibisov@NightLord alacritty]$"
+ 7 "[kchibisov@NightLord alacritty]$"
+ 8 "[kchibisov@NightLord alacritty]$"
+ 9 "[kchibisov@NightLord alacritty]$"
+10 "[kchibisov@NightLord alacritty]$"
+11 "[kchibisov@NightLord alacritty]$"
+12 "[kchibisov@NightLord alacritty]$"
+13 "[kchibisov@NightLord alacritty]$"
+14 "[kchibisov@NightLord alacritty]$"
+15 "[kchibisov@NightLord alacritty]$"
+16 "[kchibisov@NightLord alacritty]$"
+17 "[kchibisov@NightLord alacritty]$"
+18 "[kchibisov@NightLord alacritty]$"
+19 "[kchibisov@NightLord alacritty]$"
+20 "[kchibisov@NightLord alacritty]$"
+21 "[kchibisov@NightLord alacritty]$"
+22 "[kchibisov@NightLord alacritty]$"
+23 "[kchibisov@NightLord alacritty]$"
+24 "[kchibisov@NightLord alacritty]$"
+25 "[kchibisov@NightLord alacritty]$"
+26 "[kchibisov@NightLord alacritty]$"
+27 "[kchibisov@NightLord alacritty]$ echo -e "\033[?3h""
+28 ""
+29 "[kchibisov@NightLord alacritty]$"
+styles
+ 1 0..8 bold underline reverse strike fg=1 ul=single
+ 2 0..33 bold underline reverse strike fg=1 ul=single
+ 3 0..33 bold underline reverse strike fg=1 ul=single
+ 4 0..33 bold underline reverse strike fg=1 ul=single
+ 5 0..33 bold underline reverse strike fg=1 ul=single
+ 6 0..33 bold underline reverse strike fg=1 ul=single
+ 7 0..33 bold underline reverse strike fg=1 ul=single
+ 8 0..33 bold underline reverse strike fg=1 ul=single
+ 9 0..33 bold underline reverse strike fg=1 ul=single
+10 0..33 bold underline reverse strike fg=1 ul=single
+11 0..33 bold underline reverse strike fg=1 ul=single
+12 0..33 bold underline reverse strike fg=1 ul=single
+13 0..33 bold underline reverse strike fg=1 ul=single
+14 0..33 bold underline reverse strike fg=1 ul=single
+15 0..33 bold underline reverse strike fg=1 ul=single
+16 0..33 bold underline reverse strike fg=1 ul=single
+17 0..33 bold underline reverse strike fg=1 ul=single
+18 0..33 bold underline reverse strike fg=1 ul=single
+19 0..33 bold underline reverse strike fg=1 ul=single
+20 0..33 bold underline reverse strike fg=1 ul=single
+21 0..33 bold underline reverse strike fg=1 ul=single
+22 0..33 bold underline reverse strike fg=1 ul=single
+23 0..33 bold underline reverse strike fg=1 ul=single
+24 0..33 bold underline reverse strike fg=1 ul=single
+25 0..33 bold underline reverse strike fg=1 ul=single
+26 0..33 bold underline reverse strike fg=1 ul=single
+27 0..51 bold underline reverse strike fg=1 ul=single
+29 0..33 bold underline reverse strike fg=1 ul=single

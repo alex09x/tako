@@ -1,0 +1,134 @@
+# XcodeGen spec for the macOS UI test suite.
+#
+# SwiftPM has no UI-Testing-Bundle target kind, so swift/Package.swift cannot
+# host these tests -- only a real Xcode project can. This project exists for
+# exactly that: it wraps the app that scripts/build-macapp.py produces as the
+# UI tests' host application.
+#
+# Regenerate with:  cd macos_uitests && xcodegen generate
+name: TakoUITests
+options:
+  bundleIdPrefix: com.tako-core
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "13.0"
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    # Our host-app "compile step" shells out to the repo's own build script,
+    # which reads and writes all over the repo and the target/ directory.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    ALWAYS_SEARCH_USER_PATHS: NO
+
+targets:
+  # The host application. It has no real sources of its own: the single
+  # placeholder file only exists so the native app target has something to
+  # link, and the post-build script then replaces the whole product with the
+  # real Tako.app that scripts/build-macapp.py builds.
+  TakoCore:
+    type: application
+    platform: macOS
+    sources:
+      - path: AppHost
+    settings:
+      base:
+        PRODUCT_NAME: TakoCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.terminal
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        INFOPLIST_KEY_CFBundleDisplayName: TakoCore
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        SKIP_INSTALL: NO
+        # The post-build script below replaces this target's entire product
+        # with a different, externally-built app bundle (scripts/build-macapp.py's
+        # own output), which doesn't have the specific files (e.g. a Debug-
+        # configuration helper dylib) Xcode's own automatic CodeSign phase
+        # already planned to sign for the placeholder it thinks it built.
+        # Xcode's codesign step then fails looking for a file that's gone.
+        # Signing this target ourselves, at the end of the same script,
+        # after the swap, avoids that mismatch entirely.
+        CODE_SIGNING_ALLOWED: NO
+    postBuildScripts:
+      - name: Build the real app bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -uo pipefail
+          cd "${SRCROOT}/.."
+          if [ -z "${BUILT_PRODUCTS_DIR:-}" ] || [ -z "${FULL_PRODUCT_NAME:-}" ]; then
+            echo "error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset" >&2
+            exit 1
+          fi
+          DEST="${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}"
+          # The build script's own output is indented rather than passed
+          # through verbatim: Xcode's log parser turns any bare "error:" line
+          # into a build failure, and whether the app build failed is decided
+          # below by its exit status, not by grepping its prose.
+          if python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp/Tako.app" ]; then
+            rm -rf "${DEST}"
+            /usr/bin/ditto "target/macapp/Tako.app" "${DEST}"
+            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+          else
+            # Compiling the UI tests is deliberately not held hostage to the
+            # app build: the tests are what this project exists to build, and
+            # they skip themselves outside a manual Xcode IDE run anyway. Fail
+            # loudly in the build log instead, and leave the placeholder
+            # product so the test bundle still has a Target Application.
+            # It still needs signing itself, since CODE_SIGNING_ALLOWED is
+            # off for this whole target (see the setting's own comment above).
+            echo "warning: scripts/build-macapp.py did not produce target/macapp/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
+            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+          fi
+
+  TakoUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: TakoUITests
+    dependencies:
+      - target: TakoCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests
+        TEST_TARGET_NAME: TakoCore
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  # The default scheme keeps upstream's behaviour: TakoCustomConfigCase
+  # returns an empty suite unless IDE_DISABLED_OS_ACTIVITY_DT_MODE is set, a
+  # variable Xcode's IDE sets and xcodebuild does not. So `xcodebuild test`
+  # here compiles the tests and runs none of them, which is what upstream's
+  # CI wants and what keeps a click-driven suite out of an unattended build.
+  TakoUITests:
+    build:
+      targets:
+        TakoUITests: all
+    test:
+      config: Debug
+      targets:
+        - TakoUITests
+    run:
+      config: Debug
+
+  # The same tests, actually run. The variable is set here rather than in the
+  # test case so upstream's file stays verbatim, and in a second scheme rather
+  # than the first so that enabling them is always deliberate: they take over
+  # the screen, typing keystrokes and dragging tabs, and need a logged-in
+  # session with Accessibility permission granted. Driven by
+  # scripts/uitest.sh.
+  TakoUITests-Run:
+    build:
+      targets:
+        TakoUITests: all
+    test:
+      config: Debug
+      environmentVariables:
+        IDE_DISABLED_OS_ACTIVITY_DT_MODE: "1"
+      targets:
+        - TakoUITests
+    run:
+      config: Debug

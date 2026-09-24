@@ -1,0 +1,131 @@
+105x29 cursor=(0,0) hidden screen=alternate offset=0
+ 0 ""
+ 1 "  0  [|||||||                  20.0%]   Tasks: 363, 1603 thr; 1 running"
+ 2 "  1  [||                        5.9%]   Load average: 1.61 1.80 1.79"
+ 3 "  2  [|||||                    13.9%]   Uptime: 2 days, 06:36:04"
+ 4 "  3  [|||                       5.9%]"
+ 5 "  Mem[|||||||||||||||||||9.29G/16.0G]"
+ 6 "  Swp[|||||||||||||||    1000M/2.00G]"
+ 7 ""
+ 8 "  PID USER      PRI  NI  VIRT   RES S CPU% MEM%   TIME+  Command"
+ 9 " 1141 jwilm      26   0 10.5G  227M R  0.8  0.3 11:35.17 target/release/alacritt"
+10 "29598 jwilm      26   0 10.0G  133M R  2.2  0.2  0:01.37 target/debug/alacritty"
+11 "  580 jwilm      17   0 9752M 59344 R  0.8  0.1  7:39.16 tmux"
+12 "29240 jwilm      17   0 13.6G  829M R  0.2  1.3  0:59.49 /Applications/Google Ch"
+13 "29220 jwilm      17   0 13.2G  586M R  0.4  0.9  0:14.83 /Applications/Google Ch"
+14 "  923 jwilm      17   0 15.6G 1800M R  3.7  2.7 51:50.94 /Applications/Google Ch"
+15 "29826 jwilm      24   0 9621M  7408 R  0.3  0.0  0:00.12 htop"
+16 "22141 jwilm      17   0 13.3G  517M R  0.2  0.8  1:05.40 /Applications/Google Ch"
+17 "19930 jwilm      17   0 13.2G  588M R  0.3  0.9  1:00.37 /Applications/Google Ch"
+18 "13248 jwilm      17   0 13.8G  446M R  0.2  0.7  6:24.47 /Applications/Google Ch"
+19 "  396 jwilm      17   0  9.8G 74240 R  0.2  0.1  3:06.16 /System/Library/CoreSer"
+20 "  433 jwilm      17   0  9.7G 45856 R  0.2  0.1  2:35.99 /Applications/Karabiner"
+21 "23390 jwilm      17   0 11.4G  250M R  0.1  0.4  0:53.99 /Applications/Spotify.a"
+22 "F1Help  F2Setup F3SearchF4FilterF5Tree  F6SortByF7Nice -F8Nice +F9Kill  F10Quit"
+23 "1:htop*"
+24 ""
+25 ""
+26 ""
+27 ""
+28 ""
+styles
+ 1 2..5 fg=6
+ 1 5..6 bold
+ 1 6..9 fg=2
+ 1 9..13 fg=1
+ 1 13..36 bold fg=0
+ 1 36..37 bold
+ 1 40..47 fg=6
+ 1 47..50 bold fg=6
+ 1 50..52 fg=6
+ 1 52..56 bold fg=2
+ 1 56..60 fg=2
+ 1 60..62 fg=6
+ 1 62..63 bold fg=2
+ 1 63..71 fg=6
+ 2 2..5 fg=6
+ 2 5..6 bold
+ 2 6..7 fg=2
+ 2 7..8 fg=1
+ 2 8..36 bold fg=0
+ 2 36..37 bold
+ 2 40..54 fg=6
+ 2 54..59 bold
+ 2 59..64 bold fg=6
+ 2 64..69 fg=6
+ 3 2..5 fg=6
+ 3 5..6 bold
+ 3 6..9 fg=2
+ 3 9..11 fg=1
+ 3 11..36 bold fg=0
+ 3 36..37 bold
+ 3 40..48 fg=6
+ 3 48..64 bold fg=6
+ 4 2..5 fg=6
+ 4 5..6 bold
+ 4 6..8 fg=2
+ 4 8..9 fg=1
+ 4 9..36 bold fg=0
+ 4 36..37 bold
+ 5 2..5 fg=6
+ 5 5..6 bold
+ 5 6..24 fg=2
+ 5 24..26 fg=4
+ 5 26..35 fg=3
+ 5 35..36 bold fg=0
+ 5 36..37 bold
+ 6 2..5 fg=6
+ 6 5..6 bold
+ 6 6..21 fg=1
+ 6 21..36 bold fg=0
+ 6 36..37 bold
+ 8 0..38 fg=0 bg=2
+ 8 38..43 fg=0 bg=6
+ 8 43..80 fg=0 bg=2
+ 9 24..30 bold fg=1
+ 9 30..36 fg=6
+ 9 36..38 fg=2
+10 24..30 bold fg=1
+10 30..36 fg=6
+10 36..38 fg=2
+11 24..32 fg=6
+11 36..38 fg=2
+12 24..30 bold fg=1
+12 30..36 fg=6
+12 36..38 fg=2
+13 24..30 bold fg=1
+13 30..36 fg=6
+13 36..38 fg=2
+14 0..80 fg=0 bg=6
+15 24..32 fg=6
+15 36..38 fg=2
+16 24..30 bold fg=1
+16 30..36 fg=6
+16 36..38 fg=2
+17 24..30 bold fg=1
+17 30..36 fg=6
+17 36..38 fg=2
+18 24..30 bold fg=1
+18 30..36 fg=6
+18 36..38 fg=2
+19 24..30 bold fg=1
+19 30..32 fg=6
+19 36..38 fg=2
+20 24..30 bold fg=1
+20 30..32 fg=6
+20 36..38 fg=2
+21 24..30 bold fg=1
+21 30..36 fg=6
+21 36..38 fg=2
+22 2..8 fg=0 bg=6
+22 10..16 fg=0 bg=6
+22 18..24 fg=0 bg=6
+22 26..32 fg=0 bg=6
+22 34..40 fg=0 bg=6
+22 42..48 fg=0 bg=6
+22 50..56 fg=0 bg=6
+22 58..64 fg=0 bg=6
+22 66..72 fg=0 bg=6
+22 75..80 fg=0 bg=6
+23 0..7 fg=0 bg=3
+23 7..80 fg=0 bg=4

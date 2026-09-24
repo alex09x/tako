@@ -1,0 +1,37 @@
+106x30 cursor=(4,33) screen=primary offset=0
+ 0 "[kchibisov@NightLord alacritty]$ printf "\e[31;1;4;9mTEST asd\n""
+ 1 "TEST asd"
+ 2 "[kchibisov@NightLord alacritty]$ echo -e "hello        world" "\033[10;D"  "\033[4;X""
+ 3 "hello         orld"
+ 4 "[kchibisov@NightLord alacritty]$"
+ 5 ""
+ 6 ""
+ 7 ""
+ 8 ""
+ 9 ""
+10 ""
+11 ""
+12 ""
+13 ""
+14 ""
+15 ""
+16 ""
+17 ""
+18 ""
+19 ""
+20 ""
+21 ""
+22 ""
+23 ""
+24 ""
+25 ""
+26 ""
+27 ""
+28 ""
+29 ""
+styles
+ 1 0..8 bold underline strike fg=1 ul=single
+ 2 0..85 bold underline strike fg=1 ul=single
+ 3 0..10 bold underline strike fg=1 ul=single
+ 3 14..19 bold underline strike fg=1 ul=single
+ 4 0..33 bold underline strike fg=1 ul=single

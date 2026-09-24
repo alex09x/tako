@@ -1,0 +1,49 @@
+105x29 cursor=(26,40) screen=primary offset=0
+ 0 "jwilm@kurast.local ➜  ~/code/alacritty  ll"
+ 1 "total 16440"
+ 2 "drwxr-xr-x   3 jwilm  staff   102B Nov  2 10:54 Alacritty.app"
+ 3 "-rw-r--r--   1 jwilm  staff    53K Nov 19 14:27 Cargo.lock"
+ 4 "-rw-r--r--   1 jwilm  staff   746B Nov 19 14:24 Cargo.toml"
+ 5 "-rw-r--r--   1 jwilm  staff    11K Jun 30 10:44 LICENSE-APACHE"
+ 6 "-rw-r--r--   1 jwilm  staff   1.6K Nov  2 10:52 Makefile"
+ 7 "-rw-r--r--   1 jwilm  staff    49B Jun  9 18:56 TASKS.md"
+ 8 "-rwxr-xr-x   1 jwilm  staff   1.7M Sep 26 10:49 alacritty-pre-eloop"
+ 9 "-rw-r--r--   1 jwilm  staff   255B Nov 19 14:31 alacritty.recording"
+10 "-rw-r--r--   1 jwilm  staff   6.5K Nov 17 17:18 alacritty.yml"
+11 "-rw-r--r--   1 jwilm  staff   1.1K Jun 30 10:44 build.rs"
+12 "drwxr-xr-x   6 jwilm  staff   204B Oct 10 10:46 copypasta"
+13 "drwxr-xr-x   3 jwilm  staff   102B Jun  9 18:56 docs"
+14 "-rwxr-xr-x   1 jwilm  staff   2.2M Nov 11 17:53 exitter"
+15 "drwxr-xr-x   5 jwilm  staff   170B Jun 28 14:50 font"
+16 "-rwxr-xr-x   1 jwilm  staff   2.2M Nov 14 13:27 hardcoded_bindings_alacritty"
+17 "drwxr-xr-x   6 jwilm  staff   204B Nov  2 10:54 macos"
+18 "drwxr-xr-x   4 jwilm  staff   136B Oct 27 17:59 res"
+19 "-rw-r--r--   1 jwilm  staff    19B Nov 11 16:55 rustc-version"
+20 "drwxr-xr-x   5 jwilm  staff   170B Oct 10 10:46 scripts"
+21 "drwxr-xr-x  17 jwilm  staff   578B Nov 19 14:30 src"
+22 "drwxr-xr-x   5 jwilm  staff   170B Jun 28 15:49 target"
+23 "-rw-r--r--   1 jwilm  staff   8.1K Nov 17 11:13 thing.log"
+24 "-rw-r--r--   1 jwilm  staff   3.5K Sep  1 11:27 tmux-client-23038.log"
+25 "-rwxr-xr-x   1 jwilm  staff   1.8M Sep 22 12:03 with_parallel"
+26 "jwilm@kurast.local ➜  ~/code/alacritty"
+27 ""
+28 ""
+styles
+ 0 19..22 bold fg=2
+ 0 22..39 bold fg=6
+ 0 40..42 fg=5
+ 2 48..61 bold fg=6
+ 8 48..67 fg=1
+12 48..57 bold fg=6
+13 48..52 bold fg=6
+14 48..55 fg=1
+15 48..52 bold fg=6
+16 48..76 fg=1
+17 48..53 bold fg=6
+18 48..51 bold fg=6
+20 48..55 bold fg=6
+21 48..51 bold fg=6
+22 48..54 bold fg=6
+25 48..61 fg=1
+26 19..22 bold fg=2
+26 22..39 bold fg=6

@@ -1,0 +1,163 @@
+172x47 cursor=(46,0) screen=primary offset=0
+ 0 "[230359.786813] wlp3s0: send auth to 00:00:00:00:00:00 (try 1/3)"
+ 1 "[230359.827649] wlp3s0: authenticated"
+ 2 "[230359.831632] wlp3s0: associate with 00:00:00:00:00:00 (try 1/3)"
+ 3 "[230359.832798] wlp3s0: RX AssocResp from 00:00:00:00:00:00 (capab=0x1411 status=0 aid=3)"
+ 4 "[230359.834228] wlp3s0: associated"
+ 5 "[230359.915722] wlp3s0: Limiting TX power to 30 (30 - 0) dBm as advertised by 00:00:00:00:00:00"
+ 6 "[230391.707400] wlp3s0: disconnect from AP 00:00:00:00:00:00 for new auth to 00:00:00:00:00:00"
+ 7 "[230391.710358] wlp3s0: authenticate with 00:00:00:00:00:00"
+ 8 "[230391.716647] wlp3s0: send auth to 00:00:00:00:00:00 (try 1/3)"
+ 9 "[230391.756364] wlp3s0: authenticated"
+10 "[230391.759536] wlp3s0: associate with 00:00:00:00:00:00 (try 1/3)"
+11 "[230391.760897] wlp3s0: RX ReassocResp from 00:00:00:00:00:00 (capab=0x1411 status=0 aid=1)"
+12 "[230391.762833] wlp3s0: associated"
+13 "[230391.844511] wlp3s0: Limiting TX power to 23 (23 - 0) dBm as advertised by 00:00:00:00:00:00"
+14 "[231412.503669] wlp3s0: disconnect from AP 00:00:00:00:00:00 for new auth to 00:00:00:00:00:00"
+15 "[231412.513884] iwlwifi 0000:03:00.0: expected hw-decrypted unicast frame for station"
+16 "[231412.513892] iwlwifi 0000:03:00.0: expected hw-decrypted unicast frame for station"
+17 "[231412.515316] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+18 "[231412.515352] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+19 "[231412.515359] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+20 "[231412.515363] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+21 "[231412.515368] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+22 "[231412.515373] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+23 "[231412.516316] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+24 "[231412.516327] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+25 "[231412.516333] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+26 "[231412.516338] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+27 "[231412.516343] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+28 "[231412.516347] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+29 "[231412.517875] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+30 "[231412.517893] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+31 "[231412.517909] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+32 "[231412.517921] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+33 "[231412.517940] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+34 "[231412.517951] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+35 "[231412.518917] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+36 "[231412.518942] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+37 "[231412.518961] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+38 "[231412.518975] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+39 "[231412.519007] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+40 "[231412.519022] iwlwifi 0000:03:00.0: Unhandled alg: 0x707"
+41 "[231412.523892] wlp3s0: authenticate with 00:00:00:00:00:00"
+42 "[231412.529652] wlp3s0: send auth to 00:00:00:00:00:00 (try 1/3)"
+43 "[231412.575449] wlp3s0: authenticated"
+44 "[undeadleech@archhq row_reset]$ exit"
+45 "exit"
+46 ""
+styles
+ 0 0..16 fg=2
+ 0 16..22 fg=3
+ 1 0..16 fg=2
+ 1 16..22 fg=3
+ 2 0..16 fg=2
+ 2 16..22 fg=3
+ 3 0..16 fg=2
+ 3 16..22 fg=3
+ 4 0..16 fg=2
+ 4 16..22 fg=3
+ 5 0..16 fg=2
+ 5 16..22 fg=3
+ 6 0..16 fg=2
+ 6 16..22 fg=3
+ 7 0..16 fg=2
+ 7 16..22 fg=3
+ 8 0..16 fg=2
+ 8 16..22 fg=3
+ 9 0..16 fg=2
+ 9 16..22 fg=3
+10 0..16 fg=2
+10 16..22 fg=3
+11 0..16 fg=2
+11 16..22 fg=3
+12 0..16 fg=2
+12 16..22 fg=3
+13 0..16 fg=2
+13 16..22 fg=3
+14 0..16 fg=2
+14 16..22 fg=3
+15 0..16 fg=2
+15 16..36 fg=3
+15 36..85 fg=1
+16 0..16 fg=2
+16 16..36 fg=3
+16 36..85 fg=1
+17 0..16 fg=2
+17 16..36 fg=3
+17 36..58 fg=1
+18 0..16 fg=2
+18 16..36 fg=3
+18 36..58 fg=1
+19 0..16 fg=2
+19 16..36 fg=3
+19 36..58 fg=1
+20 0..16 fg=2
+20 16..36 fg=3
+20 36..58 fg=1
+21 0..16 fg=2
+21 16..36 fg=3
+21 36..58 fg=1
+22 0..16 fg=2
+22 16..36 fg=3
+22 36..58 fg=1
+23 0..16 fg=2
+23 16..36 fg=3
+23 36..58 fg=1
+24 0..16 fg=2
+24 16..36 fg=3
+24 36..58 fg=1
+25 0..16 fg=2
+25 16..36 fg=3
+25 36..58 fg=1
+26 0..16 fg=2
+26 16..36 fg=3
+26 36..58 fg=1
+27 0..16 fg=2
+27 16..36 fg=3
+27 36..58 fg=1
+28 0..16 fg=2
+28 16..36 fg=3
+28 36..58 fg=1
+29 0..16 fg=2
+29 16..36 fg=3
+29 36..58 fg=1
+30 0..16 fg=2
+30 16..36 fg=3
+30 36..58 fg=1
+31 0..16 fg=2
+31 16..36 fg=3
+31 36..58 fg=1
+32 0..16 fg=2
+32 16..36 fg=3
+32 36..58 fg=1
+33 0..16 fg=2
+33 16..36 fg=3
+33 36..58 fg=1
+34 0..16 fg=2
+34 16..36 fg=3
+34 36..58 fg=1
+35 0..16 fg=2
+35 16..36 fg=3
+35 36..58 fg=1
+36 0..16 fg=2
+36 16..36 fg=3
+36 36..58 fg=1
+37 0..16 fg=2
+37 16..36 fg=3
+37 36..58 fg=1
+38 0..16 fg=2
+38 16..36 fg=3
+38 36..58 fg=1
+39 0..16 fg=2
+39 16..36 fg=3
+39 36..58 fg=1
+40 0..16 fg=2
+40 16..36 fg=3
+40 36..58 fg=1
+41 0..16 fg=2
+41 16..22 fg=3
+42 0..16 fg=2
+42 16..22 fg=3
+43 0..16 fg=2
+43 16..22 fg=3

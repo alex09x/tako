@@ -1,0 +1,6 @@
+# Recorded PTY byte streams and captures. A CR in these is terminal data --
+# carriage return, half of a CRLF an app actually wrote -- not a line ending
+# for git to normalize. Letting autocrlf touch them silently corrupts the
+# fixture and every snapshot taken from it.
+tests/fixtures/**/*.recording -text
+tests/fixtures/**/*.bin       -text

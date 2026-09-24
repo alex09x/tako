@@ -1,0 +1,50 @@
+//
+//  TakoCustomConfigCase.swift
+//  Tako
+//
+//  Created by luca on 16.10.2025.
+//
+
+import XCTest
+
+class TakoCustomConfigCase: XCTestCase {
+    /// We only want run these UI tests
+    /// when testing manually with Xcode IDE
+    ///
+    /// So that we don't have to wait for each ci check
+    /// to run these tedious tests
+    override class var defaultTestSuite: XCTestSuite {
+        // https://lldb.llvm.org/cpp_reference/PlatformDarwin_8cpp_source.html#:~:text==%20%22-,IDE_DISABLED_OS_ACTIVITY_DT_MODE
+
+        if ProcessInfo.processInfo.environment["IDE_DISABLED_OS_ACTIVITY_DT_MODE"] != nil {
+            return XCTestSuite(forTestCaseClass: Self.self)
+        } else {
+            return XCTestSuite(name: "Skipping \(className())")
+        }
+    }
+
+    static let defaultsSuiteName: String = "TAKO_UI_TESTS"
+
+    private let configFile: URL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        .appendingPathExtension("tako")
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: configFile)
+    }
+
+    func updateConfig(_ newConfig: String) throws {
+        try newConfig.write(to: configFile, atomically: true, encoding: .utf8)
+    }
+
+    func takoApplication(defaultsSuite: String = TakoCustomConfigCase.defaultsSuiteName) throws -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES"])
+        app.launchEnvironment["TAKO_CONFIG_PATH"] = configFile.path
+        app.launchEnvironment["TAKO_USER_DEFAULTS_SUITE"] = defaultsSuite
+        return app
+    }
+}

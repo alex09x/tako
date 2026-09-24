@@ -1,0 +1,47 @@
+105x29 cursor=(28,38) screen=primary offset=0
+ 0 "jwilm@jwilm-desk ➜  ~/code/alacritty  ll"
+ 1 "total 90M"
+ 2 "-rw-rw-r-- 1 jwilm jwilm  40K May  5  2017 ]"
+ 3 "-rw-rw-r-- 1 jwilm jwilm  128 May  4  2017 TODO.md"
+ 4 "-rw-rw-r-- 1 jwilm jwilm  12K Apr 19  2017 typescript"
+ 5 "-rw-rw-r-- 1 jwilm jwilm 3.0K Mar  7  2017 wego.example"
+ 6 "jwilm@jwilm-desk ➜  ~/code/alacritty  tput cup 10"
+ 7 ""
+ 8 ""
+ 9 ""
+10 "jwilm@jwilm-desk ➜  ~/code/alacritty  ll"
+11 "total 90M"
+12 "-rw-rw-r-- 1 jwilm jwilm  40K May  5  2017 ]"
+13 "-rw-rw-r-- 1 jwilm jwilm  35K May  8  2017 0001-wip.patch"
+14 "-rwxrwxr-x 1 jwilm jwilm  328 Oct 22 11:43 Alacritty.desktop"
+15 "-rw-rw-r-- 1 jwilm jwilm  139 Oct 22 11:43 alacritty.info"
+16 "-rw-rw-r-- 1 jwilm jwilm  14K Nov  2 08:25 alacritty_macos.yml"
+17 "-rwxrwxr-x 1 jwilm jwilm  16M Jan 25  2017 alacritty-pre-gco"
+18 "-rw-rw-r-- 1 jwilm jwilm  71K May 10  2017 alacritty.profile"
+19 "-rw-rw-r-- 1 jwilm jwilm 5.6K Nov 11 08:50 alacritty.recording"
+20 "-rwxrwxr-x 1 jwilm jwilm  15M Oct 28  2016 alacritty_shader_color"
+21 "-rw-rw-r-- 1 jwilm jwilm 272K May  9  2017 alacritty.svg"
+22 "-rw-rw-r-- 1 jwilm jwilm 1019 Jan  1  2017 alacritty.txt"
+23 "-rwxrwxr-x 1 jwilm jwilm  15M Sep 24  2016 alacritty_with_corrupt_bug"
+24 "-rw-rw-r-- 1 jwilm jwilm  15K Nov  2 08:25 alacritty.yml"
+25 "drwxrwxr-x 3 jwilm jwilm 4.0K Oct 22 11:43 assets"
+26 "-rw-rw-r-- 1 jwilm jwilm 1.1K Jun 29  2016 build.rs"
+27 "-rw-rw-r-- 1 jwilm jwilm 2.1M May  8  2017 build.txt"
+28 "jwilm@jwilm-desk ➜  ~/code/alacritty"
+styles
+ 0 17..20 bold fg=2
+ 0 20..37 bold fg=6
+ 0 38..40 fg=5
+ 6 17..20 bold fg=2
+ 6 20..37 bold fg=6
+ 6 38..42 fg=5
+10 17..20 bold fg=2
+10 20..37 bold fg=6
+10 38..40 fg=5
+14 43..60 bold fg=2
+17 43..60 bold fg=2
+20 43..65 bold fg=2
+23 43..69 bold fg=2
+25 43..49 bold fg=4
+28 17..20 bold fg=2
+28 20..37 bold fg=6

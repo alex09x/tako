@@ -1,0 +1,53 @@
+[package]
+name = "tako-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.tako-core]
+path = ".."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "feed"
+path = "fuzz_targets/feed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "feed_resize"
+path = "fuzz_targets/feed_resize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chunk_differential"
+path = "fuzz_targets/chunk_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "terminal_ops"
+path = "fuzz_targets/terminal_ops.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "escape_sequences"
+path = "fuzz_targets/escape_sequences.rs"
+test = false
+doc = false
+bench = false

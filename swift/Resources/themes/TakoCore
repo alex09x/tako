@@ -1,0 +1,26 @@
+# The palette from the design system. Warm, not blue: the background is
+# nearly black-brown and the text is an off-white, so ember reads as an
+# accent rather than fighting a cool background.
+
+background = #14100e
+foreground = #ede6df
+cursor-color = #f4581c
+selection-background = #352b23
+selection-foreground = #faf7f2
+
+palette = 0=#14100e
+palette = 1=#d54e53
+palette = 2=#b5bd68
+palette = 3=#f0c674
+palette = 4=#81a2be
+palette = 5=#b294bb
+palette = 6=#8abeb7
+palette = 7=#ede6df
+palette = 8=#6b6259
+palette = 9=#ff7a3d
+palette = 10=#7bd88f
+palette = 11=#f4c96b
+palette = 12=#9bb8d3
+palette = 13=#c9a8d0
+palette = 14=#a3d3cd
+palette = 15=#faf7f2

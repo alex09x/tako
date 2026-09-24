@@ -1,0 +1,99 @@
+[package]
+name = "tako-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A VT terminal engine: parser, screen and scrollback, input encoding, kitty keyboard and graphics, with Swift bindings"
+repository = "https://github.com/alex09x/tako"
+rust-version = "1.88"
+
+# The fuzz crate is a separate workspace (needs nightly).
+exclude = ["fuzz"]
+
+[lib]
+name = "tako_core"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Desktop egui demo binary (src/main.rs). Only built when the `desktop-demo`
+# feature is enabled -- the xcframework build only needs the [lib] targets
+# above, so this keeps eframe/winit/libc out of iOS cross-compiles by default.
+[[bin]]
+name = "tako-core"
+path = "src/main.rs"
+required-features = ["desktop-demo"]
+
+# Helper binary that drives UniFFI's Swift bindings generator. Only built
+# when the `uniffi-cli` feature (which pulls in uniffi's own `cli` feature,
+# i.e. clap/cargo_metadata) is enabled -- see scripts/build-xcframework.sh.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
+
+[dependencies]
+base64 = "0.22.1"
+bitflags = "2.13.1"
+eframe = { version = "0.28", optional = true }
+libc = "0.2.189"
+smallvec = "1.15.2"
+thiserror = "2"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.13"
+unicode-width = "0.2.2"
+uniffi = "0.32.0"
+russh = { version = "0.62", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time"], optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+# The ssh password tests run russh's own server in-process; OpenSSH cannot
+# validate a made-up password without a real account.
+bytes = "1"
+
+[[bench]]
+name = "throughput"
+harness = false
+
+# A terminal with no window: runs a real program against the real engine, so
+# conformance suites (esctest, vttest) can be driven without a display.
+[[example]]
+name = "headless"
+required-features = ["pty"]
+
+# Connects over SSH and prints the screen the engine drew from it: the whole
+# mobile path, in one process.
+[[example]]
+name = "ssh_smoke"
+required-features = ["ssh"]
+
+[[example]]
+name = "test_sshd"
+required-features = ["ssh"]
+
+[features]
+default = []
+# Opt-in: pseudoterminal support (src/pty.rs). Needed to run a real program
+# against the engine -- the desktop demo and the headless conformance host.
+# Off by default so iOS cross-compiles, which only want the [lib] targets,
+# do not pull fork/openpty in.
+pty = []
+# Opt-in: an SSH transport in the core, so a phone with no fork/exec can
+# still reach a shell. Feature-gated because it is the only part of this
+# crate that opens a socket.
+ssh = ["dep:russh", "dep:tokio"]
+# Opt-in: builds the egui/PTY desktop demo (src/main.rs, src/pty.rs).
+desktop-demo = ["dep:eframe", "pty"]
+# Opt-in: builds the `uniffi-bindgen` helper binary used to generate Swift
+# bindings from the compiled library (see scripts/build-xcframework.sh).
+uniffi-cli = ["uniffi/cli"]
+
+[profile.release]
+opt-level = 3
+lto = true
+
+# Engine state is ported 1:1 from upstream, so its tuple returns, wide
+# constructors and index loops keep upstream's shape on purpose.
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+needless_range_loop = "allow"

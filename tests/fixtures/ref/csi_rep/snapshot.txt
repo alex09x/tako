@@ -1,0 +1,37 @@
+105x29 cursor=(1,38) screen=primary offset=0
+ 0 "jwilm@jwilm-desk ➜  ~/code/alacritty  printf "f\e[10b""
+ 1 "jwilm@jwilm-desk ➜  ~/code/alacritty"
+ 2 ""
+ 3 ""
+ 4 ""
+ 5 ""
+ 6 ""
+ 7 ""
+ 8 ""
+ 9 ""
+10 ""
+11 ""
+12 ""
+13 ""
+14 ""
+15 ""
+16 ""
+17 ""
+18 ""
+19 ""
+20 ""
+21 ""
+22 ""
+23 ""
+24 ""
+25 ""
+26 ""
+27 ""
+28 ""
+styles
+ 0 17..20 bold fg=2
+ 0 20..37 bold fg=6
+ 0 38..44 fg=5
+ 0 45..54 fg=3
+ 1 17..20 bold fg=2
+ 1 20..37 bold fg=6

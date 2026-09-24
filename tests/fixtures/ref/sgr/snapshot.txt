@@ -1,0 +1,49 @@
+139x35 cursor=(26,0) screen=primary offset=0
+ 0 "[undeadleech@archhq sgr]$ echo -e "\e[9;38:2:255:0:255;4mTEST\e[0m""
+ 1 "TEST"
+ 2 "[undeadleech@archhq sgr]$ echo -e "\e[9;38:2:0:255:0:255;4mTEST\e[0m""
+ 3 "TEST"
+ 4 "[undeadleech@archhq sgr]$ echo -e "\e[9;38:5:1;4mTEST\e[0m""
+ 5 "TEST"
+ 6 "[undeadleech@archhq sgr]$ echo -e "\e[9;48:2:255:0:255;4mTEST\e[0m""
+ 7 "TEST"
+ 8 "[undeadleech@archhq sgr]$ echo -e "\e[9;48:2:0:255:0:255;4mTEST\e[0m""
+ 9 "TEST"
+10 "[undeadleech@archhq sgr]$ echo -e "\e[9;48:5:1;4mTEST\e[0m""
+11 "TEST"
+12 "[undeadleech@archhq sgr]$ echo -e "\e[9;38;2;255;0;255;4mTEST\e[0m""
+13 "TEST"
+14 "[undeadleech@archhq sgr]$ echo -e "\e[9;38;2;0;255;0;255;4mTEST\e[0m""
+15 "TEST"
+16 "[undeadleech@archhq sgr]$ echo -e "\e[9;38;5;1;4mTEST\e[0m""
+17 "TEST"
+18 "[undeadleech@archhq sgr]$ echo -e "\e[9;48;2;255;0;255;4mTEST\e[0m""
+19 "TEST"
+20 "[undeadleech@archhq sgr]$ echo -e "\e[9;48;2;0;255;0;255;4mTEST\e[0m""
+21 "TEST"
+22 "[undeadleech@archhq sgr]$ echo -e "\e[9;48;5;1;4mTEST\e[0m""
+23 "TEST"
+24 "[undeadleech@archhq sgr]$ exit"
+25 "exit"
+26 ""
+27 ""
+28 ""
+29 ""
+30 ""
+31 ""
+32 ""
+33 ""
+34 ""
+styles
+ 1 0..4 underline strike fg=#ff00ff ul=single
+ 3 0..4 underline strike fg=#ff00ff ul=single
+ 5 0..4 underline strike fg=1 ul=single
+ 7 0..4 underline strike bg=#ff00ff ul=single
+ 9 0..4 underline strike bg=#ff00ff ul=single
+11 0..4 underline strike bg=1 ul=single
+13 0..4 underline strike fg=#ff00ff ul=single
+15 0..4 underline strike fg=#00ff00 ul=single
+17 0..4 underline strike fg=1 ul=single
+19 0..4 underline strike bg=#ff00ff ul=single
+21 0..4 underline strike bg=#00ff00 ul=single
+23 0..4 underline strike bg=1 ul=single

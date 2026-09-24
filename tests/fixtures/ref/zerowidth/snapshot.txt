@@ -1,0 +1,46 @@
+139x35 cursor=(2,47) screen=primary offset=0
+ 0 " UL  ~/…/tests/ref/zerowidth  zerowidth-slice  echo "( <0361>° <035c>ʖ <0361>°)""
+ 1 "( ͡° ͜ʖ ͡°)"
+ 2 " UL  ~/…/tests/ref/zerowidth  zerowidth-slice"
+ 3 ""
+ 4 ""
+ 5 ""
+ 6 ""
+ 7 ""
+ 8 ""
+ 9 ""
+10 ""
+11 ""
+12 ""
+13 ""
+14 ""
+15 ""
+16 ""
+17 ""
+18 ""
+19 ""
+20 ""
+21 ""
+22 ""
+23 ""
+24 ""
+25 ""
+26 ""
+27 ""
+28 ""
+29 ""
+30 ""
+31 ""
+32 ""
+33 ""
+34 ""
+styles
+ 0 0..4 fg=0 bg=9
+ 0 4..29 fg=7 bg=8
+ 0 29..46 fg=0 bg=9
+ 0 55..61 reverse
+ 0 63..69 reverse
+ 0 71..77 reverse
+ 2 0..4 fg=0 bg=9
+ 2 4..29 fg=7 bg=8
+ 2 29..46 fg=0 bg=9

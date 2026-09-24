@@ -1,0 +1,39 @@
+140x32 cursor=(14,0) screen=primary offset=0
+ 0 "sh-5.2$ cat alacritty_terminal/tests/ref/hyperlinks/alacritty.recording"
+ 1 "sh-5.1$ printf '\e]8;;https://example.com\e\\foo\e]8;;\e\\\n'"
+ 2 "foo"
+ 3 "sh-5.1$ printf '\e]8;;https://example.com\e\\foo\e]8;;\e\\\n'"
+ 4 "foo"
+ 5 "sh-5.1$ printf '\e]8;id=42;https://example.com\e\\bar\e]8;;\e\\\n'"
+ 6 "bar"
+ 7 "sh-5.1$ printf '\e]8;id=42;https://example.com\e\\bar\e]8;;\e\\\n'"
+ 8 "bar"
+ 9 "sh-5.1$"
+10 "exit"
+11 "sh-5.2$ printf '\e]8;id=hello;http://example.com/naoheu;ntahoeu\e\\This is a link\e]8;id=hello;\e\\\n'"
+12 "This is a link"
+13 "sh-5.2$ exit"
+14 ""
+15 ""
+16 ""
+17 ""
+18 ""
+19 ""
+20 ""
+21 ""
+22 ""
+23 ""
+24 ""
+25 ""
+26 ""
+27 ""
+28 ""
+29 ""
+30 ""
+31 ""
+styles
+ 2 0..3 link=1
+ 4 0..3 link=2
+ 6 0..3 link=3
+ 8 0..3 link=3
+12 0..14 link=4

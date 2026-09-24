@@ -1,0 +1,226 @@
+# The Xcode project for the iOS demo app.
+#
+# `scripts/build-iosapp.py` drives `swiftc` directly, which is fine for a
+# simulator but cannot produce a signed archive -- there is no target for
+# xcodebuild to sign, and no scheme to archive. This spec exists so the same
+# sources can also be built the way Apple's tooling expects: signed, installed
+# on a real phone, and uploaded to TestFlight.
+#
+# Generated rather than committed as a .pbxproj so the source list stays
+# derived from the directories, the way the swiftc build already does it.
+# Regenerate with `xcodegen -s ios/project.yml`.
+name: TakoCore
+options:
+  bundleIdPrefix: dev.prod
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 284V2M3LN9
+    # Overridden per upload by scripts/deploy-ios-testflight.sh; this is only
+    # what a local build gets.
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.0"
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    # The core is linked by the full path to its static archive, per SDK.
+    #
+    # Not `-ltako_core` with a search path: the crate is built as both a
+    # staticlib and a cdylib, so that directory holds libtako_core.a *and*
+    # libtako_core.dylib, and the linker prefers the dylib. The app then
+    # carries a load command naming this Mac's build directory -- which the
+    # simulator resolves, because it shares the filesystem, and a phone
+    # cannot, so it dies in dyld before reaching main.
+    TAKO_CORE_LIB[sdk=iphoneos*]: $(SRCROOT)/../target/aarch64-apple-ios/release/libtako_core.a
+    TAKO_CORE_LIB[sdk=iphonesimulator*]: $(SRCROOT)/../target/aarch64-apple-ios-sim/release/libtako_core.a
+
+targets:
+  TakoCore:
+    type: application
+    platform: iOS
+    sources:
+      - path: ../swift/Sources/iOSApp
+        excludes: ["Bridging-Header.h"]
+      - path: ../swift/Sources/TakoCoreUI
+        # A symlink to target/bindings, holding a second copy of the same
+        # generated Swift. `os.walk` does not follow symlinks so the swiftc
+        # build never sees it; xcodegen does, and two copies of one file in a
+        # module is a redeclaration. The committed copy under Generated/ is
+        # the one that counts.
+        excludes: ["_bindings"]
+      # Xcode compiles .metal sources into the target's default.metallib,
+      # which is the library `MTLDevice.makeDefaultLibrary()` returns. The
+      # swiftc build has to do this by hand; here it is a build phase.
+      - path: ../swift/Sources/TakoCoreUI/Resources/TerminalShaders.metal
+      - path: Assets.xcassets
+      # MIT requires the copyright notices to travel with every copy.
+      - path: ../LICENSE
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.prod.takocore
+        PRODUCT_NAME: TakoCore
+        INFOPLIST_FILE: $(SRCROOT)/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: $(SRCROOT)/../swift/Sources/iOSApp/Bridging-Header.h
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../target/bindings
+        OTHER_LDFLAGS: $(TAKO_CORE_LIB)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iPhone and iPad. The layout is a single column either way, so the
+        # iPad build is the phone one at a larger size rather than a separate
+        # design.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # A Debug build otherwise ships as a stub executable that dlopens
+        # TakoCore.debug.dylib, which is built for Xcode to hot-swap and is
+        # not reliable when the app is launched from the home screen instead.
+        # This app is installed and tapped, not run under the debugger.
+        ENABLE_DEBUG_DYLIB: NO
+      configs:
+        # `xcodebuild test` build-for-testing already implies this for a
+        # target a test bundle hosts in, but TakoCoreUnitTests below needs
+        # `@testable import TakoCore` to see the app's own (internal, not
+        # public) types, and that only typechecks with testability spelled
+        # out rather than assumed.
+        Debug:
+          ENABLE_TESTABILITY: YES
+    preBuildScripts:
+      # Keeping this in the build means an archive can never ship a stale
+      # core: the one thing a hand-run script reliably forgets.
+      - name: Build the Rust core
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          cd "$SRCROOT/.."
+          # An asset catalog has to hold the icon itself, so this is the copy
+          # that keeps it from drifting away from what brand/make-icons.swift
+          # produces.
+          cp brand/out/ios/icon_1024.png ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png
+          if [ "${PLATFORM_NAME:-iphoneos}" = "iphonesimulator" ]; then
+            TARGET=aarch64-apple-ios-sim
+          else
+            TARGET=aarch64-apple-ios
+          fi
+          # Cargo itself knows the Apple target, but C dependencies compiled
+          # by build scripts otherwise inherit the current SDK's minimum OS
+          # (for example 26.x) instead of this app's iOS 17 deployment target.
+          export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+          "$HOME/.cargo/bin/cargo" build --release --features ssh --target "$TARGET"
+          # The bridging header imports tako_coreFFI.h from target/bindings and
+          # the app compiles the generated Swift beside TakoCoreUI; both must
+          # describe the library just built, so generate them here (a no-op
+          # when up to date). In a clean environment: Xcode's SDKROOT and
+          # deployment variables would otherwise make the generator's host
+          # build target iOS.
+          env -i HOME="$HOME" DEVELOPER_DIR="${DEVELOPER_DIR:-}" \
+            PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            ./scripts/bindings.sh
+    postBuildScripts:
+      # UI tests authenticate to a disposable local sshd. Put its generated
+      # key in Debug test builds only; Release/TestFlight can never contain it.
+      - name: Install disposable UI-test key
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          if [ "$CONFIGURATION" = "Debug" ] \
+             && [ -n "${TAKO_TEST_KEY_PATH:-}" ] \
+             && [ -f "$TAKO_TEST_KEY_PATH" ]; then
+            cp "$TAKO_TEST_KEY_PATH" \
+              "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/ui_test_key"
+          fi
+      # A binary that names a path on this Mac runs everywhere it is tested
+      # from this Mac -- the simulator shares the filesystem -- and dies in
+      # dyld on a phone, before main, with nothing in the console. Cheap to
+      # check, expensive to find the hard way.
+      - name: Reject baked-in build paths
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          BINARY="$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
+          REPO="$(cd "$SRCROOT/.." && pwd)"
+          # `otool -L` names the binary itself on the first line, and a Debug
+          # build lives under target/ -- so only the load commands after it
+          # are the answer to "what will this try to open at launch".
+          LOADED="$(otool -L "$BINARY" | tail -n +2)"
+          if printf '%s\n' "$LOADED" | grep -q "$REPO"; then
+            echo "error: the app links a library by its path in the build tree:" >&2
+            printf '%s\n' "$LOADED" | grep "$REPO" >&2
+            exit 1
+          fi
+
+  # Hosted inside TakoCore itself, so it runs -- and is instrumented for
+  # coverage -- in the same `xcodebuild test` invocation as the walkthrough,
+  # rather than needing a second scheme or a second simulator run.
+  #
+  # Exists for the app code `simctl launch` scenarios and the walkthrough
+  # cannot reach: LaunchOptions/LaunchProbe parse and drive scripted runs
+  # through `simctl launch`, which collects no coverage of its own, and
+  # parts of Session (demo mode, a session with no mounted surface,
+  # reconnect/close) that the walkthrough's single interactive pass never
+  # exercises.
+  TakoCoreUnitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: UnitTests
+    dependencies:
+      - target: TakoCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.prod.takocore.unittests
+        TEST_TARGET_NAME: TakoCore
+        GENERATE_INFOPLIST_FILE: YES
+        # `@testable import TakoCore` re-resolves the host module's own
+        # bridging header (its compiled module records that PCH as part of
+        # its Objective-C interop), so this target needs the same search
+        # path TakoCore itself builds with, or planning the Swift module
+        # fails with "tako_coreFFI.h file not found" -- that header only
+        # exists under target/bindings, generated by TakoCore's own
+        # preBuildScript.
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../target/bindings
+
+  # Uses the app the way a person does: taps and typing, through the real
+  # interface, with a screenshot at every step. Everything else that drives
+  # this app hands it a host on the command line and skips the part that is
+  # actually touched.
+  TakoCoreUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: TakoCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.prod.takocore.uitests
+        TEST_TARGET_NAME: TakoCore
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  TakoCore:
+    build:
+      targets:
+        TakoCore: all
+        TakoCoreUnitTests: [test]
+        TakoCoreUITests: [test]
+    test:
+      config: Debug
+      environmentVariables:
+        TAKO_TEST_HOST: $(TAKO_TEST_HOST)
+        TAKO_TEST_USER: $(TAKO_TEST_USER)
+        TAKO_TEST_ECHO_PORT: $(TAKO_TEST_ECHO_PORT)
+        TAKO_TEST_MFA_PORT: $(TAKO_TEST_MFA_PORT)
+        TAKO_TEST_MFA_CODE: $(TAKO_TEST_MFA_CODE)
+        TAKO_TEST_MFA_DEVICE: $(TAKO_TEST_MFA_DEVICE)
+        TAKO_TEST_OPENSSH_PORT: $(TAKO_TEST_OPENSSH_PORT)
+        TAKO_TEST_OPENSSH_SECOND_PORT: $(TAKO_TEST_OPENSSH_SECOND_PORT)
+        TAKO_TEST_FAULT_PROXY_PORT: $(TAKO_TEST_FAULT_PROXY_PORT)
+        TAKO_TEST_FAULT_CONTROL_PORT: $(TAKO_TEST_FAULT_CONTROL_PORT)
+      targets:
+        - TakoCoreUnitTests
+        - TakoCoreUITests
+    run:
+      config: Debug
+    archive:
+      config: Release
