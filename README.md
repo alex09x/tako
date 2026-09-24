@@ -19,7 +19,8 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 - **Pure-Rust Engine (`tako_core`)**:
   - Full VT100, xterm, and modern terminal sequence support.
   - Kitty Keyboard Protocol (progressive enhancements, disambiguation, event queries).
-  - Kitty Graphics Protocol (direct and chunked image transmission/rendering).
+  - Kitty Graphics Protocol images: RGB, RGBA and PNG over direct transmission. Query replies
+    are not implemented yet, so `kitten icat` does not detect the support.
   - Asynchronous PTY execution with non-blocking multi-threaded pipeline.
   - Embedded SSH client support (`features = ["ssh"]`).
 
