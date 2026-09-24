@@ -1643,7 +1643,7 @@ fn test_export_and_import_charge_the_same_budget() {
         term.feed(format!("\x1b[3{}mhistory line {line}\x1b[0m\r\n", line % 8).as_bytes());
     }
     term.feed("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} e\u{0301}\u{0302} \u{0938}\u{094D}\u{0924}\u{0947}\r\n".as_bytes());
-    term.feed(format!("\x1b[?1049h\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\x1b[?1049l").as_bytes());
+    term.feed("\x1b[?1049h\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\x1b[?1049l".as_bytes());
     term.feed(b"\x1b]0;window title\x07");
     term.feed(b"\x1b[22t");
     term.feed(b"\x1b]8;id=one;https://example.invalid/a\x07linked\x1b]8;;\x07");
