@@ -25,7 +25,7 @@ let package = Package(
             // published as a release asset rather than committed. Both values
             // are rewritten by scripts/package-xcframework.sh.
             url: "https://github.com/alex09x/tako/releases/download/v0.1.0/TakoCore.xcframework.zip",
-            checksum: "16753846e1ef621290f5cae9332cdc48a621bb5d0ec462a00c083a6cc4b523d6"
+            checksum: "505fb169b0fa9f1aea04a0d87c1225acd61f814b5ca1a79a508b4dd2fd1c3da8"
         ),
         .target(
             name: "TakoCoreUI",
