@@ -82,7 +82,10 @@ root `Package.swift`, which exposes `TakoCoreUI` to consumers, at that asset.
 
 - Rust: `cargo test` (engine, parity ports, C ABI, checkpoint), with
   `--features pty` / `ssh` for those modules; `scripts/coverage-gate.py`
-  holds every engine file to a line-coverage floor.
+  holds every engine file to a line-coverage floor. `tests/frame_diffs.rs`
+  replays what a real differential TUI renderer sends between random frames
+  and checks the screen is the frame it drew; `scripts/frame-diffs`
+  regenerates those fixtures (Go, not needed to run the tests).
 - Swift: `scripts/swift-test.sh` (XCTest and Swift Testing), rebuilding
   the engine first when its sources changed; `scripts/swift-coverage-gate.py`
   for per-file coverage; `scripts/test-ios-surface.sh` runs TakoCoreUI's
