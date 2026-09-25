@@ -39,6 +39,13 @@ pub struct TerminalModes {
     /// of per-codepoint widths. Its default comes from the host's
     /// grapheme-width-method; see `Terminal::set_grapheme_width_method`.
     pub grapheme_cluster: bool,
+    /// XTMODKEYS modifyOtherKeys (`CSI > 4 ; Pv m`): 0 off, else the level a
+    /// program asked for. The key encoder implements level 2; level 1 is
+    /// remembered and reported, and encodes like 0.
+    pub modify_other_keys: u8,
+    /// Mode 2031: tell the program, unasked, each time the host's colour
+    /// scheme changes (`CSI ? 997 ; 1 n` dark, `2 n` light).
+    pub color_scheme_updates: bool,
 }
 
 impl TerminalModes {
@@ -61,6 +68,8 @@ impl TerminalModes {
             synchronized_output: false,
             shift_capture: None,
             grapheme_cluster: true,
+            modify_other_keys: 0,
+            color_scheme_updates: false,
         }
     }
 
@@ -99,6 +108,7 @@ impl TerminalModes {
             69 => self.left_right_margin_mode = set,
             1007 => self.alternate_scroll = set,
             2026 => self.synchronized_output = set,
+            2031 => self.color_scheme_updates = set,
             2027 => self.grapheme_cluster = set,
             _ => {}
         }

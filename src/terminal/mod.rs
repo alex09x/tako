@@ -862,8 +862,14 @@ impl Terminal {
     }
 
     /// Host configuration: light/dark scheme for `CSI ? 996 n` reports.
+    /// A program that set mode 2031 is told when it changes, the same way
+    /// it would have been told had it asked.
     pub fn set_dark_scheme(&mut self, dark: bool) {
+        let changed = self.dark_scheme != Some(dark);
         self.dark_scheme = Some(dark);
+        if changed && self.modes.color_scheme_updates {
+            self.report_private_dsr(&[996]);
+        }
     }
 
     /// Resize with the text area's pixel dimensions (enables XTWINOPS
@@ -2965,6 +2971,7 @@ impl Perform for Terminal {
                     2004 => set(self.modes.bracketed_paste),
                     2026 => set(self.modes.synchronized_output),
                     2027 => set(self.modes.grapheme_cluster),
+                    2031 => set(self.modes.color_scheme_updates),
                     _ => 0,
                 };
                 self.response.push_str(&format!("\x1b[?{};{}$y", ps, v));
@@ -2993,6 +3000,27 @@ impl Perform for Terminal {
                     self.pending_wrap = false;
                     self.erase_in_line_protected(param_or_default(params, 0, 0), true);
                 }
+                // DECST8C (`CSI ? 5 W`): a tab stop every eight columns
+                // again. Programs also send it with no parameter.
+                'W' if matches!(param_or_default(params, 0, 5), 0 | 5) => {
+                    self.tabstops = TabStops::new(self.active_grid().cols());
+                }
+                // XTQMODKEYS (`CSI ? Pp m`). Only modifyOtherKeys (4) can be
+                // set; the others report the encoding the terminal always
+                // uses -- modifiers on cursor and function keys, none on the
+                // keypad or the keyboard as a whole.
+                'm' => {
+                    let resource = param_or_default(params, 0, 0);
+                    let value = match resource {
+                        0 | 3 => Some(0),
+                        1 | 2 => Some(2),
+                        4 => Some(u16::from(self.modes.modify_other_keys)),
+                        _ => None,
+                    };
+                    if let Some(value) = value {
+                        self.response.push_str(&format!("\x1b[>{resource};{value}m"));
+                    }
+                }
                 _ => {}
             }
             return;
@@ -3006,6 +3034,21 @@ impl Perform for Terminal {
                 'c' => self.response.push_str(&response::da2_response()),
                 // XTSHIFTESCAPE.
                 's' => self.modes.shift_capture = Some(param_or_default(params, 0, 0) == 1),
+                // XTMODKEYS (`CSI > Pp ; Pv m`): modifyOtherKeys (4) is the
+                // resource programs set. Leaving out the value -- or every
+                // parameter -- puts it back to its default, off.
+                'm' => {
+                    if params.is_empty() || param_or_default(params, 0, 0) == 4 {
+                        self.modes.modify_other_keys = params.get(1).map_or(0, |&v| v.min(2) as u8);
+                    }
+                }
+                // XTMODKEYS disable (`CSI > 4 n`), which for this resource is
+                // the same as turning it off.
+                'n' => {
+                    if param_or_default(params, 0, 0) == 4 {
+                        self.modes.modify_other_keys = 0;
+                    }
+                }
                 'q' => {
                     let name = if self.xtversion.is_empty() {
                         "tako".to_string()
@@ -3104,6 +3147,15 @@ impl Perform for Terminal {
         if !intermediates.is_empty() {
             return;
         }
+
+        // HPA, HPR and VPR are ECMA-48's names for moves CHA, CUF and CUD
+        // already make, and xterm treats them as exactly those.
+        let action = match action {
+            '`' => 'G',
+            'a' => 'C',
+            'e' => 'B',
+            other => other,
+        };
 
         // Anything that moves the cursor or erases cancels a deferred wrap.
         // 'D' is absent: the CUB arm manages the deferred wrap itself, since
@@ -3240,13 +3292,13 @@ impl Perform for Terminal {
                 let bottom = param_nonzero_or(params, 1, rows as u16) as usize;
                 let top0 = top.saturating_sub(1).min(rows.saturating_sub(1));
                 let bottom0 = bottom.saturating_sub(1).min(rows.saturating_sub(1));
-                if top0 < bottom0 {
-                    self.scroll_top = top0;
-                    self.scroll_bottom = bottom0;
-                } else {
-                    self.scroll_top = 0;
-                    self.scroll_bottom = rows.saturating_sub(1);
+                // A region of fewer than two lines is refused whole, as in
+                // xterm: the old margins stay and the cursor does not move.
+                if top0 >= bottom0 {
+                    return;
                 }
+                self.scroll_top = top0;
+                self.scroll_bottom = bottom0;
                 if self.modes.origin_mode {
                     self.cursor.row = self.scroll_top;
                     self.cursor.col = self.h_margins().0;
@@ -3262,13 +3314,13 @@ impl Perform for Terminal {
                 let right = param_nonzero_or(params, 1, cols as u16) as usize;
                 let left0 = left.saturating_sub(1).min(cols.saturating_sub(1));
                 let right0 = right.saturating_sub(1).min(cols.saturating_sub(1));
-                if left0 < right0 {
-                    self.scroll_left = left0;
-                    self.scroll_right = right0;
-                } else {
-                    self.scroll_left = 0;
-                    self.scroll_right = cols.saturating_sub(1);
+                // Margins less than two columns apart are refused whole, as
+                // in xterm: the old ones stay and the cursor does not move.
+                if left0 >= right0 {
+                    return;
                 }
+                self.scroll_left = left0;
+                self.scroll_right = right0;
                 if self.modes.origin_mode {
                     self.cursor.row = self.scroll_top;
                     self.cursor.col = self.scroll_left;

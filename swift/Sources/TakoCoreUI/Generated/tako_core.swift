@@ -1302,6 +1302,14 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])
 
     /**
+     * Tells the engine whether the host shows a dark or a light colour
+     * scheme: what `CSI ? 996 n` answers, and what a program that set mode
+     * 2031 is sent, unasked, when it changes. That report is queued like
+     * any other reply, so drain `take_output` after calling this.
+     */
+    func setColorScheme(dark: Bool)
+
+    /**
      * Sets the host's cursor style: what a program's DECSCUSR 0 and a reset
      * return to. It applies at once unless a program has chosen a style.
      */
@@ -2253,6 +2261,21 @@ open func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb
         FfiConverterOptionTypeFfiRgb.lower(background),
         FfiConverterOptionTypeFfiRgb.lower(cursor),
         FfiConverterSequenceTypeFfiPaletteEntry.lower(palette),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Tells the engine whether the host shows a dark or a light colour
+     * scheme: what `CSI ? 996 n` answers, and what a program that set mode
+     * 2031 is sent, unasked, when it changes. That report is queued like
+     * any other reply, so drain `take_output` after calling this.
+     */
+open func setColorScheme(dark: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_color_scheme(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(dark),uniffiCallStatus
     )
 }
 }
@@ -6791,6 +6814,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_base_colors() != 24192) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_set_color_scheme() != 18592) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_default_cursor_style() != 59804) {

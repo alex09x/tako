@@ -1155,6 +1155,11 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
         mode_flags |= 1 << 14;
         if capture { mode_flags |= 1 << 15; }
     }
+    // XTMODKEYS modifyOtherKeys level, 0-2, in bits 16 and 17; ignored the
+    // same way by a reader that predates them.
+    mode_flags |= u32::from(m.modify_other_keys.min(2)) << 16;
+    // Mode 2031 (colour scheme updates) in bit 18.
+    if m.color_scheme_updates { mode_flags |= 1 << 18; }
     w.write_u32(mode_flags);
     w.write_u8(match m.mouse_tracking {
         MouseTracking::Off => 0,
@@ -1856,6 +1861,8 @@ pub fn import_traced_reserving(
         // Not carried; the importing terminal applies its host's
         // grapheme-width-method.
         grapheme_cluster: true,
+        modify_other_keys: (((mode_flags >> 16) & 0b11) as u8).min(2),
+        color_scheme_updates: (mode_flags & (1 << 18)) != 0,
     };
 
     // Parser State

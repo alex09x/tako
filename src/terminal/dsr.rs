@@ -101,7 +101,7 @@ impl Terminal {
                 // use; guessing would be worse than staying quiet, and a
                 // client of this extension expects it to be optional.
                 if let Some(dark) = self.dark_scheme {
-                    let v = if dark { 2 } else { 1 };
+                    let v = if dark { 1 } else { 2 };
                     self.response.push_str(&format!("\x1b[?997;{v}n"));
                 }
             }

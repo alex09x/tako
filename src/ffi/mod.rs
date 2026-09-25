@@ -1128,7 +1128,7 @@ impl TakoCore {
             alt_esc_prefix: true,
             macos_option_as_alt: OptionAsAlt::default(),
             backarrow_key_mode: false,
-            modify_other_keys_state_2: false,
+            modify_other_keys_state_2: terminal.modes().modify_other_keys == 2,
             ignore_keypad_with_numlock: true,
         };
         encode(
@@ -1702,6 +1702,14 @@ impl TakoCore {
         // than storing RGB, so a base-color change needs an explicit
         // damage mark -- unlike a content edit, it doesn't touch any cell.
         term.terminal.mark_all_damaged();
+    }
+
+    /// Tells the engine whether the host shows a dark or a light colour
+    /// scheme: what `CSI ? 996 n` answers, and what a program that set mode
+    /// 2031 is sent, unasked, when it changes. That report is queued like
+    /// any other reply, so drain `take_output` after calling this.
+    pub fn set_color_scheme(&self, dark: bool) {
+        lock_recover(&self.inner).terminal.set_dark_scheme(dark);
     }
 
     /// Sets the host's cursor style: what a program's DECSCUSR 0 and a reset

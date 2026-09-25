@@ -157,6 +157,8 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
             core.setBaseColors(from: theme)
             core.setDefaultCursorStyle(from: theme)
             core.setGraphemeWidthMethod(from: theme)
+            core.setColorScheme(from: theme)
+            sendQueuedReplies()
             rebuildMetalRenderer()
             updateBlinkTimer()
             needsDisplay = true
@@ -384,6 +386,7 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
         self.core.setBaseColors(from: theme)
         self.core.setDefaultCursorStyle(from: theme)
         self.core.setGraphemeWidthMethod(from: theme)
+        self.core.setColorScheme(from: theme)
     }
 
     public required init?(coder: NSCoder) {
@@ -406,6 +409,7 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
         self.core.setBaseColors(from: theme)
         self.core.setDefaultCursorStyle(from: theme)
         self.core.setGraphemeWidthMethod(from: theme)
+        self.core.setColorScheme(from: theme)
     }
 
     // Destruction needs no deactivation of its own, and cannot have one:
@@ -544,6 +548,16 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
         delegate?.terminalViewDidChangeContent(self)
         scheduleRedraw()
+    }
+
+    /// Replies the engine queued outside a parse -- a colour-scheme change
+    /// told to a program that set mode 2031 -- sent now, not with whatever
+    /// the program prints next.
+    private func sendQueuedReplies() {
+        let queued = core.takeOutput()
+        if !queued.isEmpty {
+            delegate?.terminalView(self, sendDeviceReplyData: queued)
+        }
     }
 
     /// The one place a parsed batch becomes AppKit state, always on Main and

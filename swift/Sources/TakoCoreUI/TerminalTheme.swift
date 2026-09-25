@@ -628,6 +628,22 @@ extension TakoCore {
         setGraphemeWidthMethod(method: theme.graphemeWidthMethod)
     }
 
+    /// Tells the engine whether `theme` is dark, judged by its background:
+    /// what a program asking `CSI ? 996 n` is drawing on, whatever the
+    /// system's appearance.
+    public func setColorScheme(from theme: TerminalTheme) {
+        setColorScheme(dark: Self.isDark(theme.background))
+    }
+
+    /// Whether `color` reads as a dark background: perceived brightness
+    /// (Rec. 601 weights) below half. A colour with no RGB form counts as
+    /// dark, as the default theme is.
+    static func isDark(_ color: CGColor) -> Bool {
+        guard let rgb = rgb(color) else { return true }
+        let brightness = 0.299 * Double(rgb.r) + 0.587 * Double(rgb.g) + 0.114 * Double(rgb.b)
+        return brightness < 127.5
+    }
+
     /// `color` as sRGB bytes, rounded; nil when it has no RGB form.
     static func rgb(_ color: CGColor) -> FfiRgb? {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),

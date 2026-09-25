@@ -110,6 +110,8 @@ public class TakoTerminalView: UIView, UIKeyInput {
             core.setBaseColors(from: theme)
             core.setDefaultCursorStyle(from: theme)
             core.setGraphemeWidthMethod(from: theme)
+            core.setColorScheme(from: theme)
+            sendQueuedReplies()
             rebuildMetalRenderer()
             updateBlinkTimer()
             setNeedsLayout()
@@ -274,6 +276,7 @@ public class TakoTerminalView: UIView, UIKeyInput {
         self.core.setBaseColors(from: theme)
         self.core.setDefaultCursorStyle(from: theme)
         self.core.setGraphemeWidthMethod(from: theme)
+        self.core.setColorScheme(from: theme)
     }
 
     public required init?(coder: NSCoder) {
@@ -296,6 +299,7 @@ public class TakoTerminalView: UIView, UIKeyInput {
         self.core.setBaseColors(from: theme)
         self.core.setDefaultCursorStyle(from: theme)
         self.core.setGraphemeWidthMethod(from: theme)
+        self.core.setColorScheme(from: theme)
     }
 
     deinit {
@@ -465,6 +469,16 @@ public class TakoTerminalView: UIView, UIKeyInput {
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
         delegate?.terminalViewDidChangeContent(self)
         setNeedsDisplay()
+    }
+
+    /// Replies the engine queued outside a parse -- a colour-scheme change
+    /// told to a program that set mode 2031 -- sent now, not with whatever
+    /// the program prints next.
+    private func sendQueuedReplies() {
+        let queued = core.takeOutput()
+        if !queued.isEmpty {
+            delegate?.terminalView(self, sendDeviceReplyData: queued)
+        }
     }
 
     /// The one place a parsed batch becomes UIKit state, always on Main and

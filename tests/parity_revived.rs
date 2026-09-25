@@ -66,13 +66,15 @@ fn size_report_csi_18_t() {
     assert_eq!(term.take_output(), b"\x1b[8;24;80t".to_vec());
 }
 
-/// Upstream (`stream_terminal`): "device status: color scheme dark"
+/// Upstream (`stream_terminal`): "device status: color scheme dark". The
+/// report is 1 for dark and 2 for light (upstream's `device_status.zig`, and
+/// the contour extension it implements); this port once had them swapped.
 #[test]
 fn device_status_color_scheme_dark() {
     let mut term = Terminal::new(80, 24);
     term.set_dark_scheme(true);
     term.feed(b"\x1b[?996n");
-    assert_eq!(term.take_output(), b"\x1b[?997;2n".to_vec());
+    assert_eq!(term.take_output(), b"\x1b[?997;1n".to_vec());
 }
 
 /// Upstream (`stream_terminal`): "device status: color scheme light"
@@ -81,7 +83,7 @@ fn device_status_color_scheme_light() {
     let mut term = Terminal::new(80, 24);
     term.set_dark_scheme(false);
     term.feed(b"\x1b[?996n");
-    assert_eq!(term.take_output(), b"\x1b[?997;1n".to_vec());
+    assert_eq!(term.take_output(), b"\x1b[?997;2n".to_vec());
 }
 
 /// Upstream (`stream_terminal`): "progress_report effect callback" --
