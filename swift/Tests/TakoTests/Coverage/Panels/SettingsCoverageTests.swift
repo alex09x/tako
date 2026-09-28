@@ -75,17 +75,19 @@ struct ConfigurationErrorsViewCoverageTests {
     /// suite's read-only substitute for asserting on the `Text(error)` rows
     /// directly.
     @Test func differentErrorListsRenderDifferentPixels() {
-        let model = FakeErrorsViewModel()
-        let window = makePanelWindow(size: NSSize(width: 600, height: 320))
-        let hosting = hostPanel(ConfigurationErrorsView(model: model), in: window)
+        let model1 = FakeErrorsViewModel()
+        model1.errors = ["bad line 3"]
+        let window1 = makePanelWindow(size: NSSize(width: 600, height: 320))
+        defer { window1.orderOut(nil) }
+        let hosting1 = hostPanel(ConfigurationErrorsView(model: model1), in: window1)
+        let withOneError = panelSnapshot(hosting1)
 
-        model.errors = ["bad line 3"]
-        hosting.layoutSubtreeIfNeeded()
-        let withOneError = panelSnapshot(hosting)
-
-        model.errors = ["bad line 3", "unknown directive", "a third problem entirely"]
-        hosting.layoutSubtreeIfNeeded()
-        let withThreeErrors = panelSnapshot(hosting)
+        let model2 = FakeErrorsViewModel()
+        model2.errors = ["bad line 3", "unknown directive", "a third problem entirely"]
+        let window2 = makePanelWindow(size: NSSize(width: 600, height: 320))
+        defer { window2.orderOut(nil) }
+        let hosting2 = hostPanel(ConfigurationErrorsView(model: model2), in: window2)
+        let withThreeErrors = panelSnapshot(hosting2)
 
         #expect(!panelBitmapsEqual(withOneError, withThreeErrors))
     }

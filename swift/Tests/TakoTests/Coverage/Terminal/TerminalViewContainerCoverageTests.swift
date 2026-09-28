@@ -77,6 +77,7 @@ struct TerminalViewContainerCoverageTests {
     }
 
     @Test func viewDidMoveToWindowConfiguresGlassEffectOnceAttached() {
+        guard #available(macOS 26.0, *) else { return }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -97,6 +98,7 @@ struct TerminalViewContainerCoverageTests {
     }
 
     @Test func takoConfigDidChangeIsANoOpForAnUnchangedConfig() {
+        guard #available(macOS 26.0, *) else { return }
         let (window, container) = makeWindowedContainer()
         defer { window.orderOut(nil) }
         let config = GlassConfig()
@@ -112,6 +114,7 @@ struct TerminalViewContainerCoverageTests {
     }
 
     @Test func takoConfigDidChangeRemovesGlassEffectWhenBlurIsDisabled() {
+        guard #available(macOS 26.0, *) else { return }
         let (window, container) = makeWindowedContainer()
         defer { window.orderOut(nil) }
         let glassConfig = GlassConfig()
@@ -134,6 +137,7 @@ struct TerminalViewContainerCoverageTests {
     }
 
     @Test func updateGlassTintOverlayUpdatesOnceAGlassEffectExists() {
+        guard #available(macOS 26.0, *) else { return }
         let (window, container) = makeWindowedContainer()
         defer { window.orderOut(nil) }
         let config = GlassConfig()

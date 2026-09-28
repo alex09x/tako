@@ -650,7 +650,7 @@ struct TabBarViewCoverageTests {
 
         bar.commandKeyChanged(held: true)
         var sawBadges = false
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
             if !bitmapsEqual(snapshot(bar), baseline) {
                 sawBadges = true

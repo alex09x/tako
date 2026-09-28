@@ -17,13 +17,16 @@ private func withAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T
 
 @MainActor
 private func makeWindow() -> TerminalWindow {
-    TerminalWindow(
+    let window = TerminalWindow(
         contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
         backing: .buffered,
         defer: false)
+    window.isReleasedWhenClosed = false
+    return window
 }
 
+@Suite(.serialized)
 @MainActor
 struct TerminalWindowCoverageTests {
     @Test func awakeFromNibConfiguresTheWindowWithAnAppDelegate() {
