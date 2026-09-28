@@ -1168,8 +1168,8 @@ public class TakoTerminalView: UIView, UIKeyInput {
         blinkStateVisible = true
         guard theme.cursorBlink else { return }
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 guard self.theme.cursorBlink else { return }
                 guard !self.core.isSynchronizedOutputActive() else { return }
                 self.blinkStateVisible.toggle()

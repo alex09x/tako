@@ -694,5 +694,67 @@ final class TakoTerminalNSViewTests: XCTestCase {
             XCTAssertNil(view)
         }
     }
+
+    func testNSTextInputClientProtocolConformance() {
+        MainActor.assumeIsolated {
+            let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            guard let client = view as (any NSTextInputClient)? else {
+                XCTFail("TakoTerminalNSView must conform to NSTextInputClient")
+                return
+            }
+            XCTAssertFalse(client.hasMarkedText())
+            XCTAssertEqual(client.markedRange(), NSRange(location: NSNotFound, length: 0))
+            XCTAssertEqual(client.selectedRange(), NSRange(location: 0, length: 0))
+            XCTAssertTrue(client.validAttributesForMarkedText().isEmpty)
+            XCTAssertEqual(client.characterIndex(for: NSPoint.zero), 0)
+            XCTAssertNil(client.attributedSubstring(forProposedRange: NSRange(location: 0, length: 0), actualRange: nil))
+
+            client.setMarkedText("abc", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+            XCTAssertTrue(client.hasMarkedText())
+            XCTAssertEqual(client.markedRange(), NSRange(location: 0, length: 3))
+
+            client.unmarkText()
+            XCTAssertFalse(client.hasMarkedText())
+
+            let delegate = MockTerminalNSViewDelegate()
+            view.delegate = delegate
+            client.insertText("xyz", replacementRange: NSRange(location: NSNotFound, length: 0))
+            XCTAssertFalse(delegate.inputDataReceived.isEmpty)
+        }
+    }
+
+    func testBlinkTimerCallbackTogglesBlinkState() async throws {
+        let view = await MainActor.run { () -> TakoTerminalNSView in
+            var blinking = TerminalTheme.takoDefault
+            blinking.cursorBlink = true
+            let v = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), theme: blinking)
+            XCTAssertTrue(v.isBlinkStateVisibleForTesting)
+            v.blinkTimer?.fire()
+            return v
+        }
+
+        for _ in 0..<20 {
+            await Task.yield()
+            try await Task.sleep(nanoseconds: 10_000_000)
+            let toggled = await MainActor.run { !view.isBlinkStateVisibleForTesting }
+            if toggled { break }
+        }
+
+        await MainActor.run {
+            XCTAssertFalse(view.isBlinkStateVisibleForTesting, "firing blinkTimer should toggle blinkStateVisible to false")
+            view.blinkTimer?.fire()
+        }
+
+        for _ in 0..<20 {
+            await Task.yield()
+            try await Task.sleep(nanoseconds: 10_000_000)
+            let toggledBack = await MainActor.run { view.isBlinkStateVisibleForTesting }
+            if toggledBack { break }
+        }
+
+        await MainActor.run {
+            XCTAssertTrue(view.isBlinkStateVisibleForTesting, "firing blinkTimer again should toggle blinkStateVisible back to true")
+        }
+    }
 }
 #endif

@@ -133,7 +133,7 @@ public enum MouseShiftCapture: String, Sendable {
 /// Open for subclassing: the macOS app layer wraps this surface in its own
 /// `SurfaceView`, which adds windowing identity (tabs, splits, focus,
 /// restoration) on top rather than reimplementing the terminal.
-open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUserInterfaceValidations {
+open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public weak var delegate: TakoTerminalNSViewDelegate?
 
     public let core: TakoCore
@@ -271,6 +271,7 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
     // Cursor blink state
     private(set) var blinkTimer: Timer?
     private var blinkStateVisible: Bool = true
+    var isBlinkStateVisibleForTesting: Bool { blinkStateVisible }
 
     /// Reads the text used by the native paste action.
     var pasteStringProvider: () -> String? = { NSPasteboard.general.string(forType: .string) }
@@ -1423,8 +1424,8 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
         blinkStateVisible = true
         guard theme.cursorBlink, !isPresentationPaused else { return }
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 guard self.theme.cursorBlink, !self.isPresentationPaused else { return }
                 guard !self.core.isSynchronizedOutputActive() else { return }
                 self.blinkStateVisible.toggle()
@@ -2448,6 +2449,12 @@ open class TakoTerminalNSView: NSView, @preconcurrency NSTextInputClient, NSUser
         return false
     }
 }
+
+#if compiler(>=6.0)
+extension TakoTerminalNSView: @preconcurrency NSTextInputClient {}
+#else
+extension TakoTerminalNSView: NSTextInputClient {}
+#endif
 
 public typealias TakoTerminalView = TakoTerminalNSView
 public typealias TakoTerminalViewDelegate = TakoTerminalNSViewDelegate
