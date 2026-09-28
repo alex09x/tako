@@ -2450,11 +2450,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 }
 
-#if compiler(>=6.0)
-extension TakoTerminalNSView: @preconcurrency NSTextInputClient {}
-#else
 extension TakoTerminalNSView: NSTextInputClient {}
-#endif
 
 public typealias TakoTerminalView = TakoTerminalNSView
 public typealias TakoTerminalViewDelegate = TakoTerminalNSViewDelegate
