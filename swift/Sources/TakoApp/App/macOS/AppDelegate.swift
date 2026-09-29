@@ -319,9 +319,15 @@ class AppDelegate: NSObject,
 
         // Setup our menu
         setupMenuImages()
+        setupUpdateMenuItem()
 
         // Setup signal handlers
         setupSignals()
+
+        // Check for updates in the background
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            AppUpdater.shared.checkForUpdates(silent: true)
+        }
 
         switch Tako.launchSource {
         case .app:
@@ -946,6 +952,25 @@ class AppDelegate: NSObject,
 
     @IBAction func showAbout(_ sender: Any?) {
         AboutController.shared.show()
+    }
+
+    @IBAction func checkForUpdates(_ sender: Any?) {
+        AppUpdater.shared.checkForUpdates(silent: false)
+    }
+
+    private func setupUpdateMenuItem() {
+        guard let takoMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+        if takoMenu.items.contains(where: { $0.action == #selector(checkForUpdates) }) {
+            return
+        }
+        let updateItem = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        updateItem.setImageIfDesired(systemSymbolName: "arrow.trianglehead.2.clockwise.rotate.90")
+        takoMenu.insertItem(updateItem, at: min(1, takoMenu.items.count))
     }
 
     @IBAction func showHelp(_ sender: Any) {
