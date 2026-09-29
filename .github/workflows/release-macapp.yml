@@ -34,6 +34,27 @@ jobs:
           toolchain: stable
           targets: aarch64-apple-darwin
 
+      - name: Install Apple Developer Certificate (if secret configured)
+        if: env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: "ci-keychain-temp-password"
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/build_cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          echo "Imported Apple Developer certificate into CI keychain"
+
       - name: Build Tako.app
         run: |
           set -euo pipefail
@@ -63,6 +84,20 @@ jobs:
           echo "Creating DMG..."
           hdiutil create -volname "Tako ${version}" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
           rm -rf "$STAGING"
+
+          # Sign DMG if an Apple identity is available
+          identity="$(python3 -c '
+import subprocess
+r = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"], capture_output=True, text=True)
+for line in r.stdout.splitlines():
+    if "Developer ID Application" in line or "Apple Development" in line:
+        print(line.split("\"")[1])
+        break
+' || true)"
+          if [ -n "$identity" ]; then
+            echo "Signing DMG with $identity..."
+            codesign --force --sign "$identity" --timestamp "$DMG"
+          fi
 
           echo "Creating ZIP..."
           ditto -c -k --keepParent "$APP" "$ZIP"
