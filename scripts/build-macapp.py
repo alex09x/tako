@@ -250,17 +250,21 @@ def codesign_identity():
                        capture_output=True, text=True)
     # Prefer Developer ID Application for distribution
     for line in r.stdout.splitlines():
-        if "Developer ID Application" in line:
+        if "Developer ID Application" in line and "afonya" not in line and "student.su" not in line:
+            return line.split('"')[1]
+    # Prefer Alexander Panasenko (alex@prod.codes)
+    for line in r.stdout.splitlines():
+        if "Alexander Panasenko (alex@prod.codes)" in line:
             return line.split('"')[1]
     # Fall back to Apple Development certificate if present
     for line in r.stdout.splitlines():
-        if "Apple Development" in line:
+        if "Apple Development" in line and "afonya" not in line and "student.su" not in line:
             return line.split('"')[1]
     # Fall back to any other valid codesigning certificate
     for line in r.stdout.splitlines():
         if ")" in line and '"' in line:
             name = line.split('"')[1]
-            if name:
+            if name and "afonya" not in name and "student.su" not in name:
                 return name
     return "-"
 

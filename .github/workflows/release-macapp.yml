@@ -89,10 +89,24 @@ jobs:
           identity="$(python3 -c '
 import subprocess
 r = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"], capture_output=True, text=True)
-for line in r.stdout.splitlines():
-    if "Developer ID Application" in line or "Apple Development" in line:
-        print(line.split("\"")[1])
+lines = [l for l in r.stdout.splitlines() if "afonya" not in l and "student.su" not in l]
+chosen = ""
+for line in lines:
+    if "Developer ID Application" in line:
+        chosen = line.split("\"")[1]
         break
+if not chosen:
+    for line in lines:
+        if "Alexander Panasenko (alex@prod.codes)" in line:
+            chosen = line.split("\"")[1]
+            break
+if not chosen:
+    for line in lines:
+        if "Apple Development" in line:
+            chosen = line.split("\"")[1]
+            break
+if chosen:
+    print(chosen)
 ' || true)"
           if [ -n "$identity" ]; then
             echo "Signing DMG with $identity..."
