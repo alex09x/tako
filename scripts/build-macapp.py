@@ -248,11 +248,22 @@ def codesign_identity():
         return forced
     r = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
                        capture_output=True, text=True)
+    # Prefer Developer ID Application for distribution
     for line in r.stdout.splitlines():
         if "Developer ID Application" in line:
-            # ') "Developer ID Application: Name (TEAMID)"' -> the quoted name.
             return line.split('"')[1]
+    # Fall back to Apple Development certificate if present
+    for line in r.stdout.splitlines():
+        if "Apple Development" in line:
+            return line.split('"')[1]
+    # Fall back to any other valid codesigning certificate
+    for line in r.stdout.splitlines():
+        if ")" in line and '"' in line:
+            name = line.split('"')[1]
+            if name:
+                return name
     return "-"
+
 
 
 identity = codesign_identity()
