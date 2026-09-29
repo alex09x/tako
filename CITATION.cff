@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Tako: GPU-accelerated terminal for macOS and iOS"
+type: software
+authors:
+  - given-names: Alexander
+    family-names: Panasenko
+    email: alex@prod.codes
+    orcid: "https://orcid.org/0009-0003-3569-6490"
+repository-code: "https://github.com/alex09x/tako"
+url: "https://github.com/alex09x/tako"
+license: MIT
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23028533
+    description: "Concept DOI representing all versions of Tako"
+preferred-citation:
+  type: software
+  title: "Tako: GPU-accelerated terminal for macOS and iOS"
+  authors:
+    - given-names: Alexander
+      family-names: Panasenko
+      email: alex@prod.codes
+      orcid: "https://orcid.org/0009-0003-3569-6490"
+  version: "0.1.2"
+  date-released: "2026-09-28"
+  doi: 10.5281/zenodo.23028534
+  url: "https://zenodo.org/records/23028534"
+  license: MIT

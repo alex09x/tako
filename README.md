@@ -179,3 +179,22 @@ Tako is licensed under the [MIT License](LICENSE).
 - The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1 ([`swift/Resources/fonts/OFL.txt`](swift/Resources/fonts/OFL.txt)).
 - Reference test fixtures adapted from [Alacritty](https://github.com/alacritty/alacritty) (Apache 2.0 License, © The Alacritty Project).
 - Full third-party notices and licenses are documented in [NOTICE.md](NOTICE.md).
+
+---
+
+## Citation
+
+If you use Tako in your research or project, please cite the software archive using the metadata below or via [CITATION.cff](CITATION.cff):
+
+```bibtex
+@software{panasenko_2026_23028534,
+  author       = {Panasenko, Alexander},
+  title        = {Tako: GPU-accelerated terminal for macOS and iOS},
+  month        = sep,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {0.1.2},
+  doi          = {10.5281/zenodo.23028534},
+  url          = {https://zenodo.org/records/23028534}
+}
+```
