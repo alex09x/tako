@@ -1,0 +1,125 @@
+name: release-macapp
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v0.1.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAP_REPO: alex09x/homebrew-apps
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Build Tako.app
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          export TAKO_VERSION="$version"
+          export RELEASE=1
+          export PROD_CODE_LOCAL=1
+          python3 scripts/build-macapp.py
+
+      - name: Package DMG and ZIP
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          BUILD="target/macapp"
+          APP="${BUILD}/Tako.app"
+          DMG="${BUILD}/Tako-${version}.dmg"
+          ZIP="${BUILD}/Tako-${version}.zip"
+          STAGING="${BUILD}/dmg"
+
+          rm -rf "$STAGING" "$DMG" "$ZIP"
+          mkdir -p "$STAGING"
+
+          echo "Staging Tako.app..."
+          ditto "$APP" "${STAGING}/Tako.app"
+          ln -s /Applications "${STAGING}/Applications"
+
+          echo "Creating DMG..."
+          hdiutil create -volname "Tako ${version}" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+          rm -rf "$STAGING"
+
+          echo "Creating ZIP..."
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+          dmg_sha="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          zip_sha="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+
+          echo "TAKO_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "TAKO_DMG_SHA256=${dmg_sha}" >> "$GITHUB_ENV"
+          echo "TAKO_ZIP_SHA256=${zip_sha}" >> "$GITHUB_ENV"
+          echo "DMG SHA256: ${dmg_sha}"
+          echo "ZIP SHA256: ${zip_sha}"
+
+      - name: Upload assets to GitHub Release
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          gh release upload "$RELEASE_TAG" \
+            "target/macapp/Tako-${version}.dmg" \
+            "target/macapp/Tako-${version}.zip" \
+            --clobber
+
+      - name: Update Homebrew Tap (if TAP_TOKEN available)
+        if: env.TAP_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          gh auth setup-git
+          rm -rf tap
+          gh repo clone "$TAP_REPO" tap
+
+          default_branch="$(gh repo view "$TAP_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+          git -C tap checkout "$default_branch"
+          mkdir -p tap/Casks
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          template = Path("packaging/homebrew/tako.rb.in").read_text()
+          rendered = template.replace("@@TAKO_VERSION@@", os.environ["TAKO_VERSION"])
+          rendered = rendered.replace("@@TAKO_DMG_SHA256@@", os.environ["TAKO_DMG_SHA256"])
+
+          target = Path("tap/Casks/tako.rb")
+          target.write_text(rendered)
+          print(f"Updated {target} to version {os.environ['TAKO_VERSION']}")
+          PY
+
+          git -C tap add Casks/tako.rb
+          if git -C tap diff --cached --quiet; then
+            echo "Cask already up to date"
+            exit 0
+          fi
+          git -C tap commit -m "feat(cask): update Tako to ${RELEASE_TAG}"
+          git -C tap push origin "$default_branch"
+          echo "Pushed updated Cask to ${TAP_REPO}"
