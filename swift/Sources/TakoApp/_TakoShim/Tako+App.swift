@@ -1512,6 +1512,48 @@ extension Tako {
             return fallback ?? NSHomeDirectory()
         }
 
+        /// When the running command started, from its shell-integration
+        /// mark, in seconds of system uptime: a monotonic clock, so setting
+        /// the time while a command runs does not change how long it ran.
+        private var commandStartedAt: TimeInterval?
+
+        func commandStarted(at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            commandStartedAt = time
+        }
+
+        /// Whether the user is looking at this terminal right now.
+        var isBeingLookedAt: Bool {
+            NSApp.isActive && window?.isKeyWindow == true && isFirstResponderSurface
+        }
+
+        /// `notify-on-command-finish`: ring the bell and/or post a system
+        /// notification when a long command ends. The tab's crab shows the
+        /// outcome either way; this is for when the user is not watching.
+        func commandEnded(exitCode: Int32?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            let ran = commandStartedAt.map { now - $0 }
+            commandStartedAt = nil
+            guard let config = owningApp?.config,
+                  Tako.commandFinishShouldSignal(
+                    mode: config.notifyOnCommandFinish, ran: ran,
+                    after: config.notifyOnCommandFinishAfter, focused: isBeingLookedAt),
+                  let ran
+            else { return }
+            let actions = config.notifyOnCommandFinishAction
+            if actions.contains(.bell) {
+                NSSound.beep()
+                crab.bellRang()
+            }
+            if actions.contains(.notify) {
+                let content = Tako.commandFinishContent(exitCode: exitCode, ran: ran, title: title)
+                AppDelegate.notificationCenterProvider()?.add(
+                    UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+            }
+            commandFinishSignals += 1
+        }
+
+        /// How many finished commands signalled; for tests.
+        private(set) var commandFinishSignals = 0
+
         /// Counts the PTY reads this surface has parsed; a snapshot is
         /// written again only when it moved. Bumped on `parserQueue`, read on
         /// the main thread.
@@ -1961,8 +2003,10 @@ extension Tako {
                                     progress: value)
                             case .commandStart:
                                 self.crab.commandStarted()
+                                self.commandStarted()
                             case .commandEnd(let exitCode):
                                 self.crab.commandEnded(exitCode: exitCode)
+                                self.commandEnded(exitCode: exitCode)
                             case .clipboardQuery:
                                 let text = NSPasteboard.general.string(forType: .string) ?? ""
                                 let replyOutcome = self.core.feedWithOutcome(bytes: Data("\u{1b}]52;c;\(Data(text.utf8).base64EncodedString())\u{07}".utf8))

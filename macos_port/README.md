@@ -150,6 +150,12 @@ Keys whose meaning differs here:
 - `grapheme-width-method = legacy` sizes a cluster by its codepoints, but
   zero-width codepoints still join the cell before them. A cell keeps at
   most 256 bytes of extra codepoints.
+- `notify-on-command-finish` (`never` by default, `unfocused`, `always`),
+  `notify-on-command-finish-action` (`bell`, `notify`, their `no-` forms)
+  and `notify-on-command-finish-after` (default `5s`) work from shell
+  integration's command marks (OSC 133) only: a command whose start was not
+  marked never signals, and nothing is guessed from the screen. The tab's
+  crab shows running, failed and finished commands either way.
 - `window-save-content` (default `true`) saves each tab's screen and
   scrollback every 30 seconds and at quit, in Application Support, readable
   only by the user. A restored tab shows them above a line with the time of

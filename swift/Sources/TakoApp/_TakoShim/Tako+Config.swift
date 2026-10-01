@@ -360,20 +360,26 @@ extension Tako {
         /// WHY: Upstream default audio volume is 0.5.
         var bellAudioVolume: Float { 0.5 }
 
-        /// Policy for OS notifications when long-running commands complete.
-        ///
-        /// WHY: Desktop notifications are managed by OS shell integrations; default to `.never`.
-        var notifyOnCommandFinish: NotifyOnCommandFinish { .never }
+        /// `notify-on-command-finish`: `never` (default), `unfocused` -- only
+        /// for a terminal that is not the one being looked at -- or `always`.
+        /// Needs shell integration: only its command marks say when a
+        /// command started and how it ended.
+        var notifyOnCommandFinish: NotifyOnCommandFinish {
+            rawValue("notify-on-command-finish").flatMap { NotifyOnCommandFinish(rawValue: $0.lowercased()) } ?? .never
+        }
 
-        /// Action performed when command finish notification triggers.
-        ///
-        /// WHY: Default upstream action is `.bell`.
-        var notifyOnCommandFinishAction: NotifyOnCommandFinishAction { .bell }
+        /// `notify-on-command-finish-action`: a comma list of `bell`,
+        /// `notify` and their `no-` forms, applied over the default `bell`.
+        var notifyOnCommandFinishAction: NotifyOnCommandFinishAction {
+            NotifyOnCommandFinishAction(parsing: rawValue("notify-on-command-finish-action"))
+        }
 
-        /// Minimum command execution duration before triggering completion notification.
-        ///
-        /// WHY: Upstream default threshold is 5 seconds.
-        var notifyOnCommandFinishAfter: Duration { .seconds(5) }
+        /// `notify-on-command-finish-after` (default `5s`): commands shorter
+        /// than this never signal. Units `ms`, `s`, `m`, `h`, combinable
+        /// (`1m30s`); a bare number is seconds.
+        var notifyOnCommandFinishAfter: Duration {
+            rawValue("notify-on-command-finish-after").flatMap(Tako.parseDuration) ?? .seconds(5)
+        }
 
         /// Preserved zoom state when splitting panes.
         ///
@@ -1075,6 +1081,22 @@ extension Tako.Config {
 
         init(rawValue: CUnsignedInt = 1) {
             self.rawValue = rawValue
+        }
+
+        /// Upstream's syntax: each word turns an action on, its `no-` form
+        /// off, starting from `bell`. Unknown words are ignored.
+        init(parsing text: String?) {
+            var actions: NotifyOnCommandFinishAction = .bell
+            for word in (text ?? "").split(separator: ",") {
+                switch word.trimmingCharacters(in: .whitespaces).lowercased() {
+                case "bell": actions.insert(.bell)
+                case "no-bell": actions.remove(.bell)
+                case "notify": actions.insert(.notify)
+                case "no-notify": actions.remove(.notify)
+                default: break
+                }
+            }
+            self = actions
         }
     }
 }
