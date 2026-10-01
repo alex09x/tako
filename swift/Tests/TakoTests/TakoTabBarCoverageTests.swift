@@ -445,6 +445,27 @@ struct TabBarViewCoverageTests {
         #expect(group.selectedWindow === windows[23])
     }
 
+    /// Closing from two tabs to one drops the strip entirely: no cached
+    /// tabs are left for a click on the title bar to land on.
+    @Test func goingDownToOneWindowForgetsTheStrip() {
+        let a = makeWindow(title: "a")
+        let b = makeWindow(title: "b")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: a)
+        draw(bar)
+        #expect(bar.laidOutTabCount == 2)
+
+        Tako.CustomTabGroup.leave(b)
+        draw(bar)
+        #expect(bar.laidOutTabCount == 0)
+    }
+
     @Test func scrollOffsetKeepsTheSelectedTabInView() {
         let widths = Array(repeating: CGFloat(34), count: 25) // 850 in all
         #expect(Tako.TabBarView.scrollOffset(widths: widths, selected: 0, available: 242) == 0)

@@ -241,6 +241,8 @@ extension Tako {
         }
 
         private var tabs: [Tab] = []
+        /// How many tabs the strip last laid out (0 in single-window mode).
+        var laidOutTabCount: Int { tabs.count }
         /// Where tabs are drawn and clicked; ones scrolled past it are not.
         private var stripRect: CGRect = .zero
         private var hovered: Int?
@@ -351,6 +353,13 @@ extension Tako {
             ctx.fill(CGRect(x: 0, y: 0, width: bounds.width, height: 1))
 
             guard showsStrip else {
+                // Down to one window: forget the strip, or a click where it
+                // was would still be taken as a tab click instead of a drag
+                // of the title bar.
+                tabs = []
+                stripRect = .zero
+                hovered = nil
+                hoveredClose = false
                 drawLoneTitle()
                 return
             }
@@ -642,7 +651,7 @@ extension Tako {
                 NSApp.sendAction(#selector(BaseTerminalController.splitRight(_:)), to: nil, from: self)
                 return
             }
-            guard stripRect.contains(point), let tab = tabs.first(where: { $0.frame.contains(point) }) else {
+            guard showsStrip, stripRect.contains(point), let tab = tabs.first(where: { $0.frame.contains(point) }) else {
                 // Empty bar: drag the window, or zoom it on a double click.
                 if event.clickCount == 2 {
                     window?.performZoom(nil)
