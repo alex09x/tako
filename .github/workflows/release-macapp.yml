@@ -84,6 +84,8 @@ jobs:
           xcrun notarytool store-credentials tako \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
             --keychain "$KEYCHAIN_PATH"
+          # scripts/release-macapp.py looks there, not in the default keychain.
+          echo "TAKO_NOTARY_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Build Tako.app
         run: |

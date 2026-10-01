@@ -236,6 +236,9 @@ final class AppUpdater: @unchecked Sendable {
             do {
                 let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                // Removed however this ends; declared first, so it runs after
+                // the image is detached below.
+                defer { try? FileManager.default.removeItem(at: tempDir) }
 
                 let downloadDestination = tempDir.appendingPathComponent(asset.name)
                 Self.logger.info("Downloading update asset from \(assetUrl.absoluteString)...")
@@ -285,8 +288,6 @@ final class AppUpdater: @unchecked Sendable {
                     throw error
                 }
 
-                // Cleanup temp dir
-                try? FileManager.default.removeItem(at: tempDir)
 
                 Self.logger.info("Successfully updated Tako to \(release.tagName) in-place at \(destinationBundleUrl.path)")
 

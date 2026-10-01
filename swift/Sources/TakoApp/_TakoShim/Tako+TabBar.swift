@@ -187,6 +187,9 @@ extension Tako {
             /// Narrowest a tab can be and still show its close button beside
             /// the crab.
             static let compactTabWidth: CGFloat = tabPaddingLeft + crabSize + contentGap + closeSize + tabPaddingRight
+            /// Narrowest a tab ever gets: its crab, whole, with its padding.
+            /// Below this the crab and its badge would spill into the next tab.
+            static let iconTabWidth: CGFloat = tabPaddingLeft + crabSize + tabPaddingRight
             static let maxTabWidth: CGFloat = 220
             static let firstTabX: CGFloat = 90
             static let tabPaddingLeft: CGFloat = 10
@@ -238,6 +241,8 @@ extension Tako {
         }
 
         private var tabs: [Tab] = []
+        /// Where tabs are drawn and clicked; ones scrolled past it are not.
+        private var stripRect: CGRect = .zero
         private var hovered: Int?
         private var hoveredClose = false
         private var plusHovered = false
@@ -296,21 +301,24 @@ extension Tako {
             // up room evenly (down to the 120px floor) rather than each
             // keeping its own content width -- see "тесно: равномерно
             // жмутся до 120" in the spec. Past that they keep shrinking to
-            // whatever share is left, with no floor at all: any floor makes
-            // some count of tabs run off the bar (stopping at 120 drew the
-            // seventh tab of a 900pt window under the buttons, so it looked
-            // as if no more than six could be opened).
+            // the icon width (crab only), and when even that doesn't fit the
+            // row scrolls to keep the selected tab in view. Stopping at 120
+            // with no scrolling drew the seventh tab of a 900pt window under
+            // the buttons, as if no more than six could be opened.
             let totalNatural = natural.reduce(0, +)
             let widths: [CGFloat]
             if totalNatural <= available || all.isEmpty {
                 widths = natural
             } else {
-                let share = available / CGFloat(all.count)
-                let shrunk = share
+                let shrunk = max(Metrics.iconTabWidth, available / CGFloat(all.count))
                 widths = all.map { _ in shrunk }
             }
 
-            var x = Metrics.firstTabX
+            stripRect = CGRect(x: Metrics.firstTabX, y: 0, width: max(0, available), height: Metrics.tabHeight)
+            var x = Metrics.firstTabX - Self.scrollOffset(
+                widths: widths,
+                selected: all.firstIndex { $0 === selected },
+                available: available)
             for (index, candidate) in all.enumerated() {
                 let width = widths[index]
                 tabs.append(Tab(
@@ -320,6 +328,16 @@ extension Tako {
                     index: index))
                 x += width
             }
+        }
+
+        /// How far the row scrolls left so the selected tab is in view: none
+        /// while everything fits, otherwise just enough to show the selected
+        /// tab's right edge, and never past the last tab.
+        static func scrollOffset(widths: [CGFloat], selected: Int?, available: CGFloat) -> CGFloat {
+            let total = widths.reduce(0, +)
+            guard total > available, let selected else { return 0 }
+            let selectedEnd = widths[...selected].reduce(0, +)
+            return min(max(0, selectedEnd - available), total - available)
         }
 
         // MARK: Drawing
@@ -337,7 +355,10 @@ extension Tako {
                 return
             }
             layoutTabs()
-            for tab in tabs { draw(tab, in: ctx) }
+            ctx.saveGState()
+            ctx.clip(to: stripRect)
+            for tab in tabs where tab.frame.intersects(stripRect) { draw(tab, in: ctx) }
+            ctx.restoreGState()
             drawButtons(in: ctx)
         }
 
@@ -584,7 +605,7 @@ extension Tako {
             let previousTab = hovered
             let previousPlus = plusHovered
             let previousSplit = splitHovered
-            hovered = tabs.first { $0.frame.contains(point) }?.index
+            hovered = stripRect.contains(point) ? tabs.first { $0.frame.contains(point) }?.index : nil
             hoveredClose = hovered.map { closeRect(of: tabs[$0]).contains(point) } ?? false
             plusHovered = plusRect.contains(point)
             splitHovered = splitRect.contains(point)
@@ -621,7 +642,7 @@ extension Tako {
                 NSApp.sendAction(#selector(BaseTerminalController.splitRight(_:)), to: nil, from: self)
                 return
             }
-            guard let tab = tabs.first(where: { $0.frame.contains(point) }) else {
+            guard stripRect.contains(point), let tab = tabs.first(where: { $0.frame.contains(point) }) else {
                 // Empty bar: drag the window, or zoom it on a double click.
                 if event.clickCount == 2 {
                     window?.performZoom(nil)

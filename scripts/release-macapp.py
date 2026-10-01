@@ -38,6 +38,16 @@ os.chdir(ROOT)
 BUILD = "target/macapp"
 APP = os.path.join(BUILD, "Tako.app")
 PROFILE = os.environ.get("TAKO_NOTARY_PROFILE", "tako")
+# Where the profile lives when it is not in the default (data-protection)
+# keychain -- CI stores it in a file keychain of its own.
+KEYCHAIN = os.environ.get("TAKO_NOTARY_KEYCHAIN")
+
+
+def profile_args():
+    args = ["--keychain-profile", PROFILE]
+    if KEYCHAIN:
+        args += ["--keychain", KEYCHAIN]
+    return args
 
 
 def run(cmd, what, quiet=False):
@@ -74,7 +84,7 @@ def preflight():
         sys.exit(f"{APP} is signed without the hardened runtime; rebuild it")
 
     r = subprocess.run(
-        ["xcrun", "notarytool", "history", "--keychain-profile", PROFILE],
+        ["xcrun", "notarytool", "history", *profile_args()],
         capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit(
@@ -102,7 +112,7 @@ def notarize(path, what):
     step(f"notarizing {what} -- Apple decides this, so it takes minutes")
     r = subprocess.run(
         ["xcrun", "notarytool", "submit", path,
-         "--keychain-profile", PROFILE, "--wait", "--timeout", "30m"],
+         *profile_args(), "--wait", "--timeout", "30m"],
         capture_output=True, text=True)
     print(r.stdout.strip())
     if r.returncode != 0 or "status: Accepted" not in r.stdout:
@@ -115,7 +125,7 @@ def notarize(path, what):
         if sub:
             print("--- Apple's reasons ---")
             subprocess.run(["xcrun", "notarytool", "log", sub,
-                            "--keychain-profile", PROFILE])
+                            *profile_args()])
         print(r.stderr[-4000:])
         sys.exit(f"notarization refused for {what}")
     run(["xcrun", "stapler", "staple", path], f"staple {what}")

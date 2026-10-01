@@ -416,33 +416,42 @@ struct TabBarViewCoverageTests {
         #expect(!bitmapsEqual(withAActive, withBActive))
     }
 
-    /// Any number of tabs fits on the bar: past the 120px floor they keep
-    /// sharing what is left. A floor made the seventh tab of a normal window
-    /// run off under the buttons, as if no more than six could be opened.
-    @Test(arguments: [9, 25])
-    func everyTabStaysOnTheBarHoweverManyThereAre(count: Int) {
+    /// Any number of tabs can be reached. They shrink to their crab (34pt)
+    /// and, past that, the row scrolls to keep the selected tab in view --
+    /// never narrower than the crab, so tabs don't overlap.
+    @Test func manyTabsScrollToTheSelectedOneAndNeverOverlap() {
         var windows: [NSWindow] = []
         defer { for window in windows { Tako.CustomTabGroup.leave(window) } }
 
         let anchor = makeWindow(title: "this is a long tab title that wants lots of room")
         windows.append(anchor)
-        for index in 1..<count {
+        for index in 1..<25 {
             let window = makeWindow(title: "also a fairly long tab title #\(index)")
             Tako.CustomTabGroup.join(window, to: anchor, select: false)
             windows.append(window)
         }
         let group = Tako.CustomTabGroup.group(for: anchor)
+        group.select(windows[24])
 
         let bar = Tako.TabBarView(frame: .zero)
         mount(bar, in: anchor)
         draw(bar)
 
-        // The last pixel before the buttons belongs to the last tab, the
-        // first after firstTabX(90) to the first.
+        // Scrolled to the end: the last tab sits against the buttons.
         click(bar, at: NSPoint(x: bar.bounds.width - 68 - 1, y: 14), in: anchor)
-        #expect(group.selectedWindow === windows[count - 1])
-        click(bar, at: NSPoint(x: 91, y: 14), in: anchor)
-        #expect(group.selectedWindow === windows[0])
+        #expect(group.selectedWindow === windows[24])
+        // Neighbouring 34pt slots are different tabs: none is squeezed thinner.
+        click(bar, at: NSPoint(x: bar.bounds.width - 68 - 1 - 34, y: 14), in: anchor)
+        #expect(group.selectedWindow === windows[23])
+    }
+
+    @Test func scrollOffsetKeepsTheSelectedTabInView() {
+        let widths = Array(repeating: CGFloat(34), count: 25) // 850 in all
+        #expect(Tako.TabBarView.scrollOffset(widths: widths, selected: 0, available: 242) == 0)
+        #expect(Tako.TabBarView.scrollOffset(widths: widths, selected: 24, available: 242) == 608)
+        #expect(Tako.TabBarView.scrollOffset(widths: widths, selected: 9, available: 242) == 98)
+        #expect(Tako.TabBarView.scrollOffset(widths: [100, 100], selected: 1, available: 242) == 0, "fits")
+        #expect(Tako.TabBarView.scrollOffset(widths: widths, selected: nil, available: 242) == 0)
     }
 
     @Test func mouseMovedHoversATabAndTheButtons() {
