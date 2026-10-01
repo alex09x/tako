@@ -1,32 +1,85 @@
 # Tako roadmap
 
-Tako aims to make terminal work easier to resume, understand, and search, with fast native
-rendering and a reliable core.
+Tako helps you get back to terminal work after a relaunch, see what happened across several
+sessions, and find the output you need. Underneath that sits ordinary daily reliability: shell,
+SSH and full-screen programs, input, copy and paste, scrolling and tabs. TakoCore, the embeddable
+engine, is a separate track for applications that need a terminal inside them.
 
-This roadmap describes direction, not delivery dates. Priorities may change as the product
-develops and people use it.
+This roadmap sets an order, not dates. Each step moves on when the previous one is reliable and
+the people using it say it helps, not when a list of items is done.
 
-## Tako.app
+## Before inviting outside users
 
-- Make installation and in-app updates dependable.
-- Help people pick up terminal context after a relaunch by restoring useful screen, scrollback,
-  and working-directory information. Clearly distinguish saved content from running processes.
-- Make it easier to notice when long-running commands finish or fail and to find earlier output
-  across sessions.
+**Install and update.** A clean install on another Mac opens without working around Gatekeeper,
+and the in-app updater installs only builds that are signed and notarized. This gates inviting
+outside testers; it does not hold up development, which runs on local builds.
+
+**Daily reliability.** Shells, SSH and full-screen programs keep working; input methods and
+non-Latin text, selection, copy and paste, scrolling and many tabs behave correctly. The first
+round of outside feedback looks for anything that stops someone from working before it looks at
+new features.
+
+## Tako.app, in order
+
+### 1. Pick up where you left off
+
+Each tab saves a snapshot of its screen and scrollback periodically and when the app quits. On
+the next launch the tab shows the last snapshot, followed by a separator with the time it was
+taken, so new output is visibly apart from restored text. A snapshot does not bring the old shell
+back: a new shell starts, and the tab makes that clear. The working directory comes back only
+when the shell reported it (OSC 7 or shell integration); otherwise the new shell starts in the
+home directory.
+
+Saved content is private data. It has a size limit, a setting that turns it off, and secure-input
+sessions are never saved.
+
+Done when:
+
+- after a relaunch, every tab shows its last saved screen and scrollback with the snapshot time;
+- the new shell is never presented as the old process;
+- the working directory comes back wherever the shell reported it;
+- storage stays within the configured limit;
+- with the setting off, nothing is written;
+- secure-input sessions are excluded.
+
+### 2. See which tab needs attention
+
+When a long command finishes or fails, its tab shows it, and a notification is sent according to
+the user's setting. The state comes only from shell integration (OSC 133) and exit status, never
+from guessing at the text on screen.
+
+Done when the marker matches the command's real outcome, the `never`, `unfocused` and `always`
+modes behave predictably, and the signal can be turned off.
+
+### 3. Find output across sessions
+
+One search covers the open tabs and any restored text the user allows it to read; choosing a
+result opens that tab at that place. Where command boundaries are known, results can be grouped by
+command, working directory, time and exit status. Over SSH, those boundaries exist only when the
+remote host has shell integration; otherwise the search is plain text search over the screen and
+scrollback.
+
+Done when someone finds a given piece of output among several sessions and jumps to it without
+going through tabs by hand, the search stays local, and it never invents details the shell did not
+report.
 
 ## TakoCore
 
-- Keep the reusable terminal engine and UI useful for applications that embed a terminal.
-- Improve sample apps, integration guidance, and API versioning as adoption grows.
+A small track that runs alongside the app:
 
-## Longer-term ideas
+- minimal sample apps for macOS and iOS;
+- a headless example over the C ABI;
+- a page of limits and compatibility;
+- a versioning policy for the API.
 
-- Improve remote workflows and reconnect behavior.
-- Explore companion-device and persistent-session support if user needs justify the added
-  complexity.
+When an app feature needs something new from the engine, it is designed and tested in TakoCore
+first, then used by the app.
 
-## How priorities are set
+Done when a developer outside the project builds a sample and embeds a terminal from the
+instructions alone. Success is counted in real integrations and their feedback.
 
-Favor reliability, privacy, and focused improvements to everyday workflows. Validate changes with
-users and adjust the roadmap based on what they find useful. This is not a promise of schedule or
-scope.
+## Later, only if users need it
+
+Reconnecting through a multiplexer, a session service that keeps processes alive, companion
+devices and new transports. The first version also leaves out cloud sync, vendor-specific agent
+panels and inferring state from screen text. No telemetry is sent by default.
