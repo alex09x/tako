@@ -816,7 +816,7 @@ struct SurfaceViewCoverageTests {
         #expect(waitUntil { view.processExited })
     }
 
-    @Test func encodeThenDecodeRoundTripsIdentityOnly() throws {
+    @Test func encodeThenDecodeKeepsTheIdentityWithANewShell() throws {
         let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         defer { view.close() }
 
@@ -825,9 +825,10 @@ struct SurfaceViewCoverageTests {
         defer { decoded.close() }
 
         #expect(decoded.restoredID == String(describing: view.id))
-        // A decoded surface is a fresh live one, not a resurrection of the
-        // original's PTY.
-        #expect(decoded.id != view.id)
+        // The identity carries over, so a restored window refocuses the right
+        // pane and finds its saved screen; the PTY is a new one.
+        #expect(decoded.id == view.id)
+        #expect(decoded !== view)
     }
 
     @Test func requiredCoderInitAlwaysFails() {

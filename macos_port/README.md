@@ -150,10 +150,20 @@ Keys whose meaning differs here:
 - `grapheme-width-method = legacy` sizes a cluster by its codepoints, but
   zero-width codepoints still join the cell before them. A cell keeps at
   most 256 bytes of extra codepoints.
+- `window-save-content` (default `true`) saves each tab's screen and
+  scrollback every 30 seconds and at quit, in Application Support, readable
+  only by the user. A restored tab shows them above a line with the time of
+  the save, then starts a new shell: in the directory the old one last
+  reported (OSC 7) if it still exists, else as `working-directory` says.
+  Programs that were running are not restored. `false` saves nothing and
+  deletes what was saved, and nothing is saved while Secure Keyboard Entry
+  is on. `window-save-content-limit` is the megabytes all tabs may take
+  together (default 64); a tab whose share its scrollback outgrows is not
+  saved.
 - `mouse-shift-capture` honours a program's XTSHIFTESCAPE request under
   `false` and `true`, and ignores it under `always` and `never`.
 
 Accepted but not acted on -- they raise no error, so an upstream config
 loads unchanged:
 
-- `auto-update`, `auto-update-channel`: the app has no updater.
+- `auto-update-channel`: there is one channel, GitHub releases.

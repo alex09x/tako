@@ -822,6 +822,21 @@ extension Tako {
         /// nothing, leaves it on.
         var autoUpdateEnabled: Bool { rawValue("auto-update")?.lowercased() != "off" }
 
+        /// `window-save-content` (default true): each tab's screen and
+        /// scrollback are saved, so a relaunch shows them again. `false`
+        /// writes nothing and removes what was saved.
+        var windowSaveContent: Bool { rawBool("window-save-content", default: true) }
+
+        /// `window-save-content-limit`: megabytes all saved tabs may take
+        /// together, default 64. A tab whose share is too small for its
+        /// scrollback is not saved rather than saved cut.
+        var windowSaveContentLimit: UInt64 {
+            guard let mb = rawDouble("window-save-content-limit"), mb.isFinite, mb >= 0 else { return 64 << 20 }
+            // Past a terabyte it means "no practical limit"; the engine caps a
+            // single tab far lower anyway.
+            return UInt64(min(mb, 1_048_576) * 1_048_576)
+        }
+
         /// Automatic activation of macOS Secure Input during password prompts.
         ///
         /// Reads `macos-auto-secure-input`, default true.

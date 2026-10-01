@@ -132,6 +132,27 @@ final class Driver {
         pid = 0
     }
 
+    /// Cmd+Q, the way a person quits: the app saves its windows and tabs.
+    func quitNormally() throws {
+        guard pid != 0 else { return }
+        let quitting = pid
+        key(Key.q, .maskCommand)
+        guard wait(for: { NSRunningApplication(processIdentifier: quitting) == nil }, timeout: 15) else {
+            throw Failure("Cmd+Q did not quit Tako")
+        }
+        pid = 0
+    }
+
+    /// What the terminal shows, as its accessibility value: the screen and
+    /// scrollback.
+    func screenText() -> String {
+        guard let window = windows().first,
+              let area = descendants(of: window, role: kAXTextAreaRole as String).first,
+              let text: String = attribute(area, kAXValueAttribute)
+        else { return "" }
+        return text
+    }
+
     private func running() -> [NSRunningApplication] {
         NSWorkspace.shared.runningApplications.filter {
             $0.executableURL?.path.hasPrefix(appURL.path) == true
@@ -340,6 +361,23 @@ func hex(_ s: String) -> String {
 typealias Scenario = (name: String, why: String, body: (Driver) throws -> Void)
 
 let scenarios: [Scenario] = [
+    ("restore", "a relaunch shows the tab's old screen and starts its shell where it was", { d in
+        // The output, not the command line, holds the marker; any shell.
+        try d.run("cd /private/tmp; printf 'restore-%s\\n' marker-42")
+        guard d.wait(for: { d.screenText().contains("restore-marker-42") }, timeout: 5) else {
+            throw Failure("the marker never showed: [\(d.screenText().suffix(300))]")
+        }
+        try d.quitNormally()
+        try d.launch()
+        let screen = d.screenText()
+        // Earlier runs leave their own lives above; this run's are the last.
+        guard let marker = screen.range(of: "restore-marker-42", options: .backwards),
+              let separator = screen.range(of: "restored from", options: .backwards),
+              marker.upperBound <= separator.lowerBound
+        else { throw Failure("restored screen is wrong: [\(screen)]") }
+        try d.run("pwd > \(d.path("pwd"))")
+        try d.expect("pwd", "/private/tmp\n", "the restored shell's directory")
+    }),
     ("typing", "what is typed reaches the shell, two spaces as two spaces", { d in
         try d.run("printf '%s' 'a  b' > \(d.path("typed"))")
         try d.expect("typed", "a  b", "typed text")

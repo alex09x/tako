@@ -610,6 +610,9 @@ extension Tako {
         /// finishes instantly doesn't flash the window closed.
         public var waitAfterCommand: Bool = false
         public var environmentVariables: [String: String] = [:]
+        /// What the surface showed before a relaunch, painted before its new
+        /// shell starts. Set only when a window is restored.
+        var restoredSnapshot: SessionSnapshot?
 
         public init() {}
 
@@ -1467,23 +1470,64 @@ extension Tako {
         }
 
         /// Upstream stores surfaces in a `Codable` SplitTree so a window's
-        /// layout can be restored. A live surface owns a PTY and a terminal
-        /// engine, neither of which is serializable, so only the identity
-        /// travels: restoring a layout recreates surfaces, it does not
-        /// resurrect dead shells.
-        private enum CodingKeys: String, CodingKey { case id }
+        /// layout can be restored. A live surface owns a PTY, which cannot be
+        /// serialized: restoring recreates the surface with a new shell. What
+        /// travels is its identity, the directory its shell last reported
+        /// (OSC 7), and -- in a file of its own, see `SessionSnapshotStore`
+        /// -- what was on its screen.
+        private enum CodingKeys: String, CodingKey { case id, pwd }
 
         public required convenience init(from decoder: Decoder) throws {
-            self.init(frame: .zero)
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            if let id = try? container.decode(String.self, forKey: .id) {
-                self.restoredID = id
+            let savedID = try? container.decode(String.self, forKey: .id)
+            let savedPwd = try? container.decode(String.self, forKey: .pwd)
+            let app = (NSApp?.delegate as? AppDelegate)?.tako
+            let uuid = savedID.flatMap(UUID.init(uuidString:))
+            var base = Tako.SurfaceConfiguration()
+            base.workingDirectory = Self.restoredWorkingDirectory(
+                savedPwd, fallback: app.map { Tako.resolvedWorkingDirectory($0.config) })
+            if let uuid, app?.config.windowSaveContent ?? true {
+                base.restoredSnapshot = SessionSnapshotStore.shared.read(id: uuid)
             }
+            self.init(app, baseConfig: base, uuid: uuid ?? UUID())
+            self.restoredID = savedID
         }
 
         public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(String(describing: id), forKey: .id)
+            try container.encodeIfPresent(pwd, forKey: .pwd)
+        }
+
+        /// Where a restored surface's new shell starts: the directory its old
+        /// shell reported, if it still exists; otherwise the configured one,
+        /// or home. Never the focused tab's -- that would put a restored tab
+        /// somewhere it never was.
+        static func restoredWorkingDirectory(_ saved: String?, fallback: String?) -> String {
+            var isDirectory: ObjCBool = false
+            if let saved, FileManager.default.fileExists(atPath: saved, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                return saved
+            }
+            return fallback ?? NSHomeDirectory()
+        }
+
+        /// Counts the PTY reads this surface has parsed; a snapshot is
+        /// written again only when it moved. Bumped on `parserQueue`, read on
+        /// the main thread.
+        private var contentGeneration: UInt64 = 0
+        private let generationLock = NSLock()
+
+        /// The engine's state for saving, unless nothing was parsed since
+        /// `generation`. Called on the main thread, and must not wait for
+        /// `parserQueue`: that queue waits for the main thread whenever a
+        /// program asks for a synchronous reply. The engine locks itself; a
+        /// read that lands mid-parse is caught by the next save.
+        func exportSnapshotState(maxBytes: UInt64, unlessGeneration generation: UInt64?) -> SnapshotExport {
+            let current = generationLock.withLock { contentGeneration }
+            guard current != generation else { return .unchanged }
+            guard let blob = try? core.checkpointExport(flags: 0, maxBytes: maxBytes) else { return .tooLarge }
+            return .exported(blob, generation: current)
         }
 
         /// Full scrollback text, recomputed on demand. Upstream caches it
@@ -1671,7 +1715,7 @@ extension Tako {
             let inherited = baseConfig?.workingDirectory
                 ?? (inheritWorkingDirectory ? Tako.focusedWorkingDirectory : nil)
                 ?? app.map { Tako.resolvedWorkingDirectory($0.config) }
-            setupCoreAndPty(workingDir: inherited)
+            setupCoreAndPty(workingDir: inherited, restoring: baseConfig?.restoredSnapshot)
             if let initial = baseConfig?.initialInput, !initial.isEmpty {
                 write(initial)
             }
@@ -1803,7 +1847,19 @@ extension Tako {
             }
         }
 
-        private func setupCoreAndPty(workingDir: String?) {
+        private func setupCoreAndPty(workingDir: String?, restoring snapshot: SessionSnapshot? = nil) {
+            // A restored tab shows what it showed before, and only then does
+            // its new shell start, so nothing the shell prints is overwritten.
+            if let snapshot, (try? core.checkpointImport(blob: snapshot.checkpoint)) != nil {
+                // Painted at the saved size; the first layout resizes it to the
+                // window like any other grid. Resizing here, before there is a
+                // frame, would squeeze the saved screen into a 1x1 grid.
+                if core.modes().alternateScreen {
+                    core.feed(bytes: Data(SessionSnapshot.leaveAlternateScreen))
+                }
+                core.feed(bytes: Data(SessionSnapshot.separator(
+                    savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+            }
 
             // Default: when the child shell exits on its own (`exit`, Ctrl-D,
             // the command crashing), close this surface the same way a
@@ -1861,6 +1917,9 @@ extension Tako {
                     TakoLog.feed.debug("pty hex: \(hex)  [\(printable)]")
                 }
                 let outcome = self.core.feedWithOutcome(bytes: data)
+                // After the parse, never before: a save that reads the new
+                // count must also find the bytes in the engine.
+                self.generationLock.withLock { self.contentGeneration &+= 1 }
                 if !outcome.output.isEmpty {
                     TakoLog.feed.debug("reply \(outcome.output.count)B")
                 }

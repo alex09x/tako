@@ -383,7 +383,7 @@ let knownTakoConfigKeys: Set<String> = [
     "macos-icon", "macos-icon-frame", "macos-icon-ghost-color", "macos-icon-screen-color",
     "macos-window-buttons", "macos-hidden", "scrollbar", "background-opacity",
     "window-position-x", "window-position-y", "window-height", "window-width",
-    "window-save-state", "window-new-tab-position", "auto-update-channel", "auto-update",
+    "window-save-state", "window-save-content", "window-save-content-limit", "window-new-tab-position", "auto-update-channel", "auto-update",
     // Also parsed by TakoCoreUI.TerminalTheme from the same config text
     // (see Tako+Config.swift's `init(config:)`), listed here too so they
     // don't get flagged as unknown.

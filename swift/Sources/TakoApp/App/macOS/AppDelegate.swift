@@ -211,7 +211,25 @@ class AppDelegate: NSObject,
         ])
     }
 
+    /// Saves each tab's screen so a relaunch can show it again.
+    let sessionSaver = SessionSnapshotSaver()
+
+    func sessionSaveSettings() -> SessionSnapshotSaver.Settings {
+        .init(enabled: tako.config.windowSaveContent,
+              limit: tako.config.windowSaveContentLimit,
+              secureInput: SecureInput.shared.global)
+    }
+
+    /// The surfaces of the windows AppKit restores. The quick terminal is
+    /// not one of them.
+    static func restorableSurfaces() -> [Tako.SurfaceView] {
+        TerminalController.all.flatMap { Array($0.surfaceTree) }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        sessionSaver.start(
+            settings: { [unowned self] in self.sessionSaveSettings() },
+            surfaces: { Self.restorableSurfaces() })
         // System settings overrides
         UserDefaults.tako.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
@@ -415,6 +433,8 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())
+        sessionSaver.stop()
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
