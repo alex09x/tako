@@ -188,7 +188,8 @@ final class MetalPaddingAndSelectionTests: XCTestCase {
     private func row0GlyphColors(_ planner: TerminalMetalFramePlanner) -> [Int: SIMD4<Float>] {
         var colors: [Int: SIMD4<Float>] = [:]
         for glyph in planner.glyphInstances where glyph.destRect.y < Float(Self.cellHeight) {
-            let col = Int(glyph.destRect.x) / Self.cellWidth
+            // By the glyph's centre: its ink may start a pixel left of its cell.
+            let col = Int(glyph.destRect.x + glyph.destRect.z / 2) / Self.cellWidth
             colors[col] = glyph.color
         }
         return colors
