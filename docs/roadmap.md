@@ -63,6 +63,25 @@ Done when someone finds a given piece of output among several sessions and jumps
 going through tabs by hand, the search stays local, and it never invents details the shell did not
 report.
 
+### 4. Keep the same session across a relaunch
+
+Quitting Tako detaches its tabs instead of ending them: the shell and the programs running in it
+stay alive on this Mac. On the next launch Tako restores the layout and reattaches each tab to its
+session by a stable id, passing input, terminal size and what is on screen between them. Closing a
+tab ends its process, explicitly. This works locally and needs no network service.
+
+If the local session host is not running, or the Mac restarted, the tab shows its saved snapshot
+(step 1) and starts a new shell, without presenting it as the old process. Surviving a restart of
+the Mac itself is not part of this.
+
+Done when:
+
+- after quitting normally and relaunching, every tab has the same process and interactive state;
+- full-screen programs and SSH sessions take input and respond correctly to resizing;
+- no session is duplicated;
+- the user has a clear action that ends a live session;
+- when the host is gone, the fallback above is what happens.
+
 ## TakoCore
 
 A small track that runs alongside the app:
@@ -80,6 +99,5 @@ instructions alone. Success is counted in real integrations and their feedback.
 
 ## Later, only if users need it
 
-Reconnecting through a multiplexer, a session service that keeps processes alive, companion
-devices and new transports. The first version also leaves out cloud sync, vendor-specific agent
+Reconnecting to sessions on other machines, companion devices and new transports. The first version also leaves out cloud sync, vendor-specific agent
 panels and inferring state from screen text. No telemetry is sent by default.
