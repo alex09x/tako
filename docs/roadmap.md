@@ -27,8 +27,8 @@ Each tab saves a snapshot of its screen and scrollback periodically and when the
 the next launch the tab shows the last snapshot, followed by a separator with the time it was
 taken, so new output is visibly apart from restored text. A snapshot does not bring the old shell
 back: a new shell starts, and the tab makes that clear. The working directory comes back only
-when the shell reported it (OSC 7 or shell integration); otherwise the new shell starts in the
-home directory.
+when the shell reported it (OSC 7 or shell integration); otherwise the new shell starts where Tako
+starts any shell, by the `working-directory` setting.
 
 Saved content is private data. It has a size limit, a setting that turns it off, and secure-input
 sessions are never saved.
