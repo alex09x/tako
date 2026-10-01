@@ -97,7 +97,11 @@ final class Driver {
     // is quick to type and needs nothing but plain keys.
     func path(_ name: String) -> String { work.appendingPathComponent(name).path }
 
-    func launch(config: String = "") throws {
+    /// Scenarios start from a fresh window: none restored from an earlier
+    /// run, none saved for the next. The restore scenario turns it back on.
+    static let defaultConfig = "window-save-state = never\n"
+
+    func launch(config: String = Driver.defaultConfig) throws {
         let configURL = work.appendingPathComponent("config")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
         let before = Set(running().map(\.processIdentifier))
@@ -362,21 +366,33 @@ typealias Scenario = (name: String, why: String, body: (Driver) throws -> Void)
 
 let scenarios: [Scenario] = [
     ("restore", "a relaunch shows the tab's old screen and starts its shell where it was", { d in
-        // The output, not the command line, holds the marker; any shell.
-        try d.run("cd /private/tmp; printf 'restore-%s\\n' marker-42")
-        guard d.wait(for: { d.screenText().contains("restore-marker-42") }, timeout: 5) else {
+        d.quit()
+        try d.launch(config: "")
+        // A marker and a directory of this run only, so a screen restored
+        // from an earlier run cannot pass for this one. The output, not the
+        // command line, holds the marker; any shell's printf makes it.
+        let id = d.work.lastPathComponent
+        let marker = "restore-\(id)"
+        let dir = d.path("cwd")
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try d.run("cd \(dir); printf 'restore-%s\\n' \(id)")
+        guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
             throw Failure("the marker never showed: [\(d.screenText().suffix(300))]")
         }
         try d.quitNormally()
-        try d.launch()
+        try d.launch(config: "")
         let screen = d.screenText()
-        // Earlier runs leave their own lives above; this run's are the last.
-        guard let marker = screen.range(of: "restore-marker-42", options: .backwards),
+        guard let shown = screen.range(of: marker, options: .backwards),
               let separator = screen.range(of: "restored from", options: .backwards),
-              marker.upperBound <= separator.lowerBound
-        else { throw Failure("restored screen is wrong: [\(screen)]") }
-        try d.run("pwd > \(d.path("pwd"))")
-        try d.expect("pwd", "/private/tmp\n", "the restored shell's directory")
+              shown.upperBound <= separator.lowerBound
+        else { throw Failure("this run's screen was not restored: [\(screen)]") }
+        try d.run("pwd -P > \(d.path("pwd"))")
+        // pwd -P resolves /tmp to /private/tmp; Foundation's resolving keeps
+        // /tmp, so ask the C library.
+        guard let real = realpath(dir, nil) else { throw Failure("no real path for \(dir)") }
+        let resolved = String(cString: real)
+        free(real)
+        try d.expect("pwd", resolved + "\n", "the restored shell's directory")
     }),
     ("typing", "what is typed reaches the shell, two spaces as two spaces", { d in
         try d.run("printf '%s' 'a  b' > \(d.path("typed"))")
@@ -548,11 +564,11 @@ let scenarios: [Scenario] = [
     }),
     ("config", "the config file is read, and Reload Configuration applies a change to the open terminal", { d in
         d.quit()
-        try d.launch(config: "font-size = 12\n")
+        try d.launch(config: Driver.defaultConfig + "font-size = 12\n")
         try d.run("tput cols > \(d.path("small"))")
         let small = Int(try d.file("small").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         d.quit()
-        try d.launch(config: "font-size = 24\n")
+        try d.launch(config: Driver.defaultConfig + "font-size = 24\n")
         try d.run("tput cols > \(d.path("large"))")
         let large = Int(try d.file("large").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         guard large > 0, large < small else { throw Failure("font-size 12 gave \(small) columns, 24 gave \(large)") }
@@ -569,7 +585,7 @@ let scenarios: [Scenario] = [
     ("padding", "window-padding-x takes columns away from the program", { d in
         func cols(_ config: String, _ name: String) throws -> Int {
             d.quit()
-            try d.launch(config: config)
+            try d.launch(config: Driver.defaultConfig + config)
             try d.run("tput cols > \(d.path(name))")
             return Int(try d.file(name).trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         }

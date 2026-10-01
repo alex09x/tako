@@ -155,7 +155,10 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // no matter what. Note its safe to use "tako.config" directly here
         // because window restoration is only ever invoked on app start so we
         // don't have to deal with config reloads.
-        if appDelegate.tako.config.windowSaveState == "never" {
+        // A self-test run checks a fresh window; windows left by an earlier
+        // run would take the keyboard from it.
+        if appDelegate.tako.config.windowSaveState == "never"
+            || CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }) {
             AppDelegate.logger.warning("skip restoration: window-save-state=never")
             completionHandler(nil, nil)
             return

@@ -258,6 +258,13 @@ struct SessionRestoreTests {
         #expect(Tako.SurfaceView.restoredWorkingDirectory(file.path, fallback: "/fallback") == "/fallback")
     }
 
+    @Test func windowSaveStateIsReadFromTheConfig() throws {
+        #expect(try TemporaryConfig("").windowSaveState == "always")
+        #expect(try TemporaryConfig("window-save-state = never").windowSaveState == "never")
+        #expect(try TemporaryConfig("window-save-state = default").windowSaveState == "default")
+        #expect(try TemporaryConfig("window-save-state = sometimes").windowSaveState == "always")
+    }
+
     @Test func savingIsOnByDefaultAndConfigurable() throws {
         #expect(try TemporaryConfig("").windowSaveContent)
         #expect(try TemporaryConfig("").windowSaveContentLimit == 64 << 20)

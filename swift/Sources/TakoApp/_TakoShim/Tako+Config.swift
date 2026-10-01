@@ -406,8 +406,15 @@ extension Tako {
         /// "always", not the system default: the system default depends on
         /// the "Close windows when quitting" checkbox in System Settings,
         /// and losing your window layout on every restart is not something
-        /// a terminal should leave to a global preference.
-        var windowSaveState: String { "always" }
+        /// a terminal should leave to a global preference. `never` turns it
+        /// off; `default` leaves it to that checkbox.
+        var windowSaveState: String {
+            switch rawValue("window-save-state")?.lowercased() {
+            case "never": return "never"
+            case "default": return "default"
+            default: return "always"
+            }
+        }
 
         /// Initial X coordinate position for new windows.
         ///
