@@ -478,6 +478,10 @@ let scenarios: [Scenario] = [
         guard reset == before else { throw Failure("cmd+0: \(before) columns at first, \(reset) after reset") }
     }),
     ("resize", "a smaller window is a smaller terminal for the program", { d in
+        // A new window may open at the size the last one closed with, which
+        // can be this scenario's own small one; start from a known large one.
+        d.setSize(CGSize(width: 900, height: 600))
+        usleep(1_000_000)
         try d.run("tput cols > \(d.path("wide"))")
         let wide = Int(try d.file("wide").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         d.setSize(CGSize(width: 420, height: 320))
