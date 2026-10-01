@@ -993,7 +993,8 @@ public final class TerminalMetalFramePlanner {
 
         let scale = Float(metrics.scale)
         let originX = Float(col) * metrics.pixelCellWidth
-        let baselineY = Float(row) * metrics.pixelCellHeight + metrics.pixelAscent
+        // One whole-pixel baseline per row, so every glyph on it lines up.
+        let baselineY = (Float(row) * metrics.pixelCellHeight + metrics.pixelAscent).rounded()
         let spanWidth = metrics.pixelCellWidth * (cell.wide ? 2 : 1)
         let advance = Float(entry.advance.width) * scale
         let centering = max(0, (spanWidth - advance) / 2)

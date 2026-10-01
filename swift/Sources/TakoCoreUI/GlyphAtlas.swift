@@ -350,6 +350,7 @@ public final class GlyphAtlas: @unchecked Sendable {
         CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
 
         let scale = max(key.scale, 0.001)
+        boundingRect = Self.pixelAligned(boundingRect, scale: scale)
         let widthPixels = Int(ceil(boundingRect.width * scale))
         let heightPixels = Int(ceil(boundingRect.height * scale))
 
@@ -492,6 +493,21 @@ public final class GlyphAtlas: @unchecked Sendable {
         }
     }
 
+    /// `rect` grown out to whole device pixels. Ink starts a fraction of a
+    /// pixel from the baseline, different for every glyph, while the quad is
+    /// drawn on whole pixels: an unaligned rect left each glyph shifted by
+    /// its own remainder, so neighbours sat up to a pixel higher or lower --
+    /// most visibly in Cyrillic, whose letters reach below the baseline by
+    /// many different amounts.
+    static func pixelAligned(_ rect: CGRect, scale: CGFloat) -> CGRect {
+        guard !rect.isNull, !rect.isEmpty else { return rect }
+        let minX = floor(rect.minX * scale) / scale
+        let minY = floor(rect.minY * scale) / scale
+        let maxX = ceil(rect.maxX * scale) / scale
+        let maxY = ceil(rect.maxY * scale) / scale
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// Rasterizes `draw` -- which draws with its origin on the baseline, in
     /// points -- into a zeroed mask covering `boundingRect`.
     private func renderMask(
@@ -611,8 +627,9 @@ public final class GlyphAtlas: @unchecked Sendable {
             cluster: request.text
         )
         let advance = CGSize(width: CTLineGetTypographicBounds(line, nil, nil, nil), height: 0)
-        let bearing = bounds.isNull ? .zero : CGPoint(x: bounds.minX, y: bounds.minY)
         let scale = max(request.scale, 0.001)
+        bounds = Self.pixelAligned(bounds, scale: scale)
+        let bearing = bounds.isNull ? .zero : CGPoint(x: bounds.minX, y: bounds.minY)
         let empty = GlyphAtlasEntry(
             key: key,
             pageIndex: 0,
