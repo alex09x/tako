@@ -818,6 +818,10 @@ extension Tako {
         /// WHY: Default to stable release updates.
         var autoUpdateChannel: AutoUpdateChannel { .stable }
 
+        /// `auto-update`: `off` stops the check at launch; anything else, or
+        /// nothing, leaves it on.
+        var autoUpdateEnabled: Bool { rawValue("auto-update")?.lowercased() != "off" }
+
         /// Automatic activation of macOS Secure Input during password prompts.
         ///
         /// Reads `macos-auto-secure-input`, default true.

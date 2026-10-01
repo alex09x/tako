@@ -75,6 +75,18 @@ final class AppUpdater: @unchecked Sendable {
 
     /// Checks for updates. When `silent` is true, errors and "up to date" dialogs
     /// are suppressed (suitable for automatic background checks at startup).
+    /// Whether a launch checks for updates on its own. Not when the user set
+    /// `auto-update = off`; not during a self-test, where a dialog would take
+    /// the keystrokes the test types; and not for an unversioned local build
+    /// (0.0.0), which every release is newer than, so it asked to be
+    /// replaced on every start.
+    static func checksAtLaunch(arguments: [String], version: String?, enabled: Bool) -> Bool {
+        guard enabled else { return false }
+        if arguments.contains(where: { $0.hasPrefix("--selftest") }) { return false }
+        guard let version, !version.isEmpty, version != "0.0.0" else { return false }
+        return true
+    }
+
     func checkForUpdates(silent: Bool = false) {
         guard !isUpdating else { return }
 

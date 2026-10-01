@@ -324,9 +324,15 @@ class AppDelegate: NSObject,
         // Setup signal handlers
         setupSignals()
 
-        // Check for updates in the background
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            AppUpdater.shared.checkForUpdates(silent: true)
+        // Check for updates in the background, unless this launch should not.
+        if AppUpdater.checksAtLaunch(
+            arguments: CommandLine.arguments,
+            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+            enabled: tako.config.autoUpdateEnabled
+        ) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                AppUpdater.shared.checkForUpdates(silent: true)
+            }
         }
 
         switch Tako.launchSource {
