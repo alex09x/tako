@@ -1,4 +1,5 @@
 import AppKit
+import Security
 import Foundation
 import UserNotifications
 import OSLog
@@ -139,12 +140,21 @@ final class AppUpdater: @unchecked Sendable {
         request.timeoutInterval = 15
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            return nil
-        }
+        return try Self.release(from: data, status: (response as? HTTPURLResponse)?.statusCode)
+    }
 
-        let decoder = JSONDecoder()
-        return try decoder.decode(GitHubRelease.self, from: data)
+    /// The latest release in a GitHub API response. Only a 404 means there
+    /// is none; any other failure -- rate limiting, a server error -- is an
+    /// error, not "you're up to date".
+    static func release(from data: Data, status: Int?) throws -> GitHubRelease? {
+        switch status {
+        case 200:
+            return try JSONDecoder().decode(GitHubRelease.self, from: data)
+        case 404:
+            return nil
+        default:
+            throw UpdateError.message("GitHub answered the update check with HTTP \(status.map(String.init) ?? "nothing")")
+        }
     }
 
     // MARK: - UI Alerts
@@ -153,11 +163,11 @@ final class AppUpdater: @unchecked Sendable {
     private func presentUpdateFound(release: GitHubRelease, currentVersion: String) {
         let alert = NSAlert()
         alert.messageText = "Tako \(release.tagName) is Available!"
-        
+
         var details = "A newer version of Tako is ready to install.\n\n"
         details += "• Current version: v\(currentVersion)\n"
         details += "• New version: \(release.tagName)\n"
-        
+
         if let body = release.body, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let truncated = body.prefix(400)
             details += "\nRelease notes:\n\(truncated)\(body.count > 400 ? "..." : "")\n"
@@ -236,61 +246,43 @@ final class AppUpdater: @unchecked Sendable {
                 let stagedAppPath: String
                 var shouldUnmountDmg = false
                 let mountPoint = tempDir.appendingPathComponent("tako_mount").path
+                // Detached however this ends, a refused update included.
+                defer {
+                    if shouldUnmountDmg {
+                        try? Self.run("/usr/bin/hdiutil", ["detach", mountPoint, "-force"])
+                    }
+                }
 
                 if asset.name.hasSuffix(".dmg") {
-                    // Mount disk image
                     try FileManager.default.createDirectory(atPath: mountPoint, withIntermediateDirectories: true)
-                    let mountProcess = Process()
-                    mountProcess.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-                    mountProcess.arguments = ["attach", downloadDestination.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint]
-                    try mountProcess.run()
-                    mountProcess.waitUntilExit()
-
+                    try Self.run("/usr/bin/hdiutil", ["attach", downloadDestination.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint])
                     stagedAppPath = (mountPoint as NSString).appendingPathComponent("Tako.app")
                     shouldUnmountDmg = true
                 } else {
-                    // Unzip archive
-                    let unzipProcess = Process()
-                    unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-                    unzipProcess.arguments = ["-x", "-k", downloadDestination.path, tempDir.path]
-                    try unzipProcess.run()
-                    unzipProcess.waitUntilExit()
-
+                    try Self.run("/usr/bin/ditto", ["-x", "-k", downloadDestination.path, tempDir.path])
                     stagedAppPath = tempDir.appendingPathComponent("Tako.app").path
                 }
 
                 guard FileManager.default.fileExists(atPath: stagedAppPath) else {
-                    throw NSError(domain: "TakoUpdater", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tako.app not found in downloaded archive"])
+                    throw UpdateError.message("Tako.app not found in downloaded archive")
                 }
 
-                // Locate destination bundle
-                let destinationBundleUrl: URL
-                if Bundle.main.bundleURL.path.hasPrefix("/Applications") {
-                    destinationBundleUrl = URL(fileURLWithPath: "/Applications/Tako.app")
-                } else {
-                    destinationBundleUrl = Bundle.main.bundleURL
-                }
+                // Nothing replaces this app unless the same developer signed
+                // it and Apple notarized it.
+                try Self.verify(URL(fileURLWithPath: stagedAppPath), signedBy: Self.teamIdentifier(of: Bundle.main.bundleURL))
 
-                // Replace the bundle using ditto to preserve permissions and signatures
-                let replaceProcess = Process()
-                replaceProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-                replaceProcess.arguments = [stagedAppPath, destinationBundleUrl.path]
-                try replaceProcess.run()
-                replaceProcess.waitUntilExit()
-
-                // Clear quarantine attributes
-                let xattrProcess = Process()
-                xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-                xattrProcess.arguments = ["-dr", "com.apple.quarantine", destinationBundleUrl.path]
-                try? xattrProcess.run()
-                xattrProcess.waitUntilExit()
-
-                if shouldUnmountDmg {
-                    let detachProcess = Process()
-                    detachProcess.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-                    detachProcess.arguments = ["detach", mountPoint, "-force"]
-                    try? detachProcess.run()
-                    detachProcess.waitUntilExit()
+                // The bundle this process runs from, wherever it is. The new
+                // one is copied beside it first and swapped in whole, so a
+                // failed copy leaves the old app untouched.
+                let destinationBundleUrl = Bundle.main.bundleURL
+                let incoming = destinationBundleUrl.deletingLastPathComponent()
+                    .appendingPathComponent(".Tako-update-\(UUID().uuidString).app")
+                do {
+                    try Self.run("/usr/bin/ditto", [stagedAppPath, incoming.path])
+                    _ = try FileManager.default.replaceItemAt(destinationBundleUrl, withItemAt: incoming)
+                } catch {
+                    try? FileManager.default.removeItem(at: incoming)
+                    throw error
                 }
 
                 // Cleanup temp dir
@@ -316,9 +308,73 @@ final class AppUpdater: @unchecked Sendable {
     private func showUpdateSuccessAlert(tagName: String) {
         let alert = NSAlert()
         alert.messageText = "Tako \(tagName) Installed!"
-        alert.informativeText = "The update has been installed successfully to /Applications/Tako.app.\n\nYour current terminal windows remain active and will not be interrupted. The updated version will take effect the next time you launch Tako."
+        alert.informativeText = "The update has been installed successfully to \(Bundle.main.bundleURL.path).\n\nYour current terminal windows remain active and will not be interrupted. The updated version will take effect the next time you launch Tako."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Keep Working")
         alert.runModal()
     }
 }
+
+// MARK: - Install checks
+
+extension AppUpdater {
+    enum UpdateError: LocalizedError {
+        case message(String)
+        var errorDescription: String? {
+            if case .message(let text) = self { return text }
+            return nil
+        }
+    }
+
+    /// Runs a tool and fails unless it exits 0.
+    static func run(_ tool: String, _ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw UpdateError.message("\((tool as NSString).lastPathComponent) failed with status \(process.terminationStatus)")
+        }
+    }
+
+    /// The Team ID that signed the bundle at `url`, nil for an ad-hoc or
+    /// unsigned one.
+    static func teamIdentifier(of url: URL) -> String? {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dict = info as? [String: Any] else { return nil }
+        return dict[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+
+    /// Refuses a downloaded app unless it carries a valid Developer ID
+    /// signature from `team` and Gatekeeper accepts it as notarized. A build
+    /// with no team of its own (ad-hoc, local) has nothing to compare with,
+    /// so it never installs updates by itself.
+    static func verify(_ app: URL, signedBy team: String?) throws {
+        guard let team, !team.isEmpty else {
+            throw UpdateError.message("This copy of Tako is not signed by a developer, so it cannot check an update is genuine. Download the new version from the releases page.")
+        }
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code else {
+            throw UpdateError.message("The downloaded Tako.app is not a code bundle.")
+        }
+        let text = "anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = \"\(team)\""
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess else {
+            throw UpdateError.message("Could not build the signature requirement.")
+        }
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
+        guard SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess else {
+            throw UpdateError.message("The downloaded Tako.app is not signed by the same developer as this one.")
+        }
+        do {
+            try run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path])
+        } catch {
+            throw UpdateError.message("Gatekeeper does not accept the downloaded Tako.app as notarized.")
+        }
+    }
+}
+
