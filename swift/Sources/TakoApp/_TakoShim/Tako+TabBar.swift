@@ -184,6 +184,9 @@ extension Tako {
             static let barHeight: CGFloat = 38
             static let tabHeight: CGFloat = 28
             static let minTabWidth: CGFloat = 120
+            /// Narrowest a tab can be and still show its close button beside
+            /// the crab.
+            static let compactTabWidth: CGFloat = tabPaddingLeft + crabSize + contentGap + closeSize + tabPaddingRight
             static let maxTabWidth: CGFloat = 220
             static let firstTabX: CGFloat = 90
             static let tabPaddingLeft: CGFloat = 10
@@ -292,14 +295,18 @@ extension Tako {
             // Only when the natural widths genuinely don't fit do tabs give
             // up room evenly (down to the 120px floor) rather than each
             // keeping its own content width -- see "тесно: равномерно
-            // жмутся до 120" in the spec. A real overflow menu ("+N ▾") for
-            // what still doesn't fit past that isn't built yet.
+            // жмутся до 120" in the spec. Past that they keep shrinking to
+            // whatever share is left, with no floor at all: any floor makes
+            // some count of tabs run off the bar (stopping at 120 drew the
+            // seventh tab of a 900pt window under the buttons, so it looked
+            // as if no more than six could be opened).
             let totalNatural = natural.reduce(0, +)
             let widths: [CGFloat]
             if totalNatural <= available || all.isEmpty {
                 widths = natural
             } else {
-                let shrunk = max(Metrics.minTabWidth, available / CGFloat(all.count))
+                let share = available / CGFloat(all.count)
+                let shrunk = share
                 widths = all.map { _ in shrunk }
             }
 
@@ -380,7 +387,8 @@ extension Tako {
             // "✕ — только на ховере и на активной": the close glyph shows on
             // whichever tab is hovered, plus always on the active tab (not
             // just on hover of the active tab specifically).
-            let showsClose = hovering || tab.isActive
+            // A tab too narrow for both keeps the crab and drops the close.
+            let showsClose = (hovering || tab.isActive) && tab.frame.width >= Metrics.compactTabWidth
             let textX = crabRect.maxX + Metrics.contentGap
             let closeWidth = showsClose ? Metrics.closeSize + Metrics.contentGap : 0
             let textWidth = tab.frame.maxX - Metrics.tabPaddingRight - closeWidth - textX
@@ -594,6 +602,8 @@ extension Tako {
 
         /// The close button's hit area is larger than the glyph.
         private func closeRect(of tab: Tab) -> CGRect {
+            // No close button is drawn on a tab this narrow, so none is hit.
+            guard tab.frame.width >= Metrics.compactTabWidth else { return .null }
             let inset = (Metrics.closeHitSize - Metrics.closeSize) / 2
             return CGRect(x: tab.frame.maxX - Metrics.tabPaddingRight - Metrics.closeSize - inset,
                           y: tab.frame.midY - Metrics.closeHitSize / 2,

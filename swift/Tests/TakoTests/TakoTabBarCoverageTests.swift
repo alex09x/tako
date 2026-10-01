@@ -416,13 +416,17 @@ struct TabBarViewCoverageTests {
         #expect(!bitmapsEqual(withAActive, withBActive))
     }
 
-    @Test func manyNarrowTabsShrinkEvenlyBelowTheirNaturalWidth() {
+    /// Any number of tabs fits on the bar: past the 120px floor they keep
+    /// sharing what is left. A floor made the seventh tab of a normal window
+    /// run off under the buttons, as if no more than six could be opened.
+    @Test(arguments: [9, 25])
+    func everyTabStaysOnTheBarHoweverManyThereAre(count: Int) {
         var windows: [NSWindow] = []
         defer { for window in windows { Tako.CustomTabGroup.leave(window) } }
 
         let anchor = makeWindow(title: "this is a long tab title that wants lots of room")
         windows.append(anchor)
-        for index in 0..<8 {
+        for index in 1..<count {
             let window = makeWindow(title: "also a fairly long tab title #\(index)")
             Tako.CustomTabGroup.join(window, to: anchor, select: false)
             windows.append(window)
@@ -431,15 +435,14 @@ struct TabBarViewCoverageTests {
 
         let bar = Tako.TabBarView(frame: .zero)
         mount(bar, in: anchor)
-        draw(bar) // Total natural width exceeds `available`: exercises the even-shrink branch, populating `tabs`.
+        draw(bar)
 
-        // available = 400 - firstTabX(90) - buttonsReservedWidth(68) = 242;
-        // shrunk = max(120, 242/9) clamps every tab to the 120px floor. At
-        // natural (unshrunk) widths the very long first title would still
-        // occupy x=250 on its own; shrunk to the floor it does not, so a
-        // click there lands on the second tab instead of the first.
-        click(bar, at: NSPoint(x: 250, y: 14), in: anchor)
-        #expect(group.selectedWindow === windows[1])
+        // The last pixel before the buttons belongs to the last tab, the
+        // first after firstTabX(90) to the first.
+        click(bar, at: NSPoint(x: bar.bounds.width - 68 - 1, y: 14), in: anchor)
+        #expect(group.selectedWindow === windows[count - 1])
+        click(bar, at: NSPoint(x: 91, y: 14), in: anchor)
+        #expect(group.selectedWindow === windows[0])
     }
 
     @Test func mouseMovedHoversATabAndTheButtons() {
