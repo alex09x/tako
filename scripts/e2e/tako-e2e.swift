@@ -1284,7 +1284,9 @@ func crashLayoutSetup(_ d: Driver) throws {
     echo done > \(out)/made
     """.write(toFile: d.path("make.sh"), atomically: true, encoding: .utf8)
     try d.run("sh \(d.path("make.sh"))")
-    _ = try d.file("made", timeout: 15)
+    guard (try? d.file("made", timeout: 15)) != nil else {
+        throw Failure("the layout was not made; screen: [\(d.screenText().suffix(600))]")
+    }
     usleep(2_000_000)
 }
 
