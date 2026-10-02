@@ -140,7 +140,7 @@ final class Ending: @unchecked Sendable {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var pending: [ObjectIdentifier: Ending] = [:]
-    private let finished = DispatchSemaphore(value: 0)
+    private let attemptFinished = DispatchSemaphore(value: 0)
 
     init(runtime: URL, name: String, environment: [String: String], records: SessionRecordStore,
          id: UUID, generation: String, owner: SessionOwnerLock) {
@@ -169,7 +169,8 @@ final class Ending: @unchecked Sendable {
 
     private func settle() {
         _ = Self.lock.withLock { Self.pending.removeValue(forKey: ObjectIdentifier(self)) }
-        finished.signal()
+        // If it was settled before the attempt finished (e.g. generation mismatch), signal it.
+        attemptFinished.signal()
     }
 
     /// True when the session is confirmed gone (or was never this ending's).
@@ -180,7 +181,10 @@ final class Ending: @unchecked Sendable {
             return true
         }
         _ = RuntimeCommand.run(runtime, ["kill", name], environment: environment, timeout: 3)
-        if RuntimeCommand.isListed(runtime, name: name, environment: environment) == false {
+        let listed = RuntimeCommand.isListed(runtime, name: name, environment: environment)
+        attemptFinished.signal()
+        
+        if listed == false {
             records.remove(id)
             settle()
             return true
@@ -223,9 +227,19 @@ final class Ending: @unchecked Sendable {
     /// Quitting: waits up to `seconds` for every ending under way. Those
     /// still unsettled are marked in their records; the next launch asks.
     static func settleBeforeQuit(within seconds: TimeInterval) {
-        let deadline = DispatchTime.now() + seconds
-        for ending in lock.withLock({ Array(pending.values) }) {
-            if ending.finished.wait(timeout: deadline) == .timedOut {
+        let group = DispatchGroup()
+        let endings = lock.withLock { Array(pending.values) }
+        for ending in endings {
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                _ = ending.attemptFinished.wait(timeout: .now() + seconds)
+                group.leave()
+            }
+        }
+        _ = group.wait(timeout: .now() + seconds + 0.1)
+        let unsettled = lock.withLock { pending }
+        for ending in endings {
+            if unsettled[ObjectIdentifier(ending)] != nil {
                 ending.markClosedButRunning()
             }
         }

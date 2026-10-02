@@ -248,6 +248,15 @@ class AppDelegate: NSObject,
         TerminalController.all.flatMap { Array($0.surfaceTree) }
     }
 
+    /// All surfaces that are currently alive and owned by the UI.
+    func allLiveSurfaces() -> [Tako.SurfaceView] {
+        var surfaces = Self.restorableSurfaces()
+        if case .initialized(let qc) = quickTerminalControllerState {
+            surfaces.append(contentsOf: qc.surfaceTree)
+        }
+        return surfaces
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         LayoutRecorder.finishLaunching(app: tako)
         sessionSaver.start(
@@ -472,7 +481,7 @@ class AppDelegate: NSObject,
         sessionSaver.stop()
         // Quitting is confirmed (a cancelled quit never gets here): persistent
         // terminals let go of their sessions instead of ending them.
-        SurfaceSession.detachAll(Self.restorableSurfaces())
+        SurfaceSession.detachAll(allLiveSurfaces())
         // Last: the final layout, then `clean`. Only a quit that got this far
         // is clean; a crash anywhere before leaves the journal in charge.
         LayoutRecorder.finish()
