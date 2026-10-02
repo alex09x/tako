@@ -1258,10 +1258,41 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func scrollbackLen()  -> UInt32
 
     /**
+     * One bounded step of a search over scrollback and screen, backwards
+     * from line `before` (exclusive; `None` starts at the newest line).
+     * Whole logical lines, whole grapheme clusters, case-insensitive. The
+     * terminal is held for this step only, so a host searches a long
+     * history in steps, off its main thread, and output keeps flowing
+     * between them. Lines are absolute -- see `search_first_line`.
+     */
+    func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32)  -> FfiSearchChunk
+
+    /**
+     * The absolute number of the oldest retained line and the scrollback
+     * length, read together: what turns a search hit's line into a row.
+     */
+    func searchFirstLine()  -> FfiRetainedLines
+
+    /**
+     * Whether `hit` is still where it was found, with the same text --
+     * checked before a host jumps to it, so new output, eviction, a clear
+     * or a reflow never sends the selection to some other line.
+     */
+    func searchHitIsCurrent(needle: String, hit: FfiSearchHit)  -> Bool
+
+    /**
      * Selects the whole logical line under `(row, col)`, as a triple-click
      * does, following soft wraps in both directions.
      */
     func selectLine(row: UInt32, col: UInt32)
+
+    /**
+     * Checks `hit` and selects it, scrolling it into view, all under one
+     * hold of the terminal, so output in between cannot move the selection
+     * to other cells. False -- and nothing changed -- when the hit is no
+     * longer there.
+     */
+    func selectSearchHit(needle: String, hit: FfiSearchHit)  -> Bool
 
     /**
      * Selects the word under `(row, col)`, as a double-click does. A run
@@ -2182,6 +2213,56 @@ open func scrollbackLen() -> UInt32  {
 }
 
     /**
+     * One bounded step of a search over scrollback and screen, backwards
+     * from line `before` (exclusive; `None` starts at the newest line).
+     * Whole logical lines, whole grapheme clusters, case-insensitive. The
+     * terminal is held for this step only, so a host searches a long
+     * history in steps, off its main thread, and output keeps flowing
+     * between them. Lines are absolute -- see `search_first_line`.
+     */
+open func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32) -> FfiSearchChunk  {
+    return try!  FfiConverterTypeFfiSearchChunk_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_chunk(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterOptionUInt64.lower(before),
+        FfiConverterUInt32.lower(maxRows),
+        FfiConverterUInt32.lower(maxHits),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The absolute number of the oldest retained line and the scrollback
+     * length, read together: what turns a search hit's line into a row.
+     */
+open func searchFirstLine() -> FfiRetainedLines  {
+    return try!  FfiConverterTypeFfiRetainedLines_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_first_line(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Whether `hit` is still where it was found, with the same text --
+     * checked before a host jumps to it, so new output, eviction, a clear
+     * or a reflow never sends the selection to some other line.
+     */
+open func searchHitIsCurrent(needle: String, hit: FfiSearchHit) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_hit_is_current(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Selects the whole logical line under `(row, col)`, as a triple-click
      * does, following soft wraps in both directions.
      */
@@ -2193,6 +2274,23 @@ open func selectLine(row: UInt32, col: UInt32)  {try! rustCall() {
         FfiConverterUInt32.lower(col),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Checks `hit` and selects it, scrolling it into view, all under one
+     * hold of the terminal, so output in between cannot move the selection
+     * to other cells. False -- and nothing changed -- when the hit is no
+     * longer there.
+     */
+open func selectSearchHit(needle: String, hit: FfiSearchHit) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_search_hit(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -3824,6 +3922,64 @@ public func FfiConverterTypeFfiRenderFrameOverscan_lower(_ value: FfiRenderFrame
 
 
 /**
+ * The oldest retained line's absolute number, and how many lines are in
+ * scrollback.
+ */
+public struct FfiRetainedLines: Equatable, Hashable {
+    public var firstLine: UInt64
+    public var scrollbackLen: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(firstLine: UInt64, scrollbackLen: UInt32) {
+        self.firstLine = firstLine
+        self.scrollbackLen = scrollbackLen
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiRetainedLines: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiRetainedLines: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiRetainedLines {
+        return
+            try FfiRetainedLines(
+                firstLine: FfiConverterUInt64.read(from: &buf),
+                scrollbackLen: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiRetainedLines, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.firstLine, into: &buf)
+        FfiConverterUInt32.write(value.scrollbackLen, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiRetainedLines_lift(_ buf: RustBuffer) throws -> FfiRetainedLines {
+    return try FfiConverterTypeFfiRetainedLines.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiRetainedLines_lower(_ value: FfiRetainedLines) -> RustBuffer {
+    return FfiConverterTypeFfiRetainedLines.lower(value)
+}
+
+
+/**
  * A bare RGB triple, for the host's base-color configuration
  * (`TakoCore::set_base_colors`).
  */
@@ -3943,6 +4099,171 @@ public func FfiConverterTypeFfiRowRange_lift(_ buf: RustBuffer) throws -> FfiRow
 #endif
 public func FfiConverterTypeFfiRowRange_lower(_ value: FfiRowRange) -> RustBuffer {
     return FfiConverterTypeFfiRowRange.lower(value)
+}
+
+
+/**
+ * One step of a search; see `TakoCore::search_chunk`.
+ */
+public struct FfiSearchChunk: Equatable, Hashable {
+    /**
+     * Newest first.
+     */
+    public var hits: [FfiSearchHit]
+    public var nextBefore: UInt64?
+    public var firstLine: UInt64
+    public var endLine: UInt64
+    /**
+     * True only when a hit past the limit was actually found.
+     */
+    public var truncated: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Newest first.
+         */hits: [FfiSearchHit], nextBefore: UInt64?, firstLine: UInt64, endLine: UInt64,
+        /**
+         * True only when a hit past the limit was actually found.
+         */truncated: Bool) {
+        self.hits = hits
+        self.nextBefore = nextBefore
+        self.firstLine = firstLine
+        self.endLine = endLine
+        self.truncated = truncated
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiSearchChunk: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiSearchChunk: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiSearchChunk {
+        return
+            try FfiSearchChunk(
+                hits: FfiConverterSequenceTypeFfiSearchHit.read(from: &buf),
+                nextBefore: FfiConverterOptionUInt64.read(from: &buf),
+                firstLine: FfiConverterUInt64.read(from: &buf),
+                endLine: FfiConverterUInt64.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiSearchChunk, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeFfiSearchHit.write(value.hits, into: &buf)
+        FfiConverterOptionUInt64.write(value.nextBefore, into: &buf)
+        FfiConverterUInt64.write(value.firstLine, into: &buf)
+        FfiConverterUInt64.write(value.endLine, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiSearchChunk_lift(_ buf: RustBuffer) throws -> FfiSearchChunk {
+    return try FfiConverterTypeFfiSearchChunk.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiSearchChunk_lower(_ value: FfiSearchChunk) -> RustBuffer {
+    return FfiConverterTypeFfiSearchChunk.lower(value)
+}
+
+
+/**
+ * A search hit: cells from `(start_line, start_col)` to `(end_line,
+ * end_col)`, inclusive, on absolute lines.
+ */
+public struct FfiSearchHit: Equatable, Hashable {
+    public var startLine: UInt64
+    public var startCol: UInt32
+    public var endLine: UInt64
+    public var endCol: UInt32
+    /**
+     * Context before the match, the match as shown, context after.
+     */
+    public var before: String
+    public var matched: String
+    public var after: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(startLine: UInt64, startCol: UInt32, endLine: UInt64, endCol: UInt32,
+        /**
+         * Context before the match, the match as shown, context after.
+         */before: String, matched: String, after: String) {
+        self.startLine = startLine
+        self.startCol = startCol
+        self.endLine = endLine
+        self.endCol = endCol
+        self.before = before
+        self.matched = matched
+        self.after = after
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiSearchHit: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiSearchHit {
+        return
+            try FfiSearchHit(
+                startLine: FfiConverterUInt64.read(from: &buf),
+                startCol: FfiConverterUInt32.read(from: &buf),
+                endLine: FfiConverterUInt64.read(from: &buf),
+                endCol: FfiConverterUInt32.read(from: &buf),
+                before: FfiConverterString.read(from: &buf),
+                matched: FfiConverterString.read(from: &buf),
+                after: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiSearchHit, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.startLine, into: &buf)
+        FfiConverterUInt32.write(value.startCol, into: &buf)
+        FfiConverterUInt64.write(value.endLine, into: &buf)
+        FfiConverterUInt32.write(value.endCol, into: &buf)
+        FfiConverterString.write(value.before, into: &buf)
+        FfiConverterString.write(value.matched, into: &buf)
+        FfiConverterString.write(value.after, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiSearchHit_lift(_ buf: RustBuffer) throws -> FfiSearchHit {
+    return try FfiConverterTypeFfiSearchHit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiSearchHit_lower(_ value: FfiSearchHit) -> RustBuffer {
+    return FfiConverterTypeFfiSearchHit.lower(value)
 }
 
 
@@ -6252,6 +6573,30 @@ fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
     typealias SwiftType = Bool?
 
@@ -6595,6 +6940,31 @@ fileprivate struct FfiConverterSequenceTypeFfiRowRange: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiSearchHit]
+
+    public static func write(_ value: [FfiSearchHit], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiSearchHit.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiSearchHit] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiSearchHit]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiSearchHit.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSshPrompt: FfiConverterRustBuffer {
     typealias SwiftType = [SshPrompt]
 
@@ -6801,7 +7171,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_scrollback_len() != 13828) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_search_chunk() != 116) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_search_first_line() != 33532) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_search_hit_is_current() != 61340) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_select_line() != 40152) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_select_search_hit() != 65357) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_select_word() != 45409) {

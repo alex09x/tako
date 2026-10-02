@@ -32,6 +32,9 @@ protocol TerminalViewModel: ObservableObject {
 
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
+
+    /// Whether the Find in All Tabs panel shows.
+    var findAllIsShowing: Bool { get set }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -91,6 +94,13 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
                 .ignoresSafeArea(.container, edges: tako.config.macosTitlebarStyle == .hidden ? .top : [])
+
+                if viewModel.findAllIsShowing {
+                    FindAllView(
+                        search: tako.crossSessionSearch,
+                        isPresented: $viewModel.findAllIsShowing,
+                        backgroundColor: tako.config.backgroundColor)
+                }
 
                 if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(

@@ -279,6 +279,19 @@ extension Tako.SurfaceView {
         scheduleRedraw()
     }
 
+    /// Selects a hit from the engine's search (`TakoCore.searchChunk`) and
+    /// scrolls it into view. The engine checks it is still there and selects
+    /// it in one step, so output in between cannot move the selection; false
+    /// when it is gone, and then nothing changes.
+    @discardableResult
+    func selectSearchHit(needle: String, hit: FfiSearchHit) -> Bool {
+        guard core.selectSearchHit(needle: needle, hit: hit) else { return false }
+        currentSearchMatch = nil
+        notifyScrollPositionIfChanged()
+        scheduleRedraw()
+        return true
+    }
+
     /// Scrolls to the first screenful, from the live screen up, that shows
     /// part of the selection. False when there is no selection.
     func revealSelection() -> Bool {
@@ -349,6 +362,7 @@ extension Tako.SurfaceView {
         "toggle_split_zoom": "splitZoom:",
         "toggle_fullscreen": "toggleTakoFullScreen:",
         "toggle_command_palette": "toggleCommandPalette:",
+        "find_all": "toggleFindAll:",
         "reset_window_size": "returnToDefaultSize:",
         "prompt_tab_title": "changeTabTitle:",
         "open_config": "openConfig:",

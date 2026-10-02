@@ -618,7 +618,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     private var lastReportedScrollPosition: Double = 1
 
-    private func notifyScrollPositionIfChanged() {
+    /// Internal, not private: a host that moved the viewport in the engine
+    /// directly (a search selecting a hit) calls it so the scrollbar follows.
+    func notifyScrollPositionIfChanged() {
         let position = core.scrollPosition()
         guard abs(position - lastReportedScrollPosition) > 0.0001 else { return }
         lastReportedScrollPosition = position

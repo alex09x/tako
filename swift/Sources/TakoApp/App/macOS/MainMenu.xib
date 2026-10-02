@@ -27,6 +27,7 @@
                 <outlet property="menuDecreaseFontSize" destination="kzb-SZ-dOA" id="Y1B-Vh-6Z2"/>
                 <outlet property="menuEqualizeSplits" destination="3gH-VD-vL9" id="SiZ-ce-FOF"/>
                 <outlet property="menuFind" destination="nwE-0w-30h" id="idg-Nc-apE"/>
+                <outlet property="menuFindAll" destination="fAl-Tb-s01" id="fAl-Tb-s02"/>
                 <outlet property="menuFindNext" destination="XqU-X8-q32" id="vNh-AH-6gZ"/>
                 <outlet property="menuFindParent" destination="cE3-Bt-FcH" id="2dc-ok-hgH"/>
                 <outlet property="menuFindPrevious" destination="1hd-2Z-wVm" id="sSo-wO-2MW"/>
@@ -274,6 +275,12 @@
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="findPrevious:" target="-1" id="Zvs-bs-ZR4"/>
+                                            </connections>
+                                        </menuItem>
+                                        <menuItem title="Find in All Tabs..." id="fAl-Tb-s01">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="toggleFindAll:" target="-1" id="fAl-Tb-s03"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="KlV-2C-wYr"/>

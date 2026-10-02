@@ -178,6 +178,7 @@ extension Tako {
             "decrease_font_size:1": .init("-", modifiers: .command),
             "reset_font_size": .init("0", modifiers: .command),
             "start_search": .init("f", modifiers: .command),
+            "find_all": .init("f", modifiers: [.command, .shift]),
             "search_selection": .init("e", modifiers: .command),
             "scroll_to_selection": .init("j", modifiers: .command),
             "navigate_search:next": .init("g", modifiers: .command),

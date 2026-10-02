@@ -705,6 +705,68 @@ pub struct FfiFeedOutcome {
     pub epoch: u64,
 }
 
+/// A search hit: cells from `(start_line, start_col)` to `(end_line,
+/// end_col)`, inclusive, on absolute lines.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiSearchHit {
+    pub start_line: u64,
+    pub start_col: u32,
+    pub end_line: u64,
+    pub end_col: u32,
+    /// Context before the match, the match as shown, context after.
+    pub before: String,
+    pub matched: String,
+    pub after: String,
+}
+
+impl From<crate::grid::SearchHit> for FfiSearchHit {
+    fn from(h: crate::grid::SearchHit) -> Self {
+        Self {
+            start_line: h.start_line,
+            start_col: h.start_col,
+            end_line: h.end_line,
+            end_col: h.end_col,
+            before: h.before,
+            matched: h.matched,
+            after: h.after,
+        }
+    }
+}
+
+impl From<FfiSearchHit> for crate::grid::SearchHit {
+    fn from(h: FfiSearchHit) -> Self {
+        Self {
+            start_line: h.start_line,
+            start_col: h.start_col,
+            end_line: h.end_line,
+            end_col: h.end_col,
+            before: h.before,
+            matched: h.matched,
+            after: h.after,
+        }
+    }
+}
+
+/// One step of a search; see `TakoCore::search_chunk`.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiSearchChunk {
+    /// Newest first.
+    pub hits: Vec<FfiSearchHit>,
+    pub next_before: Option<u64>,
+    pub first_line: u64,
+    pub end_line: u64,
+    /// True only when a hit past the limit was actually found.
+    pub truncated: bool,
+}
+
+/// The oldest retained line's absolute number, and how many lines are in
+/// scrollback.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FfiRetainedLines {
+    pub first_line: u64,
+    pub scrollback_len: u32,
+}
+
 /// What a checkpoint declares about itself, without decoding it.
 #[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FfiCheckpointInfo {
@@ -1772,6 +1834,85 @@ impl TakoCore {
     /// clamped, because the caller is usually replaying a stored number.
     pub fn set_scroll_position(&self, position: f64) {
         lock_recover(&self.inner).set_scroll_position(position);
+    }
+
+    /// One bounded step of a search over scrollback and screen, backwards
+    /// from line `before` (exclusive; `None` starts at the newest line).
+    /// Whole logical lines, whole grapheme clusters, case-insensitive. The
+    /// terminal is held for this step only, so a host searches a long
+    /// history in steps, off its main thread, and output keeps flowing
+    /// between them. Lines are absolute -- see `search_first_line`.
+    pub fn search_chunk(
+        &self,
+        needle: String,
+        before: Option<u64>,
+        max_rows: u32,
+        max_hits: u32,
+    ) -> FfiSearchChunk {
+        let terminal = lock_recover(&self.inner);
+        let chunk = terminal
+            .active_grid()
+            .search_chunk(&needle, before, max_rows as usize, max_hits as usize);
+        FfiSearchChunk {
+            hits: chunk.hits.into_iter().map(FfiSearchHit::from).collect(),
+            next_before: chunk.next_before,
+            first_line: chunk.first_line,
+            end_line: chunk.end_line,
+            truncated: chunk.truncated,
+        }
+    }
+
+    /// Whether `hit` is still where it was found, with the same text --
+    /// checked before a host jumps to it, so new output, eviction, a clear
+    /// or a reflow never sends the selection to some other line.
+    pub fn search_hit_is_current(&self, needle: String, hit: FfiSearchHit) -> bool {
+        lock_recover(&self.inner)
+            .active_grid()
+            .search_hit_is_current(&needle, &hit.into())
+    }
+
+    /// Checks `hit` and selects it, scrolling it into view, all under one
+    /// hold of the terminal, so output in between cannot move the selection
+    /// to other cells. False -- and nothing changed -- when the hit is no
+    /// longer there.
+    pub fn select_search_hit(&self, needle: String, hit: FfiSearchHit) -> bool {
+        let mut term = lock_recover(&self.inner);
+        let hit: crate::grid::SearchHit = hit.into();
+        if !term.active_grid().search_hit_is_current(&needle, &hit) {
+            return false;
+        }
+        let grid = term.active_grid();
+        let first = grid.first_retained_line();
+        let scrollback = grid.scrollback_len() as u64;
+        let rows = grid.rows() as u64;
+        // Retained rows: 0 is the oldest; the screen starts at `scrollback`.
+        let start = hit.start_line - first;
+        let end = hit.end_line - first;
+        let mut top = scrollback - term.viewport_offset() as u64;
+        if start < top || end >= top + rows {
+            // A third of the way down, so the lines before it show too.
+            top = start.saturating_sub(rows / 3).min(scrollback);
+            term.scroll_viewport_bottom();
+            let offset = (scrollback - top) as usize;
+            if offset > 0 {
+                term.scroll_viewport_up(offset);
+            }
+        }
+        let (start_row, end_row) = ((start - top) as usize, (end - top) as usize);
+        term.start_selection(start_row, hit.start_col as usize, FfiSelectionMode::Linear.into());
+        term.extend_selection(end_row, hit.end_col as usize);
+        true
+    }
+
+    /// The absolute number of the oldest retained line and the scrollback
+    /// length, read together: what turns a search hit's line into a row.
+    pub fn search_first_line(&self) -> FfiRetainedLines {
+        let terminal = lock_recover(&self.inner);
+        let grid = terminal.active_grid();
+        FfiRetainedLines {
+            first_line: grid.first_retained_line(),
+            scrollback_len: grid.scrollback_len() as u32,
+        }
     }
 
     /// Returns bounded plain text from start_row for up to max_rows lines.

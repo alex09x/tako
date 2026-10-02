@@ -48,6 +48,18 @@ class BaseTerminalController: NSWindowController,
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
 
+    /// Whether the Find in All Tabs panel is over this window. Closing it
+    /// gives the keyboard back to the terminal, as the command palette does;
+    /// otherwise the next keys go nowhere.
+    @Published var findAllIsShowing: Bool = false {
+        didSet {
+            guard oldValue, !findAllIsShowing else { return }
+            DispatchQueue.main.async { [weak self] in
+                Tako.moveFocus(to: self?.focusedSurface)
+            }
+        }
+    }
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 
@@ -1449,6 +1461,14 @@ class BaseTerminalController: NSWindowController,
     /// disabled (see `validateMenuItem`), so this is never reached from it.
     @IBAction func toggleTerminalInspector(_ sender: Any?) {
         NSSound.beep()
+    }
+
+    @IBAction func toggleFindAll(_ sender: Any?) {
+        findAllIsShowing.toggle()
+        if findAllIsShowing {
+            // The panel's field takes the keys; see toggleCommandPalette.
+            _ = focusedSurface?.resignFirstResponder()
+        }
     }
 
     @IBAction func toggleCommandPalette(_ sender: Any?) {

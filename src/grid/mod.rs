@@ -5,6 +5,9 @@ use std::collections::VecDeque;
 use bitflags::bitflags;
 
 mod grapheme;
+mod search;
+
+pub use search::{SearchChunk, SearchHit};
 
 use grapheme::GraphemeTable;
 pub(crate) use grapheme::{

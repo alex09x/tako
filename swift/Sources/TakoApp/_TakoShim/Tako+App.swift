@@ -29,6 +29,9 @@ extension Tako {
     /// by TakoCore and PTY. Tako.App holds application readiness state, delegates,
     /// and global clipboard confirmation dispatching.
     open class App: ObservableObject {
+        /// Find in All Tabs: one search, shared by every window's panel.
+        @MainActor lazy var crossSessionSearch = CrossSessionSearch()
+
         public enum Readiness: String {
             case loading
             case error

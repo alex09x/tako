@@ -11,6 +11,7 @@ import Combine
 private final class RecordingDelegate: TerminalViewModel, TerminalViewDelegate {
     @Published var surfaceTree: SplitTree<Tako.SurfaceView>
     @Published var commandPaletteIsShowing = false
+    @Published var findAllIsShowing = false
 
     var focusedSurfaceDidChangeCalls: [Tako.SurfaceView?] = []
     var pwdDidChangeCalls: [URL?] = []

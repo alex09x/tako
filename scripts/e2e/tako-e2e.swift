@@ -67,6 +67,9 @@ enum Key {
     static let minus: CGKeyCode = 27
     static let zero: CGKeyCode = 29
     static let t: CGKeyCode = 17
+    static let f: CGKeyCode = 3
+    static let escape: CGKeyCode = 53
+    static let a: CGKeyCode = 0
     static let d: CGKeyCode = 2
     static let w: CGKeyCode = 13
     static let n: CGKeyCode = 45
@@ -101,6 +104,9 @@ final class Driver {
     /// run, none saved for the next. The restore scenario turns it back on.
     static let defaultConfig = "window-save-state = never\n"
 
+    /// Extra environment for the next launch.
+    var environment: [String: String] = [:]
+
     func launch(config: String = Driver.defaultConfig) throws {
         let configURL = work.appendingPathComponent("config")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
@@ -108,7 +114,8 @@ final class Driver {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         // -n: a new instance, never somebody's running Tako.
-        open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)", appURL.path]
+        open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
+            + environment.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
         try open.run()
         open.waitUntilExit()
         let deadline = Date().addingTimeInterval(15)
@@ -145,6 +152,31 @@ final class Driver {
             throw Failure("Cmd+Q did not quit Tako")
         }
         pid = 0
+    }
+
+    /// Every static text in the front window, through accessibility.
+    func staticTexts() -> [String] {
+        guard let window = windows().first else { return [] }
+        return descendants(of: window, role: kAXStaticTextRole as String).compactMap {
+            attribute($0, kAXValueAttribute) as String?
+        }
+    }
+
+    /// The front window's text fields' values.
+    func textFields() -> [String] {
+        guard let window = windows().first else { return [] }
+        return descendants(of: window, role: kAXTextFieldRole as String).compactMap {
+            attribute($0, kAXValueAttribute) as String?
+        }
+    }
+
+    /// The terminal's selected text, through accessibility.
+    func selectedText() -> String {
+        guard let window = windows().first,
+              let area = descendants(of: window, role: kAXTextAreaRole as String).first,
+              let text: String = attribute(area, kAXSelectedTextAttribute)
+        else { return "" }
+        return text
     }
 
     /// What the terminal shows, as its accessibility value: the screen and
@@ -432,6 +464,82 @@ let scenarios: [Scenario] = [
             throw Failure("ctrl+c did not stop the command")
         }
     }),
+    ("find-all", "cmd+shift+f finds output in another tab and shows it there, selected", { d in
+        let id = d.work.lastPathComponent
+        try d.run("tty > \(d.path("tty1")); printf 'found-%s\\n' \(id)")
+        let first = try d.file("tty1")
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+        try d.run("tty > \(d.path("tty2")); printf 'other output\\n'")
+        guard try d.file("tty2") != first else { throw Failure("cmd+t did not open a second terminal") }
+
+        d.key(Key.f, [.maskCommand, .maskShift])
+        usleep(600_000)
+        try d.type("found-\(id)")
+        usleep(800_000)
+        d.key(Key.returnKey)
+        usleep(1_000_000)
+
+        guard d.wait(for: { d.selectedText() == "found-\(id)" }, timeout: 5) else {
+            throw Failure("selection after Return is [\(d.selectedText())]")
+        }
+        try d.run("tty > \(d.path("tty3"))")
+        guard try d.file("tty3") == first else {
+            throw Failure("Return did not bring the keyboard to the tab with the match")
+        }
+    }),
+    ("find-stale", "a match that changes, or a tab that closes, while it is being shown is reported where the user is", { d in
+        // A long settle leaves time to change the target's output after it
+        // has been brought forward and before the match is checked.
+        d.quit()
+        d.environment = ["TAKO_FIND_ALL_SETTLE": "6"]
+        defer { d.environment = [:] }
+        try d.launch()
+        let id = d.work.lastPathComponent
+        let marker = "stale-\(id)"
+        for (index, (ending, notice)) in [("clear", "changed since the search"), ("exit", "has been closed")].enumerated() {
+            // Tab A prints the match, then waits for the witness file before
+            // wiping it (clear) or going away (exit): the test creates the
+            // file only once it has seen tab A brought forward.
+            let witness = d.path("go\(index)")
+            try d.run("printf 'stale-%s\\n' \(id); sh -c 'while [ ! -e \(witness) ]; do sleep 0.2; done'; \(ending)")
+            d.key(Key.t, .maskCommand)
+            usleep(1_200_000)
+            d.key(Key.f, [.maskCommand, .maskShift])
+            usleep(600_000)
+            // The panel keeps the last query; replace it.
+            d.key(Key.a, .maskCommand)
+            try d.type(marker)
+            guard d.wait(for: { d.staticTexts().contains { $0.contains(marker) } }, timeout: 5) else {
+                throw Failure("the match was never listed: \(d.staticTexts())")
+            }
+            d.key(Key.returnKey)
+            // Tab A in front: its screen holds the marker.
+            guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
+                throw Failure("Return did not bring the tab with the match forward")
+            }
+            FileManager.default.createFile(atPath: witness, contents: Data())
+
+            guard d.wait(for: { d.staticTexts().contains { $0.contains(notice) } }, timeout: 15) else {
+                throw Failure("after '\(ending)' no notice; texts: \(d.staticTexts())")
+            }
+            guard d.textFields().contains(marker) else {
+                throw Failure("the search field is not shown with the query: \(d.textFields())")
+            }
+            // The list was searched again: the row for the gone match is gone.
+            guard d.wait(for: { !d.staticTexts().contains { $0.contains(marker) } }, timeout: 5) else {
+                throw Failure("the stale result is still listed: \(d.staticTexts())")
+            }
+            // Escape gives the keyboard back to a terminal.
+            d.key(Key.escape)
+            usleep(500_000)
+            try d.run("tty > \(d.path("back\(index)"))")
+            guard (try? d.file("back\(index)")) != nil else {
+                throw Failure("after Escape the keyboard did not reach a terminal")
+            }
+            try d.run("clear")
+        }
+    }),
     ("new-tab", "cmd+t opens a tab that takes the keyboard; exit closes it and gives it back", { d in
         // Native window tabs share one accessibility window, so a new tab is
         // a new terminal (its own tty) in the same number of windows.
@@ -644,6 +752,12 @@ guard AXIsProcessTrusted() else {
     exit(1)
 }
 let wanted = Set(args.dropFirst())
+// A misspelt name must not pass as a run of nothing.
+let unknown = wanted.subtracting(scenarios.map(\.name))
+if !unknown.isEmpty {
+    print("FAIL: no scenario named \(unknown.sorted().joined(separator: ", "))")
+    exit(2)
+}
 let previouslyFront = NSWorkspace.shared.frontmostApplication
 var failed = 0
 for scenario in scenarios where wanted.isEmpty || wanted.contains(scenario.name) {
