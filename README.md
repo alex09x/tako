@@ -36,6 +36,17 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
     mostly static screen does no redundant GPU work.
   - CoreText font shaping with fallback to system fonts and Nerd Font symbols.
 
+- **Getting back to work**:
+  - Each tab's screen and scrollback come back after a relaunch, marked with when they were saved;
+    the new shell is never presented as the old one.
+  - Find in All Tabs (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>) searches every open
+    terminal's history and jumps to the match; with shell integration, matches are grouped under
+    the command that printed them, with its exit status, directory and start time.
+  - A long command that finishes or fails while you are elsewhere marks its tab and can send a
+    notification.
+  - Experimental: `session-persistence = true` keeps each shell running across a quit and
+    reattaches it on the next launch.
+
 - **Native macOS Experience**:
   - Native tabs, split panes (horizontal & vertical), Quick Terminal dropdown.
   - Native AppleScript dictionary (`Tako.sdef`).
@@ -141,6 +152,16 @@ background-blur-radius = 20
 window-padding-x = 8
 window-padding-y = 8
 macos-titlebar-style = transparent
+
+# Getting back to work: restore screen and scrollback after a relaunch,
+# keeping at most 64 MB for all tabs together
+window-save-content = true
+window-save-content-limit = 64
+# Mark a tab and notify when a command of 10 s or more ends: never, unfocused or always
+notify-on-command-finish = unfocused
+notify-on-command-finish-after = 10s
+# Experimental: keep shells running across a quit and reattach them
+session-persistence = false
 
 # Keybindings
 keybind = super+t=new_tab

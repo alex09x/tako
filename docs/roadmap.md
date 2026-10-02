@@ -23,6 +23,8 @@ new features.
 
 ### 1. Pick up where you left off
 
+Status: shipped in 0.1.4.
+
 Each tab saves a snapshot of its screen and scrollback periodically and when the app quits. On
 the next launch the tab shows the last snapshot, followed by a separator with the time it was
 taken, so new output is visibly apart from restored text. A snapshot does not bring the old shell
@@ -44,6 +46,8 @@ Done when:
 
 ### 2. See which tab needs attention
 
+Status: shipped in 0.1.4.
+
 When a long command finishes or fails, its tab shows it, and a notification is sent according to
 the user's setting. The state comes only from shell integration (OSC 133) and exit status, never
 from guessing at the text on screen.
@@ -52,6 +56,8 @@ Done when the marker matches the command's real outcome, the `never`, `unfocused
 modes behave predictably, and the signal can be turned off.
 
 ### 3. Find output across sessions
+
+Status: shipped in 0.1.4, including grouping by command.
 
 One search covers the open tabs and any restored text the user allows it to read; choosing a
 result opens that tab at that place. Where command boundaries are known, results can be grouped by
@@ -64,6 +70,8 @@ going through tabs by hand, the search stays local, and it never invents details
 report.
 
 ### 4. Keep the same session across a relaunch
+
+Status: in 0.1.4 as an experimental setting (`session-persistence`), off by default; behaviour across sleep and wake is not yet verified.
 
 Quitting Tako detaches its tabs instead of ending them: the shell and the programs running in it
 stay alive on this Mac. On the next launch Tako restores the layout and reattaches each tab to its
