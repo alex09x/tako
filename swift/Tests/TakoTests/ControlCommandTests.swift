@@ -58,5 +58,16 @@ struct ControlCommandTests {
         #expect((try? ControlCommands.findLimit([:])) == 50)
         #expect((try? ControlCommands.findLimit(["limit": .number(7)])) == 7)
     }
+
+    @Test func aReplyGoesOutOnceWhoeverIsFirst() {
+        final class Count: @unchecked Sendable { var n = 0 }
+        let count = Count()
+        let once = ControlCommands.OnceReply { _ in count.n += 1 }
+        #expect(!once.done)
+        once.answer(.failure(ControlError(.timeout, "deadline")))
+        once.answer(.ok([:]))
+        #expect(once.done)
+        #expect(count.n == 1)
+    }
 }
 

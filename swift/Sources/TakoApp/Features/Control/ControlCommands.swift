@@ -140,7 +140,7 @@ enum ControlCommands {
                 find(try ControlInput.text(request.args), limit: try findLimit(request.args), reply: reply)
             case "notify":
                 let surface = try target(request, all)
-                try notify(surface, text: try ControlInput.text(request.args),
+                try notify(request, surface, text: try ControlInput.text(request.args),
                            title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } },
                            reply: reply)
             default:
@@ -285,7 +285,12 @@ enum ControlCommands {
     /// clicked, shown even while Tako is in front.
     /// Answered once the notification is with the system -- or with why it
     /// is not: notifications not allowed for Tako, or not accepted.
-    static func notify(_ surface: Tako.SurfaceView, text: String, title: String?,
+    /// How long `notify` waits for the system -- a first-time permission
+    /// prompt may sit unanswered -- before it answers `timeout`: inside
+    /// takoctl's own 30 s, so the client always hears why.
+    static let notifyWait: TimeInterval = 20
+
+    static func notify(_ request: ControlRequest, _ surface: Tako.SurfaceView, text: String, title: String?,
                        reply: @escaping @Sendable (ControlResponse) -> Void) throws {
         guard !text.isEmpty else { throw ControlError(.invalid, "nothing to say") }
         let content = UNMutableNotificationContent()
@@ -299,19 +304,53 @@ enum ControlCommands {
             throw ControlError(.internalError, "notifications are unavailable")
         }
         let id = surface.id.uuidString.lowercased()
+        // One answer, whichever comes first: the system, the deadline, or
+        // the client going away. After that nothing is posted.
+        let once = OnceReply(reply)
+        let deadline = Date().addingTimeInterval(notifyWait)
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { timer in
+            if once.done {
+                timer.invalidate()
+            } else if request.clientGone() {
+                once.answer(.failure(ControlError(.timeout, "the client went away")))
+                timer.invalidate()
+            } else if Date() >= deadline {
+                once.answer(.failure(ControlError(.timeout,
+                    "no answer from the system in \(Int(notifyWait)) s -- is a notification permission prompt waiting?")))
+                timer.invalidate()
+            }
+        }
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            guard !once.done else { return }
             guard granted else {
-                return reply(.failure(ControlError(.disabled,
+                return once.answer(.failure(ControlError(.disabled,
                     "notifications are not allowed for Tako (System Settings → Notifications)"
                         + (error.map { ": \($0.localizedDescription)" } ?? ""))))
             }
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
                 if let error {
-                    reply(.failure(ControlError(.internalError, "not posted: \(error.localizedDescription)")))
+                    once.answer(.failure(ControlError(.internalError, "not posted: \(error.localizedDescription)")))
                 } else {
-                    reply(.ok(["id": .string(id)]))
+                    once.answer(.ok(["id": .string(id)]))
                 }
             }
+        }
+    }
+
+    /// A reply that goes out at most once, from whichever thread is first.
+    final class OnceReply: @unchecked Sendable {
+        private let lock = NSLock()
+        private var answered = false
+        private let reply: @Sendable (ControlResponse) -> Void
+        init(_ reply: @escaping @Sendable (ControlResponse) -> Void) { self.reply = reply }
+        var done: Bool { lock.withLock { answered } }
+        func answer(_ response: ControlResponse) {
+            let first = lock.withLock { () -> Bool in
+                if answered { return false }
+                answered = true
+                return true
+            }
+            if first { reply(response) }
         }
     }
 
