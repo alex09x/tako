@@ -1341,6 +1341,13 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func setColorScheme(dark: Bool)
 
     /**
+     * Give command `id` (from a `CommandStart` event) its start time, in
+     * unix milliseconds. Only the first time counts; ignored when `epoch`
+     * is not the current engine generation or there is no such command.
+     */
+    func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64)  -> Bool
+
+    /**
      * Sets the host's cursor style: what a program's DECSCUSR 0 and a reset
      * return to. It applies at once unless a program has chosen a style.
      */
@@ -2379,6 +2386,23 @@ open func setColorScheme(dark: Bool)  {try! rustCall() {
 }
 
     /**
+     * Give command `id` (from a `CommandStart` event) its start time, in
+     * unix milliseconds. Only the first time counts; ignored when `epoch`
+     * is not the current engine generation or there is no such command.
+     */
+open func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_command_time(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(epoch),
+        FfiConverterUInt64.lower(id),
+        FfiConverterUInt64.lower(unixMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Sets the host's cursor style: what a program's DECSCUSR 0 and a reset
      * return to. It applies at once unless a program has chosen a style.
      */
@@ -2917,6 +2941,103 @@ public func FfiConverterTypeFfiCheckpointInfo_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeFfiCheckpointInfo_lower(_ value: FfiCheckpointInfo) -> RustBuffer {
     return FfiConverterTypeFfiCheckpointInfo.lower(value)
+}
+
+
+/**
+ * What the shell said about a command (OSC 133). `exit_code` is only
+ * meaningful when `finished`; a finished command without one is not a
+ * success.
+ */
+public struct FfiCommandInfo: Equatable, Hashable {
+    public var id: UInt64
+    /**
+     * The engine generation the id belongs to (see `state_epoch`).
+     */
+    public var epoch: UInt64
+    public var running: Bool
+    public var finished: Bool
+    public var abandoned: Bool
+    public var exitCode: Int32?
+    public var cwd: String?
+    public var input: String?
+    public var inputTruncated: Bool
+    public var startedAtMs: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: UInt64,
+        /**
+         * The engine generation the id belongs to (see `state_epoch`).
+         */epoch: UInt64, running: Bool, finished: Bool, abandoned: Bool, exitCode: Int32?, cwd: String?, input: String?, inputTruncated: Bool, startedAtMs: UInt64?) {
+        self.id = id
+        self.epoch = epoch
+        self.running = running
+        self.finished = finished
+        self.abandoned = abandoned
+        self.exitCode = exitCode
+        self.cwd = cwd
+        self.input = input
+        self.inputTruncated = inputTruncated
+        self.startedAtMs = startedAtMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiCommandInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiCommandInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiCommandInfo {
+        return
+            try FfiCommandInfo(
+                id: FfiConverterUInt64.read(from: &buf),
+                epoch: FfiConverterUInt64.read(from: &buf),
+                running: FfiConverterBool.read(from: &buf),
+                finished: FfiConverterBool.read(from: &buf),
+                abandoned: FfiConverterBool.read(from: &buf),
+                exitCode: FfiConverterOptionInt32.read(from: &buf),
+                cwd: FfiConverterOptionString.read(from: &buf),
+                input: FfiConverterOptionString.read(from: &buf),
+                inputTruncated: FfiConverterBool.read(from: &buf),
+                startedAtMs: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiCommandInfo, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.id, into: &buf)
+        FfiConverterUInt64.write(value.epoch, into: &buf)
+        FfiConverterBool.write(value.running, into: &buf)
+        FfiConverterBool.write(value.finished, into: &buf)
+        FfiConverterBool.write(value.abandoned, into: &buf)
+        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
+        FfiConverterOptionString.write(value.cwd, into: &buf)
+        FfiConverterOptionString.write(value.input, into: &buf)
+        FfiConverterBool.write(value.inputTruncated, into: &buf)
+        FfiConverterOptionUInt64.write(value.startedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandInfo_lift(_ buf: RustBuffer) throws -> FfiCommandInfo {
+    return try FfiConverterTypeFfiCommandInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandInfo_lower(_ value: FfiCommandInfo) -> RustBuffer {
+    return FfiConverterTypeFfiCommandInfo.lower(value)
 }
 
 
@@ -4198,13 +4319,22 @@ public struct FfiSearchHit: Equatable, Hashable {
     public var before: String
     public var matched: String
     public var after: String
+    /**
+     * The command whose output holds the hit, read under the same lock as
+     * the hit itself; `None` when its rows are not all one command's.
+     */
+    public var command: FfiCommandInfo?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(startLine: UInt64, startCol: UInt32, endLine: UInt64, endCol: UInt32,
         /**
          * Context before the match, the match as shown, context after.
-         */before: String, matched: String, after: String) {
+         */before: String, matched: String, after: String,
+        /**
+         * The command whose output holds the hit, read under the same lock as
+         * the hit itself; `None` when its rows are not all one command's.
+         */command: FfiCommandInfo?) {
         self.startLine = startLine
         self.startCol = startCol
         self.endLine = endLine
@@ -4212,6 +4342,7 @@ public struct FfiSearchHit: Equatable, Hashable {
         self.before = before
         self.matched = matched
         self.after = after
+        self.command = command
     }
 
 
@@ -4236,7 +4367,8 @@ public struct FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer {
                 endCol: FfiConverterUInt32.read(from: &buf),
                 before: FfiConverterString.read(from: &buf),
                 matched: FfiConverterString.read(from: &buf),
-                after: FfiConverterString.read(from: &buf)
+                after: FfiConverterString.read(from: &buf),
+                command: FfiConverterOptionTypeFfiCommandInfo.read(from: &buf)
         )
     }
 
@@ -4248,6 +4380,7 @@ public struct FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer {
         FfiConverterString.write(value.before, into: &buf)
         FfiConverterString.write(value.matched, into: &buf)
         FfiConverterString.write(value.after, into: &buf)
+        FfiConverterOptionTypeFfiCommandInfo.write(value.command, into: &buf)
     }
 }
 
@@ -4843,9 +4976,11 @@ public enum FfiEvent: Equatable, Hashable {
     case progress(state: UInt8, value: UInt8?
     )
     /**
-     * OSC 133;C -- a command started running.
+     * OSC 133;C -- a command started running. `id` names its record for
+     * `set_command_time`; absent on the alternate screen.
      */
-    case commandStart
+    case commandStart(id: UInt64?
+    )
     /**
      * OSC 133;D -- a command finished, with its exit code when reported.
      */
@@ -4891,7 +5026,8 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 7: return .progress(state: try FfiConverterUInt8.read(from: &buf), value: try FfiConverterOptionUInt8.read(from: &buf)
         )
 
-        case 8: return .commandStart
+        case 8: return .commandStart(id: try FfiConverterOptionUInt64.read(from: &buf)
+        )
 
         case 9: return .commandEnd(exitCode: try FfiConverterOptionInt32.read(from: &buf)
         )
@@ -4939,8 +5075,9 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterOptionUInt8.write(value, into: &buf)
 
 
-        case .commandStart:
+        case let .commandStart(id):
             writeInt(&buf, Int32(8))
+            FfiConverterOptionUInt64.write(id, into: &buf)
 
 
         case let .commandEnd(exitCode):
@@ -6669,6 +6806,30 @@ fileprivate struct FfiConverterOptionTypeFfiCell: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFfiCommandInfo: FfiConverterRustBuffer {
+    typealias SwiftType = FfiCommandInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiCommandInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiCommandInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeFfiGraphicsImageMetadata: FfiConverterRustBuffer {
     typealias SwiftType = FfiGraphicsImageMetadata?
 
@@ -7199,6 +7360,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_color_scheme() != 18592) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_set_command_time() != 11609) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_default_cursor_style() != 59804) {
