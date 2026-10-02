@@ -146,6 +146,38 @@ final class Driver {
         pid = 0
     }
 
+    /// Starts a second instance of the app beside the one being driven
+    /// (which stays `pid`), and returns its pid.
+    func launchAnother(config: String) throws -> pid_t {
+        let configURL = work.appendingPathComponent("config-another")
+        try config.write(to: configURL, atomically: true, encoding: .utf8)
+        let before = Set(running().map(\.processIdentifier))
+        var env = environment
+        if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-n", "-g", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
+            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
+        try open.run()
+        open.waitUntilExit()
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            if let app = running().first(where: { !before.contains($0.processIdentifier) }) {
+                return app.processIdentifier
+            }
+            usleep(100_000)
+        }
+        throw Failure("the second instance did not start")
+    }
+
+    /// Every terminal's text in another instance's windows.
+    func screenTexts(ofPid other: pid_t) -> [String] {
+        let app = AXUIElementCreateApplication(other)
+        let windows = (attribute(app, kAXWindowsAttribute) as [AXUIElement]?) ?? []
+        return windows.flatMap { descendants(of: $0, role: kAXTextAreaRole as String) }
+            .compactMap { attribute($0, kAXValueAttribute) as String? }
+    }
+
     /// Cmd+Q, the way a person quits: the app saves its windows and tabs.
     func quitNormally() throws {
         guard pid != 0 else { return }
@@ -589,6 +621,36 @@ let scenarios: [Scenario] = [
         }
         guard kill(kept, 0) == 0 else { throw Failure("the open tab's session did not survive the quit") }
     }),
+    ("persist-second-owner", "a second copy of Tako restoring the same session is refused and starts nothing", { d in
+        d.quit()
+        let config = "session-persistence = true\n"
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
+        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure("no shell pid")
+        }
+        // Saved with its session, then reattached: this copy owns it.
+        try d.quitNormally()
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        guard try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines) == String(shell) else {
+            throw Failure("the first copy did not reattach")
+        }
+        // A second copy restores the same window, so the same session.
+        let other = try d.launchAnother(config: config)
+        defer { kill(other, SIGKILL) }
+        guard d.wait(for: { d.screenTexts(ofPid: other).contains { $0.contains("open in another copy of Tako") } },
+                     timeout: 15) else {
+            throw Failure("the second copy said nothing about the session: \(d.screenTexts(ofPid: other).map { $0.suffix(200) })")
+        }
+        // It started nothing: the session still has its one shell, and the
+        // first copy still drives it.
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid3"))")
+        guard try d.file("pid3").trimmingCharacters(in: .whitespacesAndNewlines) == String(shell) else {
+            throw Failure("the first copy lost its session")
+        }
+        try d.run("exit")
+    }),
     ("persist-cancel", "a cancelled quit leaves the persistent terminal working and its session alive", { d in
         d.quit()
         // With persistence a running command does not make quitting ask (it
@@ -880,7 +942,7 @@ guard AXIsProcessTrusted() else {
 let wanted = Set(args.dropFirst())
 // Scenarios that need a build with the session runtime run only when named,
 // from scripts/e2e-persist.sh: never as part of the default set.
-let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit"]
+let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner"]
 // A misspelt name must not pass as a run of nothing.
 let unknown = wanted.subtracting(scenarios.map(\.name))
 if !unknown.isEmpty {
