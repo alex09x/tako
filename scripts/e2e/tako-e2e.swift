@@ -1292,8 +1292,15 @@ func crashLayoutSetup(_ d: Driver) throws {
     forgetLayout(d)
     try d.launch(config: "window-save-state = always\n")
     // Start from one window, whatever an earlier run left.
-    try d.run("takoctl tree --json > \(d.path("start"))")
-    _ = try? d.file("start", timeout: 10)   // the shell is taking input
+    // Right after launch fish can still be starting and drop what is typed:
+    // ask again until it answers, so the scenario starts from a shell that
+    // is listening.
+    var listening = false
+    for _ in 0..<3 where !listening {
+        try d.run("takoctl tree --json > \(d.path("start"))")
+        listening = (try? d.file("start", timeout: 5)) != nil
+    }
+    guard listening else { throw Failure("the shell never took input: [\(d.screenText().suffix(400))]") }
     let out = d.work.path
     try """
     takoctl split right > /dev/null || exit 1
