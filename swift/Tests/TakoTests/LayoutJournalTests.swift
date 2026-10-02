@@ -212,5 +212,19 @@ struct LayoutJournalTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
             == ["journal-7.json", "journal-x.json", "launch.json", "notes.txt"])
     }
+
+    @Test func aQuitThatKeepsWindowsRestoresFromTheJournal() {
+        typealias J = LayoutJournal
+        // Every tab and split as they were, not AppKit's view of them.
+        #expect(J.decide(previous: .clean, journal: .valid, keepsWindows: true) == .journal)
+        // A quit that closes windows restores none from the journal either.
+        #expect(J.decide(previous: .clean, journal: .valid, keepsWindows: false) == .appKit)
+        // Nothing to trust, or nothing saved yet: AppKit, whatever the setting.
+        #expect(J.decide(previous: .clean, journal: .invalid("x"), keepsWindows: true) == .appKit)
+        #expect(J.decide(previous: .clean, journal: .missing, keepsWindows: true) == .appKit)
+        #expect(J.decide(previous: .firstRun, journal: .valid, keepsWindows: true) == .appKit)
+        // After a crash the journal wins, however the quit is set.
+        #expect(J.decide(previous: .dirty, journal: .valid, keepsWindows: false) == .journal)
+    }
 }
 

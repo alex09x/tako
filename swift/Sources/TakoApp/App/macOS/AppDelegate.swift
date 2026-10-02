@@ -187,7 +187,12 @@ class AppDelegate: NSObject,
             LayoutRecorder.begin(
                 bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
                 enabled: tako.config.windowSaveState != "never"
-                    && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }))
+                    && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }),
+                // As AppKit would decide: the setting, else macOS's "Close
+                // windows when quitting an application" (unset: it closes).
+                keepsWindows: tako.config.windowSaveState == "always"
+                    || (tako.config.windowSaveState != "never"
+                        && UserDefaults.standard.bool(forKey: "NSQuitAlwaysKeepsWindows")))
         }
 
         tako.delegate = self

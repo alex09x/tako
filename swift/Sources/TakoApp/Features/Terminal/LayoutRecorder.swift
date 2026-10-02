@@ -22,7 +22,7 @@ enum LayoutRecorder {
     static let interval: TimeInterval = 0.5
 
     /// When the app delegate is created, before AppKit restores windows.
-    static func begin(bundleID: String, enabled: Bool) {
+    static func begin(bundleID: String, enabled: Bool, keepsWindows: Bool) {
         guard enabled else { return }
         let dir: URL
         do { dir = try LayoutJournal.directory(bundleID: bundleID) } catch {
@@ -33,7 +33,7 @@ enum LayoutRecorder {
         let named = dir.appendingPathComponent(LayoutJournal.journalName(previous.journalGeneration))
         let (read, journal) = LayoutJournal.check(try? Data(contentsOf: named),
                                                   expected: previous.journalGeneration)
-        source = LayoutJournal.decide(previous: previous.state, journal: read)
+        source = LayoutJournal.decide(previous: previous.state, journal: read, keepsWindows: keepsWindows)
         if case .invalid(let why) = read, previous.state != .clean {
             AppDelegate.logger.error("layout journal unusable, AppKit restores instead: \(why, privacy: .public)")
         }
@@ -41,8 +41,8 @@ enum LayoutRecorder {
         committer = c
         if source == .journal {
             pending = journal
-            // AppKit stays out of it entirely: a crash restore never mixes
-            // its windows with AppKit's.
+            // AppKit stays out of it entirely: a restore from the journal
+            // never mixes its windows with AppKit's.
             var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
             args["ApplePersistenceIgnoreState"] = true
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)

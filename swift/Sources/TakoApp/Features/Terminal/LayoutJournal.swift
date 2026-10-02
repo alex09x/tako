@@ -120,13 +120,21 @@ enum LayoutJournal {
     }
 
     /// The one place the launch decision is made.
-    static func decide(previous: LaunchState, journal: JournalRead) -> Source {
+    /// `keepsWindows`: whether a normal quit keeps the windows -- the
+    /// `window-save-state = always` setting, or macOS's own when it is `default`.
+    static func decide(previous: LaunchState, journal: JournalRead, keepsWindows: Bool = false) -> Source {
         switch (previous, journal) {
         case (.dirty, .valid), (.restoring, .valid):
             return .journal
+        case (.clean, .valid) where keepsWindows:
+            // A normal quit that keeps windows: the journal holds every tab
+            // and split as they were, which AppKit does not on every macOS
+            // (some bring back only the selected tab).
+            return .journal
         default:
-            // A clean quit, a first run, or a journal that cannot be trusted:
-            // AppKit's own restoration (which after a crash may be nothing).
+            // A quit that closes windows, a first run, or a journal that
+            // cannot be trusted: AppKit's own restoration (which after a
+            // crash, or such a quit, may be nothing).
             return .appKit
         }
     }
