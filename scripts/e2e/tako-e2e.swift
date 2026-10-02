@@ -523,6 +523,56 @@ let scenarios: [Scenario] = [
             throw Failure("Return did not bring the keyboard to the tab with the match")
         }
     }),
+    ("find-commands", "find in all tabs groups matches under the shell command that printed them", { d in
+        // The bundled zsh integration, whatever the login shell is: it marks
+        // the prompt, the command line, the output and the exit status.
+        let id = d.work.lastPathComponent
+        let marker = "grp-\(id)"
+        try d.run("exec env ZDOTDIR=$TAKO_RESOURCES_DIR/shell-integration/zsh zsh -i")
+        usleep(2_000_000)
+        try d.run("cd \(d.work.path)")
+        // The id is passed apart from the format, so no command line holds
+        // the marker: only output does.
+        try d.run("printf 'grp-%s ok\\n' \(id)")
+        try d.run("printf 'grp-%s one\\ngrp-%s two\\n' \(id) \(id); false")
+        guard d.wait(for: { d.screenText().contains("\(marker) two") }, timeout: 5) else {
+            throw Failure("the commands did not run: [\(d.screenText().suffix(300))]")
+        }
+
+        d.key(Key.f, [.maskCommand, .maskShift])
+        usleep(600_000)
+        d.key(Key.a, .maskCommand)
+        try d.type(marker)
+        guard d.wait(for: { d.staticTexts().filter { $0.contains(marker) }.count == 3 }, timeout: 5) else {
+            throw Failure("expected three matches: \(d.staticTexts())")
+        }
+        let texts = d.staticTexts()
+        let failing = "$ printf 'grp-%s one\\ngrp-%s two\\n' \(id) \(id); false"
+        let passing = "$ printf 'grp-%s ok\\n' \(id)"
+        // One heading per command, however many of its lines matched.
+        guard texts.filter({ $0 == failing }).count == 1, texts.filter({ $0 == passing }).count == 1 else {
+            throw Failure("headings: \(texts)")
+        }
+        let details = texts.filter { $0.contains("exit") }
+        let dir = d.work.resolvingSymlinksInPath().path
+        guard details.count == 2,
+              details.contains(where: { $0.hasPrefix("✗ exit 1") }),
+              details.contains(where: { $0.hasPrefix("✓ exit 0") }),
+              details.allSatisfy({ $0.contains(dir) || $0.contains(d.work.path) }),
+              details.allSatisfy({ $0.contains("started ") }) else {
+            throw Failure("details: \(details)")
+        }
+        // Newest first: the failing command's lines come before the other's.
+        guard let fi = texts.firstIndex(of: failing), let pi = texts.firstIndex(of: passing), fi < pi else {
+            throw Failure("order: \(texts)")
+        }
+
+        d.key(Key.returnKey)
+        guard d.wait(for: { d.selectedText() == marker }, timeout: 5) else {
+            throw Failure("selection after Return is [\(d.selectedText())]")
+        }
+        try d.run("exit")
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
