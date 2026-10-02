@@ -169,6 +169,9 @@ terminal.feed(data: incomingBytes)
 
 Implement `TakoTerminalNSViewDelegate` to forward user input and resize events back to your backend transport.
 
+Runnable samples for macOS, iOS and the C ABI, what the host is responsible for, limits and
+compatibility, and the versioning policy: [docs/takocore.md](docs/takocore.md).
+
 ---
 
 ## Architecture

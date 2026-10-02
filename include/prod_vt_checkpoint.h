@@ -40,8 +40,11 @@
 extern "C" {
 #endif
 
+#ifndef PROD_VT_HANDLE_DEFINED
+#define PROD_VT_HANDLE_DEFINED
 /* Opaque terminal handle, from prod_vt_new(). */
 typedef struct ProdVt ProdVt;
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Status codes                                                        */

@@ -1,0 +1,32 @@
+# The smallest iOS app that embeds TakoCore. iOS runs no local shells, so
+# the "program" here is a few lines of Swift: it echoes what is typed and
+# answers each line. A real app puts an SSH session or a remote pty there.
+#
+#   xcodegen -s project.yml && open TakoSample.xcodeproj
+#
+# TakoCoreUI comes from this repository's root package. An app outside it
+# depends on https://github.com/alex09x/tako at a release instead.
+name: TakoSample
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  TakoCoreUI:
+    path: ../..
+targets:
+  TakoSample:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: TakoCoreUI
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.TakoSample
+        CODE_SIGNING_ALLOWED: NO
+        # TakoCore ships arm64 slices only (Apple silicon Macs and devices).
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
