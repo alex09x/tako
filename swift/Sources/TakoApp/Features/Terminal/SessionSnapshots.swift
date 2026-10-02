@@ -9,8 +9,8 @@ struct SessionSnapshot: Equatable {
     var checkpoint: Data
 
     /// Bytes fed to a restored engine, never to the shell: put the screen
-    /// back in the state a fresh shell expects, then mark where the saved
-    /// text ends.
+    /// back in the state a fresh shell expects, below the saved text. No
+    /// banner: a restored tab is what the user expects, not news.
     ///
     /// A snapshot can be taken while a full-screen program runs, so its
     /// modes come with it: mouse reporting, bracketed paste, application
@@ -20,9 +20,6 @@ struct SessionSnapshot: Equatable {
     /// at `cursorRow`/`cursorCol` (0-based, read after leaving the alternate
     /// screen) before the line is drawn below it.
     static func separator(savedAt: Date, cursorRow: UInt32, cursorCol: UInt32) -> [UInt8] {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
         let reset = "\u{1b}[0m\u{1b}[r\u{1b}[?6l\u{1b}[?7h\u{1b}[?25h\u{1b}[?1l"
             + "\u{1b}[?1000l\u{1b}[?1002l\u{1b}[?1003l\u{1b}[?1005l\u{1b}[?1006l"
             + "\u{1b}[?1004l\u{1b}[?2004l\u{1b}[=0u\u{1b}[>4m"
@@ -30,8 +27,7 @@ struct SessionSnapshot: Equatable {
         // Below the old cursor sit rows the old shell had not reached or had
         // drawn ahead (a right prompt, a menu); they are cleared, so nothing
         // stale shows next to the new shell's output.
-        let line = "\r\n\u{1b}[J\u{1b}[2m--- restored from \(formatter.string(from: savedAt)); "
-            + "the programs that were running are not ---\u{1b}[0m\r\n"
+        let line = "\r\n\u{1b}[J"
         return Array((reset + line).utf8)
     }
 

@@ -77,7 +77,7 @@ struct SessionRestoreTests {
         #expect(tmp.store.read(id: id) == nil)
     }
 
-    @Test func aRestoredTabShowsItsOldScreenThenTheSeparatorAndKeepsItsIdentity() throws {
+    @Test func aRestoredTabShowsItsOldScreenWithoutABannerAndKeepsItsIdentity() throws {
         let tmp = TemporaryStore()
         defer { tmp.tearDown() }
         let original = makeSurface()
@@ -91,10 +91,9 @@ struct SessionRestoreTests {
 
         #expect(restored.id == original.id)
         let screen = text(of: restored)
-        let old = try #require(screen.range(of: "build failed: 3 errors"))
-        let mark = try #require(screen.range(of: "restored from"))
-        #expect(old.upperBound <= mark.lowerBound)
-        #expect(screen.contains("the programs that were running are not"))
+        #expect(screen.contains("build failed: 3 errors"))
+        // No banner: the old screen, then the new shell, nothing between.
+        #expect(!screen.contains("restored from"))
     }
 
     @Test func aRestoredTabIsSavedWithWhatItPrintedAfterwards() throws {
@@ -114,11 +113,12 @@ struct SessionRestoreTests {
         let third = try JSONDecoder().decode(Tako.SurfaceView.self, from: JSONEncoder().encode(second))
         defer { third.close() }
         let screen = text(of: third)
-        // Each life in order, each followed by its own separator.
+        // Each life in order, once each.
         let firstLife = try #require(screen.range(of: "first-life"))
         let secondLife = try #require(screen.range(of: "second-life"))
         #expect(firstLife.upperBound <= secondLife.lowerBound)
-        #expect(screen.components(separatedBy: "restored from").count == 3)
+        #expect(screen.components(separatedBy: "first-life").count == 2)
+        #expect(screen.components(separatedBy: "second-life").count == 2)
     }
 
     @Test func withoutASavedScreenATabStillComesBackEmpty() throws {
@@ -130,7 +130,7 @@ struct SessionRestoreTests {
         let restored = try JSONDecoder().decode(Tako.SurfaceView.self, from: JSONEncoder().encode(original))
         defer { restored.close() }
 
-        #expect(!text(of: restored).contains("restored from"))
+        #expect(text(of: restored).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     @Test func theSeparatorHandsAFreshShellPlainInputModes() {

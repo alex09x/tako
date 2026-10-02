@@ -459,10 +459,8 @@ let scenarios: [Scenario] = [
         try d.quitNormally()
         try d.launch(config: "")
         let screen = d.screenText()
-        guard let shown = screen.range(of: marker, options: .backwards),
-              let separator = screen.range(of: "restored from", options: .backwards),
-              shown.upperBound <= separator.lowerBound
-        else { throw Failure("this run's screen was not restored: [\(screen)]") }
+        guard screen.contains(marker), !screen.contains("restored from")
+        else { throw Failure("this run's screen was not restored as it was: [\(screen)]") }
         try d.run("pwd -P > \(d.path("pwd"))")
         // pwd -P resolves /tmp to /private/tmp; Foundation's resolving keeps
         // /tmp, so ask the C library.
