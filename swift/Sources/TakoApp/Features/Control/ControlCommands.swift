@@ -309,19 +309,22 @@ enum ControlCommands {
         let once = OnceReply(reply)
         let deadline = Date().addingTimeInterval(notifyWait)
         Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { timer in
+            // Cancels only while the system has not been asked to post; once
+            // it has, its own answer comes.
             if once.done {
                 timer.invalidate()
             } else if request.clientGone() {
-                once.answer(.failure(ControlError(.timeout, "the client went away")))
-                timer.invalidate()
+                if once.cancel(.failure(ControlError(.timeout, "the client went away"))) { timer.invalidate() }
             } else if Date() >= deadline {
-                once.answer(.failure(ControlError(.timeout,
-                    "no answer from the system in \(Int(notifyWait)) s -- is a notification permission prompt waiting?")))
-                timer.invalidate()
+                if once.cancel(.failure(ControlError(.timeout,
+                    "no answer from the system in \(Int(notifyWait)) s -- is a notification permission prompt waiting?"))) {
+                    timer.invalidate()
+                }
             }
         }
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            guard !once.done else { return }
+            // Cancelled already: nothing is posted.
+            guard once.claim() else { return }
             guard granted else {
                 return once.answer(.failure(ControlError(.disabled,
                     "notifications are not allowed for Tako (System Settings → Notifications)"
@@ -337,17 +340,45 @@ enum ControlCommands {
         }
     }
 
-    /// A reply that goes out at most once, from whichever thread is first.
+    /// A reply that goes out at most once, and an action it guards: while
+    /// `pending`, the deadline or a departed client may `cancel` it; once
+    /// the action has `claim`ed it, only the action answers -- so nothing is
+    /// done after a cancel, and nothing done is reported as cancelled.
     final class OnceReply: @unchecked Sendable {
+        enum State { case pending, acting, answered }
         private let lock = NSLock()
-        private var answered = false
+        private var state = State.pending
         private let reply: @Sendable (ControlResponse) -> Void
         init(_ reply: @escaping @Sendable (ControlResponse) -> Void) { self.reply = reply }
-        var done: Bool { lock.withLock { answered } }
+        var done: Bool { lock.withLock { state == .answered } }
+
+        /// Takes the right to act; false when already cancelled or answered.
+        func claim() -> Bool {
+            lock.withLock {
+                guard state == .pending else { return false }
+                state = .acting
+                return true
+            }
+        }
+
+        /// Answers only if nothing has started: false otherwise.
+        @discardableResult
+        func cancel(_ response: ControlResponse) -> Bool {
+            let won = lock.withLock { () -> Bool in
+                guard state == .pending else { return false }
+                state = .answered
+                return true
+            }
+            if won { reply(response) }
+            return won
+        }
+
+        /// The answer from whoever holds the right to act, or from a
+        /// pending one; once.
         func answer(_ response: ControlResponse) {
             let first = lock.withLock { () -> Bool in
-                if answered { return false }
-                answered = true
+                guard state != .answered else { return false }
+                state = .answered
                 return true
             }
             if first { reply(response) }

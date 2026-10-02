@@ -68,6 +68,19 @@ struct ControlCommandTests {
         once.answer(.ok([:]))
         #expect(once.done)
         #expect(count.n == 1)
+
+        // A cancel wins only before the action claims it...
+        let cancelled = ControlCommands.OnceReply { _ in }
+        #expect(cancelled.cancel(.failure(ControlError(.timeout, "gone"))))
+        #expect(!cancelled.claim())
+        // ...and after a claim, a cancel is refused and the action answers.
+        let acting = ControlCommands.OnceReply { _ in count.n += 1 }
+        #expect(acting.claim())
+        #expect(!acting.cancel(.failure(ControlError(.timeout, "late"))))
+        #expect(!acting.done)
+        acting.answer(.ok([:]))
+        #expect(acting.done)
+        #expect(count.n == 2)
     }
 }
 
