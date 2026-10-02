@@ -61,7 +61,10 @@ enum LayoutJournal {
     static func journalName(_ generation: UInt64) -> String { "journal-\(generation).json" }
 
     /// What a journal file read as, given the generation `launch.json` names:
-    /// valid only when it parses, passes every limit and is that generation.
+    /// valid only when it parses, passes every limit, is that generation, and
+    /// every tab decodes as a tab -- all checked before any window exists,
+    /// so a journal is restored whole or not at all.
+    @MainActor
     static func check(_ data: Data?, expected generation: UInt64) -> (JournalRead, Journal?) {
         guard let data else { return (.missing, nil) }
         switch read(data) {
@@ -70,7 +73,49 @@ enum LayoutJournal {
             guard j.generation == generation else {
                 return (.invalid("journal generation \(j.generation), launch record names \(generation)"), nil)
             }
+            let decoder = JSONDecoder()
+            for window in j.windows {
+                for tab in window.tabs {
+                    guard let tabData = try? JSONSerialization.data(withJSONObject: tab),
+                          let shape = try? decoder.decode(TerminalRestorableState.InternalState<PaneShape>.self, from: tabData),
+                          shape.surfaceTree.root != nil else {
+                        return (.invalid("a tab does not decode"), nil)
+                    }
+                }
+            }
             return (.valid, j)
+        }
+    }
+
+    /// A pane as the journal stores it, decoded without making one: the same
+    /// tree a restore will build, with nothing started. Stricter than a real
+    /// pane's decoding -- the id must be a UUID -- because a restore that
+    /// cannot keep a pane's id cannot find its snapshot or its session.
+    final class PaneShape: NSView, Codable, Identifiable {
+        private enum CodingKeys: String, CodingKey { case id, pwd, persistent }
+        let paneID: UUID
+
+        required init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            guard let id = UUID(uuidString: try c.decode(String.self, forKey: .id)) else {
+                throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "not a UUID")
+            }
+            _ = try c.decodeIfPresent(String.self, forKey: .pwd)
+            _ = try c.decodeIfPresent(Bool.self, forKey: .persistent)
+            paneID = id
+            super.init(frame: .zero)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(paneID.uuidString, forKey: .id)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        init(id: UUID) {
+            paneID = id
+            super.init(frame: .zero)
         }
     }
 
@@ -132,8 +177,11 @@ enum LayoutJournal {
         close(fd)
         guard rename(tmp, url.path) == 0 else { throw JournalError("rename: \(errno)") }
         ok = true
+        // The rename is durable only once the directory is.
         let dfd = open(dir, O_RDONLY | O_CLOEXEC)
-        if dfd >= 0 { fsync(dfd); close(dfd) }
+        guard dfd >= 0 else { throw JournalError("open \(dir): \(errno)") }
+        defer { close(dfd) }
+        guard fsync(dfd) == 0 else { throw JournalError("fsync \(dir): \(errno)") }
     }
 
     static func readLaunch(in dir: URL) -> LaunchRecord {
@@ -248,3 +296,68 @@ enum LayoutJournal {
         }
     }
 }
+
+/// The durable side of the journal: a layout counts as written only once
+/// its generation file and the launch record naming it are both on disk.
+/// A write that fails changes nothing here, so the same layout is tried
+/// again; and `clean` is recorded only after a final commit that succeeded.
+final class JournalCommitter: @unchecked Sendable {
+    let directory: URL
+    private(set) var generation: UInt64
+    private(set) var lastWritten: Data?
+    var state: LayoutJournal.LaunchState
+
+    init(directory: URL, generation: UInt64, state: LayoutJournal.LaunchState) {
+        self.directory = directory
+        self.generation = generation
+        self.state = state
+    }
+
+    /// Commits `journal` if it differs from what is on disk. True when it is
+    /// on disk afterwards -- written now or already there.
+    @discardableResult
+    func commit(_ journal: LayoutJournal.Journal) -> Bool {
+        var next = journal
+        next.generation = 0   // not part of what "changed" means
+        guard let body = try? LayoutJournal.encode(next) else { return false }
+        if body == lastWritten { return true }
+        let committed = generation + 1
+        next.generation = committed
+        guard let data = try? LayoutJournal.encode(next) else { return false }
+        do {
+            // The new generation's file whole, then the record naming it,
+            // then the old file: every crash point names a whole file.
+            try LayoutJournal.atomicWrite(data, to: directory.appendingPathComponent(LayoutJournal.journalName(committed)))
+            try LayoutJournal.writeLaunch(.init(state: state, journalGeneration: committed), in: directory)
+        } catch {
+            unlink(directory.appendingPathComponent(LayoutJournal.journalName(committed)).path)
+            NSLog("layout journal write failed: \(error)")
+            return false
+        }
+        unlink(directory.appendingPathComponent(LayoutJournal.journalName(generation)).path)
+        generation = committed
+        lastWritten = body
+        return true
+    }
+
+    /// Records a new launch state against the current generation.
+    @discardableResult
+    func setState(_ new: LayoutJournal.LaunchState) -> Bool {
+        do {
+            try LayoutJournal.writeLaunch(.init(state: new, journalGeneration: generation), in: directory)
+            state = new
+            return true
+        } catch {
+            NSLog("launch state write failed: \(error)")
+            return false
+        }
+    }
+
+    /// The end of a normal quit: `clean` only if `final` is on disk.
+    @discardableResult
+    func finish(_ final: LayoutJournal.Journal) -> Bool {
+        guard commit(final) else { return false }
+        return setState(.clean)
+    }
+}
+

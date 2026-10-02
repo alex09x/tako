@@ -3,6 +3,7 @@ import Testing
 @testable import Tako
 
 @Suite
+@MainActor
 struct LayoutJournalTests {
     @Test func theLaunchDecisionCoversEveryCase() {
         typealias J = LayoutJournal
@@ -23,6 +24,21 @@ struct LayoutJournalTests {
     }
 
     private let leaf: [String: Any] = ["leaf": ["view": ["id": UUID().uuidString]]]
+    /// A tab exactly as TerminalRestorableState writes it -- encoded, not
+    /// written by hand -- with one pane, or `root` in place of its tree.
+    private func tab(_ root: Any? = nil) -> [String: Any] {
+        let state = TerminalRestorableState.InternalState<LayoutJournal.PaneShape>(
+            focusedSurface: nil,
+            surfaceTree: SplitTree(view: LayoutJournal.PaneShape(id: UUID())),
+            effectiveFullscreenMode: nil, tabColor: nil, titleOverride: nil)
+        var object = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as! [String: Any]
+        if let root {
+            var tree = object["surfaceTree"] as! [String: Any]
+            tree["root"] = root
+            object["surfaceTree"] = tree
+        }
+        return object
+    }
 
     @Test func aGoodJournalReadsBack() throws {
         let data = journal(tabs: [["surfaceTree": ["root": leaf]], ["surfaceTree": ["root": leaf]]])
@@ -83,7 +99,7 @@ struct LayoutJournalTests {
     }
 
     @Test func aJournalCountsOnlyAsTheGenerationTheLaunchRecordNames() {
-        let data = journal(tabs: [leaf])          // generation 3
+        let data = journal(tabs: [tab()])         // generation 3
         #expect(LayoutJournal.check(data, expected: 3).0 == .valid)
         if case .invalid = LayoutJournal.check(data, expected: 4).0 {} else { Issue.record("a newer record accepted an older file") }
         if case .invalid = LayoutJournal.check(data, expected: 2).0 {} else { Issue.record("an older record accepted a newer file") }
@@ -91,6 +107,69 @@ struct LayoutJournalTests {
         // And only a valid, matching journal ever makes the journal the source.
         #expect(LayoutJournal.decide(previous: .dirty, journal: LayoutJournal.check(data, expected: 4).0) == .appKit)
         #expect(LayoutJournal.decide(previous: .dirty, journal: LayoutJournal.check(data, expected: 3).0) == .journal)
+    }
+
+    private func layout(_ tabs: Int) -> LayoutJournal.Journal {
+        LayoutJournal.Journal(generation: 0, windows: [LayoutJournal.Window(
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600), isKey: true, selectedTab: 0,
+            tabs: (0..<tabs).map { _ in tab() })])
+    }
+
+    @Test func aFailedWriteChangesNothingAndIsTriedAgain() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { chmod(dir.path, 0o700); try? FileManager.default.removeItem(at: dir) }
+        let c = JournalCommitter(directory: dir, generation: 0, state: .dirty)
+        #expect(c.commit(layout(1)))
+        #expect(c.generation == 1)
+        // The disk refuses: nothing advances.
+        let two = layout(2)   // one value: the retry is the same layout
+        chmod(dir.path, 0o500)
+        #expect(!c.commit(two))
+        #expect(c.generation == 1)
+        #expect(LayoutJournal.readLaunch(in: dir).journalGeneration == 1)
+        // The disk is back: the same layout is written, not skipped as known.
+        chmod(dir.path, 0o700)
+        #expect(c.commit(two))
+        #expect(c.generation == 2)
+        let named = LayoutJournal.readLaunch(in: dir)
+        let (read, j) = LayoutJournal.check(try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(named.journalGeneration))),
+                                            expected: named.journalGeneration)
+        #expect(read == .valid && j?.windows.first?.tabs.count == 2)
+        // The previous generation's file is gone; only the named one remains.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted() == ["journal-2.json", "launch.json"])
+    }
+
+    @Test func aQuitWhoseLastWriteFailedIsNotClean() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { chmod(dir.path, 0o700); try? FileManager.default.removeItem(at: dir) }
+        let c = JournalCommitter(directory: dir, generation: 0, state: .dirty)
+        #expect(c.setState(.dirty))
+        #expect(c.commit(layout(1)))
+        let three = layout(3)
+        chmod(dir.path, 0o500)
+        #expect(!c.finish(three))
+        chmod(dir.path, 0o700)
+        let record = LayoutJournal.readLaunch(in: dir)
+        #expect(record.state == .dirty && record.journalGeneration == 1)
+        // The next launch follows the last journal that was written.
+        let (read, _) = LayoutJournal.check(try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(1))), expected: 1)
+        #expect(LayoutJournal.decide(previous: record.state, journal: read) == .journal)
+        // A final write that succeeds is clean.
+        #expect(c.finish(three))
+        #expect(LayoutJournal.readLaunch(in: dir).state == .clean)
+    }
+
+    @Test func oneBadTabRejectsTheWholeJournal() {
+        let good = journal(tabs: [tab(), tab()])
+        #expect(LayoutJournal.check(good, expected: 3).0 == .valid)
+        // One tab right, one with a pane whose id is not a UUID, one empty.
+        let noPanes: [String: Any] = ["surfaceTree": ["version": 1]]
+        for bad in [tab(["leaf": ["view": ["id": "not-a-uuid"]]]), [String: Any](), noPanes] {
+            let data = journal(tabs: [tab(), bad])
+            if case .invalid = LayoutJournal.check(data, expected: 3).0 {} else { Issue.record("accepted \(bad)") }
+        }
     }
 }
 

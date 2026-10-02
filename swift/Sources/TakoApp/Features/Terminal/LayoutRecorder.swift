@@ -7,23 +7,21 @@ enum LayoutRecorder {
     /// Where this launch's windows come from; decided once, before AppKit
     /// restores anything.
     private(set) static var source: LayoutJournal.Source = .appKit
-    private static var directory: URL?
+    /// Every write goes through this, on `io` only.
+    private static var committer: JournalCommitter?
     private static var pending: LayoutJournal.Journal?
-    private static var generation: UInt64 = 0
-    private static var lastWritten: Data?
     private static var timer: Timer?
     private static let io = DispatchQueue(label: "tako.layout-journal")
-    /// The launch state as last written; every journal commit carries it.
-    private static var state: LayoutJournal.LaunchState = .dirty
     /// How many windows AppKit's restoration was asked to rebuild this
     /// launch -- zero whenever the journal is the source.
     static var appKitRestoreCalls = 0
 
     /// How often the layout is checked for changes; a change is written
-    /// within this, and only a change is written.
+    /// within this, and only a change is written. A failed write is tried
+    /// again on the next check.
     static let interval: TimeInterval = 0.5
 
-    /// At `applicationWillFinishLaunching`, before AppKit restores windows.
+    /// When the app delegate is created, before AppKit restores windows.
     static func begin(bundleID: String, enabled: Bool) {
         guard enabled else { return }
         let dir: URL
@@ -31,7 +29,6 @@ enum LayoutRecorder {
             AppDelegate.logger.error("layout journal off: \(String(describing: error), privacy: .public)")
             return
         }
-        directory = dir
         let previous = LayoutJournal.readLaunch(in: dir)
         let named = dir.appendingPathComponent(LayoutJournal.journalName(previous.journalGeneration))
         let (read, journal) = LayoutJournal.check(try? Data(contentsOf: named),
@@ -40,8 +37,8 @@ enum LayoutRecorder {
         if case .invalid(let why) = read, previous.state != .clean {
             AppDelegate.logger.error("layout journal unusable, AppKit restores instead: \(why, privacy: .public)")
         }
-        generation = previous.journalGeneration
-        state = previous.state
+        let c = JournalCommitter(directory: dir, generation: previous.journalGeneration, state: previous.state)
+        committer = c
         if source == .journal {
             pending = journal
             // AppKit stays out of it entirely: a crash restore never mixes
@@ -49,15 +46,13 @@ enum LayoutRecorder {
             var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
             args["ApplePersistenceIgnoreState"] = true
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
-            state = .restoring
-            write(.init(state: .restoring, journalGeneration: generation))
+            io.sync { _ = c.setState(.restoring) }
         } else {
-            state = .dirty
-            write(.init(state: .dirty, journalGeneration: generation))
-            if read != .valid {
-                // An explicit empty journal: from now on a dirty state with
-                // no journal is damage, not a first run.
-                commit(LayoutJournal.Journal(generation: generation, windows: []), sync: true)
+            io.sync {
+                _ = c.setState(.dirty)
+                // An explicit empty journal when there is none to trust: from
+                // now on a dirty state with no valid journal is damage.
+                if read != .valid { c.commit(LayoutJournal.Journal(generation: 0, windows: [])) }
             }
         }
     }
@@ -65,8 +60,7 @@ enum LayoutRecorder {
     /// At `applicationDidFinishLaunching`: build the journal's windows, if it
     /// is the source, then start recording.
     static func finishLaunching(app: Tako.App) {
-        guard let dir = directory else { return }
-        _ = dir
+        guard let c = committer else { return }
         if source == .journal, let journal = pending {
             restore(journal, app: app)
             // AppKit is kept from restoring, not from saving: without this
@@ -75,8 +69,7 @@ enum LayoutRecorder {
             args.removeValue(forKey: "ApplePersistenceIgnoreState")
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
             // Still not clean: a crash from here restores from the journal again.
-            state = .dirty
-            write(.init(state: .dirty, journalGeneration: generation))
+            io.sync { _ = c.setState(.dirty) }
         }
         pending = nil
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
@@ -84,16 +77,25 @@ enum LayoutRecorder {
         }
     }
 
-    /// At `applicationWillTerminate`, after snapshots and session detach: the
-    /// last layout, written before `clean` is.
+    /// At `applicationWillTerminate`, after snapshots and session detach.
+    /// `clean` only if the final layout is on disk; otherwise the state
+    /// stays dirty and the next launch uses the last journal that was.
     static func finish() {
-        guard directory != nil else { return }
+        guard let c = committer else { return }
         timer?.invalidate()
         timer = nil
-        record(sync: true)
-        io.sync {}
-        state = .clean
-        write(.init(state: .clean, journalGeneration: generation))
+        let final = capture()
+        let clean = io.sync { c.finish(final) }
+        if !clean {
+            AppDelegate.logger.error("final layout not written; this quit is not recorded as clean")
+        }
+    }
+
+    /// Writes the layout if it changed since the last successful write.
+    static func record() {
+        guard let c = committer else { return }
+        let journal = capture()
+        io.async { c.commit(journal) }
     }
 
     // MARK: - Recording
@@ -121,48 +123,7 @@ enum LayoutRecorder {
                 selectedTab: selected,
                 tabs: tabs))
         }
-        return LayoutJournal.Journal(generation: generation, windows: windows)
-    }
-
-    /// Writes the layout if it changed since the last write.
-    static func record(sync: Bool = false) {
-        commit(capture(), sync: sync)
-    }
-
-    private static func commit(_ journal: LayoutJournal.Journal, sync: Bool) {
-        guard let dir = directory else { return }
-        var next = journal
-        // The generation is not part of what "changed" means.
-        next.generation = 0
-        guard let body = try? LayoutJournal.encode(next), body != lastWritten else { return }
-        lastWritten = body
-        let previousGeneration = generation
-        generation += 1
-        next.generation = generation
-        guard let data = try? LayoutJournal.encode(next) else { return }
-        let committed = generation
-        let launch = LayoutJournal.LaunchRecord(state: state, journalGeneration: committed)
-        let work = {
-            // The new generation's file whole first, then the record naming
-            // it, then the old file: every crash point names a whole file.
-            do {
-                try LayoutJournal.atomicWrite(data, to: dir.appendingPathComponent(LayoutJournal.journalName(committed)))
-                try LayoutJournal.writeLaunch(launch, in: dir)
-                unlink(dir.appendingPathComponent(LayoutJournal.journalName(previousGeneration)).path)
-            } catch {
-                AppDelegate.logger.error("layout journal write failed: \(String(describing: error), privacy: .public)")
-            }
-        }
-        if sync { io.sync(execute: work) } else { io.async(execute: work) }
-    }
-
-    private static func write(_ record: LayoutJournal.LaunchRecord) {
-        guard let dir = directory else { return }
-        io.sync {
-            do { try LayoutJournal.writeLaunch(record, in: dir) } catch {
-                AppDelegate.logger.error("launch state write failed: \(String(describing: error), privacy: .public)")
-            }
-        }
+        return LayoutJournal.Journal(generation: 0, windows: windows)
     }
 
     // MARK: - Restoring
@@ -174,9 +135,11 @@ enum LayoutRecorder {
             var anchor: NSWindow?
             var selected: NSWindow?
             for (index, tab) in entry.tabs.enumerated() {
+                // Every tab was checked to decode before this journal was
+                // chosen; a failure here would be a bug, not damage.
                 guard let data = try? JSONSerialization.data(withJSONObject: tab),
                       let state = try? decoder.decode(TerminalRestorableState.self, from: data) else {
-                    AppDelegate.logger.error("layout journal: a tab could not be decoded; skipped")
+                    AppDelegate.logger.fault("layout journal: a checked tab did not decode")
                     continue
                 }
                 let controller = TerminalController(app, withSurfaceTree: state.surfaceTree)
