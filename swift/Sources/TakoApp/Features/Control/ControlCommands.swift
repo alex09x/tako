@@ -1,4 +1,5 @@
 import AppKit
+import UserNotifications
 
 /// What `takoctl` requests do, on the main thread.
 @MainActor
@@ -138,6 +139,8 @@ enum ControlCommands {
                                     reply: reply)
             case "run":
                 try ControlCommand.run(beside: try target(request, all), args: request.args, reply: reply)
+            case "find":
+                find(try ControlInput.text(request.args), limit: request.args["limit"]?.number, reply: reply)
             default:
                 reply(handle(request))
             }
@@ -185,7 +188,14 @@ enum ControlCommands {
                 let surface = try target(request, all)
                 try ControlLayout.title(surface, try ControlInput.text(request.args, "title"))
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
-            case "text", "close", "last", "wait", "run":
+            case "dialog":
+                return .ok(try dialog(request.args))
+            case "notify":
+                let surface = try target(request, all)
+                try notify(surface, text: try ControlInput.text(request.args),
+                           title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } })
+                return .ok(["id": .string(surface.id.uuidString.lowercased())])
+            case "text", "close", "last", "wait", "run", "find":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")
@@ -194,6 +204,89 @@ enum ControlCommands {
             return .failure(error)
         } catch {
             return .failure(ControlError(.internalError, "\(error)"))
+        }
+    }
+
+    /// `takoctl find`: the Find in All Tabs search -- every terminal window's
+    /// panes, newest match first in each, bounded the same way -- with the
+    /// command that printed each match where the shell marked one.
+    static func find(_ needle: String, limit: Double?, reply: @escaping @Sendable (ControlResponse) -> Void) {
+        guard !needle.isEmpty else { return reply(.failure(ControlError(.invalid, "nothing to find"))) }
+        let cap = max(1, min(Int(limit ?? 50), CrossSessionSearch.limit))
+        let targets = CrossSessionSearch.openTerminals()
+        Task.detached(priority: .userInitiated) {
+            guard let found = await CrossSessionSearch.search(needle, in: targets) else {
+                return reply(.failure(ControlError(.internalError, "search cancelled")))
+            }
+            let matches: [JSON] = found.results.prefix(cap).map { result in
+                var match: [String: JSON] = [
+                    "id": .string(result.surfaceID.uuidString.lowercased()),
+                    "place": .string(result.place),
+                    "pane": result.pane.map(JSON.string) ?? .null,
+                    "line": .string(result.hit.before + result.hit.matched + result.hit.after),
+                    "matched": .string(result.hit.matched),
+                ]
+                if let heading = result.command {
+                    match["command"] = .object([
+                        "input": heading.commandLine.map(JSON.string) ?? .null,
+                        "status": .string(heading.outcomeText),
+                        "cwd": heading.directory.map(JSON.string) ?? .null,
+                    ])
+                }
+                return .object(match)
+            }
+            reply(.ok(["matches": .array(matches), "more": .bool(found.more || found.results.count > cap)]))
+        }
+    }
+
+    /// `takoctl dialog`: the questions Tako has up in its windows. With
+    /// `press`, answers the only one by pressing that button -- allowed only
+    /// with `remote-control = on`: a confirmation a script in a pane could
+    /// answer itself would not protect anything.
+    static func dialog(_ args: [String: JSON]) throws -> [String: JSON] {
+        let open: [(window: String, view: TerminalDialogView)] = TerminalController.all.compactMap { controller in
+            guard let window = controller.window, let view = TerminalDialogView.pending(in: window) else { return nil }
+            return ("window-\(ObjectIdentifier(Tako.CustomTabGroup.group(for: window)).hexString)", view)
+        }
+        guard case .string(let label)? = args["press"] else {
+            return ["dialogs": .array(open.map { item in
+                var summary = item.view.summary
+                summary["window"] = .string(item.window)
+                return .object(summary)
+            })]
+        }
+        guard mode == .on else {
+            throw ControlError(.disabled, "answering a question needs remote-control = on")
+        }
+        guard let only = open.first, open.count == 1 else {
+            throw ControlError(open.isEmpty ? .notFound : .ambiguous,
+                               open.isEmpty ? "no question is up" : "\(open.count) questions are up")
+        }
+        let summary = only.view.summary
+        guard only.view.press(label) else {
+            throw ControlError(.invalid, "no button \"\(label)\"; there are: \(summary["buttons"].map { "\($0.any)" } ?? "")")
+        }
+        return ["pressed": .string(label), "title": summary["title"] ?? .null]
+    }
+
+    /// `takoctl notify`: a system notification about `surface` -- titled
+    /// `title`, or the tab's title -- that brings the pane forward when
+    /// clicked, shown even while Tako is in front.
+    static func notify(_ surface: Tako.SurfaceView, text: String, title: String?) throws {
+        guard !text.isEmpty else { throw ControlError(.invalid, "nothing to say") }
+        let content = UNMutableNotificationContent()
+        let tabTitle = surface.window?.windowController.flatMap { ($0 as? BaseTerminalController)?.titleOverride }
+            ?? surface.window?.title
+        content.title = title ?? tabTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Tako"
+        content.body = text
+        content.userInfo = [Tako.notificationSurfaceKey: surface.id.uuidString,
+                            Tako.notificationFromControlKey: true]
+        guard let center = AppDelegate.notificationCenterProvider() else {
+            throw ControlError(.internalError, "notifications are unavailable")
+        }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }
     }
 

@@ -3,6 +3,11 @@ import Foundation
 import UserNotifications
 
 extension Tako {
+    /// User-info key naming the pane a notification is about (its id).
+    static let notificationSurfaceKey = "surface"
+    /// User-info key marking a notification `takoctl notify` posted.
+    static let notificationFromControlKey = "takoctl"
+
     /// Upstream's duration syntax: numbers with `ms`, `s`, `m` or `h`,
     /// combinable (`1m30s`); a bare number is seconds. Nil for anything else.
     static func parseDuration(_ text: String) -> Duration? {

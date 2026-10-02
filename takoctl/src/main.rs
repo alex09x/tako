@@ -31,6 +31,12 @@ commands:
   focus                   bring the pane forward and give it the keyboard
   title TEXT              the tab's title (empty restores the program's own)
   close                   close the pane, asking first when closing by hand would
+  notify TEXT             a system notification about the pane (--title T); clicking it
+                          brings the pane forward
+  find TEXT               search every open tab, as Find in All Tabs does (--limit N);
+                          each match with its pane and the command that printed it
+  dialog                  the questions Tako has up (title, text, buttons); --press LABEL
+                          presses a button (needs remote-control = on)
   last                    the pane's last command: its line, directory, exit status and output
   wait                    wait for the pane's running command to end, then print it as last
                           (--next: the next command; --timeout S: give up after S seconds)
@@ -93,6 +99,16 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--wait" => {
                 args.insert("wait".into(), Value::Bool(true));
             }
+            "--title" => {
+                args.insert("title".into(), Value::String(value("--title")?));
+            }
+            "--limit" => {
+                let n: u64 = value("--limit")?.parse().map_err(|_| "--limit needs a number".to_string())?;
+                args.insert("limit".into(), Value::from(n));
+            }
+            "--press" => {
+                args.insert("press".into(), Value::String(value("--press")?));
+            }
             "--split" => {
                 args.insert("split".into(), Value::String(value("--split")?));
             }
@@ -112,11 +128,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let cmd = cmd.ok_or_else(String::new)?;
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
-        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" => None,
+        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" => None,
         "run" => Some("command"),
         "split" => Some("direction"),
         "title" => Some("title"),
-        "send" | "type" => Some("text"),
+        "send" | "type" | "notify" | "find" => Some("text"),
         "key" => Some("key"),
         _ => return Err(format!("unknown command {cmd}")),
     };
@@ -187,11 +203,13 @@ fn render(cmd: &str, result: &Value) -> String {
             out.push('\n');
             out
         }
-        "send" | "type" | "key" | "focus" | "title" => String::new(),
+        "send" | "type" | "key" | "focus" | "title" | "notify" => String::new(),
         "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
         "run" if result.get("command").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "last" | "wait" | "run" => command_report(result),
+        "find" => find_report(result),
+        "dialog" => dialog_report(result),
         _ => format!("{result}\n"),
     }
 }
@@ -222,6 +240,68 @@ fn command_report(result: &Value) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Matches grouped as the panel groups them: by pane, then by the command
+/// that printed them.
+fn find_report(result: &Value) -> String {
+    let mut out = String::new();
+    let mut pane = None;
+    let mut command = None;
+    for m in result["matches"].as_array().into_iter().flatten() {
+        let id = m["id"].as_str().unwrap_or("");
+        if pane != Some(id) {
+            pane = Some(id);
+            command = None;
+            let label = match m["pane"].as_str() {
+                Some(p) => format!("{} -- {p}", m["place"].as_str().unwrap_or("")),
+                None => m["place"].as_str().unwrap_or("").to_string(),
+            };
+            out += &format!("{}  {label}\n", &id[..id.len().min(8)]);
+        }
+        let heading = m.get("command").map(|c| {
+            let mut h = format!("$ {}", c["input"].as_str().unwrap_or("(command line not reported)"));
+            h += &format!("   {}", c["status"].as_str().unwrap_or(""));
+            if let Some(cwd) = c["cwd"].as_str() {
+                h += &format!("   {cwd}");
+            }
+            h
+        });
+        if heading != command {
+            if let Some(h) = &heading {
+                out += &format!("  {h}\n");
+            }
+            command = heading;
+        }
+        out += &format!("    {}\n", m["line"].as_str().unwrap_or("").trim_end());
+    }
+    if out.is_empty() {
+        out = "no matches\n".into();
+    } else if result["more"].as_bool() == Some(true) {
+        out += "... more matches (--limit N)\n";
+    }
+    out
+}
+
+/// The questions up, each as its frame, text and buttons; or what was pressed.
+fn dialog_report(result: &Value) -> String {
+    if let Some(label) = result["pressed"].as_str() {
+        return format!("pressed {label} in \"{}\"\n", result["title"].as_str().unwrap_or(""));
+    }
+    let mut out = String::new();
+    for d in result["dialogs"].as_array().into_iter().flatten() {
+        out += &format!("{}  {}\n", d["window"].as_str().unwrap_or(""), d["title"].as_str().unwrap_or(""));
+        for line in d["text"].as_str().unwrap_or("").lines() {
+            out += &format!("  {line}\n");
+        }
+        let selected = d["selected"].as_str();
+        let buttons: Vec<String> = d["buttons"].as_array().into_iter().flatten()
+            .filter_map(Value::as_str)
+            .map(|b| if Some(b) == selected { format!("[{b}]") } else { b.to_string() })
+            .collect();
+        out += &format!("  buttons: {}\n", buttons.join("  "));
+    }
+    if out.is_empty() { "no question is up\n".into() } else { out }
 }
 
 /// How long to wait for the app's answer: a wait for as long as asked plus
@@ -390,6 +470,47 @@ mod tests {
         let result = json!({"command": {"input": "sleep 9", "running": true}, "output": "", "state": "timeout"});
         assert_eq!(command_report(&result), "$ sleep 9   still running (timed out waiting)\n");
         assert!(command_report(&json!({"command": null})).starts_with("no command"));
+    }
+
+    #[test]
+    fn notify_takes_its_text_and_a_title() {
+        let opts = parse(&args(&["notify", "build done", "--title", "CI"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "notify", "args": {"text": "build done", "title": "CI"}}));
+        assert!(parse(&args(&["notify"])).is_err());
+    }
+
+    #[test]
+    fn find_groups_matches_by_pane_and_command() {
+        let result = json!({"matches": [
+            {"id": "aaaaaaaa-1", "place": "tako -- tab 1 of 2", "pane": null, "line": "error: one",
+             "command": {"input": "make", "status": "✗ exit 2", "cwd": "/src"}},
+            {"id": "aaaaaaaa-1", "place": "tako -- tab 1 of 2", "pane": null, "line": "error: two",
+             "command": {"input": "make", "status": "✗ exit 2", "cwd": "/src"}},
+            {"id": "bbbbbbbb-2", "place": "logs", "pane": "pane 2 of 2", "line": "kernel error"}],
+            "more": true});
+        assert_eq!(find_report(&result), "\
+aaaaaaaa  tako -- tab 1 of 2
+  $ make   ✗ exit 2   /src
+    error: one
+    error: two
+bbbbbbbb  logs -- pane 2 of 2
+    kernel error
+... more matches (--limit N)
+");
+        assert_eq!(find_report(&json!({"matches": [], "more": false})), "no matches\n");
+        let opts = parse(&args(&["find", "panic", "--limit", "5"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "find", "args": {"text": "panic", "limit": 5}}));
+    }
+
+    #[test]
+    fn a_dialog_reads_with_its_buttons_and_the_chosen_one() {
+        let result = json!({"dialogs": [{"window": "window-1", "title": "Close Terminal?",
+            "text": "A process is running.", "buttons": ["Cancel", "Close"], "selected": "Close"}]});
+        assert_eq!(dialog_report(&result),
+            "window-1  Close Terminal?\n  A process is running.\n  buttons: Cancel  [Close]\n");
+        assert_eq!(dialog_report(&json!({"dialogs": []})), "no question is up\n");
+        let opts = parse(&args(&["dialog", "--press", "Later"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "dialog", "args": {"press": "Later"}}));
     }
 
     #[test]

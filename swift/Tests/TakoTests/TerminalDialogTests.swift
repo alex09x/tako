@@ -153,5 +153,21 @@ struct TerminalDialogTests {
         #expect(AppUpdater.noticeWindow(key: terminal, windows: [settings, terminal]) === terminal)
         #expect(AppUpdater.noticeWindow(key: settings, windows: [settings]) == nil)
     }
+
+    @Test func aQuestionDescribesItselfAndAButtonCanBePressedByName() async {
+        let window = window()
+        let asked = Task { await TerminalDialogView.ask(in: window, title: "Quit Tako?", message: "A process runs.",
+                                                        confirm: "Terminate", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        #expect(dialog.summary["title"] == .string("Quit Tako?"))
+        #expect(dialog.summary["text"] == .string("A process runs."))
+        #expect(dialog.summary["buttons"] == .array([.string("Cancel"), .string("Terminate")]))
+        #expect(dialog.summary["selected"] == .string("Terminate"))
+        #expect(!dialog.press("Nope"))
+        #expect(TerminalDialogView.pending(in: window) != nil)
+        #expect(dialog.press("cancel"))
+        #expect(await asked.value == false)
+    }
 }
 

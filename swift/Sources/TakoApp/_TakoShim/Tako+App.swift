@@ -146,8 +146,26 @@ extension Tako {
             surface.resetTerminal()
         }
 
-        public func handleUserNotification(response: UNNotificationResponse) {}
-        public func shouldPresentNotification(notification: UNNotification) -> Bool { false }
+        /// A notification names the pane it is about (`surface` in its
+        /// user info): clicking it brings that pane forward, if it is open.
+        public func handleUserNotification(response: UNNotificationResponse) {
+            guard let raw = response.notification.request.content.userInfo[Tako.notificationSurfaceKey] as? String,
+                  let id = UUID(uuidString: raw) else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let pane = ControlCommands.panes().first(where: { $0.surface.id == id }) else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    ControlLayout.focus(pane.surface)
+                }
+            }
+        }
+
+        /// While Tako is in front its own notifications stay quiet -- the
+        /// tab shows what happened -- except one a script posted on purpose
+        /// with `takoctl notify`.
+        public func shouldPresentNotification(notification: UNNotification) -> Bool {
+            notification.request.content.userInfo[Tako.notificationFromControlKey] as? Bool == true
+        }
 
         /// Completes an asynchronous clipboard read or paste operation.
         /// Upstream calls this callback after paste confirmation or clipboard retrieval.
@@ -1620,6 +1638,7 @@ extension Tako {
             }
             if actions.contains(.notify) {
                 let content = Tako.commandFinishContent(exitCode: exitCode, ran: ran, title: title)
+                content.userInfo = [Tako.notificationSurfaceKey: id.uuidString]
                 AppDelegate.notificationCenterProvider()?.add(
                     UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
             }

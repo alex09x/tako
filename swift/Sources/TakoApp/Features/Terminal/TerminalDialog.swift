@@ -68,6 +68,28 @@ final class TerminalDialogView: NSView {
     /// Takes the question back unanswered: the same as cancelling it.
     func withdraw() { answer(cancelIndex) }
 
+    /// The question as `takoctl dialog` shows it: title, body text, buttons
+    /// and the one chosen.
+    var summary: [String: JSON] {
+        [
+            "title": .string(title),
+            "text": .string(lines.map { line in
+                String(repeating: " ", count: line.indent) + line.runs.map(\.text).joined()
+            }.joined(separator: "\n")),
+            "buttons": .array(buttons.map { .string($0.title) }),
+            "selected": .string(buttons[selected].title),
+        ]
+    }
+
+    /// Presses the button titled `title` (case-insensitive), as a click
+    /// would. False when there is no such button.
+    func press(_ title: String) -> Bool {
+        guard let index = buttons.firstIndex(where: { $0.title.caseInsensitiveCompare(title) == .orderedSame })
+        else { return false }
+        answer(index)
+        return true
+    }
+
     private init(title: String, lines: [TUIText.Line], choices: [Choice], cancelIndex: Int, style: Style) {
         self.style = style
         self.title = title
