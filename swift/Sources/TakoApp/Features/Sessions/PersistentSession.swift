@@ -92,7 +92,7 @@ struct SessionNamespace: Equatable {
 /// The one copy of Tako allowed to drive a session: an flock on
 /// `<namespace>/<name>.owner`, held while this object lives. The kernel drops
 /// it when the process ends, however it ends.
-final class SessionOwnerLock {
+final class SessionOwnerLock: @unchecked Sendable {
     enum Failure: Error, Equatable {
         case heldElsewhere
         case unavailable(Int32)
@@ -175,6 +175,16 @@ struct SessionRecordStore {
 
     func remove(_ id: UUID) {
         try? FileManager.default.removeItem(at: url(for: id))
+    }
+
+    /// Every readable record.
+    func all() -> [SessionRecord] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "session" }.compactMap { url in
+            guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                  case .record(let record) = read(id) else { return nil }
+            return record
+        }
     }
 }
 

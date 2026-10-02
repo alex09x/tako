@@ -977,8 +977,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // needs quit confirmation. This lets us attach the confirmation to something
         // that is running.
         guard let confirmWindow = all
-            .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmQuit }) })?
-            .surfaceTree.first(where: { $0.needsConfirmQuit })?
+            .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmClose }) })?
+            .surfaceTree.first(where: { $0.needsConfirmClose })?
             .window
         else {
             closeAllWindowsImmediately()
@@ -1335,7 +1335,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             return
         }
 
-        guard surfaceTree.contains(where: { $0.needsConfirmQuit }) else {
+        guard surfaceTree.contains(where: { $0.needsConfirmClose }) else {
             closeTabImmediately()
             return
         }
@@ -1366,7 +1366,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             }
 
             // Check if any surfaces require confirmation
-            return controller.surfaceTree.contains(where: { $0.needsConfirmQuit })
+            return controller.surfaceTree.contains(where: { $0.needsConfirmClose })
         }) else {
             self.closeOtherTabsImmediately()
             return
@@ -1393,7 +1393,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 return false
             }
 
-            return controller.surfaceTree.contains(where: { $0.needsConfirmQuit })
+            return controller.surfaceTree.contains(where: { $0.needsConfirmClose })
         }
 
         if !needsConfirm {
@@ -1422,7 +1422,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let windows: [NSWindow] = Tako.CustomTabGroup.group(for: window).windows
         guard let confirmController = windows
             .compactMap({ $0.windowController as? TerminalController })
-            .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmQuit }) })
+            .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmClose }) })
         else {
             closeWindowImmediately()
             return

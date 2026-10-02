@@ -315,14 +315,23 @@ class QuickTerminalController: BaseTerminalController {
         animateOut()
     }
 
+    /// Every quick terminal surface -- the first and every split -- is
+    /// marked as one, and kept out of session persistence: the quick
+    /// terminal is not restored on relaunch, so a session kept for it would
+    /// outlive Tako with nothing to come back to.
+    static func surfaceConfiguration(_ base: Tako.SurfaceConfiguration?) -> Tako.SurfaceConfiguration {
+        var config = base ?? Tako.SurfaceConfiguration()
+        config.environmentVariables["TAKO_QUICK_TERMINAL"] = "1"
+        config.allowsSessionPersistence = false
+        return config
+    }
+
     override func newSplit(
         at oldView: Tako.SurfaceView,
         direction: SplitTree<Tako.SurfaceView>.NewDirection,
         baseConfig config: Tako.SurfaceConfiguration? = nil
     ) -> Tako.SurfaceView? {
-        var config = config ?? Tako.SurfaceConfiguration()
-        config.environmentVariables["TAKO_QUICK_TERMINAL"] = "1"
-        return super.newSplit(at: oldView, direction: direction, baseConfig: config)
+        return super.newSplit(at: oldView, direction: direction, baseConfig: Self.surfaceConfiguration(config))
     }
 
     // MARK: Methods
@@ -378,10 +387,7 @@ class QuickTerminalController: BaseTerminalController {
                     }
                 }
             } else {
-                var config = Tako.SurfaceConfiguration()
-                config.environmentVariables["TAKO_QUICK_TERMINAL"] = "1"
-
-                let view = Tako.SurfaceView(tako, baseConfig: config)
+                let view = Tako.SurfaceView(tako, baseConfig: Self.surfaceConfiguration(nil))
                 surfaceTree = SplitTree(view: view)
                 focusedSurface = view
             }

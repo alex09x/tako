@@ -17,6 +17,15 @@ final class SurfaceSession {
     /// This attempt's nonce while a reattach check has not been decided.
     fileprivate var attempt: String?
 
+    /// Set once quitting is confirmed: from then on clients are detached,
+    /// never their sessions ended. Read from any thread (a deinit).
+    nonisolated(unsafe) private static var detachingFlag = false
+    private static let detachingLock = NSLock()
+    nonisolated static var appIsDetaching: Bool {
+        get { detachingLock.withLock { detachingFlag } }
+        set { detachingLock.withLock { detachingFlag = newValue } }
+    }
+
     init(runtime: URL, namespace: SessionNamespace, name: String, owner: SessionOwnerLock,
          records: SessionRecordStore, record: SessionRecord) {
         self.runtime = runtime
@@ -27,10 +36,78 @@ final class SurfaceSession {
         self.record = record
     }
 
-    /// The client of a reattach check ends on its own when the session was
-    /// gone; that is part of the check, not the terminal closing.
+    /// The terminal's process ended. Handled here (true) when that is not
+    /// the terminal closing: a reattach check's client ends on its own,
+    /// clients end on purpose while Tako quits, and a client that ends on
+    /// its own may have left its session running -- that is found out first.
     func clientExited(_ surface: Tako.SurfaceView) -> Bool {
-        attempt != nil
+        if attempt != nil || Self.appIsDetaching { return true }
+        let runtime = self.runtime, name = self.name, env = environment
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak surface] in
+            let listed = RuntimeCommand.isListed(runtime, name: name, environment: env)
+            DispatchQueue.main.async {
+                guard let self, let surface, surface.persistence === self, surface.pty == nil || !(surface.pty?.alive ?? false)
+                else { return }
+                switch listed {
+                case false:
+                    // The shell ended (exit, Ctrl-D): so did the session.
+                    self.records.remove(self.record.id)
+                    self.ended = true
+                    surface.onExit?(surface)
+                case true:
+                    try? self.save(.detached)
+                    surface.awaitReconnect("Disconnected from this terminal's session; it is still running. Press Return to reconnect.")
+                case nil:
+                    surface.awaitReconnect("Could not tell whether this terminal's session is still running. Press Return to check again.")
+                }
+            }
+        }
+        return true
+    }
+
+    /// Set once ending the session is taken care of -- it is over, or an
+    /// Ending owns it -- so nothing starts a second one.
+    var ended = false
+
+    /// Every session object alive in this process, including those of
+    /// closed terminals still held for undo. Weak: it keeps nothing alive.
+    private static let live = NSHashTable<SurfaceSession>.weakObjects()
+
+    func register() { Self.live.add(self) }
+
+    /// The surface is gone for good -- closed, and past any undo that could
+    /// bring it back -- and Tako is not quitting: its session ends with it.
+    deinit {
+        guard !Self.appIsDetaching, !ended else { return }
+        Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
+               id: record.id, generation: record.generation, owner: owner).start()
+    }
+
+    /// Quitting is confirmed: open terminals let go of their sessions --
+    /// recorded as detached, clients ended -- while terminals already closed
+    /// (held only for undo, never coming back) have theirs ended first,
+    /// within a bound. After this no client exit closes a tab and no
+    /// session is ended.
+    static func detachAll(_ surfaces: [Tako.SurfaceView]) {
+        let open = Set(surfaces.compactMap { $0.persistence.map(ObjectIdentifier.init) })
+        // Terminals closed but still held for undo are not coming back:
+        // their sessions end now, like any closed terminal's.
+        for session in live.allObjects where !open.contains(ObjectIdentifier(session)) && !session.ended {
+            session.ended = true
+            Ending(session).start(reportFailure: false)
+        }
+        // Every ending still under way -- these, and those started earlier
+        // when an undo expired -- gets a bounded time to finish. Whatever
+        // has not finished is recorded so the next launch asks about it.
+        Ending.settleBeforeQuit(within: 4)
+        appIsDetaching = true
+        for surface in surfaces {
+            guard let session = surface.persistence else { continue }
+            if !session.ended { try? session.save(.detached) }
+            let client = surface.pty
+            surface.currentProcess = nil
+            client?.terminate()
+        }
     }
 
     var environment: [String: String] { namespace.environment }
@@ -40,6 +117,143 @@ final class SurfaceSession {
         next.state = state
         try records.write(next)
         record = next
+    }
+}
+
+/// Ending a closed terminal's session. It holds the owner lock until it is
+/// settled -- so no other copy of Tako can take the session over in between
+/// -- ends only the session it made (the record still names its generation),
+/// and removes the record only once the session is confirmed gone. Until
+/// then it stays registered: quitting waits for it, a failure is shown with
+/// a way to try again, and one left unsettled at quit is asked about on the
+/// next launch.
+final class Ending: @unchecked Sendable {
+    static let closedButRunning = "closed, but its session could not be ended"
+
+    let runtime: URL
+    let name: String
+    let environment: [String: String]
+    let records: SessionRecordStore
+    let id: UUID
+    let generation: String
+    let owner: SessionOwnerLock
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var pending: [ObjectIdentifier: Ending] = [:]
+    private let finished = DispatchSemaphore(value: 0)
+
+    init(runtime: URL, name: String, environment: [String: String], records: SessionRecordStore,
+         id: UUID, generation: String, owner: SessionOwnerLock) {
+        self.runtime = runtime
+        self.name = name
+        self.environment = environment
+        self.records = records
+        self.id = id
+        self.generation = generation
+        self.owner = owner
+    }
+
+    @MainActor convenience init(_ session: SurfaceSession) {
+        self.init(runtime: session.runtime, name: session.name, environment: session.namespace.environment,
+                  records: session.records, id: session.record.id, generation: session.record.generation,
+                  owner: session.owner)
+    }
+
+    static var pendingCount: Int { lock.withLock { pending.count } }
+
+    /// Registers this ending and runs it in the background.
+    func start(reportFailure: Bool = true) {
+        Self.lock.withLock { Self.pending[ObjectIdentifier(self)] = self }
+        DispatchQueue.global(qos: .utility).async { self.run(reportFailure: reportFailure) }
+    }
+
+    private func settle() {
+        _ = Self.lock.withLock { Self.pending.removeValue(forKey: ObjectIdentifier(self)) }
+        finished.signal()
+    }
+
+    /// True when the session is confirmed gone (or was never this ending's).
+    @discardableResult
+    func run(reportFailure: Bool = true) -> Bool {
+        if case .record(let record) = records.read(id), record.generation != generation {
+            settle()
+            return true
+        }
+        _ = RuntimeCommand.run(runtime, ["kill", name], environment: environment, timeout: 3)
+        if RuntimeCommand.isListed(runtime, name: name, environment: environment) == false {
+            records.remove(id)
+            settle()
+            return true
+        }
+        markClosedButRunning()
+        guard reportFailure else { return false }
+        DispatchQueue.main.async {
+            if Self.askAgain(self.name) {
+                DispatchQueue.global(qos: .utility).async { self.run() }
+            } else {
+                self.leaveRunning()
+            }
+        }
+        return false
+    }
+
+    /// The record says what is pending, so it survives the app ending.
+    private func markClosedButRunning() {
+        if case .record(var record) = records.read(id), record.generation == generation {
+            record.state = .error(Self.closedButRunning)
+            try? records.write(record)
+        }
+    }
+
+    /// The user chose to leave the session running: Tako forgets it.
+    func leaveRunning() {
+        records.remove(id)
+        settle()
+    }
+
+    @MainActor static func askAgain(_ name: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "A closed terminal is still running"
+        alert.informativeText = "Its session could not be ended. Try again, or leave it running -- Tako will then stop tracking it."
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "Leave It Running")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Quitting: waits up to `seconds` for every ending under way. Those
+    /// still unsettled are marked in their records; the next launch asks.
+    static func settleBeforeQuit(within seconds: TimeInterval) {
+        let deadline = DispatchTime.now() + seconds
+        for ending in lock.withLock({ Array(pending.values) }) {
+            if ending.finished.wait(timeout: deadline) == .timedOut {
+                ending.markClosedButRunning()
+            }
+        }
+    }
+
+    /// At launch: sessions of terminals closed before Tako last quit that
+    /// could not be ended. Each is asked about: end it, or leave it running.
+    @MainActor static func askAboutLeftovers(records: SessionRecordStore, registry: SessionRuntimeRegistry,
+                                             home: URL, openIDs: Set<UUID>) {
+        for record in records.all() where !openIDs.contains(record.id) {
+            guard case .error(let reason) = record.state, reason == closedButRunning else { continue }
+            let alert = NSAlert()
+            alert.messageText = "A terminal closed before Tako last quit is still running"
+            alert.informativeText = "Its session could not be ended then. End it now, or leave it running -- Tako will then stop tracking it."
+            alert.addButton(withTitle: "End It")
+            alert.addButton(withTitle: "Leave It Running")
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                records.remove(record.id)
+                continue
+            }
+            let name = SessionNamespace.sessionName(for: record.id)
+            guard let runtime = try? registry.executable(for: record.runtimeID),
+                  let namespace = try? SessionNamespace.open(runtimeID: record.runtimeID, home: home),
+                  let owner = try? SessionOwnerLock(namespace: namespace, name: name)
+            else { continue }   // Still marked: asked again next launch.
+            Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
+                   id: record.id, generation: record.generation, owner: owner).start()
+        }
     }
 }
 
@@ -134,6 +348,20 @@ enum RuntimeCommand {
 extension Tako.SurfaceView {
     var persistenceEnabled: Bool { app?.config.sessionPersistence ?? false }
 
+    /// Says what happened and waits for Return, which tries the session again.
+    func awaitReconnect(_ message: String) {
+        let old = pty
+        currentProcess = nil
+        pty = nil
+        old?.terminate()
+        sessionNotice(message)
+        sessionRetry = { [weak self] in
+            guard let self, let session = self.persistence else { return }
+            self.sessionRetry = nil
+            self.reattach(session, workingDir: nil, snapshot: nil)
+        }
+    }
+
     /// A line from Tako, not from the shell, in the terminal itself.
     func sessionNotice(_ text: String) {
         core.feed(bytes: Data("\r\n\u{1b}[33m[Tako] \(text)\u{1b}[0m\r\n".utf8))
@@ -154,6 +382,13 @@ extension Tako.SurfaceView {
 
         if restored && hadPersistentSession {
             self.hadPersistentSession = true
+            // Whatever stops it below can be tried again with Return.
+            sessionRetry = { [weak self] in
+                guard let self else { return }
+                self.sessionRetry = nil
+                self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: true,
+                                             hadPersistentSession: true)
+            }
             // Its own record first, and the runtime it pins -- the runtime
             // this Tako carries has no say over a session another one made.
             let record: SessionRecord
@@ -161,16 +396,18 @@ extension Tako.SurfaceView {
             case .record(let r):
                 record = r
             case .none:
-                sessionNotice("This terminal had a session, but its record is gone. Nothing was started; the session, if it still runs, is left alone.")
+                sessionNotice("This terminal had a session, but its record is gone. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")
                 return
             case .unreadable:
-                sessionNotice("This terminal's session record cannot be read. Nothing was started; the session, if it still runs, is left alone.")
+                sessionNotice("This terminal's session record cannot be read. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")
                 return
             }
             guard let opened = openSession(registry: registry, runtimeID: record.runtimeID, name: name) else { return }
             let session = SurfaceSession(runtime: opened.runtime, namespace: opened.namespace, name: name,
                                          owner: opened.owner, records: records, record: record)
+            sessionRetry = nil
             persistence = session
+            session.register()
             reattach(session, workingDir: workingDir, snapshot: snapshot)
             return
         }
@@ -194,6 +431,7 @@ extension Tako.SurfaceView {
         let session = SurfaceSession(runtime: opened.runtime, namespace: opened.namespace, name: name,
                                      owner: opened.owner, records: records, record: record)
         persistence = session
+        session.register()
         if let snapshot { showSnapshot(snapshot) }
         createSession(session, workingDir: workingDir)
     }
@@ -209,7 +447,7 @@ extension Tako.SurfaceView {
             let owner = try SessionOwnerLock(namespace: namespace, name: name)
             return (runtime, namespace, owner)
         } catch SessionOwnerLock.Failure.heldElsewhere {
-            sessionNotice("This session is open in another copy of Tako. Close it there to use it here.")
+            sessionNotice("This session is open in another copy of Tako. Close it there, then press Return here.")
         } catch {
             sessionNotice("This terminal's session cannot be reached (\(error)). Nothing was started.")
         }
@@ -263,7 +501,7 @@ extension Tako.SurfaceView {
     /// Reattach check: the client runs the runtime's attach with a sentinel
     /// in place of a shell, and the outcome is decided from labels, this
     /// attempt's marker and whether this attempt's own client still runs.
-    private func reattach(_ session: SurfaceSession, workingDir: String?, snapshot: SessionSnapshot?) {
+    fileprivate func reattach(_ session: SurfaceSession, workingDir: String?, snapshot: SessionSnapshot?) {
         let attempt = SessionRecord.newGeneration()
         session.attempt = attempt
         let sentinel = session.namespace.directory.appendingPathComponent("tako-sentinel.sh")
@@ -374,12 +612,17 @@ extension Tako.SurfaceView {
             pty = nil
             old?.terminate()
             try? session.save(.error(reason))
+            sessionRetry = { [weak self] in
+                guard let self, self.persistence === session else { return }
+                self.sessionRetry = nil
+                self.reattach(session, workingDir: workingDir, snapshot: snapshot)
+            }
             // After the old client's last bytes, so its closing reset cannot
             // wipe the only message the user gets.
             afterPendingOutput { [weak self] in
                 DispatchQueue.main.async {
                     guard let self, self.persistence === session, self.pty == nil else { return }
-                    self.sessionNotice("This terminal's session could not be checked (\(reason)). Nothing was started; the session, if it exists, is left running.")
+                    self.sessionNotice("This terminal's session could not be checked (\(reason)). Nothing was started; the session, if it exists, is left running. Press Return to try again.")
                 }
             }
         case .pending:

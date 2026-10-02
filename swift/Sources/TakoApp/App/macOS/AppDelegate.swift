@@ -231,6 +231,15 @@ class AppDelegate: NSObject,
         sessionSaver.start(
             settings: { [unowned self] in self.sessionSaveSettings() },
             surfaces: { Self.restorableSurfaces() })
+        // Sessions of terminals closed before the last quit that could not
+        // be ended then: asked about once windows are restored.
+        if tako.config.sessionPersistence {
+            DispatchQueue.main.async {
+                Ending.askAboutLeftovers(
+                    records: SessionPlaces.records, registry: SessionPlaces.registry, home: SessionPlaces.home,
+                    openIDs: Set(Self.restorableSurfaces().map(\.id)))
+            }
+        }
         // System settings overrides
         UserDefaults.tako.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
@@ -436,6 +445,9 @@ class AppDelegate: NSObject,
     func applicationWillTerminate(_ notification: Notification) {
         sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())
         sessionSaver.stop()
+        // Quitting is confirmed (a cancelled quit never gets here): persistent
+        // terminals let go of their sessions instead of ending them.
+        SurfaceSession.detachAll(Self.restorableSurfaces())
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
@@ -1339,7 +1351,7 @@ extension AppDelegate {
     func terminate() -> NSApplication.TerminateReply {
         let controllersNeedConfirmation = NSApplication.shared.windows
             .compactMap { $0.windowController as? BaseTerminalController }
-            .filter { !$0.windowCanBeClosedWithoutConfirmation() }
+            .filter { !$0.windowCanBeClosedWithoutConfirmation(quitting: true) }
 
         guard !controllersNeedConfirmation.isEmpty else {
             return .terminateNow

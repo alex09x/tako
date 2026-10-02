@@ -1216,7 +1216,9 @@ class BaseTerminalController: NSWindowController,
     // MARK: NSWindowDelegate
 
     /// Check whether window should be closed without showing an alert
-    func windowCanBeClosedWithoutConfirmation() -> Bool {
+    /// `quitting`: the app is quitting, which with persistent sessions ends
+    /// nothing; closing a window ends what runs in it.
+    func windowCanBeClosedWithoutConfirmation(quitting: Bool = false) -> Bool {
         // We must have a window. Is it even possible not to?
         guard let window = self.window else { return true }
 
@@ -1227,7 +1229,7 @@ class BaseTerminalController: NSWindowController,
         guard alert == nil else { return false }
 
         // If our surfaces don't require confirmation, close.
-        if !surfaceTree.contains(where: { $0.needsConfirmQuit }) { return true }
+        if !surfaceTree.contains(where: { quitting ? $0.needsConfirmQuit : $0.needsConfirmClose }) { return true }
 
         return false
     }

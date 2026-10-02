@@ -533,6 +533,87 @@ let scenarios: [Scenario] = [
         guard first != second else { throw Failure("the same shell after it was killed?") }
         guard !d.screenText().contains("[Tako]") else { throw Failure("an error was shown: \(d.screenText().suffix(300))") }
     }),
+    ("persist-close", "closing a persistent tab ends its session once undo has expired", { d in
+        d.quit()
+        let config = "session-persistence = true\nconfirm-close-surface = false\n"
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
+        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure("no shell pid")
+        }
+        d.key(Key.w, .maskCommand)
+        // Undo keeps a closed tab for 5 s; then it is released and its
+        // session ends with it.
+        guard d.wait(for: { kill(shell, 0) != 0 }, timeout: 15) else {
+            throw Failure("the shell \(shell) of the closed tab is still running")
+        }
+    }),
+    ("persist-close-asks", "closing a persistent tab asks first, and Cancel keeps its session", { d in
+        d.quit()
+        try d.launch(config: "session-persistence = true\n")
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
+        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure("no shell pid")
+        }
+        d.key(Key.w, .maskCommand)
+        usleep(1_500_000)
+        d.key(Key.escape)
+        usleep(7_000_000)          // past the undo window
+        guard kill(shell, 0) == 0 else { throw Failure("closing ended the session without asking") }
+        try d.run("echo still > \(d.path("still"))")
+        _ = try d.file("still")
+        try d.run("exit")
+    }),
+    ("persist-close-quit", "a tab closed just before quitting still has its session ended", { d in
+        d.quit()
+        let config = "session-persistence = true\nconfirm-close-surface = false\n"
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid1"))")
+        guard let kept = Int32(try d.file("pid1").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure("no shell pid")
+        }
+        // A second tab, closed (it has the keyboard), then quit at once --
+        // well inside its undo window.
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        guard let closed = Int32(try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines)),
+              closed != kept else {
+            throw Failure("no second shell")
+        }
+        d.key(Key.w, .maskCommand)
+        usleep(500_000)
+        try d.quitNormally()
+        guard d.wait(for: { kill(closed, 0) != 0 }, timeout: 8) else {
+            throw Failure("the closed tab's shell outlived the quit")
+        }
+        guard kill(kept, 0) == 0 else { throw Failure("the open tab's session did not survive the quit") }
+    }),
+    ("persist-cancel", "a cancelled quit leaves the persistent terminal working and its session alive", { d in
+        d.quit()
+        // With persistence a running command does not make quitting ask (it
+        // keeps running), so the confirmation is forced to have one to cancel.
+        let config = "session-persistence = true\nconfirm-close-surface = always\n"
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
+        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure("no shell pid")
+        }
+        try d.run("sleep 300")
+        usleep(800_000)
+        d.key(Key.q, .maskCommand)
+        usleep(1_500_000)
+        d.key(Key.escape)          // Cancel in the quit confirmation
+        usleep(1_000_000)
+        guard d.pid != 0, NSRunningApplication(processIdentifier: d.pid) != nil else {
+            throw Failure("Tako quit although the quit was cancelled")
+        }
+        d.key(Key.c, .maskControl)
+        try d.run("echo after > \(d.path("after"))")
+        _ = try d.file("after")
+        guard kill(shell, 0) == 0 else { throw Failure("the session's shell ended") }
+        try d.run("exit")
+    }),
     ("find-stale", "a match that changes, or a tab that closes, while it is being shown is reported where the user is", { d in
         // A long settle leaves time to change the target's output after it
         // has been brought forward and before the match is checked.
@@ -799,7 +880,7 @@ guard AXIsProcessTrusted() else {
 let wanted = Set(args.dropFirst())
 // Scenarios that need a build with the session runtime run only when named,
 // from scripts/e2e-persist.sh: never as part of the default set.
-let explicitOnly: Set<String> = ["persist-live", "persist-gone"]
+let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit"]
 // A misspelt name must not pass as a run of nothing.
 let unknown = wanted.subtracting(scenarios.map(\.name))
 if !unknown.isEmpty {

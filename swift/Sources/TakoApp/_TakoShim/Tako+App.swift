@@ -621,6 +621,9 @@ extension Tako {
         var isRestored = false
         /// The saved surface said its shell lived in a persistent session.
         var hadPersistentSession = false
+        /// False for terminals that are never restored (the quick terminal):
+        /// their shell is not put in a session that would outlive Tako.
+        var allowsSessionPersistence = true
 
         public init() {}
 
@@ -1493,6 +1496,12 @@ extension Tako {
 
         /// Every byte the key path produces goes through here.
         func writeToShell(_ bytes: [UInt8]) {
+            // A terminal waiting on its session (an error, a lost client)
+            // has no process: Return tries again; other keys go nowhere.
+            if pty == nil, let retry = sessionRetry {
+                if bytes.contains(0x0d) { retry() }
+                return
+            }
             if selfTestCapturing {
                 selfTestBytes += bytes
             } else {
@@ -1706,7 +1715,23 @@ extension Tako {
         /// set false; always when set always; otherwise while a program other
         /// than the shell holds the terminal -- the tty's foreground process
         /// group is not the shell's. That needs no shell integration.
+        /// Whether quitting should ask. With a persistent session quitting
+        /// ends nothing (the session keeps running), so only `always` asks.
         public var needsConfirmQuit: Bool {
+            if persistence != nil { return confirmCloseSurface == .always }
+            return needsConfirmEnding
+        }
+
+        /// Whether closing this terminal should ask -- closing ends its
+        /// process, or its persistent session. A session's own foreground
+        /// program cannot be seen from here, so with one Tako asks unless
+        /// told `never`.
+        var needsConfirmClose: Bool {
+            if persistence != nil { return confirmCloseSurface != .never }
+            return needsConfirmEnding
+        }
+
+        private var needsConfirmEnding: Bool {
             guard let pty, pty.alive else { return false }
             switch confirmCloseSurface {
             case .never:
@@ -1802,7 +1827,8 @@ extension Tako {
                 ?? app.map { Tako.resolvedWorkingDirectory($0.config) }
             setupCoreAndPty(workingDir: inherited, restoring: baseConfig?.restoredSnapshot,
                             restored: baseConfig?.isRestored ?? false,
-                            hadPersistentSession: baseConfig?.hadPersistentSession ?? false)
+                            hadPersistentSession: baseConfig?.hadPersistentSession ?? false,
+                            allowsPersistence: baseConfig?.allowsSessionPersistence ?? true)
             if let initial = baseConfig?.initialInput, !initial.isEmpty {
                 write(initial)
             }
@@ -1935,12 +1961,14 @@ extension Tako {
         }
 
         private func setupCoreAndPty(workingDir: String?, restoring snapshot: SessionSnapshot? = nil,
-                                     restored: Bool = false, hadPersistentSession: Bool = false) {
+                                     restored: Bool = false, hadPersistentSession: Bool = false,
+                                     allowsPersistence: Bool = true) {
+            let persistent = persistenceEnabled && allowsPersistence
             // A restored tab shows what it showed before, and only then does
             // its new shell start, so nothing the shell prints is overwritten.
             // With session-persistence the session decides: a live one paints
             // its own screen and the snapshot is shown only if it is gone.
-            if !persistenceEnabled, let snapshot {
+            if !persistent, let snapshot {
                 showSnapshot(snapshot)
             }
 
@@ -1990,7 +2018,7 @@ extension Tako {
                 Tako.TabBarController.refreshAll()
             }
 
-            if persistenceEnabled {
+            if persistent {
                 launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: restored,
                                         hadPersistentSession: hadPersistentSession)
             } else {
@@ -2154,6 +2182,9 @@ extension Tako {
         /// Encoded with the surface: whether its shell lived in a persistent
         /// session, so a restored terminal with no record of one is known to
         /// have lost it rather than never had it.
+        /// What Return does while the terminal waits on its session.
+        var sessionRetry: (() -> Void)?
+
         /// Set as soon as the terminal's shell is meant to live in a session
         /// -- and kept when reaching it fails, so the saved window still says so.
         var hadPersistentSession = false

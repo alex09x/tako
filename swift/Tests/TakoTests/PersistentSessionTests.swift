@@ -234,3 +234,142 @@ struct RuntimeCommandTests {
         #expect(RuntimeCommand.isListed(failing, name: "abc", environment: [:]) == nil)
     }
 }
+
+/// Ending a closed terminal's session, against stand-in runtimes.
+@Suite
+struct SessionEndingTests {
+    private func setUp(listing: String) throws -> (Ending, SessionRecordStore, URL, SessionNamespace) {
+        let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let runtime = root.appendingPathComponent("zmx")
+        // `kill` does nothing; `list` prints what the case says.
+        try Data("#!/bin/sh\n[ \"$1\" = list ] && printf '\(listing)'\nexit 0\n".utf8).write(to: runtime)
+        chmod(runtime.path, 0o755)
+        let ns = try SessionNamespace.open(runtimeID: "0.8.1-cc9574e03dfb2480", home: root)
+        let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
+        let id = UUID()
+        try records.write(SessionRecord(id: id, runtimeID: "0.8.1-cc9574e03dfb2480", generation: "gen1",
+                                        state: .attached, createdAt: Date()))
+        let owner = try SessionOwnerLock(namespace: ns, name: "abc")
+        let ending = Ending(runtime: runtime, name: "abc", environment: [:], records: records, id: id,
+                            generation: "gen1", owner: owner)
+        return (ending, records, root, ns)
+    }
+
+    @Test func aSessionConfirmedGoneTakesItsRecordWithIt() throws {
+        let (ending, records, root, _) = try setUp(listing: "")
+        defer { try? FileManager.default.removeItem(at: root) }
+        ending.run(reportFailure: false)
+        #expect(records.read(ending.id) == .none)
+    }
+
+    @Test func aSessionStillListedKeepsItsRecordMarked() throws {
+        let (ending, records, root, _) = try setUp(listing: "name=abc\\tpid=1\\n")
+        defer { try? FileManager.default.removeItem(at: root) }
+        ending.run(reportFailure: false)
+        guard case .record(let r) = records.read(ending.id) else { Issue.record("record gone"); return }
+        #expect(r.state == .error(Ending.closedButRunning))
+    }
+
+    @Test func aSessionAnotherGenerationMadeIsNotEnded() throws {
+        let (ending, records, root, _) = try setUp(listing: "")
+        defer { try? FileManager.default.removeItem(at: root) }
+        guard case .record(var r) = records.read(ending.id) else { return }
+        r.generation = "gen2"
+        try records.write(r)
+        ending.run(reportFailure: false)
+        #expect(records.read(ending.id) == .record(r))
+    }
+
+    @Test func theOwnerLockIsHeldUntilTheEndingIsDone() throws {
+        let (ending, _, root, ns) = try setUp(listing: "")
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(throws: SessionOwnerLock.Failure.heldElsewhere) { try SessionOwnerLock(namespace: ns, name: "abc") }
+        _ = ending
+    }
+
+    @Test func aFailedEndingStaysPendingUntilLeftRunning() throws {
+        let (ending, records, root, _) = try setUp(listing: "name=abc\\tpid=1\\n")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let before = Ending.pendingCount
+        ending.start(reportFailure: false)
+        Ending.settleBeforeQuit(within: 6)
+        // Not settled: still pending, and its record says so.
+        #expect(Ending.pendingCount == before + 1)
+        guard case .record(let r) = records.read(ending.id) else { Issue.record("record gone"); return }
+        #expect(r.state == .error(Ending.closedButRunning))
+        ending.leaveRunning()
+        #expect(Ending.pendingCount == before)
+        #expect(records.read(ending.id) == .none)
+    }
+
+    @Test func quittingWaitsForAnEndingUnderWay() throws {
+        // `kill` takes a second; the ending must be waited for and settle.
+        let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = root.appendingPathComponent("zmx")
+        try Data("#!/bin/sh\n[ \"$1\" = kill ] && sleep 1\nexit 0\n".utf8).write(to: runtime)
+        chmod(runtime.path, 0o755)
+        let ns = try SessionNamespace.open(runtimeID: "0.8.1-cc9574e03dfb2480", home: root)
+        let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
+        let id = UUID()
+        try records.write(SessionRecord(id: id, runtimeID: "0.8.1-cc9574e03dfb2480", generation: "g",
+                                        state: .attached, createdAt: Date()))
+        let ending = Ending(runtime: runtime, name: "abc", environment: [:], records: records, id: id,
+                            generation: "g", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
+        let before = Ending.pendingCount
+        ending.start(reportFailure: false)
+        Ending.settleBeforeQuit(within: 6)
+        #expect(Ending.pendingCount == before)
+        #expect(records.read(id) == .none)
+    }
+
+    @Test func leftoversAreFoundByTheirRecordState() throws {
+        let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
+        let left = SessionRecord(id: UUID(), runtimeID: "0.8.1-cc9574e03dfb2480", generation: "a",
+                                 state: .error(Ending.closedButRunning), createdAt: Date())
+        let other = SessionRecord(id: UUID(), runtimeID: "0.8.1-cc9574e03dfb2480", generation: "b",
+                                  state: .detached, createdAt: Date())
+        try records.write(left)
+        try records.write(other)
+        #expect(Set(records.all().map(\.id)) == [left.id, other.id])
+        #expect(records.all().filter { $0.state == .error(Ending.closedButRunning) }.map(\.id) == [left.id])
+    }
+}
+
+@Suite
+@MainActor
+struct SessionPersistenceScopeTests {
+    /// The quick terminal is never restored, so even with the setting on
+    /// its shell is not put in a session that would outlive Tako.
+    @Test func aTerminalThatIsNeverRestoredGetsNoSession() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).tako")
+        try "session-persistence = true\n".write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let app = Tako.App(configPath: url.path)
+        var config = Tako.SurfaceConfiguration()
+        config.allowsSessionPersistence = false
+        let surface = Tako.SurfaceView(app, baseConfig: config)
+        defer { surface.close() }
+
+        #expect(surface.persistence == nil)
+        #expect(!surface.hadPersistentSession)
+        #expect(surface.pty != nil)
+    }
+}
+
+extension SessionPersistenceScopeTests {
+    /// Every way the quick terminal makes a surface goes through one policy.
+    @Test func everyQuickTerminalSurfaceIsKeptOutOfPersistence() {
+        #expect(!QuickTerminalController.surfaceConfiguration(nil).allowsSessionPersistence)
+        var split = Tako.SurfaceConfiguration()
+        split.workingDirectory = "/tmp"
+        let made = QuickTerminalController.surfaceConfiguration(split)
+        #expect(!made.allowsSessionPersistence)
+        #expect(made.workingDirectory == "/tmp")
+        #expect(made.environmentVariables["TAKO_QUICK_TERMINAL"] == "1")
+    }
+}
