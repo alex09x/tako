@@ -125,6 +125,14 @@ def notarize(path, what, staple=None):
         # Not a refusal: Apple has not answered yet, and the submission goes on.
         sub = resume or next((l.split(":", 1)[1].strip() for l in r.stdout.splitlines()
                               if l.strip().startswith("id:")), "")
+        if what != "the app":
+            # Only the app's submission can be resumed by a rerun: a rerun
+            # builds a new file, whose ticket would not be this one. The file
+            # submitted is still here -- finish it in place.
+            sys.exit(f"Apple has not finished checking {what} yet -- nothing was refused.\n"
+                     f"Wait for it and staple the file that was sent:\n"
+                     f"  xcrun notarytool wait {sub} {' '.join(profile_args())}\n"
+                     f"  xcrun stapler staple {path}")
         sys.exit(f"Apple has not finished checking {what} yet -- nothing was refused.\n"
                  f"Wait for it and go on with:  TAKO_NOTARY_SUBMISSION={sub} python3 scripts/release-macapp.py")
     if r.returncode != 0 or "status: Accepted" not in r.stdout:
