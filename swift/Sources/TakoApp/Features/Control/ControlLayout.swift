@@ -74,8 +74,13 @@ enum ControlLayout {
         try controller(of: surface).titleOverride = title.isEmpty ? nil : title
     }
 
-    /// How long a close may wait for the user to answer its question.
-    static let closeWait: TimeInterval = 60
+    /// How long a close may wait for the user to answer its question: well
+    /// inside takoctl's own 30 s, so the client always hears the outcome --
+    /// never a timeout while the question is still up. TAKO_CLOSE_WAIT
+    /// (seconds) shortens it for a test.
+    static var closeWait: TimeInterval {
+        ProcessInfo.processInfo.environment["TAKO_CLOSE_WAIT"].flatMap(Double.init).map { min($0, 20) } ?? 20
+    }
 
     /// Closes the pane the way closing it by hand does: asking first exactly
     /// when that would (a running process), never skipping a persistent

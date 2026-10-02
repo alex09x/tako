@@ -696,6 +696,31 @@ let scenarios: [Scenario] = [
             throw Failure("closing a gone pane: \(try d.file("close3"))")
         }
     }),
+    ("ctl-close-wait", "a close nobody answers is withdrawn and reported cancelled; a late Return closes nothing", { d in
+        d.quit()
+        d.environment = ["TAKO_CLOSE_WAIT": "3"]
+        defer { d.environment = [:] }
+        try d.launch()
+        let out = d.work.path
+        try """
+        b=$(takoctl split right) || exit 1
+        echo "$b" > \(out)/b
+        takoctl send "sleep 300" --target "$b"
+        sleep 1
+        takoctl close --target "$b" > \(out)/c
+        takoctl focus --target "$TAKO_SURFACE_ID"
+        echo $? > \(out)/c.rc
+        """.write(toFile: d.path("cw.sh"), atomically: true, encoding: .utf8)
+        try d.run("sh \(d.path("cw.sh"))")
+        _ = try d.file("c.rc", timeout: 15)
+        guard try d.file("c").contains("cancelled") else { throw Failure("answer: \(try d.file("c"))") }
+        // The question is gone: Return now must not close the pane.
+        d.key(Key.returnKey)
+        usleep(1_000_000)
+        let b = try d.file("b").trimmingCharacters(in: .whitespacesAndNewlines)
+        try d.run("takoctl tree --json > \(d.path("tree"))")
+        guard try d.file("tree").contains(b) else { throw Failure("a late Return closed \(b)") }
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
