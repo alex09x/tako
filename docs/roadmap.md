@@ -100,10 +100,10 @@ across every open tab grouped by command. A script or a coding agent running in 
 address its own pane by id instead of whatever the user has selected.
 
 It works only on this Mac, over a socket only the user can open, and nothing is exposed over the
-network. Any program running as that user can use it, as it can already read and type into the
-user's terminals, so the setting is about convenience, not isolation: by default the tool accepts
-requests made from inside a Tako pane, it can be opened to scripts started elsewhere, and it can be
-turned off entirely.
+network. Any process running as this user that can open the socket can read terminal contents and
+send input. By default the tool accepts requests made from inside a Tako pane; that checks where a
+request comes from and is not a security boundary. It can be opened to scripts started elsewhere,
+and it can be turned off entirely.
 
 Done when a script can build a layout, run a command in a new pane, wait for it to finish and read
 its exit status and output, without touching the keyboard; when a request names a pane that is gone
