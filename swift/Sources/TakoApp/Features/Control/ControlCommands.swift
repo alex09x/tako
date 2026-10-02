@@ -137,7 +137,12 @@ enum ControlCommands {
             case "run":
                 try ControlCommand.run(request, beside: try target(request, all), reply: reply)
             case "find":
-                find(try ControlInput.text(request.args), limit: request.args["limit"]?.number, reply: reply)
+                find(try ControlInput.text(request.args), limit: try findLimit(request.args), reply: reply)
+            case "notify":
+                let surface = try target(request, all)
+                try notify(surface, text: try ControlInput.text(request.args),
+                           title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } },
+                           reply: reply)
             default:
                 reply(handle(request))
             }
@@ -187,12 +192,7 @@ enum ControlCommands {
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "dialog":
                 return .ok(try dialog(request.args))
-            case "notify":
-                let surface = try target(request, all)
-                try notify(surface, text: try ControlInput.text(request.args),
-                           title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } })
-                return .ok(["id": .string(surface.id.uuidString.lowercased())])
-            case "text", "close", "last", "wait", "run", "find":
+            case "text", "close", "last", "wait", "run", "find", "notify":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")
@@ -207,9 +207,23 @@ enum ControlCommands {
     /// `takoctl find`: the Find in All Tabs search -- every terminal window's
     /// panes, newest match first in each, bounded the same way -- with the
     /// command that printed each match where the shell marked one.
-    static func find(_ needle: String, limit: Double?, reply: @escaping @Sendable (ControlResponse) -> Void) {
+    /// `limit` for find: a whole number from 1 to the panel's own limit.
+    static func findLimit(_ args: [String: JSON]) throws -> Int {
+        let refused = ControlError(.invalid, "\"limit\" must be a whole number from 1 to \(CrossSessionSearch.limit)")
+        switch args["limit"] {
+        case nil, .null?: return 50
+        case .number(let n)?:
+            guard n.isFinite, let limit = Int(exactly: n), (1...CrossSessionSearch.limit).contains(limit) else {
+                throw refused
+            }
+            return limit
+        default:
+            throw refused
+        }
+    }
+
+    static func find(_ needle: String, limit cap: Int, reply: @escaping @Sendable (ControlResponse) -> Void) {
         guard !needle.isEmpty else { return reply(.failure(ControlError(.invalid, "nothing to find"))) }
-        let cap = max(1, min(Int(limit ?? 50), CrossSessionSearch.limit))
         let targets = CrossSessionSearch.openTerminals()
         Task.detached(priority: .userInitiated) {
             guard let found = await CrossSessionSearch.search(needle, in: targets) else {
@@ -269,7 +283,10 @@ enum ControlCommands {
     /// `takoctl notify`: a system notification about `surface` -- titled
     /// `title`, or the tab's title -- that brings the pane forward when
     /// clicked, shown even while Tako is in front.
-    static func notify(_ surface: Tako.SurfaceView, text: String, title: String?) throws {
+    /// Answered once the notification is with the system -- or with why it
+    /// is not: notifications not allowed for Tako, or not accepted.
+    static func notify(_ surface: Tako.SurfaceView, text: String, title: String?,
+                       reply: @escaping @Sendable (ControlResponse) -> Void) throws {
         guard !text.isEmpty else { throw ControlError(.invalid, "nothing to say") }
         let content = UNMutableNotificationContent()
         let tabTitle = surface.window?.windowController.flatMap { ($0 as? BaseTerminalController)?.titleOverride }
@@ -281,9 +298,20 @@ enum ControlCommands {
         guard let center = AppDelegate.notificationCenterProvider() else {
             throw ControlError(.internalError, "notifications are unavailable")
         }
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        let id = surface.id.uuidString.lowercased()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            guard granted else {
+                return reply(.failure(ControlError(.disabled,
+                    "notifications are not allowed for Tako (System Settings → Notifications)"
+                        + (error.map { ": \($0.localizedDescription)" } ?? ""))))
+            }
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
+                if let error {
+                    reply(.failure(ControlError(.internalError, "not posted: \(error.localizedDescription)")))
+                } else {
+                    reply(.ok(["id": .string(id)]))
+                }
+            }
         }
     }
 

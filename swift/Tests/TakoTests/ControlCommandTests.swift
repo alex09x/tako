@@ -50,4 +50,13 @@ struct ControlCommandTests {
         #expect(ControlCommand.path(fromReported: "file://host/Users/a%20b") == "/Users/a b")
         #expect(ControlCommand.path(fromReported: "/already/a/path") == "/already/a/path")
     }
+
+    @Test func aFindLimitOutsideItsRangeIsRefused() {
+        for bad: JSON in [.number(1.8446744073709552e19), .number(0), .number(1.5), .number(-3), .string("9")] {
+            #expect(throws: ControlError.self) { try ControlCommands.findLimit(["limit": bad]) }
+        }
+        #expect((try? ControlCommands.findLimit([:])) == 50)
+        #expect((try? ControlCommands.findLimit(["limit": .number(7)])) == 7)
+    }
 }
+
