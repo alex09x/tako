@@ -42,7 +42,7 @@ python3 scripts/swift-coverage-gate.py --module TakoCoreUI --module TakoKit --mo
     --module TakoApp/Features/Services --module TakoApp/Features/Splits \\
     --module TakoApp/Features/About --module TakoApp/Features/Settings \\
     --module TakoApp/Features/ClipboardConfirmation --module 'TakoApp/Features/Custom App Icon' \\
-    --module 'TakoApp/Features/Command Palette' --module TakoApp/Features/AppleScript \\
+    --module 'TakoApp/Features/Command Palette' \\
     --module TakoApp/App --module TakoApp/Features/Terminal" ;;
         apps) script+="
 echo '== apps'

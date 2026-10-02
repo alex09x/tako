@@ -6,7 +6,7 @@ that draws it with Metal, and two apps on top.
 ```
  macOS app (swift/Sources/TakoApp)          iOS app (swift/Sources/iOSApp)
  windows, tabs, splits, quick terminal,     session list, SSH forms,
- AppleScript                                 key row, host-key prompts
+ takoctl control socket                      key row, host-key prompts
         |                                          |
  Tako.* adapter (_TakoShim) + TakoKit               |
         |                                          |

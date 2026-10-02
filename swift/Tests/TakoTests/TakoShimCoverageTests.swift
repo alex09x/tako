@@ -152,10 +152,6 @@ struct ConfigDefaultsCoverageTests {
         #expect(config.secureInputIndication == true)
     }
 
-    @Test func macosAppleScriptDefaultsToTrue() throws {
-        let config = try TemporaryConfig("")
-        #expect(config.macosAppleScript == true)
-    }
 
     @Test func abnormalCommandExitRuntimeDefault() throws {
         let config = try TemporaryConfig("")

@@ -877,10 +877,6 @@ extension Tako {
             rawBool("macos-secure-input-indication", default: true)
         }
 
-        /// AppleScript / Automation support on macOS.
-        ///
-        /// WHY: macOS automation interfaces are enabled by default.
-        var macosAppleScript: Bool { true }
 
         /// Whether double-clicking titlebar maximizes window height/width.
         ///

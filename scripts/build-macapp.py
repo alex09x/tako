@@ -189,7 +189,6 @@ for d, _, fs in os.walk("swift/Sources/TakoApp"):
             run(["ibtool", "--compile",
                  os.path.join(res, f[:-4] + ".nib"), os.path.join(d, f)],
                 f"compile {f}")
-shutil.copy("swift/Resources/Tako.sdef", os.path.join(res, "Tako.sdef"))
 # MIT requires the copyright notices to travel with every copy.
 shutil.copy("LICENSE", os.path.join(res, "LICENSE"))
 shutil.copy(os.path.join(BUILD, "default.metallib"), os.path.join(res, "default.metallib"))
@@ -227,8 +226,6 @@ with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
         "NSMainNibFile": "MainMenu",
         "ATSApplicationFontsPath": "fonts",
         "CFBundleIconFile": "AppIcon.icns",
-        "NSAppleScriptEnabled": True,
-        "OSAScriptingDefinition": "Tako.sdef",
         "NSHumanReadableCopyright": COPYRIGHT,
     }, f)
 

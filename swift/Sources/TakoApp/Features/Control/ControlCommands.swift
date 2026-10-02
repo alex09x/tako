@@ -79,8 +79,8 @@ enum ControlCommands {
                 tabID = "quick-terminal"
             } else {
                 guard let window = controller.window else { continue }
-                windowID = ScriptWindow.stableID(tabGroup: Tako.CustomTabGroup.group(for: window))
-                tabID = ScriptTab.stableID(controller: controller)
+                windowID = "window-\(ObjectIdentifier(Tako.CustomTabGroup.group(for: window)).hexString)"
+                tabID = "tab-\(ObjectIdentifier(controller).hexString)"
             }
             for surface in controller.surfaceTree {
                 result.append(Pane(surface: surface, windowID: windowID, tabID: tabID))

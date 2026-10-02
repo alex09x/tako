@@ -51,7 +51,7 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 
 - **Native macOS Experience**:
   - Native tabs, split panes (horizontal & vertical), Quick Terminal dropdown.
-  - Native AppleScript dictionary (`Tako.sdef`).
+  - Scriptable from the command line: `takoctl` drives tabs, splits, input and output over a local socket.
   - Window transparency and customizable titlebar styling.
 
 - **Cross-Platform Swift Component**:
