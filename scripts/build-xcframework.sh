@@ -20,7 +20,9 @@ for arg in "$@"; do
     esac
 done
 
-if [ "$IOS_ONLY" -eq 1 ]; then
+if [ "$MACOS_ONLY" -eq 1 ]; then
+    echo "🚀 Starting macOS-only build for TakoCore.xcframework (host tests, not shippable)..."
+elif [ "$IOS_ONLY" -eq 1 ]; then
     echo "🚀 Starting iOS-only build for TakoCore.xcframework..."
 else
     echo "🚀 Starting production macOS (arm64) & iOS build for TakoCore.xcframework..."
@@ -37,6 +39,12 @@ echo "🔨 Compiling release builds..."
 # generated from it below, and generating them from a stale copy would ship
 # bindings that no longer match the iOS libraries. arm64 only, deliberately:
 # a universal slice more than doubles the release asset.
+if [ "$MACOS_ONLY" -eq 1 ]; then
+    TRIPLES="aarch64-apple-darwin"
+else
+    TRIPLES="aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim"
+fi
+python3 scripts/engine_fingerprint.py before-cargo $TRIPLES
 MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --lib --features ssh --target aarch64-apple-darwin
 if [ "$MACOS_ONLY" -ne 1 ]; then
 IPHONEOS_DEPLOYMENT_TARGET=17.0 cargo build --release --lib --features ssh --target aarch64-apple-ios
@@ -127,5 +135,11 @@ with INFO_PLIST.open("wb") as handle:
     plistlib.dump(plist, handle, fmt=plistlib.FMT_XML, sort_keys=True)
 PY
 
+# Recorded only now that every step built from these sources succeeded.
+python3 scripts/engine_fingerprint.py after-cargo $TRIPLES
+python3 scripts/engine_fingerprint.py write TakoCore.xcframework
+if [ "$IOS_ONLY" -ne 1 ]; then
+    python3 scripts/engine_fingerprint.py write target/macos/libtako_core.a
+fi
 echo "✅ TakoCore.xcframework built successfully!"
 echo "ℹ️  Generated Swift sources are in target/bindings/*.swift and swift/Sources/TakoCoreUI/Generated/tako_core.swift"

@@ -23,12 +23,14 @@ cd "$(dirname "$0")/../swift"
 # would otherwise test the Swift code against an old engine, or fail to link
 # a newly added FFI method. build-xcframework.sh also refreshes the macOS test
 # library and the generated bindings.
+# Stale unless built from exactly these engine sources (by content; see
+# scripts/engine_fingerprint.py for why not timestamps).
 stale() {
-    [ ! -e "$1" ] || [ -n "$(find ../src ../Cargo.toml ../Cargo.lock -newer "$1" -print -quit)" ]
+    ! python3 ../scripts/engine_fingerprint.py check "$1"
 }
 # Tests here link the macOS slice only; building the iOS slices too would
 # only make an engine change wait for two more cross-compiles.
-if stale ../TakoCore.xcframework; then ../scripts/build-xcframework.sh --macos-only; fi
-if stale ../target/macos/libtako_core.a; then ../scripts/build-macos-testlib.sh; fi
+if stale TakoCore.xcframework; then ../scripts/build-xcframework.sh --macos-only; fi
+if stale target/macos/libtako_core.a; then ../scripts/build-macos-testlib.sh; fi
 
 exec swift test --no-parallel -Xlinker -L../target/macos -Xlinker -ltako_core -Xcc -I../target/bindings "$@"

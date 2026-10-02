@@ -40,7 +40,7 @@ echo "$CMD_B64" | base64 -D > "$RUN.cmd"
 cat > "$RUN.sync" <<'SYNC'
 set -e
 mkdir -p "$DIR" && cd "$DIR"
-find . -mindepth 1 -maxdepth 1 ! -name target ! -name swift ! -name TakoCore.xcframework ! -name TakoCore.xcframework.macos-only -exec rm -rf {} +
+find . -mindepth 1 -maxdepth 1 ! -name target ! -name swift ! -name TakoCore.xcframework ! -name TakoCore.xcframework.macos-only ! -name TakoCore.xcframework.inputs -exec rm -rf {} +
 if [ -d swift ]; then find swift -mindepth 1 -maxdepth 1 ! -name .build -exec rm -rf {} +; fi
 tar -xf -
 cd - >/dev/null

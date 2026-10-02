@@ -66,15 +66,17 @@ def check_rust(name):
 
 def host_framework():
     """The macOS slice the Swift package links, rebuilt only when the engine changed."""
-    stale = not os.path.exists("TakoCore.xcframework") or subprocess.run(
-        ["find", "src", "Cargo.toml", "Cargo.lock", "-newer", "TakoCore.xcframework", "-print", "-quit"],
-        capture_output=True, text=True).stdout.strip()
+    def stale(artifact):
+        # By content, not timestamps: see scripts/engine_fingerprint.py.
+        # The build scripts themselves make cargo see changed content.
+        return subprocess.run(["python3", "scripts/engine_fingerprint.py", "check", artifact]).returncode != 0
+
     secs = 0.0
-    if stale:
+    if stale("TakoCore.xcframework"):
         secs, code, _ = run(["scripts/build-xcframework.sh", "--macos-only"])
         if code != 0:
             return None
-    if not os.path.exists("target/macos/libtako_core.a"):
+    if stale("target/macos/libtako_core.a"):
         s, code, _ = run(["scripts/build-macos-testlib.sh"])
         secs += s
         if code != 0:

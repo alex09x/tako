@@ -22,3 +22,5 @@ target/simtest/
 # Swift compiler dependency data
 *.swiftdeps
 __pycache__/
+TakoCore.xcframework.inputs
+TakoCore.xcframework.macos-only

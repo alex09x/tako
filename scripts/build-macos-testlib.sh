@@ -11,6 +11,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "🔨 Compiling release build (aarch64-apple-darwin)..."
+python3 scripts/engine_fingerprint.py before-cargo aarch64-apple-darwin
 MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release --lib --features ssh --target aarch64-apple-darwin
 
 echo "🧬 Staging target/macos/libtako_core.a..."
@@ -22,6 +23,8 @@ lipo -create -output target/macos/libtako_core.a \
 
 echo "🔗 Generating Swift bindings via UniFFI..."
 ./scripts/bindings.sh --force
+python3 scripts/engine_fingerprint.py after-cargo aarch64-apple-darwin
+python3 scripts/engine_fingerprint.py write target/macos/libtako_core.a
 
 # Clang/SwiftPM only auto-discovers a module map under the conventional
 # filename, so the staged header directory carries both names -- exactly as
