@@ -41,8 +41,8 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
     the new shell is never presented as the old one.
   - Find in All Tabs (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>) searches every open
     terminal's history and jumps to the match. Where the shell marks its commands (shell
-    integration), matches are grouped under the command that printed them, with what the shell
-    reported: exit status, directory, and the time it started.
+    integration), matches are grouped under the command that printed them, with the exit status
+    and directory the shell reported, and the start time Tako recorded.
   - A long command that finishes or fails while you are elsewhere marks its tab and can send a
     notification.
   - Experimental: `session-persistence = true` keeps each shell running across a quit and
