@@ -306,6 +306,11 @@ if os.environ.get("TAKO_WITH_ZMX") == "1" or RELEASE:
     for notice in ("LICENSE-zmx", "LICENSE-ghostty"):
         shutil.copy2(os.path.join(os.path.dirname(built), notice), os.path.join(licenses, notice))
 
+# takoctl is an executable of its own inside the bundle: notarization
+# wants every one signed, with the hardened runtime and a timestamp, by the
+# same team -- before the app's signature seals it.
+run(cmd + [os.path.join(macos, "takoctl")], "sign takoctl")
+
 run(cmd + [APP], "sign app")
 
 print(f"built {APP} {VERSION} ({BUILD_NUMBER})")

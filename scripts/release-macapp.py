@@ -107,8 +107,10 @@ def version_of(app):
     return p["CFBundleShortVersionString"], p["CFBundleVersion"]
 
 
-def notarize(path, what):
-    """Submit, wait, and fail loudly with Apple's reasons if it is rejected."""
+def notarize(path, what, staple=None):
+    """Submit, wait, and fail loudly with Apple's reasons if it is rejected.
+    Then staple the ticket to `staple` (default: `path`) -- a ZIP cannot take
+    one, so for a ZIP it is the app inside."""
     step(f"notarizing {what} -- Apple decides this, so it takes minutes")
     r = subprocess.run(
         ["xcrun", "notarytool", "submit", path,
@@ -128,7 +130,9 @@ def notarize(path, what):
                             *profile_args()])
         print(r.stderr[-4000:])
         sys.exit(f"notarization refused for {what}")
-    run(["xcrun", "stapler", "staple", path], f"staple {what}")
+    target = staple or path
+    run(["xcrun", "stapler", "staple", target], f"staple {what}")
+    run(["xcrun", "stapler", "validate", target], f"validate {what}")
 
 
 def main():
@@ -142,8 +146,12 @@ def main():
     step("archiving the app for submission")
     run(["ditto", "-c", "-k", "--keepParent", APP, zip_path], "archive app")
 
-    notarize(zip_path, "the app")
+    # Apple notarizes the ZIP but staples the app in it; the ZIP that ships
+    # is made again from the stapled app, so it carries the ticket too.
+    notarize(zip_path, "the app", staple=APP)
     os.remove(zip_path)
+    step("archiving the stapled app for release")
+    run(["ditto", "-c", "-k", "--keepParent", APP, zip_path], "archive stapled app")
 
     # The disk image is built from the now-stapled app, so the copy a user
     # drags to Applications carries Apple's approval with it.
@@ -177,11 +185,13 @@ def main():
     notarize(dmg, "the disk image")
 
     step("verifying the way Gatekeeper will")
-    run(["spctl", "-a", "-vvv", "-t", "install", APP], "assess app")
+    run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", APP], "verify signatures")
+    run(["spctl", "-a", "-vvv", "-t", "exec", APP], "assess app")
     run(["xcrun", "stapler", "validate", dmg], "validate dmg")
 
     size = os.path.getsize(dmg) / (1024 * 1024)
     print(f"\n{dmg} -- {size:.1f} MB, notarized and stapled")
+    print(f"{zip_path} -- the stapled app, for the release and the updater")
     print("This opens on a Mac that has never seen it, with no right-click "
           "and no Gatekeeper prompt.")
 
