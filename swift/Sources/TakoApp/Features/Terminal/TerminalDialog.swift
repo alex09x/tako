@@ -1,63 +1,63 @@
 import AppKit
 
-/// A confirmation drawn inside the terminal window instead of a macOS sheet,
-/// the way a terminal UI draws one: the terminal dims, and a card on the cell
-/// grid, in the terminal's font and the colours of its theme's palette,
-/// asks the question --
+/// A question drawn inside the terminal window instead of a macOS sheet or
+/// alert, the way a terminal UI draws one: the terminal dims, and a card on
+/// the cell grid, in the terminal's font, asks it --
 ///
 ///     ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╮
 ///     │                                                 │
 ///     │  The terminal still has a running process.      │
 ///     │                                                 │
-///     │                            ▌ Close ▐   Cancel   │
+///     │                             Cancel   ▌ Close ▐  │
 ///     │                                                 │
 ///     │  tab choose · return confirm · esc cancel       │
 ///     ╰─────────────────────────────────────────────────╯
 ///
-/// The border and title run from the palette's magenta to its blue; the
-/// chosen button is filled with the magenta. The keyboard answers it -- left,
-/// right or tab to choose, return to confirm the chosen button, escape or `n`
-/// to cancel, `y` to confirm -- and so does the mouse. Its buttons are real
-/// buttons, so VoiceOver and accessibility clients press them like any other.
+/// In the TakoCore palette (`TakoTUI`): the frame and the hatching after the
+/// title run from Rust to Ember, the title is Claw. The body is lines of
+/// styled runs -- plain text, or release notes with headings, bullets, bold,
+/// code and links. The keyboard answers it -- left, right or tab to choose,
+/// return to press the chosen button, escape or `n` to cancel, `y` to press
+/// the first -- and so does the mouse. Its buttons are real buttons, so
+/// VoiceOver and accessibility clients press them like any other.
 @MainActor
 final class TerminalDialogView: NSView {
     struct Style {
         var font: NSFont
         var background: NSColor
         var foreground: NSColor
-        /// Where the border and title's colour starts, and the chosen button's fill.
+        /// Where the border's colour starts.
         var accent: NSColor
-        /// Where the border and title's colour ends.
+        /// Where the border's colour ends.
         var accentEnd: NSColor
-        /// Hints and the unchosen button's text.
+        /// Hints.
         var muted: NSColor
 
+        /// The brand palette (see `TakoTUI`), the terminal's font.
         static func from(_ theme: TerminalTheme?) -> Style {
-            let size = max(theme?.fontSize ?? 13, 11)
-            let font = theme?.fontFamily.flatMap { NSFont(name: $0, size: size) }
-                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-            let background = theme.flatMap { NSColor(cgColor: $0.background) } ?? .black
-            let foreground = theme.flatMap { NSColor(cgColor: $0.foreground) } ?? .white
-            // The theme's own palette: bright magenta and bright blue, as a
-            // TUI in this terminal would colour itself; a theme without them
-            // gets Tako's defaults.
-            func palette(_ index: Int, _ fallback: NSColor) -> NSColor {
-                theme?.palette[index].flatMap { NSColor(cgColor: $0) } ?? fallback
-            }
-            return Style(
-                font: font, background: background, foreground: foreground,
-                accent: palette(13, NSColor(srgbRed: 0.85, green: 0.47, blue: 0.95, alpha: 1)),
-                accentEnd: palette(12, NSColor(srgbRed: 0.45, green: 0.62, blue: 1.0, alpha: 1)),
-                muted: palette(8, foreground.withAlphaComponent(0.45)))
+            Style(font: TakoTUI.font(theme), background: TakoTUI.ink, foreground: TakoTUI.text,
+                  accent: TakoTUI.rust, accentEnd: TakoTUI.ember, muted: TakoTUI.dim)
         }
+    }
+
+    /// A button: its label and how it is filled when chosen.
+    struct Choice {
+        enum Kind { case destructive, primary, normal }
+        var title: String
+        var kind: Kind
     }
 
     private let style: Style
     private let title: String
-    private let message: String
+    private let lines: [TUIText.Line]
+    private let hint: String
+    private let cancelIndex: Int
     private var buttons: [DialogButton] = []
     private var selected = 0
-    private var finish: ((Bool) -> Void)?
+    /// The first body line shown, when the body is taller than the card.
+    private var offset = 0
+    private var scrollRemainder: CGFloat = 0
+    private var finish: ((Int) -> Void)?
     private weak var previousResponder: NSResponder?
 
     /// The question drawn in `window`, if one is waiting for an answer.
@@ -66,20 +66,23 @@ final class TerminalDialogView: NSView {
     }
 
     /// Takes the question back unanswered: the same as cancelling it.
-    func withdraw() { answer(false) }
+    func withdraw() { answer(cancelIndex) }
 
-    private init(title: String, message: String, confirm: String, cancel: String, style: Style) {
+    private init(title: String, lines: [TUIText.Line], choices: [Choice], cancelIndex: Int, style: Style) {
         self.style = style
         self.title = title
-        self.message = message
+        self.lines = lines
+        self.cancelIndex = cancelIndex
+        self.hint = (lines.count > Self.maxBodyRows ? "↑↓ scroll · " : "")
+            + (choices.count > 1 ? "tab choose · return confirm · esc cancel" : "return or esc to close")
         super.init(frame: .zero)
         wantsLayer = true
         // The terminal behind dims, as a TUI's backdrop does.
-        layer?.backgroundColor = style.background.withAlphaComponent(0.75).cgColor
+        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.62).cgColor
         setAccessibilityRole(.group)
         setAccessibilityLabel(title)
-        buttons = [confirm, cancel].enumerated().map { index, label in
-            let button = DialogButton(title: label, style: style)
+        buttons = choices.enumerated().map { index, choice in
+            let button = DialogButton(choice: choice, style: style)
             button.target = self
             button.action = #selector(pressed(_:))
             button.tag = index
@@ -92,14 +95,29 @@ final class TerminalDialogView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// Asks in `window` and answers whether the user confirmed. Nil when the
-    /// window has no content view to draw in.
+    /// Asks in `window` and answers whether the user confirmed: `confirm`
+    /// (destructive) or `cancel`. Nil when the window has no content view.
     static func ask(in window: NSWindow, title: String, message: String,
                     confirm: String, cancel: String = "Cancel",
                     theme: TerminalTheme?) async -> Bool? {
-        guard let content = window.contentView else { return nil }
-        let view = TerminalDialogView(title: title, message: message, confirm: confirm,
-                                      cancel: cancel, style: .from(theme))
+        // The safe choice is on the left, the confirm on the right and chosen.
+        let answer = await choose(in: window, title: title, lines: TUIText.plain(message, width: 52),
+                                  choices: [Choice(title: cancel, kind: .normal),
+                                            Choice(title: confirm, kind: .destructive)],
+                                  selected: 1, cancelIndex: 0, theme: theme)
+        return answer.map { $0 == 1 }
+    }
+
+    /// Asks in `window` and answers the index of the button pressed --
+    /// `cancelIndex` for escape or a withdrawn question. Nil when the window
+    /// has no content view to draw in.
+    static func choose(in window: NSWindow, title: String, lines: [TUIText.Line], choices: [Choice],
+                       selected: Int = 0, cancelIndex: Int, theme: TerminalTheme?) async -> Int? {
+        guard let content = window.contentView, !choices.isEmpty else { return nil }
+        let view = TerminalDialogView(title: title, lines: lines, choices: choices,
+                                      cancelIndex: cancelIndex, style: .from(theme))
+        view.selected = min(max(selected, 0), choices.count - 1)
+        view.updateSelection()
         view.frame = content.bounds
         view.autoresizingMask = [.width, .height]
         return await withCheckedContinuation { continuation in
@@ -114,44 +132,38 @@ final class TerminalDialogView: NSView {
     // MARK: the grid
 
     private var cellHeight: CGFloat { ceil(style.font.ascender - style.font.descender + style.font.leading) }
-    private var cellWidth: CGFloat { ceil(("M" as NSString).size(withAttributes: [.font: style.font]).width) }
+    /// The font's own advance, not rounded: runs are placed by counting
+    /// cells, and a rounded width drifts from where the glyphs actually end.
+    private var cellWidth: CGFloat { ("M" as NSString).size(withAttributes: [.font: style.font]).width }
     private var boldFont: NSFont { NSFontManager.shared.convert(style.font, toHaveTrait: .boldFontMask) }
 
-    private let hint = "tab choose · return confirm · esc cancel"
+    private var buttonsWidth: Int { buttons.reduce(0) { $0 + $1.title.count + 4 } + max(buttons.count - 1, 0) }
 
-    /// The message, wrapped at word boundaries to a readable width.
-    private var messageLines: [String] {
-        let width = 52
-        var lines: [String] = []
-        for paragraph in message.components(separatedBy: "\n") {
-            var line = ""
-            for word in paragraph.split(separator: " ", omittingEmptySubsequences: false) {
-                if !line.isEmpty, line.count + 1 + word.count > width {
-                    lines.append(line)
-                    line = String(word)
-                } else {
-                    line += line.isEmpty ? String(word) : " " + word
-                }
-            }
-            lines.append(line)
-        }
-        return lines
-    }
-
-    /// The card's size in cells: border, blank, message, blank, buttons,
-    /// blank, hint, border.
+    /// The card's size in cells: border, blank, body, blank, buttons, blank,
+    /// hint, border.
     private var columns: Int {
-        let longest = ([title.count + 8, hint.count] + messageLines.map(\.count)).max() ?? 40
+        let longest = ([title.count + 8, hint.count, buttonsWidth + 2] + lines.map(\.width)).max() ?? 40
         return min(longest + 6, max(Int(bounds.width / cellWidth) - 4, 24))
     }
 
-    private var rows: Int { messageLines.count + 7 }
+    /// At most this many body lines show at once; the rest scroll.
+    static let maxBodyRows = 18
+
+    /// Body lines that fit: no more than `maxBodyRows`, nor than the window holds.
+    private var visibleRows: Int {
+        let fit = Int(bounds.height / cellHeight) - 9
+        return max(1, min(lines.count, Self.maxBodyRows, max(fit, 3)))
+    }
+
+    private var maxOffset: Int { max(lines.count - visibleRows, 0) }
+
+    private var rows: Int { visibleRows + 7 }
 
     /// The top-left of the cell at `column`, `row` of the card, which sits on
     /// whole cells in the middle of the window.
     private func cell(_ column: Int, _ row: Int) -> NSPoint {
         let left = floor((bounds.width / cellWidth - CGFloat(columns)) / 2) * cellWidth
-        let top = floor((bounds.height / cellHeight - CGFloat(rows)) / 2) * cellHeight
+        let top = max(floor((bounds.height / cellHeight - CGFloat(rows)) / 2), 0) * cellHeight
         return NSPoint(x: left + CGFloat(column) * cellWidth, y: top + CGFloat(row) * cellHeight)
     }
 
@@ -180,8 +192,7 @@ final class TerminalDialogView: NSView {
         style.background.setFill()
         card.fill()
 
-        // The colour of column `c`, from one accent to the other across the
-        // card, as Crush shades its borders and titles.
+        // The colour of column `c`, from one accent to the other across the card.
         let gradient = NSGradient(starting: style.accent, ending: style.accentEnd)
         func shade(_ column: Int) -> NSColor {
             gradient?.interpolatedColor(atLocation: CGFloat(column) / CGFloat(max(columns - 1, 1))) ?? style.accent
@@ -200,27 +211,62 @@ final class TerminalDialogView: NSView {
         gradient?.draw(in: card, angle: 0)
         NSGraphicsContext.restoreGraphicsState()
 
-        // The title on a gap in the top border, then Crush's hatching to
-        // the corner: ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╮
+        // The title on a gap in the top border, then hatching to the corner:
+        // ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╮
         let titleStart = 2
         let gap = cell(titleStart, 0)
         style.background.setFill()
         NSRect(x: gap.x, y: gap.y, width: CGFloat(columns - titleStart - 2) * cellWidth, height: cellHeight).fill()
-        for (offset, character) in title.enumerated() {
-            draw(String(character), column: titleStart + 1 + offset, row: 0, font: boldFont,
-                 color: shade(titleStart + 1 + offset))
-        }
+        draw(title, column: titleStart + 1, row: 0, font: boldFont, color: TakoTUI.claw)
         let hatchStart = titleStart + title.count + 2
         if hatchStart < columns - 2 {
             for column in hatchStart..<(columns - 2) {
-                draw("╱", column: column, row: 0, font: style.font, color: shade(column).withAlphaComponent(0.55))
+                draw("╱", column: column, row: 0, font: style.font, color: shade(column))
             }
         }
 
-        for (index, line) in messageLines.enumerated() {
-            draw(line, column: 3, row: 2 + index, font: style.font, color: style.foreground)
+        offset = min(offset, maxOffset)
+        for (index, line) in lines[offset..<min(offset + visibleRows, lines.count)].enumerated() {
+            var column = 3 + line.indent
+            for run in line.runs {
+                draw(run, column: column, row: 2 + index)
+                column += run.text.count
+            }
+        }
+        // Where the view is in a body that scrolls: a thumb on the right
+        // edge of the frame, in Ember.
+        if maxOffset > 0 {
+            let track = NSRect(x: card.maxX - cellWidth / 2 - 1.5, y: cell(0, 2).y,
+                               width: 3, height: CGFloat(visibleRows) * cellHeight)
+            let thumbHeight = max(track.height * CGFloat(visibleRows) / CGFloat(lines.count), cellHeight)
+            let thumbY = track.minY + (track.height - thumbHeight) * CGFloat(offset) / CGFloat(maxOffset)
+            TakoTUI.ember.setFill()
+            NSBezierPath(roundedRect: NSRect(x: track.minX, y: thumbY, width: track.width, height: thumbHeight),
+                         xRadius: 1.5, yRadius: 1.5).fill()
         }
         draw(hint, column: 3, row: rows - 2, font: style.font, color: style.muted)
+    }
+
+    private func draw(_ run: TUIText.Run, column: Int, row: Int) {
+        let origin = cell(column, row)
+        var attributes: [NSAttributedString.Key: Any]
+        switch run.kind {
+        case .plain: attributes = [.font: style.font, .foregroundColor: TakoTUI.soft]
+        case .bold: attributes = [.font: boldFont, .foregroundColor: TakoTUI.bright]
+        case .heading: attributes = [.font: boldFont, .foregroundColor: TakoTUI.claw]
+        case .bullet: attributes = [.font: style.font, .foregroundColor: TakoTUI.ember]
+        case .muted: attributes = [.font: style.font, .foregroundColor: style.muted]
+        case .code:
+            TakoTUI.field.setFill()
+            NSRect(x: origin.x, y: origin.y, width: CGFloat(run.text.count) * cellWidth, height: cellHeight).fill()
+            attributes = [.font: style.font, .foregroundColor: TakoTUI.claw]
+        case .link:
+            attributes = [.font: style.font, .foregroundColor: TakoTUI.claw,
+                          .underlineStyle: NSUnderlineStyle.single.rawValue]
+        }
+        let height = (run.text as NSString).size(withAttributes: attributes).height
+        (run.text as NSString).draw(at: NSPoint(x: origin.x, y: origin.y + (cellHeight - height) / 2),
+                                    withAttributes: attributes)
     }
 
     /// Text placed in its cell as the terminal places glyphs: from the
@@ -239,18 +285,43 @@ final class TerminalDialogView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
+        case 126: scroll(by: -1)               // up
+        case 125: scroll(by: 1)                // down
+        case 116: scroll(by: -visibleRows)     // page up
+        case 121: scroll(by: visibleRows)      // page down
+        case 115: scroll(by: -lines.count)     // home
+        case 119: scroll(by: lines.count)      // end
         case 123: move(-1)                     // left
         case 124, 48: move(1)                  // right, tab
-        case 36, 76: answer(selected == 0)     // return, keypad enter
-        case 53: answer(false)                 // escape
+        case 36, 76: answer(selected)          // return, keypad enter
+        case 53: answer(cancelIndex)           // escape
         default:
             switch event.charactersIgnoringModifiers?.lowercased() {
-            case "y": answer(true)
-            case "n": answer(false)
+            case "y": answer(buttons.firstIndex { $0.isConfirm } ?? 0)
+            case "n": answer(cancelIndex)
             default: break
             }
         }
     }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Precise deltas (trackpads) come in points, others in lines.
+        scrollRemainder -= event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / cellHeight : event.scrollingDeltaY
+        let whole = Int(scrollRemainder)
+        guard whole != 0 else { return }
+        scrollRemainder -= CGFloat(whole)
+        scroll(by: whole)
+    }
+
+    private func scroll(by lines: Int) {
+        let next = min(max(offset + lines, 0), maxOffset)
+        guard next != offset else { return }
+        offset = next
+        needsDisplay = true
+    }
+
+    /// The first body line shown; for tests.
+    var scrollOffset: Int { offset }
 
     /// Clicks outside the card do nothing: the question stays until answered.
     override func mouseDown(with event: NSEvent) {}
@@ -264,9 +335,9 @@ final class TerminalDialogView: NSView {
         for (index, button) in buttons.enumerated() { button.isChosen = index == selected }
     }
 
-    @objc private func pressed(_ sender: NSButton) { answer(sender.tag == 0) }
+    @objc private func pressed(_ sender: NSButton) { answer(sender.tag) }
 
-    private func answer(_ confirmed: Bool) {
+    private func answer(_ index: Int) {
         guard let finish else { return }
         self.finish = nil
         let window = self.window
@@ -274,22 +345,25 @@ final class TerminalDialogView: NSView {
         if let previousResponder, window?.firstResponder == nil || window?.firstResponder === window {
             window?.makeFirstResponder(previousResponder)
         }
-        finish(confirmed)
+        finish(index)
     }
 }
 
 /// A dialog button drawn in cells, as a terminal UI draws one: the chosen
-/// one a block of the accent with the background's colour for its text, the
-/// other a quieter block in the muted colour.
+/// one a filled block -- red for a destructive action, Ember otherwise -- the
+/// other on the field colour.
 @MainActor
 private final class DialogButton: NSButton {
     private let style: TerminalDialogView.Style
+    private let kind: TerminalDialogView.Choice.Kind
     var isChosen = false { didSet { needsDisplay = true } }
+    var isConfirm: Bool { kind != .normal }
 
-    init(title: String, style: TerminalDialogView.Style) {
+    init(choice: TerminalDialogView.Choice, style: TerminalDialogView.Style) {
         self.style = style
+        self.kind = choice.kind
         super.init(frame: .zero)
-        self.title = title
+        self.title = choice.title
         isBordered = false
         setButtonType(.momentaryChange)
         focusRingType = .none
@@ -304,13 +378,13 @@ private final class DialogButton: NSButton {
         let font: NSFont
         let color: NSColor
         if isChosen {
-            style.accent.setFill()
+            (kind == .destructive ? TakoTUI.danger : TakoTUI.ember).setFill()
             font = NSFontManager.shared.convert(style.font, toHaveTrait: .boldFontMask)
-            color = style.background
+            color = kind == .destructive ? TakoTUI.bright : TakoTUI.deep
         } else {
-            (style.background.blended(withFraction: 0.12, of: style.foreground) ?? style.background).setFill()
+            TakoTUI.field.setFill()
             font = style.font
-            color = style.foreground.withAlphaComponent(0.75)
+            color = TakoTUI.text
         }
         bounds.fill()
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
@@ -318,5 +392,114 @@ private final class DialogButton: NSButton {
         let size = label.size(withAttributes: attributes)
         label.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
                    withAttributes: attributes)
+    }
+}
+
+/// Text for a terminal-style card: lines of styled runs, wrapped to a width
+/// in cells.
+enum TUIText {
+    struct Run: Equatable {
+        enum Kind { case plain, bold, heading, bullet, code, link, muted }
+        var text: String
+        var kind: Kind
+    }
+
+    struct Line: Equatable {
+        var indent = 0
+        var runs: [Run]
+        var width: Int { indent + runs.reduce(0) { $0 + $1.text.count } }
+    }
+
+    /// `text`, wrapped at word boundaries.
+    static func plain(_ text: String, width: Int) -> [Line] {
+        text.components(separatedBy: "\n").flatMap { wrap([Run(text: $0, kind: .plain)], width: width) }
+    }
+
+    /// Release notes in the Markdown GitHub keeps: `##` headings, `-`
+    /// bullets, `**bold**`, `` `code` `` and `[links](url)`. At most
+    /// `maxLines`, then a line saying where the rest is.
+    static func markdown(_ text: String, width: Int, maxLines: Int) -> [Line] {
+        var lines: [Line] = []
+        for raw in text.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                if let last = lines.last, !last.runs.isEmpty { lines.append(Line(runs: [])) }
+            } else if line.hasPrefix("#") {
+                let heading = line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                lines.append(Line(runs: [Run(text: heading, kind: .heading)]))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                let body = wrap(inline(String(line.dropFirst(2))), width: width - 2)
+                for (index, wrapped) in body.enumerated() {
+                    lines.append(index == 0
+                        ? Line(runs: [Run(text: "• ", kind: .bullet)] + wrapped.runs)
+                        : Line(indent: 2, runs: wrapped.runs))
+                }
+            } else {
+                lines += wrap(inline(line), width: width)
+            }
+        }
+        while lines.last?.runs.isEmpty == true { lines.removeLast() }
+        if lines.count > maxLines {
+            lines = Array(lines.prefix(maxLines - 1))
+            lines.append(Line(runs: [Run(text: "… the full notes are on GitHub", kind: .muted)]))
+        }
+        return lines
+    }
+
+    /// One line of Markdown into runs.
+    static func inline(_ text: String) -> [Run] {
+        var runs: [Run] = []
+        var rest = Substring(text)
+        func plain(_ s: Substring) { if !s.isEmpty { runs.append(Run(text: String(s), kind: .plain)) } }
+        while !rest.isEmpty {
+            if rest.hasPrefix("**"), let end = rest.dropFirst(2).range(of: "**") {
+                runs.append(Run(text: String(rest[rest.index(rest.startIndex, offsetBy: 2)..<end.lowerBound]), kind: .bold))
+                rest = rest[end.upperBound...]
+            } else if rest.hasPrefix("`"), let end = rest.dropFirst().firstIndex(of: "`") {
+                runs.append(Run(text: String(rest[rest.index(after: rest.startIndex)..<end]), kind: .code))
+                rest = rest[rest.index(after: end)...]
+            } else if rest.hasPrefix("["), let close = rest.range(of: "]("),
+                      let end = rest[close.upperBound...].firstIndex(of: ")") {
+                runs.append(Run(text: String(rest[rest.index(after: rest.startIndex)..<close.lowerBound]), kind: .link))
+                rest = rest[rest.index(after: end)...]
+            } else {
+                let next = rest.dropFirst().firstIndex { "*`[".contains($0) } ?? rest.endIndex
+                plain(rest[rest.startIndex..<next])
+                rest = rest[next...]
+            }
+        }
+        // Neighbouring plain runs are one run.
+        return runs.reduce(into: []) { merged, run in
+            if run.kind == .plain, merged.last?.kind == .plain { merged[merged.count - 1].text += run.text } else { merged.append(run) }
+        }
+    }
+
+    /// Runs wrapped at spaces to `width` cells; a word longer than a line is cut.
+    static func wrap(_ runs: [Run], width: Int) -> [Line] {
+        var lines: [Line] = []
+        var current: [Run] = []
+        var used = 0
+        func push(_ text: String, _ kind: Run.Kind) {
+            if let last = current.last, last.kind == kind { current[current.count - 1].text += text } else { current.append(Run(text: text, kind: kind)) }
+            used += text.count
+        }
+        for run in runs {
+            // Words with the space before them, so a line never starts with one.
+            var words = run.text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+            if words.isEmpty { words = [""] }
+            for (index, word) in words.enumerated() {
+                let lead = index > 0 ? " " : ""
+                if used > 0, used + lead.count + word.count > width {
+                    lines.append(Line(runs: current))
+                    current = []
+                    used = 0
+                    push(String(word.prefix(width)), run.kind)
+                } else {
+                    push(lead + String(word.prefix(width)), run.kind)
+                }
+            }
+        }
+        lines.append(Line(runs: current))
+        return lines
     }
 }

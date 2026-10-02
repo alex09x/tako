@@ -55,8 +55,9 @@ struct TerminalDialogTests {
                                                         confirm: "Terminate", theme: nil) }
         while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
         let buttons = TerminalDialogView.pending(in: window)!.subviews.compactMap { $0 as? NSButton }
-        #expect(buttons.map(\.title) == ["Terminate", "Cancel"])
-        buttons[1].performClick(nil)
+        // The safe choice on the left, the destructive one on the right.
+        #expect(buttons.map(\.title) == ["Cancel", "Terminate"])
+        buttons[0].performClick(nil)
         #expect(await asked.value == false)
     }
 
@@ -87,4 +88,51 @@ struct TerminalDialogTests {
         for _ in 0..<50 where closed == 0 { await Task.yield() }
         #expect(closed == 1)
     }
+
+    @Test func releaseNotesBecomeStyledWrappedLines() {
+        let notes = "## New\n\n- **Find in All Tabs** (Cmd+Shift+F) searches `every` tab, see [docs](https://x).\n\nPlain."
+        let lines = TUIText.markdown(notes, width: 30, maxLines: 20)
+        #expect(lines.first?.runs == [TUIText.Run(text: "New", kind: .heading)])
+        #expect(lines[2].runs.first == TUIText.Run(text: "• ", kind: .bullet))
+        #expect(lines[2].runs.contains(TUIText.Run(text: "Find in All Tabs", kind: .bold)))
+        let all = lines.flatMap(\.runs)
+        #expect(all.contains(TUIText.Run(text: "every", kind: .code)))
+        #expect(all.contains(TUIText.Run(text: "docs", kind: .link)))
+        #expect(lines.allSatisfy { $0.width <= 30 })
+        // A wrapped bullet continues under its text, not under the bullet.
+        #expect(lines[3].indent == 2)
+    }
+
+    @Test func longNotesStopWithAPointerToTheRest() {
+        let notes = (1...40).map { "- item \($0)" }.joined(separator: "\n")
+        let lines = TUIText.markdown(notes, width: 40, maxLines: 10)
+        #expect(lines.count == 10)
+        #expect(lines.last?.runs.first?.kind == .muted)
+    }
+
+    @Test func aLongBodyScrollsByKeysAndStopsAtItsEnds() async {
+        let window = window()
+        let lines = (1...60).map { TUIText.Line(runs: [TUIText.Run(text: "line \($0)", kind: .plain)]) }
+        let asked = Task { await TerminalDialogView.choose(in: window, title: "Notes", lines: lines,
+                                                           choices: [.init(title: "OK", kind: .primary)],
+                                                           cancelIndex: 0, theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        dialog.layoutSubtreeIfNeeded()
+        #expect(dialog.scrollOffset == 0)
+        dialog.keyDown(with: key(125))                       // down
+        #expect(dialog.scrollOffset == 1)
+        dialog.keyDown(with: key(126)); dialog.keyDown(with: key(126))   // up past the top
+        #expect(dialog.scrollOffset == 0)
+        dialog.keyDown(with: key(119))                       // end
+        let end = dialog.scrollOffset
+        #expect(end > 0 && end < 60)
+        dialog.keyDown(with: key(121))                       // page down past the end
+        #expect(dialog.scrollOffset == end)
+        dialog.keyDown(with: key(116))                       // page up
+        #expect(dialog.scrollOffset < end)
+        dialog.withdraw()
+        _ = await asked.value
+    }
 }
+

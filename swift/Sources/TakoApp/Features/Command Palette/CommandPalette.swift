@@ -120,13 +120,8 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
-        let scheme: ColorScheme = if OSColor(backgroundColor).isLightColor {
-            .light
-        } else {
-            .dark
-        }
-
         VStack(alignment: .leading, spacing: 0) {
+            TUIHeader(title: "Commands")
             CommandPaletteQuery(query: $rawQuery) { event in
                 switch event {
                 case .exit:
@@ -170,7 +165,7 @@ struct CommandPaletteView: View {
                 }
             }
 
-            Divider()
+            TUIRule()
 
             CommandTable(
                 options: filteredOptions,
@@ -180,26 +175,28 @@ struct CommandPaletteView: View {
                     isPresented = false
                     option.action()
             }
+
+            TUIRule()
+            Text("↑↓ select · ⏎ run · esc")
+                .font(TUIFont.regular)
+                .foregroundStyle(Color(nsColor: TakoTUI.dim))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
         }
-        .frame(maxWidth: 500)
-        .background(
-            ZStack {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                Rectangle()
-                    .fill(backgroundColor)
-                    .blendMode(.color)
-            }
-                .compositingGroup()
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: 560)
+        // Drawn as the terminal UI is (see `TakoTUI`): Ink, a frame from
+        // Rust to Ember with corners of half a cell.
+        .background(Color(nsColor: TakoTUI.ink))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(nsColor: .tertiaryLabelColor).opacity(0.75))
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(LinearGradient(colors: [Color(nsColor: TakoTUI.rust), Color(nsColor: TakoTUI.ember)],
+                                       startPoint: .leading, endPoint: .trailing), lineWidth: 1.25)
         )
-        .shadow(radius: 32, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.45), radius: 24, x: 0, y: 12)
         .padding()
-        .environment(\.colorScheme, scheme)
+        .environment(\.colorScheme, .dark)
+        .tint(Color(nsColor: TakoTUI.ember))
         .onChange(of: isPresented) { newValue in
             if !newValue {
                 // This is optional, since most of the time
@@ -274,10 +271,13 @@ private struct CommandPaletteQuery: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
 
-            TextField("Execute a command…", text: $query)
-                .padding()
-                .font(.system(size: 20, weight: .light))
-                .frame(height: 48)
+            HStack(spacing: 0) {
+                Text("› ")
+                    .font(TUIFont.bold)
+                    .foregroundStyle(Color(nsColor: TakoTUI.claw))
+            TextField("", text: $query, prompt: Text("Run a command…").foregroundColor(Color(nsColor: TakoTUI.dim)))
+                .font(TUIFont.regular)
+                .foregroundStyle(Color(nsColor: TakoTUI.bright))
                 .textFieldStyle(.plain)
                 .focused($isTextFieldFocused)
                 .onChange(of: isTextFieldFocused) { focused in
@@ -298,6 +298,9 @@ private struct CommandPaletteQuery: View {
                         isTextFieldFocused = true
                     }
                 }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
         }
     }
 }
@@ -312,12 +315,14 @@ private struct CommandTable: View {
     var body: some View {
         if options.isEmpty {
             Text("No matches")
-                .foregroundStyle(.secondary)
-                .padding()
+                .font(TUIFont.regular)
+                .foregroundStyle(Color(nsColor: TakoTUI.dim))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
                                 option: option,
@@ -337,9 +342,9 @@ private struct CommandTable: View {
                             }
                         }
                     }
-                    .padding(10)
+                    .padding(.vertical, 4)
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 260)
                 .onChange(of: selectedIndex) { _ in
                     guard let selectedIndex,
                           selectedIndex < options.count else { return }
@@ -363,19 +368,19 @@ private struct CommandRow: View {
         guard !query.isEmpty,
               let indices = option.title.matchedIndices(for: query) else {
             return Text(option.title)
-                .fontWeight(option.emphasis ? .medium : .regular)
+                .font(isSelected || option.emphasis ? TUIFont.bold : TUIFont.regular)
         }
 
         var attributed = AttributedString(option.title)
-        attributed[attributed.startIndex...].font = .body
-            .weight(option.emphasis ? .medium : .regular)
+        attributed[attributed.startIndex...].font = isSelected || option.emphasis ? TUIFont.bold : TUIFont.regular
 
+        // Matched letters in Claw, bold; on the Ember selection, in Ink.
         for idx in indices {
             let offset = option.title.distance(from: option.title.startIndex, to: idx)
             let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: offset)
             let attrEnd = attributed.index(attrStart, offsetByCharacters: 1)
-            attributed[attrStart..<attrEnd].font = .body.bold()
-            attributed[attrStart..<attrEnd].foregroundColor = Color.accentColor
+            attributed[attrStart..<attrEnd].font = TUIFont.bold
+            attributed[attrStart..<attrEnd].foregroundColor = isSelected ? Color(nsColor: TakoTUI.deep) : Color(nsColor: TakoTUI.claw)
         }
 
         return Text(attributed)
@@ -394,8 +399,8 @@ private struct CommandRow: View {
             let offset = subtitle.distance(from: subtitle.startIndex, to: idx)
             let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: offset)
             let attrEnd = attributed.index(attrStart, offsetByCharacters: 1)
-            attributed[attrStart..<attrEnd].font = .caption.bold()
-            attributed[attrStart..<attrEnd].foregroundColor = Color.accentColor
+            attributed[attrStart..<attrEnd].font = TUIFont.bold
+            attributed[attrStart..<attrEnd].foregroundColor = Color(nsColor: TakoTUI.claw)
         }
 
         return Text(attributed)
@@ -412,17 +417,18 @@ private struct CommandRow: View {
 
                 if let icon = option.leadingIcon {
                     Image(systemName: icon)
-                        .foregroundStyle(option.emphasis ? Color.accentColor : .secondary)
+                        .foregroundStyle(Color(nsColor: isSelected ? TakoTUI.deep : (option.emphasis ? TakoTUI.claw : TakoTUI.muted)))
                         .font(.system(size: 14, weight: .medium))
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 0) {
                     highlightedTitle
+                        .foregroundStyle(Color(nsColor: isSelected ? TakoTUI.deep : TakoTUI.text))
 
                     if let subtitle = option.subtitle {
                         highlightedSubtitle(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(TUIFont.small)
+                            .foregroundStyle(Color(nsColor: isSelected ? TakoTUI.ink : TakoTUI.dim))
                     }
                 }
 
@@ -430,34 +436,28 @@ private struct CommandRow: View {
 
                 if let badge = option.badge, !badge.isEmpty {
                     Text(badge)
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule().fill(Color.accentColor.opacity(0.15))
-                        )
-                        .foregroundStyle(Color.accentColor)
+                        .font(TUIFont.small)
+                        .padding(.horizontal, 4)
+                        .background(Color(nsColor: isSelected ? TakoTUI.ink : TakoTUI.field))
+                        .foregroundStyle(Color(nsColor: TakoTUI.claw))
                 }
 
                 if let symbols = option.symbols {
                     ShortcutSymbolsView(symbols: symbols)
-                        .foregroundStyle(.secondary)
+                        .font(TUIFont.regular)
+                        .foregroundStyle(Color(nsColor: isSelected ? TakoTUI.deep : TakoTUI.muted))
                 }
             }
-            .padding(8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
             .contentShape(Rectangle())
+            // A row of cells: the selection filled with Ember, a hovered
+            // row on the selection colour -- no rounded corners.
             .background(
                 isSelected
-                    ? Color.accentColor.opacity(0.2)
-                    : (hoveredID == option.id
-                       ? Color.secondary.opacity(0.2)
-                       : Color.clear)
+                    ? Color(nsColor: TakoTUI.ember)
+                    : (hoveredID == option.id ? Color(nsColor: TakoTUI.selection) : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(Color.accentColor.opacity(option.emphasis && !isSelected ? 0.3 : 0), lineWidth: 1.5)
-            )
-            .cornerRadius(5)
         }
         .help(option.description ?? "")
         .buttonStyle(.plain)
@@ -508,5 +508,51 @@ extension String {
         }
 
         return queryIndex == query.endIndex ? matched : nil
+    }
+}
+
+/// The terminal's font for the palette's terminal-style rows.
+@MainActor
+enum TUIFont {
+    private static var theme: TerminalTheme? { (NSApp.delegate as? AppDelegate)?.tako.config.theme }
+    static var regular: Font { Font(TakoTUI.font(theme)) }
+    static var bold: Font { Font(TakoTUI.font(theme, bold: true)) }
+    static var small: Font {
+        let f = TakoTUI.font(theme)
+        return Font(NSFont(descriptor: f.fontDescriptor, size: max(f.pointSize - 2, 10)) ?? f)
+    }
+}
+
+/// `╭─ Title ╱╱╱╱╱─╮` without its frame: the title in Claw, then hatching
+/// shaded from Rust to Ember to the edge.
+struct TUIHeader: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(" \(title) ")
+                .font(TUIFont.bold)
+                .foregroundStyle(Color(nsColor: TakoTUI.claw))
+                .fixedSize()
+            Text(String(repeating: "╱", count: 120))
+                .font(TUIFont.regular)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(LinearGradient(colors: [Color(nsColor: TakoTUI.rust), Color(nsColor: TakoTUI.ember)],
+                                                startPoint: .leading, endPoint: .trailing))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 4)
+    }
+}
+
+/// A rule between parts of a terminal-style panel: `├────┤` in the dim colour.
+struct TUIRule: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: TakoTUI.dim).opacity(0.6))
+            .frame(height: 1)
     }
 }

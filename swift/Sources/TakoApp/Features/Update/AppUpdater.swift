@@ -161,6 +161,31 @@ final class AppUpdater: @unchecked Sendable {
 
     @MainActor
     private func presentUpdateFound(release: GitHubRelease, currentVersion: String) {
+        // In the terminal window, drawn as the terminal UI is; the alert
+        // below only when no terminal window is open to draw in.
+        if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.windowController is BaseTerminalController && $0.isVisible }) {
+            var lines = [TUIText.Line(runs: [TUIText.Run(text: "v\(currentVersion)", kind: .muted),
+                                             TUIText.Run(text: "  →  ", kind: .muted),
+                                             TUIText.Run(text: release.tagName, kind: .bold)]),
+                         TUIText.Line(runs: [])]
+            // All of it: the card scrolls.
+            lines += TUIText.markdown(release.body ?? "", width: 64, maxLines: 400)
+            Task { @MainActor in
+                let answer = await TerminalDialogView.choose(
+                    in: window, title: "Tako \(release.tagName) is available", lines: lines,
+                    choices: [.init(title: "Later", kind: .normal),
+                              .init(title: "View on GitHub", kind: .normal),
+                              .init(title: "Download & Install", kind: .primary)],
+                    selected: 2, cancelIndex: 0,
+                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme)
+                switch answer {
+                case 2: self.performDownloadAndInstall(release: release)
+                case 1: if let url = URL(string: release.htmlUrl) { NSWorkspace.shared.open(url) }
+                default: break
+                }
+            }
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Tako \(release.tagName) is Available!"
 
