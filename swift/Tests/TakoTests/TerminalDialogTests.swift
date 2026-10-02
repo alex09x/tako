@@ -134,5 +134,24 @@ struct TerminalDialogTests {
         dialog.withdraw()
         _ = await asked.value
     }
+
+    @Test func aWordLongerThanALineIsSplitNotDropped() {
+        let hash = String(repeating: "0123456789abcdef", count: 5)   // 80 characters
+        let lines = TUIText.wrap([TUIText.Run(text: "commit \(hash) done", kind: .code)], width: 30)
+        #expect(lines.allSatisfy { $0.width <= 30 })
+        let text = lines.map { $0.runs.map(\.text).joined() }.joined()
+        #expect(text.replacingOccurrences(of: " ", with: "") == "commit\(hash)done")
+    }
+
+    @Test func anUpdateNoticeGoesToATerminalWindowNotSettings() {
+        let settings = NSWindow(contentRect: .init(x: 0, y: 0, width: 200, height: 200), styleMask: [.titled],
+                                backing: .buffered, defer: true)
+        let (controller, terminal) = TerminalTestSupport.makeController()
+        defer { TerminalTestSupport.tearDown(controller, terminal) }
+        terminal.orderFront(nil)
+        #expect(AppUpdater.noticeWindow(key: settings, windows: [settings, terminal]) === terminal)
+        #expect(AppUpdater.noticeWindow(key: terminal, windows: [settings, terminal]) === terminal)
+        #expect(AppUpdater.noticeWindow(key: settings, windows: [settings]) == nil)
+    }
 }
 

@@ -474,7 +474,8 @@ enum TUIText {
         }
     }
 
-    /// Runs wrapped at spaces to `width` cells; a word longer than a line is cut.
+    /// Runs wrapped at spaces to `width` cells; a word longer than a line is
+    /// split across lines.
     static func wrap(_ runs: [Run], width: Int) -> [Line] {
         var lines: [Line] = []
         var current: [Run] = []
@@ -493,10 +494,21 @@ enum TUIText {
                     lines.append(Line(runs: current))
                     current = []
                     used = 0
-                    push(String(word.prefix(width)), run.kind)
-                } else {
-                    push(lead + String(word.prefix(width)), run.kind)
+                } else if used > 0 || !lead.isEmpty {
+                    push(lead, run.kind)
                 }
+                // A word longer than a line goes on in width-sized pieces,
+                // each on a line of its own: nothing is dropped.
+                var rest = Substring(word)
+                while rest.count > max(width - used, 1) {
+                    let room = max(width - used, 1)
+                    push(String(rest.prefix(room)), run.kind)
+                    rest = rest.dropFirst(room)
+                    lines.append(Line(runs: current))
+                    current = []
+                    used = 0
+                }
+                push(String(rest), run.kind)
             }
         }
         lines.append(Line(runs: current))

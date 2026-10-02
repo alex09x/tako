@@ -159,11 +159,23 @@ final class AppUpdater: @unchecked Sendable {
 
     // MARK: - UI Alerts
 
+    /// The terminal window an update notice is drawn in: the key window if
+    /// it is a terminal's, else the first visible terminal window -- never
+    /// Settings or another window that is not a terminal's.
+    @MainActor
+    static func noticeWindow(key: NSWindow?, windows: [NSWindow]) -> NSWindow? {
+        func isTerminal(_ window: NSWindow) -> Bool {
+            window.windowController is BaseTerminalController && window.isVisible
+        }
+        if let key, isTerminal(key) { return key }
+        return windows.first(where: isTerminal)
+    }
+
     @MainActor
     private func presentUpdateFound(release: GitHubRelease, currentVersion: String) {
         // In the terminal window, drawn as the terminal UI is; the alert
         // below only when no terminal window is open to draw in.
-        if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.windowController is BaseTerminalController && $0.isVisible }) {
+        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
             var lines = [TUIText.Line(runs: [TUIText.Run(text: "v\(currentVersion)", kind: .muted),
                                              TUIText.Run(text: "  →  ", kind: .muted),
                                              TUIText.Run(text: release.tagName, kind: .bold)]),
