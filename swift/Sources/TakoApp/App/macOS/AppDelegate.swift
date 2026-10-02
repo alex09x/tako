@@ -187,6 +187,10 @@ class AppDelegate: NSObject,
     // MARK: - NSApplicationDelegate
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before any window is restored: each terminal's shell is told where
+        // the control socket is.
+        ControlCommands.start(mode: tako.config.remoteControl,
+                              bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal")
         #if DEBUG
         if
             let suite = UserDefaults.takoSuite,
@@ -443,6 +447,7 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ControlCommands.stop()
         sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())
         sessionSaver.stop()
         // Quitting is confirmed (a cancelled quit never gets here): persistent

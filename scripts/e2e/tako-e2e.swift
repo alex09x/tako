@@ -573,6 +573,23 @@ let scenarios: [Scenario] = [
         }
         try d.run("exit")
     }),
+    ("ctl-tree", "takoctl inside a pane sees that pane, and refuses what it must", { d in
+        // On PATH through the shell integration's `path` feature.
+        try d.run("takoctl tree --json > \(d.path("tree")); echo $TAKO_SURFACE_ID > \(d.path("self")); cd \(d.work.path)")
+        let tree = try d.file("tree")
+        let me = try d.file("self").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard me.count == 36, tree.contains("\"id\":\"\(me)\""), tree.contains("\"ok\":true") else {
+            throw Failure("tree does not list this pane \(me): \(tree.prefix(400))")
+        }
+        // Without the pane context, the default setting refuses.
+        try d.run("sh -c 'env -u TAKO_SURFACE_ID takoctl version 2> \(d.path("err")); echo $? > \(d.path("rc"))'")
+        guard try d.file("rc").trimmingCharacters(in: .whitespacesAndNewlines) == "1",
+              try d.file("err").contains("disabled") else {
+            throw Failure("a request from outside a pane was not refused: \(try d.file("err"))")
+        }
+        try d.run("takoctl version > \(d.path("ver"))")
+        guard try d.file("ver").contains("protocol 1") else { throw Failure("version: \(try d.file("ver"))") }
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()

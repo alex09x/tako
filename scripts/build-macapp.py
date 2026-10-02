@@ -176,6 +176,10 @@ macos = os.path.join(APP, "Contents", "MacOS")
 res = os.path.join(APP, "Contents", "Resources")
 os.makedirs(macos); os.makedirs(res)
 shutil.copy(binary, os.path.join(macos, "Tako"))
+# takoctl, the command-line side of remote control: next to the app, where
+# the shell integration's `path` feature puts it on every pane's PATH.
+run(["cargo", "build", "--release", "--manifest-path", "takoctl/Cargo.toml"], "build takoctl")
+shutil.copy("takoctl/target/release/takoctl", os.path.join(macos, "takoctl"))
 # Upstream's interface files: the menu bar, the window styles, and the
 # scripting definition. Their Swift loads these by name, so they ship
 # compiled into Resources exactly as its Xcode target does.

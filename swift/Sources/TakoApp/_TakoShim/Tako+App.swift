@@ -937,6 +937,10 @@ final class PTY {
             // byte-for-byte cat; see the shell-integration files.
             ("TAKO_SHELL_FEATURES", shellFeatures),
         ]
+        // Where the `path` feature finds takoctl: the app's own MacOS folder.
+        if let bin = Bundle.main.executableURL?.deletingLastPathComponent().path {
+            env.append(("TAKO_BIN_DIR", bin))
+        }
 
         let shellName: String
         switch mode {
@@ -968,9 +972,11 @@ final class PTY {
     /// applied over them: a bare name enables it, `no-<name>` disables it.
     /// Names outside `knownShellFeatures` are ignored, matching how every
     /// other config key here treats an unrecognised value.
-    static let defaultShellFeatures = ["sudo", "prompt", "highlight"]
+    /// `path` appends the app's own executables (takoctl) to the end of
+    /// PATH, so nothing the user installed is shadowed.
+    static let defaultShellFeatures = ["sudo", "prompt", "highlight", "path"]
     static let knownShellFeatures: Set<String> = [
-        "cursor", "sudo", "title", "ssh-env", "ssh-terminfo", "prompt", "highlight",
+        "cursor", "sudo", "title", "ssh-env", "ssh-terminfo", "prompt", "highlight", "path",
     ]
 
     static func shellFeatures(_ raw: String?) -> String {
@@ -2040,6 +2046,20 @@ extension Tako {
             // SessionClientPreamble); with `sessionPreamble` set to the
             // session's name it is taken off the start of the output.
             var preamble = sessionPreamble.map(SessionClientPreamble.init(sessionName:))
+            // Where takoctl reaches this app and which pane it runs in. Set
+            // last, over anything passed in: a pane is never told it is
+            // another one.
+            var environment = environment
+            environment["TAKO_SURFACE_ID"] = id.uuidString.lowercased()
+            var removing = removing
+            if let socket = ControlCommands.socketPath {
+                environment["TAKO_SOCKET"] = socket
+            } else {
+                // Inherited from a Tako this one was started in, it would
+                // point at that one.
+                environment.removeValue(forKey: "TAKO_SOCKET")
+                removing.append("TAKO_SOCKET")
+            }
             pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config,
                       program: program, environment: environment, removing: removing)
             let started = pty

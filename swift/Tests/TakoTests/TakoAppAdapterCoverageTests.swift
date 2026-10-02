@@ -153,19 +153,19 @@ struct PTYCoverageTests {
     }
 
     @Test func shellFeaturesDefaultsToSudoPromptHighlight() {
-        #expect(PTY.shellFeatures(nil) == "sudo,prompt,highlight")
+        #expect(PTY.shellFeatures(nil) == "sudo,prompt,highlight,path")
     }
 
     @Test func shellFeaturesEnablesAnExtraFeature() {
-        #expect(PTY.shellFeatures("cursor") == "sudo,prompt,highlight,cursor")
+        #expect(PTY.shellFeatures("cursor") == "sudo,prompt,highlight,path,cursor")
     }
 
     @Test func shellFeaturesDisablesADefaultFeature() {
-        #expect(PTY.shellFeatures("no-sudo") == "prompt,highlight")
+        #expect(PTY.shellFeatures("no-sudo") == "prompt,highlight,path")
     }
 
     @Test func shellFeaturesIgnoresAnUnknownName() {
-        #expect(PTY.shellFeatures("made-up-feature") == "sudo,prompt,highlight")
+        #expect(PTY.shellFeatures("made-up-feature") == "sudo,prompt,highlight,path")
     }
 
     @Test func aNewSurfacesPtyStartsInTheDirectoryTheKeyResolvesTo() throws {

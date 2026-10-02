@@ -841,6 +841,13 @@ extension Tako {
         /// reattaches to it. Needs a Tako built with its session runtime.
         var sessionPersistence: Bool { rawBool("session-persistence", default: false) }
 
+        /// `remote-control`: whether `takoctl` may drive this app -- `local`
+        /// (default; requests from inside a Tako pane), `on` (any process of
+        /// this user that can open the socket) or `off` (no socket).
+        var remoteControl: RemoteControlMode {
+            rawValue("remote-control").flatMap { RemoteControlMode(rawValue: $0.lowercased()) } ?? .local
+        }
+
         /// `window-save-content` (default true): each tab's screen and
         /// scrollback are saved, so a relaunch shows them again. `false`
         /// writes nothing and removes what was saved.
