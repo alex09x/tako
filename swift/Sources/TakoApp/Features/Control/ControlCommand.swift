@@ -82,8 +82,24 @@ enum ControlCommand {
         let idString = paneID.uuidString.lowercased()
 
         if let program = surface.runProgram {
+            // A program run started, waiting on its own pane: it is the wait.
+            if request.from == paneID {
+                throw ControlError(.selfWait, "this request runs in the pane it would wait on: its program cannot end while it waits")
+            }
+            var exitedAt: Date?
             return poll(request, paneID, timeout: timeout, reply: reply) {
-                guard let pty = surface.pty, !pty.alive else { return nil }
+                guard let pty = surface.pty else { return nil }
+                if pty.startError != nil {
+                    var result = process(program: program, pty: pty, core: core, lines: lines)
+                    result["state"] = .string("failedToStart")
+                    return result
+                }
+                // Ended when the process itself has; its last output may
+                // still be on its way, until the terminal closes or briefly.
+                guard pty.exitStatus != nil else { return nil }
+                let at = exitedAt ?? Date()
+                exitedAt = at
+                guard !pty.alive || Date().timeIntervalSince(at) > 0.5 else { return nil }
                 var result = process(program: program, pty: pty, core: core, lines: lines)
                 result["state"] = .string("finished")
                 return result
@@ -96,6 +112,8 @@ enum ControlCommand {
 
         // Which command: named, or the running one, or (next) a newer one.
         let newest = core.lastCommand(maxLines: 0, maxBytes: 0)?.command
+        // Next: the first command recorded after this one, whatever becomes of it.
+        let baseline = core.newestCommandId() ?? 0
         var target: (id: UInt64, epoch: UInt64)? = named
         if target == nil, !next {
             guard let running = newest, running.running else {
@@ -109,14 +127,10 @@ enum ControlCommand {
         if request.from == paneID, named == nil || named?.id == newest?.id && newest?.running == true {
             throw ControlError(.selfWait, "this request runs in the pane it would wait on: that command cannot end while it waits")
         }
-        let baseline = newest?.id ?? 0
         poll(request, paneID, timeout: timeout, reply: reply) {
             if target == nil {
-                // Next: the first command newer than when the wait began.
-                guard let latest = core.lastCommand(maxLines: 0, maxBytes: 0)?.command, latest.id > baseline else {
-                    return nil
-                }
-                target = (latest.id, latest.epoch)
+                guard let first = core.firstCommandAfter(after: baseline) else { return nil }
+                target = (first.id, first.epoch)
             }
             guard let (id, epoch) = target else { return nil }
             guard let found = core.commandOutput(id: id, epoch: epoch, maxLines: UInt32(lines), maxBytes: UInt32(maxBytes)) else {
@@ -197,16 +211,18 @@ enum ControlCommand {
     /// the last lines the pane shows.
     static func process(program: [String], pty: PTY?, core: TakoCore, lines: Int) -> [String: JSON] {
         let tail = core.textTail(maxLines: UInt32(lines) + 2, maxBytes: UInt32(maxBytes))
-        let running = pty?.alive ?? false
+        let started = pty?.startError == nil
+        let running = started && pty?.exitStatus == nil
         // The line Tako writes when the program ends is not its output.
         var outputLines = tail.text.components(separatedBy: "\n")
-        while let last = outputLines.last, last.isEmpty || last.hasPrefix("[exited") { outputLines.removeLast() }
+        while let last = outputLines.last, last.isEmpty || last.hasPrefix("[exited") || last.hasPrefix("[could not start") { outputLines.removeLast() }
         let kept = outputLines.suffix(lines)
         return [
             "process": .object([
                 "argv": .array(program.map(JSON.string)),
                 "running": .bool(running),
-                "exitCode": running ? .null : (pty?.exitStatus.map { .number(Double($0)) } ?? .null),
+                "exitCode": running || !started ? .null : (pty?.exitStatus.map { .number(Double($0)) } ?? .null),
+                "startError": pty?.startError.map { .string(String(cString: strerror($0))) } ?? .null,
             ]),
             "output": .string(kept.joined(separator: "\n")),
             "lines": .number(Double(kept.count)),

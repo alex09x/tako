@@ -1939,6 +1939,24 @@ impl TakoCore {
         Some(command_output_record(&record, out, terminal.epoch))
     }
 
+    /// The newest command record's id, whatever became of the command --
+    /// running, finished or abandoned. A wait for the next command starts
+    /// after it.
+    pub fn newest_command_id(&self) -> Option<u64> {
+        lock_recover(&self.inner).commands().records().next_back().map(|r| r.id)
+    }
+
+    /// The first command recorded after `after` -- running, finished or
+    /// abandoned -- in the current generation.
+    pub fn first_command_after(&self, after: u64) -> Option<FfiCommandInfo> {
+        let terminal = lock_recover(&self.inner);
+        terminal
+            .commands()
+            .records()
+            .find(|r| r.id > after)
+            .map(|r| FfiCommandInfo::new(r, terminal.epoch))
+    }
+
     /// Command `id` of engine generation `epoch` (both from a
     /// `FfiCommandInfo`), as `last_command` reports one. `None` when that
     /// generation is gone (an import or reset since) or the record is.

@@ -1062,6 +1062,12 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func feedWithOutcome(bytes: Data)  -> FfiFeedOutcome
 
     /**
+     * The first command recorded after `after` -- running, finished or
+     * abandoned -- in the current generation.
+     */
+    func firstCommandAfter(after: UInt64)  -> FfiCommandInfo?
+
+    /**
      * Returns the styled cell at (row, col) in the currently active grid,
      * or `None` if out of bounds.
      */
@@ -1139,6 +1145,13 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * `mouse-shift-capture` decides whether the request counts.
      */
     func mouseShiftCapture()  -> Bool?
+
+    /**
+     * The newest command record's id, whatever became of the command --
+     * running, finished or abandoned. A wait for the next command starts
+     * after it.
+     */
+    func newestCommandId()  -> UInt64?
 
     /**
      * Whether pasting this text unbracketed would be risky (contains
@@ -1857,6 +1870,20 @@ open func feedWithOutcome(bytes: Data) -> FfiFeedOutcome  {
 }
 
     /**
+     * The first command recorded after `after` -- running, finished or
+     * abandoned -- in the current generation.
+     */
+open func firstCommandAfter(after: UInt64) -> FfiCommandInfo?  {
+    return try!  FfiConverterOptionTypeFfiCommandInfo.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_first_command_after(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(after),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Returns the styled cell at (row, col) in the currently active grid,
      * or `None` if out of bounds.
      */
@@ -2029,6 +2056,20 @@ open func mouseShiftCapture() -> Bool?  {
     return try!  FfiConverterOptionBool.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_mouse_shift_capture(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The newest command record's id, whatever became of the command --
+     * running, finished or abandoned. A wait for the next command starts
+     * after it.
+     */
+open func newestCommandId() -> UInt64?  {
+    return try!  FfiConverterOptionUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_newest_command_id(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -7523,6 +7564,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_feed_with_outcome() != 18184) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_first_command_after() != 27620) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_get_cell() != 48280) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7560,6 +7604,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_mouse_shift_capture() != 41674) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_newest_command_id() != 16855) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_paste_is_unsafe() != 40277) {

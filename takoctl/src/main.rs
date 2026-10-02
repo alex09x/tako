@@ -344,6 +344,9 @@ fn dialog_report(result: &Value) -> String {
 fn process_report(process: &Value, result: &Value) -> String {
     let argv: Vec<&str> = process["argv"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
     let status = match (result["state"].as_str(), process["running"].as_bool(), process["exitCode"].as_f64()) {
+        _ if process["startError"].is_string() => {
+            format!("could not start: {}", process["startError"].as_str().unwrap_or(""))
+        }
         (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
         (_, Some(true), _) => "running".to_string(),
         (_, _, Some(code)) => format!("exit {}", code as i64),

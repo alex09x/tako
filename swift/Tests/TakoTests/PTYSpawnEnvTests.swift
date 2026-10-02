@@ -74,11 +74,28 @@ struct PTYSpawnEnvTests {
             let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(),
                                        program: ["/bin/sh", "-c", script]))
             pty.readLoop(targetQueue: .global(), onData: { _ in }, onExit: {})
-            #expect(waitUntil { pty.exitStatus != nil })
+            #expect(waitUntil { pty.exitStatus != nil && !pty.alive })
             #expect(pty.exitStatus == want, "\(script)")
-            #expect(!pty.alive)
             pty.terminate()
         }
+    }
+
+    @Test func aProgramThatCannotStartSaysWhyInsteadOfExiting127() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(),
+                                   program: ["/nonexistent/tako-test-program"]))
+        defer { pty.terminate() }
+        #expect(pty.startError == ENOENT)
+    }
+
+    @Test func aProgramThatClosesItsTerminalAndRunsOnIsStillWaitedFor() throws {
+        // Lets go of the terminal and exits only seconds later: the status is
+        // its own, collected when it really exits, however long after.
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(),
+                                   program: ["/bin/sh", "-c", "exec </dev/null >/dev/null 2>&1; sleep 2; exit 5"]))
+        defer { pty.terminate() }
+        pty.readLoop(targetQueue: .global(), onData: { _ in }, onExit: {})
+        #expect(waitUntil(timeout: 8) { pty.exitStatus != nil })
+        #expect(pty.exitStatus == 5)
     }
 }
 

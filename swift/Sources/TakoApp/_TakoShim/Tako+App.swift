@@ -801,28 +801,42 @@ final class PTY {
     private func markEnded() { aliveLock.withLock { _alive = false } }
 
     /// How the process ended, once it has: its exit code, or 128 plus the
-    /// signal that ended it -- as a shell reports it. Nil while it runs, or
-    /// if it could not be collected.
+    /// signal that ended it -- as a shell reports it. Nil while it runs.
+    /// Collected when the process itself exits, whatever happens to its
+    /// terminal: a descendant may hold the terminal open after it, or it may
+    /// close the terminal and run on.
     var exitStatus: Int32? { aliveLock.withLock { _exitStatus } }
     private var _exitStatus: Int32?
 
-    /// Collects the child once its terminal has reached EOF, so it does not
-    /// linger as a zombie and its status is known. The process may close the
-    /// terminal a moment before it exits: a few short tries, off the main
-    /// thread.
-    private func reap() {
-        var status: Int32 = 0
-        for _ in 0..<50 {
-            let r = waitpid(child, &status, WNOHANG)
-            if r == child {
-                let signal = status & 0x7f
-                let code = signal == 0 ? (status >> 8) & 0xff : 128 + signal
-                aliveLock.withLock { _exitStatus = code }
-                return
-            }
-            if r < 0 { return }
-            usleep(20_000)
+    /// The error `execve` gave when the program could not be started at
+    /// all (its errno); then the process never ran and `exitStatus` is not
+    /// the program's.
+    private(set) var startError: Int32?
+
+    private var exitSource: DispatchSourceProcess?
+
+    /// Watches the child for its exit and collects it then, so it does not
+    /// linger as a zombie and its status is known.
+    private func watchExit() {
+        let pid = child
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
+        let collect: @Sendable () -> Bool = { [weak self] in
+            var status: Int32 = 0
+            guard waitpid(pid, &status, WNOHANG) == pid else { return false }
+            let signal = status & 0x7f
+            let code = signal == 0 ? (status >> 8) & 0xff : 128 + signal
+            self?.aliveLock.withLock { self?._exitStatus = code }
+            return true
         }
+        source.setEventHandler {
+            // The event can come a moment before the process can be waited on.
+            for _ in 0..<100 where !collect() { usleep(10_000) }
+            source.cancel()
+        }
+        exitSource = source
+        source.resume()
+        // An exit before the watch was set up is not reported by it.
+        DispatchQueue.global(qos: .utility).async { if collect() { source.cancel() } }
     }
 
     /// The directory the child process actually started in -- what
@@ -876,10 +890,23 @@ final class PTY {
         self.startedInDirectory = startDir
         let childDir = strdup(startDir)
 
+        // execve's error, if it fails, comes back on this pipe: both ends
+        // close on exec, so a started program leaves it empty and closed.
+        var errorPipe: [Int32] = [-1, -1]
+        let haveErrorPipe = pipe(&errorPipe) == 0
+        if haveErrorPipe {
+            _ = fcntl(errorPipe[0], F_SETFD, FD_CLOEXEC)
+            _ = fcntl(errorPipe[1], F_SETFD, FD_CLOEXEC)
+        }
+
         var masterFD: Int32 = 0
         var size = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         let pid = forkpty(&masterFD, nil, nil, &size)
         if pid < 0 {
+            if haveErrorPipe {
+                close(errorPipe[0])
+                close(errorPipe[1])
+            }
             for s in envStrings { free(s) }
             for s in argvStrings { free(s) }
             free(shellPath)
@@ -904,7 +931,21 @@ final class PTY {
             }
             chdir(childDir)
             _ = execve(shellPath, argv, envp)
+            var failure = errno
+            if haveErrorPipe { _ = Darwin.write(errorPipe[1], &failure, MemoryLayout<Int32>.size) }
             _exit(127)
+        }
+        var startFailure: Int32?
+        if haveErrorPipe {
+            close(errorPipe[1])
+            // Returns at the child's exec (the pipe closes) or its failure.
+            var failure: Int32 = 0
+            var got = 0
+            repeat {
+                got = withUnsafeMutableBytes(of: &failure) { Darwin.read(errorPipe[0], $0.baseAddress, $0.count) }
+            } while got < 0 && errno == EINTR
+            if got == MemoryLayout<Int32>.size { startFailure = failure }
+            close(errorPipe[0])
         }
         for s in envStrings { free(s) }
         for s in argvStrings { free(s) }
@@ -914,6 +955,8 @@ final class PTY {
         free(childDir)
         master = masterFD
         child = pid
+        startError = startFailure
+        watchExit()
     }
 
     /// The user's login shell, from the password database. `$SHELL` is not
@@ -1094,8 +1137,7 @@ final class PTY {
                 onData: onData,
                 onExit: { [weak self] in
                     // Recorded before anyone is told, so whoever asks next
-                    // sees it ended, and how.
-                    self?.reap()
+                    // sees it ended.
                     self?.markEnded()
                     onExit()
                 },
@@ -2090,9 +2132,22 @@ extension Tako {
                 // The pane outlives its program: what it printed, and how it
                 // ended, stay to be read.
                 onExit = { view in
-                    let status = view.pty?.exitStatus.map { "exited with code \($0)" } ?? "exited"
-                    view.core.feed(bytes: Data("\r\n\u{1b}[2m[\(status)]\u{1b}[0m\r\n".utf8))
-                    view.needsDisplay = true
+                    // The terminal closed; the status comes with the process's
+                    // own exit, which may follow a moment later.
+                    let pty = view.pty
+                    DispatchQueue.global(qos: .utility).async {
+                        for _ in 0..<100 where pty?.exitStatus == nil && pty?.startError == nil { usleep(10_000) }
+                        let status: String
+                        if let error = pty?.startError {
+                            status = "could not start: \(String(cString: strerror(error)))"
+                        } else {
+                            status = pty?.exitStatus.map { "exited with code \($0)" } ?? "exited"
+                        }
+                        DispatchQueue.main.async {
+                            view.core.feed(bytes: Data("\r\n\u{1b}[2m[\(status)]\u{1b}[0m\r\n".utf8))
+                            view.needsDisplay = true
+                        }
+                    }
                 }
                 startProcess(workingDir: workingDir, program: program, environment: programEnvironment)
             } else if persistent {

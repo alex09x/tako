@@ -697,3 +697,17 @@ fn reading_a_few_lines_of_a_long_output_stops_early() {
     assert!(out.more);
 }
 
+#[test]
+fn the_first_command_after_another_is_found_even_when_abandoned() {
+    let core = TakoCore::new(30, 8);
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07ok\r\n\x1b]133;C\x07fine\r\n\x1b]133;D;0\x07".to_vec());
+    let before = core.newest_command_id().expect("one command");
+    // A command that starts and is abandoned by a new prompt, then another.
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07sleep\r\n\x1b]133;C\x07".to_vec());
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07x\r\n\x1b]133;D;0\x07".to_vec());
+    let next = core.first_command_after(before).expect("a later command");
+    assert!(next.abandoned);
+    assert_eq!(next.input.as_deref(), Some("sleep"));
+    assert!(core.newest_command_id().unwrap() > next.id);
+}
+
