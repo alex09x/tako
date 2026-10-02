@@ -188,5 +188,20 @@ struct TerminalDialogTests {
         TerminalDialogView.pending(in: window)!.withdraw()
         #expect(await cancelled.value == nil)
     }
+
+    @Test func returnInTheFieldPressesTheButtonShownAsChosen() async {
+        let window = window()
+        let asked = Task { await TerminalDialogView.askText(in: window, title: "Rename Tab", label: "Title",
+                                                            value: "x", hint: nil, confirm: "Save", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        let field = dialog.subviews.compactMap { $0 as? NSTextField }.first!
+        let editor = NSTextView()
+        #expect(dialog.summary["selected"] == .string("Save"))
+        _ = dialog.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:)))
+        #expect(dialog.summary["selected"] == .string("Cancel"))
+        _ = dialog.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(await asked.value == nil)
+    }
 }
 

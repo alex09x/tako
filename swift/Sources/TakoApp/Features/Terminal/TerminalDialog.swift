@@ -60,10 +60,9 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     private var finish: ((Int) -> Void)?
     private weak var previousResponder: NSResponder?
     /// A line to type into, on body row `fieldRow`, when the question asks
-    /// for text; return presses `fieldConfirm`.
+    /// for text; return presses the chosen button.
     private var field: NSTextField?
     private var fieldRow = 0
-    private var fieldConfirm = 0
 
     /// The question drawn in `window`, if one is waiting for an answer.
     static func pending(in window: NSWindow?) -> TerminalDialogView? {
@@ -161,7 +160,6 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         field.setAccessibilityLabel(label)
         view.field = field
         view.fieldRow = 1
-        view.fieldConfirm = 1
         view.addSubview(field)
         view.frame = content.bounds
         view.autoresizingMask = [.width, .height]
@@ -180,7 +178,8 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     // inside the field, as from the card.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
-        case #selector(NSResponder.insertNewline(_:)): answer(fieldConfirm)
+        // The button shown as chosen -- Save until tab moves the choice.
+        case #selector(NSResponder.insertNewline(_:)): answer(selected)
         case #selector(NSResponder.cancelOperation(_:)): answer(cancelIndex)
         case #selector(NSResponder.insertTab(_:)): move(1)
         default: return false
