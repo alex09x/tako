@@ -60,4 +60,13 @@ struct PTYSpawnEnvTests {
         #expect(!output.contains("NO_COLOR="))
         #expect(output.contains(resolvedWorkDir))
     }
+
+    @Test func aPTYNamesTheTerminalDeviceItsShellRunsOn() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory()))
+        defer { pty.terminate() }
+        let name = try #require(pty.ttyName)
+        #expect(name.hasPrefix("/dev/tty"))
+        #expect(FileManager.default.fileExists(atPath: name))
+    }
 }
+

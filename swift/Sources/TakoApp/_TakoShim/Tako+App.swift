@@ -1002,8 +1002,11 @@ final class PTY {
         return pid > 0 ? Int(pid) : nil
     }
 
+    /// The terminal device the shell runs on, `/dev/ttysNNN`: the pty's
+    /// slave side, by `ptsname`. `ttyname` on the master returns nothing on
+    /// macOS.
     var ttyName: String? {
-        guard let name = ttyname(master) else { return nil }
+        guard let name = ptsname(master) else { return nil }
         return String(cString: name)
     }
 
@@ -1762,8 +1765,7 @@ extension Tako {
 
         public var pid: Int { Int(pty?.child ?? 0) }
         public var ttyName: String {
-            guard let master = pty?.master, let name = ttyname(master) else { return "" }
-            return String(cString: name)
+            pty?.ttyName ?? ""
         }
         public var visibleText: String {
             (0..<rows).map { core.getLine(row: UInt32($0)) }.joined(separator: "\n")

@@ -37,6 +37,12 @@ enum JSON: Equatable {
         }
     }
 
+    /// The number this is, if it is one.
+    var number: Double? {
+        if case .number(let n) = self { return n }
+        return nil
+    }
+
     var any: Any {
         switch self {
         case .null: return NSNull()

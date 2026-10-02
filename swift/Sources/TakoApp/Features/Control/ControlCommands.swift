@@ -61,6 +61,7 @@ enum ControlCommands {
         let surface: Tako.SurfaceView
         let windowID: String
         let tabID: String
+        let controller: BaseTerminalController
     }
 
     static func panes() -> [Pane] {
@@ -83,7 +84,7 @@ enum ControlCommands {
                 tabID = "tab-\(ObjectIdentifier(controller).hexString)"
             }
             for surface in controller.surfaceTree {
-                result.append(Pane(surface: surface, windowID: windowID, tabID: tabID))
+                result.append(Pane(surface: surface, windowID: windowID, tabID: tabID, controller: controller))
             }
         }
         return result
@@ -213,6 +214,7 @@ enum ControlCommands {
     /// client of a persistent session rather than the shell.
     static func tree(_ panes: [Pane], active: UUID?) -> [String: JSON] {
         var windows: [(id: String, tabs: [(id: String, panes: [JSON])])] = []
+        var tabInfo: [String: [String: JSON]] = [:]
         for pane in panes {
             let surface = pane.surface
             let persistent = surface.persistence != nil
@@ -240,17 +242,54 @@ enum ControlCommands {
             }()
             let t = windows[w].tabs.firstIndex { $0.id == pane.tabID } ?? {
                 windows[w].tabs.append((pane.tabID, []))
+                tabInfo[pane.tabID] = tabFacts(pane.controller)
                 return windows[w].tabs.count - 1
             }()
             windows[w].tabs[t].panes.append(.object(node))
         }
         return ["windows": .array(windows.map { window in
-            .object([
+            // Tabs in the order the tab bar shows them.
+            let tabs = window.tabs.sorted {
+                (tabInfo[$0.id]?["index"]?.number ?? 0) < (tabInfo[$1.id]?["index"]?.number ?? 0)
+            }
+            return .object([
                 "id": .string(window.id),
-                "tabs": .array(window.tabs.map { tab in
-                    .object(["id": .string(tab.id), "panes": .array(tab.panes)])
+                "tabs": .array(tabs.map { tab in
+                    var node = tabInfo[tab.id] ?? [:]
+                    node["id"] = .string(tab.id)
+                    node["panes"] = .array(tab.panes)
+                    return .object(node)
                 }),
             ])
         })]
+    }
+
+    /// What a tab adds to its panes: its place in the tab bar (from 1), its
+    /// title, whether it is the one shown, and how its panes are split --
+    /// `{"pane": id}` or `{"split": "right"|"down", "ratio", "children": [a, b]}`.
+    static func tabFacts(_ controller: BaseTerminalController) -> [String: JSON] {
+        var facts: [String: JSON] = ["layout": controller.surfaceTree.root.map(layout) ?? .null]
+        if let window = controller.window, !(controller is QuickTerminalController) {
+            let group = Tako.CustomTabGroup.group(for: window)
+            facts["index"] = .number(Double((group.windows.firstIndex { $0 === window } ?? 0) + 1))
+            facts["selected"] = .bool(group.selectedWindow === window || group.windows.count <= 1)
+            facts["title"] = .string(controller.titleOverride ?? window.title)
+        }
+        return facts
+    }
+
+    static func layout(_ node: SplitTree<Tako.SurfaceView>.Node) -> JSON {
+        switch node {
+        case .leaf(let view):
+            return .object(["pane": .string(view.id.uuidString.lowercased())])
+        case .split(let split):
+            return .object([
+                // Horizontal lays the two out side by side: the second is to
+                // the right. Vertical stacks them: the second is below.
+                "split": .string(split.direction == .horizontal ? "right" : "down"),
+                "ratio": .number((split.ratio * 100).rounded() / 100),
+                "children": .array([layout(split.left), layout(split.right)]),
+            ])
+        }
     }
 }

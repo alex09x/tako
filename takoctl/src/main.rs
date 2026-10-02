@@ -133,15 +133,26 @@ fn render(cmd: &str, result: &Value) -> String {
             for window in result["windows"].as_array().into_iter().flatten() {
                 out += &format!("window {}\n", window["id"].as_str().unwrap_or(""));
                 for tab in window["tabs"].as_array().into_iter().flatten() {
-                    out += &format!("  tab {}\n", tab["id"].as_str().unwrap_or(""));
-                    for pane in tab["panes"].as_array().into_iter().flatten() {
-                        let mark = if pane["focused"].as_bool() == Some(true) { "*" } else { " " };
-                        out += &format!(
-                            "   {mark}{}  {}  {}\n",
-                            pane["id"].as_str().unwrap_or(""),
-                            pane["cwd"].as_str().unwrap_or("-"),
-                            pane["title"].as_str().unwrap_or("")
-                        );
+                    let mut head = match tab["index"].as_f64() {
+                        Some(i) => format!("  tab {}", i as u64),
+                        None => format!("  tab {}", tab["id"].as_str().unwrap_or("")),
+                    };
+                    if let Some(t) = tab["title"].as_str().filter(|t| !t.is_empty()) {
+                        head += &format!("  \"{t}\"");
+                    }
+                    if tab["selected"].as_bool() == Some(true) {
+                        head += "  (shown)";
+                    }
+                    out += &head;
+                    out.push('\n');
+                    let panes: Vec<&Value> = tab["panes"].as_array().into_iter().flatten().collect();
+                    match tab.get("layout").filter(|l| !l.is_null()) {
+                        Some(layout) => outline(&mut out, layout, &panes, 2),
+                        None => {
+                            for pane in &panes {
+                                out += &pane_line(pane, 2);
+                            }
+                        }
                     }
                 }
             }
@@ -156,6 +167,34 @@ fn render(cmd: &str, result: &Value) -> String {
         "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
         _ => format!("{result}\n"),
+    }
+}
+
+/// One pane: `*` when it has the keyboard, its id, directory and title.
+fn pane_line(pane: &Value, depth: usize) -> String {
+    let mark = if pane["focused"].as_bool() == Some(true) { "*" } else { " " };
+    format!(
+        "{}{mark}{}  {}  {}\n",
+        "  ".repeat(depth),
+        pane["id"].as_str().unwrap_or(""),
+        pane["cwd"].as_str().unwrap_or("-"),
+        pane["title"].as_str().unwrap_or("")
+    )
+}
+
+/// A tab's splits as an indented outline, panes at their leaves.
+fn outline(out: &mut String, node: &Value, panes: &[&Value], depth: usize) {
+    if let Some(id) = node["pane"].as_str() {
+        match panes.iter().find(|p| p["id"].as_str() == Some(id)) {
+            Some(pane) => *out += &pane_line(pane, depth),
+            None => *out += &format!("{} {id}\n", "  ".repeat(depth)),
+        }
+        return;
+    }
+    let ratio = node["ratio"].as_f64().map(|r| format!(" {:.0}%", r * 100.0)).unwrap_or_default();
+    *out += &format!("{}split {}{ratio}\n", "  ".repeat(depth), node["split"].as_str().unwrap_or("?"));
+    for child in node["children"].as_array().into_iter().flatten() {
+        outline(out, child, panes, depth + 1);
     }
 }
 
@@ -271,11 +310,35 @@ mod tests {
     }
 
     #[test]
+    fn a_tree_with_splits_reads_as_nested_splits() {
+        let result = json!({"windows": [{"id": "w1", "tabs": [{"id": "t1", "index": 1, "title": "build",
+            "selected": true,
+            "layout": {"split": "right", "ratio": 0.5, "children": [
+                {"pane": "p1"},
+                {"split": "down", "ratio": 0.3, "children": [{"pane": "p2"}, {"pane": "p3"}]}]},
+            "panes": [
+                {"id": "p1", "cwd": "/src", "title": "zsh", "focused": true},
+                {"id": "p2", "cwd": "/tmp", "title": "", "focused": false},
+                {"id": "p3", "cwd": null, "title": "top", "focused": false}]}]}]});
+        let want = [
+            "window w1",
+            "  tab 1  \"build\"  (shown)",
+            "    split right 50%",
+            "      *p1  /src  zsh",
+            "      split down 30%",
+            "         p2  /tmp  ",
+            "         p3  -  top",
+            "",
+        ].join("\n");
+        assert_eq!(render("tree", &result), want);
+    }
+
+    #[test]
     fn a_tree_reads_as_an_outline() {
         let result = json!({"windows": [{"id": "w1", "tabs": [{"id": "t1", "panes": [
             {"id": "p1", "cwd": "/src", "title": "zsh", "focused": true},
             {"id": "p2", "cwd": null, "title": "", "focused": false}]}]}]});
         assert_eq!(render("tree", &result),
-            "window w1\n  tab t1\n   *p1  /src  zsh\n    p2  -  \n");
+            "window w1\n  tab t1\n    *p1  /src  zsh\n     p2  -  \n");
     }
 }
