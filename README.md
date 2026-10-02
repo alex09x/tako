@@ -40,12 +40,14 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
   - Each tab's screen and scrollback come back after a relaunch, marked with when they were saved;
     the new shell is never presented as the old one.
   - Find in All Tabs (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>) searches every open
-    terminal's history and jumps to the match; with shell integration, matches are grouped under
-    the command that printed them, with its exit status, directory and start time.
+    terminal's history and jumps to the match. Where the shell marks its commands (shell
+    integration), matches are grouped under the command that printed them, with what the shell
+    reported: exit status, directory, and the time it started.
   - A long command that finishes or fails while you are elsewhere marks its tab and can send a
     notification.
   - Experimental: `session-persistence = true` keeps each shell running across a quit and
-    reattaches it on the next launch.
+    reattaches it on the next launch (not the Quick Terminal). Output from before the relaunch is
+    searchable but not grouped by command.
 
 - **Native macOS Experience**:
   - Native tabs, split panes (horizontal & vertical), Quick Terminal dropdown.
@@ -157,9 +159,11 @@ macos-titlebar-style = transparent
 # keeping at most 64 MB for all tabs together
 window-save-content = true
 window-save-content-limit = 64
-# Mark a tab and notify when a command of 10 s or more ends: never, unfocused or always
+# When a command of 10 s or more ends while its tab is not focused, mark the tab,
+# ring the bell and send a system notification (never, unfocused or always)
 notify-on-command-finish = unfocused
 notify-on-command-finish-after = 10s
+notify-on-command-finish-action = bell,notify
 # Experimental: keep shells running across a quit and reattach them
 session-persistence = false
 
