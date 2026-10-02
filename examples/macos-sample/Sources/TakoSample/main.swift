@@ -21,19 +21,12 @@ private func freeCStringArray(_ array: UnsafeMutablePointer<UnsafeMutablePointer
 /// other side. TakoCoreUI draws and parses; starting and talking to the
 /// program is the host's job, because only the host knows what it may run.
 final class Shell {
-    /// Input waiting for the program, at most this much; a paste beyond it
-    /// is cut rather than letting memory grow without bound.
+    /// Input not yet taken by the program, at most this much.
     static let maxPending = 8 << 20
 
     let master: Int32
     let pid: pid_t
-    private let reader: DispatchSourceRead
-    private let writer: DispatchSourceWrite
-    /// Writes happen here, never on the main thread: a program that is not
-    /// reading must not freeze the window.
-    private let io = DispatchQueue(label: "TakoSample.pty-write")
-    private var pending = Data()
-    private var writerRunning = false
+    private let channel: Channel
 
     init(
         program: [String], cols: Int, rows: Int,
@@ -64,35 +57,98 @@ final class Shell {
         _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL) | O_NONBLOCK)
         self.master = master
         self.pid = pid
-        reader = DispatchSource.makeReadSource(fileDescriptor: master, queue: .main)
-        reader.setEventHandler { [master] in
+        channel = Channel(fd: master, onOutput: onOutput, onExit: onExit)
+    }
+
+    /// Queues `data` -- one key, one paste, one reply -- for the program and
+    /// returns at once. All of it or none: false when it does not fit, so a
+    /// paste is never cut between its start and end markers.
+    @discardableResult
+    func write(_ data: Data) -> Bool {
+        channel.write(data)
+    }
+
+    /// Bytes accepted and not yet taken by the program.
+    var pendingBytes: Int { channel.reservedBytes }
+
+    func resize(cols: Int, rows: Int) {
+        var size = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols), ws_xpixel: 0, ws_ypixel: 0)
+        _ = ioctl(master, TIOCSWINSZ, &size)
+    }
+
+    deinit {
+        // Never waits on the writer's queue: this may run on it, when queued
+        // work held the last reference.
+        channel.close()
+        kill(pid, SIGHUP)
+    }
+}
+
+/// The pty's two directions. Everything mutable here belongs to `io`, and
+/// work queued there holds the channel, never the `Shell` -- so releasing a
+/// `Shell` from any thread is safe, and the descriptor is closed only after
+/// both dispatch sources are cancelled.
+private final class Channel: @unchecked Sendable {
+    private let fd: Int32
+    private let io = DispatchQueue(label: "TakoSample.pty-write")
+    private let reader: DispatchSourceRead
+    private let writer: DispatchSourceWrite
+    private var pending = Data()            // on io
+    private var writerRunning = false       // on io
+    private var closed = false              // on io
+    /// Bytes accepted by `write` and not yet written: queued closures
+    /// included, so the cap bounds everything held.
+    private let lock = NSLock()
+    private var reserved = 0                // under lock
+
+    init(fd: Int32, onOutput: @escaping (Data) -> Void, onExit: @escaping () -> Void) {
+        self.fd = fd
+        reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
+        writer = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: io)
+        // The descriptor outlives both sources: closed by whichever
+        // cancellation comes second.
+        let cancelled = DispatchGroup()
+        cancelled.enter(); cancelled.enter()
+        reader.setCancelHandler { cancelled.leave() }
+        writer.setCancelHandler { cancelled.leave() }
+        cancelled.notify(queue: .global()) { Darwin.close(fd) }
+        reader.setEventHandler {
             var buffer = [UInt8](repeating: 0, count: 65536)
-            let n = read(master, &buffer, buffer.count)
+            let n = read(fd, &buffer, buffer.count)
             if n > 0 {
                 onOutput(Data(buffer[0..<n]))
             } else if n == 0 || (errno != EAGAIN && errno != EINTR) {
                 onExit()
             }
         }
-        writer = DispatchSource.makeWriteSource(fileDescriptor: master, queue: io)
         writer.setEventHandler { [weak self] in self?.flush() }
         reader.resume()
     }
 
-    /// Queues `data` for the program and returns at once.
-    func write(_ data: Data) {
+    var reservedBytes: Int { lock.withLock { reserved } }
+
+    func write(_ data: Data) -> Bool {
+        let accepted = lock.withLock {
+            guard reserved + data.count <= Shell.maxPending else { return false }
+            reserved += data.count
+            return true
+        }
+        guard accepted else { return false }
         io.async { [self] in
-            pending.append(data.prefix(max(0, Self.maxPending - pending.count)))
+            guard !closed else { return }
+            pending.append(data)
             flush()
         }
+        return true
     }
 
     /// On `io`: writes what the pty takes now, and waits for room for the rest.
     private func flush() {
         while !pending.isEmpty {
-            let n = pending.withUnsafeBytes { Darwin.write(master, $0.baseAddress!, $0.count) }
+            let n = pending.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, $0.count) }
             if n > 0 {
                 pending.removeFirst(n)
+                lock.withLock { reserved -= n }
             } else if n < 0 && errno == EINTR {
                 continue
             } else {
@@ -108,53 +164,86 @@ final class Shell {
         }
     }
 
-    /// Bytes still waiting for the program.
-    func pendingBytes() -> Int { io.sync { pending.count } }
-
-    func resize(cols: Int, rows: Int) {
-        var size = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols), ws_xpixel: 0, ws_ypixel: 0)
-        _ = ioctl(master, TIOCSWINSZ, &size)
-    }
-
-    deinit {
-        reader.cancel()
-        io.sync {
-            // A dispatch source must be resumed to be cancelled cleanly.
+    /// From any thread, any number of times.
+    func close() {
+        io.async { [self] in
+            guard !closed else { return }
+            closed = true
+            pending = Data()
+            lock.withLock { reserved = 0 }
+            reader.cancel()
+            // A suspended source must be resumed to be cancelled.
             if !writerRunning { writer.resume() }
             writer.cancel()
         }
-        kill(pid, SIGHUP)
-        close(master)
     }
 }
 
-/// `TakoSample --selftest`: a large paste into a program that reads nothing
-/// must not block the caller. No window needed.
+/// `TakoSample --selftest`: input to a program is accepted whole or not at
+/// all, arrives intact once there is room, never blocks the caller, and a
+/// Shell can be released with input still queued. No window needed.
 func selfTest() -> Int32 {
-    do {
-        let shell = try Shell(program: ["/bin/sleep", "30"], cols: 80, rows: 24, onOutput: { _ in }, onExit: {})
-        // Raw, as a full-screen program sets it: a canonical-mode line
-        // discipline would quietly drop what does not fit, and nothing would
-        // ever wait.
+    func raw(_ fd: Int32) {
+        // As a full-screen program sets it: a canonical-mode line discipline
+        // would quietly drop what does not fit, and nothing would ever wait.
         var mode = termios()
-        tcgetattr(shell.master, &mode)
+        tcgetattr(fd, &mode)
         cfmakeraw(&mode)
-        tcsetattr(shell.master, TCSANOW, &mode)
+        tcsetattr(fd, TCSANOW, &mode)
+    }
+    var failures = 0
+    func check(_ ok: Bool, _ what: String) {
+        print("\(ok ? "ok  " : "FAIL") \(what)")
+        if !ok { failures += 1 }
+    }
+    do {
+        // 1. A program that reads nothing: the caller never blocks, items
+        //    past the cap are refused whole.
+        let idle = try Shell(program: ["/bin/sleep", "30"], cols: 80, rows: 24, onOutput: { _ in }, onExit: {})
+        raw(idle.master)
+        let item = Data(repeating: 0x61, count: 3 << 20)
         let start = Date()
-        for _ in 0..<64 { shell.write(Data(repeating: 0x61, count: 256 << 10)) }
-        let took = Date().timeIntervalSince(start)
-        // The writer must still answer -- a blocking write would hang it --
-        // and hold no more than its cap.
-        let answered = DispatchSemaphore(value: 0)
-        var waiting = -1
-        DispatchQueue.global().async { waiting = shell.pendingBytes(); answered.signal() }
-        let alive = answered.wait(timeout: .now() + 2) == .success
-        print("queued 16 MiB in \(Int(took * 1000)) ms; writer answering: \(alive); waiting: \(waiting) bytes")
-        return took < 0.5 && alive && waiting > 0 && waiting <= Shell.maxPending ? 0 : 1
+        let results = (0..<5).map { _ in idle.write(item) }
+        check(Date().timeIntervalSince(start) < 0.5, "writing 15 MiB returns at once")
+        check(results == [true, true, false, false, false], "items past 8 MiB are refused whole: \(results)")
+        check(idle.pendingBytes <= Shell.maxPending, "held input stays within the cap: \(idle.pendingBytes)")
+
+        // 2. A bracketed paste larger than the pty's buffer reaches a
+        //    program that starts reading late, complete and in order.
+        let out = NSTemporaryDirectory() + "tako-sample-\(getpid()).out"
+        let reader = try Shell(
+            program: ["/bin/sh", "-c", "sleep 1; head -c 2097164 > \(out)"], cols: 80, rows: 24,
+            onOutput: { _ in }, onExit: {})
+        raw(reader.master)
+        let paste = Data("\u{1b}[200~".utf8) + Data(repeating: 0x62, count: 2 << 20) + Data("\u{1b}[201~".utf8)
+        check(reader.write(paste), "a 2 MiB bracketed paste is accepted")
+        var got = Data()
+        for _ in 0..<100 {
+            got = FileManager.default.contents(atPath: out) ?? Data()
+            if got.count >= paste.count { break }
+            usleep(100_000)
+        }
+        check(got == paste, "it arrives whole, end marker included (\(got.count) of \(paste.count) bytes)")
+        try? FileManager.default.removeItem(atPath: out)
+
+        // 3. Released with input still queued: nothing waits on the writer's
+        //    queue, and the program is told to go.
+        var dropped: Shell? = try Shell(program: ["/bin/sleep", "30"], cols: 80, rows: 24, onOutput: { _ in }, onExit: {})
+        raw(dropped!.master)
+        let child = dropped!.pid
+        dropped!.write(Data(repeating: 0x63, count: 4 << 20))
+        dropped = nil
+        var gone = false
+        for _ in 0..<50 {
+            if waitpid(child, nil, WNOHANG) == child { gone = true; break }
+            usleep(100_000)
+        }
+        check(gone, "releasing a Shell with queued input ends its program")
     } catch {
-        print("could not start: \(error)")
+        print("FAIL could not start: \(error)")
         return 1
     }
+    return failures == 0 ? 0 : 1
 }
 
 @MainActor
@@ -191,9 +280,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, TakoTerminalNSViewDele
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     // Keys, paste and mouse reports the view produced: the program's input.
-    func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) { shell?.write(data) }
+    // Input that does not fit is refused whole; say so rather than send part.
+    func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
+        if shell?.write(data) == false { NSSound.beep() }
+    }
     // Answers to the program's queries (cursor position, device attributes).
-    func terminalView(_ view: TakoTerminalNSView, sendDeviceReplyData data: Data) { shell?.write(data) }
+    func terminalView(_ view: TakoTerminalNSView, sendDeviceReplyData data: Data) {
+        if shell?.write(data) == false { NSSound.beep() }
+    }
     func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
         shell?.resize(cols: cols, rows: rows)
     }

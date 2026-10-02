@@ -19,8 +19,9 @@ There are three ways in:
 opens a pseudo-terminal (`forkpty`), feeds what the shell writes to the view,
 and writes what the view produces (keys, paste, mouse, replies to the
 program's queries) back to the shell -- off the main thread, so a program
-that stops reading cannot freeze the window. `TakoSample --selftest` checks
-exactly that without a window.
+that stops reading cannot freeze the window. Input that does not fit in its
+8 MiB queue is refused whole, never cut. `TakoSample --selftest` checks this
+without a window.
 
 **iOS** -- iOS runs no local shells, so the program on the other side is a few
 lines of Swift that echo a line back. Replace it with your SSH session.
@@ -39,8 +40,8 @@ the package under `swift/`, which links the engine built here. Build it once,
 and again after changing the Rust sources:
 
     scripts/build-xcframework.sh          # macOS, iOS and the simulator
-    cd examples/macos-sample && swift run
-    cd examples/ios-sample && xcodegen -s project.yml && open TakoSample.xcodeproj
+    (cd examples/macos-sample && swift run)
+    (cd examples/ios-sample && xcodegen -s project.yml && open TakoSample.xcodeproj)
 
 `scripts/build-xcframework.sh --macos-only` is enough for the macOS sample.
 The iOS sample excludes x86_64 for the simulator: the engine has arm64
