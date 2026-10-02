@@ -5,14 +5,36 @@ import AppKit
 enum ControlLayout {
     /// `cwd` from a request: a directory that exists, or nothing.
     static func config(_ args: [String: JSON]) throws -> Tako.SurfaceConfiguration? {
-        guard let cwd = args["cwd"] else { return nil }
-        guard let path = cwd.string else { throw ControlError(.invalid, "\"cwd\" is not a string") }
-        let expanded = (path as NSString).expandingTildeInPath
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else {
-            throw ControlError(.invalid, "\"cwd\" is not a directory: \(path)")
+        var config: Tako.SurfaceConfiguration?
+        if let cwd = args["cwd"] {
+            guard let path = cwd.string else { throw ControlError(.invalid, "\"cwd\" is not a string") }
+            let expanded = (path as NSString).expandingTildeInPath
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else {
+                throw ControlError(.invalid, "\"cwd\" is not a directory: \(path)")
+            }
+            config = Tako.SurfaceConfiguration(workingDirectory: expanded)
         }
-        return Tako.SurfaceConfiguration(workingDirectory: expanded)
+        if let argv = args["argv"] {
+            guard case .array(let items) = argv, !items.isEmpty else {
+                throw ControlError(.invalid, "\"argv\" must be a non-empty list of strings")
+            }
+            let program = try items.map { item -> String in
+                guard let s = item.string, !s.isEmpty || item != items[0] else {
+                    throw ControlError(.invalid, "\"argv\" must be a non-empty list of strings")
+                }
+                return s
+            }
+            var withProgram = config ?? Tako.SurfaceConfiguration()
+            withProgram.program = program
+            // The client's PATH, so the program finds what the user's shell
+            // would: an app started from the Finder has only the system's.
+            if let path = args["path"]?.string, !path.isEmpty {
+                withProgram.environmentVariables["PATH"] = path
+            }
+            config = withProgram
+        }
+        return config
     }
 
     static func controller(of surface: Tako.SurfaceView) throws -> BaseTerminalController {

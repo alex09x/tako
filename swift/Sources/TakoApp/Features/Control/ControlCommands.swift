@@ -131,14 +131,11 @@ enum ControlCommands {
                 let surface = try target(request, all)
                 ControlLayout.close(surface, reply: reply)
             case "last":
-                ControlCommand.last(try target(request, all), args: request.args, reply: reply)
+                try ControlCommand.last(try target(request, all), args: request.args, reply: reply)
             case "wait":
-                ControlCommand.wait(try target(request, all), next: request.args["next"] == .bool(true),
-                                    timeout: request.args["timeout"]?.number,
-                                    lines: Int(request.args["lines"]?.number ?? Double(ControlCommand.defaultLines)),
-                                    reply: reply)
+                try ControlCommand.wait(request, try target(request, all), reply: reply)
             case "run":
-                try ControlCommand.run(beside: try target(request, all), args: request.args, reply: reply)
+                try ControlCommand.run(request, beside: try target(request, all), reply: reply)
             case "find":
                 find(try ControlInput.text(request.args), limit: request.args["limit"]?.number, reply: reply)
             default:

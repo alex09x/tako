@@ -803,6 +803,21 @@ pub struct FfiTextTail {
     pub more: bool,
 }
 
+fn command_output_record(
+    record: &crate::terminal::commands::CommandRecord,
+    out: crate::grid::CommandOutput,
+    epoch: u64,
+) -> FfiCommandOutput {
+    FfiCommandOutput {
+        command: FfiCommandInfo::new(record, epoch),
+        output: out.text,
+        lines: out.lines as u32,
+        truncated: out.truncated,
+        more: out.more,
+        incomplete: out.incomplete,
+    }
+}
+
 /// See `TakoCore::last_command`.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiCommandOutput {
@@ -814,6 +829,8 @@ pub struct FfiCommandOutput {
     pub truncated: bool,
     /// It printed more lines than returned.
     pub more: bool,
+    /// Some of what it printed is not here (see `Grid::command_output`).
+    pub incomplete: bool,
 }
 
 /// One step of a search; see `TakoCore::search_chunk`.
@@ -1919,13 +1936,19 @@ impl TakoCore {
     pub fn last_command(&self, max_lines: u32, max_bytes: u32) -> Option<FfiCommandOutput> {
         let terminal = lock_recover(&self.inner);
         let (record, out) = terminal.last_command(max_lines as usize, max_bytes as usize)?;
-        Some(FfiCommandOutput {
-            command: FfiCommandInfo::new(&record, terminal.epoch),
-            output: out.text,
-            lines: out.lines as u32,
-            truncated: out.truncated,
-            more: out.more,
-        })
+        Some(command_output_record(&record, out, terminal.epoch))
+    }
+
+    /// Command `id` of engine generation `epoch` (both from a
+    /// `FfiCommandInfo`), as `last_command` reports one. `None` when that
+    /// generation is gone (an import or reset since) or the record is.
+    pub fn command_output(&self, id: u64, epoch: u64, max_lines: u32, max_bytes: u32) -> Option<FfiCommandOutput> {
+        let terminal = lock_recover(&self.inner);
+        if terminal.epoch != epoch {
+            return None;
+        }
+        let (record, out) = terminal.command(id, max_lines as usize, max_bytes as usize)?;
+        Some(command_output_record(&record, out, terminal.epoch))
     }
 
     /// Where the viewport sits as a fraction: 0 is the oldest retained line,

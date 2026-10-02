@@ -1704,6 +1704,18 @@ impl Terminal {
         Some((record, output))
     }
 
+    /// Command `id` and what it printed, while its record is kept.
+    pub fn command(
+        &self,
+        id: u64,
+        max_lines: usize,
+        max_bytes: usize,
+    ) -> Option<(commands::CommandRecord, crate::grid::CommandOutput)> {
+        let record = self.commands.get(id)?.clone();
+        let output = self.primary.command_output(id, max_lines, max_bytes);
+        Some((record, output))
+    }
+
     /// Give command `id` its start time (unix ms), once.
     pub fn set_command_started_at(&mut self, id: u64, unix_ms: u64) -> bool {
         self.commands.set_started_at(id, unix_ms)

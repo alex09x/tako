@@ -519,8 +519,9 @@ fn a_command_whose_output_is_all_gone_is_forgotten() {
     let mut copy = Terminal::new(20, 4);
     copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
     assert_eq!(copy.commands().records().len(), 0);
+    // A sweep keeps it: it is still the last command, even with no output.
     t.prune_commands();
-    assert!(t.commands().get(1).is_none());
+    assert!(t.commands().get(1).is_some());
 }
 
 #[test]
@@ -656,5 +657,43 @@ fn the_ffi_reports_the_last_command() {
     assert!(last.command.finished);
     assert_eq!(last.command.exit_code, Some(1));
     assert_eq!(last.command.input.as_deref(), Some("false"));
+}
+
+#[test]
+fn a_quiet_last_command_survives_sweeps() {
+    let mut t = Terminal::new(30, 8);
+    for _ in 0..300 {
+        run(&mut t, "cd /tmp", "", Some(0));
+    }
+    run(&mut t, "true", "", Some(0));
+    let (rec, out) = t.last_command(10, 1000).expect("the newest command is kept");
+    assert_eq!(rec.input.as_deref(), Some("true"));
+    assert_eq!(out.text, "");
+}
+
+#[test]
+fn a_command_by_id_and_output_written_over_is_reported_incomplete() {
+    let mut t = Terminal::new(20, 10);
+    run(&mut t, "first", "one\r\ntwo\r\n", Some(0));
+    let (first, _) = t.last_command(10, 1000).unwrap();
+    run(&mut t, "second", "three\r\n", Some(1));
+    let (rec, out) = t.command(first.id, 10, 1000).unwrap();
+    assert_eq!(rec.input.as_deref(), Some("first"));
+    assert_eq!(out.text, "one\ntwo");
+    assert!(!out.incomplete);
+    // Overwrite a row of the first command's output from outside it.
+    t.feed(b"\x1b[3;1Hxx");
+    let (_, out) = t.command(first.id, 10, 1000).unwrap();
+    assert!(out.incomplete, "{out:?}");
+}
+
+#[test]
+fn reading_a_few_lines_of_a_long_output_stops_early() {
+    let mut t = Terminal::new(30, 10);
+    let output: String = (1..=2000).map(|i| format!("line{i}\r\n")).collect();
+    run(&mut t, "seq", &output, Some(0));
+    let (_, out) = t.last_command(2, 10_000).unwrap();
+    assert_eq!(out.text, "line1999\nline2000");
+    assert!(out.more);
 }
 

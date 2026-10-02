@@ -233,9 +233,14 @@ final class ControlServer: @unchecked Sendable {
             close(client)
         }
         let gone = ControlResponse.failure(ControlError(.disabled, "remote control stopped"))
-        let request: ControlRequest
+        var request: ControlRequest
         do {
             request = try ControlRequest.parse(try Self.readRequest(client, deadline: .now() + Self.readTimeout))
+            // Only while the connection is this server's: once answered, the
+            // descriptor is closed and its number may be another file's.
+            request.clientGone = { [self] in
+                lock.withLock { !clients.contains(client) } || Self.clientGone(client)
+            }
         } catch let error as ControlError {
             finish(.failure(error))
             return

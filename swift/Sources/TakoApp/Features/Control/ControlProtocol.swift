@@ -72,6 +72,9 @@ struct ControlError: Error, Equatable {
         /// Too many requests at once.
         case busy
         case timeout
+        /// A wait on the command the request itself is part of: it cannot
+        /// end while the request waits.
+        case selfWait
         case internalError = "internal"
     }
 
@@ -92,6 +95,19 @@ struct ControlRequest: Equatable {
     let args: [String: JSON]
     /// The pane the client runs in, as it says.
     let from: UUID?
+    /// Whether the client has gone -- closed its end -- so work that waits
+    /// for something (`wait`) can stop. Set by the server.
+    var clientGone: @Sendable () -> Bool = { false }
+
+    init(cmd: String, args: [String: JSON], from: UUID?) {
+        self.cmd = cmd
+        self.args = args
+        self.from = from
+    }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.cmd == b.cmd && a.args == b.args && a.from == b.from
+    }
 
     /// Parses one request line. A `from` that is present but not a UUID is
     /// refused rather than ignored: a script that meant its own pane must not

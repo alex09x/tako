@@ -639,6 +639,10 @@ extension Tako {
         var isRestored = false
         /// The saved surface said its shell lived in a persistent session.
         var hadPersistentSession = false
+        /// A program to run in place of the login shell, argv as given:
+        /// `takoctl run`. The pane is not put in a persistent session, and
+        /// it stays open with the program's output after it exits.
+        var program: [String]?
         /// False for terminals that are never restored (the quick terminal):
         /// their shell is not put in a session that would outlive Tako.
         var allowsSessionPersistence = true
@@ -795,6 +799,31 @@ final class PTY {
     private var _alive = true
     private let aliveLock = NSLock()
     private func markEnded() { aliveLock.withLock { _alive = false } }
+
+    /// How the process ended, once it has: its exit code, or 128 plus the
+    /// signal that ended it -- as a shell reports it. Nil while it runs, or
+    /// if it could not be collected.
+    var exitStatus: Int32? { aliveLock.withLock { _exitStatus } }
+    private var _exitStatus: Int32?
+
+    /// Collects the child once its terminal has reached EOF, so it does not
+    /// linger as a zombie and its status is known. The process may close the
+    /// terminal a moment before it exits: a few short tries, off the main
+    /// thread.
+    private func reap() {
+        var status: Int32 = 0
+        for _ in 0..<50 {
+            let r = waitpid(child, &status, WNOHANG)
+            if r == child {
+                let signal = status & 0x7f
+                let code = signal == 0 ? (status >> 8) & 0xff : 128 + signal
+                aliveLock.withLock { _exitStatus = code }
+                return
+            }
+            if r < 0 { return }
+            usleep(20_000)
+        }
+    }
 
     /// The directory the child process actually started in -- what
     /// `working-directory`/`window-inherit-working-directory` resolved to,
@@ -1065,7 +1094,8 @@ final class PTY {
                 onData: onData,
                 onExit: { [weak self] in
                     // Recorded before anyone is told, so whoever asks next
-                    // sees it ended.
+                    // sees it ended, and how.
+                    self?.reap()
                     self?.markEnded()
                     onExit()
                 },
@@ -1600,12 +1630,12 @@ extension Tako {
             commandStartedAt = time
         }
 
+        /// The program `takoctl run` started in this pane in place of a shell.
+        private(set) var runProgram: [String]?
+
         /// Whether a command the shell marked (OSC 133) is running now.
         var isCommandRunning: Bool { commandStartedAt != nil }
 
-        /// Called, each once, when the next marked command ends, with its
-        /// exit code; `takoctl wait` waits on this.
-        var commandEndObservers: [UUID: (Int32?) -> Void] = [:]
 
         /// Whether the user is looking at this terminal right now.
         var isBeingLookedAt: Bool {
@@ -1618,13 +1648,6 @@ extension Tako {
         func commandEnded(exitCode: Int32?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             let ran = commandStartedAt.map { now - $0 }
             commandStartedAt = nil
-            // Only the end of a command whose start the shell marked: a
-            // shell ends its first prompt's "command" without starting one.
-            if ran != nil {
-                let observers = commandEndObservers
-                commandEndObservers = [:]
-                for observer in observers.values { observer(exitCode) }
-            }
             guard let config = owningApp?.config,
                   Tako.commandFinishShouldSignal(
                     mode: config.notifyOnCommandFinish, ran: ran,
@@ -1869,7 +1892,9 @@ extension Tako {
             setupCoreAndPty(workingDir: inherited, restoring: baseConfig?.restoredSnapshot,
                             restored: baseConfig?.isRestored ?? false,
                             hadPersistentSession: baseConfig?.hadPersistentSession ?? false,
-                            allowsPersistence: baseConfig?.allowsSessionPersistence ?? true)
+                            allowsPersistence: baseConfig?.allowsSessionPersistence ?? true,
+                            program: baseConfig?.program,
+                            programEnvironment: baseConfig?.environmentVariables ?? [:])
             if let initial = baseConfig?.initialInput, !initial.isEmpty {
                 write(initial)
             }
@@ -2003,8 +2028,10 @@ extension Tako {
 
         private func setupCoreAndPty(workingDir: String?, restoring snapshot: SessionSnapshot? = nil,
                                      restored: Bool = false, hadPersistentSession: Bool = false,
-                                     allowsPersistence: Bool = true) {
-            let persistent = persistenceEnabled && allowsPersistence
+                                     allowsPersistence: Bool = true, program: [String]? = nil,
+                                     programEnvironment: [String: String] = [:]) {
+            runProgram = program
+            let persistent = persistenceEnabled && allowsPersistence && program == nil
             // A restored tab shows what it showed before, and only then does
             // its new shell start, so nothing the shell prints is overwritten.
             // With session-persistence the session decides: a live one paints
@@ -2059,7 +2086,16 @@ extension Tako {
                 Tako.TabBarController.refreshAll()
             }
 
-            if persistent {
+            if let program {
+                // The pane outlives its program: what it printed, and how it
+                // ended, stay to be read.
+                onExit = { view in
+                    let status = view.pty?.exitStatus.map { "exited with code \($0)" } ?? "exited"
+                    view.core.feed(bytes: Data("\r\n\u{1b}[2m[\(status)]\u{1b}[0m\r\n".utf8))
+                    view.needsDisplay = true
+                }
+                startProcess(workingDir: workingDir, program: program, environment: programEnvironment)
+            } else if persistent {
                 launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: restored,
                                         hadPersistentSession: hadPersistentSession)
             } else {

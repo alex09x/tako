@@ -155,11 +155,18 @@ impl CommandLog {
 
     /// Forget every finished record no retained row names: its output is
     /// gone, so nothing could be grouped under it.
+    /// The newest record, and the newest one not abandoned, stay whether or
+    /// not they printed anything: they are what "the last command" means.
     pub(crate) fn prune(&mut self, live: &std::collections::HashSet<u64>) {
         let running = self.running;
+        let newest = self.records.back().map(|r| r.id);
+        let newest_kept = self.records.iter().rev().find(|r| r.status != CommandStatus::Abandoned).map(|r| r.id);
         let mut freed = 0;
         self.records.retain(|r| {
-            let keep = Some(r.id) == running || live.contains(&r.id);
+            let keep = Some(r.id) == running
+                || Some(r.id) == newest
+                || Some(r.id) == newest_kept
+                || live.contains(&r.id);
             if !keep {
                 freed += r.text_bytes();
             }

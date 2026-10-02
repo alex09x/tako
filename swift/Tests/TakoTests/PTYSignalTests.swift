@@ -19,15 +19,16 @@ struct PTYSignalTests {
         usleep(500_000)
         kill(pty.child, SIGHUP)
 
-        var status: Int32 = 0
-        var exited = false
+        // Tako collects the child when its terminal ends, with how it ended
+        // (a shell may catch the hangup and exit on its own: any status).
+        var status: Int32?
         let deadline = Date().addingTimeInterval(10)
-        while !exited, Date() < deadline {
-            exited = waitpid(pty.child, &status, WNOHANG) == pty.child
-            if !exited { usleep(20_000) }
+        while status == nil, Date() < deadline {
+            status = pty.exitStatus
+            if status == nil { usleep(20_000) }
         }
         pty.terminate()
-        #expect(exited, "the shell ignored SIGHUP")
+        #expect(status != nil, "the shell ignored SIGHUP")
     }
 
     /// Terminating twice -- a surface's close() and then its deinit -- once

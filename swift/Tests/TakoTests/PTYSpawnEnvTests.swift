@@ -68,5 +68,17 @@ struct PTYSpawnEnvTests {
         #expect(name.hasPrefix("/dev/tty"))
         #expect(FileManager.default.fileExists(atPath: name))
     }
+
+    @Test func aProgramsExitStatusIsCollectedAsAShellReportsIt() throws {
+        for (script, want) in [("exit 3", Int32(3)), ("kill -9 $$", Int32(128 + 9))] {
+            let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(),
+                                       program: ["/bin/sh", "-c", script]))
+            pty.readLoop(targetQueue: .global(), onData: { _ in }, onExit: {})
+            #expect(waitUntil { pty.exitStatus != nil })
+            #expect(pty.exitStatus == want, "\(script)")
+            #expect(!pty.alive)
+            pty.terminate()
+        }
+    }
 }
 

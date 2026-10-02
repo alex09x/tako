@@ -993,6 +993,13 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
 
     func cols()  -> UInt32
 
+    /**
+     * Command `id` of engine generation `epoch` (both from a
+     * `FfiCommandInfo`), as `last_command` reports one. `None` when that
+     * generation is gone (an import or reset since) or the record is.
+     */
+    func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
+
     func cursorCol()  -> UInt32
 
     /**
@@ -1684,6 +1691,24 @@ open func cols() -> UInt32  {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_cols(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Command `id` of engine generation `epoch` (both from a
+     * `FfiCommandInfo`), as `last_command` reports one. `None` when that
+     * generation is gone (an import or reset since) or the record is.
+     */
+open func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: UInt32) -> FfiCommandOutput?  {
+    return try!  FfiConverterOptionTypeFfiCommandOutput.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_command_output(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(id),
+        FfiConverterUInt64.lower(epoch),
+        FfiConverterUInt32.lower(maxLines),
+        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
     )
 })
 }
@@ -3105,6 +3130,10 @@ public struct FfiCommandOutput: Equatable, Hashable {
      * It printed more lines than returned.
      */
     public var more: Bool
+    /**
+     * Some of what it printed is not here (see `Grid::command_output`).
+     */
+    public var incomplete: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3117,12 +3146,16 @@ public struct FfiCommandOutput: Equatable, Hashable {
          */truncated: Bool,
         /**
          * It printed more lines than returned.
-         */more: Bool) {
+         */more: Bool,
+        /**
+         * Some of what it printed is not here (see `Grid::command_output`).
+         */incomplete: Bool) {
         self.command = command
         self.output = output
         self.lines = lines
         self.truncated = truncated
         self.more = more
+        self.incomplete = incomplete
     }
 
 
@@ -3145,7 +3178,8 @@ public struct FfiConverterTypeFfiCommandOutput: FfiConverterRustBuffer {
                 output: FfiConverterString.read(from: &buf),
                 lines: FfiConverterUInt32.read(from: &buf),
                 truncated: FfiConverterBool.read(from: &buf),
-                more: FfiConverterBool.read(from: &buf)
+                more: FfiConverterBool.read(from: &buf),
+                incomplete: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -3155,6 +3189,7 @@ public struct FfiConverterTypeFfiCommandOutput: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.lines, into: &buf)
         FfiConverterBool.write(value.truncated, into: &buf)
         FfiConverterBool.write(value.more, into: &buf)
+        FfiConverterBool.write(value.incomplete, into: &buf)
     }
 }
 
@@ -7450,6 +7485,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_cols() != 18796) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_command_output() != 54790) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_cursor_col() != 48435) {

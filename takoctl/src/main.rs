@@ -37,12 +37,15 @@ commands:
                           each match with its pane and the command that printed it
   dialog                  the questions Tako has up (title, text, buttons); --press LABEL
                           presses a button (needs remote-control = on)
-  last                    the pane's last command: its line, directory, exit status and output
-  wait                    wait for the pane's running command to end, then print it as last
-                          (--next: the next command; --timeout S: give up after S seconds)
-  run COMMAND             open a tab (--split right|down|left|up: a split instead; --cwd DIR)
-                          and run COMMAND in it; prints its pane id, or with --wait the
-                          finished command as last (--timeout S)
+  last                    the pane's last command: its line, directory, exit status, output
+                          and ref (ID@EPOCH); in a pane run started, its program
+  wait                    wait for the pane's running command (--command REF: that one;
+                          --next: the next one) or run program to end; print it as last
+                          (--timeout S: give up after S seconds). Not on its own pane's
+                          running command, which is the wait itself.
+  run -- PROGRAM ARGS...  run PROGRAM, as given -- no shell -- in a new tab (--split
+                          right|down|left|up: a split; --cwd DIR); prints the pane id, or
+                          with --wait its exit status and output (--timeout S)
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -67,6 +70,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let mut socket = None;
     let mut bundle_id = std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
     let mut positional: Vec<String> = Vec::new();
+    let mut dashdash = false;
     let mut it = argv.iter();
     while let Some(arg) = it.next() {
         let mut value = |name: &str| {
@@ -86,7 +90,13 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 let n: u64 = value("--lines")?.parse().map_err(|_| "--lines needs a number".to_string())?;
                 args.insert("lines".into(), Value::from(n));
             }
-            "--" => positional.extend(it.by_ref().cloned()),
+            "--" => {
+                positional.extend(it.by_ref().cloned());
+                dashdash = true;
+            }
+            "--command" => {
+                args.insert("command".into(), Value::String(value("--command")?));
+            }
             "--cwd" => {
                 args.insert("cwd".into(), Value::String(value("--cwd")?));
             }
@@ -114,8 +124,8 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--timeout" => {
                 let s: f64 = value("--timeout")?.parse().map_err(|_| "--timeout needs seconds".to_string())?;
-                if !(s.is_finite() && s >= 0.0) {
-                    return Err("--timeout needs seconds".into());
+                if !(s.is_finite() && (0.0..=7.0 * 24.0 * 3600.0).contains(&s)) {
+                    return Err("--timeout needs seconds, at most a week".into());
                 }
                 args.insert("timeout".into(), Value::from(s));
             }
@@ -129,7 +139,19 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
         "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" => None,
-        "run" => Some("command"),
+        "run" => {
+            // Everything after `--`, as the program's argv; the program found
+            // on this shell's PATH, which goes with it.
+            if !dashdash || positional.is_empty() {
+                return Err("run needs -- PROGRAM [ARGS...]".into());
+            }
+            let path = std::env::var("PATH").unwrap_or_default();
+            let mut argv = std::mem::take(&mut positional);
+            argv[0] = resolve(&argv[0], &path).ok_or_else(|| format!("{}: not found on PATH", argv[0]))?;
+            args.insert("argv".into(), Value::from(argv));
+            args.insert("path".into(), Value::String(path));
+            None
+        }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
@@ -206,7 +228,7 @@ fn render(cmd: &str, result: &Value) -> String {
         "send" | "type" | "key" | "focus" | "title" | "notify" => String::new(),
         "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
-        "run" if result.get("command").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
+        "run" if result.get("state").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "last" | "wait" | "run" => command_report(result),
         "find" => find_report(result),
         "dialog" => dialog_report(result),
@@ -216,6 +238,12 @@ fn render(cmd: &str, result: &Value) -> String {
 
 /// A command as `last` reports it: `$ line   (cwd)   exit N`, then its output.
 fn command_report(result: &Value) -> String {
+    if let Some(process) = result.get("process") {
+        return process_report(process, result);
+    }
+    if result["state"].as_str() == Some("gone") {
+        return format!("command {} is no longer kept\n", result["command"]["ref"].as_str().unwrap_or("?"));
+    }
     let command = &result["command"];
     if command.is_null() {
         return "no command marked by the shell in this pane (shell integration off?)\n".into();
@@ -223,6 +251,7 @@ fn command_report(result: &Value) -> String {
     let status = match (result["state"].as_str(), command["running"].as_bool(), command["exitCode"].as_f64()) {
         (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
         (_, Some(true), _) => "running".to_string(),
+        _ if command["abandoned"].as_bool() == Some(true) => "abandoned (a new prompt came before it ended)".to_string(),
         (_, _, Some(code)) => format!("exit {}", code as i64),
         _ => "ended, no exit status".to_string(),
     };
@@ -230,9 +259,16 @@ fn command_report(result: &Value) -> String {
     if let Some(cwd) = command["cwd"].as_str() {
         out += &format!("   ({cwd})");
     }
-    out += &format!("   {status}\n");
+    out += &format!("   {status}");
+    if let Some(r) = command["ref"].as_str() {
+        out += &format!("   [{r}]");
+    }
+    out.push('\n');
     if result["more"].as_bool() == Some(true) {
         out += "...\n";
+    }
+    if result["incomplete"].as_bool() == Some(true) {
+        out += "(some of its output was written over or is no longer kept)\n";
     }
     let output = result["output"].as_str().unwrap_or("");
     if !output.is_empty() {
@@ -304,6 +340,24 @@ fn dialog_report(result: &Value) -> String {
     if out.is_empty() { "no question is up\n".into() } else { out }
 }
 
+/// A program run started: its argv, how it ended, what the pane shows.
+fn process_report(process: &Value, result: &Value) -> String {
+    let argv: Vec<&str> = process["argv"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let status = match (result["state"].as_str(), process["running"].as_bool(), process["exitCode"].as_f64()) {
+        (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
+        (_, Some(true), _) => "running".to_string(),
+        (_, _, Some(code)) => format!("exit {}", code as i64),
+        _ => "exited, status unknown".to_string(),
+    };
+    let mut out = format!("{}   {status}\n", argv.join(" "));
+    let output = result["output"].as_str().unwrap_or("");
+    if !output.is_empty() {
+        out += output;
+        out.push('\n');
+    }
+    out
+}
+
 /// How long to wait for the app's answer: a wait for as long as asked plus
 /// a margin, an unbounded one for a day; anything else the usual limit.
 fn answer_limit(opts: &Options) -> std::time::Duration {
@@ -343,6 +397,20 @@ fn outline(out: &mut String, node: &Value, panes: &[&Value], depth: usize) {
     for child in node["children"].as_array().into_iter().flatten() {
         outline(out, child, panes, depth + 1);
     }
+}
+
+/// `program` as execve needs it: a path. A name with a slash is taken as
+/// it is; a bare name is looked up on `path`, as a shell does.
+fn resolve(program: &str, path: &str) -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    if program.contains('/') {
+        return Some(program.to_string());
+    }
+    path.split(':').filter(|d| !d.is_empty()).find_map(|dir| {
+        let candidate = std::path::Path::new(dir).join(program);
+        let meta = std::fs::metadata(&candidate).ok()?;
+        (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then(|| candidate.to_string_lossy().into_owned())
+    })
 }
 
 fn main() -> ExitCode {
@@ -449,16 +517,28 @@ mod tests {
 
     #[test]
     fn run_and_wait_take_their_options() {
-        let opts = parse(&args(&["run", "make test", "--split", "down", "--wait", "--timeout", "90", "--lines", "5"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "run", "args": {
-            "command": "make test", "split": "down", "wait": true, "timeout": 90.0, "lines": 5}}));
+        let opts = parse(&args(&["run", "--split", "down", "--wait", "--timeout", "90", "--lines", "5",
+                                  "--", "/bin/echo", "a b", "--not-ours"])).unwrap();
+        let req = request(&opts, None);
+        assert_eq!(req["args"]["argv"], json!(["/bin/echo", "a b", "--not-ours"]));
+        assert_eq!(req["args"]["split"], "down");
+        assert_eq!(req["args"]["wait"], true);
+        assert!(req["args"]["path"].is_string());
         assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(90) + socket::TIMEOUT);
+        // A bare name is found on PATH; an unknown one is a usage error.
+        assert_eq!(resolve("sh", "/nope:/bin"), Some("/bin/sh".into()));
+        assert_eq!(resolve("./x", "/bin"), Some("./x".into()));
+        assert!(resolve("definitely-not-a-program-xyz", "/bin:/usr/bin").is_none());
+        assert!(parse(&args(&["run", "ls"])).is_err());
+        let opts = parse(&args(&["wait", "--command", "12@3"])).unwrap();
+        assert_eq!(opts.args["command"], "12@3");
         let opts = parse(&args(&["wait", "--next"])).unwrap();
         assert_eq!(opts.args["next"], true);
         assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(24 * 3600));
-        assert_eq!(answer_limit(&parse(&args(&["run", "ls"])).unwrap()), socket::TIMEOUT);
+        assert_eq!(answer_limit(&parse(&args(&["run", "--", "/bin/ls"])).unwrap()), socket::TIMEOUT);
         assert!(parse(&args(&["run"])).is_err());
         assert!(parse(&args(&["wait", "--timeout", "-1"])).is_err());
+        assert!(parse(&args(&["wait", "--timeout", "1e300"])).is_err());
         assert!(parse(&args(&["last", "x"])).is_err());
     }
 
@@ -467,6 +547,13 @@ mod tests {
         let result = json!({"command": {"input": "make", "cwd": "/src", "running": false,
             "finished": true, "exitCode": 2}, "output": "error: x", "more": true, "state": "finished"});
         assert_eq!(command_report(&result), "$ make   (/src)   exit 2\n...\nerror: x\n");
+        let result = json!({"command": {"ref": "7@1", "input": "make", "running": false, "finished": true,
+            "abandoned": false, "exitCode": 0}, "output": "", "incomplete": true});
+        assert_eq!(command_report(&result),
+            "$ make   exit 0   [7@1]\n(some of its output was written over or is no longer kept)\n");
+        let result = json!({"process": {"argv": ["/bin/ls", "/nope"], "running": false, "exitCode": 1},
+            "output": "ls: /nope: No such file", "state": "finished"});
+        assert_eq!(command_report(&result), "/bin/ls /nope   exit 1\nls: /nope: No such file\n");
         let result = json!({"command": {"input": "sleep 9", "running": true}, "output": "", "state": "timeout"});
         assert_eq!(command_report(&result), "$ sleep 9   still running (timed out waiting)\n");
         assert!(command_report(&json!({"command": null})).starts_with("no command"));
