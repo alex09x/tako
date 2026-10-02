@@ -15,6 +15,11 @@ APP="${APP:-target/macapp/Tako.app}"
 
 # Reports go to a directory of this run's own (the app reads
 # TAKO_SELFTEST_DIR), so two runs on one machine never read each other's.
+# The whole self-test holds the GUI session: re-run under the lock.
+if [ -z "${TAKO_GUI_LOCKED:-}" ]; then
+    TAKO_GUI_LOCKED=1 exec python3 scripts/gui_lock.py -- "$0" "$@"
+fi
+
 REPORTS="$(mktemp -d "${TMPDIR:-/tmp}/tako-selftest.XXXXXX")"
 launch() { open -n --env "TAKO_SELFTEST_DIR=$REPORTS" "$APP" --args "$@"; }
 

@@ -5,10 +5,17 @@ set -e
 cd "$(dirname "$0")/.."
 
 IOS_ONLY=0
+MACOS_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --ios-only)
             IOS_ONLY=1
+            ;;
+        # The macOS slice alone: what the Swift package's tests on this Mac
+        # link. Not a shippable framework -- release and iOS builds make
+        # every slice. A marker file says so, so a full build can tell.
+        --macos-only)
+            MACOS_ONLY=1
             ;;
     esac
 done
@@ -31,8 +38,10 @@ echo "🔨 Compiling release builds..."
 # bindings that no longer match the iOS libraries. arm64 only, deliberately:
 # a universal slice more than doubles the release asset.
 MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release --lib --features ssh --target aarch64-apple-darwin
+if [ "$MACOS_ONLY" -ne 1 ]; then
 IPHONEOS_DEPLOYMENT_TARGET=17.0 cargo build --release --lib --features ssh --target aarch64-apple-ios
 IPHONEOS_DEPLOYMENT_TARGET=17.0 cargo build --release --lib --features ssh --target aarch64-apple-ios-sim
+fi
 
 # 3. macOS slice staging
 if [ "$IOS_ONLY" -ne 1 ]; then
@@ -75,8 +84,13 @@ cp target/bindings/tako_core.swift swift/Sources/TakoCoreUI/Generated/tako_core.
 
 # 5. Assemble XCFramework
 echo "🍏 Packaging into TakoCore.xcframework..."
-rm -rf TakoCore.xcframework
-if [ "$IOS_ONLY" -eq 1 ]; then
+rm -rf TakoCore.xcframework TakoCore.xcframework.macos-only
+if [ "$MACOS_ONLY" -eq 1 ]; then
+    xcodebuild -create-xcframework \
+        -library target/macos/libtako_core.a -headers target/xcframework-headers \
+        -output TakoCore.xcframework
+    touch TakoCore.xcframework.macos-only
+elif [ "$IOS_ONLY" -eq 1 ]; then
     xcodebuild -create-xcframework \
         -library target/aarch64-apple-ios/release/libtako_core.a -headers target/xcframework-headers \
         -library target/aarch64-apple-ios-sim/release/libtako_core.a -headers target/xcframework-headers \

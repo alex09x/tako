@@ -26,7 +26,9 @@ cd "$(dirname "$0")/../swift"
 stale() {
     [ ! -e "$1" ] || [ -n "$(find ../src ../Cargo.toml ../Cargo.lock -newer "$1" -print -quit)" ]
 }
-if stale ../TakoCore.xcframework; then ../scripts/build-xcframework.sh; fi
+# Tests here link the macOS slice only; building the iOS slices too would
+# only make an engine change wait for two more cross-compiles.
+if stale ../TakoCore.xcframework; then ../scripts/build-xcframework.sh --macos-only; fi
 if stale ../target/macos/libtako_core.a; then ../scripts/build-macos-testlib.sh; fi
 
 exec swift test --no-parallel -Xlinker -L../target/macos -Xlinker -ltako_core -Xcc -I../target/bindings "$@"

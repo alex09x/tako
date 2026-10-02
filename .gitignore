@@ -21,3 +21,4 @@ target/simtest/
 
 # Swift compiler dependency data
 *.swiftdeps
+__pycache__/

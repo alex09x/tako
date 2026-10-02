@@ -6,6 +6,10 @@
 #   scripts/ci.sh                 # every stage
 #   scripts/ci.sh rust swift      # only those stages
 #
+# For a change, run only what it touches with scripts/check.sh (named Rust
+# tests, Swift test filters, e2e scenarios, no coverage); this script is the
+# full run, kept for releases and wide changes.
+#
 # Stages, in order:
 #   rust   clippy over every target, then the engine suite with pty and ssh
 #          under the per-file line-coverage gate (every src/ file >= 80%)

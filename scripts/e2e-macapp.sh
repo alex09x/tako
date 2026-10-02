@@ -15,5 +15,7 @@ APP="${APP:-target/macapp/Tako.app}"
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
 
 mkdir -p target
+started=$(date +%s)
 swiftc -O -o target/tako-e2e scripts/e2e/tako-e2e.swift
-exec target/tako-e2e "$APP" "$@"
+echo "[timing] e2e runner compiled in $(( $(date +%s) - started ))s" >&2
+exec python3 scripts/gui_lock.py -- target/tako-e2e "$APP" "$@"
