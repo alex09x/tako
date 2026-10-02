@@ -125,6 +125,21 @@ first, then used by the app.
 Done when a developer outside the project builds a sample and embeds a terminal from the
 instructions alone. Success is counted in real integrations and their feedback.
 
+## Engine updates and new settings
+
+Each release, before it is tagged, the engine's changes since the last release are read into one
+list of new capabilities and settings. Each is weighed for:
+
+- compatibility: config keys, the Swift and C API, the checkpoint format, restored sessions;
+- cost: memory, speed, privacy, and what it takes to support (UI, tests, documentation);
+- use: a user asked for it, or terminals people know behave that way.
+
+A setting with a use -- a user asked for it, or terminals people know behave that way -- no UI
+and an acceptable cost is exposed as a config key and documented. A feature with UI or
+a changed default becomes an item here and goes through review, with targeted e2e tests. The rest
+is left out, with the reason written down. A setting existing in the engine does not by itself
+put it in Tako.
+
 ## Later, only if users need it
 
 Reconnecting to sessions on other machines, companion devices and new transports. The first version also leaves out cloud sync, vendor-specific agent
