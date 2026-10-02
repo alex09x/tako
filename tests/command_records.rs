@@ -566,3 +566,23 @@ fn a_line_editor_redraw_keeps_the_command_line() {
     let rec = t.commands().get(command_of(&t, "built").unwrap()).unwrap();
     assert_eq!(rec.input.as_deref(), Some("make"));
 }
+
+#[test]
+fn continuation_prompts_keep_the_whole_command_line() {
+    // What the bundled bash and zsh integrations send: P;k=i ... B for the
+    // prompt, P;k=s ... B for each continuation line.
+    let mut t = Terminal::new(40, 8);
+    t.feed(b"\x1b]133;P;k=i\x07$ \x1b]133;B\x07for x in a b\r\n");
+    t.feed(b"\x1b]133;P;k=s\x07> \x1b]133;B\x07do echo $x; done\r\n");
+    t.feed(C);
+    t.feed(b"looped\r\n");
+    let rec = t.commands().get(command_of(&t, "looped").unwrap()).unwrap();
+    assert_eq!(rec.input.as_deref(), Some("for x in a b\n> do echo $x; done"));
+    // A primary P is a new prompt: the next command line starts after it.
+    t.feed(&d(0));
+    t.feed(b"\x1b]133;P;k=i\x07$ \x1b]133;B\x07ls\r\n");
+    t.feed(C);
+    t.feed(b"listed\r\n");
+    let rec = t.commands().get(command_of(&t, "listed").unwrap()).unwrap();
+    assert_eq!(rec.input.as_deref(), Some("ls"));
+}

@@ -3040,8 +3040,13 @@ impl Perform for Terminal {
                     }
                 }
                 b'P' => {
-                    // prompt_start without the fresh-line behavior.
-                    self.command_prompt_started();
+                    // prompt_start without the fresh-line behavior. A
+                    // secondary prompt (`k=s`, PS2) continues the command
+                    // line being typed; any other starts a new one.
+                    let secondary = params.iter().skip(1).any(|p| p.windows(3).any(|w| w == b"k=s"));
+                    if !secondary {
+                        self.command_prompt_started();
+                    }
                     self.semantic_content = SemanticContent::Prompt;
                     let row = self.cursor.row;
                     let mark = if continuation {
@@ -3053,7 +3058,9 @@ impl Perform for Terminal {
                 }
                 b'B' => {
                     self.semantic_content = SemanticContent::Input;
-                    if self.active == ScreenBuffer::Primary {
+                    // The first B after a prompt starts the command line; the
+                    // B after each continuation prompt does not move it.
+                    if self.active == ScreenBuffer::Primary && self.input_start.is_none() {
                         self.input_start = Some((self.cursor_absolute_line(), self.cursor.col));
                     }
                 }

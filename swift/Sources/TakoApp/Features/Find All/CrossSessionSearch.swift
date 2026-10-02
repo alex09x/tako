@@ -256,3 +256,86 @@ final class CrossSessionSearch: ObservableObject {
         return nil
     }
 }
+
+/// What a result list says about the command that printed a match, taken
+/// only from what the shell reported (OSC 133, OSC 7) and the host's clock.
+/// Nothing is inferred from screen text.
+struct CommandHeading: Equatable {
+    /// Which command, in which engine generation: ids restart after an
+    /// import, so the id alone could join two different commands.
+    struct Key: Hashable {
+        let surfaceID: UUID
+        let epoch: UInt64
+        let id: UInt64
+    }
+
+    enum Outcome: Equatable {
+        case running
+        case succeeded
+        case failed(Int32)
+        /// The shell said it ended but sent no exit status: not a success.
+        case endedWithoutStatus
+        /// A new prompt came before the shell said it ended.
+        case interrupted
+    }
+
+    let key: Key
+    /// The command line as typed; nil when the shell did not mark it.
+    let commandLine: String?
+    let outcome: Outcome
+    let directory: String?
+    let startedAt: Date?
+
+    init(surfaceID: UUID, info: FfiCommandInfo) {
+        key = Key(surfaceID: surfaceID, epoch: info.epoch, id: info.id)
+        commandLine = info.input.map { line in
+            let first = line.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? line
+            return first != line || info.inputTruncated ? first + " …" : first
+        }
+        if info.running {
+            outcome = .running
+        } else if info.abandoned {
+            outcome = .interrupted
+        } else if let code = info.exitCode {
+            outcome = code == 0 ? .succeeded : .failed(code)
+        } else {
+            outcome = .endedWithoutStatus
+        }
+        directory = info.cwd.map { URL(string: $0)?.path ?? $0 }.flatMap { $0.isEmpty ? nil : $0 }
+        startedAt = info.startedAtMs.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+    }
+
+    var title: String {
+        commandLine.map { "$ \($0)" } ?? "Command (command line not reported)"
+    }
+
+    var outcomeText: String {
+        switch outcome {
+        case .running: return "running"
+        case .succeeded: return "✓ exit 0"
+        case .failed(let code): return "✗ exit \(code)"
+        case .endedWithoutStatus: return "ended, no exit status"
+        case .interrupted: return "no end reported"
+        }
+    }
+
+    /// Status, directory and start time, as far as they are known.
+    func details(now: Date = Date()) -> String {
+        var parts = [outcomeText]
+        if let directory { parts.append(directory) }
+        if let startedAt {
+            let formatter = DateFormatter()
+            formatter.dateStyle = Calendar.current.isDate(startedAt, inSameDayAs: now) ? .none : .short
+            formatter.timeStyle = .short
+            parts.append("started \(formatter.string(from: startedAt))")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension CrossSearchResult {
+    /// The command that printed this match, when the shell marked one.
+    var command: CommandHeading? {
+        hit.command.map { CommandHeading(surfaceID: surfaceID, info: $0) }
+    }
+}

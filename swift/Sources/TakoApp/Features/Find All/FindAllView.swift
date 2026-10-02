@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// Find in All Tabs: a query field over every open terminal's scrollback
-/// and screen, results grouped by terminal. Return shows the chosen match
+/// and screen, results grouped by terminal and, where the shell marked its
+/// commands, by the command that printed them. Return shows the chosen match
 /// in its tab; Option-Command-C copies the excerpt shown.
 struct FindAllView: View {
     @ObservedObject var search: CrossSessionSearch
@@ -80,7 +81,12 @@ struct FindAllView: View {
                             ForEach(groups, id: \.first) { group in
                                 header(for: group.results[0])
                                 ForEach(Array(group.results.enumerated()), id: \.element.id) { offset, result in
-                                    row(result, index: group.first + offset).id(group.first + offset)
+                                    let previous = offset > 0 ? group.results[offset - 1].command?.key : nil
+                                    if let command = result.command, command.key != previous {
+                                        commandHeader(command)
+                                    }
+                                    row(result, index: group.first + offset, indented: result.command != nil)
+                                        .id(group.first + offset)
                                 }
                             }
                         }
@@ -137,13 +143,42 @@ struct FindAllView: View {
         .padding(.bottom, 2)
     }
 
-    private func row(_ result: CrossSearchResult, index: Int) -> some View {
+    /// The command a run of matches came from: its line, how it ended, where
+    /// and when it started -- only what the shell and the clock reported.
+    private func commandHeader(_ command: CommandHeading) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(command.title)
+                .font(.system(.caption, design: .monospaced).weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(command.details())
+                .font(.caption2)
+                .foregroundStyle(outcomeColor(command.outcome))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal)
+        .padding(.leading, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 1)
+    }
+
+    private func outcomeColor(_ outcome: CommandHeading.Outcome) -> Color {
+        switch outcome {
+        case .failed: return .red
+        case .succeeded: return .green
+        default: return .secondary
+        }
+    }
+
+    private func row(_ result: CrossSearchResult, index: Int, indented: Bool = false) -> some View {
         Text(highlighted(result.hit))
             .font(.system(.body, design: .monospaced))
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
+            .padding(.leading, indented ? 16 : 0)
             .padding(.vertical, 3)
             .background(index == selected ? Color.accentColor.opacity(0.3) : Color.clear)
             .contentShape(Rectangle())

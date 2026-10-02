@@ -2063,6 +2063,12 @@ extension Tako {
                     TakoLog.feed.debug("pty hex: \(hex)  [\(printable)]")
                 }
                 let outcome = self.core.feedWithOutcome(bytes: data)
+                // The engine has no clock: a command's start time is when its
+                // start reached us, stamped against the engine it belongs to.
+                for case .commandStart(let id?) in outcome.events {
+                    let now = UInt64(Date().timeIntervalSince1970 * 1000)
+                    _ = self.core.setCommandTime(epoch: outcome.epoch, id: id, unixMs: now)
+                }
                 // After the parse, never before: a save that reads the new
                 // count must also find the bytes in the engine.
                 self.generationLock.withLock { self.contentGeneration &+= 1 }
