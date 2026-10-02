@@ -29,6 +29,11 @@ final class ControlServer: @unchecked Sendable {
     private let lock = NSLock()
     private var connections = 0      // under lock
     private var mainBacklog = 0      // under lock
+    /// Clients being served, so stopping can cut them off. Each fd is closed
+    /// only by its own `finish`.
+    private var clients = Set<Int32>()   // under lock
+    /// Set once by `stop`: nothing this server took is served after it.
+    private var stopped = false          // under lock
     /// The socket file this server made, to remove only that one on stop.
     private var boundInode: ino_t = 0
     /// `<path>.lock`, held exclusively for as long as this server listens.
@@ -139,8 +144,8 @@ final class ControlServer: @unchecked Sendable {
             throw ControlError(.internalError, "listen: \(errno)")
         }
         if lstat(path, &st) == 0 { boundInode = st.st_ino }
-        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
-        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        // Also on the listener: accepted sockets inherit it.
+        Self.prepare(fd)
         listener = fd
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: acceptQueue)
@@ -158,6 +163,14 @@ final class ControlServer: @unchecked Sendable {
     func stop() {
         acceptSource?.cancel()
         acceptSource = nil
+        // Requests already accepted die with this server: their sockets are
+        // shut down (each is closed by its own finish) and work queued for
+        // the main thread is refused when it runs. A later server, even with
+        // the same path and a more permissive setting, never answers them.
+        lock.withLock {
+            stopped = true
+            for fd in clients { shutdown(fd, SHUT_RDWR) }
+        }
         var st = stat()
         if boundInode != 0, lstat(path, &st) == 0, st.st_ino == boundInode {
             unlink(path)
@@ -177,22 +190,28 @@ final class ControlServer: @unchecked Sendable {
             let client = accept(listener, nil, nil)
             if client < 0 { return }   // EAGAIN: no more for now
             // Before anything can be written to it: no SIGPIPE from a peer
-            // that is gone, and no write that can block.
-            Self.prepare(client)
+            // that is gone, and no write that can block. A client that left
+            // before it was accepted may refuse the option; nothing is
+            // written to one that did -- it is closed unanswered.
+            guard Self.prepare(client) else {
+                close(client)
+                continue
+            }
             var uid: uid_t = 0, gid: gid_t = 0
             guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else {
                 close(client)
                 continue
             }
             let admitted = lock.withLock {
-                guard connections < Self.maxConnections else { return false }
+                guard !stopped, connections < Self.maxConnections else { return false }
                 connections += 1
+                clients.insert(client)
                 return true
             }
             guard admitted else {
                 // One nonblocking attempt: the refusal never holds up accepting.
                 Self.send(.failure(ControlError(.busy, "too many connections")), to: client,
-                          deadline: .now())
+                          deadline: .now(), once: true)
                 close(client)
                 continue
             }
@@ -203,9 +222,13 @@ final class ControlServer: @unchecked Sendable {
     private func serve(_ client: Int32) {
         let finish: @Sendable (ControlResponse) -> Void = { [self] response in
             Self.send(response, to: client, deadline: .now() + Self.writeTimeout)
+            lock.withLock {
+                clients.remove(client)
+                connections -= 1
+            }
             close(client)
-            lock.withLock { connections -= 1 }
         }
+        let gone = ControlResponse.failure(ControlError(.disabled, "remote control stopped"))
         let request: ControlRequest
         do {
             request = try ControlRequest.parse(try Self.readRequest(client, deadline: .now() + Self.readTimeout))
@@ -214,6 +237,10 @@ final class ControlServer: @unchecked Sendable {
             return
         } catch {
             finish(.failure(ControlError(.internalError, "\(error)")))
+            return
+        }
+        if lock.withLock({ stopped }) {
+            finish(gone)
             return
         }
         let queued = lock.withLock {
@@ -227,7 +254,14 @@ final class ControlServer: @unchecked Sendable {
         }
         let handler = self.handler
         DispatchQueue.main.async { [self] in
-            lock.withLock { mainBacklog -= 1 }
+            let isStopped = lock.withLock {
+                mainBacklog -= 1
+                return stopped
+            }
+            if isStopped {
+                DispatchQueue.global(qos: .userInitiated).async { finish(gone) }
+                return
+            }
             MainActor.assumeIsolated {
                 handler(request) { response in
                     // Answered off the main thread: a client slow to read
@@ -242,7 +276,8 @@ final class ControlServer: @unchecked Sendable {
     private static func ready(_ fd: Int32, _ events: Int16, by deadline: DispatchTime) -> Bool {
         while true {
             let now = DispatchTime.now()
-            let left = deadline > now ? (deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000 : 0
+            guard deadline > now else { return false }
+            let left = (deadline.uptimeNanoseconds - now.uptimeNanoseconds + 999_999) / 1_000_000
             var p = pollfd(fd: fd, events: events, revents: 0)
             let n = poll(&p, 1, Int32(min(left, UInt64(Int32.max))))
             if n > 0 { return true }
@@ -257,6 +292,11 @@ final class ControlServer: @unchecked Sendable {
         var data = Data()
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
         while true {
+            // Checked before every read and every retry, not only when the
+            // socket has nothing: data that keeps arriving does not extend it.
+            guard DispatchTime.now() < deadline else {
+                throw ControlError(.timeout, "no complete request within \(Int(readTimeout)) s")
+            }
             let n = read(fd, &chunk, chunk.count)
             if n > 0 {
                 if let newline = chunk[0..<n].firstIndex(of: 0x0A) {
@@ -284,12 +324,16 @@ final class ControlServer: @unchecked Sendable {
 
     /// Writes as much of the answer as the client takes by `deadline`; a
     /// client that does not read is dropped then.
-    private static func send(_ response: ControlResponse, to fd: Int32, deadline: DispatchTime) {
+    static func send(_ response: ControlResponse, to fd: Int32, deadline: DispatchTime,
+                             once: Bool = false) {
         let data = response.encoded()
         data.withUnsafeBytes { raw in
             var offset = 0
             while offset < raw.count {
+                // One attempt for a refusal; otherwise never past the deadline.
+                guard once || DispatchTime.now() < deadline else { return }
                 let n = write(fd, raw.baseAddress! + offset, raw.count - offset)
+                if once { return }
                 if n > 0 {
                     offset += n
                 } else if n < 0 && errno == EINTR {
@@ -303,12 +347,19 @@ final class ControlServer: @unchecked Sendable {
         }
     }
 
-    /// Nonblocking, close-on-exec, and no SIGPIPE.
-    static func prepare(_ fd: Int32) {
+    /// Nonblocking, close-on-exec, and no SIGPIPE. False when the socket
+    /// would not take SO_NOSIGPIPE, which makes writing to it unsafe.
+    @discardableResult
+    static func prepare(_ fd: Int32) -> Bool {
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         var noSigpipe: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
+        guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            return false
+        }
+        var set: Int32 = 0
+        var size = socklen_t(MemoryLayout<Int32>.size)
+        return getsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &set, &size) == 0 && set != 0
     }
 
     private static func address(_ path: String) -> sockaddr_un {

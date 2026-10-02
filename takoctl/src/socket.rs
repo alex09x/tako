@@ -67,13 +67,16 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
         match stream.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-                answer.extend_from_slice(&chunk[..n]);
-                if let Some(end) = answer.iter().position(|&b| b == b'\n') {
-                    answer.truncate(end);
-                    break;
-                }
-                if answer.len() > max {
+                let got = &chunk[..n];
+                let line_end = got.iter().position(|&b| b == b'\n');
+                let take = line_end.unwrap_or(n);
+                // The cap holds for the whole line, newline or not.
+                if answer.len() + take > max {
                     return Err(format!("answer larger than {max} bytes"));
+                }
+                answer.extend_from_slice(&got[..take]);
+                if line_end.is_some() {
+                    break;
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
@@ -223,6 +226,19 @@ mod tests {
                                   Duration::from_millis(500), MAX_ANSWER_BYTES).unwrap_err();
         assert!(err.contains("timed out"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn an_oversized_json_line_is_refused_even_when_complete() {
+        let (path, listener) = listen("bigline");
+        let _big = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let line = format!("{}\n", serde_json::json!({"ok": true, "result": {"pad": "x".repeat(4000)}}));
+            let _ = s.write_all(line.as_bytes());
+        });
+        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
+                                  Duration::from_secs(2), 1024).unwrap_err();
+        assert!(err.contains("larger than"), "{err}");
     }
 
     #[test]

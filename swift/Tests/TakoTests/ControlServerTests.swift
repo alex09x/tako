@@ -16,11 +16,35 @@ private func privateDir() throws -> String {
     return dir
 }
 
+/// The test's own client sockets: a write to one the server closed must
+/// not kill the test process. Set per socket -- the process-wide
+/// disposition stays as it is, so the server's own protection is what is
+/// being tested.
+private func noSigpipe(_ fd: Int32) {
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+}
+
+private func connectTo(_ path: String) -> Int32 {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    noSigpipe(fd)
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &address.sun_path) { raw in
+        let bytes = Array(path.utf8); raw.copyBytes(from: bytes); raw[bytes.count] = 0
+    }
+    _ = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    return fd
+}
+
 /// One request over the socket, as takoctl sends it.
 private func ask(_ path: String, _ line: String) async throws -> [String: Any] {
     try await Task.detached {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         defer { close(fd) }
+        noSigpipe(fd)
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         withUnsafeMutableBytes(of: &address.sun_path) { raw in
@@ -194,8 +218,6 @@ struct ControlServerTests {
     }
 
     @Test func aClientTricklingItsRequestIsCutOffAtTheDeadline() async throws {
-        // The test's own client writes into sockets the server closes.
-        signal(SIGPIPE, SIG_IGN)
         let dir = try privateDir()
         let path = dir + "/c.sock"
         let server = ControlServer(path: path) { _, reply in reply(.ok([:])) }
@@ -205,6 +227,7 @@ struct ControlServerTests {
         let answer: String = try await Task.detached {
             let fd = socket(AF_UNIX, SOCK_STREAM, 0)
             defer { close(fd) }
+            noSigpipe(fd)
             var address = sockaddr_un()
             address.sun_family = sa_family_t(AF_UNIX)
             withUnsafeMutableBytes(of: &address.sun_path) { raw in
@@ -228,8 +251,6 @@ struct ControlServerTests {
     }
 
     @Test func refusingAnExtraClientThatAlreadyLeftDoesNotHurtTheServer() async throws {
-        // The test's own client writes into sockets the server closes.
-        signal(SIGPIPE, SIG_IGN)
         let dir = try privateDir()
         let path = dir + "/c.sock"
         let server = ControlServer(path: path) { _, reply in reply(.ok(["alive": .bool(true)])) }
@@ -237,6 +258,7 @@ struct ControlServerTests {
         defer { server.stop() }
         func open() -> Int32 {
             let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            noSigpipe(fd)
             var address = sockaddr_un()
             address.sun_family = sa_family_t(AF_UNIX)
             withUnsafeMutableBytes(of: &address.sun_path) { raw in
@@ -291,6 +313,54 @@ struct ControlServerTests {
         ControlCommands.apply(mode: .on, bundleID: bundle)
         #expect(ControlCommands.socketPath.isEmpty)
         #expect(ControlCommands.server == nil)
+    }
+
+    @Test func aStoppedServerNeverAnswersWhatItTookEvenAfterARestart() async throws {
+        let bundle = "test.control.\(UUID().uuidString)"
+        defer { ControlCommands.stop() }
+        ControlCommands.apply(mode: .on, bundleID: bundle)
+        let path = ControlCommands.socketPath
+        let fd = connectTo(path)
+        defer { close(fd) }
+        let half = Array(#"{"cmd":"vers"#.utf8)
+        _ = half.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        try await Task.sleep(for: .milliseconds(200))
+        ControlCommands.apply(mode: .off)
+        ControlCommands.apply(mode: .on)
+        let rest = Array(#"ion"}"#.utf8) + [0x0A]
+        _ = rest.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        let answer: String = await Task.detached {
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            let n = read(fd, &buffer, buffer.count)
+            return n > 0 ? String(decoding: buffer[0..<n], as: UTF8.self) : ""
+        }.value
+        #expect(!answer.contains("\"ok\":true"), "\(answer)")
+        // The new server itself works.
+        #expect(try await ask(path, #"{"cmd":"version"}"#)["ok"] as? Bool == true)
+    }
+
+    @Test func anExpiredDeadlineEndsReadingEvenWithDataWaiting() throws {
+        var pair: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { close(pair[0]); close(pair[1]) }
+        ControlServer.prepare(pair[0])
+        let line = Array(#"{"cmd":"x"}"#.utf8) + [0x0A]
+        _ = line.withUnsafeBytes { write(pair[1], $0.baseAddress, $0.count) }
+        #expect(throws: ControlError.self) {
+            _ = try ControlServer.readRequest(pair[0], deadline: .now() - .milliseconds(1))
+        }
+    }
+
+    @Test func aClientThatDoesNotReadIsDroppedAtTheWriteDeadline() {
+        var pair: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { close(pair[0]); close(pair[1]) }
+        ControlServer.prepare(pair[0])
+        // Far more than a socket buffer holds; nobody reads the other end.
+        let big = ControlResponse.ok(["pad": .string(String(repeating: "x", count: 8 << 20))])
+        let started = Date()
+        ControlServer.send(big, to: pair[0], deadline: .now() + .milliseconds(300))
+        #expect(Date().timeIntervalSince(started) < 2)
     }
 }
 
