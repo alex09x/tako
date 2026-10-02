@@ -21,7 +21,7 @@ import AppKit
 /// the first -- and so does the mouse. Its buttons are real buttons, so
 /// VoiceOver and accessibility clients press them like any other.
 @MainActor
-final class TerminalDialogView: NSView {
+final class TerminalDialogView: NSView, NSTextFieldDelegate {
     struct Style {
         var font: NSFont
         var background: NSColor
@@ -47,7 +47,7 @@ final class TerminalDialogView: NSView {
         var kind: Kind
     }
 
-    private let style: Style
+    fileprivate let style: Style
     private let title: String
     private let lines: [TUIText.Line]
     private let hint: String
@@ -59,6 +59,11 @@ final class TerminalDialogView: NSView {
     private var scrollRemainder: CGFloat = 0
     private var finish: ((Int) -> Void)?
     private weak var previousResponder: NSResponder?
+    /// A line to type into, on body row `fieldRow`, when the question asks
+    /// for text; return presses `fieldConfirm`.
+    private var field: NSTextField?
+    private var fieldRow = 0
+    private var fieldConfirm = 0
 
     /// The question drawn in `window`, if one is waiting for an answer.
     static func pending(in window: NSWindow?) -> TerminalDialogView? {
@@ -128,6 +133,64 @@ final class TerminalDialogView: NSView {
                                             Choice(title: confirm, kind: .destructive)],
                                   selected: 1, cancelIndex: 0, theme: theme)
         return answer.map { $0 == 1 }
+    }
+
+    /// Asks for a line of text in `window` -- `label` above the field,
+    /// `hint` below it, `value` in it to start with -- and answers what was
+    /// typed when `confirm` is pressed or return typed, nil when cancelled.
+    static func askText(in window: NSWindow, title: String, label: String, value: String, hint: String?,
+                        confirm: String, cancel: String = "Cancel", theme: TerminalTheme?) async -> String? {
+        guard let content = window.contentView else { return nil }
+        var lines = [TUIText.Line(runs: [TUIText.Run(text: label, kind: .muted)]), TUIText.Line(runs: [])]
+        if let hint { lines.append(TUIText.Line(runs: [TUIText.Run(text: hint, kind: .muted)])) }
+        let view = TerminalDialogView(title: title, lines: lines,
+                                      choices: [Choice(title: cancel, kind: .normal), Choice(title: confirm, kind: .primary)],
+                                      cancelIndex: 0, style: .from(theme))
+        view.selected = 1
+        view.updateSelection()
+        let field = NSTextField(string: value)
+        field.isBordered = false
+        field.drawsBackground = true
+        field.backgroundColor = TakoTUI.field
+        field.textColor = TakoTUI.bright
+        field.font = view.style.font
+        field.focusRingType = .none
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.delegate = view
+        field.setAccessibilityLabel(label)
+        view.field = field
+        view.fieldRow = 1
+        view.fieldConfirm = 1
+        view.addSubview(field)
+        view.frame = content.bounds
+        view.autoresizingMask = [.width, .height]
+        let answer: Int = await withCheckedContinuation { continuation in
+            view.finish = { continuation.resume(returning: $0) }
+            view.previousResponder = window.firstResponder
+            content.addSubview(view, positioned: .above, relativeTo: nil)
+            view.layoutSubtreeIfNeeded()
+            window.makeFirstResponder(field)
+            field.currentEditor()?.selectAll(nil)
+        }
+        return answer == 1 ? field.stringValue : nil
+    }
+
+    // Return confirms, escape cancels, tab moves between the buttons -- from
+    // inside the field, as from the card.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)): answer(fieldConfirm)
+        case #selector(NSResponder.cancelOperation(_:)): answer(cancelIndex)
+        case #selector(NSResponder.insertTab(_:)): move(1)
+        default: return false
+        }
+        return true
+    }
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        // The caret as the terminal's: an Ember block's colour.
+        (field?.currentEditor() as? NSTextView)?.insertionPointColor = TakoTUI.ember
     }
 
     /// Asks in `window` and answers the index of the button pressed --
@@ -206,6 +269,12 @@ final class TerminalDialogView: NSView {
             let origin = cell(column, rows - 4)
             button.frame = NSRect(x: origin.x, y: origin.y, width: CGFloat(width) * cellWidth, height: cellHeight)
             column -= 1
+        }
+        if let field {
+            // The field on its row, the whole width inside the frame's padding.
+            let origin = cell(3, 2 + fieldRow - offset)
+            field.frame = NSRect(x: origin.x - cellWidth / 2, y: origin.y,
+                                 width: CGFloat(columns - 5) * cellWidth, height: cellHeight)
         }
     }
 

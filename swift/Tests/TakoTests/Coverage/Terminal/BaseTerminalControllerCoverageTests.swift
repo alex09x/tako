@@ -716,28 +716,34 @@ struct BaseTerminalControllerRealWindowTests {
         #expect(true)
     }
 
-    @Test func promptTabTitleShowsAnAlertWithAWindow() {
+    @MainActor @Test func promptTabTitleAsksInTheWindow() async {
         let (controller, window) = makeControllerWithWindow()
         defer {
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            TerminalDialogView.pending(in: window)?.withdraw()
             window.orderOut(nil)
         }
+        if window.contentView == nil { window.contentView = NSView(frame: window.frame) }
         window.makeKeyAndOrderFront(nil)
         controller.promptTabTitle()
-        TerminalTestSupport.waitUntil(timeout: 1) { window.attachedSheet != nil }
-        #expect(window.attachedSheet != nil)
+        // Asked in the window, as the terminal UI draws it -- not a sheet.
+        for _ in 0..<200 where TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window)?.summary["title"] == .string("Rename Tab"))
+        #expect(window.attachedSheet == nil)
     }
 
-    @Test func changeTabTitleFallsBackToPromptTabTitle() {
+    @MainActor @Test func changeTabTitleFallsBackToPromptTabTitle() async {
         let (controller, window) = makeControllerWithWindow()
         defer {
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            TerminalDialogView.pending(in: window)?.withdraw()
             window.orderOut(nil)
         }
+        if window.contentView == nil { window.contentView = NSView(frame: window.frame) }
         window.makeKeyAndOrderFront(nil)
         controller.changeTabTitle(controller)
-        TerminalTestSupport.waitUntil(timeout: 1) { window.attachedSheet != nil }
-        #expect(window.attachedSheet != nil)
+        // Asked in the window, as the terminal UI draws it -- not a sheet.
+        for _ in 0..<200 where TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window)?.summary["title"] == .string("Rename Tab"))
+        #expect(window.attachedSheet == nil)
     }
 
     @Test func windowShouldCloseRequiresConfirmationForARunningSurface() throws {

@@ -169,5 +169,24 @@ struct TerminalDialogTests {
         #expect(dialog.press("cancel"))
         #expect(await asked.value == false)
     }
+
+    @Test func aTextQuestionAnswersWhatWasTypedOrNothing() async {
+        let window = window()
+        let asked = Task { await TerminalDialogView.askText(in: window, title: "Rename Tab", label: "Title",
+                                                            value: "old", hint: nil, confirm: "Save", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        let field = dialog.subviews.compactMap { $0 as? NSTextField }.first!
+        #expect(field.stringValue == "old")
+        field.stringValue = "build logs"
+        #expect(dialog.press("Save"))
+        #expect(await asked.value == "build logs")
+
+        let cancelled = Task { await TerminalDialogView.askText(in: window, title: "Rename Tab", label: "Title",
+                                                                value: "x", hint: nil, confirm: "Save", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        TerminalDialogView.pending(in: window)!.withdraw()
+        #expect(await cancelled.value == nil)
+    }
 }
 

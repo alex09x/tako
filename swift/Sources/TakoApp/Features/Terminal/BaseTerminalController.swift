@@ -400,30 +400,18 @@ class BaseTerminalController: NSWindowController,
     func promptTabTitle() {
         guard let window else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "Change Tab Title"
-        alert.informativeText = "Leave blank to restore the default."
-        alert.alertStyle = .informational
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
-        textField.stringValue = titleOverride ?? window.title
-        alert.accessoryView = textField
-
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-
-        alert.window.initialFirstResponder = textField
-
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self else { return }
-            guard response == .alertFirstButtonReturn else { return }
-
-            let newTitle = textField.stringValue
-            if newTitle.isEmpty {
-                self.titleOverride = nil
-            } else {
-                self.titleOverride = newTitle
-            }
+        // Asked in the window, drawn as the terminal UI is (see
+        // `TerminalDialogView`).
+        let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let newTitle = await TerminalDialogView.askText(
+                    in: window, title: "Rename Tab", label: "Title",
+                    value: self.titleOverride ?? window.title,
+                    hint: "empty brings back the program's own title",
+                    confirm: "Save", theme: theme)
+            else { return }
+            self.titleOverride = newTitle.isEmpty ? nil : newTitle
         }
     }
 
