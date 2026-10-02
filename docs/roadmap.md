@@ -90,6 +90,26 @@ Done when:
 - the user has a clear action that ends a live session;
 - when the host is gone, the fallback above is what happens.
 
+### 5. Drive Tako from a script
+
+A command-line tool, `takoctl`, controls the running app: list windows, tabs and panes with their
+directories; open a tab or split with a directory and a command; type into a pane or send it a key;
+read its screen back; focus, retitle or close it; post a notification tied to it. It also reaches
+what only Tako knows: the last command a pane ran, with its exit status and output, and a search
+across every open tab grouped by command. A script or a coding agent running in one pane can
+address its own pane by id instead of whatever the user has selected.
+
+It works only on this Mac, over a socket only the user can open, and nothing is exposed over the
+network. Any program running as that user can use it, as it can already read and type into the
+user's terminals, so the setting is about convenience, not isolation: by default the tool accepts
+requests made from inside a Tako pane, it can be opened to scripts started elsewhere, and it can be
+turned off entirely.
+
+Done when a script can build a layout, run a command in a new pane, wait for it to finish and read
+its exit status and output, without touching the keyboard; when a request names a pane that is gone
+or ambiguous it fails with a clear error instead of acting on another one; and when no other user on
+the Mac can reach it.
+
 ## TakoCore
 
 A small track that runs alongside the app:
