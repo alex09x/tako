@@ -1848,6 +1848,12 @@ impl Terminal {
             0 => {
                 let row = self.cursor.row;
                 let col = self.cursor.col;
+                // Rows below the cursor go whole. Erasing from the cursor on
+                // its own row is how a line editor redraws, so that stays.
+                let here = self.cursor_absolute_line();
+                if self.input_start.is_some_and(|(line, _)| line > here) {
+                    self.input_start = None;
+                }
                 self.active_grid_mut().fill_cells_respecting(row, col, cols, blank, respect);
                 for r in (row + 1)..rows {
                     self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
@@ -1857,6 +1863,10 @@ impl Terminal {
             1 => {
                 let row = self.cursor.row;
                 let col = self.cursor.col;
+                let here = self.cursor_absolute_line();
+                if self.input_start.is_some_and(|(line, _)| line < here) {
+                    self.input_start = None;
+                }
                 for r in 0..row {
                     self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
                     self.active_grid_mut().set_line_wrapped(r, false);

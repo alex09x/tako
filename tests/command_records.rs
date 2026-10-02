@@ -464,7 +464,9 @@ fn a_multiline_command_line_stays_within_the_limit_and_round_trips() {
 
 #[test]
 fn rows_moving_under_the_command_line_drop_it() {
-    let cases: [(&str, &[u8]); 5] = [
+    let cases: [(&str, &[u8]); 7] = [
+        ("erase below from above", b"\x1b[1;1H\x1b[J\x1b[2;3Hreplacement"),
+        ("erase above from below", b"\x1b[3;1H\x1b[1J\x1b[2;3Hreplacement"),
         ("insert line", b"\x1b[1;1H\x1b[L\x1b[1;1Hreplacement"),
         ("delete line", b"\x1b[1;1H\x1b[M\x1b[1;1Hreplacement"),
         ("region scroll up", b"\x1b[1;3r\x1b[3;1H\n\x1b[r\x1b[1;1Hreplacement"),
@@ -473,6 +475,10 @@ fn rows_moving_under_the_command_line_drop_it() {
     ];
     for (name, seq) in cases {
         let mut t = Terminal::new(40, 6);
+        if name.starts_with("erase ") {
+            // The command line on row 2, so there is a row above it.
+            t.feed(b"\r\n");
+        }
         t.feed(b"$ ");
         t.feed(B);
         t.feed(b"original");
@@ -543,4 +549,20 @@ fn import_cost_matches_what_a_v4_import_charges() {
     let (restored, trace) = import_traced(&blob).unwrap();
     assert_eq!(trace.allocated, predicted);
     assert_eq!(import_cost(&restored), predicted);
+}
+
+#[test]
+fn a_line_editor_redraw_keeps_the_command_line() {
+    // Erasing from the cursor on the command line's own row and retyping is
+    // a redraw, not a different command.
+    let mut t = Terminal::new(40, 6);
+    t.feed(b"$ ");
+    t.feed(B);
+    t.feed(b"mkae");
+    t.feed(b"\x1b[1;3H\x1b[Jmake\x1b[K");
+    t.feed(b"\r\n");
+    t.feed(C);
+    t.feed(b"built");
+    let rec = t.commands().get(command_of(&t, "built").unwrap()).unwrap();
+    assert_eq!(rec.input.as_deref(), Some("make"));
 }
