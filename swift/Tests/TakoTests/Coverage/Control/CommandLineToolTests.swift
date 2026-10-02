@@ -28,7 +28,13 @@ struct CommandLineToolTests {
         FileManager.default.createFile(atPath: "\(bin)/takoctl", contents: Data("real".utf8))
         #expect(CommandLineTool.writableDirectory(directories: ["/nonexistent", bin, free]) == free)
         try FileManager.default.removeItem(atPath: "\(bin)/takoctl")
-        try FileManager.default.createSymbolicLink(atPath: "\(bin)/takoctl", withDestinationPath: "/old")
+        // Another tool's link is left alone too; an older Tako's is taken.
+        try FileManager.default.createSymbolicLink(atPath: "\(bin)/takoctl", withDestinationPath: "/usr/lib/other/takoctl")
+        #expect(CommandLineTool.writableDirectory(directories: [bin, free]) == free)
+        #expect(CommandLineTool.occupied(directories: [bin, free]) == "\(bin)/takoctl")
+        try FileManager.default.removeItem(atPath: "\(bin)/takoctl")
+        try FileManager.default.createSymbolicLink(atPath: "\(bin)/takoctl", withDestinationPath: "/Old/Tako.app/Contents/MacOS/takoctl")
         #expect(CommandLineTool.writableDirectory(directories: [bin, free]) == bin)
+        #expect(CommandLineTool.occupied(directories: [bin, free]) == nil)
     }
 }

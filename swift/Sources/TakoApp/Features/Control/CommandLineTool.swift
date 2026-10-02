@@ -30,33 +30,58 @@ enum CommandLineTool {
         }
     }
 
+    /// What a Tako bundle's copy looks like at the end of a link.
+    static let bundleSuffix = ".app/Contents/MacOS/\(name)"
+
+    /// Whether `link` may be made to point at this copy: nothing is there,
+    /// or a link to some Tako's own copy (an older install). Read without
+    /// following links; another tool's `takoctl` is never touched.
+    static func replaceable(_ link: String) -> Bool {
+        let fm = FileManager.default
+        guard let attrs = try? fm.attributesOfItem(atPath: link) else { return true }
+        guard attrs[.type] as? FileAttributeType == .typeSymbolicLink,
+              let target = try? fm.destinationOfSymbolicLink(atPath: link) else { return false }
+        return target.hasSuffix(bundleSuffix)
+    }
+
     /// The directory to link into without a password: one that exists, is
-    /// writable, and holds no `takoctl` other than a link (an older Tako's).
+    /// writable, and has no `takoctl` but a Tako's.
     static func writableDirectory(directories: [String] = directories) -> String? {
         let fm = FileManager.default
         return directories.first { dir in
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue,
                   fm.isWritableFile(atPath: dir) else { return false }
-            let link = (dir as NSString).appendingPathComponent(name)
-            let attrs = try? fm.attributesOfItem(atPath: link)
-            return attrs == nil || attrs?[.type] as? FileAttributeType == .typeSymbolicLink
+            return replaceable((dir as NSString).appendingPathComponent(name))
         }
+    }
+
+    /// Why it was not installed, when nowhere would take it.
+    static func occupied(directories: [String] = directories) -> String? {
+        directories.map { ($0 as NSString).appendingPathComponent(name) }.first { !replaceable($0) }
     }
 
     /// Links `takoctl` in; answers where, or nil when it could not.
     static func install(bundled: String) -> String? {
         if let dir = writableDirectory() {
+            // Made beside it, then renamed over it: the swap is one step.
             let link = (dir as NSString).appendingPathComponent(name)
-            try? FileManager.default.removeItem(atPath: link)
-            if (try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: bundled)) != nil {
-                return link
+            let fresh = (dir as NSString).appendingPathComponent(".\(name).\(UUID().uuidString)")
+            if (try? FileManager.default.createSymbolicLink(atPath: fresh, withDestinationPath: bundled)) != nil {
+                if rename(fresh, link) == 0 { return link }
+                try? FileManager.default.removeItem(atPath: fresh)
             }
+            return nil
         }
         // Nowhere writable: the system directory, with the administrator's
-        // password, asked by macOS itself.
+        // password, asked by macOS itself -- and only over nothing or a
+        // Tako's link, checked again as root right before.
         let link = "/usr/local/bin/\(name)"
-        let shell = "/bin/mkdir -p /usr/local/bin && /bin/ln -sf \(quoted(bundled)) \(quoted(link))"
+        guard replaceable(link) else { return nil }
+        let l = quoted(link), fresh = quoted("/usr/local/bin/.\(name).\(UUID().uuidString)")
+        let shell = "/bin/mkdir -p /usr/local/bin && "
+            + "if [ -e \(l) ] || [ -L \(l) ]; then case \"$(/usr/bin/readlink \(l))\" in *\(bundleSuffix)) ;; *) exit 3;; esac; fi && "
+            + "/bin/ln -s \(quoted(bundled)) \(fresh) && /bin/mv -f \(fresh) \(l)"
         let script = "do shell script \"\(shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -111,8 +136,9 @@ enum CommandLineTool {
             report(in: window, title: "takoctl installed",
                    text: "\(link) → the copy inside Tako. Try: takoctl tree", theme: theme)
         } else {
+            let reason = occupied().map { "\($0) is another program's; it was left alone." } ?? "Could not link it."
             report(in: window, title: "takoctl not installed",
-                   text: "Could not link it. By hand: ln -s \(bundled) /usr/local/bin/\(name)", theme: theme)
+                   text: "\(reason) By hand: ln -s \(bundled) <a directory on your PATH>/\(name)", theme: theme)
         }
     }
 
