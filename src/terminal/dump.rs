@@ -160,6 +160,82 @@ impl Terminal {
     /// Soft-wrapped rows are rejoined, because a line broken by the screen
     /// edge is one line to whoever pastes it. Trailing blanks go, for the
     /// same reason.
+    /// The last lines of `buffer_text`, read from the end and no further
+    /// than asked: at most `max_lines` logical lines (soft wraps rejoined,
+    /// trailing blanks gone, the screen's empty bottom rows skipped) and at
+    /// most `max_bytes` of text. Its cost is what it returns, not the
+    /// history: a scripted reader asking for one line never walks ten
+    /// thousand.
+    ///
+    /// `truncated` is set when the oldest returned line was cut at the front
+    /// to fit `max_bytes` (on a character boundary); `more` when lines older
+    /// than the returned ones exist.
+    pub fn text_tail(&self, max_lines: usize, max_bytes: usize) -> TextTail {
+        let grid = self.active_grid();
+        let (cols, rows) = (grid.cols(), grid.rows());
+        let scrollback_len = grid.scrollback_len();
+        let total_rows = scrollback_len + rows;
+        let row_text_at = |abs_row: usize| -> String {
+            let mut line = String::new();
+            for col in 0..cols {
+                let cell = if abs_row < scrollback_len {
+                    grid.scrollback_line((scrollback_len - 1) - abs_row)
+                        .and_then(|l| l.get(col).copied())
+                        .unwrap_or_default()
+                } else {
+                    grid.get(abs_row - scrollback_len, col).copied().unwrap_or_default()
+                };
+                push_glyph(grid, &mut line, &cell);
+            }
+            line
+        };
+
+        let mut lines: Vec<String> = Vec::new();
+        let mut bytes = 0usize;
+        let mut truncated = false;
+        let mut end = total_rows; // exclusive
+        let mut skipping_blank_tail = true;
+        while end > 0 && lines.len() < max_lines {
+            // The logical line ending at `end - 1` starts at the first row
+            // above it that is not a soft-wrap continuation.
+            let mut start = end - 1;
+            while start > 0 && self.is_line_wrapped_abs(start) {
+                start -= 1;
+            }
+            let mut line: String = (start..end).map(&row_text_at).collect();
+            while line.ends_with(' ') {
+                line.pop();
+            }
+            end = start;
+            if skipping_blank_tail && line.is_empty() {
+                continue;
+            }
+            skipping_blank_tail = false;
+            let cost = line.len() + usize::from(!lines.is_empty());
+            if bytes + cost > max_bytes {
+                let room = max_bytes.saturating_sub(bytes + usize::from(!lines.is_empty()));
+                if room > 0 || lines.is_empty() {
+                    let mut cut = line.len() - room.min(line.len());
+                    while !line.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    lines.push(line[cut..].to_string());
+                }
+                truncated = true;
+                break;
+            }
+            bytes += cost;
+            lines.push(line);
+        }
+        lines.reverse();
+        TextTail {
+            lines: lines.len(),
+            text: lines.join("\n"),
+            truncated,
+            more: end > 0,
+        }
+    }
+
     pub fn buffer_text(&self) -> String {
         let grid = self.active_grid();
         let (cols, rows) = (grid.cols(), grid.rows());
@@ -272,4 +348,13 @@ impl Terminal {
 
         runs
     }
+}
+
+/// What [`Terminal::text_tail`] read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextTail {
+    pub text: String,
+    pub lines: usize,
+    pub truncated: bool,
+    pub more: bool,
 }

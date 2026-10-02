@@ -32,7 +32,7 @@ enum ControlCommands {
         do {
             let path = try ControlServer.socketPath(bundleID: self.bundleID)
             let candidate = ControlServer(path: path) { request, reply in
-                reply(handle(request))
+                handle(request, reply: reply)
             }
             switch try candidate.start() {
             case .listening:
@@ -90,9 +90,52 @@ enum ControlCommands {
     }
 
     /// The focused pane of the front window.
+    /// The pane with the keyboard: the focused pane of the key window, else
+    /// of the main window, else of the frontmost terminal window. Each tab is
+    /// a window of its own, so the frontmost by order is not necessarily the
+    /// one being typed into.
     static func activePane(_ panes: [Pane]) -> UUID? {
-        let front = NSApp.orderedWindows.compactMap { $0.windowController as? BaseTerminalController }.first
-        return front?.focusedSurface?.id ?? panes.first?.surface.id
+        let candidates = [NSApp.keyWindow, NSApp.mainWindow] + NSApp.orderedWindows.map { Optional($0) }
+        for window in candidates {
+            if let controller = window?.windowController as? BaseTerminalController,
+               let id = controller.focusedSurface?.id {
+                return id
+            }
+        }
+        return panes.first?.surface.id
+    }
+
+    /// Answers `request`, now or -- for work done off the main thread or
+    /// that waits on the user -- later, exactly once.
+    static func handle(_ request: ControlRequest, reply: @escaping @Sendable (ControlResponse) -> Void) {
+        let all = panes()
+        do {
+            guard mode.allows(from: request.from, panes: all.map(\.surface.id)) else {
+                reply(handle(request))   // the refusal, from one place
+                return
+            }
+            switch request.cmd {
+            case "text":
+                let surface = try target(request, all)
+                let lines = try ControlInput.lines(request.args)
+                let core = surface.core
+                let id = surface.id.uuidString.lowercased()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    var result = ControlInput.read(core, lines: lines)
+                    result["id"] = .string(id)
+                    reply(.ok(result))
+                }
+            case "close":
+                let surface = try target(request, all)
+                ControlLayout.close(surface, reply: reply)
+            default:
+                reply(handle(request))
+            }
+        } catch let error as ControlError {
+            reply(.failure(error))
+        } catch {
+            reply(.failure(ControlError(.internalError, "\(error)")))
+        }
     }
 
     static func handle(_ request: ControlRequest) -> ControlResponse {
@@ -132,21 +175,8 @@ enum ControlCommands {
                 let surface = try target(request, all)
                 try ControlLayout.title(surface, try ControlInput.text(request.args, "title"))
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
-            case "close":
-                let surface = try target(request, all)
-                let state = try ControlLayout.close(surface, all: panes)
-                return .ok(["id": .string(surface.id.uuidString.lowercased()), "state": .string(state)])
-            case "text":
-                let surface = try target(request, all)
-                var lines: Int?
-                switch request.args["lines"] {
-                case nil, .null?: lines = nil
-                case .number(let n)? where n >= 0 && n == n.rounded(): lines = Int(n)
-                default: throw ControlError(.invalid, "\"lines\" is not a whole number")
-                }
-                var result = ControlInput.read(surface, lines: lines)
-                result["id"] = .string(surface.id.uuidString.lowercased())
-                return .ok(result)
+            case "text", "close":
+                throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")
             }

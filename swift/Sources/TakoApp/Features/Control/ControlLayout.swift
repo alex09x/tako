@@ -74,12 +74,53 @@ enum ControlLayout {
         try controller(of: surface).titleOverride = title.isEmpty ? nil : title
     }
 
-    /// Closes the pane the way closing it by hand does, asking first when
-    /// that would. Answers what happened: `closed`, or `confirming` while
-    /// the question is on screen -- never `closed` before it is.
-    static func close(_ surface: Tako.SurfaceView, all: () -> [ControlCommands.Pane]) throws -> String {
+    /// How long a close may wait for the user to answer its question.
+    static let closeWait: TimeInterval = 60
+
+    /// Closes the pane the way closing it by hand does: asking first exactly
+    /// when that would (a running process), never skipping a persistent
+    /// session's own question. Answers once, with what happened: `closed`,
+    /// or `cancelled` when the user said no -- or did not answer within
+    /// `closeWait`, in which case the question is withdrawn so a late click
+    /// cannot close it after takoctl was told it did not.
+    static func close(_ surface: Tako.SurfaceView, reply: @escaping @Sendable (ControlResponse) -> Void) {
         let id = surface.id
-        try controller(of: surface).closeSurface(surface, withConfirmation: true)
-        return all().contains(where: { $0.surface.id == id }) ? "confirming" : "closed"
+        let idString = id.uuidString.lowercased()
+        let controller: BaseTerminalController
+        do { controller = try self.controller(of: surface) } catch let e as ControlError {
+            reply(.failure(e)); return
+        } catch { reply(.failure(ControlError(.internalError, "\(error)"))); return }
+        if controller is QuickTerminalController, Array(controller.surfaceTree).count == 1 {
+            // Its last pane is hidden with the Quick Terminal, not closed.
+            reply(.failure(ControlError(.invalid, "the Quick Terminal's last pane is hidden, not closed")))
+            return
+        }
+        let window = controller.window
+        controller.closeSurface(surface, withConfirmation: surface.needsConfirmClose)
+        let deadline = Date().addingTimeInterval(closeWait)
+        func answer(_ state: String, _ note: String? = nil) {
+            var result: [String: JSON] = ["id": .string(idString), "state": .string(state)]
+            if let note { result["note"] = .string(note) }
+            reply(.ok(result))
+        }
+        func exists() -> Bool { ControlCommands.panes().contains { $0.surface.id == id } }
+        func check() {
+            if !exists() { return answer("closed") }
+            if let sheet = window?.attachedSheet {
+                guard Date() < deadline else {
+                    // Withdraw the question: an abort is not a yes.
+                    window?.endSheet(sheet, returnCode: .abort)
+                    DispatchQueue.main.async {
+                        exists() ? answer("cancelled", "no answer within \(Int(closeWait)) s") : answer("closed")
+                    }
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { check() }
+                return
+            }
+            answer("cancelled")
+        }
+        // The question, when there is one, goes up on the next turn.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { check() }
     }
 }

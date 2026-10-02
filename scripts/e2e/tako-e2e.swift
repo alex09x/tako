@@ -602,6 +602,100 @@ let scenarios: [Scenario] = [
             throw Failure("from the Quick Terminal \(me): \(tree.prefix(500))")
         }
     }),
+    ("ctl-layout", "takoctl splits, types, reads, retitles, opens a tab behind and closes with the user's answer", { d in
+        let id = d.work.lastPathComponent
+        let out = d.work.path
+        // Each phase is a small sh script run in the pane, so fish and zsh
+        // alike run it; results go to files the driver reads.
+        func script(_ name: String, _ body: String) throws {
+            try body.write(toFile: d.path(name), atomically: true, encoding: .utf8)
+        }
+        try script("setup.sh", """
+        me=$TAKO_SURFACE_ID
+        b=$(takoctl split right) || exit 1
+        echo "$b" > \(out)/b
+        takoctl type "echo split-\(id)" --target "$b"
+        sleep 0.5
+        takoctl text --target "$b" --lines 3 > \(out)/typed
+        takoctl key enter --target "$b"
+        sleep 1
+        takoctl text --target "$b" --lines 5 > \(out)/ran
+        takoctl title "ctl-\(id)" --target "$b" && echo ok > \(out)/titled
+        takoctl tree --json > \(out)/before
+        takoctl tab-new --no-select --target "$me" > \(out)/f
+        sleep 1
+        takoctl tree --json > \(out)/after
+        takoctl send "sleep 300" --target "$b"
+        takoctl focus --target "$me"
+        sleep 0.5
+        takoctl tree --json > \(out)/refocused
+        echo "$me" > \(out)/me
+        echo done > \(out)/setup
+        """)
+        try d.run("sh \(d.path("setup.sh"))")
+        _ = try d.file("setup", timeout: 20)
+        let b = try d.file("b").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard b.count == 36 else { throw Failure("split gave no pane id: \(b)") }
+        // type: the text is on the line, not yet run; key enter: it ran.
+        let typed = try d.file("typed"), ran = try d.file("ran")
+        guard typed.contains("echo split-\(id)"), !typed.contains("\nsplit-\(id)"),
+              ran.contains("\nsplit-\(id)") else {
+            throw Failure("type/key/text: typed=\(typed) ran=\(ran)")
+        }
+        guard try d.file("titled").contains("ok") else { throw Failure("title failed") }
+        // tab-new --no-select: a new pane, and the focused pane did not change.
+        let before = try d.file("before"), after = try d.file("after")
+        let f = try d.file("f").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard f.count == 36, after.contains(f), !before.contains(f) else {
+            throw Failure("tab-new: \(f) not in tree")
+        }
+        // The pane object whose "focused" is true: parsed, not pattern-matched.
+        func focusedID(_ json: String) -> String? {
+            guard let data = json.data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else { return nil }
+            for window in windows {
+                for tab in window["tabs"] as? [[String: Any]] ?? [] {
+                    for pane in tab["panes"] as? [[String: Any]] ?? [] where pane["focused"] as? Bool == true {
+                        return pane["id"] as? String
+                    }
+                }
+            }
+            return nil
+        }
+        guard let fb = focusedID(before), focusedID(after) == fb else {
+            throw Failure("--no-select moved the focus: \(focusedID(before) ?? "-") -> \(focusedID(after) ?? "-")")
+        }
+        // focus: the keyboard is back in this pane.
+        let me = try d.file("me").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard focusedID(try d.file("refocused")) == me else {
+            throw Failure("focus did not return to \(me); focused \(focusedID(try d.file("refocused")) ?? "-"), b \(b), f \(f): \(try d.file("refocused"))")
+        }
+        // close a pane with a running process: the question; Escape = cancelled.
+        try script("close1.sh", "takoctl close --target \(b) > \(out)/close1; echo $? > \(out)/close1.rc")
+        try d.run("sh \(d.path("close1.sh")) &")
+        usleep(1_500_000)
+        d.key(Key.escape)
+        _ = try d.file("close1.rc", timeout: 10)   // written after the answer
+        guard try d.file("close1").contains("cancelled") else {
+            throw Failure("Cancel was not reported: \(try d.file("close1"))")
+        }
+        // Again, and Return = closed.
+        try script("close2.sh", "takoctl close --target \(b) > \(out)/close2; echo $? > \(out)/close2.rc")
+        try d.run("sh \(d.path("close2.sh")) &")
+        usleep(1_500_000)
+        d.key(Key.returnKey)
+        _ = try d.file("close2.rc", timeout: 10)   // written after the answer
+        guard try d.file("close2").contains("closed") else {
+            throw Failure("closing was not reported: \(try d.file("close2"))")
+        }
+        // The pane is gone: notFound, exit 1, nothing else closed.
+        try d.run("sh -c 'takoctl close --target \(b) 2> \(out)/close3; echo $? > \(out)/close3.rc'")
+        guard try d.file("close3.rc").trimmingCharacters(in: .whitespacesAndNewlines) == "1",
+              try d.file("close3").contains("notFound") else {
+            throw Failure("closing a gone pane: \(try d.file("close3"))")
+        }
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()

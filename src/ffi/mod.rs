@@ -792,6 +792,17 @@ impl From<FfiSearchHit> for crate::grid::SearchHit {
     }
 }
 
+/// See `TakoCore::text_tail`.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiTextTail {
+    pub text: String,
+    pub lines: u32,
+    /// The oldest returned line was cut at the front to fit.
+    pub truncated: bool,
+    /// Older lines exist than those returned.
+    pub more: bool,
+}
+
 /// One step of a search; see `TakoCore::search_chunk`.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiSearchChunk {
@@ -1874,6 +1885,19 @@ impl TakoCore {
     /// last screenful of a session that has thousands of lines.
     pub fn buffer_text(&self) -> String {
         lock_recover(&self.inner).buffer_text()
+    }
+
+    /// The last `max_lines` lines of `buffer_text`, at most `max_bytes` of
+    /// them, read from the end only as far as needed (see
+    /// `Terminal::text_tail`). Holds the terminal for that much and no more.
+    pub fn text_tail(&self, max_lines: u32, max_bytes: u32) -> FfiTextTail {
+        let tail = lock_recover(&self.inner).text_tail(max_lines as usize, max_bytes as usize);
+        FfiTextTail {
+            text: tail.text,
+            lines: tail.lines as u32,
+            truncated: tail.truncated,
+            more: tail.more,
+        }
     }
 
     /// Where the viewport sits as a fraction: 0 is the oldest retained line,

@@ -6,7 +6,9 @@
 //! way the app names it, from its bundle id.
 //!
 //! Exit status: 0 when the app answered `ok`, 1 when it refused (the error
-//! is printed), 2 for a usage error, 3 when no Tako answers.
+//! is printed), 2 for a usage error, 3 when no Tako took the request, 4 when
+//! the request was delivered but no answer came: it may have been carried
+//! out, and is never retried.
 
 mod socket;
 
@@ -193,9 +195,15 @@ fn main() -> ExitCode {
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     let answer = match socket::exchange(&path, &req) {
         Ok(a) => a,
-        Err(e) => {
-            eprintln!("takoctl: no Tako answers on {path}: {e}");
+        Err(e) if !e.sent => {
+            eprintln!("takoctl: no Tako answers on {path}: {}", e.message);
             return ExitCode::from(3);
+        }
+        Err(e) => {
+            // The request went out: it may or may not have been carried out.
+            // Never sent again from here -- a second tab-new is a second tab.
+            eprintln!("takoctl: unknown outcome: {} (the request was delivered and may have been carried out; not retried)", e.message);
+            return ExitCode::from(4);
         }
     };
     let ok = answer["ok"].as_bool() == Some(true);

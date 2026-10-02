@@ -41,29 +41,51 @@ pub const MAX_ANSWER_BYTES: usize = 16 << 20;
 
 /// Sends one request line and reads the one-line answer, all of it within
 /// `TIMEOUT` -- connecting included.
-pub fn exchange(path: &str, request: &Value) -> Result<Value, String> {
+pub fn exchange(path: &str, request: &Value) -> Result<Value, Failure> {
     exchange_within(path, request, TIMEOUT, MAX_ANSWER_BYTES)
 }
 
-pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, String> {
+/// Why no answer was read, and whether the request had already gone out --
+/// which decides whether it may have been carried out.
+#[derive(Debug)]
+pub struct Failure {
+    pub message: String,
+    pub sent: bool,
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl Failure {
+    pub fn contains(&self, s: &str) -> bool {
+        self.message.contains(s)
+    }
+}
+
+pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, Failure> {
+    let unsent = |message: String| Failure { message, sent: false };
+    let sent = |message: String| Failure { message, sent: true };
     let deadline = Instant::now() + limit;
-    let mut stream = connect(path, deadline)?;
-    let mut line = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    let mut stream = connect(path, deadline).map_err(unsent)?;
+    let mut line = serde_json::to_vec(request).map_err(|e| unsent(e.to_string()))?;
     line.push(b'\n');
     let mut written = 0;
     while written < line.len() {
-        stream.set_write_timeout(Some(left(deadline)?)).map_err(|e| e.to_string())?;
+        stream.set_write_timeout(Some(left(deadline).map_err(unsent)?)).map_err(|e| unsent(e.to_string()))?;
         match stream.write(&line[written..]) {
-            Ok(0) => return Err("the connection closed".into()),
+            Ok(0) => return Err(unsent("the connection closed".into())),
             Ok(n) => written += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(timeout_or(e)),
+            Err(e) => return Err(unsent(timeout_or(e))),
         }
     }
     let mut answer = Vec::new();
     let mut chunk = [0u8; 64 * 1024];
     loop {
-        stream.set_read_timeout(Some(left(deadline)?)).map_err(|e| e.to_string())?;
+        stream.set_read_timeout(Some(left(deadline).map_err(sent)?)).map_err(|e| sent(e.to_string()))?;
         match stream.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
@@ -72,7 +94,7 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
                 let take = line_end.unwrap_or(n);
                 // The cap holds for the whole line, newline or not.
                 if answer.len() + take > max {
-                    return Err(format!("answer larger than {max} bytes"));
+                    return Err(sent(format!("answer larger than {max} bytes")));
                 }
                 answer.extend_from_slice(&got[..take]);
                 if line_end.is_some() {
@@ -80,13 +102,13 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(timeout_or(e)),
+            Err(e) => return Err(sent(timeout_or(e))),
         }
     }
     if answer.is_empty() {
-        return Err("the connection closed without an answer".into());
+        return Err(sent("the connection closed without an answer".into()));
     }
-    serde_json::from_slice(&answer).map_err(|e| format!("unreadable answer: {e}"))
+    serde_json::from_slice(&answer).map_err(|e| sent(format!("unreadable answer: {e}")))
 }
 
 fn left(deadline: Instant) -> Result<Duration, String> {
@@ -197,6 +219,13 @@ mod tests {
     }
 
     #[test]
+    fn nothing_listening_is_a_request_never_sent() {
+        let err = exchange_within("/nonexistent/tako.sock", &serde_json::json!({"cmd": "x"}),
+                                  Duration::from_millis(300), MAX_ANSWER_BYTES).unwrap_err();
+        assert!(!err.sent, "{err}");
+    }
+
+    #[test]
     fn a_server_that_never_answers_times_out() {
         let (path, listener) = listen("silent");
         let _hold = std::thread::spawn(move || {
@@ -208,6 +237,8 @@ mod tests {
         let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
                                   Duration::from_millis(300), MAX_ANSWER_BYTES).unwrap_err();
         assert!(err.contains("timed out"), "{err}");
+        // Delivered, then silence: the outcome is unknown, not "no Tako".
+        assert!(err.sent);
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 

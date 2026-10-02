@@ -59,63 +59,142 @@ enum ControlInput {
         return text
     }
 
+    /// The pane's current process, live: input for a pane whose process
+    /// ended, or that is waiting on its session, is refused rather than
+    /// dropped -- and never takes the keyboard's retry path.
+    static func livePTY(_ surface: Tako.SurfaceView) throws -> PTY {
+        guard let pty = surface.pty, pty.alive else {
+            throw ControlError(.notFound, "the pane has no running process")
+        }
+        return pty
+    }
+
     /// `send`: the text as a paste -- bracketed when the program asked for
     /// that, so a multi-line text arrives whole -- then Enter unless
-    /// `enter` is false. `type`: the same without Enter.
+    /// `enter` is false. `type`: the same without Enter. One item for the
+    /// writer, so paste and Enter stay together and in order.
     static func send(_ surface: Tako.SurfaceView, text: String, enter: Bool) throws {
-        guard !surface.processExited else {
-            throw ControlError(.notFound, "the pane's process has exited")
-        }
-        if !text.isEmpty {
-            surface.writeToShell([UInt8](surface.core.encodePaste(text: text)))
-        }
+        let pty = try livePTY(surface)
+        var bytes = text.isEmpty ? [] : [UInt8](surface.core.encodePaste(text: text))
         if enter {
-            surface.writeToShell([UInt8](surface.core.encodeKey(event: try keyEvent("enter"))))
+            bytes += [UInt8](surface.core.encodeKey(event: try keyEvent("enter")))
         }
+        try ControlWriter.writer(for: pty).enqueue(bytes)
     }
 
     static func key(_ surface: Tako.SurfaceView, chord: String) throws {
         let event = try keyEvent(chord)
-        guard !surface.processExited else {
-            throw ControlError(.notFound, "the pane's process has exited")
-        }
-        let bytes = surface.core.encodeKey(event: event)
+        let pty = try livePTY(surface)
+        let bytes = [UInt8](surface.core.encodeKey(event: event))
         guard !bytes.isEmpty else {
             throw ControlError(.invalid, "\"\(chord)\" sends nothing in this pane")
         }
-        surface.writeToShell([UInt8](bytes))
+        try ControlWriter.writer(for: pty).enqueue(bytes)
     }
 
-    /// Largest text returned, in bytes; cut at a character boundary.
-    static let maxTextBytes = 4 << 20
+    /// Largest text returned, in bytes.
+    static let maxTextBytes: UInt32 = 4 << 20
+    /// Most lines one `text` reads.
+    static let maxLines = 1_000_000
 
-    /// The pane's text: history and screen with soft wraps rejoined, its
-    /// last `lines` lines when asked for. `truncated` when cut to fit.
-    static func read(_ surface: Tako.SurfaceView, lines: Int?) -> [String: JSON] {
-        var all = surface.bufferText
-        // The screen's blank bottom rows are not text.
-        while all.hasSuffix("\n") { all.removeLast() }
-        var rows = all.split(separator: "\n", omittingEmptySubsequences: false)
-        let totalLines = rows.count
-        if let lines, lines >= 0, rows.count > lines {
-            rows = Array(rows.suffix(lines))
+    /// `lines` from a request: a whole number from 0 to `maxLines`; absent
+    /// means all of them, up to the limits.
+    static func lines(_ args: [String: JSON]) throws -> Int {
+        switch args["lines"] {
+        case nil, .null?:
+            return maxLines
+        case .number(let n)?:
+            guard n.isFinite, let lines = Int(exactly: n), (0...maxLines).contains(lines) else {
+                throw ControlError(.invalid, "\"lines\" must be a whole number from 0 to \(maxLines)")
+            }
+            return lines
+        default:
+            throw ControlError(.invalid, "\"lines\" is not a number")
         }
-        var text = rows.joined(separator: "\n")
-        var truncated = false
-        if text.utf8.count > maxTextBytes {
-            // Keep the end -- the newest output -- whole characters only.
-            var cut = text.utf8.index(text.utf8.endIndex, offsetBy: -maxTextBytes)
-            while cut < text.utf8.endIndex, !text.isValidIndex(cut) { cut = text.utf8.index(after: cut) }
-            text = String(text[cut...])
-            truncated = true
-        }
+    }
+
+    /// The pane's last lines, read off the main thread from the end of its
+    /// history only as far as asked.
+    nonisolated static func read(_ core: TakoCore, lines: Int) -> [String: JSON] {
+        let tail = core.textTail(maxLines: UInt32(lines), maxBytes: maxTextBytes)
         return [
-            "text": .string(text),
-            "lines": .number(Double(min(totalLines, lines ?? totalLines))),
-            "totalLines": .number(Double(totalLines)),
-            "truncated": .bool(truncated),
+            "text": .string(tail.text),
+            "lines": .number(Double(tail.lines)),
+            "truncated": .bool(tail.truncated),
+            "more": .bool(tail.more),
         ]
     }
+}
+
+/// Input for one pane's process, written off the main thread in order.
+///
+/// An item -- one send, one key -- is admitted whole or refused (`busy`)
+/// when the bytes still waiting would pass the cap; a program that stops
+/// reading blocks this writer's own queue, never the app. Partial writes and
+/// interruptions are carried on; a write error (the process is gone) drops
+/// what is left.
+final class ControlWriter: @unchecked Sendable {
+    static let maxPending = 1 << 20
+
+    private let fd: Int32
+    private let queue = DispatchQueue(label: "tako.control.input")
+    private let lock = NSLock()
+    private var pending = 0   // under lock
+
+    /// Its own duplicate of the pty's master: the pane closing its master
+    /// can never leave this writing to a number that now names another file.
+    private init?(master: Int32) {
+        let own = dup(master)
+        guard own >= 0 else { return nil }
+        _ = fcntl(own, F_SETFD, FD_CLOEXEC)
+        fd = own
+    }
+
+    /// For tests: a writer on a descriptor of their own (duplicated).
+    static func onDescriptor(_ fd: Int32) -> ControlWriter? { ControlWriter(master: fd) }
+
+    deinit { close(fd) }
+
+    private struct Entry {
+        weak var pty: PTY?
+        let writer: ControlWriter
+    }
+    @MainActor private static var writers: [ObjectIdentifier: Entry] = [:]
+
+    /// One writer per process, made the first time it is needed; writers of
+    /// processes that have ended are let go.
+    @MainActor static func writer(for pty: PTY) throws -> ControlWriter {
+        writers = writers.filter { $0.value.pty?.alive == true }
+        let key = ObjectIdentifier(pty)
+        if let entry = writers[key], entry.pty === pty { return entry.writer }
+        guard let made = ControlWriter(master: pty.master) else {
+            throw ControlError(.internalError, "cannot write to the pane: \(errno)")
+        }
+        writers[key] = Entry(pty: pty, writer: made)
+        return made
+    }
+
+    func enqueue(_ bytes: [UInt8]) throws {
+        guard !bytes.isEmpty else { return }
+        let admitted = lock.withLock {
+            guard pending + bytes.count <= Self.maxPending else { return false }
+            pending += bytes.count
+            return true
+        }
+        guard admitted else {
+            throw ControlError(.busy, "the pane's program is not taking input; \(Self.maxPending) bytes already wait")
+        }
+        queue.async { [self] in
+            var offset = 0
+            while offset < bytes.count {
+                let n = bytes.withUnsafeBytes { Darwin.write(fd, $0.baseAddress! + offset, bytes.count - offset) }
+                if n > 0 { offset += n } else if n < 0 && errno == EINTR { continue } else { break }
+            }
+            lock.withLock { pending -= bytes.count }
+        }
+    }
+
+    var pendingBytes: Int { lock.withLock { pending } }
 }
 
 private extension String {

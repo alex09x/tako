@@ -1408,6 +1408,13 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      */
     func takeOutput()  -> Data
 
+    /**
+     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of
+     * them, read from the end only as far as needed (see
+     * `Terminal::text_tail`). Holds the terminal for that much and no more.
+     */
+    func textTail(maxLines: UInt32, maxBytes: UInt32)  -> FfiTextTail
+
     func title()  -> String
 
     /**
@@ -2532,6 +2539,22 @@ open func takeOutput() -> Data  {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_take_output(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of
+     * them, read from the end only as far as needed (see
+     * `Terminal::text_tail`). Holds the terminal for that much and no more.
+     */
+open func textTail(maxLines: UInt32, maxBytes: UInt32) -> FfiTextTail  {
+    return try!  FfiConverterTypeFfiTextTail_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_text_tail(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxLines),
+        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
     )
 })
 }
@@ -4732,6 +4755,83 @@ public func FfiConverterTypeFfiTerminalModes_lift(_ buf: RustBuffer) throws -> F
 #endif
 public func FfiConverterTypeFfiTerminalModes_lower(_ value: FfiTerminalModes) -> RustBuffer {
     return FfiConverterTypeFfiTerminalModes.lower(value)
+}
+
+
+/**
+ * See `TakoCore::text_tail`.
+ */
+public struct FfiTextTail: Equatable, Hashable {
+    public var text: String
+    public var lines: UInt32
+    /**
+     * The oldest returned line was cut at the front to fit.
+     */
+    public var truncated: Bool
+    /**
+     * Older lines exist than those returned.
+     */
+    public var more: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, lines: UInt32,
+        /**
+         * The oldest returned line was cut at the front to fit.
+         */truncated: Bool,
+        /**
+         * Older lines exist than those returned.
+         */more: Bool) {
+        self.text = text
+        self.lines = lines
+        self.truncated = truncated
+        self.more = more
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiTextTail: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiTextTail: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiTextTail {
+        return
+            try FfiTextTail(
+                text: FfiConverterString.read(from: &buf),
+                lines: FfiConverterUInt32.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf),
+                more: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiTextTail, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterUInt32.write(value.lines, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterBool.write(value.more, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiTextTail_lift(_ buf: RustBuffer) throws -> FfiTextTail {
+    return try FfiConverterTypeFfiTextTail.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiTextTail_lower(_ value: FfiTextTail) -> RustBuffer {
+    return FfiConverterTypeFfiTextTail.lower(value)
 }
 
 
@@ -7393,6 +7493,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_take_output() != 61657) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_text_tail() != 51790) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_title() != 50854) {

@@ -19,6 +19,7 @@ pub mod checkpoint;
 pub mod commands;
 mod dsr;
 mod dump;
+pub use dump::TextTail;
 mod select;
 
 #[cfg(test)]

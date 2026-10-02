@@ -18,6 +18,10 @@ final class ControlServer: @unchecked Sendable {
     /// client trickling a byte at a time cannot hold a connection.
     static let readTimeout: TimeInterval = 5
     static let writeTimeout: TimeInterval = 10
+    /// How long a request may wait for the main thread before it is dropped
+    /// unrun -- less than takoctl's own deadline, so the client hears "not
+    /// run" rather than timing out on a request that might still run.
+    static let mainWait: TimeInterval = 15
 
     typealias Handler = @MainActor (ControlRequest, @escaping @Sendable (ControlResponse) -> Void) -> Void
 
@@ -253,6 +257,7 @@ final class ControlServer: @unchecked Sendable {
             return
         }
         let handler = self.handler
+        let queuedAt = DispatchTime.now()
         DispatchQueue.main.async { [self] in
             let isStopped = lock.withLock {
                 mainBacklog -= 1
@@ -260,6 +265,20 @@ final class ControlServer: @unchecked Sendable {
             }
             if isStopped {
                 DispatchQueue.global(qos: .userInitiated).async { finish(gone) }
+                return
+            }
+            // Work that has not started is not started late: not for a
+            // client that has gone, nor after the client's own deadline,
+            // when it would already have given up and might send it again.
+            if Self.clientGone(client) {
+                DispatchQueue.global(qos: .userInitiated).async { finish(gone) }
+                return
+            }
+            if DispatchTime.now() > queuedAt + Self.mainWait {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    finish(.failure(ControlError(.timeout,
+                        "not run: Tako was busy for \(Int(Self.mainWait)) s; nothing was done")))
+                }
                 return
             }
             MainActor.assumeIsolated {
@@ -345,6 +364,15 @@ final class ControlServer: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Whether the client has closed or reset its end.
+    static func clientGone(_ fd: Int32) -> Bool {
+        var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        guard poll(&p, 1, 0) > 0 else { return false }
+        if p.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 { return true }
+        var byte: UInt8 = 0
+        return recv(fd, &byte, 1, MSG_PEEK) == 0
     }
 
     /// Nonblocking, close-on-exec, and no SIGPIPE. False when the socket
