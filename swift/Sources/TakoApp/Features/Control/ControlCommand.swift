@@ -51,7 +51,7 @@ enum ControlCommand {
         let core = surface.core
         let id = surface.id.uuidString.lowercased()
         if let program = surface.runProgram {
-            var result = process(program: program, pty: surface.pty, core: core, lines: lines)
+            var result = process(program: program, pty: surface.pty, core: core, lines: lines, note: surface.runEndNote)
             result["id"] = .string(id)
             return reply(.ok(result))
         }
@@ -90,7 +90,7 @@ enum ControlCommand {
             return poll(request, paneID, timeout: timeout, reply: reply) {
                 guard let pty = surface.pty else { return nil }
                 if pty.startError != nil {
-                    var result = process(program: program, pty: pty, core: core, lines: lines)
+                    var result = process(program: program, pty: pty, core: core, lines: lines, note: surface.runEndNote)
                     result["state"] = .string("failedToStart")
                     return result
                 }
@@ -100,11 +100,11 @@ enum ControlCommand {
                 let at = exitedAt ?? Date()
                 exitedAt = at
                 guard !pty.alive || Date().timeIntervalSince(at) > 0.5 else { return nil }
-                var result = process(program: program, pty: pty, core: core, lines: lines)
+                var result = process(program: program, pty: pty, core: core, lines: lines, note: surface.runEndNote)
                 result["state"] = .string("finished")
                 return result
             } onTimeout: {
-                var result = process(program: program, pty: surface.pty, core: core, lines: lines)
+                var result = process(program: program, pty: surface.pty, core: core, lines: lines, note: surface.runEndNote)
                 result["state"] = .string("timeout")
                 return result
             }
@@ -209,13 +209,18 @@ enum ControlCommand {
 
     /// A run pane's program: its argv, whether it runs, how it ended, and
     /// the last lines the pane shows.
-    static func process(program: [String], pty: PTY?, core: TakoCore, lines: Int) -> [String: JSON] {
+    static func process(program: [String], pty: PTY?, core: TakoCore, lines: Int, note: String?) -> [String: JSON] {
         let tail = core.textTail(maxLines: UInt32(lines) + 2, maxBytes: UInt32(maxBytes))
         let started = pty?.startError == nil
         let running = started && pty?.exitStatus == nil
-        // The line Tako writes when the program ends is not its output.
+        // The line Tako wrote when the program ended is not its output:
+        // that exact line, the last one written, and the blank before it.
         var outputLines = tail.text.components(separatedBy: "\n")
-        while let last = outputLines.last, last.isEmpty || last.hasPrefix("[exited") || last.hasPrefix("[could not start") { outputLines.removeLast() }
+        while outputLines.last?.isEmpty == true { outputLines.removeLast() }
+        if let note, outputLines.last == note {
+            outputLines.removeLast()
+            if outputLines.last?.isEmpty == true { outputLines.removeLast() }
+        }
         let kept = outputLines.suffix(lines)
         return [
             "process": .object([

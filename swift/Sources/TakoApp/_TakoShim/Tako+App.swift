@@ -1674,6 +1674,10 @@ extension Tako {
 
         /// The program `takoctl run` started in this pane in place of a shell.
         private(set) var runProgram: [String]?
+        /// The line Tako wrote below the program's output when it ended, as
+        /// written -- so an answer leaves out exactly that line and no line
+        /// of the program's that happens to look like it.
+        var runEndNote: String?
 
         /// Whether a command the shell marked (OSC 133) is running now.
         var isCommandRunning: Bool { commandStartedAt != nil }
@@ -2144,6 +2148,7 @@ extension Tako {
                             status = pty?.exitStatus.map { "exited with code \($0)" } ?? "exited"
                         }
                         DispatchQueue.main.async {
+                            view.runEndNote = "[\(status)]"
                             view.core.feed(bytes: Data("\r\n\u{1b}[2m[\(status)]\u{1b}[0m\r\n".utf8))
                             view.needsDisplay = true
                         }
