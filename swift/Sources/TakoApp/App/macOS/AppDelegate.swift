@@ -370,6 +370,8 @@ class AppDelegate: NSObject,
         // Setup our menu
         setupMenuImages()
         setupUpdateMenuItem()
+        setupCommandLineToolMenuItem()
+        CommandLineTool.offerAtLaunch(theme: tako.config.theme)
 
         // Setup signal handlers
         setupSignals()
@@ -1025,6 +1027,20 @@ class AppDelegate: NSObject,
 
     @IBAction func checkForUpdates(_ sender: Any?) {
         AppUpdater.shared.checkForUpdates(silent: false)
+    }
+
+    @IBAction func installCommandLineTool(_ sender: Any?) {
+        CommandLineTool.installFromMenu(theme: tako.config.theme)
+    }
+
+    private func setupCommandLineToolMenuItem() {
+        guard let takoMenu = NSApp.mainMenu?.items.first?.submenu,
+              !takoMenu.items.contains(where: { $0.action == #selector(installCommandLineTool) })
+        else { return }
+        let item = NSMenuItem(title: "Install takoctl Command…", action: #selector(installCommandLineTool), keyEquivalent: "")
+        item.target = self
+        item.setImageIfDesired(systemSymbolName: "terminal")
+        takoMenu.insertItem(item, at: min(2, takoMenu.items.count))
     }
 
     private func setupUpdateMenuItem() {
