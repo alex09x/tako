@@ -33,16 +33,31 @@ enum CommandLineTool {
     /// What a Tako bundle's copy looks like at the end of a link.
     static let bundleSuffix = ".app/Contents/MacOS/\(name)"
 
-    /// Whether `link` may be made to point at this copy: nothing is there,
-    /// or a link to some Tako's own copy (an older install). Read without
-    /// following links; another tool's `takoctl` is never touched.
-    static func replaceable(_ link: String) -> Bool {
+    /// Bundle identifiers that are Tako: the release and its local builds
+    /// (`com.tako-core.terminal.demo` and the like).
+    static let bundleIdentifierPrefix = "com.tako-core.terminal"
+
+    /// What is at `link`, read without following it: nothing (nil target,
+    /// replaceable), a link to a Tako's own copy (its target, replaceable),
+    /// or anything else -- another tool's, or a link whose app is gone or
+    /// cannot be told to be Tako -- which is never touched.
+    enum Occupant: Equatable { case empty, tako(target: String), other }
+
+    static func occupant(_ link: String) -> Occupant {
         let fm = FileManager.default
-        guard let attrs = try? fm.attributesOfItem(atPath: link) else { return true }
+        guard let attrs = try? fm.attributesOfItem(atPath: link) else { return .empty }
         guard attrs[.type] as? FileAttributeType == .typeSymbolicLink,
-              let target = try? fm.destinationOfSymbolicLink(atPath: link) else { return false }
-        return target.hasSuffix(bundleSuffix)
+              let target = try? fm.destinationOfSymbolicLink(atPath: link),
+              target.hasSuffix(bundleSuffix) else { return .other }
+        // The app the link runs, and what it says it is.
+        let resolved = URL(fileURLWithPath: target, relativeTo: URL(fileURLWithPath: (link as NSString).deletingLastPathComponent))
+        let app = resolved.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        guard let id = Bundle(url: app)?.bundleIdentifier,
+              id == bundleIdentifierPrefix || id.hasPrefix(bundleIdentifierPrefix + ".") else { return .other }
+        return .tako(target: target)
     }
+
+    static func replaceable(_ link: String) -> Bool { occupant(link) != .other }
 
     /// The directory to link into without a password: one that exists, is
     /// writable, and has no `takoctl` but a Tako's.
@@ -77,10 +92,16 @@ enum CommandLineTool {
         // password, asked by macOS itself -- and only over nothing or a
         // Tako's link, checked again as root right before.
         let link = "/usr/local/bin/\(name)"
-        guard replaceable(link) else { return nil }
+        // As root, it must still be exactly what was checked here: nothing,
+        // or the very link verified to be a Tako's.
+        let expected: String
+        switch occupant(link) {
+        case .other: return nil
+        case .empty: expected = "if [ -e \(quoted(link)) ] || [ -L \(quoted(link)) ]; then exit 3; fi"
+        case .tako(let target): expected = "[ -L \(quoted(link)) ] && [ \"$(/usr/bin/readlink \(quoted(link)))\" = \(quoted(target)) ] || exit 3"
+        }
         let l = quoted(link), fresh = quoted("/usr/local/bin/.\(name).\(UUID().uuidString)")
-        let shell = "/bin/mkdir -p /usr/local/bin && "
-            + "if [ -e \(l) ] || [ -L \(l) ]; then case \"$(/usr/bin/readlink \(l))\" in *\(bundleSuffix)) ;; *) exit 3;; esac; fi && "
+        let shell = "/bin/mkdir -p /usr/local/bin && { \(expected); } && "
             + "/bin/ln -s \(quoted(bundled)) \(fresh) && /bin/mv -f \(fresh) \(l)"
         let script = "do shell script \"\(shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
         let process = Process()
