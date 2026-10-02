@@ -386,13 +386,13 @@ class BaseTerminalController: NSWindowController,
         completion: @escaping () -> Void
     ) {
         Task {
-            guard let response = await confirmCloseAsync(messageText: messageText, informativeText: informativeText, confirmButtonTitle: confirmButtonTitle) else {
-                completion()
-                return
-            }
-            if [.alertFirstButtonReturn, .OK].contains(response) {
-                completion()
-            }
+            // Nil: a question is already up. It is not an answer -- with the
+            // question drawn in the window a second ⌘W reaches us while the
+            // first waits -- so nothing closes until that one is answered.
+            guard let response = await confirmCloseAsync(messageText: messageText, informativeText: informativeText, confirmButtonTitle: confirmButtonTitle),
+                  [.alertFirstButtonReturn, .OK].contains(response)
+            else { return }
+            completion()
         }
     }
 

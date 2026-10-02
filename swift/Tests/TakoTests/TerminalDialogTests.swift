@@ -69,4 +69,22 @@ struct TerminalDialogTests {
         #expect(await asked.value == false)
         #expect(TerminalDialogView.pending(in: window) == nil)
     }
+
+    @Test func aSecondCloseWhileTheQuestionIsUpClosesNothing() async {
+        let (controller, window) = TerminalTestSupport.makeController()
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        defer { TerminalTestSupport.tearDown(controller, window) }
+        var closed = 0
+        controller.confirmClose(messageText: "Close Terminal?", informativeText: "m") { closed += 1 }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        // Another ⌘W while the first is unanswered.
+        controller.confirmClose(messageText: "Close Terminal?", informativeText: "m") { closed += 1 }
+        for _ in 0..<50 { await Task.yield() }
+        #expect(closed == 0)
+        #expect(TerminalDialogView.pending(in: window) != nil)
+        // The first question's answer is the only one that counts.
+        TerminalDialogView.pending(in: window)!.keyDown(with: key(36, "\r"))
+        for _ in 0..<50 where closed == 0 { await Task.yield() }
+        #expect(closed == 1)
+    }
 }
