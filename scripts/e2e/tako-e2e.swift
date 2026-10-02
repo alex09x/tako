@@ -78,6 +78,7 @@ enum Key {
     static let u: CGKeyCode = 32
     static let q: CGKeyCode = 12
     static let comma: CGKeyCode = 43
+    static let grave: CGKeyCode = 50
     static let rightBracket: CGKeyCode = 30
 }
 
@@ -589,6 +590,17 @@ let scenarios: [Scenario] = [
         }
         try d.run("takoctl version > \(d.path("ver"))")
         guard try d.file("ver").contains("protocol 1") else { throw Failure("version: \(try d.file("ver"))") }
+    }),
+    ("ctl-quick", "takoctl works from the Quick Terminal, which tree lists", { d in
+        d.key(Key.grave, [.maskCommand, .maskShift])
+        usleep(1_500_000)
+        try d.run("takoctl tree --json > \(d.path("qtree")); echo $TAKO_SURFACE_ID > \(d.path("qself"))")
+        let tree = try d.file("qtree")
+        let me = try d.file("qself").trimmingCharacters(in: .whitespacesAndNewlines)
+        d.key(Key.grave, [.maskCommand, .maskShift])
+        guard tree.contains("\"ok\":true"), tree.contains("quick-terminal"), tree.contains("\"id\":\"\(me)\"") else {
+            throw Failure("from the Quick Terminal \(me): \(tree.prefix(500))")
+        }
     }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).

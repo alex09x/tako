@@ -192,4 +192,105 @@ struct ControlServerTests {
         let real = try ControlServer.socketPath(bundleID: "com.tako-core.terminal.e2e-persist-1790000000-99999")
         #expect(real.utf8.count < 104)
     }
+
+    @Test func aClientTricklingItsRequestIsCutOffAtTheDeadline() async throws {
+        // The test's own client writes into sockets the server closes.
+        signal(SIGPIPE, SIG_IGN)
+        let dir = try privateDir()
+        let path = dir + "/c.sock"
+        let server = ControlServer(path: path) { _, reply in reply(.ok([:])) }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+        let started = Date()
+        let answer: String = try await Task.detached {
+            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            defer { close(fd) }
+            var address = sockaddr_un()
+            address.sun_family = sa_family_t(AF_UNIX)
+            withUnsafeMutableBytes(of: &address.sun_path) { raw in
+                let bytes = Array(path.utf8); raw.copyBytes(from: bytes); raw[bytes.count] = 0
+            }
+            _ = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            }
+            // A byte every second: each read succeeds, the whole never ends.
+            for _ in 0..<10 {
+                var byte: UInt8 = 0x20
+                if write(fd, &byte, 1) != 1 { break }
+                sleep(1)
+            }
+            var buffer = [UInt8](repeating: 0, count: 512)
+            let n = read(fd, &buffer, buffer.count)
+            return n > 0 ? String(decoding: buffer[0..<n], as: UTF8.self) : ""
+        }.value
+        #expect(answer.contains("\"timeout\""))
+        #expect(Date().timeIntervalSince(started) < 9)
+    }
+
+    @Test func refusingAnExtraClientThatAlreadyLeftDoesNotHurtTheServer() async throws {
+        // The test's own client writes into sockets the server closes.
+        signal(SIGPIPE, SIG_IGN)
+        let dir = try privateDir()
+        let path = dir + "/c.sock"
+        let server = ControlServer(path: path) { _, reply in reply(.ok(["alive": .bool(true)])) }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+        func open() -> Int32 {
+            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            var address = sockaddr_un()
+            address.sun_family = sa_family_t(AF_UNIX)
+            withUnsafeMutableBytes(of: &address.sun_path) { raw in
+                let bytes = Array(path.utf8); raw.copyBytes(from: bytes); raw[bytes.count] = 0
+            }
+            _ = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            }
+            return fd
+        }
+        // Fill every slot with a client that says nothing...
+        let idle = (0..<ControlServer.maxConnections).map { _ in open() }
+        try await Task.sleep(for: .milliseconds(300))
+        // ...then a few that leave at once: each is refused into a closed socket.
+        for _ in 0..<5 { close(open()) }
+        try await Task.sleep(for: .milliseconds(300))
+        idle.forEach { close($0) }
+        // The idle ones time out; the server goes on answering.
+        var answered = false
+        for _ in 0..<40 where !answered {
+            try await Task.sleep(for: .milliseconds(250))
+            answered = (try? await ask(path, #"{"cmd":"x"}"#))?["ok"] as? Bool == true
+        }
+        #expect(answered)
+    }
+
+    @Test func theSettingTakesEffectWithoutARestart() async throws {
+        let bundle = "test.control.\(UUID().uuidString)"
+        defer { ControlCommands.stop() }
+        ControlCommands.apply(mode: .on, bundleID: bundle)
+        let path = ControlCommands.socketPath
+        #expect(!path.isEmpty && access(path, F_OK) == 0)
+        #expect(try await ask(path, #"{"cmd":"version"}"#)["ok"] as? Bool == true)
+        // on -> local: same socket, the gate changes -- a request from outside a pane is refused.
+        ControlCommands.apply(mode: .local)
+        let refused = try await ask(path, #"{"cmd":"version"}"#)
+        #expect((refused["error"] as? [String: Any])?["code"] as? String == "disabled")
+        // -> off: no socket, and new shells are told so.
+        ControlCommands.apply(mode: .off)
+        #expect(ControlCommands.socketPath.isEmpty)
+        #expect(access(path, F_OK) != 0)
+        ControlCommands.apply(mode: .on)
+        #expect(ControlCommands.socketPath == path)
+    }
+
+    @Test func aSecondCopyDoesNotHandOutTheFirstCopysSocket() throws {
+        let bundle = "test.control.\(UUID().uuidString)"
+        let path = try ControlServer.socketPath(bundleID: bundle)
+        let first = ControlServer(path: path) { _, reply in reply(.ok([:])) }
+        #expect(try first.start() == .listening)
+        defer { first.stop(); ControlCommands.stop() }
+        ControlCommands.apply(mode: .on, bundleID: bundle)
+        #expect(ControlCommands.socketPath.isEmpty)
+        #expect(ControlCommands.server == nil)
+    }
 }
+

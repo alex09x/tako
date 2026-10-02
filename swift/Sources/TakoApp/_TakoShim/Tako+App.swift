@@ -2051,15 +2051,9 @@ extension Tako {
             // another one.
             var environment = environment
             environment["TAKO_SURFACE_ID"] = id.uuidString.lowercased()
-            var removing = removing
-            if let socket = ControlCommands.socketPath {
-                environment["TAKO_SOCKET"] = socket
-            } else {
-                // Inherited from a Tako this one was started in, it would
-                // point at that one.
-                environment.removeValue(forKey: "TAKO_SOCKET")
-                removing.append("TAKO_SOCKET")
-            }
+            // Empty when this copy serves no socket: never one inherited
+            // from, or owned by, another copy of Tako.
+            environment["TAKO_SOCKET"] = ControlCommands.socketPath
             pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config,
                       program: program, environment: environment, removing: removing)
             let started = pty

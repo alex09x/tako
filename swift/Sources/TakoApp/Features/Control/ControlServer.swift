@@ -13,7 +13,9 @@ final class ControlServer: @unchecked Sendable {
     static let maxConnections = 32
     /// Requests waiting for, or running on, the main thread.
     static let maxMainBacklog = 64
-    /// How long a client has to send its request, and to take the answer.
+    /// How long a client has, in all, to send its request, and to take the
+    /// answer -- whole-operation deadlines, not per-call timeouts, so a
+    /// client trickling a byte at a time cannot hold a connection.
     static let readTimeout: TimeInterval = 5
     static let writeTimeout: TimeInterval = 10
 
@@ -174,7 +176,9 @@ final class ControlServer: @unchecked Sendable {
         while true {
             let client = accept(listener, nil, nil)
             if client < 0 { return }   // EAGAIN: no more for now
-            _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+            // Before anything can be written to it: no SIGPIPE from a peer
+            // that is gone, and no write that can block.
+            Self.prepare(client)
             var uid: uid_t = 0, gid: gid_t = 0
             guard getpeereid(client, &uid, &gid) == 0, uid == getuid() else {
                 close(client)
@@ -186,7 +190,9 @@ final class ControlServer: @unchecked Sendable {
                 return true
             }
             guard admitted else {
-                Self.send(.failure(ControlError(.busy, "too many connections")), to: client)
+                // One nonblocking attempt: the refusal never holds up accepting.
+                Self.send(.failure(ControlError(.busy, "too many connections")), to: client,
+                          deadline: .now())
                 close(client)
                 continue
             }
@@ -195,15 +201,14 @@ final class ControlServer: @unchecked Sendable {
     }
 
     private func serve(_ client: Int32) {
-        Self.setTimeouts(client)
         let finish: @Sendable (ControlResponse) -> Void = { [self] response in
-            Self.send(response, to: client)
+            Self.send(response, to: client, deadline: .now() + Self.writeTimeout)
             close(client)
             lock.withLock { connections -= 1 }
         }
         let request: ControlRequest
         do {
-            request = try ControlRequest.parse(try Self.readRequest(client))
+            request = try ControlRequest.parse(try Self.readRequest(client, deadline: .now() + Self.readTimeout))
         } catch let error as ControlError {
             finish(.failure(error))
             return
@@ -233,8 +238,22 @@ final class ControlServer: @unchecked Sendable {
         }
     }
 
-    /// One request: bytes up to the first newline or end of input.
-    static func readRequest(_ fd: Int32) throws -> Data {
+    /// Waits until `fd` is ready for `events` or `deadline` passes.
+    private static func ready(_ fd: Int32, _ events: Int16, by deadline: DispatchTime) -> Bool {
+        while true {
+            let now = DispatchTime.now()
+            let left = deadline > now ? (deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000 : 0
+            var p = pollfd(fd: fd, events: events, revents: 0)
+            let n = poll(&p, 1, Int32(min(left, UInt64(Int32.max))))
+            if n > 0 { return true }
+            if n == 0 { return false }
+            if errno != EINTR { return false }
+        }
+    }
+
+    /// One request: bytes up to the first newline or end of input, all of it
+    /// by `deadline`.
+    static func readRequest(_ fd: Int32, deadline: DispatchTime) throws -> Data {
         var data = Data()
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
         while true {
@@ -253,7 +272,9 @@ final class ControlServer: @unchecked Sendable {
             } else if errno == EINTR {
                 continue
             } else if errno == EAGAIN || errno == EWOULDBLOCK {
-                throw ControlError(.timeout, "no request within \(Int(readTimeout)) s")
+                guard ready(fd, Int16(POLLIN), by: deadline) else {
+                    throw ControlError(.timeout, "no complete request within \(Int(readTimeout)) s")
+                }
             } else {
                 throw ControlError(.internalError, "read: \(errno)")
             }
@@ -261,24 +282,33 @@ final class ControlServer: @unchecked Sendable {
         return data
     }
 
-    private static func send(_ response: ControlResponse, to fd: Int32) {
+    /// Writes as much of the answer as the client takes by `deadline`; a
+    /// client that does not read is dropped then.
+    private static func send(_ response: ControlResponse, to fd: Int32, deadline: DispatchTime) {
         let data = response.encoded()
         data.withUnsafeBytes { raw in
             var offset = 0
             while offset < raw.count {
                 let n = write(fd, raw.baseAddress! + offset, raw.count - offset)
-                if n > 0 { offset += n } else if n < 0 && errno == EINTR { continue } else { break }
+                if n > 0 {
+                    offset += n
+                } else if n < 0 && errno == EINTR {
+                    continue
+                } else if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    guard ready(fd, Int16(POLLOUT), by: deadline) else { return }
+                } else {
+                    return
+                }
             }
         }
     }
 
-    private static func setTimeouts(_ fd: Int32) {
+    /// Nonblocking, close-on-exec, and no SIGPIPE.
+    static func prepare(_ fd: Int32) {
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         var noSigpipe: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
-        for (option, seconds) in [(SO_RCVTIMEO, readTimeout), (SO_SNDTIMEO, writeTimeout)] {
-            var tv = timeval(tv_sec: Int(seconds), tv_usec: 0)
-            setsockopt(fd, SOL_SOCKET, option, &tv, socklen_t(MemoryLayout<timeval>.size))
-        }
     }
 
     private static func address(_ path: String) -> sockaddr_un {

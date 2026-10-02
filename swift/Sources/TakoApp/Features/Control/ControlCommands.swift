@@ -3,30 +3,47 @@ import AppKit
 /// What `takoctl` requests do, on the main thread.
 @MainActor
 enum ControlCommands {
-    /// The server, once started; `TAKO_SOCKET` names its path.
+    /// The server, while this copy of Tako owns the socket.
     static var server: ControlServer?
-    static var mode: RemoteControlMode = .local
+    static var mode: RemoteControlMode = .off
+    private static var bundleID = "com.tako-core.terminal"
 
-    /// The socket path every shell is told about, or nil when control is off.
-    /// Set when the server starts, before any terminal opens.
-    nonisolated(unsafe) static var socketPath: String?
+    /// What every new shell is told in `TAKO_SOCKET`: the socket this copy
+    /// serves, or "" when it serves none -- control off, another copy of
+    /// Tako owning the socket, or a failure to start. Empty rather than
+    /// absent, so takoctl in such a pane says control is unavailable here
+    /// instead of finding another copy's socket on its own.
+    nonisolated(unsafe) static var socketPath = ""
 
-    /// Starts serving per `remote-control`. A copy of Tako that finds the
-    /// socket owned by another copy leaves it to that one.
-    static func start(mode: RemoteControlMode, bundleID: String) {
-        self.mode = mode
-        guard mode != .off else { return }
+    /// Brings the server in line with `remote-control`: at launch, and again
+    /// whenever the configuration is reloaded.
+    static func apply(mode newMode: RemoteControlMode, bundleID: String? = nil) {
+        if let bundleID { self.bundleID = bundleID }
+        mode = newMode
+        if newMode == .off {
+            // Requests already taken are answered `disabled` by `handle`,
+            // which reads the mode when it runs.
+            server?.stop()
+            server = nil
+            socketPath = ""
+            return
+        }
+        guard server == nil else { return }   // local <-> on: only the gate changes
         do {
-            let path = try ControlServer.socketPath(bundleID: bundleID)
-            socketPath = path
-            let server = ControlServer(path: path) { request, reply in
+            let path = try ControlServer.socketPath(bundleID: self.bundleID)
+            let candidate = ControlServer(path: path) { request, reply in
                 reply(handle(request))
             }
-            switch try server.start() {
-            case .listening: self.server = server
-            case .taken: NSLog("takoctl: another copy of Tako serves \(path)")
+            switch try candidate.start() {
+            case .listening:
+                server = candidate
+                socketPath = path
+            case .taken:
+                socketPath = ""
+                NSLog("takoctl: another copy of Tako serves \(path); control is unavailable in this one")
             }
         } catch {
+            socketPath = ""
             NSLog("takoctl: not serving: \(error)")
         }
     }
@@ -34,6 +51,7 @@ enum ControlCommands {
     static func stop() {
         server?.stop()
         server = nil
+        socketPath = ""
     }
 
     // MARK: - Requests
@@ -48,11 +66,22 @@ enum ControlCommands {
     static func panes() -> [Pane] {
         var result: [Pane] = []
         // Every terminal window, hidden tabs included: a tab that is not in
-        // front is still a pane a script can name.
-        for controller in TerminalController.all {
-            guard let window = controller.window else { continue }
-            let windowID = ScriptWindow.stableID(tabGroup: Tako.CustomTabGroup.group(for: window))
-            let tabID = ScriptTab.stableID(controller: controller)
+        // front is still a pane a script can name. The Quick Terminal last,
+        // while it exists, shown or not.
+        var controllers: [BaseTerminalController] = TerminalController.all
+        if let app = NSApp.delegate as? AppDelegate, app.quickControllerInitialized {
+            controllers.append(app.quickController)
+        }
+        for controller in controllers {
+            let windowID: String, tabID: String
+            if controller is QuickTerminalController {
+                windowID = "quick-terminal"
+                tabID = "quick-terminal"
+            } else {
+                guard let window = controller.window else { continue }
+                windowID = ScriptWindow.stableID(tabGroup: Tako.CustomTabGroup.group(for: window))
+                tabID = ScriptTab.stableID(controller: controller)
+            }
             for surface in controller.surfaceTree {
                 result.append(Pane(surface: surface, windowID: windowID, tabID: tabID))
             }

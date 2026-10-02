@@ -122,7 +122,15 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let path = match opts.socket.clone().or_else(|| std::env::var("TAKO_SOCKET").ok()) {
+    // Inside a Tako pane, TAKO_SOCKET is that copy's answer: its socket, or
+    // empty when it serves none. Empty means stop -- never go looking for
+    // another copy's socket instead.
+    let inherited = std::env::var("TAKO_SOCKET").ok();
+    if opts.socket.is_none() && inherited.as_deref() == Some("") {
+        eprintln!("takoctl: remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)");
+        return ExitCode::from(3);
+    }
+    let path = match opts.socket.clone().or(inherited) {
         Some(p) => p,
         None => match socket::default_path(&opts.bundle_id) {
             Ok(p) => p,

@@ -189,7 +189,7 @@ class AppDelegate: NSObject,
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before any window is restored: each terminal's shell is told where
         // the control socket is.
-        ControlCommands.start(mode: tako.config.remoteControl,
+        ControlCommands.apply(mode: tako.config.remoteControl,
                               bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal")
         #if DEBUG
         if
@@ -805,6 +805,10 @@ class AppDelegate: NSObject,
     }
 
     private func takoConfigDidChange(config: Tako.Config) {
+        // remote-control takes effect at once: off stops serving, on/local
+        // changes who is answered, without a restart.
+        let remoteControl = config.remoteControl
+        DispatchQueue.main.async { ControlCommands.apply(mode: remoteControl) }
         // Update the config we need to store
         self.derivedConfig = DerivedConfig(config)
 

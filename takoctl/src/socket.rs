@@ -1,8 +1,8 @@
 //! Finding the app's control socket and talking to it.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -36,25 +36,122 @@ fn user_temp_dir() -> Result<String, String> {
     Err("Tako runs on macOS; pass --socket".into())
 }
 
-/// Sends one request line and reads the one-line answer.
+/// Largest answer read; a larger one is refused rather than held.
+pub const MAX_ANSWER_BYTES: usize = 16 << 20;
+
+/// Sends one request line and reads the one-line answer, all of it within
+/// `TIMEOUT` -- connecting included.
 pub fn exchange(path: &str, request: &Value) -> Result<Value, String> {
-    let mut stream = UnixStream::connect(path).map_err(|e| e.to_string())?;
-    stream.set_read_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
-    stream.set_write_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
+    exchange_within(path, request, TIMEOUT, MAX_ANSWER_BYTES)
+}
+
+pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, String> {
+    let deadline = Instant::now() + limit;
+    let mut stream = connect(path, deadline)?;
     let mut line = serde_json::to_vec(request).map_err(|e| e.to_string())?;
     line.push(b'\n');
-    stream.write_all(&line).map_err(|e| e.to_string())?;
-    let mut answer = String::new();
-    BufReader::new(stream).read_line(&mut answer).map_err(|e| e.to_string())?;
+    let mut written = 0;
+    while written < line.len() {
+        stream.set_write_timeout(Some(left(deadline)?)).map_err(|e| e.to_string())?;
+        match stream.write(&line[written..]) {
+            Ok(0) => return Err("the connection closed".into()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(timeout_or(e)),
+        }
+    }
+    let mut answer = Vec::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        stream.set_read_timeout(Some(left(deadline)?)).map_err(|e| e.to_string())?;
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                answer.extend_from_slice(&chunk[..n]);
+                if let Some(end) = answer.iter().position(|&b| b == b'\n') {
+                    answer.truncate(end);
+                    break;
+                }
+                if answer.len() > max {
+                    return Err(format!("answer larger than {max} bytes"));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(timeout_or(e)),
+        }
+    }
     if answer.is_empty() {
         return Err("the connection closed without an answer".into());
     }
-    serde_json::from_str(&answer).map_err(|e| format!("unreadable answer: {e}"))
+    serde_json::from_slice(&answer).map_err(|e| format!("unreadable answer: {e}"))
+}
+
+fn left(deadline: Instant) -> Result<Duration, String> {
+    let now = Instant::now();
+    if now >= deadline {
+        return Err("timed out".into());
+    }
+    Ok(deadline - now)
+}
+
+fn timeout_or(e: std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut => "timed out".into(),
+        _ => e.to_string(),
+    }
+}
+
+/// Connects without blocking past `deadline`.
+fn connect(path: &str, deadline: Instant) -> Result<UnixStream, String> {
+    use std::os::fd::FromRawFd;
+    let bytes = path.as_bytes();
+    let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    if bytes.len() >= address.sun_path.len() {
+        return Err("socket path too long".into());
+    }
+    address.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    for (dst, src) in address.sun_path.iter_mut().zip(bytes) {
+        *dst = *src as libc::c_char;
+    }
+    unsafe {
+        let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let stream = UnixStream::from_raw_fd(fd);
+        libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK);
+        let one: libc::c_int = 1;
+        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_NOSIGPIPE, (&one as *const libc::c_int).cast(),
+                         std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+        let rc = libc::connect(fd, (&address as *const libc::sockaddr_un).cast(),
+                               std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t);
+        if rc != 0 {
+            let err = std::io::Error::last_os_error();
+            let pending = matches!(err.raw_os_error(), Some(libc::EINPROGRESS) | Some(libc::EAGAIN));
+            if !pending {
+                return Err(err.to_string());
+            }
+            let mut p = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+            let ms = left(deadline)?.as_millis().min(i32::MAX as u128) as i32;
+            if libc::poll(&mut p, 1, ms) <= 0 {
+                return Err("timed out connecting".into());
+            }
+            let mut so_error: libc::c_int = 0;
+            let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+            libc::getsockopt(fd, libc::SOL_SOCKET, libc::SO_ERROR, (&mut so_error as *mut libc::c_int).cast(), &mut len);
+            if so_error != 0 {
+                return Err(std::io::Error::from_raw_os_error(so_error).to_string());
+            }
+        }
+        libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) & !libc::O_NONBLOCK);
+        Ok(stream)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
 
     #[test]
     fn the_name_matches_the_apps() {
@@ -85,5 +182,58 @@ mod tests {
         server.join().unwrap();
         assert_eq!(answer["result"]["echo"], "tree");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn listen(name: &str) -> (std::path::PathBuf, std::os::unix::net::UnixListener) {
+        let dir = std::env::temp_dir().join(format!("takoctl-{name}-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("s.sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        (path, listener)
+    }
+
+    #[test]
+    fn a_server_that_never_answers_times_out() {
+        let (path, listener) = listen("silent");
+        let _hold = std::thread::spawn(move || {
+            let (s, _) = listener.accept().unwrap();
+            std::thread::sleep(Duration::from_secs(3));
+            drop(s);
+        });
+        let started = Instant::now();
+        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
+                                  Duration::from_millis(300), MAX_ANSWER_BYTES).unwrap_err();
+        assert!(err.contains("timed out"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_trickling_answer_still_ends_at_the_deadline() {
+        let (path, listener) = listen("drip");
+        let _drip = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            for _ in 0..30 {
+                if s.write_all(b" ").is_err() { break; }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let started = Instant::now();
+        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
+                                  Duration::from_millis(500), MAX_ANSWER_BYTES).unwrap_err();
+        assert!(err.contains("timed out"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn an_oversized_answer_is_refused() {
+        let (path, listener) = listen("big");
+        let _big = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let _ = s.write_all(&vec![b'x'; 4096]);
+        });
+        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
+                                  Duration::from_secs(2), 1024).unwrap_err();
+        assert!(err.contains("larger than"), "{err}");
     }
 }
