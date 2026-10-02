@@ -111,10 +111,13 @@ enum ControlLayout {
         func exists() -> Bool { ControlCommands.panes().contains { $0.surface.id == id } }
         func check() {
             if !exists() { return answer("closed") }
-            if let sheet = window?.attachedSheet {
+            // The question is a dialog drawn in the window, or a sheet.
+            let dialog = TerminalDialogView.pending(in: window)
+            let sheet = window?.attachedSheet
+            if dialog != nil || sheet != nil {
                 guard Date() < deadline else {
                     // Withdraw the question: an abort is not a yes.
-                    window?.endSheet(sheet, returnCode: .abort)
+                    if let dialog { dialog.withdraw() } else if let sheet { window?.endSheet(sheet, returnCode: .abort) }
                     DispatchQueue.main.async {
                         exists() ? answer("cancelled", "no answer within \(Int(closeWait)) s") : answer("closed")
                     }

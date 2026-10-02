@@ -70,6 +70,8 @@ class BaseTerminalController: NSWindowController,
 
     /// Non-nil when an alert is active so we don't overlap multiple.
     private var alert: NSAlert?
+    /// True while a confirmation is drawn in the window (`TerminalDialogView`).
+    private var asking = false
 
     /// The clipboard confirmation window, if shown.
     private var clipboardConfirmation: ClipboardConfirmationController?
@@ -340,11 +342,23 @@ class BaseTerminalController: NSWindowController,
         // If we already have an alert, we need to wait for that one.
         guard alert == nil else { return nil }
 
+        guard !asking else { return nil }
+
         // If there is no window to attach the modal then we assume success
         // since we'll never be able to show the modal.
         guard let window else {
             return .OK
         }
+
+        // Asked inside the terminal, in its own font and colours, rather
+        // than in a macOS sheet; the sheet remains for a window without a
+        // content view to draw in.
+        asking = true
+        let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        let answer = await TerminalDialogView.ask(in: window, title: messageText, message: informativeText,
+                                                  confirm: confirmButtonTitle, theme: theme)
+        asking = false
+        if let answer { return answer ? .alertFirstButtonReturn : .alertSecondButtonReturn }
 
         // If we need confirmation by any, show one confirmation for all windows
         // in the tab group.
