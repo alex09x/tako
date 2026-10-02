@@ -1324,4 +1324,3 @@ func forgetLayout(_ d: Driver) {
     try? FileManager.default.removeItem(at: library.appendingPathComponent("Saved Application State/\(bundle).savedState"))
     try? FileManager.default.removeItem(at: library.appendingPathComponent("Application Support/\(bundle)/layout"))
 }
-

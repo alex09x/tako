@@ -196,5 +196,21 @@ struct LayoutJournalTests {
         #expect(LayoutJournal.decide(previous: armed.state, journal: read) == .journal)
         #expect(j?.windows.first?.tabs.count == 2)
     }
+
+    @Test func generationsACrashLeftBehindAreRemovedByTheNextCommit() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // A crash after launch.json named 6, before journal-5 was removed;
+        // and an older leftover. Plus files that are not journals.
+        for name in ["journal-4.json", "journal-5.json", "journal-6.json", "journal-x.json", "notes.txt"] {
+            try Data("{}".utf8).write(to: dir.appendingPathComponent(name))
+        }
+        try LayoutJournal.writeLaunch(.init(state: .dirty, journalGeneration: 6), in: dir)
+        let c = JournalCommitter(directory: dir, generation: 6, state: .dirty)
+        #expect(c.commit(layout(1)))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+            == ["journal-7.json", "journal-x.json", "launch.json", "notes.txt"])
+    }
 }
 

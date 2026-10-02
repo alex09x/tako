@@ -334,10 +334,26 @@ final class JournalCommitter: @unchecked Sendable {
             NSLog("layout journal write failed: \(error)")
             return false
         }
-        unlink(directory.appendingPathComponent(LayoutJournal.journalName(generation)).path)
         generation = committed
+        sweep()
         lastWritten = body
         return true
+    }
+
+    /// Removes every journal generation but the one `launch.json` now names
+    /// -- including any a crash left between naming a new one and removing
+    /// the old. Only regular files named `journal-<number>.json` are touched.
+    func sweep() {
+        let current = LayoutJournal.journalName(generation)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        for name in names where name != current {
+            guard name.hasPrefix("journal-"), name.hasSuffix(".json"),
+                  UInt64(name.dropFirst("journal-".count).dropLast(".json".count)) != nil else { continue }
+            let path = directory.appendingPathComponent(name).path
+            var st = stat()
+            guard lstat(path, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { continue }
+            unlink(path)
+        }
     }
 
     /// Records a new launch state against the current generation.
@@ -360,4 +376,3 @@ final class JournalCommitter: @unchecked Sendable {
         return setState(.clean)
     }
 }
-
