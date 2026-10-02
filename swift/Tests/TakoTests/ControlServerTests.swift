@@ -362,5 +362,17 @@ struct ControlServerTests {
         ControlServer.send(big, to: pair[0], deadline: .now() + .milliseconds(300))
         #expect(Date().timeIntervalSince(started) < 2)
     }
+
+    @Test func theSettingIsReadFromARealConfigFile() throws {
+        let dir = try privateDir()
+        func mode(_ text: String?) throws -> RemoteControlMode {
+            let url = URL(fileURLWithPath: dir).appendingPathComponent(UUID().uuidString)
+            try (text ?? "").write(to: url, atomically: true, encoding: .utf8)
+            return Tako.App(configPath: url.path).config.remoteControl
+        }
+        #expect(try mode("remote-control = on\n") == .on)
+        #expect(try mode("remote-control = off\n") == .off)
+        #expect(try mode(nil) == .local)
+    }
 }
 

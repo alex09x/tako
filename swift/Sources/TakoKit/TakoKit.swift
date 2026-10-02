@@ -384,7 +384,7 @@ let knownTakoConfigKeys: Set<String> = [
     "macos-window-buttons", "macos-hidden", "scrollbar", "background-opacity",
     "window-position-x", "window-position-y", "window-height", "window-width",
     "notify-on-command-finish", "notify-on-command-finish-action", "notify-on-command-finish-after",
-    "session-persistence", "window-save-state", "window-save-content", "window-save-content-limit", "window-new-tab-position", "auto-update-channel", "auto-update",
+    "session-persistence", "remote-control", "window-save-state", "window-save-content", "window-save-content-limit", "window-new-tab-position", "auto-update-channel", "auto-update",
     // Also parsed by TakoCoreUI.TerminalTheme from the same config text
     // (see Tako+Config.swift's `init(config:)`), listed here too so they
     // don't get flagged as unknown.
