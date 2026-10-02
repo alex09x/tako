@@ -27,6 +27,66 @@ pub enum SemanticPrompt {
     PromptContinuation,
 }
 
+/// Which command's output a row holds, as far as OSC 133 marks can tell.
+///
+/// A row is claimed by a command only while it is clean or already that
+/// command's: anything written into a row that holds something else -- a
+/// prompt, another command's output, text written outside any command --
+/// makes it [`RowOwner::Mixed`], which never groups. Erasing the whole row
+/// makes it clean again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowOwner {
+    /// Nothing has been written since the row was last blank.
+    #[default]
+    Empty,
+    /// Written outside any command (a prompt, a program without marks, or
+    /// content restored from a source that carried no owners).
+    Unowned,
+    /// Holds writes from more than one source.
+    Mixed,
+    /// Written only while command `id` was producing output.
+    Command(u64),
+}
+
+impl RowOwner {
+    /// The owner after something is written into a row owned by `self`
+    /// while `pen` is the command producing output (if any).
+    #[inline]
+    pub fn after_write(self, pen: Option<u64>) -> RowOwner {
+        match (self, pen) {
+            (RowOwner::Empty, Some(id)) => RowOwner::Command(id),
+            (RowOwner::Empty, None) => RowOwner::Unowned,
+            (RowOwner::Command(a), Some(b)) if a == b => self,
+            (RowOwner::Unowned, None) => RowOwner::Unowned,
+            _ => RowOwner::Mixed,
+        }
+    }
+
+    /// The owner of one row made by joining rows owned by `self` and
+    /// `other` (reflow joins the rows of a soft-wrapped line).
+    #[inline]
+    pub fn joined(self, other: RowOwner) -> RowOwner {
+        match (self, other) {
+            (RowOwner::Empty, o) | (o, RowOwner::Empty) => o,
+            (a, b) if a == b => a,
+            _ => RowOwner::Mixed,
+        }
+    }
+
+    /// The owner a row of `cells` gets when nothing better is known: clean
+    /// when it shows nothing, otherwise of unknown origin.
+    pub fn of_cells(cells: &[Cell]) -> RowOwner {
+        if cells
+            .iter()
+            .all(|c| (c.char == '\0' || c.char == ' ') && c.grapheme == 0)
+        {
+            RowOwner::Empty
+        } else {
+            RowOwner::Unowned
+        }
+    }
+}
+
 /// A cell's foreground/background color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Color {
@@ -110,6 +170,7 @@ impl Default for Cell {
 pub struct ScrollbackRow {
     pub cells: Vec<Cell>,
     pub wrapped: bool,
+    pub owner: RowOwner,
 }
 
 /// The visible terminal grid plus a bounded scrollback buffer.
@@ -139,6 +200,11 @@ pub struct Grid {
     line_wrapped: Vec<bool>,
     /// Per-row OSC 133 semantic-prompt marks, parallel to `line_wrapped`.
     row_semantic: Vec<SemanticPrompt>,
+    /// Per-row command ownership, parallel to `line_wrapped`.
+    row_owner: Vec<RowOwner>,
+    /// The command whose output is being written now, if any: what a write
+    /// into a row claims it for (see [`RowOwner::after_write`]).
+    pen_owner: Option<u64>,
     /// Per-row damage flags: set on any mutation, cleared by the host
     /// after it redraws (see `Terminal::take_damage`).
     dirty: Vec<bool>,
@@ -205,6 +271,8 @@ impl Grid {
             cells: vec![vec![Cell::default(); cols]; rows],
             line_wrapped: vec![false; rows],
             row_semantic: vec![SemanticPrompt::Unset; rows],
+            row_owner: vec![RowOwner::Empty; rows],
+            pen_owner: None,
             dirty: vec![true; rows],
             row_may_have_wide: vec![false; rows],
             row_offset: 0,
@@ -259,6 +327,7 @@ impl Grid {
         debug_assert!(self.cells.iter().all(|row| row.len() == self.cols));
         debug_assert_eq!(self.line_wrapped.len(), self.rows);
         debug_assert_eq!(self.row_semantic.len(), self.rows);
+        debug_assert_eq!(self.row_owner.len(), self.rows);
         debug_assert_eq!(self.dirty.len(), self.rows);
         debug_assert_eq!(self.row_may_have_wide.len(), self.rows);
         debug_assert_eq!(self.row_slots.len(), self.rows);
@@ -274,12 +343,14 @@ impl Grid {
             .collect();
         let mut line_wrapped = vec![false; self.rows];
         let mut row_semantic = vec![SemanticPrompt::Unset; self.rows];
+        let mut row_owner = vec![RowOwner::Empty; self.rows];
         let mut dirty = vec![false; self.rows];
         let mut row_may_have_wide = vec![false; self.rows];
         for logical in 0..self.rows {
             let physical = self.phys(logical);
             line_wrapped[logical] = self.line_wrapped[physical];
             row_semantic[logical] = self.row_semantic[physical];
+            row_owner[logical] = self.row_owner[physical];
             dirty[logical] = self.dirty[physical];
             row_may_have_wide[logical] = self.row_may_have_wide[physical];
         }
@@ -287,6 +358,7 @@ impl Grid {
         self.cells = cells;
         self.line_wrapped = line_wrapped;
         self.row_semantic = row_semantic;
+        self.row_owner = row_owner;
         self.dirty = dirty;
         self.row_may_have_wide = row_may_have_wide;
         self.row_offset = 0;
@@ -307,6 +379,7 @@ impl Grid {
         }
         let physical = self.phys(row);
         self.row_may_have_wide[physical] = true;
+        self.touch_owner(physical);
         self.cells[physical].get_mut(col)
     }
 
@@ -316,6 +389,7 @@ impl Grid {
         }
         let physical = self.phys(row);
         self.cells[physical][col] = cell;
+        self.touch_owner(physical);
         if cell.is_wide_spacer || cell.is_wide_spacer_head {
             self.row_may_have_wide[physical] = true;
         }
@@ -345,6 +419,7 @@ impl Grid {
         self.cells[physical][col] = cell;
         self.cells[physical][col + 1] = spacer;
         self.row_may_have_wide[physical] = true;
+        self.touch_owner(physical);
         true
     }
 
@@ -441,6 +516,7 @@ impl Grid {
             next.char = byte as char;
             *cell = next;
         }
+        self.touch_owner(physical);
         self.mark_dirty(row);
         true
     }
@@ -501,6 +577,52 @@ impl Grid {
         self.row_semantic[p] = mark;
     }
 
+    /// Which command's output `row` holds.
+    pub fn row_owner(&self, row: usize) -> RowOwner {
+        if row >= self.rows {
+            return RowOwner::Empty;
+        }
+        self.row_owner[self.phys(row)]
+    }
+
+    /// Overwrite `row`'s owner (checkpoint import).
+    pub(crate) fn set_row_owner(&mut self, row: usize, owner: RowOwner) {
+        if row >= self.rows {
+            return;
+        }
+        let p = self.phys(row);
+        self.row_owner[p] = owner;
+    }
+
+    /// The command whose output writes claim rows for, if any.
+    pub fn pen_owner(&self) -> Option<u64> {
+        self.pen_owner
+    }
+
+    /// Start (`Some`) or stop (`None`) claiming written rows for a command.
+    pub fn set_pen_owner(&mut self, pen: Option<u64>) {
+        self.pen_owner = pen;
+    }
+
+    /// Record a write into physical row `p`.
+    #[inline]
+    fn touch_owner(&mut self, p: usize) {
+        let owner = &mut self.row_owner[p];
+        *owner = owner.after_write(self.pen_owner);
+    }
+
+    /// Owner of the scrollback line at `index` (oldest-first).
+    pub fn scrollback_owner(&self, index: usize) -> RowOwner {
+        self.scrollback.get(index).map(|r| r.owner).unwrap_or_default()
+    }
+
+    /// Overwrite the owner of the scrollback line at `index` (oldest-first).
+    pub(crate) fn set_scrollback_owner(&mut self, index: usize, owner: RowOwner) {
+        if let Some(r) = self.scrollback.get_mut(index) {
+            r.owner = owner;
+        }
+    }
+
     /// Whether `row` is a soft-wrapped continuation of the row above it.
     pub fn is_line_wrapped(&self, row: usize) -> bool {
         if row >= self.rows {
@@ -538,6 +660,7 @@ impl Grid {
         for w in self.line_wrapped.iter_mut() {
             *w = false;
         }
+        self.row_owner.fill(RowOwner::Empty);
         self.row_may_have_wide.fill(false);
     }
 
@@ -588,14 +711,22 @@ impl Grid {
         } else {
             end
         };
+        let mut kept = false;
         for c in start..end {
             if respect_protected && row_cells[c].protected {
+                kept = true;
                 continue;
             }
             row_cells[c] = blank;
         }
+        let physical = self.phys(row);
+        if start == 0 && end == cols && !kept {
+            // The whole row is blank again, whoever wrote it.
+            self.row_owner[physical] = RowOwner::Empty;
+        } else {
+            self.touch_owner(physical);
+        }
         if blank.is_wide_spacer || blank.is_wide_spacer_head {
-            let physical = self.phys(row);
             self.row_may_have_wide[physical] = true;
         }
     }
@@ -627,6 +758,7 @@ impl Grid {
         }
         let physical = self.phys(row);
         self.row_may_have_wide[physical] = false;
+        self.row_owner[physical] = RowOwner::Empty;
         self.set_line_wrapped(row, false);
     }
 
@@ -661,6 +793,7 @@ impl Grid {
             let p = self.phys(row);
             self.line_wrapped[p] = false;
             self.row_semantic[p] = SemanticPrompt::Unset;
+            self.row_owner[p] = RowOwner::Empty;
             self.row_may_have_wide[p] = blank.is_wide_spacer || blank.is_wide_spacer_head;
         }
 
@@ -701,6 +834,7 @@ impl Grid {
             self.cells[recycled].fill(blank);
             self.line_wrapped[recycled] = false;
             self.row_semantic[recycled] = SemanticPrompt::Unset;
+            self.row_owner[recycled] = RowOwner::Empty;
             self.row_may_have_wide[recycled] =
                 blank.is_wide_spacer || blank.is_wide_spacer_head;
 
@@ -740,6 +874,7 @@ impl Grid {
             ScrollbackRow {
                 cells: Vec::with_capacity(self.cols),
                 wrapped,
+                owner: RowOwner::Empty,
             }
         };
 
@@ -747,6 +882,7 @@ impl Grid {
         entry.cells.clear();
         entry.cells.extend_from_slice(&self.cells[physical]);
         entry.wrapped = wrapped;
+        entry.owner = self.row_owner[physical];
         self.scrollback.push_back(entry);
     }
 
@@ -773,10 +909,11 @@ impl Grid {
         self.scrollback.push_back(ScrollbackRow {
             cells: archived,
             wrapped,
+            owner: self.row_owner[physical],
         });
     }
 
-    fn push_scrollback(&mut self, line: Vec<Cell>, wrapped: bool) {
+    fn push_scrollback(&mut self, line: Vec<Cell>, wrapped: bool, owner: RowOwner) {
         if self.scrollback_capacity == 0 {
             return;
         }
@@ -784,7 +921,7 @@ impl Grid {
             self.scrollback.pop_front();
             self.history_evicted += 1;
         }
-        self.scrollback.push_back(ScrollbackRow { cells: line, wrapped });
+        self.scrollback.push_back(ScrollbackRow { cells: line, wrapped, owner });
     }
 
     /// Total number of scrollback lines that have been evicted (dropped)
@@ -808,12 +945,13 @@ impl Grid {
 
         // Snapshot the retained rows in *logical* order before the physical
         // layout (and `row_offset`) is thrown away.
-        let kept: Vec<(Vec<Cell>, bool, SemanticPrompt)> = (0..min_rows)
+        let kept: Vec<(Vec<Cell>, bool, SemanticPrompt, RowOwner)> = (0..min_rows)
             .map(|r| {
                 (
                     self.row_slice(r).to_vec(),
                     self.is_line_wrapped(r),
                     self.row_semantic_prompt(r),
+                    self.row_owner(r),
                 )
             })
             .collect();
@@ -825,12 +963,14 @@ impl Grid {
         self.cells = vec![vec![Cell::default(); new_cols]; new_rows];
         self.line_wrapped = vec![false; new_rows];
         self.row_semantic = vec![SemanticPrompt::Unset; new_rows];
+        self.row_owner = vec![RowOwner::Empty; new_rows];
         self.dirty = vec![true; new_rows];
         self.row_may_have_wide = vec![false; new_rows];
 
-        for (r, (old_row, wrapped, semantic)) in kept.into_iter().enumerate() {
+        for (r, (old_row, wrapped, semantic, owner)) in kept.into_iter().enumerate() {
             self.line_wrapped[r] = wrapped;
             self.row_semantic[r] = semantic;
+            self.row_owner[r] = owner;
 
             self.cells[r][..min_cols].copy_from_slice(&old_row[..min_cols]);
 
@@ -980,6 +1120,10 @@ impl Grid {
             (self.row_semantic.capacity() as u64)
                 .saturating_mul(std::mem::size_of::<SemanticPrompt>() as u64),
         );
+        total = total.saturating_add(
+            (self.row_owner.capacity() as u64)
+                .saturating_mul(std::mem::size_of::<RowOwner>() as u64),
+        );
         total = total.saturating_add(self.dirty.capacity() as u64);
         total = total.saturating_add(self.row_may_have_wide.capacity() as u64);
         total = total.saturating_add(
@@ -1047,6 +1191,7 @@ impl Grid {
         }
         line_wrapped.resize(rows, false);
         row_semantic.resize(rows, SemanticPrompt::Unset);
+        let row_owner = visible_cells.iter().map(|r| RowOwner::of_cells(r)).collect();
         let dirty = vec![true; rows];
         let mut row_may_have_wide = vec![false; rows];
         for (i, r) in visible_cells.iter().enumerate() {
@@ -1064,6 +1209,8 @@ impl Grid {
             cells: visible_cells,
             line_wrapped,
             row_semantic,
+            row_owner,
+            pen_owner: None,
             dirty,
             row_may_have_wide,
             row_offset: 0,
@@ -1144,6 +1291,7 @@ impl Grid {
         struct LogicalLine {
             cells: Vec<Cell>,
             semantic: SemanticPrompt,
+            owner: RowOwner,
             cursor_offset: Option<usize>,
         }
 
@@ -1152,12 +1300,14 @@ impl Grid {
             let wrapped = self.is_line_wrapped(row);
             let row_cells = self.row_slice(row);
             let semantic = self.row_semantic_prompt(row);
+            let owner = self.row_owner(row);
             let is_cursor_row = target_cursor_row == Some(row);
 
             if wrapped && !logical_lines.is_empty() {
                 let last = logical_lines.last_mut().unwrap();
                 let start_offset = last.cells.len();
                 last.cells.extend_from_slice(row_cells);
+                last.owner = last.owner.joined(owner);
                 if is_cursor_row {
                     last.cursor_offset = Some(start_offset + target_cursor_col.unwrap_or(0));
                 }
@@ -1170,6 +1320,7 @@ impl Grid {
                 logical_lines.push(LogicalLine {
                     cells: row_cells.to_vec(),
                     semantic,
+                    owner,
                     cursor_offset,
                 });
             }
@@ -1178,6 +1329,7 @@ impl Grid {
             logical_lines.push(LogicalLine {
                 cells: Vec::new(),
                 semantic: SemanticPrompt::Unset,
+                owner: RowOwner::Empty,
                 cursor_offset: if target_cursor_row.is_some() {
                     Some(0)
                 } else {
@@ -1209,6 +1361,7 @@ impl Grid {
             cells: Vec<Cell>,
             wrapped: bool,
             semantic: SemanticPrompt,
+            owner: RowOwner,
         }
 
         let mut new_rows_data: Vec<NewRow> = Vec::new();
@@ -1237,6 +1390,7 @@ impl Grid {
                     cells: row,
                     wrapped,
                     semantic,
+                    owner: line.owner,
                 });
             }
         }
@@ -1268,6 +1422,7 @@ impl Grid {
         self.cells = vec![vec![Cell::default(); new_cols]; new_rows];
         self.line_wrapped = vec![false; new_rows];
         self.row_semantic = vec![SemanticPrompt::Unset; new_rows];
+        self.row_owner = vec![RowOwner::Empty; new_rows];
         self.dirty = vec![true; new_rows];
         self.row_may_have_wide = vec![false; new_rows];
 
@@ -1279,13 +1434,14 @@ impl Grid {
             self.cells[r][..len].copy_from_slice(&row_data.cells[..len]);
             self.line_wrapped[r] = row_data.wrapped;
             self.row_semantic[r] = row_data.semantic;
+            self.row_owner[r] = row_data.owner;
             self.row_may_have_wide[r] = self.cells[r]
                 .iter()
                 .any(|cell| cell.is_wide_spacer || cell.is_wide_spacer_head);
         }
 
         for row_data in scrollback_extra {
-            self.push_scrollback(row_data.cells, row_data.wrapped);
+            self.push_scrollback(row_data.cells, row_data.wrapped, row_data.owner);
         }
 
         final_cursor
@@ -1325,12 +1481,14 @@ impl Grid {
                     let old_cells = std::mem::take(&mut self.cells);
                     let old_wrapped = std::mem::take(&mut self.line_wrapped);
                     let old_semantic = std::mem::take(&mut self.row_semantic);
+                    let old_owner = std::mem::take(&mut self.row_owner);
                     let old_dirty = std::mem::take(&mut self.dirty);
                     let old_wide = std::mem::take(&mut self.row_may_have_wide);
 
                     self.cells = Vec::with_capacity(new_rows);
                     self.line_wrapped = Vec::with_capacity(new_rows);
                     self.row_semantic = Vec::with_capacity(new_rows);
+                    self.row_owner = Vec::with_capacity(new_rows);
                     self.dirty = Vec::with_capacity(new_rows);
                     self.row_may_have_wide = Vec::with_capacity(new_rows);
 
@@ -1352,6 +1510,7 @@ impl Grid {
                         self.cells.push(history_row.cells);
                         self.line_wrapped.push(history_row.wrapped);
                         self.row_semantic.push(SemanticPrompt::Unset);
+                        self.row_owner.push(history_row.owner);
                         self.dirty.push(true);
                         self.row_may_have_wide.push(may_have_wide);
                     }
@@ -1359,6 +1518,7 @@ impl Grid {
                     self.cells.extend(old_cells);
                     self.line_wrapped.extend(old_wrapped);
                     self.row_semantic.extend(old_semantic);
+                    self.row_owner.extend(old_owner);
                     self.dirty.extend(old_dirty);
                     self.row_may_have_wide.extend(old_wide);
                 }
@@ -1370,6 +1530,8 @@ impl Grid {
                     .extend(std::iter::repeat_n(false, blank_rows));
                 self.row_semantic
                     .extend(std::iter::repeat_n(SemanticPrompt::Unset, blank_rows));
+                self.row_owner
+                    .extend(std::iter::repeat_n(RowOwner::Empty, blank_rows));
                 self.dirty
                     .extend(std::iter::repeat_n(true, blank_rows));
                 self.row_may_have_wide
@@ -1416,6 +1578,7 @@ impl Grid {
                     self.cells.truncate(kept);
                     self.line_wrapped.truncate(kept);
                     self.row_semantic.truncate(kept);
+                    self.row_owner.truncate(kept);
                     self.dirty.truncate(kept);
                     self.row_may_have_wide.truncate(kept);
                     self.rows = kept;
@@ -1428,13 +1591,15 @@ impl Grid {
                 for row in 0..remove_top {
                     let line: Vec<Cell> = self.row_slice(row).to_vec();
                     let wrapped = self.is_line_wrapped(row);
-                    self.push_scrollback(line, wrapped);
+                    let owner = self.row_owner(row);
+                    self.push_scrollback(line, wrapped, owner);
                 }
                 self.cells.drain(0..remove_top);
                 self.line_wrapped.drain(0..remove_top);
                 // The per-row metadata vectors must stay exactly `rows`
                 // long and aligned with the rows they describe.
                 self.row_semantic.drain(0..remove_top);
+                self.row_owner.drain(0..remove_top);
                 self.dirty.drain(0..remove_top);
                 self.row_may_have_wide.drain(0..remove_top);
                 self.rows = new_rows;

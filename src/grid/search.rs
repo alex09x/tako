@@ -18,7 +18,7 @@
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{Cell, Grid};
+use super::{Cell, Grid, RowOwner};
 
 /// Clusters of context kept before and after a hit for showing it.
 const CONTEXT_BEFORE: usize = 40;
@@ -38,6 +38,9 @@ pub struct SearchHit {
     pub matched: String,
     /// Some of the line after the match, trailing blanks trimmed.
     pub after: String,
+    /// The command whose output holds every row of the hit, if one does
+    /// (see [`super::RowOwner`]).
+    pub command: Option<u64>,
 }
 
 /// What one bounded step of a search found.
@@ -92,6 +95,31 @@ impl Grid {
             let r = index - sb;
             (self.row_slice(r), self.is_line_wrapped(r))
         }
+    }
+
+    fn retained_owner(&self, index: usize) -> RowOwner {
+        let sb = self.scrollback.len();
+        if index < sb {
+            self.scrollback[index].owner
+        } else {
+            self.row_owner(index - sb)
+        }
+    }
+
+    /// The command that owns every line in `[start, end]`, if one does.
+    pub fn command_of_lines(&self, start: u64, end: u64) -> Option<u64> {
+        let first = self.first_retained_line();
+        if start < first || end >= self.end_retained_line() || end < start {
+            return None;
+        }
+        let mut found = None;
+        for line in start..=end {
+            match self.retained_owner((line - first) as usize) {
+                RowOwner::Command(id) if found.is_none_or(|f| f == id) => found = Some(id),
+                _ => return None,
+            }
+        }
+        found
     }
 
     /// The absolute number of the oldest retained line.
@@ -209,6 +237,7 @@ impl Grid {
                     after: text(i + n..(i + n + CONTEXT_AFTER).min(pieces.len()))
                         .trim_end_matches(' ')
                         .to_string(),
+                    command: self.command_of_lines(start.line, last.line),
                 });
                 if hits.len() == limit || i < n {
                     break;

@@ -401,8 +401,9 @@ pub enum FfiEvent {
     Notification { title: String, body: String },
     PwdChanged { url: String },
     Progress { state: u8, value: Option<u8> },
-    /// OSC 133;C -- a command started running.
-    CommandStart,
+    /// OSC 133;C -- a command started running. `id` names its record for
+    /// `set_command_time`; absent on the alternate screen.
+    CommandStart { id: Option<u64> },
     /// OSC 133;D -- a command finished, with its exit code when reported.
     CommandEnd { exit_code: Option<i32> },
 }
@@ -417,7 +418,7 @@ impl From<TerminalEvent> for FfiEvent {
             TerminalEvent::Notification { title, body } => FfiEvent::Notification { title, body },
             TerminalEvent::PwdChanged(url) => FfiEvent::PwdChanged { url },
             TerminalEvent::Progress { state, value } => FfiEvent::Progress { state, value },
-            TerminalEvent::CommandStart => FfiEvent::CommandStart,
+            TerminalEvent::CommandStart { id } => FfiEvent::CommandStart { id },
             TerminalEvent::CommandEnd { exit_code } => FfiEvent::CommandEnd { exit_code },
         }
     }
@@ -717,6 +718,48 @@ pub struct FfiSearchHit {
     pub before: String,
     pub matched: String,
     pub after: String,
+    /// The command whose output holds the hit, read under the same lock as
+    /// the hit itself; `None` when its rows are not all one command's.
+    pub command: Option<FfiCommandInfo>,
+}
+
+/// What the shell said about a command (OSC 133). `exit_code` is only
+/// meaningful when `finished`; a finished command without one is not a
+/// success.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiCommandInfo {
+    pub id: u64,
+    /// The engine generation the id belongs to (see `state_epoch`).
+    pub epoch: u64,
+    pub running: bool,
+    pub finished: bool,
+    pub abandoned: bool,
+    pub exit_code: Option<i32>,
+    pub cwd: Option<String>,
+    pub input: Option<String>,
+    pub input_truncated: bool,
+    pub started_at_ms: Option<u64>,
+}
+
+impl FfiCommandInfo {
+    fn new(rec: &crate::terminal::commands::CommandRecord, epoch: u64) -> Self {
+        use crate::terminal::commands::CommandStatus as S;
+        Self {
+            id: rec.id,
+            epoch,
+            running: rec.status == S::Running,
+            finished: matches!(rec.status, S::Completed(_)),
+            abandoned: rec.status == S::Abandoned,
+            exit_code: match rec.status {
+                S::Completed(code) => code,
+                _ => None,
+            },
+            cwd: rec.cwd.clone(),
+            input: rec.input.clone(),
+            input_truncated: rec.input_truncated,
+            started_at_ms: rec.started_at_ms,
+        }
+    }
 }
 
 impl From<crate::grid::SearchHit> for FfiSearchHit {
@@ -729,6 +772,7 @@ impl From<crate::grid::SearchHit> for FfiSearchHit {
             before: h.before,
             matched: h.matched,
             after: h.after,
+            command: None,
         }
     }
 }
@@ -743,6 +787,7 @@ impl From<FfiSearchHit> for crate::grid::SearchHit {
             before: h.before,
             matched: h.matched,
             after: h.after,
+            command: None,
         }
     }
 }
@@ -967,6 +1012,14 @@ impl TakoCore {
             rows: info.rows,
             payload_len: info.payload_len,
         })
+    }
+
+    /// Give command `id` (from a `CommandStart` event) its start time, in
+    /// unix milliseconds. Only the first time counts; ignored when `epoch`
+    /// is not the current engine generation or there is no such command.
+    pub fn set_command_time(&self, epoch: u64, id: u64, unix_ms: u64) -> bool {
+        let mut engine = lock_recover(&self.inner);
+        engine.epoch == epoch && engine.terminal.set_command_started_at(id, unix_ms)
     }
 
     /// The current engine generation. Bumped by every checkpoint import.
@@ -1853,8 +1906,22 @@ impl TakoCore {
         let chunk = terminal
             .active_grid()
             .search_chunk(&needle, before, max_rows as usize, max_hits as usize);
+        // Only the primary screen records commands.
+        let log = (terminal.active_screen() == crate::terminal::ScreenBuffer::Primary)
+            .then(|| terminal.commands());
+        let epoch = terminal.epoch;
         FfiSearchChunk {
-            hits: chunk.hits.into_iter().map(FfiSearchHit::from).collect(),
+            hits: chunk
+                .hits
+                .into_iter()
+                .map(|hit| {
+                    let command = hit
+                        .command
+                        .and_then(|id| log.and_then(|log| log.get(id)))
+                        .map(|rec| FfiCommandInfo::new(rec, epoch));
+                    FfiSearchHit { command, ..FfiSearchHit::from(hit) }
+                })
+                .collect(),
             next_before: chunk.next_before,
             first_line: chunk.first_line,
             end_line: chunk.end_line,
@@ -2833,14 +2900,15 @@ mod tests {
     #[test]
     fn checkpoint_version_negotiation_is_explicit() {
         let core = TakoCore::new(40, 10);
-        assert_eq!(core.checkpoint_version(), 3);
+        assert_eq!(core.checkpoint_version(), 4);
         // v1 and v2 stay readable so a peer holding an older container is
-        // not forced to discard it; v3 is what this build writes.
+        // not forced to discard it; v4 is what this build writes.
         assert!(core.checkpoint_supports(1));
         assert!(core.checkpoint_supports(2));
         assert!(core.checkpoint_supports(3));
+        assert!(core.checkpoint_supports(4));
         assert!(!core.checkpoint_supports(0));
-        assert!(!core.checkpoint_supports(4));
+        assert!(!core.checkpoint_supports(5));
 
         core.feed(b"negotiate".to_vec());
         let blob = core.checkpoint_export(0, 1 << 20).unwrap();
@@ -2848,18 +2916,18 @@ mod tests {
         // A newer container, correctly checksummed: a version failure, not
         // corruption. A bool could not tell the two apart.
         let mut newer = blob.clone();
-        newer[4..8].copy_from_slice(&4u32.to_le_bytes());
+        newer[4..8].copy_from_slice(&5u32.to_le_bytes());
         let crc = crate::terminal::checkpoint::crc32(&newer[20..]);
         newer[16..20].copy_from_slice(&crc.to_le_bytes());
 
         let dest = TakoCore::new(20, 6);
         assert_eq!(
             dest.checkpoint_import(newer.clone()),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 4 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 5 })
         );
         assert_eq!(
             dest.checkpoint_inspect(newer),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 4 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 5 })
         );
 
         let mut corrupt = blob.clone();
@@ -2871,7 +2939,7 @@ mod tests {
         ));
 
         let info = dest.checkpoint_inspect(blob.clone()).unwrap();
-        assert_eq!((info.version, info.cols, info.rows), (3, 40, 10));
+        assert_eq!((info.version, info.cols, info.rows), (4, 40, 10));
         assert_eq!(info.payload_len as usize, blob.len() - 20);
         assert_eq!(dest.checkpoint_import(blob), Ok(()));
     }

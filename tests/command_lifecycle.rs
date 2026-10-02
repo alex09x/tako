@@ -14,7 +14,7 @@ fn command_start_and_end_emit_events() {
     term.feed(b"output\r\n");
     term.feed(b"\x1b]133;D;0\x07");
     let events = term.take_events();
-    assert!(events.contains(&TerminalEvent::CommandStart));
+    assert!(events.contains(&TerminalEvent::CommandStart { id: Some(1) }));
     assert!(events.contains(&TerminalEvent::CommandEnd { exit_code: Some(0) }));
 }
 
@@ -55,7 +55,7 @@ fn prompt_start_emits_no_command_event() {
 fn events_drain_between_commands() {
     let mut term = Terminal::new(20, 5);
     term.feed(b"\x1b]133;C\x07");
-    assert_eq!(term.take_events(), vec![TerminalEvent::CommandStart]);
+    assert_eq!(term.take_events(), vec![TerminalEvent::CommandStart { id: Some(1) }]);
     assert!(term.take_events().is_empty());
     term.feed(b"\x1b]133;D;0\x07");
     assert_eq!(

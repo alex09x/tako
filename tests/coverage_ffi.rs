@@ -233,7 +233,7 @@ fn take_events_reports_every_variant() {
     assert!(events.iter().any(|e| matches!(e, FfiEvent::Notification { .. })));
     assert!(events.iter().any(|e| matches!(e, FfiEvent::PwdChanged { url } if url == "file:///tmp")));
     assert!(events.iter().any(|e| matches!(e, FfiEvent::Progress { .. })));
-    assert!(events.contains(&FfiEvent::CommandStart));
+    assert!(events.contains(&FfiEvent::CommandStart { id: Some(1) }));
     assert!(events.contains(&FfiEvent::CommandEnd { exit_code: Some(0) }));
 }
 

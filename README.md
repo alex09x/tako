@@ -23,6 +23,11 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
     are not implemented yet, so `kitten icat` does not detect the support.
   - Asynchronous PTY execution with non-blocking multi-threaded pipeline.
   - Embedded SSH client support (`features = ["ssh"]`).
+  - Shell command records from OSC 133 marks: each search hit says which command printed
+    it, with its command line, working directory, exit code and start time. Only rows a
+    single command wrote are attributed; a row holding a prompt and output, or two
+    commands' output, belongs to none. A finished command without an exit code is not
+    reported as a success.
 
 - **Hardware-Accelerated Metal Renderer (`TakoCoreUI`)**:
   - GPU rendering with Metal vertex and fragment shaders (`TerminalShaders.metal`).

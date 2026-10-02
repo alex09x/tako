@@ -14,11 +14,12 @@
 //!   and partial UTF-8 multi-byte sequences).
 //! - Viewport offset, title, title stack, palette, and Kitty keyboard state.
 //!
-//! Wire format specification (Version 3):
+//! Wire format specification (Version 4):
 //! - Header (20 bytes):
 //!   - `magic`: `[u8; 4]` = `b"TKCK"`
-//!   - `version`: `u32` (little-endian, 3; versions 1 and 2 are still
-//!     readable, and 2 can still be written for a peer that reads no newer)
+//!   - `version`: `u32` (little-endian, 4; versions 1 to 3 are still
+//!     readable, and 2 or 3 can still be written for a peer that reads no
+//!     newer)
 //!   - `flags`: `u32` (little-endian, 0)
 //!   - `payload_len`: `u32` (little-endian)
 //!   - `checksum`: `u32` (little-endian, IEEE 802.3 CRC32 of payload bytes)
@@ -41,6 +42,13 @@
 //! guesses that every colour differing from the built-in default was a
 //! program's -- so a theme's colours stayed on screen as "overrides" after a
 //! destination with another theme set its own.
+//!
+//! Version 4 is version 3 followed by the shell's command records (OSC 133):
+//! the primary grid's row owners as runs over its scrollback then its visible
+//! rows, then the command table -- next id, running id, and each record's id,
+//! status, cwd, command line and start time -- then the last OSC 7 report and
+//! where the command line being typed starts. Older versions carry none of
+//! it: their rows are owned by no command.
 
 use std::collections::HashMap;
 
@@ -50,7 +58,7 @@ use super::{
 };
 use crate::charset::Charset;
 use crate::cursor_style::{CursorShape, CursorStyle};
-use crate::grid::{Cell, CellAttrs, Color, Grid, ScrollbackRow, SemanticPrompt};
+use crate::grid::{Cell, CellAttrs, Color, Grid, RowOwner, ScrollbackRow, SemanticPrompt};
 use crate::kitty_keyboard::{KittyFlags, KittyKeyboardState};
 use crate::modes::{MouseTracking, TerminalModes};
 use crate::palette::Palette;
@@ -58,9 +66,10 @@ use crate::parser::{Parser, ParserSnapshot, State};
 use crate::response::ResponseQueue;
 use crate::tabstops::TabStops;
 use crate::title_stack::TitleStack;
+use super::commands::{CommandLog, CommandRecord, CommandStatus, MAX_COMMAND_RECORDS, MAX_CWD_BYTES};
 
 pub const MAGIC: [u8; 4] = *b"TKCK";
-pub const CURRENT_VERSION: u32 = 3;
+pub const CURRENT_VERSION: u32 = 4;
 
 /// The oldest container this build can write, for [`export_version`]. Version
 /// 1 is readable but no longer written: it carried the selection.
@@ -901,7 +910,8 @@ pub fn retained_cost(term: &Terminal) -> u64 {
     for event in &term.events {
         total = total.saturating_add(event_payload_bytes(event));
     }
-    total
+    total = total.saturating_add(term.commands.heap_bytes());
+    total.saturating_add(term.last_cwd.as_ref().map_or(0, |c| c.capacity() as u64))
 }
 
 /// Heap owned by one queued event, beyond the slot it occupies in `events`.
@@ -924,7 +934,7 @@ fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
         E::Bell
         | E::ClipboardQuery
         | E::Progress { .. }
-        | E::CommandStart
+        | E::CommandStart { .. }
         | E::CommandEnd { .. } => 0,
     }
 }
@@ -1386,6 +1396,9 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
         write_clusters(&mut w, &term.primary);
         write_clusters(&mut w, &term.alternate);
     }
+    if version >= 4 {
+        write_commands(&mut w, term);
+    }
 
     // Write Header
     if w.overflowed() {
@@ -1414,6 +1427,210 @@ fn shape_from_code(code: u8) -> CursorShape {
         2 => CursorShape::Bar,
         _ => CursorShape::Block,
     }
+}
+
+fn owner_tag(owner: RowOwner) -> (u8, u64) {
+    match owner {
+        RowOwner::Empty => (0, 0),
+        RowOwner::Unowned => (1, 0),
+        RowOwner::Mixed => (2, 0),
+        RowOwner::Command(id) => (3, id),
+    }
+}
+
+fn write_opt_u64(w: &mut Writer, v: Option<u64>) {
+    w.write_bool(v.is_some());
+    w.write_u64(v.unwrap_or(0));
+}
+
+fn read_opt_u64(r: &mut Reader<'_>) -> Result<Option<u64>, CheckpointError> {
+    let present = r.read_bool()?;
+    let v = r.read_u64()?;
+    Ok(present.then_some(v))
+}
+
+fn write_opt_string(w: &mut Writer, v: Option<&str>) {
+    w.write_bool(v.is_some());
+    if let Some(v) = v {
+        w.write_string(v);
+    }
+}
+
+fn read_opt_string(r: &mut Reader<'_>) -> Result<Option<String>, CheckpointError> {
+    if r.read_bool()? { Ok(Some(r.read_string_budgeted()?)) } else { Ok(None) }
+}
+
+/// v4's tail: row owners of the primary grid as runs, then the command
+/// table. An owner naming a record the table no longer has is written as
+/// unowned -- it would group nothing anyway.
+fn write_commands(w: &mut Writer, term: &Terminal) {
+    let grid = &term.primary;
+    let log = &term.commands;
+    let normalized = |owner: RowOwner| match owner {
+        RowOwner::Command(id) if log.get(id).is_none() => RowOwner::Unowned,
+        other => other,
+    };
+    let history = grid.scrollback_len();
+    let owners = (0..history)
+        .map(|i| grid.scrollback_owner(i))
+        .chain((0..grid.rows()).map(|r| grid.row_owner(r)))
+        .map(normalized);
+    let mut runs: Vec<(RowOwner, u32)> = Vec::new();
+    for owner in owners {
+        match runs.last_mut() {
+            Some((last, n)) if *last == owner => *n += 1,
+            _ => runs.push((owner, 1)),
+        }
+    }
+    w.write_u32(runs.len() as u32);
+    for (owner, n) in runs {
+        let (tag, id) = owner_tag(owner);
+        w.write_u8(tag);
+        w.write_u64(id);
+        w.write_u32(n);
+    }
+    let pen = grid.pen_owner().filter(|id| log.get(*id).is_some());
+    write_opt_u64(w, pen);
+    write_opt_u64(w, log.next_id());
+    write_opt_u64(w, log.running());
+    w.write_u32(log.records().len() as u32);
+    for rec in log.records() {
+        w.write_u64(rec.id);
+        let (status, code) = match rec.status {
+            CommandStatus::Running => (0, 0),
+            CommandStatus::Completed(None) => (1, 0),
+            CommandStatus::Completed(Some(code)) => (2, code),
+            CommandStatus::Abandoned => (3, 0),
+        };
+        w.write_u8(status);
+        w.write_u32(code as u32);
+        write_opt_string(w, rec.cwd.as_deref());
+        write_opt_string(w, rec.input.as_deref());
+        w.write_bool(rec.input_truncated);
+        write_opt_u64(w, rec.started_at_ms);
+    }
+    write_opt_string(w, term.last_cwd.as_deref());
+    write_opt_u64(w, term.input_start.map(|(line, _)| line));
+    w.write_u32(term.input_start.map_or(0, |(_, col)| col as u32));
+}
+
+/// What [`read_commands`] decoded, checked against itself and the grid.
+struct CommandState {
+    log: CommandLog,
+    last_cwd: Option<String>,
+    input_start: Option<(u64, usize)>,
+}
+
+/// [`write_commands`]' block. The runs must cover the grid's retained rows
+/// exactly; every owner must name a record; the pen must be the running
+/// command. Anything else is corrupt.
+fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) -> Result<CommandState, CheckpointError> {
+    let bad = CheckpointError::InvalidData;
+    let run_count = r.read_u32()? as usize;
+    // tag, id, length: 13 bytes each.
+    r.check_count(run_count, 13)?;
+    let total = written_history + grid.rows();
+    let mut runs = Vec::with_capacity(run_count.min(total));
+    let mut covered = 0usize;
+    for _ in 0..run_count {
+        let tag = r.read_u8()?;
+        let id = r.read_u64()?;
+        let n = r.read_u32()? as usize;
+        if n == 0 {
+            return Err(bad("empty owner run"));
+        }
+        covered = covered.checked_add(n).ok_or(bad("owner runs overflow"))?;
+        if covered > total {
+            return Err(bad("owner runs exceed rows"));
+        }
+        let owner = match tag {
+            0 => RowOwner::Empty,
+            1 => RowOwner::Unowned,
+            2 => RowOwner::Mixed,
+            3 => RowOwner::Command(id),
+            _ => return Err(bad("invalid row owner")),
+        };
+        if tag != 3 && id != 0 {
+            return Err(bad("invalid row owner"));
+        }
+        runs.push((owner, n));
+    }
+    if covered != total {
+        return Err(bad("owner runs do not cover rows"));
+    }
+    let pen = read_opt_u64(r)?;
+    let next_id = read_opt_u64(r)?;
+    let running = read_opt_u64(r)?;
+    let count = r.read_u32()? as usize;
+    // id, status, code, two presence flags, the truncation flag, the time.
+    r.check_count(count, 8 + 1 + 4 + 1 + 1 + 1 + 9)?;
+    if count > MAX_COMMAND_RECORDS {
+        return Err(bad("too many command records"));
+    }
+    r.charge_spine(count, std::mem::size_of::<CommandRecord>() as u64)?;
+    let mut records = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = r.read_u64()?;
+        let status = r.read_u8()?;
+        let code = r.read_u32()? as i32;
+        let status = match status {
+            0 => CommandStatus::Running,
+            1 => CommandStatus::Completed(None),
+            2 => CommandStatus::Completed(Some(code)),
+            3 => CommandStatus::Abandoned,
+            _ => return Err(bad("invalid command status")),
+        };
+        let cwd = read_opt_string(r)?;
+        let input = read_opt_string(r)?;
+        let input_truncated = r.read_bool()?;
+        let started_at_ms = read_opt_u64(r)?;
+        records.push(CommandRecord { id, status, cwd, input, input_truncated, started_at_ms });
+    }
+    let log = CommandLog::from_parts(records, next_id, running).map_err(bad)?;
+    if pen != running {
+        return Err(bad("command pen is not the running command"));
+    }
+    for (owner, _) in &runs {
+        if let RowOwner::Command(id) = owner
+            && log.get(*id).is_none()
+        {
+            return Err(bad("row owner names no command"));
+        }
+    }
+    let last_cwd = read_opt_string(r)?;
+    if last_cwd.as_ref().is_some_and(|c| c.len() > MAX_CWD_BYTES) {
+        return Err(bad("cwd too long"));
+    }
+    let input_line = read_opt_u64(r)?;
+    let input_col = r.read_u32()? as usize;
+    if input_col >= grid.cols() && input_line.is_some() {
+        return Err(bad("input start outside the grid"));
+    }
+
+    // The grid may hold fewer history rows than were written (its capacity
+    // dropped the oldest); their owners go with them.
+    let mut skip = written_history - grid.scrollback_len().min(written_history);
+    let mut index = 0usize;
+    for (owner, n) in runs {
+        let mut n = n;
+        let skipped = skip.min(n);
+        skip -= skipped;
+        n -= skipped;
+        for _ in 0..n {
+            if index < grid.scrollback_len() {
+                grid.set_scrollback_owner(index, owner);
+            } else {
+                grid.set_row_owner(index - grid.scrollback_len(), owner);
+            }
+            index += 1;
+        }
+    }
+    grid.set_pen_owner(pen);
+    Ok(CommandState {
+        log,
+        last_cwd,
+        input_start: input_line.map(|line| (line, input_col)),
+    })
 }
 
 /// What the host configured, as opposed to what a program did: v3's tail.
@@ -1664,7 +1881,8 @@ pub fn import_traced_reserving(
         }
         r.charge((cells_len as u64).saturating_mul(CELL_BYTES))?;
         let cells = r.read_cells(cells_len)?;
-        prim_sb.push(ScrollbackRow { cells, wrapped });
+        let owner = RowOwner::of_cells(&cells);
+        prim_sb.push(ScrollbackRow { cells, wrapped, owner });
     }
     // The whole visible grid, charged before a single row is decoded: run
     // length encoding means three payload bytes can declare ten thousand
@@ -1716,7 +1934,8 @@ pub fn import_traced_reserving(
         }
         r.charge((cells_len as u64).saturating_mul(CELL_BYTES))?;
         let cells = r.read_cells(cells_len)?;
-        alt_sb.push(ScrollbackRow { cells, wrapped });
+        let owner = RowOwner::of_cells(&cells);
+        alt_sb.push(ScrollbackRow { cells, wrapped, owner });
     }
     r.charge((rows as u64).saturating_mul(cols as u64).saturating_mul(CELL_BYTES))?;
     r.charge_spine(rows, GRID_ROW_SPINE)?;
@@ -2177,12 +2396,21 @@ pub fn import_traced_reserving(
     }
     let selection = None;
 
+    // Before v4 nothing was recorded: no command owns a row.
+    let mut commands = CommandState {
+        log: CommandLog::default(),
+        last_cwd: None,
+        input_start: None,
+    };
     // A v3 container says which colours and which cursor style were the
     // host's; an older one leaves the inference above in place.
     let (default_cursor_style, cursor_style_overridden) = if version >= 3 {
         let host = read_host_config(&mut r)?;
         read_clusters(&mut r, &mut primary)?;
         read_clusters(&mut r, &mut alternate)?;
+        if version >= 4 {
+            commands = read_commands(&mut r, &mut primary, prim_sb_len)?;
+        }
         palette.restore_bases(host.base, host.overridden);
         palette.set_base_fg(host.base_fg);
         palette.set_base_bg(host.base_bg);
@@ -2248,6 +2476,9 @@ pub fn import_traced_reserving(
         height_px,
         dark_scheme,
         semantic_content,
+        commands: commands.log,
+        last_cwd: commands.last_cwd,
+        input_start: commands.input_start,
         viewport_offset,
         dcs,
         dcs_buf,
@@ -2258,4 +2489,111 @@ pub fn import_traced_reserving(
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))
+}
+
+#[cfg(test)]
+mod command_block_tests {
+    use super::*;
+
+    /// One record as `write_commands` lays it out: id, status, code, no
+    /// cwd, no input, not truncated, no time.
+    struct Rec(u64, u8, i32);
+
+    fn block(runs: &[(u8, u64, u32)], pen: Option<u64>, next: Option<u64>, running: Option<u64>, recs: &[Rec]) -> Vec<u8> {
+        let mut w = Writer::with_capacity(256, usize::MAX);
+        w.write_u32(runs.len() as u32);
+        for &(tag, id, n) in runs {
+            w.write_u8(tag);
+            w.write_u64(id);
+            w.write_u32(n);
+        }
+        write_opt_u64(&mut w, pen);
+        write_opt_u64(&mut w, next);
+        write_opt_u64(&mut w, running);
+        w.write_u32(recs.len() as u32);
+        for Rec(id, status, code) in recs {
+            w.write_u64(*id);
+            w.write_u8(*status);
+            w.write_u32(*code as u32);
+            write_opt_string(&mut w, None);
+            write_opt_string(&mut w, None);
+            w.write_bool(false);
+            write_opt_u64(&mut w, None);
+        }
+        write_opt_string(&mut w, None);
+        write_opt_u64(&mut w, None);
+        w.write_u32(0);
+        w.buf
+    }
+
+    /// Decode against a 4x2 grid with no history: the runs must cover 2 rows.
+    fn decode(bytes: &[u8]) -> Result<(), CheckpointError> {
+        let mut grid = Grid::new(4, 2);
+        read_commands(&mut Reader::new(bytes), &mut grid, 0).map(|_| ())
+    }
+
+    fn rejected(bytes: &[u8]) -> bool {
+        matches!(decode(bytes), Err(CheckpointError::InvalidData(_)))
+    }
+
+    #[test]
+    fn a_consistent_block_decodes_and_applies_its_owners() {
+        let bytes = block(&[(3, 1, 1), (0, 0, 1)], Some(1), Some(2), Some(1), &[Rec(1, 0, 0)]);
+        let mut grid = Grid::new(4, 2);
+        let state = read_commands(&mut Reader::new(&bytes), &mut grid, 0).unwrap();
+        assert_eq!(grid.row_owner(0), RowOwner::Command(1));
+        assert_eq!(grid.row_owner(1), RowOwner::Empty);
+        assert_eq!(grid.pen_owner(), Some(1));
+        assert_eq!(state.log.running(), Some(1));
+    }
+
+    #[test]
+    fn runs_must_cover_the_rows_exactly_and_be_positive() {
+        assert!(rejected(&block(&[(0, 0, 1)], None, Some(1), None, &[])));
+        assert!(rejected(&block(&[(0, 0, 3)], None, Some(1), None, &[])));
+        assert!(rejected(&block(&[(0, 0, 2), (0, 0, 0)], None, Some(1), None, &[])));
+        assert!(rejected(&block(&[(0, 0, u32::MAX), (0, 0, u32::MAX)], None, Some(1), None, &[])));
+        assert!(rejected(&block(&[(9, 0, 2)], None, Some(1), None, &[])));
+        assert!(rejected(&block(&[(1, 7, 2)], None, Some(1), None, &[])));
+    }
+
+    #[test]
+    fn an_owner_must_name_a_record() {
+        assert!(rejected(&block(&[(3, 5, 2)], None, Some(9), None, &[Rec(1, 1, 0)])));
+    }
+
+    #[test]
+    fn ids_must_be_unique_ascending_and_below_the_next_id() {
+        let ok = [(0, 0, 2)];
+        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(2, 1, 0), Rec(2, 1, 0)])));
+        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(3, 1, 0), Rec(2, 1, 0)])));
+        assert!(rejected(&block(&ok, None, Some(2), None, &[Rec(2, 1, 0)])));
+        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(0, 1, 0)])));
+        assert!(rejected(&block(&ok, None, Some(0), None, &[])));
+        // Ids ran out: no next id, and that is fine.
+        assert!(decode(&block(&ok, None, None, None, &[Rec(u64::MAX, 1, 0)])).is_ok());
+    }
+
+    #[test]
+    fn the_running_command_must_agree_with_the_table_and_the_pen() {
+        let ok = [(0, 0, 2)];
+        // Running status without being the running id, and the reverse.
+        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(1, 0, 0)])));
+        assert!(rejected(&block(&ok, Some(1), Some(9), Some(1), &[Rec(1, 3, 0)])));
+        // Running id with no record.
+        assert!(rejected(&block(&ok, Some(4), Some(9), Some(4), &[])));
+        // Pen on something other than the running command.
+        assert!(rejected(&block(&ok, None, Some(9), Some(1), &[Rec(1, 0, 0)])));
+        assert!(rejected(&block(&ok, Some(2), Some(9), Some(1), &[Rec(1, 0, 0), Rec(2, 1, 0)])));
+        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(1, 7, 0)])));
+    }
+
+    #[test]
+    fn a_count_the_payload_cannot_hold_is_refused_before_allocating() {
+        let mut bytes = block(&[(0, 0, 2)], None, Some(1), None, &[]);
+        // Patch the record count (after the run, the pen, next and running).
+        let at = 4 + 13 + 9 * 3;
+        bytes[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(matches!(decode(&bytes), Err(CheckpointError::UnexpectedEof)));
+    }
 }

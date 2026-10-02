@@ -40,11 +40,11 @@ fn header_version(blob: &[u8]) -> u32 {
 }
 
 #[test]
-fn this_build_writes_version_3() {
-    assert_eq!(CURRENT_VERSION, 3);
-    assert_eq!(Terminal::checkpoint_version(), 3);
+fn this_build_writes_version_4() {
+    assert_eq!(CURRENT_VERSION, 4);
+    assert_eq!(Terminal::checkpoint_version(), 4);
     let blob = themed_source().export_checkpoint().unwrap();
-    assert_eq!(header_version(&blob), 3);
+    assert_eq!(header_version(&blob), 4);
 }
 
 #[test]
@@ -114,9 +114,10 @@ fn the_default_cursor_style_travels_and_a_programs_style_stays_a_programs() {
 fn export_version_writes_what_was_asked_or_refuses() {
     let term = themed_source();
     assert_eq!(MIN_EXPORT_VERSION, 2);
-    assert_eq!(header_version(&term.export_checkpoint_version(0, 0).unwrap()), 3);
+    assert_eq!(header_version(&term.export_checkpoint_version(0, 0).unwrap()), 4);
     assert_eq!(header_version(&term.export_checkpoint_version(3, 0).unwrap()), 3);
-    for version in [1, 4, u32::MAX] {
+    assert_eq!(header_version(&term.export_checkpoint_version(4, 0).unwrap()), 4);
+    for version in [1, 5, u32::MAX] {
         assert_eq!(
             term.export_checkpoint_version(version, 0),
             Err(CheckpointError::UnsupportedVersion(version))
@@ -169,7 +170,7 @@ fn ffi_exports_the_version_a_peer_asks_for() {
     core.feed(b"negotiate".to_vec());
     let v2 = core.checkpoint_export_version(2, 0).unwrap();
     assert_eq!(header_version(&v2), 2);
-    assert_eq!(header_version(&core.checkpoint_export_version(0, 0).unwrap()), 3);
+    assert_eq!(header_version(&core.checkpoint_export_version(0, 0).unwrap()), 4);
     assert!(core.checkpoint_export_version(1, 0).is_err());
 
     let dest = TakoCore::new(20, 4);
@@ -274,7 +275,8 @@ fn a_v2_checkpoint_keeps_only_each_clusters_first_character() {
 fn a_cluster_that_names_no_cell_is_refused() {
     let mut term = Terminal::new(20, 4);
     term.feed(STACKED.as_bytes());
-    let blob = term.export_checkpoint().unwrap();
+    // v3, where the cluster lists end the payload.
+    let blob = term.export_checkpoint_version(3, 0).unwrap();
     // The last cluster list is the alternate screen's, empty; the one
     // before it holds our single cluster. Find its line number -- the
     // first u32 after the primary list's count -- and point it past the

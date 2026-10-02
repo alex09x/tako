@@ -16,6 +16,7 @@ use crate::title_stack::TitleStack;
 
 pub mod checksum;
 pub mod checkpoint;
+pub mod commands;
 mod dsr;
 mod dump;
 mod select;
@@ -146,8 +147,9 @@ pub enum TerminalEvent {
     /// 3=indeterminate,4=pause); `value` is absent when not sent.
     Progress { state: u8, value: Option<u8> },
     /// OSC 133;C -- the shell handed control to a command. A host can start
-    /// timing here.
-    CommandStart,
+    /// timing here, and give the command its start time with `id` (absent
+    /// on the alternate screen, where commands are not recorded).
+    CommandStart { id: Option<u64> },
     /// OSC 133;D -- the command finished. `exit_code` is present when the
     /// shell reported one (`OSC 133;D;<code>`).
     CommandEnd { exit_code: Option<i32> },
@@ -275,6 +277,13 @@ pub struct Terminal {
     pub(crate) dark_scheme: Option<bool>,
     /// OSC 133 semantic mode of subsequently printed content.
     pub(crate) semantic_content: SemanticContent,
+    /// Commands the shell marked on the primary screen.
+    pub(crate) commands: commands::CommandLog,
+    /// The last OSC 7 report, when it fit in [`commands::MAX_CWD_BYTES`].
+    pub(crate) last_cwd: Option<String>,
+    /// Where the command line starts (absolute line, column): the cursor at
+    /// `133;B`. Dropped by anything that may have moved or erased it.
+    pub(crate) input_start: Option<(u64, usize)>,
     /// Viewport offset into scrollback: 0 = bottom (live screen), N = N
     /// lines up. Any print/scroll snaps it back to the bottom.
     pub(crate) viewport_offset: usize,
@@ -452,6 +461,9 @@ impl Terminal {
             height_px: 0,
             dark_scheme: None,
             semantic_content: SemanticContent::None,
+            commands: commands::CommandLog::default(),
+            last_cwd: None,
+            input_start: None,
             viewport_offset: 0,
             dcs: None,
             dcs_buf: Vec::new(),
@@ -494,6 +506,9 @@ impl Terminal {
         // (a real TUI app's redraw, say) -- found live via exactly that.
         let cols_changed = cols != self.active_grid().cols();
         let cursor_pos = (self.cursor.row, self.cursor.col);
+        // Reflow moves the command line being typed; where it started is
+        // no longer known.
+        self.input_start = None;
         let new_cursor = if self.modes.autowrap {
             match self.active {
                 ScreenBuffer::Primary => {
@@ -1562,7 +1577,108 @@ impl Terminal {
     /// This was previously masked: output used to reset the offset on every
     /// printed character, so the first thing an app drew cleared it as a side
     /// effect.
+    /// The absolute line (as search numbers lines) the cursor is on.
+    fn cursor_absolute_line(&self) -> u64 {
+        let grid = self.active_grid();
+        (grid.history_evicted() + grid.scrollback_len() + self.cursor.row) as u64
+    }
+
+    /// `133;A`/`P`: a new prompt. A command still running never got its
+    /// `D`; what follows is not its output.
+    fn command_prompt_started(&mut self) {
+        self.input_start = None;
+        if self.active == ScreenBuffer::Primary {
+            self.commands.abandon_running();
+            self.primary.set_pen_owner(None);
+        }
+    }
+
+    /// `133;C`: open a record and claim what is written from here on for
+    /// it. `None` on the alternate screen or once ids ran out.
+    fn command_output_started(&mut self) -> Option<u64> {
+        if self.active != ScreenBuffer::Primary {
+            return None;
+        }
+        let (input, truncated) = match self.input_start.take() {
+            Some(start) => self.command_line_text(start),
+            None => (None, false),
+        };
+        let id = self.commands.start(self.last_cwd.clone(), input, truncated);
+        self.primary.set_pen_owner(id);
+        id
+    }
+
+    /// The text from `start` up to the cursor: the command line just
+    /// entered. `None` when its first line was evicted or nothing is there.
+    fn command_line_text(&self, start: (u64, usize)) -> (Option<String>, bool) {
+        let grid = &self.primary;
+        let first = grid.history_evicted() as u64;
+        let history = grid.scrollback_len() as u64;
+        let (start_line, start_col) = start;
+        let end_line = self.cursor_absolute_line();
+        if start_line < first || start_line > end_line {
+            return (None, false);
+        }
+        let mut text = String::new();
+        let mut count = 0usize;
+        let mut truncated = false;
+        'lines: for line in start_line..=end_line {
+            let index = line - first;
+            let (cells, wrapped) = if index < history {
+                let i = (history - 1 - index) as usize;
+                match grid.scrollback_line(i) {
+                    Some(cells) => (cells, grid.scrollback_line_wrapped(i)),
+                    None => break,
+                }
+            } else {
+                let row = (index - history) as usize;
+                (grid.row_cells(row), grid.is_line_wrapped(row))
+            };
+            if line > start_line && !wrapped {
+                text.truncate(text.trim_end_matches(' ').len());
+                text.push('\n');
+            }
+            let from = if line == start_line { start_col.min(cells.len()) } else { 0 };
+            let to = if line == end_line { self.cursor.col.min(cells.len()) } else { cells.len() };
+            for cell in cells.get(from..to.max(from)).unwrap_or(&[]) {
+                if cell.is_wide_spacer || cell.is_wide_spacer_head {
+                    continue;
+                }
+                if count == commands::MAX_INPUT_CHARS {
+                    truncated = true;
+                    break 'lines;
+                }
+                let before = text.len();
+                grid.push_cell_text(&mut text, cell);
+                count += text[before..].chars().count();
+                if count > commands::MAX_INPUT_CHARS {
+                    text.truncate(before);
+                    truncated = true;
+                    break 'lines;
+                }
+            }
+        }
+        let trimmed = text.trim_end();
+        if trimmed.is_empty() {
+            return (None, false);
+        }
+        (Some(trimmed.to_string()), truncated)
+    }
+
+    /// The commands recorded on the primary screen.
+    pub fn commands(&self) -> &commands::CommandLog {
+        &self.commands
+    }
+
+    /// Give command `id` its start time (unix ms), once.
+    pub fn set_command_started_at(&mut self, id: u64, unix_ms: u64) -> bool {
+        self.commands.set_started_at(id, unix_ms)
+    }
+
     fn switch_screen(&mut self, to: ScreenBuffer) {
+        if to != self.active {
+            self.input_start = None;
+        }
         self.active = to;
         self.viewport_offset = 0;
     }
@@ -1728,6 +1844,7 @@ impl Terminal {
                     .fill_cells_respecting(row, 0, col.saturating_add(1), blank, respect);
             }
             2 | 3 => {
+                self.input_start = None;
                 for r in 0..rows {
                     self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
                     self.active_grid_mut().set_line_wrapped(r, false);
@@ -1791,6 +1908,9 @@ impl Terminal {
                 if full_width {
                     let wrapped = self.active_grid().is_line_wrapped(row);
                     self.active_grid_mut().set_line_wrapped(row + n, wrapped);
+                    // The whole row moved: so does whose output it is.
+                    let owner = self.active_grid().row_owner(row);
+                    self.active_grid_mut().set_row_owner(row + n, owner);
                 }
             }
         }
@@ -1841,6 +1961,8 @@ impl Terminal {
                 if full_width {
                     let wrapped = self.active_grid().is_line_wrapped(row + n);
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
+                    let owner = self.active_grid().row_owner(row + n);
+                    self.active_grid_mut().set_row_owner(row, owner);
                 }
             }
         }
@@ -2746,9 +2868,9 @@ impl Perform for Terminal {
         }
         if params[0] == b"7" {
             if let Some(url) = params.get(1) {
-                self.events.push(TerminalEvent::PwdChanged(
-                    String::from_utf8_lossy(url).into_owned(),
-                ));
+                let url = String::from_utf8_lossy(url).into_owned();
+                self.last_cwd = (url.len() <= commands::MAX_CWD_BYTES).then(|| url.clone());
+                self.events.push(TerminalEvent::PwdChanged(url));
             }
             return;
         }
@@ -2867,6 +2989,7 @@ impl Perform for Terminal {
                         self.line_feed();
                     }
                     if action == b'A' {
+                        self.command_prompt_started();
                         self.semantic_content = SemanticContent::Prompt;
                         let row = self.cursor.row;
                         let mark = if continuation {
@@ -2879,6 +3002,7 @@ impl Perform for Terminal {
                 }
                 b'P' => {
                     // prompt_start without the fresh-line behavior.
+                    self.command_prompt_started();
                     self.semantic_content = SemanticContent::Prompt;
                     let row = self.cursor.row;
                     let mark = if continuation {
@@ -2888,10 +3012,16 @@ impl Perform for Terminal {
                     };
                     self.active_grid_mut().set_row_semantic_prompt(row, mark);
                 }
-                b'B' => self.semantic_content = SemanticContent::Input,
+                b'B' => {
+                    self.semantic_content = SemanticContent::Input;
+                    if self.active == ScreenBuffer::Primary {
+                        self.input_start = Some((self.cursor_absolute_line(), self.cursor.col));
+                    }
+                }
                 b'C' => {
                     self.semantic_content = SemanticContent::Output;
-                    self.events.push(TerminalEvent::CommandStart);
+                    let id = self.command_output_started();
+                    self.events.push(TerminalEvent::CommandStart { id });
                     // Fish heuristic: OSC 133;C at column 0 clears the
                     // continuation mark the preceding newline just set.
                     if self.cursor.col == 0 {
@@ -2914,6 +3044,10 @@ impl Perform for Terminal {
                         .get(2)
                         .and_then(|p| std::str::from_utf8(p).ok())
                         .and_then(|s| s.trim().parse::<i32>().ok());
+                    if self.active == ScreenBuffer::Primary {
+                        self.commands.finish(exit_code);
+                        self.primary.set_pen_owner(None);
+                    }
                     self.events.push(TerminalEvent::CommandEnd { exit_code });
                 }
                 _ => {}
@@ -3830,6 +3964,11 @@ impl Terminal {
         self.last_printed_char = None;
         self.pending_wrap = false;
         self.protected_mode = ProtectedMode::Off;
+        // Ids keep counting, so one handed out before the reset never names
+        // a command after it.
+        self.commands.clear();
+        self.input_start = None;
+        self.last_cwd = None;
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll
