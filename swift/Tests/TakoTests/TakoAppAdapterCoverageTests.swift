@@ -492,9 +492,9 @@ struct SurfaceViewCoverageTests {
         #expect(!view.processExited)
         #expect(!view.needsConfirmQuit)
         #expect(view.pid > 0)
-        // See `startsAShellWithARealTtyAndForegroundProcess`: the pty
-        // master has no `ttyname(3)`, so the fallback `""` is what's real.
-        #expect(view.ttyName.isEmpty)
+        // The terminal device the shell runs on: the pty's slave, by
+        // `ptsname` (the master itself has no `ttyname`).
+        #expect(view.ttyName.hasPrefix("/dev/tty"))
         #expect(view.mouseCaptured == false)
         #expect(view.cellSize.width > 0 && view.cellSize.height > 0)
     }

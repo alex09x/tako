@@ -111,12 +111,22 @@ def notarize(path, what, staple=None):
     """Submit, wait, and fail loudly with Apple's reasons if it is rejected.
     Then staple the ticket to `staple` (default: `path`) -- a ZIP cannot take
     one, so for a ZIP it is the app inside."""
-    step(f"notarizing {what} -- Apple decides this, so it takes minutes")
-    r = subprocess.run(
-        ["xcrun", "notarytool", "submit", path,
-         *profile_args(), "--wait", "--timeout", "30m"],
-        capture_output=True, text=True)
+    step(f"notarizing {what} -- Apple decides this: minutes, and for a new team's first submissions hours")
+    # A submission already sent (TAKO_NOTARY_SUBMISSION) is waited on again
+    # rather than uploaded again.
+    resume = os.environ.get("TAKO_NOTARY_SUBMISSION") if what == "the app" else None
+    if resume:
+        cmd = ["xcrun", "notarytool", "wait", resume, *profile_args(), "--timeout", "2h"]
+    else:
+        cmd = ["xcrun", "notarytool", "submit", path, *profile_args(), "--wait", "--timeout", "2h"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
     print(r.stdout.strip())
+    if "Timeout of" in r.stdout + r.stderr:
+        # Not a refusal: Apple has not answered yet, and the submission goes on.
+        sub = resume or next((l.split(":", 1)[1].strip() for l in r.stdout.splitlines()
+                              if l.strip().startswith("id:")), "")
+        sys.exit(f"Apple has not finished checking {what} yet -- nothing was refused.\n"
+                 f"Wait for it and go on with:  TAKO_NOTARY_SUBMISSION={sub} python3 scripts/release-macapp.py")
     if r.returncode != 0 or "status: Accepted" not in r.stdout:
         # The submission id is the only way to read why it was refused.
         sub = ""

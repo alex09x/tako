@@ -104,16 +104,15 @@ struct AppDelegateQuitConfirmationTests {
         }
     }
 
-    /// Polls until one of `windows` has a sheet attached (the per-window
-    /// confirmation alert `confirmCloseAsync` shows), returning it. Doesn't
-    /// assume an index into `windows` corresponds to processing order:
-    /// `terminate()`/`reviewWindows` walk `NSApplication.shared.windows`,
-    /// whose front-to-back order need not match the order these helper
-    /// windows were created in.
-    private func waitForAnySheet(among windows: [NSWindow], timeout: TimeInterval = 3) async -> NSWindow? {
-        var found: NSWindow?
+    /// Polls until a question is up in any window -- drawn in the window as
+    /// the terminal UI is (`TerminalDialogView`) -- returning it. Doesn't
+    /// assume which window: `terminate()`/`reviewWindows` walk
+    /// `NSApplication.shared.windows`, whose front-to-back order need not
+    /// match the order these helper windows were created in.
+    private func waitForQuestion(timeout: TimeInterval = 3) async -> TerminalDialogView? {
+        var found: TerminalDialogView?
         _ = await eventually(timeout: timeout) {
-            found = windows.first { $0.attachedSheet != nil }
+            found = NSApplication.shared.windows.lazy.compactMap { TerminalDialogView.pending(in: $0) }.first
             return found != nil
         }
         return found
@@ -136,28 +135,34 @@ struct AppDelegateQuitConfirmationTests {
             .allSatisfy { busy in controllers.contains { $0 === busy } }
     }
 
-    @Test func terminatingProcessesQuitsAndCancellingStays() {
+    @Test func terminatingProcessesQuitsAndCancellingStays() async throws {
         _ = NSApplication.shared
         let delegate = AppDelegate()
         let controllers = busyWindows(2, app: delegate.tako)
         defer { close(controllers) }
         #expect(controllers.allSatisfy { !$0.windowCanBeClosedWithoutConfirmation() })
+        var replied: Bool?
+        delegate.replyToTermination = { replied = $0 }
+        guard onlyTheseAreBusy(controllers) else { return }
 
-        var message: String?
-        delegate.runModalAlert = { alert in
-            message = alert.messageText
-            return .alertSecondButtonReturn // Terminate Processes
-        }
-        #expect(delegate.terminate() == .terminateNow)
-        #expect(message?.contains("2 windows") == true)
+        #expect(delegate.terminate() == .terminateLater)
+        let question = try #require(await waitForQuestion())
+        guard case .string(let text)? = question.summary["text"] else { Issue.record("no text"); return }
+        #expect(text.contains("2 windows"))
+        #expect(question.press("Terminate Processes"))
+        #expect(await eventually { replied != nil })
+        #expect(replied == true)
 
-        delegate.runModalAlert = { _ in .alertThirdButtonReturn } // Cancel
-        #expect(delegate.terminate() == .terminateCancel)
+        replied = nil
+        #expect(delegate.terminate() == .terminateLater)
+        #expect(try #require(await waitForQuestion()).press("Cancel"))
+        #expect(await eventually { replied != nil })
+        #expect(replied == false)
     }
 
-    /// A single busy window skips the "N windows" alert entirely and goes
-    /// straight to that one controller's own confirmation sheet.
-    @Test func terminatingASingleBusyWindowShowsItsOwnSheetAndReplies() async throws {
+    /// A single busy window skips the "N windows" question and goes straight
+    /// to that one controller's own confirmation.
+    @Test func terminatingASingleBusyWindowShowsItsOwnQuestionAndReplies() async throws {
         _ = NSApplication.shared
         let delegate = AppDelegate()
         let controllers = busyWindows(1, app: delegate.tako)
@@ -169,9 +174,8 @@ struct AppDelegateQuitConfirmationTests {
         guard onlyTheseAreBusy(controllers) else { return }
         #expect(delegate.terminate() == .terminateLater)
 
-        #expect(await eventually { window.attachedSheet != nil })
-        let sheet = try #require(window.attachedSheet)
-        window.endSheet(sheet, returnCode: .alertFirstButtonReturn) // Terminate
+        #expect(await eventually { TerminalDialogView.pending(in: window) != nil })
+        #expect(try #require(TerminalDialogView.pending(in: window)).press("Terminate"))
 
         #expect(await eventually { replied != nil })
         #expect(replied == true)
@@ -189,36 +193,32 @@ struct AppDelegateQuitConfirmationTests {
         guard onlyTheseAreBusy(controllers) else { return }
         #expect(delegate.terminate() == .terminateLater)
 
-        #expect(await eventually { window.attachedSheet != nil })
-        let sheet = try #require(window.attachedSheet)
-        window.endSheet(sheet, returnCode: .alertSecondButtonReturn) // Cancel
+        #expect(await eventually { TerminalDialogView.pending(in: window) != nil })
+        #expect(try #require(TerminalDialogView.pending(in: window)).press("Cancel"))
 
         #expect(await eventually { replied != nil })
         #expect(replied == false)
     }
 
-    /// Choosing "Review Windows..." on the multi-window alert walks each
-    /// busy controller's own confirmation in turn, closing every one that
-    /// confirms, then replies true once they've all been handled.
+    /// Choosing "Review Windows…" walks each busy controller's own
+    /// confirmation in turn, closing every one that confirms, then replies
+    /// true once they've all been handled.
     @Test func reviewingWindowsClosesEachConfirmedWindowInTurn() async throws {
         _ = NSApplication.shared
         let delegate = AppDelegate()
         let controllers = busyWindows(2, app: delegate.tako)
         defer { close(controllers) }
-        let windows = controllers.compactMap { $0.window }
-        #expect(windows.count == 2)
 
-        delegate.runModalAlert = { _ in .alertFirstButtonReturn } // Review Windows...
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
         guard onlyTheseAreBusy(controllers) else { return }
         #expect(delegate.terminate() == .terminateLater)
+        #expect(try #require(await waitForQuestion()).press("Review Windows…"))
 
-        var remaining = windows
-        while replied == nil, let window = await waitForAnySheet(among: remaining) {
-            let sheet = try #require(window.attachedSheet)
-            window.endSheet(sheet, returnCode: .alertFirstButtonReturn) // Terminate
-            remaining.removeAll { $0 === window }
+        var answered = 0
+        while replied == nil, answered < 4, let question = await waitForQuestion() {
+            #expect(question.press("Terminate"))
+            answered += 1
         }
 
         #expect(await eventually { replied != nil })
@@ -232,20 +232,16 @@ struct AppDelegateQuitConfirmationTests {
         let delegate = AppDelegate()
         let controllers = busyWindows(2, app: delegate.tako)
         defer { close(controllers) }
-        let windows = controllers.compactMap { $0.window }
-        #expect(windows.count == 2)
 
-        delegate.runModalAlert = { _ in .alertFirstButtonReturn } // Review Windows...
         var replied: Bool?
         delegate.replyToTermination = { replied = $0 }
         guard onlyTheseAreBusy(controllers) else { return }
         #expect(delegate.terminate() == .terminateLater)
-
-        let window = try #require(await waitForAnySheet(among: windows))
-        let sheet = try #require(window.attachedSheet)
-        window.endSheet(sheet, returnCode: .alertSecondButtonReturn) // Cancel
+        #expect(try #require(await waitForQuestion()).press("Review Windows…"))
+        #expect(try #require(await waitForQuestion()).press("Cancel"))
 
         #expect(await eventually { replied != nil })
         #expect(replied == false)
+        #expect(controllers.allSatisfy { $0.window?.isVisible == true })
     }
 }

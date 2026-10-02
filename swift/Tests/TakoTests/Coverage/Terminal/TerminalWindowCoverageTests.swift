@@ -333,19 +333,23 @@ struct TerminalWindowCoverageTests {
         #expect(!window.beginInlineTabTitleEdit(for: window))
     }
 
-    @Test func renameTabFromContextMenuFallsBackToPromptingWithoutATabGroup() {
-        withAppDelegate { _ in
-            let (controller, window) = TerminalTestSupport.loaded()
-            defer {
-                if let sheet = window.attachedSheet { window.endSheet(sheet) }
-                TerminalTestSupport.tearDown(controller, window)
-            }
-            window.makeKeyAndOrderFront(nil)
-            let item = NSMenuItem(title: "Rename Tab...", action: nil, keyEquivalent: "")
-            window.perform(NSSelectorFromString("renameTabFromContextMenu:"), with: item)
-            TerminalTestSupport.waitUntil(timeout: 1) { window.attachedSheet != nil }
-            #expect(window.attachedSheet != nil)
+    @Test func renameTabFromContextMenuFallsBackToPromptingWithoutATabGroup() async {
+        let appDelegate = AppDelegate()
+        let originalDelegate = NSApplication.shared.delegate
+        NSApplication.shared.delegate = appDelegate
+        defer { NSApplication.shared.delegate = originalDelegate }
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer {
+            TerminalDialogView.pending(in: window)?.withdraw()
+            TerminalTestSupport.tearDown(controller, window)
         }
+        if window.contentView == nil { window.contentView = NSView(frame: window.frame) }
+        window.makeKeyAndOrderFront(nil)
+        let item = NSMenuItem(title: "Rename Tab...", action: nil, keyEquivalent: "")
+        window.perform(NSSelectorFromString("renameTabFromContextMenu:"), with: item)
+        // Asked in the window, as the terminal UI draws it.
+        for _ in 0..<200 where TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window)?.summary["title"] == .string("Rename Tab"))
     }
 
     @Test func configureTabContextMenuIfNeededBuildsTheTabModifierSectionForARealTabContextMenu() {

@@ -187,7 +187,10 @@ class AppDelegate: NSObject,
             LayoutRecorder.begin(
                 bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
                 enabled: tako.config.windowSaveState != "never"
-                    && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }),
+                    && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") })
+                    // A test host's delegates are not the app: never the
+                    // user's journal, read or written.
+                    && NSClassFromString("XCTestCase") == nil,
                 // As AppKit would decide: the setting, else macOS's "Close
                 // windows when quitting an application" (unset: it closes).
                 keepsWindows: tako.config.windowSaveState == "always"
@@ -1399,6 +1402,27 @@ extension AppDelegate {
                 }
             }
 
+            return .terminateLater
+        } else if let window = MainActor.assumeIsolated({
+            AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+        }) {
+            // Asked in a terminal window, drawn as the terminal UI is; the
+            // alert below only when no terminal window is there to ask in.
+            let count = controllersNeedConfirmation.count
+            Task { @MainActor in
+                let answer = await TerminalDialogView.choose(
+                    in: window, title: "Quit Tako?",
+                    lines: TUIText.plain("\(count) windows have running processes. Review them one by one, or end them all and quit.", width: 52),
+                    choices: [.init(title: "Cancel", kind: .normal),
+                              .init(title: "Review Windows…", kind: .normal),
+                              .init(title: "Terminate Processes", kind: .destructive)],
+                    selected: 1, cancelIndex: 0, theme: self.tako.config.theme)
+                switch answer {
+                case 1: self.reviewWindows(controllersNeedConfirmation)
+                case 2: await self.replyToTermination(true)
+                default: await self.replyToTermination(false)
+                }
+            }
             return .terminateLater
         } else {
             let alert = NSAlert()
