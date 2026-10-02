@@ -120,6 +120,17 @@ TakoCore follows semantic versioning from 1.0. Until then (0.x):
 - A **patch** release (0.1.x) does not remove or change the meaning of
   anything public in the Swift package, the C headers or the crate. It may
   add.
+- **The generated engine types** (`TakoCore`, `Ffi*` in the Swift package)
+  follow the engine and, until 1.0, may change in a way that needs a source
+  change even in a patch release -- a new field in a record, a value on an
+  enum case. Each such change is listed in the release notes with the
+  one-line edit it needs. The views (`TakoTerminalNSView`,
+  `TakoTerminalView`) and their delegates follow the patch rule above.
+
+  0.1.4 is the first such release: `FfiEvent.commandStart` carries
+  `id: UInt64?` (match it as `.commandStart` or `.commandStart(let id)`;
+  construct it as `.commandStart(id: nil)`), and `FfiSearchHit` has a new
+  `command: FfiCommandInfo?` (pass `command: nil` where you build one).
 - A **minor** release (0.x.0) may change public API. Every change is listed
   in the release notes with what to do instead.
 - **The C ABI is additive.** An exported C function keeps its signature and
