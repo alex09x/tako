@@ -109,6 +109,44 @@ enum ControlCommands {
                 return .ok(version())
             case "tree":
                 return .ok(tree(all, active: activePane(all)))
+            case "send", "type":
+                let surface = try target(request, all)
+                let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
+                try ControlInput.send(surface, text: try ControlInput.text(request.args), enter: enter)
+                return .ok(["id": .string(surface.id.uuidString.lowercased())])
+            case "key":
+                let surface = try target(request, all)
+                try ControlInput.key(surface, chord: try ControlInput.text(request.args, "key"))
+                return .ok(["id": .string(surface.id.uuidString.lowercased())])
+            case "tab-new":
+                let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args)
+                return .ok(["id": .string(pane.id.uuidString.lowercased())])
+            case "split":
+                let pane = try ControlLayout.split(try target(request, all), args: request.args)
+                return .ok(["id": .string(pane.id.uuidString.lowercased())])
+            case "focus":
+                let surface = try target(request, all)
+                ControlLayout.focus(surface)
+                return .ok(["id": .string(surface.id.uuidString.lowercased())])
+            case "title":
+                let surface = try target(request, all)
+                try ControlLayout.title(surface, try ControlInput.text(request.args, "title"))
+                return .ok(["id": .string(surface.id.uuidString.lowercased())])
+            case "close":
+                let surface = try target(request, all)
+                let state = try ControlLayout.close(surface, all: panes)
+                return .ok(["id": .string(surface.id.uuidString.lowercased()), "state": .string(state)])
+            case "text":
+                let surface = try target(request, all)
+                var lines: Int?
+                switch request.args["lines"] {
+                case nil, .null?: lines = nil
+                case .number(let n)? where n >= 0 && n == n.rounded(): lines = Int(n)
+                default: throw ControlError(.invalid, "\"lines\" is not a whole number")
+                }
+                var result = ControlInput.read(surface, lines: lines)
+                result["id"] = .string(surface.id.uuidString.lowercased())
+                return .ok(result)
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")
             }
@@ -117,6 +155,16 @@ enum ControlCommands {
         } catch {
             return .failure(ControlError(.internalError, "\(error)"))
         }
+    }
+
+    /// The one pane a request means, decided now -- `active` included.
+    static func target(_ request: ControlRequest, _ all: [Pane]) throws -> Tako.SurfaceView {
+        let id = try ControlTarget.from(request.args, requestFrom: request.from)
+            .resolve(panes: all.map(\.surface.id), requestFrom: request.from, active: activePane(all))
+        guard let pane = all.first(where: { $0.surface.id == id }) else {
+            throw ControlError(.notFound, "no pane \(id.uuidString.lowercased())")
+        }
+        return pane.surface
     }
 
     static func version() -> [String: JSON] {

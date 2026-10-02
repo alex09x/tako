@@ -20,6 +20,15 @@ usage: takoctl [--json] <command> [options]
 commands:
   version                 the running app and its protocol version
   tree                    windows, tabs and panes, with their directories
+  send TEXT               type TEXT into the pane and press Enter (--no-enter: don't)
+  type TEXT               type TEXT into the pane, no Enter
+  key CHORD               press a key: enter, esc, up, f5, ctrl+c, alt+left, ...
+  text                    print the pane's text (--lines N: the last N lines)
+  tab-new                 a new tab in the pane's window (--cwd DIR, --no-select); prints its pane id
+  split DIRECTION         split the pane: right, left, down or up (--cwd DIR); prints the new pane id
+  focus                   bring the pane forward and give it the keyboard
+  title TEXT              the tab's title (empty restores the program's own)
+  close                   close the pane, asking first when closing by hand would
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -42,6 +51,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let mut json = false;
     let mut socket = None;
     let mut bundle_id = std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
+    let mut positional: Vec<String> = Vec::new();
     let mut it = argv.iter();
     while let Some(arg) = it.next() {
         let mut value = |name: &str| {
@@ -54,15 +64,44 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--socket" => socket = Some(value("--socket")?),
             "--bundle-id" => bundle_id = value("--bundle-id")?,
+            "--no-enter" => {
+                args.insert("enter".into(), Value::Bool(false));
+            }
+            "--lines" => {
+                let n: u64 = value("--lines")?.parse().map_err(|_| "--lines needs a number".to_string())?;
+                args.insert("lines".into(), Value::from(n));
+            }
+            "--" => positional.extend(it.by_ref().cloned()),
+            "--cwd" => {
+                args.insert("cwd".into(), Value::String(value("--cwd")?));
+            }
+            "--no-select" => {
+                args.insert("select".into(), Value::Bool(false));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
-            a => return Err(format!("unexpected argument {a}")),
+            a => positional.push(a.to_string()),
         }
     }
     let cmd = cmd.ok_or_else(String::new)?;
-    if !["version", "tree"].contains(&cmd.as_str()) {
-        return Err(format!("unknown command {cmd}"));
+    // What each command takes besides options: one text argument or none.
+    let wants = match cmd.as_str() {
+        "version" | "tree" | "text" | "tab-new" | "focus" | "close" => None,
+        "split" => Some("direction"),
+        "title" => Some("title"),
+        "send" | "type" => Some("text"),
+        "key" => Some("key"),
+        _ => return Err(format!("unknown command {cmd}")),
+    };
+    match (wants, positional.len()) {
+        (None, 0) => {}
+        (None, _) => return Err(format!("unexpected argument {}", positional[0])),
+        (Some(name), 1) => {
+            args.insert(name.into(), Value::String(positional.remove(0)));
+        }
+        (Some(name), 0) => return Err(format!("{cmd} needs a {name}")),
+        (Some(_), _) => return Err(format!("{cmd} takes one argument; quote it")),
     }
     Ok(Options { cmd, args, json, socket, bundle_id })
 }
@@ -106,6 +145,14 @@ fn render(cmd: &str, result: &Value) -> String {
             }
             out
         }
+        "text" => {
+            let mut out = result["text"].as_str().unwrap_or("").to_string();
+            out.push('\n');
+            out
+        }
+        "send" | "type" | "key" | "focus" | "title" => String::new(),
+        "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
+        "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
         _ => format!("{result}\n"),
     }
 }
@@ -115,10 +162,13 @@ fn main() -> ExitCode {
     let opts = match parse(&argv) {
         Ok(o) => o,
         Err(e) => {
-            if !e.is_empty() {
-                eprintln!("takoctl: {e}");
+            // Asked for help, or nothing at all: the usage. A mistake: just
+            // the mistake.
+            if e.is_empty() {
+                eprint!("{USAGE}");
+            } else {
+                eprintln!("takoctl: {e} (takoctl --help)");
             }
-            eprint!("{USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -184,6 +234,23 @@ mod tests {
         // Outside a pane there is no "from".
         assert!(request(&opts, None).get("from").is_none());
         assert!(request(&opts, Some(String::new())).get("from").is_none());
+    }
+
+    #[test]
+    fn text_commands_take_exactly_one_argument() {
+        let opts = parse(&args(&["send", "ls -la", "--target", "ab", "--no-enter"])).unwrap();
+        assert_eq!(request(&opts, None),
+            json!({"cmd": "send", "args": {"text": "ls -la", "target": "ab", "enter": false}}));
+        let opts = parse(&args(&["key", "ctrl+c"])).unwrap();
+        assert_eq!(opts.args["key"], "ctrl+c");
+        let opts = parse(&args(&["type", "--", "--not-an-option"])).unwrap();
+        assert_eq!(opts.args["text"], "--not-an-option");
+        let opts = parse(&args(&["text", "--lines", "3"])).unwrap();
+        assert_eq!(opts.args["lines"], 3);
+        assert!(parse(&args(&["send"])).is_err());
+        assert!(parse(&args(&["send", "a", "b"])).is_err());
+        assert!(parse(&args(&["text", "x"])).is_err());
+        assert!(parse(&args(&["text", "--lines", "many"])).is_err());
     }
 
     #[test]

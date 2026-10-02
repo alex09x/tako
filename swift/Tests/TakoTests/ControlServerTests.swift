@@ -376,3 +376,28 @@ struct ControlServerTests {
     }
 }
 
+
+@Suite
+@MainActor
+struct ControlInputTests {
+    @Test func keyChordsParse() throws {
+        let c = try ControlInput.keyEvent("ctrl+c")
+        #expect(c.key == .character && c.ctrl && c.text == "c" && c.physicalText == "c")
+        let t = try ControlInput.keyEvent("ctrl+shift+t")
+        #expect(t.ctrl && t.shift && t.text == "T" && t.unshiftedText == "t")
+        #expect(try ControlInput.keyEvent("enter").key == .enter)
+        #expect(try ControlInput.keyEvent("ESC").key == .escape)
+        let left = try ControlInput.keyEvent("alt+left")
+        #expect(left.key == .left && left.alt)
+        for bad in ["", "ctrl+", "hyper+c", "ctrl+cc", "f13", "ctrl+ "] {
+            #expect(throws: ControlError.self) { try ControlInput.keyEvent(bad) }
+        }
+    }
+
+    @Test func textArgumentsMustBeText() throws {
+        #expect(throws: ControlError.self) { try ControlInput.text([:]) }
+        #expect(throws: ControlError.self) { try ControlInput.text(["text": .number(1)]) }
+        #expect(throws: ControlError.self) { try ControlInput.text(["text": .string("a\u{0}b")]) }
+        #expect(try ControlInput.text(["text": .string("ls -la")]) == "ls -la")
+    }
+}
