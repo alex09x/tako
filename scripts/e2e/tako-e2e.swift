@@ -114,8 +114,11 @@ final class Driver {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         // -n: a new instance, never somebody's running Tako.
+        // The isolated persistence profile moves the session namespace.
+        var env = environment
+        if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
         open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
-            + environment.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
+            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
         try open.run()
         open.waitUntilExit()
         let deadline = Date().addingTimeInterval(15)
@@ -488,6 +491,48 @@ let scenarios: [Scenario] = [
             throw Failure("Return did not bring the keyboard to the tab with the match")
         }
     }),
+    ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
+        // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
+        d.quit()
+        let config = "session-persistence = true\n"
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid1")); env | grep -c ZMX_SESSION > \(d.path("zs"))")
+        let first = try d.file("pid1")
+        guard try d.file("zs").trimmingCharacters(in: .whitespacesAndNewlines) == "1" else {
+            throw Failure("the shell is not inside a session")
+        }
+        try d.quitNormally()
+        try d.launch(config: config)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        let second = try d.file("pid2")
+        // End the session so nothing is left running.
+        try d.run("exit")
+        guard first == second else { throw Failure("a new shell after relaunch: \(first) then \(second)") }
+    }),
+    ("persist-gone", "a session that ended while Tako was closed comes back as its saved screen and a new shell", { d in
+        d.quit()
+        let config = "session-persistence = true\n"
+        try d.launch(config: config)
+        let id = d.work.lastPathComponent
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid1")); printf 'gone-%s\\n' \(id)")
+        guard let first = try? d.file("pid1") else { throw Failure("no shell: [\(d.screenText().suffix(400))]") }
+        guard d.wait(for: { d.screenText().contains("gone-\(id)") }, timeout: 5) else { throw Failure("no marker") }
+        // A real save before quitting, so the snapshot holds the marker.
+        try d.quitNormally()
+        // End the shell behind Tako's back, the way a reboot would.
+        let shell = Int32(first.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard shell > 0, kill(shell, SIGKILL) == 0 else { throw Failure("could not end the shell \(first)") }
+        usleep(1_000_000)
+        try d.launch(config: config)
+        guard d.wait(for: { d.screenText().contains("gone-\(id)") }, timeout: 10) else {
+            throw Failure("the saved screen did not come back: [\(d.screenText().suffix(300))]")
+        }
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        let second = try d.file("pid2")
+        try d.run("exit")
+        guard first != second else { throw Failure("the same shell after it was killed?") }
+        guard !d.screenText().contains("[Tako]") else { throw Failure("an error was shown: \(d.screenText().suffix(300))") }
+    }),
     ("find-stale", "a match that changes, or a tab that closes, while it is being shown is reported where the user is", { d in
         // A long settle leaves time to change the target's output after it
         // has been brought forward and before the match is checked.
@@ -752,6 +797,9 @@ guard AXIsProcessTrusted() else {
     exit(1)
 }
 let wanted = Set(args.dropFirst())
+// Scenarios that need a build with the session runtime run only when named,
+// from scripts/e2e-persist.sh: never as part of the default set.
+let explicitOnly: Set<String> = ["persist-live", "persist-gone"]
 // A misspelt name must not pass as a run of nothing.
 let unknown = wanted.subtracting(scenarios.map(\.name))
 if !unknown.isEmpty {
@@ -760,7 +808,15 @@ if !unknown.isEmpty {
 }
 let previouslyFront = NSWorkspace.shared.frontmostApplication
 var failed = 0
-for scenario in scenarios where wanted.isEmpty || wanted.contains(scenario.name) {
+if !wanted.isDisjoint(with: explicitOnly) {
+    let helper = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Helpers/zmx").path
+    guard FileManager.default.isExecutableFile(atPath: helper),
+          ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] != nil else {
+        print("FAIL: persistence scenarios need scripts/e2e-persist.sh (an app with its session runtime and an isolated session home)")
+        exit(2)
+    }
+}
+for scenario in scenarios where (wanted.isEmpty && !explicitOnly.contains(scenario.name)) || wanted.contains(scenario.name) {
     // A fresh app per scenario: one that failed half way must not leave a
     // split, a zoom or a hung command behind for the next.
     do {

@@ -9,7 +9,9 @@ import hashlib, json, os, subprocess, sys, shutil, plistlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-BUILD = "target/macapp"
+# Overridable for a test-only copy (scripts/e2e-persist.sh): its own path and
+# bundle id, so its saved windows and Application Support are its own.
+BUILD = os.environ.get("TAKO_APP_DIR", "target/macapp")
 APP = os.path.join(BUILD, "Tako.app")
 # Shown in the About window. The full licence, with every copyright
 # notice it requires, ships in the bundle as Contents/Resources/LICENSE.
@@ -209,7 +211,7 @@ with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
     plistlib.dump({
         "CFBundleName": "Tako",
         "CFBundleDisplayName": "Tako",
-        "CFBundleIdentifier": "com.tako-core.terminal",
+        "CFBundleIdentifier": os.environ.get("TAKO_BUNDLE_ID", "com.tako-core.terminal"),
         "CFBundleExecutable": "Tako",
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": VERSION,

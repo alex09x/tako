@@ -836,6 +836,11 @@ extension Tako {
         /// nothing, leaves it on.
         var autoUpdateEnabled: Bool { rawValue("auto-update")?.lowercased() != "off" }
 
+        /// `session-persistence` (experimental, default false): each terminal's
+        /// shell runs in a session that outlives Tako, and a relaunch
+        /// reattaches to it. Needs a Tako built with its session runtime.
+        var sessionPersistence: Bool { rawBool("session-persistence", default: false) }
+
         /// `window-save-content` (default true): each tab's screen and
         /// scrollback are saved, so a relaunch shows them again. `false`
         /// writes nothing and removes what was saved.

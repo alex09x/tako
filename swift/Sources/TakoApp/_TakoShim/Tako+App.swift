@@ -616,6 +616,11 @@ extension Tako {
         /// What the surface showed before a relaunch, painted before its new
         /// shell starts. Set only when a window is restored.
         var restoredSnapshot: SessionSnapshot?
+        /// Set when the surface is being restored with a window, so a
+        /// persistent session is checked rather than created.
+        var isRestored = false
+        /// The saved surface said its shell lived in a persistent session.
+        var hadPersistentSession = false
 
         public init() {}
 
@@ -763,14 +768,24 @@ enum TakoPTYEnvironment {
 final class PTY {
     let master: Int32
     let child: pid_t
-    private(set) var alive = true
+    /// False once the process was told to end or its terminal reached EOF.
+    /// Read from any thread.
+    var alive: Bool { aliveLock.withLock { _alive } }
+    private var _alive = true
+    private let aliveLock = NSLock()
+    private func markEnded() { aliveLock.withLock { _alive = false } }
 
     /// The directory the child process actually started in -- what
     /// `working-directory`/`window-inherit-working-directory` resolved to,
     /// or the home directory when nothing supplied one.
     let startedInDirectory: String
 
-    init?(cols: UInt16, rows: UInt16, workingDirectory: String? = nil, config: Tako.Config? = nil) {
+    /// `program` replaces the login shell (argv[0] is the executable): the
+    /// session runtime's client, when the terminal's shell lives in a
+    /// persistent session. `environment` is added, and `removing` taken out,
+    /// on top of what every shell gets.
+    init?(cols: UInt16, rows: UInt16, workingDirectory: String? = nil, config: Tako.Config? = nil,
+          program: [String]? = nil, environment: [String: String] = [:], removing: [String] = []) {
         // Everything the child needs -- argv, envp and the working directory
         // -- is built as C strings here, in the parent, before forkpty: after
         // it, only async-signal-safe calls are legal in the child, which
@@ -786,6 +801,8 @@ final class PTY {
         envMap["COLORTERM"] = "truecolor"
         envMap["SHELL"] = shellPathString
         for (key, value) in extraEnv { envMap[key] = value }
+        for key in removing { envMap.removeValue(forKey: key) }
+        for (key, value) in environment { envMap[key] = value }
 
         // Plain C arrays, allocated here: passing a Swift array with `&` in
         // the child would go through Swift's array bridging, which is not
@@ -795,8 +812,9 @@ final class PTY {
         for (i, s) in envStrings.enumerated() { envp[i] = s }
         envp[envStrings.count] = nil
 
-        let shellPath = strdup(shellPathString)
-        let argvStrings: [UnsafeMutablePointer<CChar>?] = [shellPath, strdup("-l")]
+        let shellPath = strdup(program?.first ?? shellPathString)
+        let argvStrings: [UnsafeMutablePointer<CChar>?] = program.map { $0.map { strdup($0) } }
+            ?? [strdup(shellPathString), strdup("-l")]
         let argv = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: argvStrings.count + 1)
         for (i, s) in argvStrings.enumerated() { argv[i] = s }
         argv[argvStrings.count] = nil
@@ -814,6 +832,7 @@ final class PTY {
         if pid < 0 {
             for s in envStrings { free(s) }
             for s in argvStrings { free(s) }
+            free(shellPath)
             envp.deallocate()
             argv.deallocate()
             free(childDir)
@@ -839,6 +858,7 @@ final class PTY {
         }
         for s in envStrings { free(s) }
         for s in argvStrings { free(s) }
+        free(shellPath)
         envp.deallocate()
         argv.deallocate()
         free(childDir)
@@ -1013,7 +1033,12 @@ final class PTY {
                     return readChunk()
                 },
                 onData: onData,
-                onExit: onExit,
+                onExit: { [weak self] in
+                    // Recorded before anyone is told, so whoever asks next
+                    // sees it ended.
+                    self?.markEnded()
+                    onExit()
+                },
                 targetQueue: targetQueue
             )
         }
@@ -1025,7 +1050,7 @@ final class PTY {
     private var masterClosed = false
 
     func terminate() {
-        alive = false
+        markEnded()
         guard !masterClosed else { return }
         masterClosed = true
         kill(child, SIGHUP)
@@ -1358,7 +1383,10 @@ extension Tako {
 
         @Published public private(set) var derivedConfig: DerivedConfig
 
-        public private(set) var pty: PTY?
+        public internal(set) var pty: PTY?
+        /// The persistent session this terminal's shell lives in, when
+        /// session-persistence is on.
+        var persistence: SurfaceSession?
 
         private let parserQueue: DispatchQueue
         private let ptyRedrawLock = NSLock()
@@ -1478,7 +1506,7 @@ extension Tako {
         /// travels is its identity, the directory its shell last reported
         /// (OSC 7), and -- in a file of its own, see `SessionSnapshotStore`
         /// -- what was on its screen.
-        private enum CodingKeys: String, CodingKey { case id, pwd }
+        private enum CodingKeys: String, CodingKey { case id, pwd, persistent }
 
         public required convenience init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1487,6 +1515,8 @@ extension Tako {
             let app = (NSApp?.delegate as? AppDelegate)?.tako
             let uuid = savedID.flatMap(UUID.init(uuidString:))
             var base = Tako.SurfaceConfiguration()
+            base.isRestored = uuid != nil
+            base.hadPersistentSession = (try? container.decode(Bool.self, forKey: .persistent)) ?? false
             base.workingDirectory = Self.restoredWorkingDirectory(
                 savedPwd, fallback: app.map { Tako.resolvedWorkingDirectory($0.config) })
             if let uuid, app?.config.windowSaveContent ?? true {
@@ -1500,6 +1530,7 @@ extension Tako {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(String(describing: id), forKey: .id)
             try container.encodeIfPresent(pwd, forKey: .pwd)
+            if hadPersistentSession { try container.encode(true, forKey: .persistent) }
         }
 
         /// Where a restored surface's new shell starts: the directory its old
@@ -1513,6 +1544,15 @@ extension Tako {
                 return saved
             }
             return fallback ?? NSHomeDirectory()
+        }
+
+        /// The process whose output this terminal shows, readable from the
+        /// parser queue.
+        private var _currentProcess: PTY?
+        private let processLock = NSLock()
+        var currentProcess: PTY? {
+            get { processLock.withLock { _currentProcess } }
+            set { processLock.withLock { _currentProcess = newValue } }
         }
 
         /// When the running command started, from its shell-integration
@@ -1760,7 +1800,9 @@ extension Tako {
             let inherited = baseConfig?.workingDirectory
                 ?? (inheritWorkingDirectory ? Tako.focusedWorkingDirectory : nil)
                 ?? app.map { Tako.resolvedWorkingDirectory($0.config) }
-            setupCoreAndPty(workingDir: inherited, restoring: baseConfig?.restoredSnapshot)
+            setupCoreAndPty(workingDir: inherited, restoring: baseConfig?.restoredSnapshot,
+                            restored: baseConfig?.isRestored ?? false,
+                            hadPersistentSession: baseConfig?.hadPersistentSession ?? false)
             if let initial = baseConfig?.initialInput, !initial.isEmpty {
                 write(initial)
             }
@@ -1892,18 +1934,14 @@ extension Tako {
             }
         }
 
-        private func setupCoreAndPty(workingDir: String?, restoring snapshot: SessionSnapshot? = nil) {
+        private func setupCoreAndPty(workingDir: String?, restoring snapshot: SessionSnapshot? = nil,
+                                     restored: Bool = false, hadPersistentSession: Bool = false) {
             // A restored tab shows what it showed before, and only then does
             // its new shell start, so nothing the shell prints is overwritten.
-            if let snapshot, (try? core.checkpointImport(blob: snapshot.checkpoint)) != nil {
-                // Painted at the saved size; the first layout resizes it to the
-                // window like any other grid. Resizing here, before there is a
-                // frame, would squeeze the saved screen into a 1x1 grid.
-                if core.modes().alternateScreen {
-                    core.feed(bytes: Data(SessionSnapshot.leaveAlternateScreen))
-                }
-                core.feed(bytes: Data(SessionSnapshot.separator(
-                    savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+            // With session-persistence the session decides: a live one paints
+            // its own screen and the snapshot is shown only if it is gone.
+            if !persistenceEnabled, let snapshot {
+                showSnapshot(snapshot)
             }
 
             // Default: when the child shell exits on its own (`exit`, Ctrl-D,
@@ -1952,9 +1990,44 @@ extension Tako {
                 Tako.TabBarController.refreshAll()
             }
 
-            pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config)
+            if persistenceEnabled {
+                launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: restored,
+                                        hadPersistentSession: hadPersistentSession)
+            } else {
+                startProcess(workingDir: workingDir)
+            }
+
+            // Cursor blinking is the inherited surface's, driven by its own
+            // display link and suppressed inside a Synchronized Output frame.
+        }
+
+        /// Starts the terminal's process and the loop that reads it: the
+        /// login shell, or `program` (the session runtime's client when the
+        /// shell lives in a persistent session). May run again for the same
+        /// surface, when a reattach found no session and a new one starts.
+        func startProcess(workingDir: String?, program: [String]? = nil,
+                          environment: [String: String] = [:], removing: [String] = [],
+                          sessionPreamble: String? = nil) {
+            // The session runtime's client opens with its own preamble (see
+            // SessionClientPreamble); with `sessionPreamble` set to the
+            // session's name it is taken off the start of the output.
+            var preamble = sessionPreamble.map(SessionClientPreamble.init(sessionName:))
+            pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config,
+                      program: program, environment: environment, removing: removing)
+            let started = pty
+            currentProcess = started
             pty?.readLoop(targetQueue: parserQueue, onData: { [weak self] data in
                 guard let self else { return }
+                // Output still draining from a process that has been
+                // replaced (a reattach check's client) is not this
+                // terminal's any more.
+                guard self.currentProcess === started else { return }
+                var data = data
+                if preamble != nil {
+                    data = preamble!.consume(data)
+                    if preamble!.done { preamble = nil }
+                    if data.isEmpty { return }
+                }
                 TakoLog.feed.debug("pty \(data.count)B")
                 if data.count <= 200 {
                     let hex = data.map { String(format: "%02x", $0) }.joined(separator: " ")
@@ -1973,7 +2046,10 @@ extension Tako {
                     events: outcome.events
                 ) {
                     DispatchQueue.main.sync {
-                        if !outcome.output.isEmpty { self.pty?.write(outcome.output) }
+                        // Replies go to the process that asked; effects only
+                        // while it is still this terminal's process.
+                        if !outcome.output.isEmpty { started?.write(outcome.output) }
+                        guard self.currentProcess === started else { return }
                         for event in outcome.events {
                             switch event {
                             case .bell:
@@ -2037,13 +2113,50 @@ extension Tako {
             }, onExit: { [weak self] in
                 DispatchQueue.main.sync {
                     guard let self else { return }
-                    self.onExit?(self)
+                    self.childDidExit(started)
                 }
             })
-
-            // Cursor blinking is the inherited surface's, driven by its own
-            // display link and suppressed inside a Synchronized Output frame.
         }
+
+        /// Paints a saved screen, then the line that says where it ends.
+        func showSnapshot(_ snapshot: SessionSnapshot) {
+            guard (try? core.checkpointImport(blob: snapshot.checkpoint)) != nil else { return }
+            // Painted at the saved size; the first layout resizes it to the
+            // window like any other grid. Resizing here, before there is a
+            // frame, would squeeze the saved screen into a 1x1 grid.
+            if core.modes().alternateScreen {
+                core.feed(bytes: Data(SessionSnapshot.leaveAlternateScreen))
+            }
+            core.feed(bytes: Data(SessionSnapshot.separator(
+                savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+        }
+
+        /// The process ended. A persistent session's client may end on
+        /// purpose (a reattach check); only otherwise is the surface closed.
+        private func childDidExit(_ process: PTY?) {
+            // Only the current process decides: one replaced since (a
+            // reattach check, a session that started anew) is history.
+            guard let process, process === pty else { return }
+            if persistence?.clientExited(self) == true { return }
+            onExit?(self)
+        }
+
+        /// The app this surface belongs to, for the session code.
+        var app: Tako.App? { owningApp }
+
+        /// Runs `work` on the queue that feeds the engine, after any output
+        /// already being parsed: what replaces the screen must not interleave
+        /// with the last bytes of the process it replaces.
+        func afterPendingOutput(_ work: @escaping () -> Void) {
+            parserQueue.async(execute: work)
+        }
+
+        /// Encoded with the surface: whether its shell lived in a persistent
+        /// session, so a restored terminal with no record of one is known to
+        /// have lost it rather than never had it.
+        /// Set as soon as the terminal's shell is meant to live in a session
+        /// -- and kept when reaching it fails, so the saved window still says so.
+        var hadPersistentSession = false
 
         public func focusDidChange(_ focused: Bool) {
             self.focused = focused
