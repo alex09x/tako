@@ -180,6 +180,15 @@ class AppDelegate: NSObject,
         // is what a test driving the shipped app found.
         tako = Tako.App(configPath: ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"])
         super.init()
+        // Decided here, as the delegate is created -- before NSApplication
+        // finishes launching and before any window is restored: whether
+        // windows come from AppKit or, after a crash, from the journal.
+        MainActor.assumeIsolated {
+            LayoutRecorder.begin(
+                bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
+                enabled: tako.config.windowSaveState != "never"
+                    && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }))
+        }
 
         tako.delegate = self
     }
@@ -189,12 +198,6 @@ class AppDelegate: NSObject,
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before any window is restored: each terminal's shell is told where
         // the control socket is.
-        // Before AppKit restores anything: decides whether windows come from
-        // AppKit or, after a run that did not end cleanly, from the journal.
-        LayoutRecorder.begin(
-            bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
-            enabled: tako.config.windowSaveState != "never"
-                && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }))
         ControlCommands.apply(mode: tako.config.remoteControl,
                               bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal")
         #if DEBUG

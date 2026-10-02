@@ -170,6 +170,7 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             completionHandler(nil, nil)
             return
         }
+        LayoutRecorder.appKitRestoreCalls += 1
 
         // Decode the state. If we can't decode the state, then we can't restore.
         guard let state = TerminalRestorableState(coder: state) else {

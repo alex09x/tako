@@ -722,7 +722,10 @@ let scenarios: [Scenario] = [
         guard try d.file("tree").contains(b) else { throw Failure("a late Return closed \(b)") }
     }),
     ("crash-layout", "tabs and splits made shortly before a crash come back after it", { d in
+        // What this saves must not reach the scenarios after it.
+        defer { d.quit(); forgetLayout(d) }
         d.quit()
+        forgetLayout(d)
         let config = "window-save-state = always\n"
         try d.launch(config: config)
         let out = d.work.path
@@ -753,6 +756,48 @@ let scenarios: [Scenario] = [
         guard after.tabs >= before.tabs, after.panes >= before.panes else {
             throw Failure("after the crash: \(after.tabs) tabs, \(after.panes) panes; before: \(before.tabs), \(before.panes)")
         }
+    }),
+    ("crash-again", "a crash while restoring after a crash still restores the layout", { d in
+        // What this saves must not reach the scenarios after it.
+        defer { d.quit(); forgetLayout(d) }
+        try crashLayoutSetup(d)
+        d.quit()
+        try d.launch(config: "window-save-state = always\n")
+        d.quit()                          // a second crash, straight after the restore began
+        usleep(500_000)
+        try d.launch(config: "window-save-state = always\n")
+        usleep(1_500_000)
+        let after = try crashLayoutCount(d, "after")
+        guard after.tabs >= 2, after.panes >= 3 else { throw Failure("after two crashes: \(after)") }
+    }),
+    ("crash-corrupt", "a damaged journal restores nothing from itself and duplicates nothing", { d in
+        // What this saves must not reach the scenarios after it.
+        defer { d.quit(); forgetLayout(d) }
+        try crashLayoutSetup(d)
+        d.quit()
+        let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
+        let layout = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(bundle).appendingPathComponent("layout")
+        // Every journal generation damaged: whichever launch.json names.
+        for name in try FileManager.default.contentsOfDirectory(atPath: layout.path) where name.hasPrefix("journal-") {
+            try Data("{\"version\":1,\"generation\":9,\"windows\":[{\"tabs\":".utf8)
+                .write(to: layout.appendingPathComponent(name))
+        }
+        try d.launch(config: "window-save-state = always\n")
+        usleep(1_500_000)
+        let after = try crashLayoutCount(d, "after")
+        // One fresh window: none of the journal's, and no second copy from AppKit.
+        guard after.windows == 1, after.tabs == 1, after.panes == 1 else { throw Failure("after a damaged journal: \(after)") }
+    }),
+    ("quit-layout", "a normal quit restores the layout once, without duplicates", { d in
+        // What this saves must not reach the scenarios after it.
+        defer { d.quit(); forgetLayout(d) }
+        try crashLayoutSetup(d)
+        try d.quitNormally()
+        try d.launch(config: "window-save-state = always\n")
+        usleep(1_500_000)
+        let after = try crashLayoutCount(d, "after")
+        guard after.tabs == 2, after.panes == 3 else { throw Failure("after a normal quit: \(after)") }
     }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
@@ -1223,3 +1268,41 @@ if let previouslyFront, !previouslyFront.isTerminated, let bundle = previouslyFr
     previouslyFront.activate()
 }
 exit(failed == 0 ? 0 : 1)
+
+/// Two tabs, three panes, made through takoctl, then left long enough to be
+/// recorded.
+func crashLayoutSetup(_ d: Driver) throws {
+    d.quit()
+    forgetLayout(d)
+    try d.launch(config: "window-save-state = always\n")
+    // Start from one window, whatever an earlier run left.
+    try d.run("takoctl tree --json > \(d.path("start"))")
+    let out = d.work.path
+    try """
+    takoctl split right > /dev/null || exit 1
+    takoctl tab-new --no-select > /dev/null || exit 1
+    echo done > \(out)/made
+    """.write(toFile: d.path("make.sh"), atomically: true, encoding: .utf8)
+    try d.run("sh \(d.path("make.sh"))")
+    _ = try d.file("made", timeout: 15)
+    usleep(2_000_000)
+}
+
+func crashLayoutCount(_ d: Driver, _ name: String) throws -> (windows: Int, tabs: Int, panes: Int) {
+    try d.run("takoctl tree --json > \(d.path(name))")
+    let json = try d.file(name)
+    guard let data = json.data(using: .utf8),
+          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else { return (0, 0, 0) }
+    let tabs = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
+    return (windows.count, tabs.count, tabs.reduce(0) { $0 + (($1["panes"] as? [Any])?.count ?? 0) })
+}
+
+/// Nothing saved from an earlier run: neither AppKit's state nor the journal.
+func forgetLayout(_ d: Driver) {
+    let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
+    let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+    try? FileManager.default.removeItem(at: library.appendingPathComponent("Saved Application State/\(bundle).savedState"))
+    try? FileManager.default.removeItem(at: library.appendingPathComponent("Application Support/\(bundle)/layout"))
+}
+

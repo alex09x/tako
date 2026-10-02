@@ -81,4 +81,16 @@ struct LayoutJournalTests {
         try Data("garbage".utf8).write(to: dir.appendingPathComponent("launch.json"))
         #expect(LayoutJournal.readLaunch(in: dir).state == .dirty)
     }
+
+    @Test func aJournalCountsOnlyAsTheGenerationTheLaunchRecordNames() {
+        let data = journal(tabs: [leaf])          // generation 3
+        #expect(LayoutJournal.check(data, expected: 3).0 == .valid)
+        if case .invalid = LayoutJournal.check(data, expected: 4).0 {} else { Issue.record("a newer record accepted an older file") }
+        if case .invalid = LayoutJournal.check(data, expected: 2).0 {} else { Issue.record("an older record accepted a newer file") }
+        #expect(LayoutJournal.check(nil, expected: 3).0 == .missing)
+        // And only a valid, matching journal ever makes the journal the source.
+        #expect(LayoutJournal.decide(previous: .dirty, journal: LayoutJournal.check(data, expected: 4).0) == .appKit)
+        #expect(LayoutJournal.decide(previous: .dirty, journal: LayoutJournal.check(data, expected: 3).0) == .journal)
+    }
 }
+

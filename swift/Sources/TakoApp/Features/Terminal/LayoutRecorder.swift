@@ -13,6 +13,11 @@ enum LayoutRecorder {
     private static var lastWritten: Data?
     private static var timer: Timer?
     private static let io = DispatchQueue(label: "tako.layout-journal")
+    /// The launch state as last written; every journal commit carries it.
+    private static var state: LayoutJournal.LaunchState = .dirty
+    /// How many windows AppKit's restoration was asked to rebuild this
+    /// launch -- zero whenever the journal is the source.
+    static var appKitRestoreCalls = 0
 
     /// How often the layout is checked for changes; a change is written
     /// within this, and only a change is written.
@@ -28,22 +33,15 @@ enum LayoutRecorder {
         }
         directory = dir
         let previous = LayoutJournal.readLaunch(in: dir)
-        let journalURL = dir.appendingPathComponent("journal.json")
-        let read: LayoutJournal.JournalRead
-        var journal: LayoutJournal.Journal?
-        if let data = try? Data(contentsOf: journalURL) {
-            switch LayoutJournal.read(data) {
-            case .success(let j): read = .valid; journal = j
-            case .failure(let e): read = .invalid(e.description)
-            }
-        } else {
-            read = .missing
-        }
+        let named = dir.appendingPathComponent(LayoutJournal.journalName(previous.journalGeneration))
+        let (read, journal) = LayoutJournal.check(try? Data(contentsOf: named),
+                                                  expected: previous.journalGeneration)
         source = LayoutJournal.decide(previous: previous.state, journal: read)
         if case .invalid(let why) = read, previous.state != .clean {
             AppDelegate.logger.error("layout journal unusable, AppKit restores instead: \(why, privacy: .public)")
         }
-        generation = max(previous.journalGeneration, journal?.generation ?? 0)
+        generation = previous.journalGeneration
+        state = previous.state
         if source == .journal {
             pending = journal
             // AppKit stays out of it entirely: a crash restore never mixes
@@ -51,10 +49,12 @@ enum LayoutRecorder {
             var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
             args["ApplePersistenceIgnoreState"] = true
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
+            state = .restoring
             write(.init(state: .restoring, journalGeneration: generation))
         } else {
+            state = .dirty
             write(.init(state: .dirty, journalGeneration: generation))
-            if previous.state == .firstRun || read == .missing {
+            if read != .valid {
                 // An explicit empty journal: from now on a dirty state with
                 // no journal is damage, not a first run.
                 commit(LayoutJournal.Journal(generation: generation, windows: []), sync: true)
@@ -69,7 +69,13 @@ enum LayoutRecorder {
         _ = dir
         if source == .journal, let journal = pending {
             restore(journal, app: app)
+            // AppKit is kept from restoring, not from saving: without this
+            // the next normal quit would save nothing and lose the layout.
+            var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            args.removeValue(forKey: "ApplePersistenceIgnoreState")
+            UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
             // Still not clean: a crash from here restores from the journal again.
+            state = .dirty
             write(.init(state: .dirty, journalGeneration: generation))
         }
         pending = nil
@@ -86,6 +92,7 @@ enum LayoutRecorder {
         timer = nil
         record(sync: true)
         io.sync {}
+        state = .clean
         write(.init(state: .clean, journalGeneration: generation))
     }
 
@@ -129,12 +136,20 @@ enum LayoutRecorder {
         next.generation = 0
         guard let body = try? LayoutJournal.encode(next), body != lastWritten else { return }
         lastWritten = body
+        let previousGeneration = generation
         generation += 1
         next.generation = generation
         guard let data = try? LayoutJournal.encode(next) else { return }
-        let url = dir.appendingPathComponent("journal.json")
+        let committed = generation
+        let launch = LayoutJournal.LaunchRecord(state: state, journalGeneration: committed)
         let work = {
-            do { try LayoutJournal.atomicWrite(data, to: url) } catch {
+            // The new generation's file whole first, then the record naming
+            // it, then the old file: every crash point names a whole file.
+            do {
+                try LayoutJournal.atomicWrite(data, to: dir.appendingPathComponent(LayoutJournal.journalName(committed)))
+                try LayoutJournal.writeLaunch(launch, in: dir)
+                unlink(dir.appendingPathComponent(LayoutJournal.journalName(previousGeneration)).path)
+            } catch {
                 AppDelegate.logger.error("layout journal write failed: \(String(describing: error), privacy: .public)")
             }
         }
@@ -172,11 +187,13 @@ enum LayoutRecorder {
                    let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }) {
                     controller.focusedSurface = view
                 }
+                // As undoing a closed window rebuilds its tabs: shown, then
+                // joined to the first, in order.
+                controller.showWindow(nil)
                 if let anchor {
-                    Tako.CustomTabGroup.insert(window, into: anchor, at: index, select: false)
+                    Tako.CustomTabGroup.join(window, to: anchor, select: false)
                 } else {
                     window.setFrame(onScreen(entry.frame), display: false)
-                    window.makeKeyAndOrderFront(nil)
                     anchor = window
                 }
                 if index == entry.selectedTab { selected = window }

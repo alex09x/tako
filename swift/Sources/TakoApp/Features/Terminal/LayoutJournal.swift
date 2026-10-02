@@ -6,7 +6,8 @@ import Darwin
 ///
 /// Two files in `Application Support/<bundle id>/layout/`:
 /// - `launch.json`: how the last run ended (`LaunchState`);
-/// - `journal.json`: the current layout, rewritten shortly after any change.
+/// - `journal-<generation>.json`: the layout, a new generation shortly after
+///   any change; `launch.json` names the current one.
 ///
 /// At launch, `decide` picks one source of windows: AppKit's restoration
 /// after a clean quit, this journal after a run that did not end cleanly,
@@ -51,6 +52,26 @@ enum LayoutJournal {
         case valid
         case invalid(String)
         case missing
+    }
+
+    /// The journal file of one generation. Each generation is a file of its
+    /// own, written whole before `launch.json` names it, and older ones are
+    /// removed only after: a crash at any point leaves `launch.json` naming
+    /// a generation whose file is complete -- the old one or the new one.
+    static func journalName(_ generation: UInt64) -> String { "journal-\(generation).json" }
+
+    /// What a journal file read as, given the generation `launch.json` names:
+    /// valid only when it parses, passes every limit and is that generation.
+    static func check(_ data: Data?, expected generation: UInt64) -> (JournalRead, Journal?) {
+        guard let data else { return (.missing, nil) }
+        switch read(data) {
+        case .failure(let e): return (.invalid(e.description), nil)
+        case .success(let j):
+            guard j.generation == generation else {
+                return (.invalid("journal generation \(j.generation), launch record names \(generation)"), nil)
+            }
+            return (.valid, j)
+        }
     }
 
     /// The one place the launch decision is made.
