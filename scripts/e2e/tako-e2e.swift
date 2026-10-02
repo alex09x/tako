@@ -799,6 +799,22 @@ let scenarios: [Scenario] = [
         let after = try crashLayoutCount(d, "after")
         guard after.tabs == 2, after.panes == 3 else { throw Failure("after a normal quit: \(after)") }
     }),
+    ("upgrade-crash", "a layout AppKit saved survives a crash right after the first launch that keeps a journal", { d in
+        defer { d.quit(); forgetLayout(d) }
+        try crashLayoutSetup(d)
+        try d.quitNormally()
+        // As before the journal existed: only AppKit's saved state.
+        let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.removeItem(at: library.appendingPathComponent("Application Support/\(bundle)/layout"))
+        try d.launch(config: "window-save-state = always\n")
+        d.quit()                          // straight after AppKit restored, before any timer
+        usleep(500_000)
+        try d.launch(config: "window-save-state = always\n")
+        usleep(1_500_000)
+        let after = try crashLayoutCount(d, "after")
+        guard after.tabs == 2, after.panes == 3 else { throw Failure("after the upgrade crash: \(after)") }
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
@@ -1277,6 +1293,7 @@ func crashLayoutSetup(_ d: Driver) throws {
     try d.launch(config: "window-save-state = always\n")
     // Start from one window, whatever an earlier run left.
     try d.run("takoctl tree --json > \(d.path("start"))")
+    _ = try? d.file("start", timeout: 10)   // the shell is taking input
     let out = d.work.path
     try """
     takoctl split right > /dev/null || exit 1

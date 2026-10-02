@@ -47,14 +47,11 @@ enum LayoutRecorder {
             args["ApplePersistenceIgnoreState"] = true
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
             io.sync { _ = c.setState(.restoring) }
-        } else {
-            io.sync {
-                _ = c.setState(.dirty)
-                // An explicit empty journal when there is none to trust: from
-                // now on a dirty state with no valid journal is damage.
-                if read != .valid { c.commit(LayoutJournal.Journal(generation: 0, windows: [])) }
-            }
         }
+        // On the AppKit path nothing is written yet: the run becomes `dirty`
+        // -- and its journal the one a crash restores -- only once the
+        // windows AppKit restored are in it (see `arm`). Until then a crash
+        // leaves the previous record, and AppKit restores again.
     }
 
     /// At `applicationDidFinishLaunching`: build the journal's windows, if it
@@ -70,6 +67,12 @@ enum LayoutRecorder {
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
             // Still not clean: a crash from here restores from the journal again.
             io.sync { _ = c.setState(.dirty) }
+            armed = true
+        } else {
+            // AppKit has restored its windows by now: record them, in full,
+            // before anything says a crash should come back to the journal.
+            let now = capture()
+            armed = io.sync { arm(c, with: now) }
         }
         pending = nil
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
@@ -91,11 +94,30 @@ enum LayoutRecorder {
         }
     }
 
-    /// Writes the layout if it changed since the last successful write.
+    /// Writes the layout if it changed since the last successful write, and
+    /// arms crash recovery once a full layout is on disk.
     static func record() {
         guard let c = committer else { return }
         let journal = capture()
-        io.async { c.commit(journal) }
+        let wasArmed = armed
+        io.async {
+            if wasArmed {
+                c.commit(journal)
+            } else if arm(c, with: journal) {
+                DispatchQueue.main.async { armed = true }
+            }
+        }
+    }
+
+    /// True once the journal holds this run's layout and the run is `dirty`
+    /// -- from here a crash restores from the journal.
+    private static var armed = false
+
+    /// On `io`: commit `journal`, and only if that succeeded mark the run
+    /// dirty. A failed commit leaves the previous record -- clean, or a
+    /// journal AppKit's fallback already distrusts -- and is tried again.
+    nonisolated private static func arm(_ c: JournalCommitter, with journal: LayoutJournal.Journal) -> Bool {
+        c.commit(journal) && c.setState(.dirty)
     }
 
     // MARK: - Recording

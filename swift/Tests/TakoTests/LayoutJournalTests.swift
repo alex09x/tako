@@ -171,5 +171,30 @@ struct LayoutJournalTests {
             if case .invalid = LayoutJournal.check(data, expected: 3).0 {} else { Issue.record("accepted \(bad)") }
         }
     }
+
+    @Test func aRunIsDirtyOnlyOnceItsLayoutIsWritten() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { chmod(dir.path, 0o700); try? FileManager.default.removeItem(at: dir) }
+        // After a clean quit: the journal is written first, still under `clean`.
+        let c = JournalCommitter(directory: dir, generation: 0, state: .clean)
+        let restored = layout(2)
+        chmod(dir.path, 0o500)
+        #expect(!(c.commit(restored) && c.setState(.dirty)))
+        chmod(dir.path, 0o700)
+        // Nothing written, nothing armed: a crash now is still AppKit's.
+        #expect(LayoutJournal.readLaunch(in: dir).state == .firstRun)
+        #expect(c.commit(restored))
+        let mid = LayoutJournal.readLaunch(in: dir)
+        #expect(mid.state == .clean)          // a crash here: AppKit again
+        #expect(LayoutJournal.decide(previous: mid.state, journal: .valid) == .appKit)
+        #expect(c.setState(.dirty))
+        let armed = LayoutJournal.readLaunch(in: dir)
+        let (read, j) = LayoutJournal.check(try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(armed.journalGeneration))),
+                                            expected: armed.journalGeneration)
+        // A crash from here restores the full layout, never an empty one.
+        #expect(LayoutJournal.decide(previous: armed.state, journal: read) == .journal)
+        #expect(j?.windows.first?.tabs.count == 2)
+    }
 }
 

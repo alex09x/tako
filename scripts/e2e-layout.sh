@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-[ $# -gt 0 ] || set -- crash-layout crash-again crash-corrupt quit-layout
+[ $# -gt 0 ] || set -- crash-layout crash-again crash-corrupt quit-layout upgrade-crash
 export TAKO_APP_DIR=target/macapp-layout
 APP="$TAKO_APP_DIR/Tako.app"
 
