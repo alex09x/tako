@@ -128,8 +128,14 @@ pub const CELL_BYTES: u64 = std::mem::size_of::<Cell>() as u64;
 /// Every reserved container below is charged for what reserving it costs.
 pub const SCROLLBACK_ROW_SPINE: u64 = std::mem::size_of::<ScrollbackRow>() as u64;
 /// Per visible row: the `Vec<Cell>` handle in the row vector, plus the wrap
-/// flag and the semantic prompt kept in their own parallel vectors.
-pub const GRID_ROW_SPINE: u64 = std::mem::size_of::<Vec<Cell>>() as u64 + 2;
+/// flag and the semantic prompt kept in their own parallel vectors,
+/// and the row's command owner.
+pub const GRID_ROW_SPINE: u64 =
+    std::mem::size_of::<Vec<Cell>>() as u64 + 2 + std::mem::size_of::<RowOwner>() as u64;
+/// One decoded run of row owners (v4).
+pub const OWNER_RUN_SPINE: u64 = std::mem::size_of::<(RowOwner, usize)>() as u64;
+/// One decoded command record (v4), separate from its strings.
+pub const COMMAND_RECORD_SPINE: u64 = std::mem::size_of::<CommandRecord>() as u64;
 /// A `String` handle inside a `Vec<String>`, separate from its bytes -- which
 /// `read_string_budgeted` charges on their own.
 pub const STRING_SPINE: u64 = std::mem::size_of::<String>() as u64;
@@ -764,7 +770,7 @@ fn validate_container(data: &[u8]) -> Result<(u32, &[u8]), CheckpointError> {
 /// Export runs this before it writes anything, so the invariant holds in both
 /// directions: a checkpoint this build produces is one this build accepts.
 /// Anything added to the charge list in `import` belongs here too.
-fn allocation_cost(term: &Terminal) -> u64 {
+fn allocation_cost(term: &Terminal, version: u32) -> u64 {
     let mut total: u64 = 0;
     let mut grid_cost = |grid: &Grid| {
         total = total.saturating_add(
@@ -834,6 +840,16 @@ fn allocation_cost(term: &Terminal) -> u64 {
     for transfer in term.graphics.pending().values() {
         bytes = bytes.saturating_add(transfer.data.len() as u64);
     }
+    if version >= 4 {
+        let block = CommandBlock::of(term);
+        bytes = bytes.saturating_add((block.runs.len() as u64).saturating_mul(OWNER_RUN_SPINE));
+        bytes = bytes.saturating_add((block.records.len() as u64).saturating_mul(COMMAND_RECORD_SPINE));
+        for rec in &block.records {
+            bytes = bytes.saturating_add(rec.cwd.as_ref().map_or(0, |c| c.len() as u64));
+            bytes = bytes.saturating_add(rec.input.as_ref().map_or(0, |i| i.len() as u64));
+        }
+        bytes = bytes.saturating_add(term.last_cwd.as_ref().map_or(0, |c| c.len() as u64));
+    }
     total.saturating_add(bytes)
 }
 
@@ -844,7 +860,7 @@ fn allocation_cost(term: &Terminal) -> u64 {
 /// what export charges and what import charges is testable rather than asserted
 /// in a comment.
 pub fn import_cost(term: &Terminal) -> u64 {
-    allocation_cost(term)
+    allocation_cost(term, CURRENT_VERSION)
 }
 
 /// The heap `term` is *holding right now*, counted by capacity.
@@ -1050,7 +1066,7 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
     // buffers to fit, or resetting anything, would be a lossy export wearing
     // a success return; failing here keeps "a successful export is importable"
     // true without touching the terminal.
-    let cost = allocation_cost(term);
+    let cost = allocation_cost(term, version);
     if cost > MAX_IMPORT_ALLOC_BYTES {
         return Err(CheckpointError::TooLarge {
             size: cost,
@@ -1460,30 +1476,57 @@ fn read_opt_string(r: &mut Reader<'_>) -> Result<Option<String>, CheckpointError
     if r.read_bool()? { Ok(Some(r.read_string_budgeted()?)) } else { Ok(None) }
 }
 
+/// What v4 writes about commands: the owner runs, and only the records some
+/// retained row still names (or the running one). The exporter and the cost
+/// estimate both read it, so they cannot disagree.
+struct CommandBlock<'a> {
+    runs: Vec<(RowOwner, u32)>,
+    records: Vec<&'a CommandRecord>,
+}
+
+impl<'a> CommandBlock<'a> {
+    fn of(term: &'a Terminal) -> Self {
+        let grid = &term.primary;
+        let log = &term.commands;
+        let normalized = |owner: RowOwner| match owner {
+            RowOwner::Command(id) if log.get(id).is_none() => RowOwner::Unowned,
+            other => other,
+        };
+        let owners = (0..grid.scrollback_len())
+            .map(|i| grid.scrollback_owner(i))
+            .chain((0..grid.rows()).map(|r| grid.row_owner(r)))
+            .map(normalized);
+        let mut runs: Vec<(RowOwner, u32)> = Vec::new();
+        for owner in owners {
+            match runs.last_mut() {
+                Some((last, n)) if *last == owner => *n += 1,
+                _ => runs.push((owner, 1)),
+            }
+        }
+        let live: std::collections::HashSet<u64> = runs
+            .iter()
+            .filter_map(|(o, _)| match o {
+                RowOwner::Command(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        let records = log
+            .records()
+            .filter(|r| live.contains(&r.id) || log.running() == Some(r.id))
+            .collect();
+        Self { runs, records }
+    }
+}
+
 /// v4's tail: row owners of the primary grid as runs, then the command
 /// table. An owner naming a record the table no longer has is written as
 /// unowned -- it would group nothing anyway.
 fn write_commands(w: &mut Writer, term: &Terminal) {
     let grid = &term.primary;
     let log = &term.commands;
-    let normalized = |owner: RowOwner| match owner {
-        RowOwner::Command(id) if log.get(id).is_none() => RowOwner::Unowned,
-        other => other,
-    };
-    let history = grid.scrollback_len();
-    let owners = (0..history)
-        .map(|i| grid.scrollback_owner(i))
-        .chain((0..grid.rows()).map(|r| grid.row_owner(r)))
-        .map(normalized);
-    let mut runs: Vec<(RowOwner, u32)> = Vec::new();
-    for owner in owners {
-        match runs.last_mut() {
-            Some((last, n)) if *last == owner => *n += 1,
-            _ => runs.push((owner, 1)),
-        }
-    }
-    w.write_u32(runs.len() as u32);
-    for (owner, n) in runs {
+    let block = CommandBlock::of(term);
+    w.write_u32(block.runs.len() as u32);
+    for &(owner, n) in &block.runs {
         let (tag, id) = owner_tag(owner);
         w.write_u8(tag);
         w.write_u64(id);
@@ -1493,8 +1536,8 @@ fn write_commands(w: &mut Writer, term: &Terminal) {
     write_opt_u64(w, pen);
     write_opt_u64(w, log.next_id());
     write_opt_u64(w, log.running());
-    w.write_u32(log.records().len() as u32);
-    for rec in log.records() {
+    w.write_u32(block.records.len() as u32);
+    for rec in &block.records {
         w.write_u64(rec.id);
         let (status, code) = match rec.status {
             CommandStatus::Running => (0, 0),
@@ -1530,6 +1573,7 @@ fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) ->
     // tag, id, length: 13 bytes each.
     r.check_count(run_count, 13)?;
     let total = written_history + grid.rows();
+    r.charge_spine(run_count, OWNER_RUN_SPINE)?;
     let mut runs = Vec::with_capacity(run_count.min(total));
     let mut covered = 0usize;
     for _ in 0..run_count {
@@ -1567,7 +1611,7 @@ fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) ->
     if count > MAX_COMMAND_RECORDS {
         return Err(bad("too many command records"));
     }
-    r.charge_spine(count, std::mem::size_of::<CommandRecord>() as u64)?;
+    r.charge_spine(count, COMMAND_RECORD_SPINE)?;
     let mut records = Vec::with_capacity(count);
     for _ in 0..count {
         let id = r.read_u64()?;

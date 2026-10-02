@@ -611,6 +611,20 @@ impl Grid {
         *owner = owner.after_write(self.pen_owner);
     }
 
+    /// Every command id a retained row (history or screen) names.
+    pub fn live_commands(&self) -> std::collections::HashSet<u64> {
+        let rows = self.row_owner.iter().copied();
+        self.scrollback
+            .iter()
+            .map(|r| r.owner)
+            .chain(rows)
+            .filter_map(|o| match o {
+                RowOwner::Command(id) => Some(id),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Owner of the scrollback line at `index` (oldest-first).
     pub fn scrollback_owner(&self, index: usize) -> RowOwner {
         self.scrollback.get(index).map(|r| r.owner).unwrap_or_default()

@@ -1605,6 +1605,9 @@ impl Terminal {
         };
         let id = self.commands.start(self.last_cwd.clone(), input, truncated);
         self.primary.set_pen_owner(id);
+        if self.commands.prune_due() {
+            self.prune_commands();
+        }
         id
     }
 
@@ -1636,7 +1639,13 @@ impl Terminal {
             };
             if line > start_line && !wrapped {
                 text.truncate(text.trim_end_matches(' ').len());
+                count = text.chars().count();
+                if count == commands::MAX_INPUT_CHARS {
+                    truncated = true;
+                    break;
+                }
                 text.push('\n');
+                count += 1;
             }
             let from = if line == start_line { start_col.min(cells.len()) } else { 0 };
             let to = if line == end_line { self.cursor.col.min(cells.len()) } else { cells.len() };
@@ -1663,6 +1672,12 @@ impl Terminal {
             return (None, false);
         }
         (Some(trimmed.to_string()), truncated)
+    }
+
+    /// Forget finished commands none of whose output is still retained.
+    pub fn prune_commands(&mut self) {
+        let live = self.primary.live_commands();
+        self.commands.prune(&live);
     }
 
     /// The commands recorded on the primary screen.
@@ -1732,6 +1747,9 @@ impl Terminal {
             self.active_grid_mut().scroll_up_with_blank(n, blank);
             return;
         }
+        // Rows move without changing their line numbers: where the command
+        // line started no longer names it.
+        self.input_start = None;
 
         let full_width = self.h_margins_full();
         // A partial-height region anchored at the top of the screen still
@@ -1784,6 +1802,7 @@ impl Terminal {
         let n = n.min(region_height);
         let (left, right) = self.h_margins();
         let full_width = self.h_margins_full();
+        self.input_start = None;
 
         if n < region_height {
             for row in (top + n..=bottom).rev() {
@@ -1794,6 +1813,8 @@ impl Terminal {
                 if full_width {
                     let wrapped = self.active_grid().is_line_wrapped(row - n);
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
+                    let owner = self.active_grid().row_owner(row - n);
+                    self.active_grid_mut().set_row_owner(row, owner);
                 }
             }
         }
@@ -1871,9 +1892,15 @@ impl Terminal {
             1 => self
                 .active_grid_mut()
                 .fill_cells_respecting(row, 0, col.saturating_add(1), blank, respect),
-            2 => self
-                .active_grid_mut()
-                .fill_cells_respecting(row, 0, cols, blank, respect),
+            2 => {
+                // A whole input line erased: what C finds there is not what
+                // B started.
+                if self.input_start.is_some_and(|(line, _)| self.cursor_absolute_line() >= line) {
+                    self.input_start = None;
+                }
+                self.active_grid_mut()
+                    .fill_cells_respecting(row, 0, cols, blank, respect)
+            }
             _ => {}
         }
     }
@@ -1889,6 +1916,7 @@ impl Terminal {
         }
         // IL homes the cursor to the left margin (xterm behavior).
         self.cursor.col = hl;
+        self.input_start = None;
         self.pending_wrap = false;
         let rows = self.active_grid().rows();
         let top = self.cursor.row;
@@ -1942,6 +1970,7 @@ impl Terminal {
         }
         // DL homes the cursor to the left margin (xterm behavior).
         self.cursor.col = hl;
+        self.input_start = None;
         self.pending_wrap = false;
         let rows = self.active_grid().rows();
         let top = self.cursor.row;

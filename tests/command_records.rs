@@ -319,8 +319,10 @@ fn the_table_keeps_the_newest_records_and_a_forgotten_id_groups_nothing() {
     let mut t = Terminal::with_scrollback(20, 4, 100_000);
     t.feed(C);
     t.feed(b"oldest\r\n");
+    // Each command keeps a row of output, so none is pruned for lack of one.
     for _ in 0..MAX_COMMAND_RECORDS {
         t.feed(C);
+        t.feed(b"x\r\n");
         t.feed(&d(0));
     }
     assert_eq!(t.commands().records().len(), MAX_COMMAND_RECORDS);
@@ -349,7 +351,8 @@ fn a_checkpoint_keeps_owners_records_and_the_running_command() {
 
     let mut copy = Terminal::new(30, 8);
     copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
-    assert_eq!(copy.commands(), t.commands());
+    let records = |t: &Terminal| t.commands().records().cloned().collect::<Vec<_>>();
+    assert_eq!(records(&copy), records(&t));
     assert_eq!(owners(&copy), owners(&t));
     // The running command goes on claiming its output, and ends.
     copy.feed(b"more\r\n");
@@ -434,4 +437,110 @@ fn an_old_token_does_nothing_after_an_import_or_a_reset() {
     core.feed(b"\x1b]133;C\x07".to_vec());
     assert!(!core.set_command_time(epoch, id, 1000));
     assert!(core.set_command_time(core.state_epoch(), id, 1000));
+}
+
+#[test]
+fn a_multiline_command_line_stays_within_the_limit_and_round_trips() {
+    let mut t = Terminal::with_scrollback(50, 30, 100);
+    t.feed(B);
+    // Eleven full rows, each ended by a real line break: 550 cells plus ten
+    // separators.
+    for _ in 0..11 {
+        t.feed("y".repeat(50).as_bytes());
+        t.feed(b"\x1b[K\r\n");
+    }
+    t.feed(C);
+    t.feed(b"result\r\n");
+    let id = command_of(&t, "result").unwrap();
+    let rec = t.commands().get(id).unwrap().clone();
+    let input = rec.input.unwrap();
+    assert!(input.chars().count() <= MAX_INPUT_CHARS, "{}", input.chars().count());
+    assert!(input.contains('\n'));
+    assert!(rec.input_truncated);
+    let mut copy = Terminal::new(50, 30);
+    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
+    assert_eq!(copy.commands().get(id).unwrap().input.as_deref(), Some(input.as_str()));
+}
+
+#[test]
+fn rows_moving_under_the_command_line_drop_it() {
+    let cases: [(&str, &[u8]); 5] = [
+        ("insert line", b"\x1b[1;1H\x1b[L\x1b[1;1Hreplacement"),
+        ("delete line", b"\x1b[1;1H\x1b[M\x1b[1;1Hreplacement"),
+        ("region scroll up", b"\x1b[1;3r\x1b[3;1H\n\x1b[r\x1b[1;1Hreplacement"),
+        ("region scroll down", b"\x1b[1;3r\x1b[1;1H\x1bM\x1b[r\x1b[1;1Hreplacement"),
+        ("whole line erased", b"\x1b[2K\x1b[1;3Hreplacement"),
+    ];
+    for (name, seq) in cases {
+        let mut t = Terminal::new(40, 6);
+        t.feed(b"$ ");
+        t.feed(B);
+        t.feed(b"original");
+        t.feed(seq);
+        t.feed(b"\x1b[4;1H");
+        t.feed(C);
+        t.feed(b"built");
+        let rec = t.commands().get(command_of(&t, "built").unwrap()).unwrap();
+        assert_eq!(rec.input, None, "{name}");
+    }
+}
+
+#[test]
+fn a_command_whose_output_is_all_gone_is_forgotten() {
+    // Evicted from history.
+    let mut t = Terminal::with_scrollback(20, 3, 2);
+    t.feed(C);
+    t.feed(b"gone soon\r\n");
+    t.feed(&d(0));
+    t.feed(C);
+    t.feed(b"kept\r\n");
+    for i in 0..6 {
+        t.feed(format!("{i}\r\n").as_bytes());
+    }
+    t.feed(&d(0));
+    t.prune_commands();
+    assert!(t.commands().get(1).is_none());
+    // The second command's tail is still retained.
+    assert!(t.commands().get(2).is_some());
+
+    // Cleared from the screen: gone from the checkpoint even before a sweep.
+    let mut t = Terminal::new(20, 4);
+    t.feed(C);
+    t.feed(b"secret\r\n");
+    t.feed(&d(0));
+    t.feed(b"\x1b[2J");
+    assert!(t.commands().get(1).is_some());
+    let mut copy = Terminal::new(20, 4);
+    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
+    assert_eq!(copy.commands().records().len(), 0);
+    t.prune_commands();
+    assert!(t.commands().get(1).is_none());
+}
+
+#[test]
+fn commands_with_no_output_left_are_swept_as_the_table_grows() {
+    let mut t = Terminal::new(20, 4);
+    for _ in 0..1000 {
+        t.feed(C);
+        t.feed(&d(0));
+    }
+    assert!(t.commands().records().len() < 200, "{}", t.commands().records().len());
+}
+
+#[test]
+fn import_cost_matches_what_a_v4_import_charges() {
+    use tako_core::terminal::checkpoint::{import_cost, import_traced};
+    let mut t = Terminal::with_scrollback(30, 6, 50);
+    t.feed(b"\x1b]7;file://h/some/dir\x07");
+    for i in 0..5 {
+        run(&mut t, &format!("cmd {i}"), &format!("out {i}\r\nmixed "), Some(i));
+        t.feed(b"prompt junk\r\n");
+    }
+    t.feed(B);
+    t.feed(b"half typed");
+    let blob = t.export_checkpoint().unwrap();
+    let predicted = import_cost(&t);
+    let (restored, trace) = import_traced(&blob).unwrap();
+    assert_eq!(trace.allocated, predicted);
+    assert_eq!(import_cost(&restored), predicted);
 }

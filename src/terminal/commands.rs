@@ -61,11 +61,17 @@ pub struct CommandLog {
     /// The command whose output is being written, if any.
     running: Option<u64>,
     text_bytes: usize,
+    /// Prune once the table grows to this many records again.
+    prune_at: usize,
 }
+
+/// The table is never pruned below this many records: a sweep reads every
+/// retained row, so it runs only after the table has doubled.
+const PRUNE_FLOOR: usize = 64;
 
 impl Default for CommandLog {
     fn default() -> Self {
-        Self { records: VecDeque::new(), next_id: Some(1), running: None, text_bytes: 0 }
+        Self { records: VecDeque::new(), next_id: Some(1), running: None, text_bytes: 0, prune_at: PRUNE_FLOOR }
     }
 }
 
@@ -142,6 +148,27 @@ impl CommandLog {
         }
     }
 
+    /// Whether enough records were added since the last sweep for another.
+    pub(crate) fn prune_due(&self) -> bool {
+        self.records.len() >= self.prune_at
+    }
+
+    /// Forget every finished record no retained row names: its output is
+    /// gone, so nothing could be grouped under it.
+    pub(crate) fn prune(&mut self, live: &std::collections::HashSet<u64>) {
+        let running = self.running;
+        let mut freed = 0;
+        self.records.retain(|r| {
+            let keep = Some(r.id) == running || live.contains(&r.id);
+            if !keep {
+                freed += r.text_bytes();
+            }
+            keep
+        });
+        self.text_bytes -= freed;
+        self.prune_at = (self.records.len() * 2).max(PRUNE_FLOOR);
+    }
+
     /// Forget every record (reset). Ids keep counting.
     pub fn clear(&mut self) {
         self.records.clear();
@@ -216,6 +243,6 @@ impl CommandLog {
         if next_id == Some(0) {
             return Err("next command id is zero");
         }
-        Ok(Self { records: records.into(), next_id, running, text_bytes })
+        Ok(Self { records: records.into(), next_id, running, text_bytes, prune_at: PRUNE_FLOOR })
     }
 }
