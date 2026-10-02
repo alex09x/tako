@@ -4,8 +4,9 @@
 #
 #   xcodegen -s project.yml && open TakoSample.xcodeproj
 #
-# TakoCoreUI comes from this repository's root package. An app outside it
-# depends on https://github.com/alex09x/tako at a release instead.
+# TakoCoreUI comes from the package under swift/, which links the engine
+# scripts/build-xcframework.sh builds in this checkout. An app outside the
+# repository depends on https://github.com/alex09x/tako at a release instead.
 name: TakoSample
 options:
   bundleIdPrefix: com.example
@@ -13,7 +14,7 @@ options:
     iOS: "17.0"
 packages:
   TakoCoreUI:
-    path: ../..
+    path: ../../swift
 targets:
   TakoSample:
     type: application

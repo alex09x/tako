@@ -15,28 +15,42 @@ There are three ways in:
 
 ## The samples
 
-**macOS** -- a window with your login shell in it, about 120 lines. The host
+**macOS** -- a window with your login shell in it, about 200 lines. The host
 opens a pseudo-terminal (`forkpty`), feeds what the shell writes to the view,
 and writes what the view produces (keys, paste, mouse, replies to the
-program's queries) back to the shell.
-
-    cd examples/macos-sample && swift run
+program's queries) back to the shell -- off the main thread, so a program
+that stops reading cannot freeze the window. `TakoSample --selftest` checks
+exactly that without a window.
 
 **iOS** -- iOS runs no local shells, so the program on the other side is a few
 lines of Swift that echo a line back. Replace it with your SSH session.
 
-    cd examples/ios-sample && xcodegen -s project.yml && open TakoSample.xcodeproj
-
 **C, no window** -- feeds escape sequences, answers the terminal's queries,
 prints the screen, saves the whole terminal to a checkpoint and restores it
-into a second one.
+into a second one. It builds the engine from the checkout itself, so it
+always matches:
 
     examples/c/build.sh && examples/c/headless
 
-The Swift samples depend on this repository's root package, which pins the
-engine to the last release. To try them against engine changes not yet
-released, build the engine (`scripts/build-xcframework.sh`) and set
-`TAKO_LOCAL_XCFRAMEWORK=1` when building.
+### Building the Swift samples
+
+The samples build against this checkout, never a published engine: they use
+the package under `swift/`, which links the engine built here. Build it once,
+and again after changing the Rust sources:
+
+    scripts/build-xcframework.sh          # macOS, iOS and the simulator
+    cd examples/macos-sample && swift run
+    cd examples/ios-sample && xcodegen -s project.yml && open TakoSample.xcodeproj
+
+`scripts/build-xcframework.sh --macos-only` is enough for the macOS sample.
+The iOS sample excludes x86_64 for the simulator: the engine has arm64
+slices only.
+
+An app outside this repository depends on the root package at a release tag
+(`.package(url: "https://github.com/alex09x/tako", exact: "<release>")`),
+whose published engine matches that tag's Swift sources. A revision between
+releases has Swift sources newer than the last published engine and is not
+meant to be consumed that way.
 
 ## What the host does
 

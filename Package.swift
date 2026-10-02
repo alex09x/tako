@@ -1,21 +1,5 @@
 // swift-tools-version:5.9
-import Foundation
 import PackageDescription
-
-/// The Rust engine. A release pins the published asset below; with
-/// TAKO_LOCAL_XCFRAMEWORK set, a checkout's own build
-/// (scripts/build-xcframework.sh) is used instead, so the samples and a
-/// consumer can be tried against unreleased engine changes.
-let engine: Target = ProcessInfo.processInfo.environment["TAKO_LOCAL_XCFRAMEWORK"] != nil
-    ? .binaryTarget(name: "TakoCoreXCFramework", path: "TakoCore.xcframework")
-    : .binaryTarget(
-        name: "TakoCoreXCFramework",
-        // The Rust engine for macOS arm64, iOS device and iOS Simulator,
-        // published as a release asset rather than committed. Both values
-        // are rewritten by scripts/package-xcframework.sh.
-        url: "https://github.com/alex09x/tako/releases/download/v0.1.3/TakoCore.xcframework.zip",
-        checksum: "c6b9a348b483c5308be7b6648a691236d8ebf37969d684570a3cfd34725efdb4"
-    )
 
 /// The production consumer package.
 ///
@@ -35,7 +19,14 @@ let package = Package(
         .library(name: "TakoCoreUI", targets: ["TakoCoreUI"]),
     ],
     targets: [
-        engine,
+        .binaryTarget(
+            name: "TakoCoreXCFramework",
+            // The Rust engine for macOS arm64, iOS device and iOS Simulator,
+            // published as a release asset rather than committed. Both values
+            // are rewritten by scripts/package-xcframework.sh.
+            url: "https://github.com/alex09x/tako/releases/download/v0.1.3/TakoCore.xcframework.zip",
+            checksum: "c6b9a348b483c5308be7b6648a691236d8ebf37969d684570a3cfd34725efdb4"
+        ),
         .target(
             name: "TakoCoreUI",
             dependencies: ["TakoCoreXCFramework"],
