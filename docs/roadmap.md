@@ -23,12 +23,15 @@ new features.
 
 ### 1. Pick up where you left off
 
-Status: shipped in 0.1.4.
+Status: shipped in 0.1.4; the layout after a crash, and every tab after a normal quit, since.
 
 Each tab saves a snapshot of its screen and scrollback periodically and when the app quits. On
-the next launch the tab shows the last snapshot, followed by a separator with the time it was
-taken, so new output is visibly apart from restored text. A snapshot does not bring the old shell
-back: a new shell starts, and the tab makes that clear. The working directory comes back only
+the next launch the tab shows the last snapshot, and the new shell starts below it. A snapshot
+does not bring the old shell back: a new shell starts.
+
+Windows, tabs and splits are kept in a journal written as they change, so they come back after a
+crash as well as after a normal quit -- every tab, not only the selected one. A damaged journal is
+ignored in favour of what macOS saved. The working directory comes back only
 when the shell reported it (OSC 7 or shell integration); otherwise the new shell starts where Tako
 starts any shell, by the `working-directory` setting.
 
@@ -37,7 +40,8 @@ sessions are never saved.
 
 Done when:
 
-- after a relaunch, every tab shows its last saved screen and scrollback with the snapshot time;
+- after a relaunch, every tab shows its last saved screen and scrollback;
+- after a crash or a normal quit, the same windows, tabs and splits come back, once each;
 - the new shell is never presented as the old process;
 - the working directory comes back wherever the shell reported it;
 - storage stays within the configured limit;
