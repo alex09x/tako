@@ -13,8 +13,12 @@ it and finds the folder gone on the next save.
 import glob
 import os
 import plistlib
+import re
 import shutil
 import sys
+
+# The folder names macOS gives: an uppercase canonical UUID, nothing else.
+UUID = re.compile(r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\Z")
 
 
 def main(identifier):
@@ -31,10 +35,26 @@ def main(identifier):
         # A flat list: an app's description, then the UUID of its folder.
         for app, uuid in zip(entries[0::2], entries[1::2]):
             signing = app.get("protected", {}).get("signingIdentifier") if isinstance(app, dict) else None
-            if signing == identifier and isinstance(uuid, str):
-                doomed.append(os.path.join(os.path.dirname(mapping), uuid + ".savedState"))
+            if signing == identifier:
+                path = folder(os.path.dirname(mapping), uuid)
+                if path:
+                    doomed.append(path)
     for path in doomed:
         shutil.rmtree(path, ignore_errors=True)
+
+
+def folder(states, uuid):
+    """The saved-state folder `uuid` names, only if it is a real directory
+    directly inside `states`; anything else in the mapping is skipped."""
+    if not isinstance(uuid, str) or not UUID.match(uuid):
+        print(f"forget-saved-state: skipping a mapping entry that is not a UUID: {uuid!r}", file=sys.stderr)
+        return None
+    path = os.path.join(states, uuid + ".savedState")
+    if os.path.islink(path) or not os.path.isdir(path):
+        return None
+    if os.path.dirname(os.path.realpath(path)) != os.path.realpath(states):
+        return None
+    return path
 
 
 if __name__ == "__main__":
