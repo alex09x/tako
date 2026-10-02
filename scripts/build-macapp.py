@@ -61,8 +61,8 @@ BASE = ["-target", "arm64-apple-macos14.0", "-sdk", sdk]
 RELEASE = os.environ.get("RELEASE") == "1"
 OPT = ["-O", "-whole-module-optimization"] if RELEASE else [
     "-Onone", "-incremental", "-enable-batch-mode",
-    "-output-file-map", "target/macapp/output-file-map.json",
-    "-module-cache-path", "target/macapp/modulecache",
+    "-output-file-map", os.path.join(BUILD, "output-file-map.json"),
+    "-module-cache-path", os.path.join(BUILD, "modulecache"),
 ]
 
 
