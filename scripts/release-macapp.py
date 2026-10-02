@@ -107,14 +107,13 @@ def version_of(app):
     return p["CFBundleShortVersionString"], p["CFBundleVersion"]
 
 
-def notarize(path, what, staple=None):
+def notarize(path, what, staple=None, resume=None):
     """Submit, wait, and fail loudly with Apple's reasons if it is rejected.
     Then staple the ticket to `staple` (default: `path`) -- a ZIP cannot take
     one, so for a ZIP it is the app inside."""
     step(f"notarizing {what} -- Apple decides this: minutes, and for a new team's first submissions hours")
-    # A submission already sent (TAKO_NOTARY_SUBMISSION) is waited on again
-    # rather than uploaded again.
-    resume = os.environ.get("TAKO_NOTARY_SUBMISSION") if what == "the app" else None
+    # A submission already sent (`resume`) is waited on again rather than
+    # uploaded again.
     if resume:
         cmd = ["xcrun", "notarytool", "wait", resume, *profile_args(), "--timeout", "2h"]
     else:
@@ -125,16 +124,11 @@ def notarize(path, what, staple=None):
         # Not a refusal: Apple has not answered yet, and the submission goes on.
         sub = resume or next((l.split(":", 1)[1].strip() for l in r.stdout.splitlines()
                               if l.strip().startswith("id:")), "")
-        if what != "the app":
-            # Only the app's submission can be resumed by a rerun: a rerun
-            # builds a new file, whose ticket would not be this one. The file
-            # submitted is still here -- finish it in place.
-            sys.exit(f"Apple has not finished checking {what} yet -- nothing was refused.\n"
-                     f"Wait for it and staple the file that was sent:\n"
-                     f"  xcrun notarytool wait {sub} {' '.join(profile_args())}\n"
-                     f"  xcrun stapler staple {path}")
+        # Each stage resumes with its own variable; the disk image's resume
+        # goes on with the very file that was sent, never a rebuilt one.
+        var = "TAKO_NOTARY_SUBMISSION" if what == "the app" else "TAKO_NOTARY_DMG_SUBMISSION"
         sys.exit(f"Apple has not finished checking {what} yet -- nothing was refused.\n"
-                 f"Wait for it and go on with:  TAKO_NOTARY_SUBMISSION={sub} python3 scripts/release-macapp.py")
+                 f"Wait for it and go on with:  {var}={sub} python3 scripts/release-macapp.py")
     if r.returncode != 0 or "status: Accepted" not in r.stdout:
         # The submission id is the only way to read why it was refused.
         sub = ""
@@ -161,19 +155,29 @@ def main():
     # Notarization takes an archive, not a bundle. ditto is the one that
     # preserves the signature; zip(1) mangles symlinks inside frameworks.
     zip_path = os.path.join(BUILD, f"Tako-{version}.zip")
+    dmg = os.path.join(BUILD, f"Tako-{version}.dmg")
+    dmg_resume = os.environ.get("TAKO_NOTARY_DMG_SUBMISSION")
+    if dmg_resume:
+        # The app is already stapled and archived, the image built and sent:
+        # only Apple's answer for it and the checks after it are left.
+        for f in (dmg, zip_path):
+            if not os.path.exists(f):
+                sys.exit(f"no {f} -- the disk image's submission belongs to an earlier build; run without TAKO_NOTARY_DMG_SUBMISSION")
+        notarize(dmg, "the disk image", resume=dmg_resume)
+        finish(dmg, zip_path)
+        return
     step("archiving the app for submission")
     run(["ditto", "-c", "-k", "--keepParent", APP, zip_path], "archive app")
 
     # Apple notarizes the ZIP but staples the app in it; the ZIP that ships
     # is made again from the stapled app, so it carries the ticket too.
-    notarize(zip_path, "the app", staple=APP)
+    notarize(zip_path, "the app", staple=APP, resume=os.environ.get("TAKO_NOTARY_SUBMISSION"))
     os.remove(zip_path)
     step("archiving the stapled app for release")
     run(["ditto", "-c", "-k", "--keepParent", APP, zip_path], "archive stapled app")
 
     # The disk image is built from the now-stapled app, so the copy a user
     # drags to Applications carries Apple's approval with it.
-    dmg = os.path.join(BUILD, f"Tako-{version}.dmg")
     staging = os.path.join(BUILD, "dmg")
     if os.path.exists(dmg):
         os.remove(dmg)
@@ -201,7 +205,10 @@ def main():
         "sign dmg")
 
     notarize(dmg, "the disk image")
+    finish(dmg, zip_path)
 
+
+def finish(dmg, zip_path):
     step("verifying the way Gatekeeper will")
     run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", APP], "verify signatures")
     run(["spctl", "-a", "-vvv", "-t", "exec", APP], "assess app")
