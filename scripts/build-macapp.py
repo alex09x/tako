@@ -5,7 +5,7 @@ Produces Tako.app. The Rust staticlib, the Objective-C helpers and
 all of upstream's Swift link into one binary -- nothing loads at runtime
 that isn't in the bundle.
 """
-import os, subprocess, sys, shutil, plistlib
+import hashlib, json, os, subprocess, sys, shutil, plistlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -277,6 +277,32 @@ if not adhoc:
     # --timestamp needs Apple's server and is what makes the signature
     # outlive the certificate. --options runtime is the hardened runtime.
     cmd += ["--options", "runtime", "--timestamp"]
+
+# The session runtime (session-persistence, experimental): bundled only when
+# asked for, so ordinary builds and checks never fetch Zig or zmx. It is
+# signed on its own first, and the manifest records the hash of that signed
+# file -- what Tako checks before it runs one. The app's signature then seals
+# it as part of the bundle without re-signing it.
+if os.environ.get("TAKO_WITH_ZMX") == "1" or RELEASE:
+    built = subprocess.run(["scripts/build-zmx.sh"], check=True, capture_output=True,
+                           text=True).stdout.strip().splitlines()[-1]
+    helpers = os.path.join(APP, "Contents", "Helpers")
+    os.makedirs(helpers, exist_ok=True)
+    helper = os.path.join(helpers, "zmx")
+    shutil.copy2(built, helper)
+    run(cmd + [helper], "sign session runtime")
+    with open(os.path.join(os.path.dirname(built), "source.json")) as f:
+        source = json.load(f)
+    with open(helper, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    with open(os.path.join(APP, "Contents", "Resources", "session-runtime.json"), "w") as f:
+        json.dump({**source, "path": "Contents/Helpers/zmx", "sha256": digest}, f, indent=2, sort_keys=True)
+    # The runtime's own notices, and those of what it bundles, ship with it.
+    licenses = os.path.join(APP, "Contents", "Resources", "Licenses")
+    os.makedirs(licenses, exist_ok=True)
+    for notice in ("LICENSE-zmx", "LICENSE-ghostty"):
+        shutil.copy2(os.path.join(os.path.dirname(built), notice), os.path.join(licenses, notice))
+
 run(cmd + [APP], "sign app")
 
 print(f"built {APP} {VERSION} ({BUILD_NUMBER})")
