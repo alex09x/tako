@@ -1,9 +1,9 @@
 #!/bin/bash
 # The session-persistence scenarios, each isolated: a copy of the app built
 # with its session runtime under a bundle id of that scenario's run only (so
-# its saved windows and Application Support are its own -- macOS keeps
-# restoration state per bundle id beyond what deleting its saved-state
-# folder clears) and a fresh session home. Everything a run creates --
+# its saved windows and Application Support are its own) and a fresh
+# session home. Saved windows are removed with forget-saved-state.py: newer
+# macOS keeps them outside ~/Library/Saved Application State. Everything a run creates --
 # sessions, saved state, records -- is removed afterwards, whatever the
 # outcome; nothing of a real Tako's is read or touched.
 #
@@ -19,7 +19,6 @@ APP="$TAKO_APP_DIR/Tako.app"
 run_one() {
     local scenario=$1
     local bundle="com.tako-core.terminal.e2e-persist-$(date +%s)-$$"
-    local state="$HOME/Library/Saved Application State/$bundle.savedState"
     local support="$HOME/Library/Application Support/$bundle"
     # Short: socket paths under it must stay within macOS's 104 bytes.
     local sessions
@@ -32,7 +31,8 @@ run_one() {
                 ZMX_DIR="$dir" "$zmx" kill "$name" --force >/dev/null 2>&1 || true
             done
         done
-        rm -rf "$sessions" "$state" "$support"
+        python3 scripts/e2e/forget-saved-state.py "$bundle"
+        rm -rf "$sessions" "$support"
     }
     trap cleanup_one EXIT
     # Called on the left of ||, so errexit does not apply here: every step

@@ -1,9 +1,9 @@
 #!/bin/bash
 # The window-layout scenarios, each isolated the way the persistence ones
 # are (see e2e-persist.sh): a copy of the app under a bundle id of that run
-# only, because macOS keeps restoration state per bundle id beyond what
-# deleting its saved-state folder clears, and a run that restores windows
-# would otherwise inherit every earlier run's. Its saved state and
+# only, so a run that restores windows never inherits another's. Saved
+# windows are removed with forget-saved-state.py: newer macOS keeps them
+# outside ~/Library/Saved Application State. Its saved state and
 # Application Support are removed afterwards, whatever the outcome.
 #
 #   ./scripts/e2e-layout.sh             # every layout scenario
@@ -18,9 +18,8 @@ APP="$TAKO_APP_DIR/Tako.app"
 run_one() {
     local scenario=$1
     local bundle="com.tako-core.terminal.e2e-layout-$(date +%s)-$$"
-    local state="$HOME/Library/Saved Application State/$bundle.savedState"
     local support="$HOME/Library/Application Support/$bundle"
-    cleanup_one() { rm -rf "$state" "$support"; }
+    cleanup_one() { python3 scripts/e2e/forget-saved-state.py "$bundle"; rm -rf "$support"; }
     trap cleanup_one EXIT
     if ! TAKO_BUNDLE_ID=$bundle python3 scripts/build-macapp.py >/dev/null; then
         echo "FAIL  $scenario: the app could not be built" >&2

@@ -435,6 +435,9 @@ typealias Scenario = (name: String, why: String, body: (Driver) throws -> Void)
 let scenarios: [Scenario] = [
     ("restore", "a relaunch shows the tab's old screen and starts its shell where it was", { d in
         d.quit()
+        // Every scenario ends with a kill, which the layout journal rightly
+        // treats as a crash: start from nothing an earlier scenario left.
+        forgetLayout(d)
         try d.launch(config: "")
         // A marker and a directory of this run only, so a screen restored
         // from an earlier run cannot pass for this one. The output, not the
@@ -443,8 +446,14 @@ let scenarios: [Scenario] = [
         let marker = "restore-\(id)"
         let dir = d.path("cwd")
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        try d.run("cd \(dir); printf 'restore-%s\\n' \(id)")
-        guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
+        // Right after launch the shell can still be starting and drop what is
+        // typed; the command is harmless to repeat, so repeat it until it shows.
+        var shown = false
+        for _ in 0..<3 where !shown {
+            try d.run("cd \(dir); printf 'restore-%s\\n' \(id)")
+            shown = d.wait(for: { d.screenText().contains(marker) }, timeout: 5)
+        }
+        guard shown else {
             throw Failure("the marker never showed: [\(d.screenText().suffix(300))]")
         }
         try d.quitNormally()
@@ -1328,6 +1337,11 @@ func crashLayoutCount(_ d: Driver, _ name: String) throws -> (windows: Int, tabs
 func forgetLayout(_ d: Driver) {
     let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
     let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-    try? FileManager.default.removeItem(at: library.appendingPathComponent("Saved Application State/\(bundle).savedState"))
+    // Newer macOS keeps saved windows where only the script finds them.
+    let forget = Process()
+    forget.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    forget.arguments = ["python3", "scripts/e2e/forget-saved-state.py", bundle]
+    try? forget.run()
+    forget.waitUntilExit()
     try? FileManager.default.removeItem(at: library.appendingPathComponent("Application Support/\(bundle)/layout"))
 }
