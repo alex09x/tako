@@ -1582,6 +1582,13 @@ extension Tako {
             commandStartedAt = time
         }
 
+        /// Whether a command the shell marked (OSC 133) is running now.
+        var isCommandRunning: Bool { commandStartedAt != nil }
+
+        /// Called, each once, when the next marked command ends, with its
+        /// exit code; `takoctl wait` waits on this.
+        var commandEndObservers: [UUID: (Int32?) -> Void] = [:]
+
         /// Whether the user is looking at this terminal right now.
         var isBeingLookedAt: Bool {
             NSApp.isActive && window?.isKeyWindow == true && isFirstResponderSurface
@@ -1593,6 +1600,13 @@ extension Tako {
         func commandEnded(exitCode: Int32?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             let ran = commandStartedAt.map { now - $0 }
             commandStartedAt = nil
+            // Only the end of a command whose start the shell marked: a
+            // shell ends its first prompt's "command" without starting one.
+            if ran != nil {
+                let observers = commandEndObservers
+                commandEndObservers = [:]
+                for observer in observers.values { observer(exitCode) }
+            }
             guard let config = owningApp?.config,
                   Tako.commandFinishShouldSignal(
                     mode: config.notifyOnCommandFinish, ran: ran,

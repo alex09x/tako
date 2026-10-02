@@ -803,6 +803,19 @@ pub struct FfiTextTail {
     pub more: bool,
 }
 
+/// See `TakoCore::last_command`.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiCommandOutput {
+    pub command: FfiCommandInfo,
+    /// What it printed, oldest line first.
+    pub output: String,
+    pub lines: u32,
+    /// The oldest returned line was cut at its front to fit.
+    pub truncated: bool,
+    /// It printed more lines than returned.
+    pub more: bool,
+}
+
 /// One step of a search; see `TakoCore::search_chunk`.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiSearchChunk {
@@ -1898,6 +1911,21 @@ impl TakoCore {
             truncated: tail.truncated,
             more: tail.more,
         }
+    }
+
+    /// The newest command the shell marked (OSC 133), not abandoned, with
+    /// its exit status and the last `max_lines` lines it printed, at most
+    /// `max_bytes` of them. `None` when the shell marked none.
+    pub fn last_command(&self, max_lines: u32, max_bytes: u32) -> Option<FfiCommandOutput> {
+        let terminal = lock_recover(&self.inner);
+        let (record, out) = terminal.last_command(max_lines as usize, max_bytes as usize)?;
+        Some(FfiCommandOutput {
+            command: FfiCommandInfo::new(&record, terminal.epoch),
+            output: out.text,
+            lines: out.lines as u32,
+            truncated: out.truncated,
+            more: out.more,
+        })
     }
 
     /// Where the viewport sits as a fraction: 0 is the oldest retained line,

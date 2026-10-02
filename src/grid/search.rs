@@ -79,6 +79,17 @@ fn wanted(needle: &str) -> Vec<String> {
     composed.graphemes(true).map(fold).collect()
 }
 
+/// What `Grid::command_output` returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandOutput {
+    pub text: String,
+    pub lines: usize,
+    /// The oldest returned line was cut at its front to fit.
+    pub truncated: bool,
+    /// The command printed more lines than returned.
+    pub more: bool,
+}
+
 impl Grid {
     fn retained_rows(&self) -> usize {
         self.scrollback.len() + self.rows
@@ -104,6 +115,74 @@ impl Grid {
         } else {
             self.row_owner(index - sb)
         }
+    }
+
+    /// What command `id` printed: the retained rows it owns, soft wraps
+    /// rejoined into lines, trailing blanks dropped, oldest first -- the
+    /// last `max_lines` of them, at most `max_bytes`. Rows another write
+    /// touched too (`Mixed`) are not its output and are left out.
+    pub fn command_output(&self, id: u64, max_lines: usize, max_bytes: usize) -> CommandOutput {
+        let mine = |index: usize| self.retained_owner(index) == RowOwner::Command(id);
+        let mut lines: Vec<String> = Vec::new();
+        let mut open = false;
+        for index in 0..self.retained_rows() {
+            if !mine(index) {
+                open = false;
+                continue;
+            }
+            let (cells, wrapped) = self.retained_row(index);
+            if !(open && wrapped) {
+                lines.push(String::new());
+            }
+            let line = lines.last_mut().expect("pushed above");
+            for cell in cells {
+                if cell.is_wide_spacer || cell.is_wide_spacer_head {
+                    continue;
+                }
+                self.push_cell_text(line, cell);
+            }
+            open = true;
+        }
+        for line in &mut lines {
+            while line.ends_with(' ') {
+                line.pop();
+            }
+        }
+        while lines.last().is_some_and(String::is_empty) {
+            lines.pop();
+        }
+        let mut more = lines.len() > max_lines;
+        let mut kept: Vec<String> = lines.split_off(lines.len().saturating_sub(max_lines));
+        // From the newest back, as many bytes as fit; the oldest kept line
+        // may be cut at its front.
+        let mut truncated = false;
+        let mut budget = max_bytes;
+        let mut start = kept.len();
+        while start > 0 {
+            let len = kept[start - 1].len() + usize::from(start < kept.len());
+            if len > budget {
+                if budget > 1 {
+                    let line = &kept[start - 1];
+                    let mut cut = line.len() - (budget - usize::from(start < kept.len()));
+                    while !line.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    kept[start - 1] = line[cut..].to_string();
+                    truncated = true;
+                    start -= 1;
+                } else {
+                    more = true;
+                }
+                break;
+            }
+            budget -= len;
+            start -= 1;
+        }
+        if start > 0 {
+            more = true;
+        }
+        let kept = kept.split_off(start);
+        CommandOutput { lines: kept.len(), text: kept.join("\n"), truncated, more }
     }
 
     /// The command that owns every line in `[start, end]`, if one does.

@@ -1686,6 +1686,24 @@ impl Terminal {
         &self.commands
     }
 
+    /// The newest command the shell marked that was not abandoned --
+    /// running or finished -- with what it printed on the primary screen
+    /// (see `Grid::command_output`).
+    pub fn last_command(
+        &self,
+        max_lines: usize,
+        max_bytes: usize,
+    ) -> Option<(commands::CommandRecord, crate::grid::CommandOutput)> {
+        let record = self
+            .commands
+            .records()
+            .rev()
+            .find(|r| r.status != commands::CommandStatus::Abandoned)?
+            .clone();
+        let output = self.primary.command_output(record.id, max_lines, max_bytes);
+        Some((record, output))
+    }
+
     /// Give command `id` its start time (unix ms), once.
     pub fn set_command_started_at(&mut self, id: u64, unix_ms: u64) -> bool {
         self.commands.set_started_at(id, unix_ms)

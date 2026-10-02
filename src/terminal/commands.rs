@@ -94,7 +94,7 @@ impl CommandLog {
         self.next_id
     }
 
-    pub fn records(&self) -> impl ExactSizeIterator<Item = &CommandRecord> {
+    pub fn records(&self) -> impl ExactSizeIterator<Item = &CommandRecord> + DoubleEndedIterator {
         self.records.iter()
     }
 

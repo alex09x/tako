@@ -8,7 +8,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 /// How long to wait for the app to take the request and to answer.
-const TIMEOUT: Duration = Duration::from_secs(30);
+pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The socket of the app with `bundle_id`, named the way the app names it:
 /// `tako-ctl-<12 hex of sha256(bundle id)>.sock` in this user's private

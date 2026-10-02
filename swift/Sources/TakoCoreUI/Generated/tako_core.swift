@@ -1108,6 +1108,13 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func kittyKeyboardFlags()  -> UInt8
 
     /**
+     * The newest command the shell marked (OSC 133), not abandoned, with
+     * its exit status and the last `max_lines` lines it printed, at most
+     * `max_bytes` of them. `None` when the shell marked none.
+     */
+    func lastCommand(maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
+
+    /**
      * Forces a full redraw on the next `takeDamage()`.
      */
     func markAllDamaged()
@@ -1943,6 +1950,22 @@ open func kittyKeyboardFlags() -> UInt8  {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_kitty_keyboard_flags(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The newest command the shell marked (OSC 133), not abandoned, with
+     * its exit status and the last `max_lines` lines it printed, at most
+     * `max_bytes` of them. `None` when the shell marked none.
+     */
+open func lastCommand(maxLines: UInt32, maxBytes: UInt32) -> FfiCommandOutput?  {
+    return try!  FfiConverterOptionTypeFfiCommandOutput.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_last_command(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxLines),
+        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
     )
 })
 }
@@ -3061,6 +3084,93 @@ public func FfiConverterTypeFfiCommandInfo_lift(_ buf: RustBuffer) throws -> Ffi
 #endif
 public func FfiConverterTypeFfiCommandInfo_lower(_ value: FfiCommandInfo) -> RustBuffer {
     return FfiConverterTypeFfiCommandInfo.lower(value)
+}
+
+
+/**
+ * See `TakoCore::last_command`.
+ */
+public struct FfiCommandOutput: Equatable, Hashable {
+    public var command: FfiCommandInfo
+    /**
+     * What it printed, oldest line first.
+     */
+    public var output: String
+    public var lines: UInt32
+    /**
+     * The oldest returned line was cut at its front to fit.
+     */
+    public var truncated: Bool
+    /**
+     * It printed more lines than returned.
+     */
+    public var more: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(command: FfiCommandInfo,
+        /**
+         * What it printed, oldest line first.
+         */output: String, lines: UInt32,
+        /**
+         * The oldest returned line was cut at its front to fit.
+         */truncated: Bool,
+        /**
+         * It printed more lines than returned.
+         */more: Bool) {
+        self.command = command
+        self.output = output
+        self.lines = lines
+        self.truncated = truncated
+        self.more = more
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiCommandOutput: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiCommandOutput: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiCommandOutput {
+        return
+            try FfiCommandOutput(
+                command: FfiConverterTypeFfiCommandInfo.read(from: &buf),
+                output: FfiConverterString.read(from: &buf),
+                lines: FfiConverterUInt32.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf),
+                more: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiCommandOutput, into buf: inout [UInt8]) {
+        FfiConverterTypeFfiCommandInfo.write(value.command, into: &buf)
+        FfiConverterString.write(value.output, into: &buf)
+        FfiConverterUInt32.write(value.lines, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterBool.write(value.more, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandOutput_lift(_ buf: RustBuffer) throws -> FfiCommandOutput {
+    return try FfiConverterTypeFfiCommandOutput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandOutput_lower(_ value: FfiCommandOutput) -> RustBuffer {
+    return FfiConverterTypeFfiCommandOutput.lower(value)
 }
 
 
@@ -6930,6 +7040,30 @@ fileprivate struct FfiConverterOptionTypeFfiCommandInfo: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFfiCommandOutput: FfiConverterRustBuffer {
+    typealias SwiftType = FfiCommandOutput?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiCommandOutput.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiCommandOutput.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeFfiGraphicsImageMetadata: FfiConverterRustBuffer {
     typealias SwiftType = FfiGraphicsImageMetadata?
 
@@ -7376,6 +7510,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_kitty_keyboard_flags() != 35046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_last_command() != 42246) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_mark_all_damaged() != 59514) {

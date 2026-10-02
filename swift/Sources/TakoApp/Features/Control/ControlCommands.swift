@@ -129,6 +129,15 @@ enum ControlCommands {
             case "close":
                 let surface = try target(request, all)
                 ControlLayout.close(surface, reply: reply)
+            case "last":
+                ControlCommand.last(try target(request, all), args: request.args, reply: reply)
+            case "wait":
+                ControlCommand.wait(try target(request, all), next: request.args["next"] == .bool(true),
+                                    timeout: request.args["timeout"]?.number,
+                                    lines: Int(request.args["lines"]?.number ?? Double(ControlCommand.defaultLines)),
+                                    reply: reply)
+            case "run":
+                try ControlCommand.run(beside: try target(request, all), args: request.args, reply: reply)
             default:
                 reply(handle(request))
             }
@@ -176,7 +185,7 @@ enum ControlCommands {
                 let surface = try target(request, all)
                 try ControlLayout.title(surface, try ControlInput.text(request.args, "title"))
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
-            case "text", "close":
+            case "text", "close", "last", "wait", "run":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")

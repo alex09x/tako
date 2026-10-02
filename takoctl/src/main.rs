@@ -31,9 +31,16 @@ commands:
   focus                   bring the pane forward and give it the keyboard
   title TEXT              the tab's title (empty restores the program's own)
   close                   close the pane, asking first when closing by hand would
+  last                    the pane's last command: its line, directory, exit status and output
+  wait                    wait for the pane's running command to end, then print it as last
+                          (--next: the next command; --timeout S: give up after S seconds)
+  run COMMAND             open a tab (--split right|down|left|up: a split instead; --cwd DIR)
+                          and run COMMAND in it; prints its pane id, or with --wait the
+                          finished command as last (--timeout S)
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --lines N               last, wait, run --wait: at most the last N lines of output
   --json                  print the app's raw JSON answer
   --socket PATH           the control socket (default: $TAKO_SOCKET, or the app's)
   --bundle-id ID          find the socket of this build of Tako (default com.tako-core.terminal)
@@ -80,6 +87,22 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--no-select" => {
                 args.insert("select".into(), Value::Bool(false));
             }
+            "--next" => {
+                args.insert("next".into(), Value::Bool(true));
+            }
+            "--wait" => {
+                args.insert("wait".into(), Value::Bool(true));
+            }
+            "--split" => {
+                args.insert("split".into(), Value::String(value("--split")?));
+            }
+            "--timeout" => {
+                let s: f64 = value("--timeout")?.parse().map_err(|_| "--timeout needs seconds".to_string())?;
+                if !(s.is_finite() && s >= 0.0) {
+                    return Err("--timeout needs seconds".into());
+                }
+                args.insert("timeout".into(), Value::from(s));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
@@ -89,7 +112,8 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let cmd = cmd.ok_or_else(String::new)?;
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
-        "version" | "tree" | "text" | "tab-new" | "focus" | "close" => None,
+        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" => None,
+        "run" => Some("command"),
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" => Some("text"),
@@ -166,7 +190,50 @@ fn render(cmd: &str, result: &Value) -> String {
         "send" | "type" | "key" | "focus" | "title" => String::new(),
         "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
+        "run" if result.get("command").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
+        "last" | "wait" | "run" => command_report(result),
         _ => format!("{result}\n"),
+    }
+}
+
+/// A command as `last` reports it: `$ line   (cwd)   exit N`, then its output.
+fn command_report(result: &Value) -> String {
+    let command = &result["command"];
+    if command.is_null() {
+        return "no command marked by the shell in this pane (shell integration off?)\n".into();
+    }
+    let status = match (result["state"].as_str(), command["running"].as_bool(), command["exitCode"].as_f64()) {
+        (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
+        (_, Some(true), _) => "running".to_string(),
+        (_, _, Some(code)) => format!("exit {}", code as i64),
+        _ => "ended, no exit status".to_string(),
+    };
+    let mut out = format!("$ {}", command["input"].as_str().unwrap_or("(command line not reported by the shell)"));
+    if let Some(cwd) = command["cwd"].as_str() {
+        out += &format!("   ({cwd})");
+    }
+    out += &format!("   {status}\n");
+    if result["more"].as_bool() == Some(true) {
+        out += "...\n";
+    }
+    let output = result["output"].as_str().unwrap_or("");
+    if !output.is_empty() {
+        out += output;
+        out.push('\n');
+    }
+    out
+}
+
+/// How long to wait for the app's answer: a wait for as long as asked plus
+/// a margin, an unbounded one for a day; anything else the usual limit.
+fn answer_limit(opts: &Options) -> std::time::Duration {
+    let waits = opts.cmd == "wait" || (opts.cmd == "run" && opts.args.get("wait") == Some(&Value::Bool(true)));
+    if !waits {
+        return socket::TIMEOUT;
+    }
+    match opts.args.get("timeout").and_then(Value::as_f64) {
+        Some(s) => std::time::Duration::from_secs_f64(s) + socket::TIMEOUT,
+        None => std::time::Duration::from_secs(24 * 3600),
     }
 }
 
@@ -232,7 +299,7 @@ fn main() -> ExitCode {
         },
     };
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
-    let answer = match socket::exchange(&path, &req) {
+    let answer = match socket::exchange_within(&path, &req, answer_limit(&opts), socket::MAX_ANSWER_BYTES) {
         Ok(a) => a,
         Err(e) if !e.sent => {
             eprintln!("takoctl: no Tako answers on {path}: {}", e.message);
@@ -298,6 +365,31 @@ mod tests {
         assert!(parse(&args(&["send", "a", "b"])).is_err());
         assert!(parse(&args(&["text", "x"])).is_err());
         assert!(parse(&args(&["text", "--lines", "many"])).is_err());
+    }
+
+    #[test]
+    fn run_and_wait_take_their_options() {
+        let opts = parse(&args(&["run", "make test", "--split", "down", "--wait", "--timeout", "90", "--lines", "5"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "run", "args": {
+            "command": "make test", "split": "down", "wait": true, "timeout": 90.0, "lines": 5}}));
+        assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(90) + socket::TIMEOUT);
+        let opts = parse(&args(&["wait", "--next"])).unwrap();
+        assert_eq!(opts.args["next"], true);
+        assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(24 * 3600));
+        assert_eq!(answer_limit(&parse(&args(&["run", "ls"])).unwrap()), socket::TIMEOUT);
+        assert!(parse(&args(&["run"])).is_err());
+        assert!(parse(&args(&["wait", "--timeout", "-1"])).is_err());
+        assert!(parse(&args(&["last", "x"])).is_err());
+    }
+
+    #[test]
+    fn a_command_reads_as_its_line_status_and_output() {
+        let result = json!({"command": {"input": "make", "cwd": "/src", "running": false,
+            "finished": true, "exitCode": 2}, "output": "error: x", "more": true, "state": "finished"});
+        assert_eq!(command_report(&result), "$ make   (/src)   exit 2\n...\nerror: x\n");
+        let result = json!({"command": {"input": "sleep 9", "running": true}, "output": "", "state": "timeout"});
+        assert_eq!(command_report(&result), "$ sleep 9   still running (timed out waiting)\n");
+        assert!(command_report(&json!({"command": null})).starts_with("no command"));
     }
 
     #[test]

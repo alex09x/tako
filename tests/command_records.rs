@@ -586,3 +586,75 @@ fn continuation_prompts_keep_the_whole_command_line() {
     let rec = t.commands().get(command_of(&t, "listed").unwrap()).unwrap();
     assert_eq!(rec.input.as_deref(), Some("ls"));
 }
+
+#[test]
+fn the_last_command_is_the_newest_with_its_output_and_status() {
+    let mut t = Terminal::new(30, 12);
+    t.feed(b"\x1b]7;file://host/tmp/work\x07");
+    run(&mut t, "echo one", "one\r\n", Some(0));
+    run(&mut t, "make", "compiling\r\nerror: nope\r\n", Some(2));
+    let (rec, out) = t.last_command(100, 10_000).expect("a command");
+    assert_eq!(rec.input.as_deref(), Some("make"));
+    assert_eq!(rec.status, CommandStatus::Completed(Some(2)));
+    // As the shell reported it (OSC 7): a file URL.
+    assert_eq!(rec.cwd.as_deref(), Some("file://host/tmp/work"));
+    // Its own output only: not the earlier command's, not the prompt.
+    assert_eq!(out.text, "compiling\nerror: nope");
+    assert_eq!((out.lines, out.more, out.truncated), (2, false, false));
+}
+
+#[test]
+fn the_last_command_while_it_runs_and_a_soft_wrapped_line_comes_back_whole() {
+    let mut t = Terminal::new(10, 12);
+    t.feed(A);
+    t.feed(b"$ ");
+    t.feed(B);
+    t.feed(b"seq\r\n");
+    t.feed(C);
+    t.feed(b"abcdefghijklmnop\r\n");
+    let (rec, out) = t.last_command(100, 10_000).expect("a command");
+    assert_eq!(rec.status, CommandStatus::Running);
+    assert_eq!(out.text, "abcdefghijklmnop");
+}
+
+#[test]
+fn the_last_command_output_is_bounded_from_its_end() {
+    let mut t = Terminal::new(30, 40);
+    let output: String = (1..=20).map(|i| format!("line{i}\r\n")).collect();
+    run(&mut t, "seq", &output, Some(0));
+    let (_, out) = t.last_command(3, 10_000).unwrap();
+    assert_eq!(out.text, "line18\nline19\nline20");
+    assert!(out.more);
+    let (_, out) = t.last_command(100, 9).unwrap();
+    // "line20" (6) + a newline leaves 2 bytes of "line19", from its end.
+    assert_eq!(out.text, "19\nline20");
+    assert!(out.truncated && out.more);
+}
+
+#[test]
+fn no_last_command_without_marks_and_abandoned_ones_are_skipped() {
+    let mut t = Terminal::new(30, 8);
+    t.feed(b"plain output\r\n");
+    assert!(t.last_command(10, 1000).is_none());
+    run(&mut t, "ok", "fine\r\n", Some(0));
+    // A command that starts and is abandoned by a new prompt.
+    t.feed(A);
+    t.feed(B);
+    t.feed(b"sleep\r\n");
+    t.feed(C);
+    t.feed(A);
+    let (rec, _) = t.last_command(10, 1000).unwrap();
+    assert_eq!(rec.input.as_deref(), Some("ok"));
+}
+
+#[test]
+fn the_ffi_reports_the_last_command() {
+    let core = TakoCore::new(30, 8);
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07bad\r\n\x1b]133;D;1\x07".to_vec());
+    let last = core.last_command(10, 1000).expect("a command");
+    assert_eq!(last.output, "bad");
+    assert!(last.command.finished);
+    assert_eq!(last.command.exit_code, Some(1));
+    assert_eq!(last.command.input.as_deref(), Some("false"));
+}
+
