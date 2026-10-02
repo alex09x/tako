@@ -189,6 +189,12 @@ class AppDelegate: NSObject,
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before any window is restored: each terminal's shell is told where
         // the control socket is.
+        // Before AppKit restores anything: decides whether windows come from
+        // AppKit or, after a run that did not end cleanly, from the journal.
+        LayoutRecorder.begin(
+            bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
+            enabled: tako.config.windowSaveState != "never"
+                && !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }))
         ControlCommands.apply(mode: tako.config.remoteControl,
                               bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal")
         #if DEBUG
@@ -232,6 +238,7 @@ class AppDelegate: NSObject,
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LayoutRecorder.finishLaunching(app: tako)
         sessionSaver.start(
             settings: { [unowned self] in self.sessionSaveSettings() },
             surfaces: { Self.restorableSurfaces() })
@@ -453,6 +460,9 @@ class AppDelegate: NSObject,
         // Quitting is confirmed (a cancelled quit never gets here): persistent
         // terminals let go of their sessions instead of ending them.
         SurfaceSession.detachAll(Self.restorableSurfaces())
+        // Last: the final layout, then `clean`. Only a quit that got this far
+        // is clean; a crash anywhere before leaves the journal in charge.
+        LayoutRecorder.finish()
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.

@@ -164,6 +164,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             return
         }
 
+        // After a crash the journal rebuilds the windows; AppKit's state is
+        // stale then, and mixing the two would duplicate windows.
+        if LayoutRecorder.source == .journal {
+            completionHandler(nil, nil)
+            return
+        }
+
         // Decode the state. If we can't decode the state, then we can't restore.
         guard let state = TerminalRestorableState(coder: state) else {
             completionHandler(nil, TerminalRestoreError.stateDecodeFailed)

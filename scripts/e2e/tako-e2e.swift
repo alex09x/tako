@@ -721,6 +721,39 @@ let scenarios: [Scenario] = [
         try d.run("takoctl tree --json > \(d.path("tree"))")
         guard try d.file("tree").contains(b) else { throw Failure("a late Return closed \(b)") }
     }),
+    ("crash-layout", "tabs and splits made shortly before a crash come back after it", { d in
+        d.quit()
+        let config = "window-save-state = always\n"
+        try d.launch(config: config)
+        let out = d.work.path
+        try """
+        b=$(takoctl split right) || exit 1
+        f=$(takoctl tab-new --no-select) || exit 1
+        takoctl tree --json > \(out)/before
+        echo done > \(out)/made
+        """.write(toFile: d.path("make.sh"), atomically: true, encoding: .utf8)
+        try d.run("sh \(d.path("make.sh"))")
+        _ = try d.file("made", timeout: 15)
+        func count(_ json: String) -> (tabs: Int, panes: Int) {
+            guard let data = json.data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let windows = (root["result"] as? [String: Any])?["windows"] as? [[String: Any]] else { return (0, 0) }
+            let tabs = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
+            return (tabs.count, tabs.reduce(0) { $0 + (($1["panes"] as? [Any])?.count ?? 0) })
+        }
+        let before = count(try d.file("before"))
+        guard before.tabs >= 2, before.panes >= 3 else { throw Failure("layout not made: \(before)") }
+        usleep(UInt32(ProcessInfo.processInfo.environment["TAKO_E2E_CRASH_WAIT"].flatMap(Double.init).map { $0 * 1_000_000 } ?? 3_000_000))
+        d.quit()                          // SIGKILL: a crash, nothing saved on the way out
+        usleep(1_000_000)
+        try d.launch(config: config)
+        usleep(1_500_000)
+        try d.run("takoctl tree --json > \(d.path("after"))")
+        let after = count(try d.file("after"))
+        guard after.tabs >= before.tabs, after.panes >= before.panes else {
+            throw Failure("after the crash: \(after.tabs) tabs, \(after.panes) panes; before: \(before.tabs), \(before.panes)")
+        }
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
