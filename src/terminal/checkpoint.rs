@@ -1615,6 +1615,13 @@ fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) ->
         let started_at_ms = read_opt_u64(r)?;
         records.push(CommandRecord { id, status, cwd, input, input_truncated, started_at_ms });
     }
+    for (owner, _) in &runs {
+        if let RowOwner::Command(id) = *owner {
+            if id == 0 || next_id.is_some_and(|n| id >= n) {
+                return Err(bad("invalid row owner id"));
+            }
+        }
+    }
     let log = CommandLog::from_parts(records, next_id, running).map_err(bad)?;
     if pen != running {
         return Err(bad("command pen is not the running command"));
@@ -2580,8 +2587,20 @@ mod command_block_tests {
         assert!(rejected(&block(&[(1, 7, 2)], None, Some(1), None, &[])));
     }
 
+    #[test]
+    fn dangling_owner_ids_are_rejected() {
+        // A pruned older command is accepted even without a record, so long as it is below next_id.
+        assert!(decode(&block(&[(3, 1, 2)], None, Some(2), None, &[])).is_ok());
+        // If IDs are exhausted (next_id is None), any non-zero ID is accepted.
+        assert!(decode(&block(&[(3, 999, 2)], None, None, None, &[])).is_ok());
 
-
+        // ID 0 is strictly invalid.
+        assert!(rejected(&block(&[(3, 0, 2)], None, Some(1), None, &[])));
+        // An orphan ID equal to next_id is rejected.
+        assert!(rejected(&block(&[(3, 1, 2)], None, Some(1), None, &[])));
+        // An orphan ID greater than next_id is rejected.
+        assert!(rejected(&block(&[(3, 9, 2)], None, Some(1), None, &[])));
+    }
     #[test]
     fn ids_must_be_unique_ascending_and_below_the_next_id() {
         let ok = [(0, 0, 2)];

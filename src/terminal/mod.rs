@@ -4115,7 +4115,7 @@ fn test_set_command_started_at_any_status() {
     let mut term = Terminal::new(10, 10);
     // C and D in one feed
     term.feed(b"\x1b]133;C\x07\x1b]133;D\x07");
-    
+
     // Command is already Completed, but setting time still works!
     assert_eq!(term.commands.running(), None); // It is not running
     // id is 1
