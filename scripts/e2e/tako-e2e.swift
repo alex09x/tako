@@ -1100,6 +1100,21 @@ let scenarios: [Scenario] = [
         try d.run("' > \(d.path("pasted"))")
         try d.expect("pasted", "pasted  text", "paste")
     }),
+    ("paste-utf8", "cmd+v pastes utf8 text correctly", { d in
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        defer {
+            pasteboard.clearContents()
+            if let saved { pasteboard.setString(saved, forType: .string) }
+        }
+        pasteboard.clearContents()
+        pasteboard.setString("кириллица 👋 123", forType: .string)
+        try d.type("printf '%s' '")
+        d.key(Key.v, .maskCommand)
+        usleep(500_000)
+        try d.run("' > \(d.path("pasted-utf8"))")
+        try d.expect("pasted-utf8", "кириллица 👋 123", "paste-utf8")
+    }),
     ("close-busy", "closing a terminal that is running something asks first", { d in
         try d.run("sleep 30")
         usleep(800_000)

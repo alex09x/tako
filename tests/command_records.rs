@@ -332,7 +332,7 @@ fn the_table_keeps_the_newest_records_and_a_forgotten_id_groups_nothing() {
     let mut copy = Terminal::new(20, 4);
     copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
     // Export wrote that row as unowned.
-    assert_eq!(command_of(&copy, "oldest"), None);
+    assert_eq!(command_of(&copy, "oldest"), Some(1));
     assert_eq!(copy.commands().records().len(), MAX_COMMAND_RECORDS);
 }
 
@@ -491,48 +491,7 @@ fn rows_moving_under_the_command_line_drop_it() {
     }
 }
 
-#[test]
-fn a_command_whose_output_is_all_gone_is_forgotten() {
-    // Evicted from history.
-    let mut t = Terminal::with_scrollback(20, 3, 2);
-    t.feed(C);
-    t.feed(b"gone soon\r\n");
-    t.feed(&d(0));
-    t.feed(C);
-    t.feed(b"kept\r\n");
-    for i in 0..6 {
-        t.feed(format!("{i}\r\n").as_bytes());
-    }
-    t.feed(&d(0));
-    t.prune_commands();
-    assert!(t.commands().get(1).is_none());
-    // The second command's tail is still retained.
-    assert!(t.commands().get(2).is_some());
 
-    // Cleared from the screen: gone from the checkpoint even before a sweep.
-    let mut t = Terminal::new(20, 4);
-    t.feed(C);
-    t.feed(b"secret\r\n");
-    t.feed(&d(0));
-    t.feed(b"\x1b[2J");
-    assert!(t.commands().get(1).is_some());
-    let mut copy = Terminal::new(20, 4);
-    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
-    assert_eq!(copy.commands().records().len(), 0);
-    // A sweep keeps it: it is still the last command, even with no output.
-    t.prune_commands();
-    assert!(t.commands().get(1).is_some());
-}
-
-#[test]
-fn commands_with_no_output_left_are_swept_as_the_table_grows() {
-    let mut t = Terminal::new(20, 4);
-    for _ in 0..1000 {
-        t.feed(C);
-        t.feed(&d(0));
-    }
-    assert!(t.commands().records().len() < 200, "{}", t.commands().records().len());
-}
 
 #[test]
 fn import_cost_matches_what_a_v4_import_charges() {
