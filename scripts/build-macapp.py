@@ -303,7 +303,7 @@ if os.environ.get("TAKO_WITH_ZMX") == "1" or RELEASE:
     # The runtime's own notices, and those of what it bundles, ship with it.
     licenses = os.path.join(APP, "Contents", "Resources", "Licenses")
     os.makedirs(licenses, exist_ok=True)
-    for notice in ("LICENSE-zmx", "LICENSE-ghostty"):
+    for notice in ("LICENSE-zmx",):
         shutil.copy2(os.path.join(os.path.dirname(built), notice), os.path.join(licenses, notice))
 
 # takoctl is an executable of its own inside the bundle: notarization
