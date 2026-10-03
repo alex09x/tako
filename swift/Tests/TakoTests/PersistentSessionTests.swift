@@ -331,7 +331,7 @@ struct SessionEndingTests {
         let runtime = root.appendingPathComponent("zmx")
         // If flag file 'f' exists, the script sleeps 1 sec and then succeeds (closing the session)
         // Otherwise, it fails immediately to simulate the first failed attempt.
-        try Data("#!/bin/sh\nif [ \"$1\" = kill ]; then\n  if [ -f \"$2/f\" ]; then\n    sleep 1\n    exit 0\n  else\n    echo \"name=abc\\tpid=1\" >&2\n    exit 1\n  fi\nfi\n".utf8).write(to: runtime)
+        try Data("#!/bin/sh\nif [ \"$1\" = list ]; then\n  if [ -f \"$T/f\" ]; then\n    exit 0\n  else\n    printf \"name=abc\\tpid=1\\n\"\n    exit 0\n  fi\nelif [ \"$1\" = kill ]; then\n  if [ -f \"$T/f\" ]; then\n    sleep 1\n    exit 0\n  else\n    echo \"kill failed\" >&2\n    exit 1\n  fi\nfi\n".utf8).write(to: runtime)
         chmod(runtime.path, 0o755)
         
         let ns = try SessionNamespace.open(runtimeID: "0.8.1", home: root)
