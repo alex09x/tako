@@ -298,5 +298,104 @@ final class TakoTerminalNSViewScrollTests: XCTestCase {
 
         XCTAssertEqual(delegate.inputDataReceived.dropFirst(baseline), expected)
     }
+
+
+    func testEmptyScrollbackScrollbarClickAndDragSendsNoInput() throws {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+
+        XCTAssertEqual(view.scrollbackLength, 0)
+        let baseline = delegate.inputDataReceived.count
+
+        let clickPoint = NSPoint(x: 595, y: 150)
+        let downEvent = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: clickPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        view.mouseDown(with: downEvent)
+        XCTAssertEqual(delegate.inputDataReceived.count, baseline, "mouseDown on empty scrollbar track must not synthesize input")
+
+        let dragEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: NSPoint(x: 595, y: 200),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        view.mouseDragged(with: dragEvent)
+        XCTAssertEqual(delegate.inputDataReceived.count, baseline, "mouseDragged on empty scrollbar track must not synthesize input")
+
+        let upEvent = NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: NSPoint(x: 595, y: 200),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0.0
+        )!
+        view.mouseUp(with: upEvent)
+        XCTAssertEqual(delegate.inputDataReceived.count, baseline, "mouseUp on empty scrollbar track must not synthesize input")
+    }
+
+    func testAlternateScreenDEC1007ScrollbarClickAndDragSynthesizesKeys() throws {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+
+        view.feed(data: Data("\u{1b}[?1049h\u{1b}[?1007h".utf8))
+        let baseline = delegate.inputDataReceived.count
+
+        let clickPoint = NSPoint(x: 595, y: 250)
+        let downEvent = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: clickPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        view.mouseDown(with: downEvent)
+        XCTAssertGreaterThan(delegate.inputDataReceived.count, baseline, "mouseDown in DEC 1007 alternate screen must synthesize PageUp")
+
+        let dragBaseline = delegate.inputDataReceived.count
+        let dragEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: NSPoint(x: 595, y: 200),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        view.mouseDragged(with: dragEvent)
+        XCTAssertGreaterThan(delegate.inputDataReceived.count, dragBaseline, "mouseDragged in DEC 1007 alternate screen must synthesize arrow keys")
+    }
+
 }
 #endif
