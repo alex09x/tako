@@ -9,9 +9,19 @@ enum CommandLineTool {
     /// Remembers "Don't Ask Again" from the launch question.
     static let declinedKey = "TakoctlInstallDeclined"
 
-    /// Where shells find it: Homebrew's directory on Apple silicon first (it
-    /// is the user's own, no password), then the system-wide one.
-    static let directories = ["/opt/homebrew/bin", "/usr/local/bin"]
+    /// Candidate directories where shells look:
+    /// Homebrew on Apple silicon (/opt/homebrew/bin),
+    /// system / Intel Homebrew (/usr/local/bin),
+    /// modern user bin (~/.local/bin), and user bin (~/bin).
+    nonisolated static var directories: [String] {
+        var dirs = ["/opt/homebrew/bin", "/usr/local/bin"]
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let localBin = (home as NSString).appendingPathComponent(".local/bin")
+        let userBin = (home as NSString).appendingPathComponent("bin")
+        if !dirs.contains(localBin) { dirs.append(localBin) }
+        if !dirs.contains(userBin) { dirs.append(userBin) }
+        return dirs
+    }
 
     /// The copy inside this app, if the bundle carries one.
     static var bundled: String? {
@@ -76,44 +86,39 @@ enum CommandLineTool {
         directories.map { ($0 as NSString).appendingPathComponent(name) }.first { !replaceable($0) }
     }
 
-    /// Links `takoctl` in; answers where, or nil when it could not.
-    static func install(bundled: String) -> String? {
-        if let dir = writableDirectory() {
-            // Made beside it, then renamed over it: the swap is one step.
-            let link = (dir as NSString).appendingPathComponent(name)
-            let fresh = (dir as NSString).appendingPathComponent(".\(name).\(UUID().uuidString)")
-            if (try? FileManager.default.createSymbolicLink(atPath: fresh, withDestinationPath: bundled)) != nil {
-                if rename(fresh, link) == 0 { return link }
-                try? FileManager.default.removeItem(atPath: fresh)
+    /// Links `takoctl` in using direct system calls; answers where, or nil when it could not.
+    /// Never invokes osascript or elevates privileges.
+    static func install(bundled: String, directories: [String] = directories) -> String? {
+        if let dir = writableDirectory(directories: directories) {
+            return linkInDirectory(dir, bundled: bundled)
+        }
+
+        // If no candidate directory is currently available, try creating ~/.local/bin
+        // if it is in the candidate directories list (native user-space system call).
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        let localBin = (home as NSString).appendingPathComponent(".local/bin")
+        if directories.contains(localBin) {
+            var isDir: ObjCBool = false
+            if !fm.fileExists(atPath: localBin, isDirectory: &isDir) {
+                try? fm.createDirectory(atPath: localBin, withIntermediateDirectories: true)
             }
-            return nil
+            if let dir = writableDirectory(directories: [localBin]) {
+                return linkInDirectory(dir, bundled: bundled)
+            }
         }
-        // Nowhere writable: the system directory, with the administrator's
-        // password, asked by macOS itself -- and only over nothing or a
-        // Tako's link, checked again as root right before.
-        let link = "/usr/local/bin/\(name)"
-        // As root, it must still be exactly what was checked here: nothing,
-        // or the very link verified to be a Tako's.
-        let expected: String
-        switch occupant(link) {
-        case .other: return nil
-        case .empty: expected = "if [ -e \(quoted(link)) ] || [ -L \(quoted(link)) ]; then exit 3; fi"
-        case .tako(let target): expected = "[ -L \(quoted(link)) ] && [ \"$(/usr/bin/readlink \(quoted(link)))\" = \(quoted(target)) ] || exit 3"
-        }
-        let l = quoted(link), fresh = quoted("/usr/local/bin/.\(name).\(UUID().uuidString)")
-        let shell = "/bin/mkdir -p /usr/local/bin && { \(expected); } && "
-            + "/bin/ln -s \(quoted(bundled)) \(fresh) && /bin/mv -f \(fresh) \(l)"
-        let script = "do shell script \"\(shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
-        return process.terminationStatus == 0 ? link : nil
+
+        return nil
     }
 
-    private static func quoted(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    private static func linkInDirectory(_ dir: String, bundled: String) -> String? {
+        let link = (dir as NSString).appendingPathComponent(name)
+        let fresh = (dir as NSString).appendingPathComponent(".\(name).\(UUID().uuidString)")
+        if (try? FileManager.default.createSymbolicLink(atPath: fresh, withDestinationPath: bundled)) != nil {
+            if rename(fresh, link) == 0 { return link }
+            try? FileManager.default.removeItem(atPath: fresh)
+        }
+        return nil
     }
 
     /// At launch: asks once, in a terminal window, when it is not installed.

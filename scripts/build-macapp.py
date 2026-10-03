@@ -165,7 +165,7 @@ run(["swiftc", "-module-name", "Tako", *BASE, *OPT,
      "-framework", "Cocoa", "-framework", "SwiftUI",
      "-framework", "UserNotifications", "-framework", "CoreText",
      "-framework", "UniformTypeIdentifiers", "-framework", "Carbon",
-     "-framework", "OSAKit", "-framework", "ServiceManagement",
+     "-framework", "ServiceManagement",
      ], "link app")
 
 # Bundle it, because LaunchServices -- and therefore tabs, the dock icon and

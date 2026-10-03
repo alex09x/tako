@@ -60,4 +60,39 @@ struct CommandLineToolTests {
             try FileManager.default.removeItem(atPath: link)
         }
     }
+
+    @Test func installLinksIntoWritableDirectoryAndReplacesTakoLink() throws {
+        let bin = try temp(), apps = try temp()
+        defer { try? FileManager.default.removeItem(atPath: bin); try? FileManager.default.removeItem(atPath: apps) }
+        let bundled = try app(apps, "Tako", id: "com.tako-core.terminal")
+        let linkPath = "\(bin)/takoctl"
+
+        // Successful installation into a clean directory
+        let installed = CommandLineTool.install(bundled: bundled, directories: [bin])
+        #expect(installed == linkPath)
+        #expect(CommandLineTool.isInstalled(bundled: bundled, directories: [bin]))
+
+        // Reinstalling replaces existing Tako link
+        let reinstalled = CommandLineTool.install(bundled: bundled, directories: [bin])
+        #expect(reinstalled == linkPath)
+        #expect(CommandLineTool.isInstalled(bundled: bundled, directories: [bin]))
+    }
+
+    @Test func installRefusesToOverwriteForeignFileOrLink() throws {
+        let bin = try temp(), apps = try temp()
+        defer { try? FileManager.default.removeItem(atPath: bin); try? FileManager.default.removeItem(atPath: apps) }
+        let bundled = try app(apps, "Tako", id: "com.tako-core.terminal")
+        let linkPath = "\(bin)/takoctl"
+
+        // Regular file from another tool
+        FileManager.default.createFile(atPath: linkPath, contents: Data("other".utf8))
+        #expect(CommandLineTool.install(bundled: bundled, directories: [bin]) == nil)
+        #expect(!CommandLineTool.isInstalled(bundled: bundled, directories: [bin]))
+
+        // Foreign symlink
+        try FileManager.default.removeItem(atPath: linkPath)
+        try FileManager.default.createSymbolicLink(atPath: linkPath, withDestinationPath: "/usr/bin/python3")
+        #expect(CommandLineTool.install(bundled: bundled, directories: [bin]) == nil)
+        #expect(!CommandLineTool.isInstalled(bundled: bundled, directories: [bin]))
+    }
 }
