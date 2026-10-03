@@ -143,8 +143,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     let parserCoordinator: TerminalParserCoordinator
 
     /// A native scrollbar for visual UX, optionally shown depending on settings.
-    public let scrollerContainer = NSScrollView()
-    private let scrollerDocumentView = NSView()
+    private let scrollbarLayer = CALayer()
+    private let scrollbarKnob = CALayer()
+    private var scrollbarFadeTimer: Foundation.Timer?
+    private var isDraggingScrollbar = false
+    private var scrollbarDragStartKnobY: CGFloat = 0.0
+    private var scrollbarDragStartMouseY: CGFloat = 0.0
     private var isUpdatingScroller = false
 
     public var theme: TerminalTheme {
@@ -446,16 +450,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             registerForDraggedTypes([.fileURL, .string])
         }
 
-        scrollerContainer.hasVerticalScroller = true
-        scrollerContainer.hasHorizontalScroller = false
-        scrollerContainer.scrollerStyle = .overlay
-        scrollerContainer.drawsBackground = false
-        scrollerContainer.contentView.drawsBackground = false
-        scrollerContainer.documentView = scrollerDocumentView
-        scrollerContainer.isHidden = true
-        scrollerContainer.contentView.postsBoundsChangedNotifications = true
-        NotificationCenter.default.addObserver(self, selector: #selector(scrollerDidScroll(_:)), name: NSView.boundsDidChangeNotification, object: scrollerContainer.contentView)
-        addSubview(scrollerContainer)
+        scrollbarLayer.addSublayer(scrollbarKnob)
+        scrollbarLayer.opacity = 0.0
+        scrollbarKnob.cornerRadius = 3.0
+        self.layer?.addSublayer(scrollbarLayer)
 
         parserCoordinator.setMainApplicationHandler { [weak self] outcomes in
             MainActor.assumeIsolated { self?.apply(outcomes) }
@@ -469,22 +467,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         rebuildMetalRenderer()
         setupAccessibility()
         startBlinkTimer()
-    }
-
-    @objc private func scrollerDidScroll(_ notification: Notification) {
-        if isUpdatingScroller { return }
-        let maxScroll = scrollbackLength
-        if maxScroll > 0 {
-            let contentView = scrollerContainer.contentView
-            let maxDocScroll = scrollerDocumentView.frame.height - contentView.bounds.height
-            if maxDocScroll <= 0 { return }
-            let positionY = contentView.bounds.origin.y
-            let fraction = Double(positionY / maxDocScroll)
-            // fraction is 0.0 when scrolled to top, 1.0 at bottom. 
-            // we need offset where 0 is bottom, maxScroll is top.
-            let targetOffset = Int(round((1.0 - fraction) * Double(maxScroll)))
-            scrollToOffset(targetOffset)
-        }
     }
 
     private func setupAccessibility() {
@@ -653,20 +635,35 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     func updateScroller() {
         let maxScroll = scrollbackLength
-        if maxScroll > 0 && !isAlternateScroll {
-            scrollerContainer.isHidden = false
-            let visibleLines = Double(core.rows())
-            let rowHeight: CGFloat = 20.0
-            let docHeight = CGFloat(Double(maxScroll) + visibleLines) * rowHeight
-            isUpdatingScroller = true
-            scrollerDocumentView.frame = CGRect(x: 0, y: 0, width: scrollerContainer.bounds.width, height: docHeight)
-            // scrollPosition is 0.0 at top, 1.0 at bottom.
-            let targetY = CGFloat(core.scrollPosition()) * (docHeight - scrollerContainer.bounds.height)
-            scrollerContainer.contentView.bounds.origin = CGPoint(x: 0, y: targetY)
-            isUpdatingScroller = false
-            scrollerContainer.flashScrollers()
-        } else {
-            scrollerContainer.isHidden = true
+        guard maxScroll > 0 && !isAlternateScroll else {
+            scrollbarLayer.opacity = 0.0
+            return
+        }
+        
+        let trackHeight = bounds.height
+        let visibleLines = Double(core.rows())
+        let totalLines = Double(maxScroll) + visibleLines
+        let proportion = visibleLines / totalLines
+        let knobHeight = max(trackHeight * CGFloat(proportion), 20.0)
+        let maxKnobTravel = trackHeight - knobHeight
+        
+        let pos = core.scrollPosition()
+        let knobY = maxKnobTravel * CGFloat(1.0 - pos)
+        
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
+        scrollbarKnob.frame = CGRect(x: 2, y: knobY, width: scrollbarLayer.bounds.width - 4, height: knobHeight)
+        scrollbarLayer.opacity = 1.0
+        CATransaction.commit()
+        
+        scrollbarFadeTimer?.invalidate()
+        scrollbarFadeTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.3)
+            MainActor.assumeIsolated { self.scrollbarLayer.opacity = 0.0 }
+            CATransaction.commit()
         }
     }
 
@@ -683,8 +680,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func layout() {
         super.layout()
-        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
-        scrollerContainer.frame = CGRect(x: bounds.width - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
+        let scrollerWidth: CGFloat = 12.0
+        scrollbarLayer.frame = CGRect(x: bounds.width - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
+        updateScroller()
     }
 
     /// Reset terminal state.
@@ -1824,6 +1822,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        let loc = convert(event.locationInWindow, from: nil)
+        if scrollbarLayer.opacity > 0, scrollbarLayer.frame.contains(loc) {
+            isDraggingScrollbar = true
+            scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
+            scrollbarDragStartMouseY = loc.y
+            
+            scrollbarFadeTimer?.invalidate()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.8).cgColor
+            CATransaction.commit()
+            return
+        }
+        isDraggingScrollbar = false
         let cell = cellAt(convert(event.locationInWindow, from: nil))
         if event.modifierFlags.contains(.command), let link = linkRange(at: cell) {
             Self.openURL(link.url)
@@ -1862,7 +1874,34 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     override public func mouseDragged(with event: NSEvent) {
-        let cell = cellAt(convert(event.locationInWindow, from: nil))
+        let loc = convert(event.locationInWindow, from: nil)
+        if isDraggingScrollbar {
+            let maxScroll = scrollbackLength
+            if maxScroll == 0 { return }
+            
+            let trackHeight = bounds.height
+            let visibleLines = Double(core.rows())
+            let totalLines = Double(maxScroll) + visibleLines
+            let proportion = visibleLines / totalLines
+            let knobHeight = max(trackHeight * CGFloat(proportion), 20.0)
+            let maxKnobTravel = trackHeight - knobHeight
+            guard maxKnobTravel > 0 else { return }
+            
+            let dy = loc.y - scrollbarDragStartMouseY
+            var newKnobY = scrollbarDragStartKnobY + dy
+            newKnobY = max(0, min(newKnobY, maxKnobTravel))
+            
+            let fraction = newKnobY / maxKnobTravel
+            // fraction = 0 is bottom, fraction = 1 is top
+            let newPos = 1.0 - Double(fraction)
+            
+            core.setScrollPosition(position: newPos)
+            lastReportedScrollPosition = newPos
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
+        let cell = cellAt(loc)
         guard !reportingCurrentPress else {
             let report = mouseReportBytes(button: .left, action: .motion, cell: cell, event: event)
             if !report.isEmpty { delegate?.terminalView(self, sendInputData: report) }
