@@ -140,7 +140,7 @@ final class Ending: @unchecked Sendable {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var pending: [ObjectIdentifier: Ending] = [:]
-    private let attemptFinished = DispatchSemaphore(value: 0)
+    let attemptFinished = DispatchSemaphore(value: 0)
 
     init(runtime: URL, name: String, environment: [String: String], records: SessionRecordStore,
          id: UUID, generation: String, owner: SessionOwnerLock) {
@@ -183,7 +183,7 @@ final class Ending: @unchecked Sendable {
         _ = RuntimeCommand.run(runtime, ["kill", name], environment: environment, timeout: 3)
         let listed = RuntimeCommand.isListed(runtime, name: name, environment: environment)
         attemptFinished.signal()
-        
+
         if listed == false {
             records.remove(id)
             settle()
@@ -193,6 +193,7 @@ final class Ending: @unchecked Sendable {
         guard reportFailure else { return false }
         DispatchQueue.main.async {
             if Self.askAgain(self.name) {
+                _ = self.attemptFinished.wait(timeout: .now())
                 DispatchQueue.global(qos: .utility).async { self.run() }
             } else {
                 self.leaveRunning()

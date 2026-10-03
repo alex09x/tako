@@ -324,6 +324,46 @@ struct SessionEndingTests {
         #expect(Ending.pendingCount == before)
         #expect(records.read(id) == .none)
     }
+    @Test func aRetryIsWaitedForIfQuitHappensConcurrently() throws {
+        let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runtime = root.appendingPathComponent("zmx")
+        // If flag file 'f' exists, the script sleeps 1 sec and then succeeds (closing the session)
+        // Otherwise, it fails immediately to simulate the first failed attempt.
+        try Data("#!/bin/sh\nif [ \"$1\" = kill ]; then\n  if [ -f \"$2/f\" ]; then\n    sleep 1\n    exit 0\n  else\n    echo \"name=abc\\tpid=1\" >&2\n    exit 1\n  fi\nfi\n".utf8).write(to: runtime)
+        chmod(runtime.path, 0o755)
+        
+        let ns = try SessionNamespace.open(runtimeID: "0.8.1", home: root)
+        let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
+        let id = UUID()
+        try records.write(SessionRecord(id: id, runtimeID: "0.8.1", generation: "g", state: .attached, createdAt: Date()))
+        let ending = Ending(runtime: runtime, name: "abc", environment: ["T": root.path], records: records, id: id, generation: "g", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
+        
+        // 1. Fail first attempt
+        let before = Ending.pendingCount
+        ending.start(reportFailure: false)
+        // Since reportFailure is false, run() returns false when it fails, and it's kept in pending, marked closedButRunning
+        Ending.settleBeforeQuit(within: 2) // wait for first attempt to fail
+        #expect(Ending.pendingCount == before + 1)
+        
+        // 2. Setup retry to succeed slowly
+        try Data().write(to: root.appendingPathComponent("f"))
+        
+        // 3. Start retry and concurrently quit
+        // We have to emulate what `askAgain` returning true does: drain the signal and async run
+        _ = ending.attemptFinished.wait(timeout: .now())
+        DispatchQueue.global(qos: .utility).async { _ = ending.run(reportFailure: false) }
+        
+        // Give the global queue a tiny head start so `run()` executes, but we want to make sure settleBeforeQuit WAITS for it
+        Thread.sleep(forTimeInterval: 0.1)
+        
+        Ending.settleBeforeQuit(within: 6)
+        
+        // The retry should have successfully cleared the session record and removed it from pending
+        #expect(Ending.pendingCount == before)
+        #expect(records.read(id) == .none)
+    }
 
     @Test func leftoversAreFoundByTheirRecordState() throws {
         let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
