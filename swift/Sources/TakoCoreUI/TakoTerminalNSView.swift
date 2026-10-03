@@ -145,7 +145,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// A native scrollbar for visual UX, optionally shown depending on settings.
     private let scrollbarLayer = CALayer()
     private let scrollbarKnob = CALayer()
-    private var scrollbarFadeTimer: Foundation.Timer?
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -450,9 +449,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             registerForDraggedTypes([.fileURL, .string])
         }
 
+        scrollbarLayer.zPosition = 9999
+        scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
+        scrollbarLayer.cornerRadius = 5.0
+        scrollbarLayer.masksToBounds = true
+        scrollbarKnob.cornerRadius = 3.5
+        scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
         scrollbarLayer.addSublayer(scrollbarKnob)
-        scrollbarLayer.opacity = 0.0
-        scrollbarKnob.cornerRadius = 3.0
+        scrollbarLayer.opacity = 1.0
         self.layer?.addSublayer(scrollbarLayer)
 
         parserCoordinator.setMainApplicationHandler { [weak self] outcomes in
@@ -634,37 +638,37 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private var lastReportedScrollPosition: Double = 1
 
     func updateScroller() {
-        let maxScroll = scrollbackLength
-        guard maxScroll > 0 && !isAlternateScroll else {
-            scrollbarLayer.opacity = 0.0
-            return
-        }
-        
         let trackHeight = bounds.height
-        let visibleLines = Double(core.rows())
-        let totalLines = Double(maxScroll) + visibleLines
-        let proportion = visibleLines / totalLines
-        let knobHeight = max(trackHeight * CGFloat(proportion), 20.0)
-        let maxKnobTravel = trackHeight - knobHeight
+        guard trackHeight > 0 else { return }
         
-        let pos = core.scrollPosition()
-        let knobY = maxKnobTravel * CGFloat(1.0 - pos)
+        let scrollerWidth: CGFloat = 10.0
+        scrollbarLayer.frame = CGRect(x: bounds.width - scrollerWidth - 2.0, y: 2.0, width: scrollerWidth, height: trackHeight - 4.0)
         
+        let maxScroll = scrollbackLength
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
-        scrollbarKnob.frame = CGRect(x: 2, y: knobY, width: scrollbarLayer.bounds.width - 4, height: knobHeight)
         scrollbarLayer.opacity = 1.0
-        CATransaction.commit()
         
-        scrollbarFadeTimer?.invalidate()
-        scrollbarFadeTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(0.3)
-            MainActor.assumeIsolated { self.scrollbarLayer.opacity = 0.0 }
-            CATransaction.commit()
+        let usableHeight = scrollbarLayer.bounds.height
+        if maxScroll == 0 {
+            scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
+            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        } else {
+            let visibleLines = Double(core.rows())
+            let totalLines = Double(maxScroll) + visibleLines
+            let proportion = max(0.05, min(1.0, visibleLines / totalLines))
+            let knobHeight = max(usableHeight * CGFloat(proportion), 24.0)
+            let maxKnobTravel = max(0, usableHeight - knobHeight)
+            
+            let pos = core.scrollPosition()
+            let knobY = maxKnobTravel * CGFloat(1.0 - pos)
+            
+            scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
+            scrollbarKnob.backgroundColor = isDraggingScrollbar
+                ? NSColor.white.withAlphaComponent(0.85).cgColor
+                : NSColor.white.withAlphaComponent(0.45).cgColor
         }
+        CATransaction.commit()
     }
 
     /// Internal, not private: a host that moved the viewport in the engine
@@ -680,8 +684,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func layout() {
         super.layout()
-        let scrollerWidth: CGFloat = 12.0
-        scrollbarLayer.frame = CGRect(x: bounds.width - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
         updateScroller()
     }
 
@@ -1823,16 +1825,35 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     override public func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let loc = convert(event.locationInWindow, from: nil)
-        if scrollbarLayer.opacity > 0, scrollbarLayer.frame.contains(loc) {
-            isDraggingScrollbar = true
-            scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
-            scrollbarDragStartMouseY = loc.y
-            
-            scrollbarFadeTimer?.invalidate()
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.8).cgColor
-            CATransaction.commit()
+        if scrollbarLayer.frame.contains(loc) {
+            let maxScroll = scrollbackLength
+            if maxScroll > 0 {
+                isDraggingScrollbar = true
+                let locInLayer = CGPoint(x: loc.x - scrollbarLayer.frame.origin.x, y: loc.y - scrollbarLayer.frame.origin.y)
+                
+                if scrollbarKnob.frame.contains(locInLayer) {
+                    scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
+                    scrollbarDragStartMouseY = loc.y
+                } else {
+                    let usableHeight = scrollbarLayer.bounds.height
+                    let knobHeight = scrollbarKnob.frame.height
+                    let maxKnobTravel = max(0, usableHeight - knobHeight)
+                    let targetKnobY = max(0, min(locInLayer.y - knobHeight / 2.0, maxKnobTravel))
+                    let newPos = maxKnobTravel > 0 ? Double(1.0 - targetKnobY / maxKnobTravel) : 1.0
+                    core.setScrollPosition(position: newPos)
+                    lastReportedScrollPosition = newPos
+                    updateScroller()
+                    scheduleRedraw()
+                    
+                    scrollbarDragStartKnobY = targetKnobY
+                    scrollbarDragStartMouseY = loc.y
+                }
+                
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+                CATransaction.commit()
+            }
             return
         }
         isDraggingScrollbar = false
@@ -1879,12 +1900,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             let maxScroll = scrollbackLength
             if maxScroll == 0 { return }
             
-            let trackHeight = bounds.height
+            let usableHeight = scrollbarLayer.bounds.height
             let visibleLines = Double(core.rows())
             let totalLines = Double(maxScroll) + visibleLines
-            let proportion = visibleLines / totalLines
-            let knobHeight = max(trackHeight * CGFloat(proportion), 20.0)
-            let maxKnobTravel = trackHeight - knobHeight
+            let proportion = max(0.05, min(1.0, visibleLines / totalLines))
+            let knobHeight = max(usableHeight * CGFloat(proportion), 24.0)
+            let maxKnobTravel = max(0, usableHeight - knobHeight)
             guard maxKnobTravel > 0 else { return }
             
             let dy = loc.y - scrollbarDragStartMouseY
@@ -1892,7 +1913,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             newKnobY = max(0, min(newKnobY, maxKnobTravel))
             
             let fraction = newKnobY / maxKnobTravel
-            // fraction = 0 is bottom, fraction = 1 is top
             let newPos = 1.0 - Double(fraction)
             
             core.setScrollPosition(position: newPos)
@@ -1914,6 +1934,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     override public func mouseUp(with event: NSEvent) {
+        if isDraggingScrollbar {
+            isDraggingScrollbar = false
+            updateScroller()
+            return
+        }
         let cell = cellAt(convert(event.locationInWindow, from: nil))
         guard !reportingCurrentPress else {
             let report = mouseReportBytes(button: .left, action: .release, cell: cell, event: event)
@@ -2092,6 +2117,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if scrollbarLayer.frame.contains(point) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.65).cgColor
+            CATransaction.commit()
+        } else if !isDraggingScrollbar {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            scrollbarKnob.backgroundColor = scrollbackLength == 0
+                ? NSColor.white.withAlphaComponent(0.15).cgColor
+                : NSColor.white.withAlphaComponent(0.45).cgColor
+            CATransaction.commit()
+        }
         mouseCell = cellAt(point)
         updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         if let cell = mouseCell {
