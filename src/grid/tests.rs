@@ -1324,3 +1324,29 @@ fn a_grapheme_id_costs_a_cell_no_bytes() {
     // The id sits in padding the cell already had.
     assert_eq!(std::mem::size_of::<Cell>(), 32);
 }
+
+#[test]
+fn test_row_owner_transitions() {
+    let empty = RowOwner::Empty;
+    let unowned = RowOwner::Unowned;
+    let mixed = RowOwner::Mixed;
+    let cmd1 = RowOwner::Command(1);
+
+    assert_eq!(empty.after_write(Some(1)), cmd1);
+    assert_eq!(empty.after_write(None), unowned);
+
+    // Unowned + partial print gives Mixed
+    assert_eq!(unowned.after_write(Some(1)), mixed);
+    assert_eq!(unowned.after_write(None), unowned);
+
+    // Command + same command stays
+    assert_eq!(cmd1.after_write(Some(1)), cmd1);
+    // Command + different command gives Mixed
+    assert_eq!(cmd1.after_write(Some(2)), mixed);
+    // Command + outside command gives Mixed
+    assert_eq!(cmd1.after_write(None), mixed);
+
+    // Mixed -> print outside command -> new command
+    assert_eq!(mixed.after_write(None), mixed);
+    assert_eq!(mixed.after_write(Some(2)), mixed);
+}

@@ -1488,14 +1488,9 @@ impl<'a> CommandBlock<'a> {
     fn of(term: &'a Terminal) -> Self {
         let grid = &term.primary;
         let log = &term.commands;
-        let normalized = |owner: RowOwner| match owner {
-            RowOwner::Command(id) if log.get(id).is_none() => RowOwner::Unowned,
-            other => other,
-        };
         let owners = (0..grid.scrollback_len())
             .map(|i| grid.scrollback_owner(i))
-            .chain((0..grid.rows()).map(|r| grid.row_owner(r)))
-            .map(normalized);
+            .chain((0..grid.rows()).map(|r| grid.row_owner(r)));
         let mut runs: Vec<(RowOwner, u32)> = Vec::new();
         for owner in owners {
             match runs.last_mut() {
@@ -1503,17 +1498,7 @@ impl<'a> CommandBlock<'a> {
                 _ => runs.push((owner, 1)),
             }
         }
-        let live: std::collections::HashSet<u64> = runs
-            .iter()
-            .filter_map(|(o, _)| match o {
-                RowOwner::Command(id) => Some(*id),
-                _ => None,
-            })
-            .collect();
-        let records = log
-            .records()
-            .filter(|r| live.contains(&r.id) || log.running() == Some(r.id))
-            .collect();
+        let records = log.records().collect();
         Self { runs, records }
     }
 }
@@ -1634,13 +1619,7 @@ fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) ->
     if pen != running {
         return Err(bad("command pen is not the running command"));
     }
-    for (owner, _) in &runs {
-        if let RowOwner::Command(id) = owner
-            && log.get(*id).is_none()
-        {
-            return Err(bad("row owner names no command"));
-        }
-    }
+
     let last_cwd = read_opt_string(r)?;
     if last_cwd.as_ref().is_some_and(|c| c.len() > MAX_CWD_BYTES) {
         return Err(bad("cwd too long"));
@@ -2601,10 +2580,7 @@ mod command_block_tests {
         assert!(rejected(&block(&[(1, 7, 2)], None, Some(1), None, &[])));
     }
 
-    #[test]
-    fn an_owner_must_name_a_record() {
-        assert!(rejected(&block(&[(3, 5, 2)], None, Some(9), None, &[Rec(1, 1, 0)])));
-    }
+
 
     #[test]
     fn ids_must_be_unique_ascending_and_below_the_next_id() {

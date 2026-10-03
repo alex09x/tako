@@ -1606,9 +1606,6 @@ impl Terminal {
         };
         let id = self.commands.start(self.last_cwd.clone(), input, truncated);
         self.primary.set_pen_owner(id);
-        if self.commands.prune_due() {
-            self.prune_commands();
-        }
         id
     }
 
@@ -1675,11 +1672,7 @@ impl Terminal {
         (Some(trimmed.to_string()), truncated)
     }
 
-    /// Forget finished commands none of whose output is still retained.
-    pub fn prune_commands(&mut self) {
-        let live = self.primary.live_commands();
-        self.commands.prune(&live);
-    }
+
 
     /// The commands recorded on the primary screen.
     pub fn commands(&self) -> &commands::CommandLog {
@@ -4115,4 +4108,21 @@ mod scrollback_soft_wrap_tests {
         // still retained, rather than referencing discarded text.
         assert_eq!(evicted_selected, "KLMNOPQRST\nUVWXYZ");
     }
+}
+
+#[test]
+fn test_set_command_started_at_any_status() {
+    let mut term = Terminal::new(10, 10);
+    // C and D in one feed
+    term.feed(b"\x1b]133;C\x07\x1b]133;D\x07");
+    
+    // Command is already Completed, but setting time still works!
+    assert_eq!(term.commands.running(), None); // It is not running
+    // id is 1
+    assert!(term.set_command_started_at(1, 1000));
+    assert_eq!(term.commands.get(1).unwrap().started_at_ms, Some(1000));
+
+    // Time cannot be overwritten
+    assert!(!term.set_command_started_at(1, 2000));
+    assert_eq!(term.commands.get(1).unwrap().started_at_ms, Some(1000));
 }
