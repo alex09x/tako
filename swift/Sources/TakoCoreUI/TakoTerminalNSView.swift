@@ -142,6 +142,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// off Main, and comes back as outcomes applied here in batch order.
     let parserCoordinator: TerminalParserCoordinator
 
+    /// A native scrollbar for visual UX, optionally shown depending on settings.
+    public let scrollerContainer = NSScrollView()
+    private let scrollerDocumentView = NSView()
+    private var isUpdatingScroller = false
+
     public var theme: TerminalTheme {
         didSet {
             renderer = TerminalRenderer(
@@ -441,6 +446,17 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             registerForDraggedTypes([.fileURL, .string])
         }
 
+        scrollerContainer.hasVerticalScroller = true
+        scrollerContainer.hasHorizontalScroller = false
+        scrollerContainer.scrollerStyle = .overlay
+        scrollerContainer.drawsBackground = false
+        scrollerContainer.contentView.drawsBackground = false
+        scrollerContainer.documentView = scrollerDocumentView
+        scrollerContainer.isHidden = true
+        scrollerContainer.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(scrollerDidScroll(_:)), name: NSView.boundsDidChangeNotification, object: scrollerContainer.contentView)
+        addSubview(scrollerContainer)
+
         parserCoordinator.setMainApplicationHandler { [weak self] outcomes in
             MainActor.assumeIsolated { self?.apply(outcomes) }
         }
@@ -453,6 +469,22 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         rebuildMetalRenderer()
         setupAccessibility()
         startBlinkTimer()
+    }
+
+    @objc private func scrollerDidScroll(_ notification: Notification) {
+        if isUpdatingScroller { return }
+        let maxScroll = scrollbackLength
+        if maxScroll > 0 {
+            let contentView = scrollerContainer.contentView
+            let maxDocScroll = scrollerDocumentView.frame.height - contentView.bounds.height
+            if maxDocScroll <= 0 { return }
+            let positionY = contentView.bounds.origin.y
+            let fraction = Double(positionY / maxDocScroll)
+            // fraction is 0.0 when scrolled to top, 1.0 at bottom. 
+            // we need offset where 0 is bottom, maxScroll is top.
+            let targetOffset = Int(round((1.0 - fraction) * Double(maxScroll)))
+            scrollToOffset(targetOffset)
+        }
     }
 
     private func setupAccessibility() {
@@ -600,6 +632,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             // Synchronized output suppression & damage-aware redraw
             if outcome.hasDamage && !outcome.synchronizedOutputActive {
                 totalDamage = true
+                updateScroller()
                 scheduleRedraw()
             }
         }
@@ -618,13 +651,40 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     private var lastReportedScrollPosition: Double = 1
 
+    func updateScroller() {
+        let maxScroll = scrollbackLength
+        if maxScroll > 0 && !isAlternateScroll {
+            scrollerContainer.isHidden = false
+            let visibleLines = Double(core.rows())
+            let rowHeight: CGFloat = 20.0
+            let docHeight = CGFloat(Double(maxScroll) + visibleLines) * rowHeight
+            isUpdatingScroller = true
+            scrollerDocumentView.frame = CGRect(x: 0, y: 0, width: scrollerContainer.bounds.width, height: docHeight)
+            // scrollPosition is 0.0 at top, 1.0 at bottom.
+            let targetY = CGFloat(core.scrollPosition()) * (docHeight - scrollerContainer.bounds.height)
+            scrollerContainer.contentView.bounds.origin = CGPoint(x: 0, y: targetY)
+            isUpdatingScroller = false
+            scrollerContainer.flashScrollers()
+        } else {
+            scrollerContainer.isHidden = true
+        }
+    }
+
     /// Internal, not private: a host that moved the viewport in the engine
     /// directly (a search selecting a hit) calls it so the scrollbar follows.
     func notifyScrollPositionIfChanged() {
+        updateScroller()
+        
         let position = core.scrollPosition()
         guard abs(position - lastReportedScrollPosition) > 0.0001 else { return }
         lastReportedScrollPosition = position
         delegate?.terminalView(self, didScrollTo: position)
+    }
+
+    override public func layout() {
+        super.layout()
+        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
+        scrollerContainer.frame = CGRect(x: bounds.width - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
     }
 
     /// Reset terminal state.
