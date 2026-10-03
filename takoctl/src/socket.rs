@@ -41,6 +41,7 @@ pub const MAX_ANSWER_BYTES: usize = 16 << 20;
 
 /// Sends one request line and reads the one-line answer, all of it within
 /// `TIMEOUT` -- connecting included.
+#[allow(dead_code)]
 pub fn exchange(path: &str, request: &Value) -> Result<Value, Failure> {
     exchange_within(path, request, TIMEOUT, MAX_ANSWER_BYTES)
 }
@@ -60,6 +61,7 @@ impl std::fmt::Display for Failure {
 }
 
 impl Failure {
+    #[allow(dead_code)]
     pub fn contains(&self, s: &str) -> bool {
         self.message.contains(s)
     }

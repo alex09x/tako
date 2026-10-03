@@ -114,6 +114,8 @@ its exit status and output, without touching the keyboard; when a request names 
 or ambiguous it fails with a clear error instead of acting on another one; and when no other user on
 the Mac can reach it.
 
+Status: shipped in 0.1.4.
+
 ## TakoCore
 
 A small track that runs alongside the app:
