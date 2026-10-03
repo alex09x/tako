@@ -259,39 +259,39 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="Find" id="vPo-Sd-cTP">
                                     <items>
-                                        <menuItem title="Find..." id="nwE-0w-30h">
+                                        <menuItem title="Find..." keyEquivalent="f" id="nwE-0w-30h">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="find:" target="-1" id="PeY-3u-IxC"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Find Next" id="XqU-X8-q32">
+                                        <menuItem title="Find Next" keyEquivalent="g" id="XqU-X8-q32">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="findNext:" target="-1" id="Dka-ng-aSs"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Find Previous" id="1hd-2Z-wVm">
+                                        <menuItem title="Find Previous" keyEquivalent="G" id="1hd-2Z-wVm">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="findPrevious:" target="-1" id="Zvs-bs-ZR4"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Find in All Tabs..." id="fAl-Tb-s01">
+                                        <menuItem title="Find in All Tabs..." keyEquivalent="F" id="fAl-Tb-s01">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="toggleFindAll:" target="-1" id="fAl-Tb-s03"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="KlV-2C-wYr"/>
-                                        <menuItem title="Hide Find Bar" id="xzC-AG-HAc">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                        <menuItem title="Hide Find Bar" keyEquivalent="f" id="xzC-AG-HAc">
+                                            <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
                                             <connections>
                                                 <action selector="findHide:" target="-1" id="hGP-K9-yN9"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem isSeparatorItem="YES" id="2N8-Xz-RVc"/>
-                                        <menuItem title="Use Selection for Find" id="TDN-42-Bu7">
+                                        <menuItem title="Use Selection for Find" keyEquivalent="e" id="TDN-42-Bu7">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
                                                 <action selector="selectionForFind:" target="-1" id="rhL-7g-XQQ"/>
