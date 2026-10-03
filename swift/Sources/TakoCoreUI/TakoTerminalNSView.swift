@@ -650,9 +650,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scrollbarLayer.opacity = 1.0
         
         let usableHeight = scrollbarLayer.bounds.height
-        if maxScroll == 0 {
-            scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
-            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        let modes = core.modes()
+        if maxScroll == 0 || (modes.alternateScreen && modes.alternateScroll) {
+            let knobHeight: CGFloat = (modes.alternateScreen && modes.alternateScroll) ? 44.0 : max(0, usableHeight - 3.0)
+            let knobY = (modes.alternateScreen && modes.alternateScroll) ? (usableHeight - knobHeight) / 2.0 : 1.5
+            scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
+            scrollbarKnob.backgroundColor = (modes.alternateScreen && modes.alternateScroll)
+                ? NSColor.white.withAlphaComponent(0.5).cgColor
+                : NSColor.white.withAlphaComponent(0.15).cgColor
         } else {
             let visibleLines = Double(core.rows())
             let totalLines = Double(maxScroll) + visibleLines
@@ -1827,6 +1832,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let loc = convert(event.locationInWindow, from: nil)
         if scrollbarLayer.frame.contains(loc) {
             let maxScroll = scrollbackLength
+            let modes = core.modes()
+            if maxScroll == 0 || (modes.alternateScreen && modes.alternateScroll) {
+                isDraggingScrollbar = true
+                scrollbarDragStartMouseY = loc.y
+                let key = FfiKeyEvent(
+                    key: loc.y > bounds.height / 2 ? .pageUp : .pageDown, text: "", physicalText: "", unshiftedText: "",
+                    shift: false, alt: false, ctrl: false, superKey: false,
+                    press: true, repeat: false, composing: false)
+                let singleKey = core.encodeKey(event: key)
+                if !singleKey.isEmpty {
+                    delegate?.terminalView(self, sendInputData: singleKey)
+                }
+                return
+            }
             if maxScroll > 0 {
                 isDraggingScrollbar = true
                 let locInLayer = CGPoint(x: loc.x - scrollbarLayer.frame.origin.x, y: loc.y - scrollbarLayer.frame.origin.y)
@@ -1898,7 +1917,27 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let loc = convert(event.locationInWindow, from: nil)
         if isDraggingScrollbar {
             let maxScroll = scrollbackLength
-            if maxScroll == 0 { return }
+            let modes = core.modes()
+            if maxScroll == 0 || (modes.alternateScreen && modes.alternateScroll) {
+                // In alternate screen / session multiplexer (zmx), synthesize arrow keys
+                let dy = loc.y - scrollbarDragStartMouseY
+                let pointsPerStep: CGFloat = 8.0
+                if abs(dy) >= pointsPerStep {
+                    let steps = Int(dy / pointsPerStep)
+                    scrollbarDragStartMouseY += CGFloat(steps) * pointsPerStep
+                    let key = FfiKeyEvent(
+                        key: steps > 0 ? .up : .down, text: "", physicalText: "", unshiftedText: "",
+                        shift: false, alt: false, ctrl: false, superKey: false,
+                        press: true, repeat: false, composing: false)
+                    let singleKey = core.encodeKey(event: key)
+                    if !singleKey.isEmpty {
+                        var keys = Data()
+                        for _ in 0..<abs(steps) { keys.append(singleKey) }
+                        delegate?.terminalView(self, sendInputData: keys)
+                    }
+                }
+                return
+            }
             
             let usableHeight = scrollbarLayer.bounds.height
             let visibleLines = Double(core.rows())
