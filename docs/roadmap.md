@@ -10,18 +10,18 @@ the people using it say it helps, not when a list of items is done.
 
 ## Before inviting outside users
 
-**Install and update.** Status: on main, targeted for 0.1.5. A clean install on another Mac opens without working around Gatekeeper,
+- [x] **Install and update.** Status: on main, targeted for 0.1.5. A clean install on another Mac opens without working around Gatekeeper,
 and the in-app updater installs only builds that are signed and notarized. This gates inviting
 outside testers; it does not hold up development, which runs on local builds.
 
-**Daily reliability.** Status: on main, targeted for 0.1.5. Shells, SSH and full-screen programs keep working; input methods and
+- [x] **Daily reliability.** Status: on main, targeted for 0.1.5. Shells, SSH and full-screen programs keep working; input methods and
 non-Latin text, selection, copy and paste, scrolling and many tabs behave correctly. The first
 round of outside feedback looks for anything that stops someone from working before it looks at
 new features.
 
 ## Tako.app, in order
 
-### 1. Pick up where you left off
+### [x] 1. Pick up where you left off
 
 Status: shipped in 0.1.4; the layout after a crash, and every tab after a normal quit, since.
 
@@ -48,7 +48,7 @@ Done when:
 - with the setting off, nothing is written;
 - secure-input sessions are excluded.
 
-### 2. See which tab needs attention
+### [x] 2. See which tab needs attention
 
 Status: shipped in 0.1.4.
 
@@ -59,7 +59,7 @@ from guessing at the text on screen.
 Done when the marker matches the command's real outcome, the `never`, `unfocused` and `always`
 modes behave predictably, and the signal can be turned off.
 
-### 3. Find output across sessions
+### [x] 3. Find output across sessions
 
 Status: shipped in 0.1.4, including grouping by command.
 
@@ -73,7 +73,7 @@ Done when someone finds a given piece of output among several sessions and jumps
 going through tabs by hand, the search stays local, and it never invents details the shell did not
 report.
 
-### 4. Keep the same session across a relaunch
+### [ ] 4. Keep the same session across a relaunch
 
 Status: in 0.1.4 as an experimental setting (`session-persistence`), off by default; behaviour across sleep and wake is not yet verified.
 
@@ -94,7 +94,7 @@ Done when:
 - the user has a clear action that ends a live session;
 - when the host is gone, the fallback above is what happens.
 
-### 5. Drive Tako from a script
+### [x] 5. Drive Tako from a script
 
 A command-line tool, `takoctl`, controls the running app: list windows, tabs and panes with their
 directories; open a tab or split with a directory and a command; type into a pane or send it a key;
@@ -120,10 +120,10 @@ Status: on main, targeted for 0.1.5.
 
 A small track that runs alongside the app:
 
-- minimal sample apps for macOS and iOS;
-- a headless example over the C ABI;
-- a page of limits and compatibility;
-- a versioning policy for the API.
+- [ ] minimal sample apps for macOS and iOS;
+- [ ] a headless example over the C ABI;
+- [ ] a page of limits and compatibility;
+- [ ] a versioning policy for the API.
 
 When an app feature needs something new from the engine, it is designed and tested in TakoCore
 first, then used by the app.
