@@ -10,11 +10,11 @@ the people using it say it helps, not when a list of items is done.
 
 ## Before inviting outside users
 
-**Install and update.** A clean install on another Mac opens without working around Gatekeeper,
+**Install and update.** Status: on main, targeted for 0.1.5. A clean install on another Mac opens without working around Gatekeeper,
 and the in-app updater installs only builds that are signed and notarized. This gates inviting
 outside testers; it does not hold up development, which runs on local builds.
 
-**Daily reliability.** Shells, SSH and full-screen programs keep working; input methods and
+**Daily reliability.** Status: on main, targeted for 0.1.5. Shells, SSH and full-screen programs keep working; input methods and
 non-Latin text, selection, copy and paste, scrolling and many tabs behave correctly. The first
 round of outside feedback looks for anything that stops someone from working before it looks at
 new features.
