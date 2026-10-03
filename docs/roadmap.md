@@ -148,5 +148,8 @@ put it in Tako.
 
 ## Later, only if users need it
 
-Reconnecting to sessions on other machines, companion devices and new transports. The first version also leaves out cloud sync, vendor-specific agent
-panels and inferring state from screen text. No telemetry is sent by default.
+- [ ] **Reconnecting to sessions:** (Other machines, companion devices, new transports). The first version leaves out cloud sync, vendor-specific agent panels and inferring state from screen text. No telemetry is sent by default.
+- [ ] **AI / Copilot integration:** Revisit only if there is direct demand. Must be opt-in with explicit control over context sharing. (A user's external agent can already drive Tako through `takoctl`).
+- [ ] **tmux control mode:** Revisit only if users need Tako to host or control existing tmux workflows (large compatibility surface).
+- [ ] **Native scrollbars:** Revisit only if users specifically need a clearer position indicator to navigate history (scrollback search is already present).
+- [ ] **Font ligatures:** Consider adding as a setting only if explicitly requested.
