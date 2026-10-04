@@ -2153,6 +2153,18 @@ impl Terminal {
         self.input_start = None;
 
         let full_width = self.h_margins_full();
+        let prompt_shift_below = if top == 0
+            && full_width
+            && bottom + 1 < rows
+            && self.active == ScreenBuffer::Primary
+        {
+            let sb = self.primary.scrollback_len() as u64;
+            let first = self.primary.first_retained_line();
+            Some((first + sb + (bottom + 1) as u64)..=(first + sb + (rows - 1) as u64))
+        } else {
+            None
+        };
+
         // A partial-height region anchored at the top of the screen still
         // feeds scrollback -- its lines leave the screen the same way a
         // full-screen scroll's do (upstream behavior).
@@ -2166,7 +2178,9 @@ impl Terminal {
             let blank = self.bce_blank();
             self.active_grid_mut()
                 .scroll_region_up_with_blank(top, bottom, n, blank);
-            if top > 0 && self.active == ScreenBuffer::Primary {
+            if let Some(shift_range) = prompt_shift_below {
+                self.remap_prompts_below_scroll_region(shift_range, n as u64);
+            } else if top > 0 && self.active == ScreenBuffer::Primary {
                 self.remap_screen_rows_up(top, bottom, n);
             }
             return;
@@ -2523,6 +2537,19 @@ impl Terminal {
         }
 
         self.commands.shift_screen_prompts_up(shift_range, n as u64, discard_range);
+    }
+
+    fn remap_prompts_below_scroll_region(
+        &mut self,
+        shift_range: std::ops::RangeInclusive<u64>,
+        delta: u64,
+    ) {
+        if let Some(prompt) = self.last_prompt_line
+            && shift_range.contains(&prompt)
+        {
+            self.last_prompt_line = Some(prompt + delta);
+        }
+        self.commands.shift_prompts_forward(shift_range, delta);
     }
 
     /// DECIC: insert `n` blank columns at the cursor, shifting columns

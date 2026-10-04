@@ -933,6 +933,45 @@ fn prompt_marks_remap_through_vertical_row_edits() {
     assert!(marks.is_empty(), "deleted prompt line should have its mark removed");
 }
 
+#[test]
+fn prompt_marks_remap_below_top_anchored_scroll_region() {
+    let mut t = Terminal::new(40, 10);
+    // Write prompt 1 at row 0 (inside upcoming region 0..=2)
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;C\x07cmd1\r\n\x1b]133;D;0\x07");
+
+    // Move cursor to row 4 (1-based: 5, below upcoming region 0..=2)
+    t.feed(b"\x1b[5;1H\x1b]133;A\x07$ \x1b]133;C\x07cmd2\r\n\x1b]133;D;0\x07");
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 2);
+    assert_eq!(marks[0].retained_row, 0);
+    assert_eq!(marks[0].prompt_line, 0);
+    assert_eq!(marks[1].retained_row, 4);
+    assert_eq!(marks[1].prompt_line, 4);
+
+    // Set scroll region to rows 1..3 (0-based: 0..=2)
+    t.feed(b"\x1b[1;3r");
+
+    // Scroll region up by 2 lines: CSI 2 S
+    t.feed(b"\x1b[2S");
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 2, "both marks must be preserved");
+
+    // Prompt 1 entered scrollback (stashed at history line 0)
+    assert_eq!(marks[0].prompt_line, 0);
+    assert_eq!(marks[0].retained_row, 0);
+
+    // Prompt 2 remained at screen row 4, but 2 rows were added to scrollback,
+    // so retained_row is now 6 and prompt_line is remapped to 6.
+    assert_eq!(marks[1].prompt_line, 6);
+    assert_eq!(marks[1].retained_row, 6);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(6),
+        SemanticPrompt::Prompt
+    );
+}
+
 
 
 

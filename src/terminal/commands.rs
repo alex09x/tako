@@ -202,6 +202,16 @@ impl CommandLog {
         }
     }
 
+    /// Shift prompt lines forward by `delta` for rows within `range`.
+    pub fn shift_prompts_forward(&mut self, range: std::ops::RangeInclusive<u64>, delta: u64) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line
+                && range.contains(&prompt)
+            {
+                rec.prompt_line = Some(prompt + delta);
+            }
+        }
+    }
 
     /// Forget every record (reset). Ids keep counting.
     pub fn clear(&mut self) {

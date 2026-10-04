@@ -934,6 +934,7 @@ fn test_debug_is_independent_of_physical_rotation() {
         rotated.scroll_up(1);
     }
     let mut fresh = Grid::with_scrollback_capacity(3, 3, 0);
+    fresh.history_evicted = rotated.history_evicted;
 
     for g in [&mut rotated, &mut fresh] {
         for row in 0..3 {
