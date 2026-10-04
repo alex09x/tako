@@ -59,7 +59,7 @@ struct TerminalCommandPaletteView: View {
         // Sort them. We replace ":" with a character that sorts before space
         // so that "Foo:" sorts before "Foo Bar:". Use sortKey as a tie-breaker
         // for stable ordering when titles are equal.
-        options.append(contentsOf: (jumpOptions + terminalOptions).sorted { a, b in
+        options.append(contentsOf: (jumpOptions + terminalOptions + commandActionOptions).sorted { a, b in
             let aNormalized = a.title.replacingOccurrences(of: ":", with: "\t")
             let bNormalized = b.title.replacingOccurrences(of: ":", with: "\t")
             let comparison = aNormalized.localizedCaseInsensitiveCompare(bNormalized)
@@ -72,6 +72,134 @@ struct TerminalCommandPaletteView: View {
             }
             return false
         })
+        return options
+    }
+
+    @State private var commandActionsPage: Int = 1
+    private static let commandsPerPage: Int = 50
+
+    /// Actions on recorded commands (copy command, copy output, re-run, etc.).
+    /// Paginates history in batches of 50 to avoid materializing tens of thousands of rows on the main thread.
+    private var commandActionOptions: [CommandOption] {
+        let commands = surfaceView.recordedCommands()
+        guard !commands.isEmpty else { return [] }
+
+        let newestId = surfaceView.activeStickyCommandHeader?.commandId ?? commands.last?.id
+
+        let totalCommands = commands.count
+        let visibleCount = min(totalCommands, commandActionsPage * Self.commandsPerPage)
+        let visibleCommands = Array(commands.suffix(visibleCount).reversed())
+
+        var options: [CommandOption] = []
+        for cmd in visibleCommands {
+            let isCurrent = (cmd.id == newestId)
+            let rawInput = cmd.input?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasInput = !(rawInput?.isEmpty ?? true)
+            let trimmedCmd = hasInput ? rawInput! : "Command #\(cmd.id)"
+            let badgeText = isCurrent ? "Active Command" : "Command"
+            let outputAvailable = surfaceView.commandOutput(for: cmd.id, epoch: cmd.epoch) != nil
+
+            if hasInput {
+                let copyTitle = cmd.inputTruncated ? "Command: Copy Command (Truncated)" : "Command: Copy Command"
+                options.append(CommandOption(
+                    title: copyTitle,
+                    subtitle: trimmedCmd,
+                    leadingIcon: "doc.on.doc",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 1)
+                ) {
+                    surfaceView.copyCommand(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+
+            if outputAvailable {
+                options.append(CommandOption(
+                    title: "Command: Copy Output",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "doc.text",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 2)
+                ) {
+                    surfaceView.copyOutput(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+
+            if hasInput && outputAvailable {
+                let copyMdTitle = cmd.inputTruncated ? "Command: Copy Both as Markdown (Truncated Input)" : "Command: Copy Both as Markdown"
+                options.append(CommandOption(
+                    title: copyMdTitle,
+                    subtitle: trimmedCmd,
+                    leadingIcon: "text.quote",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 3)
+                ) {
+                    surfaceView.copyBothAsMarkdown(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+
+            if hasInput && !cmd.inputTruncated && surfaceView.isAtShellPrompt {
+                options.append(CommandOption(
+                    title: "Command: Re-run in This Pane",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "arrow.clockwise",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 4)
+                ) {
+                    surfaceView.rerunCommand(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+
+            if outputAvailable {
+                options.append(CommandOption(
+                    title: "Command: Send Output to Another Pane",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "rectangle.split.2x1",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 5)
+                ) {
+                    surfaceView.sendOutputToAnotherPane(id: cmd.id, epoch: cmd.epoch)
+                })
+
+                options.append(CommandOption(
+                    title: "Command: Save Output to File",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "square.and.arrow.down",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 6)
+                ) {
+                    surfaceView.saveOutputToFile(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+
+            if let cwd = cmd.cwd {
+                let dirDisplay = cwd.hasPrefix("file://") ? (URL(string: cwd)?.path ?? cwd) : cwd
+                let subtitle = "\(trimmedCmd) (\(dirDisplay))"
+                options.append(CommandOption(
+                    title: "Command: Open Working Directory",
+                    subtitle: subtitle,
+                    leadingIcon: "folder",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 7)
+                ) {
+                    surfaceView.openWorkingDirectory(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
+        }
+
+        if totalCommands > visibleCount {
+            let remaining = totalCommands - visibleCount
+            options.append(CommandOption(
+                title: "Command: Show Older Commands (\(remaining) remaining)...",
+                subtitle: "Load 50 more historical commands into palette",
+                leadingIcon: "ellipsis.circle",
+                badge: "History",
+                sortKey: AnySortKey(UInt64.max),
+                dismissesOnAction: false
+            ) {
+                commandActionsPage += 1
+            })
+        }
+
         return options
     }
 

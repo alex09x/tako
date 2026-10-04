@@ -1999,6 +1999,63 @@ extension Tako {
             scheduleSearchHitRefresh()
         }
 
+        /// A command action requested sending text to another pane.
+        public func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {
+            sendOutputToAnotherPane(text: text)
+        }
+
+        func sendOutputToAnotherPane(text: String) {
+            if let controller = TerminalController.all.first(where: { $0.surfaceTree.contains(self) }) {
+                if let target = controller.surfaceTree.first(where: { $0 !== self && $0.isAtShellPrompt }) {
+                    controller.focusSurface(target)
+                    controller.focusedSurface = target
+                    target.window?.makeFirstResponder(target)
+                    target.insertInputText(text)
+                    return
+                }
+                if let newSurface = controller.newSplit(at: self, direction: .right) {
+                    controller.focusSurface(newSurface)
+                    controller.focusedSurface = newSurface
+                    newSurface.window?.makeFirstResponder(newSurface)
+                    newSurface.insertInputText(text)
+                    return
+                }
+            }
+            for controller in TerminalController.all {
+                if let target = controller.surfaceTree.first(where: { $0 !== self && $0.isAtShellPrompt }) {
+                    controller.focusSurface(target)
+                    controller.focusedSurface = target
+                    target.window?.makeFirstResponder(target)
+                    target.insertInputText(text)
+                    return
+                }
+            }
+        }
+
+        override public func insertInputText(_ text: String) {
+            revealLiveScreenForUserInput()
+            var cleanText = text
+            while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
+                cleanText.removeLast()
+            }
+            guard !cleanText.isEmpty else { return }
+
+            let isMultiLine = cleanText.contains("\n") || cleanText.contains("\r") || core.pasteIsUnsafe(text: cleanText)
+            let isUnbracketed = !core.modes().bracketedPaste
+            if isMultiLine && (safePaste || isUnbracketed) {
+                NotificationCenter.default.post(
+                    name: Tako.Notification.confirmClipboard,
+                    object: self,
+                    userInfo: [
+                        Tako.Notification.ConfirmClipboardStrKey: cleanText,
+                        Tako.Notification.ConfirmClipboardRequestKey: Tako.ClipboardRequest.paste,
+                    ]
+                )
+                return
+            }
+            handlePaste(cleanText)
+        }
+
         /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
         func cancelPendingSearchHitRefresh() {
             searchHitDebounceItem?.cancel()
@@ -2423,10 +2480,16 @@ extension Tako {
             applyTheme(newTheme)
         }
 
+        /// Whether this surface is idle at a shell prompt (not running a command, not in alternate screen).
+        override open var isAtShellPrompt: Bool {
+            guard !isCommandRunning else { return false }
+            return super.isAtShellPrompt
+        }
+
         /// Evaluates safe paste guard before sending text to the shell.
         /// If the clipboard contains newlines, safe paste is enabled, and the terminal
         /// is idle at a shell prompt, posts a confirmation request instead of pasting immediately.
-        public func handlePaste(_ text: String) {
+        override public func handlePaste(_ text: String) {
             let isMultiLine = text.contains("\n") || text.contains("\r")
             if safePaste && isMultiLine && core.cursorIsAtPrompt() && !isCommandRunning {
                 NotificationCenter.default.post(

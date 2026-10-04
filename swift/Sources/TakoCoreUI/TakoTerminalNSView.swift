@@ -59,6 +59,9 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
     /// a copy action or an accessibility element -- refreshes on this rather
     /// than polling.
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView)
+
+    /// A command action requested sending text to another pane.
+    func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String)
 }
 
 public extension TakoTerminalNSViewDelegate {
@@ -71,6 +74,7 @@ public extension TakoTerminalNSViewDelegate {
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {}
     func terminalView(_ view: TakoTerminalNSView, didScrollTo position: Double) {}
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {}
+    func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {}
 }
 
 /// Which Option key, if any, `TakoTerminalNSView.keyDown` treats as Alt
@@ -197,6 +201,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return newestId
         }
         return nil
+    }
+
+    /// Whether the terminal surface is currently idle at a shell prompt (not running a command, and not in alternate screen).
+    open var isAtShellPrompt: Bool {
+        guard !core.modes().alternateScreen else { return false }
+        if let runningId = findRunningCommandId(), runningId > 0 {
+            return false
+        }
+        return true
     }
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
@@ -373,6 +386,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// Handler invoked when a command action requests sending text to another pane.
+    public var sendTextToAnotherPaneHandler: ((String) -> Void)?
+
+    /// Handler invoked for safe paste confirmation when unbracketed paste contains line breaks.
+    public var confirmPasteHandler: ((String, @escaping (Bool) -> Void) -> Void)?
+
     // Screen buffer & private mode properties
     public var isAlternateScreen: Bool { core.modes().alternateScreen }
     public var isAlternateScroll: Bool { core.modes().alternateScroll }
@@ -425,6 +444,55 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// an app.
     nonisolated(unsafe) public static var openURL: (URL) -> Void = { url in
         NSWorkspace.shared.open(url)
+    }
+
+    /// Hook for presenting alerts; can be replaced in tests to verify error presentation without modal UI.
+    nonisolated(unsafe) public static var presentAlert: @MainActor (_ alert: NSAlert, _ window: NSWindow?) -> Void = { alert, window in
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    /// Report save errors to the user via an alert modal or sheet.
+    public static func reportSaveError(_ error: Error, window: NSWindow?) {
+        let alert = NSAlert(error: error)
+        alert.messageText = "Failed to Save Output"
+        alert.informativeText = error.localizedDescription
+        DispatchQueue.main.async {
+            presentAlert(alert, window)
+        }
+    }
+
+    /// Hook for presenting a save panel; can be replaced in tests to avoid modal UI.
+    nonisolated(unsafe) public static var saveFilePanel: @MainActor (
+        _ text: String,
+        _ suggestedFilename: String,
+        _ window: NSWindow?,
+        _ completion: @escaping (URL?) -> Void
+    ) -> Void = { text, suggestedFilename, window, completion in
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename
+        panel.prompt = "Save"
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let targetURL = panel.url else {
+                completion(nil)
+                return
+            }
+            do {
+                try text.write(to: targetURL, atomically: true, encoding: .utf8)
+                completion(targetURL)
+            } catch {
+                reportSaveError(error, window: window)
+                completion(nil)
+            }
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            handler(panel.runModal())
+        }
     }
 
     /// Matches the schemes upstream's `link-url` looks for: `http`,
@@ -2709,7 +2777,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scheduleRedraw()
     }
 
-    private func revealLiveScreenForUserInput() {
+    func revealLiveScreenForUserInput() {
         guard viewportOffset > 0 else { return }
         scrollViewportToBottom()
     }
@@ -3043,10 +3111,18 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let cell = cellAt(convert(event.locationInWindow, from: nil))
-        let report = mouseReportBytes(button: .right, action: .press, cell: cell, event: event)
-        if !report.isEmpty {
-            delegate?.terminalView(self, sendInputData: report)
+        let loc = convert(event.locationInWindow, from: nil)
+        let isStickyClick = stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(loc)
+        if !isStickyClick {
+            let cell = cellAt(loc)
+            let report = mouseReportBytes(button: .right, action: .press, cell: cell, event: event)
+            if !report.isEmpty {
+                delegate?.terminalView(self, sendInputData: report)
+                return
+            }
+        }
+        if let menu = menu(for: event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
         } else {
             super.rightMouseDown(with: event)
         }
@@ -3319,7 +3395,55 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     @objc public func paste(_ sender: Any?) {
         guard let string = pasteStringProvider() else { return }
         revealLiveScreenForUserInput()
-        let bytes = core.encodePaste(text: string)
+        handlePaste(string)
+    }
+
+    /// Inserts input text at the prompt, stripping any trailing line endings and routing through safe paste.
+    open func insertInputText(_ text: String) {
+        revealLiveScreenForUserInput()
+        var cleanText = text
+        while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
+            cleanText.removeLast()
+        }
+        guard !cleanText.isEmpty else { return }
+        handlePaste(cleanText)
+    }
+
+    /// Routes pasted or inserted text through safe checks before sending to the shell.
+    /// Withholds unsafe line breaks when DEC bracketed-paste mode is disabled until confirmed.
+    open func handlePaste(_ text: String) {
+        let isMultiLine = text.contains("\n") || text.contains("\r") || core.pasteIsUnsafe(text: text)
+        let isUnbracketed = !core.modes().bracketedPaste
+        if isMultiLine && isUnbracketed {
+            // Unbracketed paste with line breaks would submit input immediately without user pressing Enter.
+            // Withhold unsafe line breaks until explicit user confirmation/input.
+            if let confirmPasteHandler {
+                confirmPasteHandler(text) { [weak self] confirmed in
+                    guard confirmed, let self else { return }
+                    self.performPaste(text)
+                }
+                return
+            } else if let window = self.window {
+                let alert = NSAlert()
+                alert.messageText = "Confirm Multiline Paste"
+                alert.informativeText = "The text to be pasted contains multiple lines or line breaks, and bracketed paste mode is disabled. Pasting it may execute commands immediately without confirmation."
+                alert.addButton(withTitle: "Paste")
+                alert.addButton(withTitle: "Cancel")
+                alert.beginSheetModal(for: window) { [weak self] response in
+                    guard response == .alertFirstButtonReturn, let self else { return }
+                    self.performPaste(text)
+                }
+                return
+            } else {
+                performPaste(text)
+                return
+            }
+        }
+        performPaste(text)
+    }
+
+    func performPaste(_ text: String) {
+        let bytes = core.encodePaste(text: text)
         if !bytes.isEmpty {
             delegate?.terminalView(self, sendInputData: bytes)
         }
@@ -3329,6 +3453,404 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         core.startSelection(row: 0, col: 0, mode: .linear)
         core.extendSelection(row: UInt32(max(rows - 1, 0)), col: UInt32(max(cols - 1, 0)))
         scheduleRedraw()
+    }
+
+    // MARK: - Command Actions
+
+    /// Returns all recorded commands currently kept in the engine's memory.
+    public func recordedCommands() -> [FfiCommandInfo] {
+        var commands: [FfiCommandInfo] = []
+        var after: UInt64 = 0
+        while let cmd = core.firstCommandAfter(after: after) {
+            commands.append(cmd)
+            after = cmd.id
+        }
+        return commands
+    }
+
+    /// Structure identifying a command within a specific engine generation epoch.
+    public struct CommandTarget: Hashable, Sendable {
+        public let id: UInt64
+        public let epoch: UInt64
+
+        public init(id: UInt64, epoch: UInt64) {
+            self.id = id
+            self.epoch = epoch
+        }
+    }
+
+    /// Looks up command info for a specific command ID and optional epoch.
+    public func commandInfo(for id: UInt64, epoch: UInt64? = nil) -> FfiCommandInfo? {
+        guard id > 0 else { return nil }
+        if let info = core.firstCommandAfter(after: id - 1), info.id == id {
+            if let epoch, info.epoch != epoch {
+                return nil
+            }
+            return info
+        }
+        return nil
+    }
+
+    /// Resolves the command output record including completion metadata.
+    public func commandOutput(for commandId: UInt64, epoch: UInt64? = nil) -> FfiCommandOutput? {
+        let currentEpoch = core.stateEpoch()
+        if let epoch, epoch != currentEpoch {
+            return nil
+        }
+        return core.commandOutput(id: commandId, epoch: epoch ?? currentEpoch, maxLines: 500_000, maxBytes: 50_000_000)
+    }
+
+    /// Resolves the output string of a recorded command, or nil if unavailable.
+    public func commandOutputString(for commandId: UInt64, epoch: UInt64? = nil) -> String? {
+        commandOutput(for: commandId, epoch: epoch)?.output
+    }
+
+    /// Identifies the command ID associated with a view point or the current context.
+    public func commandIdForContext(at point: NSPoint? = nil) -> UInt64? {
+        if let point {
+            if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(point) {
+                if let header = activeStickyCommandHeader ?? currentStickyCommandHeader() {
+                    return header.commandId
+                }
+            }
+            let cell = cellAt(point)
+            let totalScrollback = Int(core.scrollbackLen())
+            let offset = Int(core.viewportOffset())
+            let vpTop = totalScrollback - offset
+            let firstRetainedLine = core.firstRetainedLine()
+            let cellAbsLine = firstRetainedLine + UInt64(max(0, vpTop + cell.row))
+
+            let marks = core.commandMarks().sorted(by: { $0.promptLine < $1.promptLine })
+            if let mark = marks.last(where: { $0.promptLine <= cellAbsLine }) {
+                return mark.commandId
+            } else if let firstMark = marks.first, cellAbsLine < firstMark.promptLine {
+                if firstMark.commandId > 1 {
+                    return firstMark.commandId - 1
+                }
+            }
+        }
+
+        return activeStickyCommandHeader?.commandId
+            ?? activeRunningCommandId
+            ?? findRunningCommandId()
+            ?? core.newestCommandId()
+    }
+
+    /// Determines the shortest code fence (at least 3 backticks) that does not occur in `text`.
+    public static func markdownCodeFence(for text: String) -> String {
+        var maxRun = 0
+        var currentRun = 0
+        for ch in text {
+            if ch == "`" {
+                currentRun += 1
+                if currentRun > maxRun {
+                    maxRun = currentRun
+                }
+            } else {
+                currentRun = 0
+            }
+        }
+        let fenceLen = max(3, maxRun + 1)
+        return String(repeating: "`", count: fenceLen)
+    }
+
+    /// Formats a command and its output as Markdown using backtick fences safe against content collisions.
+    public static func formatCommandAndOutputAsMarkdown(
+        command: String,
+        output: String,
+        isInputTruncated: Bool = false,
+        isPartial: Bool = false
+    ) -> String {
+        let cmdFence = markdownCodeFence(for: command)
+        let cmdNote = isInputTruncated ? "\n<!-- Note: Command input was truncated to buffer limit -->" : ""
+        var md = "\(cmdFence)bash\n\(command)\n\(cmdFence)\(cmdNote)"
+        let trimmedOutput = output.hasSuffix("\n") ? String(output.dropLast()) : output
+        if !trimmedOutput.isEmpty || isPartial {
+            let outFence = markdownCodeFence(for: trimmedOutput)
+            let note = isPartial ? "\n<!-- Note: Output was partially evicted or truncated from scrollback -->" : ""
+            md += "\n\n\(outFence)\n\(trimmedOutput)\n\(outFence)\(note)"
+        }
+        return md
+    }
+
+    /// 1. Copy command to clipboard.
+    public func copyCommand(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input else { return }
+        let text = cmd.inputTruncated ? "\(input) # [truncated]" : input
+        copyStringConsumer(text)
+    }
+
+    /// 2. Copy output to clipboard. Aborts if output is unavailable (e.g. evicted or wrong epoch).
+    public func copyOutput(id: UInt64, epoch: UInt64? = nil) {
+        guard let output = commandOutputString(for: id, epoch: epoch) else { return }
+        copyStringConsumer(output)
+    }
+
+    /// 3. Copy both command and output as a Markdown block. Aborts if output is unavailable.
+    public func copyBothAsMarkdown(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input else { return }
+        guard let outRecord = commandOutput(for: id, epoch: epoch) else { return }
+        let md = Self.formatCommandAndOutputAsMarkdown(
+            command: input,
+            output: outRecord.output,
+            isInputTruncated: cmd.inputTruncated,
+            isPartial: outRecord.isPartial
+        )
+        copyStringConsumer(md)
+    }
+
+    /// 4. Re-run command in this pane (inserted at the prompt, not executed).
+    /// Refuses to re-run truncated command inputs or when the pane is busy to prevent unintended execution.
+    public func rerunCommand(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input, !cmd.inputTruncated else { return }
+        guard isAtShellPrompt else { return }
+        revealLiveScreenForUserInput()
+        window?.makeFirstResponder(self)
+        var text = input
+        while text.hasSuffix("\n") || text.hasSuffix("\r") {
+            text.removeLast()
+        }
+        guard !text.isEmpty else { return }
+        insertInputText(text)
+    }
+
+    /// 5. Send output to another pane as text (inserted at the prompt, not executed). Aborts if output is unavailable.
+    public func sendOutputToAnotherPane(id: UInt64, epoch: UInt64? = nil) {
+        guard let output = commandOutputString(for: id, epoch: epoch) else { return }
+        var cleanText = output
+        while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
+            cleanText.removeLast()
+        }
+        if let sendTextToAnotherPaneHandler {
+            sendTextToAnotherPaneHandler(cleanText)
+        } else {
+            delegate?.terminalView(self, sendTextToAnotherPane: cleanText)
+        }
+    }
+
+    /// 6. Save output to a file via save panel. Aborts if output is unavailable.
+    public func saveOutputToFile(id: UInt64, epoch: UInt64? = nil, completion: ((URL?) -> Void)? = nil) {
+        guard let outRecord = commandOutput(for: id, epoch: epoch) else {
+            completion?(nil)
+            return
+        }
+        let output = outRecord.output
+        let suffix = outRecord.isPartial ? "-partial" : ""
+        let suggestedFilename = "command-\(id)-output\(suffix).txt"
+        Self.saveFilePanel(output, suggestedFilename, window) { url in
+            completion?(url)
+        }
+    }
+
+    /// Directly save output to a file URL.
+    public func saveOutput(for id: UInt64, epoch: UInt64? = nil, to url: URL) throws {
+        guard let output = commandOutputString(for: id, epoch: epoch) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        try output.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// 7. Open working directory in Finder.
+    public func openWorkingDirectory(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let cwd = cmd.cwd else { return }
+        let url: URL
+        if cwd.hasPrefix("file://") {
+            url = URL(string: cwd) ?? URL(fileURLWithPath: cwd)
+        } else {
+            url = URL(fileURLWithPath: cwd)
+        }
+        Self.openURL(url)
+    }
+
+    // MARK: - Context Menu
+
+    override open func menu(for event: NSEvent) -> NSMenu? {
+        let loc = convert(event.locationInWindow, from: nil)
+        if let targetId = commandIdForContext(at: loc),
+           let cmd = commandInfo(for: targetId) {
+            return contextMenu(for: cmd)
+        }
+        return defaultContextMenu()
+    }
+
+    public func contextMenu(for commandId: UInt64, epoch: UInt64? = nil) -> NSMenu? {
+        guard let cmd = commandInfo(for: commandId, epoch: epoch) else { return nil }
+        return contextMenu(for: cmd)
+    }
+
+    public func contextMenu(for cmd: FfiCommandInfo) -> NSMenu {
+        let menu = NSMenu(title: "Command")
+        let target = CommandTarget(id: cmd.id, epoch: cmd.epoch)
+        let outputAvailable = commandOutput(for: cmd.id, epoch: cmd.epoch) != nil
+
+        if core.hasSelection() {
+            let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copyItem.target = self
+            menu.addItem(copyItem)
+        }
+
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 1. Copy Command
+        let copyCmdTitle = cmd.inputTruncated ? "Copy Command (Truncated)" : "Copy Command"
+        let copyCmdItem = NSMenuItem(title: copyCmdTitle, action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
+        copyCmdItem.representedObject = target
+        copyCmdItem.target = self
+        if cmd.input == nil {
+            copyCmdItem.isEnabled = false
+        }
+        menu.addItem(copyCmdItem)
+
+        // 2. Copy Output
+        let copyOutItem = NSMenuItem(title: "Copy Output", action: #selector(copyOutputContextAction(_:)), keyEquivalent: "")
+        copyOutItem.representedObject = target
+        copyOutItem.target = self
+        if !outputAvailable {
+            copyOutItem.isEnabled = false
+        }
+        menu.addItem(copyOutItem)
+
+        // 3. Copy Both as Markdown
+        let copyMdTitle = cmd.inputTruncated ? "Copy Both as Markdown (Truncated Input)" : "Copy Both as Markdown"
+        let copyMdItem = NSMenuItem(title: copyMdTitle, action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
+        copyMdItem.representedObject = target
+        copyMdItem.target = self
+        if cmd.input == nil || !outputAvailable {
+            copyMdItem.isEnabled = false
+        }
+        menu.addItem(copyMdItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 4. Re-run in This Pane
+        let rerunTitle: String
+        let rerunEnabled: Bool
+        if cmd.inputTruncated {
+            rerunTitle = "Re-run in This Pane (Truncated - Unavailable)"
+            rerunEnabled = false
+        } else if !isAtShellPrompt {
+            rerunTitle = "Re-run in This Pane (Pane Busy)"
+            rerunEnabled = false
+        } else {
+            rerunTitle = "Re-run in This Pane"
+            rerunEnabled = (cmd.input != nil)
+        }
+        let rerunItem = NSMenuItem(title: rerunTitle, action: #selector(rerunCommandContextAction(_:)), keyEquivalent: "")
+        rerunItem.representedObject = target
+        rerunItem.target = self
+        rerunItem.isEnabled = rerunEnabled
+        menu.addItem(rerunItem)
+
+        // 5. Send Output to Another Pane
+        let sendItem = NSMenuItem(title: "Send Output to Another Pane", action: #selector(sendOutputToAnotherPaneContextAction(_:)), keyEquivalent: "")
+        sendItem.representedObject = target
+        sendItem.target = self
+        if !outputAvailable {
+            sendItem.isEnabled = false
+        }
+        menu.addItem(sendItem)
+
+        // 6. Save Output to File…
+        let saveItem = NSMenuItem(title: "Save Output to File…", action: #selector(saveOutputToFileContextAction(_:)), keyEquivalent: "")
+        saveItem.representedObject = target
+        saveItem.target = self
+        if !outputAvailable {
+            saveItem.isEnabled = false
+        }
+        menu.addItem(saveItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 7. Open Working Directory
+        let openDirItem = NSMenuItem(title: "Open Working Directory", action: #selector(openWorkingDirectoryContextAction(_:)), keyEquivalent: "")
+        openDirItem.representedObject = target
+        openDirItem.target = self
+        if cmd.cwd == nil {
+            openDirItem.isEnabled = false
+        }
+        menu.addItem(openDirItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+
+        return menu
+    }
+
+    public func defaultContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Terminal")
+        if core.hasSelection() {
+            let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copyItem.target = self
+            menu.addItem(copyItem)
+        }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+        menu.addItem(NSMenuItem.separator())
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+        return menu
+    }
+
+    /// Resolves the target (id and epoch) from a menu item or current context.
+    public func commandTarget(from sender: Any?) -> CommandTarget? {
+        if let target = (sender as? NSMenuItem)?.representedObject as? CommandTarget {
+            return target
+        }
+        if let id = (sender as? NSMenuItem)?.representedObject as? UInt64 {
+            if let cmd = commandInfo(for: id) {
+                return CommandTarget(id: cmd.id, epoch: cmd.epoch)
+            }
+        }
+        if let id = commandIdForContext() {
+            if let cmd = commandInfo(for: id) {
+                return CommandTarget(id: cmd.id, epoch: cmd.epoch)
+            }
+        }
+        return nil
+    }
+
+    @objc func copyCommandContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyCommand(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func copyOutputContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyOutput(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func copyBothAsMarkdownContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyBothAsMarkdown(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func rerunCommandContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        rerunCommand(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func sendOutputToAnotherPaneContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        sendOutputToAnotherPane(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func saveOutputToFileContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        saveOutputToFile(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func openWorkingDirectoryContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        openWorkingDirectory(id: target.id, epoch: target.epoch)
     }
 
     // MARK: - Drag and Drop
@@ -3591,6 +4113,38 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
            item.action == #selector(selectCommandOutput(_:)) {
             return true
         }
+        if item.action == #selector(copyCommandContextAction(_:)) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
+                return cmd.input != nil
+            }
+            return false
+        }
+        if item.action == #selector(rerunCommandContextAction(_:)) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
+                return cmd.input != nil && !cmd.inputTruncated && isAtShellPrompt
+            }
+            return false
+        }
+        if item.action == #selector(copyOutputContextAction(_:)) ||
+           item.action == #selector(sendOutputToAnotherPaneContextAction(_:)) ||
+           item.action == #selector(saveOutputToFileContextAction(_:)) {
+            if let target = commandTarget(from: item) {
+                return commandOutput(for: target.id, epoch: target.epoch) != nil
+            }
+            return false
+        }
+        if item.action == #selector(copyBothAsMarkdownContextAction(_:)) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
+                return cmd.input != nil && commandOutput(for: target.id, epoch: target.epoch) != nil
+            }
+            return false
+        }
+        if item.action == #selector(openWorkingDirectoryContextAction(_:)) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
+                return cmd.cwd != nil
+            }
+            return false
+        }
         return false
     }
 }
@@ -3599,5 +4153,12 @@ extension TakoTerminalNSView: NSTextInputClient {}
 
 public typealias TakoTerminalView = TakoTerminalNSView
 public typealias TakoTerminalViewDelegate = TakoTerminalNSViewDelegate
+
+public extension FfiCommandOutput {
+    /// True when any part of the command's original output was evicted, overwritten, or truncated.
+    var isPartial: Bool {
+        incomplete || more || truncated
+    }
+}
 
 #endif

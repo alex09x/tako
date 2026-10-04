@@ -21,6 +21,8 @@ struct CommandOption: Identifiable, Hashable {
     let emphasis: Bool
     /// Sort key for stable ordering when titles are equal.
     let sortKey: AnySortKey?
+    /// Whether the command palette should dismiss automatically when this option is chosen.
+    let dismissesOnAction: Bool
     /// The action to perform when this option is selected.
     let action: () -> Void
 
@@ -34,6 +36,7 @@ struct CommandOption: Identifiable, Hashable {
         badge: String? = nil,
         emphasis: Bool = false,
         sortKey: AnySortKey? = nil,
+        dismissesOnAction: Bool = true,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -45,6 +48,7 @@ struct CommandOption: Identifiable, Hashable {
         self.badge = badge
         self.emphasis = emphasis
         self.sortKey = sortKey
+        self.dismissesOnAction = dismissesOnAction
         self.action = action
     }
 
@@ -128,8 +132,14 @@ struct CommandPaletteView: View {
                     isPresented = false
 
                 case .submit:
-                    isPresented = false
-                    selectedOption?.action()
+                    if let selectedOption {
+                        if selectedOption.dismissesOnAction {
+                            isPresented = false
+                        }
+                        selectedOption.action()
+                    } else {
+                        isPresented = false
+                    }
 
                 case .move(.up):
                     if filteredOptions.isEmpty { break }
@@ -172,7 +182,9 @@ struct CommandPaletteView: View {
                 query: query,
                 selectedIndex: $selectedIndex,
                 hoveredOptionID: $hoveredOptionID) { option in
-                    isPresented = false
+                    if option.dismissesOnAction {
+                        isPresented = false
+                    }
                     option.action()
             }
 
@@ -322,7 +334,7 @@ private struct CommandTable: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
                             CommandRow(
                                 option: option,

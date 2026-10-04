@@ -81,6 +81,14 @@ struct CommandOptionTests {
         a.hash(into: &hasher)
         #expect(hasher.finalize() == hasher.finalize())
     }
+
+    @Test func dismissesOnActionDefaultsToTrueAndCanBeOverridden() {
+        let defaultOption = CommandOption(title: "Default") {}
+        #expect(defaultOption.dismissesOnAction == true)
+
+        let stayOption = CommandOption(title: "Stay", dismissesOnAction: false) {}
+        #expect(stayOption.dismissesOnAction == false)
+    }
 }
 
 struct StringMatchedIndicesTests {
