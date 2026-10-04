@@ -3468,24 +3468,41 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return commands
     }
 
-    /// Looks up command info for a specific command ID.
-    public func commandInfo(for id: UInt64) -> FfiCommandInfo? {
+    /// Structure identifying a command within a specific engine generation epoch.
+    public struct CommandTarget: Hashable, Sendable {
+        public let id: UInt64
+        public let epoch: UInt64
+
+        public init(id: UInt64, epoch: UInt64) {
+            self.id = id
+            self.epoch = epoch
+        }
+    }
+
+    /// Looks up command info for a specific command ID and optional epoch.
+    public func commandInfo(for id: UInt64, epoch: UInt64? = nil) -> FfiCommandInfo? {
         guard id > 0 else { return nil }
         if let info = core.firstCommandAfter(after: id - 1), info.id == id {
+            if let epoch, info.epoch != epoch {
+                return nil
+            }
             return info
         }
         return nil
     }
 
     /// Resolves the command output record including completion metadata.
-    public func commandOutput(for commandId: UInt64) -> FfiCommandOutput? {
-        let epoch = core.stateEpoch()
-        return core.commandOutput(id: commandId, epoch: epoch, maxLines: 500_000, maxBytes: 50_000_000)
+    public func commandOutput(for commandId: UInt64, epoch: UInt64? = nil) -> FfiCommandOutput? {
+        let currentEpoch = core.stateEpoch()
+        if let epoch, epoch != currentEpoch {
+            return nil
+        }
+        return core.commandOutput(id: commandId, epoch: epoch ?? currentEpoch, maxLines: 500_000, maxBytes: 50_000_000)
     }
 
-    /// Resolves the output string of a recorded command.
-    public func commandOutputString(for commandId: UInt64) -> String {
-        commandOutput(for: commandId)?.output ?? ""
+    /// Resolves the output string of a recorded command, or nil if unavailable.
+    public func commandOutputString(for commandId: UInt64, epoch: UInt64? = nil) -> String? {
+        commandOutput(for: commandId, epoch: epoch)?.output
     }
 
     /// Identifies the command ID associated with a view point or the current context.
@@ -3557,36 +3574,35 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     /// 1. Copy command to clipboard.
-    public func copyCommand(id: UInt64) {
-        guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
+    public func copyCommand(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input else { return }
         let text = cmd.inputTruncated ? "\(input) # [truncated]" : input
         copyStringConsumer(text)
     }
 
-    /// 2. Copy output to clipboard.
-    public func copyOutput(id: UInt64) {
-        let output = commandOutputString(for: id)
+    /// 2. Copy output to clipboard. Aborts if output is unavailable (e.g. evicted or wrong epoch).
+    public func copyOutput(id: UInt64, epoch: UInt64? = nil) {
+        guard let output = commandOutputString(for: id, epoch: epoch) else { return }
         copyStringConsumer(output)
     }
 
-    /// 3. Copy both command and output as a Markdown block.
-    public func copyBothAsMarkdown(id: UInt64) {
-        guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
-        let outRecord = commandOutput(for: id)
-        let output = outRecord?.output ?? ""
+    /// 3. Copy both command and output as a Markdown block. Aborts if output is unavailable.
+    public func copyBothAsMarkdown(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input else { return }
+        guard let outRecord = commandOutput(for: id, epoch: epoch) else { return }
         let md = Self.formatCommandAndOutputAsMarkdown(
             command: input,
-            output: output,
+            output: outRecord.output,
             isInputTruncated: cmd.inputTruncated,
-            isPartial: outRecord?.isPartial == true
+            isPartial: outRecord.isPartial
         )
         copyStringConsumer(md)
     }
 
     /// 4. Re-run command in this pane (inserted at the prompt, not executed).
     /// Refuses to re-run truncated command inputs or when the pane is busy to prevent unintended execution.
-    public func rerunCommand(id: UInt64) {
-        guard let cmd = commandInfo(for: id), let input = cmd.input, !cmd.inputTruncated else { return }
+    public func rerunCommand(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let input = cmd.input, !cmd.inputTruncated else { return }
         guard isAtShellPrompt else { return }
         revealLiveScreenForUserInput()
         window?.makeFirstResponder(self)
@@ -3598,9 +3614,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         insertInputText(text)
     }
 
-    /// 5. Send output to another pane as text (inserted at the prompt, not executed).
-    public func sendOutputToAnotherPane(id: UInt64) {
-        let output = commandOutputString(for: id)
+    /// 5. Send output to another pane as text (inserted at the prompt, not executed). Aborts if output is unavailable.
+    public func sendOutputToAnotherPane(id: UInt64, epoch: UInt64? = nil) {
+        guard let output = commandOutputString(for: id, epoch: epoch) else { return }
         var cleanText = output
         while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
             cleanText.removeLast()
@@ -3612,11 +3628,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
-    /// 6. Save output to a file via save panel.
-    public func saveOutputToFile(id: UInt64, completion: ((URL?) -> Void)? = nil) {
-        let outRecord = commandOutput(for: id)
-        let output = outRecord?.output ?? ""
-        let suffix = (outRecord?.isPartial == true) ? "-partial" : ""
+    /// 6. Save output to a file via save panel. Aborts if output is unavailable.
+    public func saveOutputToFile(id: UInt64, epoch: UInt64? = nil, completion: ((URL?) -> Void)? = nil) {
+        guard let outRecord = commandOutput(for: id, epoch: epoch) else {
+            completion?(nil)
+            return
+        }
+        let output = outRecord.output
+        let suffix = outRecord.isPartial ? "-partial" : ""
         let suggestedFilename = "command-\(id)-output\(suffix).txt"
         Self.saveFilePanel(output, suggestedFilename, window) { url in
             completion?(url)
@@ -3624,14 +3643,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     /// Directly save output to a file URL.
-    public func saveOutput(for id: UInt64, to url: URL) throws {
-        let output = commandOutputString(for: id)
+    public func saveOutput(for id: UInt64, epoch: UInt64? = nil, to url: URL) throws {
+        guard let output = commandOutputString(for: id, epoch: epoch) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
         try output.write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// 7. Open working directory in Finder.
-    public func openWorkingDirectory(id: UInt64) {
-        guard let cmd = commandInfo(for: id), let cwd = cmd.cwd else { return }
+    public func openWorkingDirectory(id: UInt64, epoch: UInt64? = nil) {
+        guard let cmd = commandInfo(for: id, epoch: epoch), let cwd = cmd.cwd else { return }
         let url: URL
         if cwd.hasPrefix("file://") {
             url = URL(string: cwd) ?? URL(fileURLWithPath: cwd)
@@ -3652,13 +3673,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return defaultContextMenu()
     }
 
-    public func contextMenu(for commandId: UInt64) -> NSMenu? {
-        guard let cmd = commandInfo(for: commandId) else { return nil }
+    public func contextMenu(for commandId: UInt64, epoch: UInt64? = nil) -> NSMenu? {
+        guard let cmd = commandInfo(for: commandId, epoch: epoch) else { return nil }
         return contextMenu(for: cmd)
     }
 
     public func contextMenu(for cmd: FfiCommandInfo) -> NSMenu {
         let menu = NSMenu(title: "Command")
+        let target = CommandTarget(id: cmd.id, epoch: cmd.epoch)
+        let outputAvailable = commandOutput(for: cmd.id, epoch: cmd.epoch) != nil
 
         if core.hasSelection() {
             let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
@@ -3675,7 +3698,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         // 1. Copy Command
         let copyCmdTitle = cmd.inputTruncated ? "Copy Command (Truncated)" : "Copy Command"
         let copyCmdItem = NSMenuItem(title: copyCmdTitle, action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
-        copyCmdItem.representedObject = cmd.id
+        copyCmdItem.representedObject = target
         copyCmdItem.target = self
         if cmd.input == nil {
             copyCmdItem.isEnabled = false
@@ -3684,16 +3707,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         // 2. Copy Output
         let copyOutItem = NSMenuItem(title: "Copy Output", action: #selector(copyOutputContextAction(_:)), keyEquivalent: "")
-        copyOutItem.representedObject = cmd.id
+        copyOutItem.representedObject = target
         copyOutItem.target = self
+        if !outputAvailable {
+            copyOutItem.isEnabled = false
+        }
         menu.addItem(copyOutItem)
 
         // 3. Copy Both as Markdown
         let copyMdTitle = cmd.inputTruncated ? "Copy Both as Markdown (Truncated Input)" : "Copy Both as Markdown"
         let copyMdItem = NSMenuItem(title: copyMdTitle, action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
-        copyMdItem.representedObject = cmd.id
+        copyMdItem.representedObject = target
         copyMdItem.target = self
-        if cmd.input == nil {
+        if cmd.input == nil || !outputAvailable {
             copyMdItem.isEnabled = false
         }
         menu.addItem(copyMdItem)
@@ -3714,28 +3740,34 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             rerunEnabled = (cmd.input != nil)
         }
         let rerunItem = NSMenuItem(title: rerunTitle, action: #selector(rerunCommandContextAction(_:)), keyEquivalent: "")
-        rerunItem.representedObject = cmd.id
+        rerunItem.representedObject = target
         rerunItem.target = self
         rerunItem.isEnabled = rerunEnabled
         menu.addItem(rerunItem)
 
         // 5. Send Output to Another Pane
         let sendItem = NSMenuItem(title: "Send Output to Another Pane", action: #selector(sendOutputToAnotherPaneContextAction(_:)), keyEquivalent: "")
-        sendItem.representedObject = cmd.id
+        sendItem.representedObject = target
         sendItem.target = self
+        if !outputAvailable {
+            sendItem.isEnabled = false
+        }
         menu.addItem(sendItem)
 
         // 6. Save Output to File…
         let saveItem = NSMenuItem(title: "Save Output to File…", action: #selector(saveOutputToFileContextAction(_:)), keyEquivalent: "")
-        saveItem.representedObject = cmd.id
+        saveItem.representedObject = target
         saveItem.target = self
+        if !outputAvailable {
+            saveItem.isEnabled = false
+        }
         menu.addItem(saveItem)
 
         menu.addItem(NSMenuItem.separator())
 
         // 7. Open Working Directory
         let openDirItem = NSMenuItem(title: "Open Working Directory", action: #selector(openWorkingDirectoryContextAction(_:)), keyEquivalent: "")
-        openDirItem.representedObject = cmd.id
+        openDirItem.representedObject = target
         openDirItem.target = self
         if cmd.cwd == nil {
             openDirItem.isEnabled = false
@@ -3768,39 +3800,57 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return menu
     }
 
-    @objc private func copyCommandContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        copyCommand(id: id)
+    /// Resolves the target (id and epoch) from a menu item or current context.
+    public func commandTarget(from sender: Any?) -> CommandTarget? {
+        if let target = (sender as? NSMenuItem)?.representedObject as? CommandTarget {
+            return target
+        }
+        if let id = (sender as? NSMenuItem)?.representedObject as? UInt64 {
+            if let cmd = commandInfo(for: id) {
+                return CommandTarget(id: cmd.id, epoch: cmd.epoch)
+            }
+        }
+        if let id = commandIdForContext() {
+            if let cmd = commandInfo(for: id) {
+                return CommandTarget(id: cmd.id, epoch: cmd.epoch)
+            }
+        }
+        return nil
     }
 
-    @objc private func copyOutputContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        copyOutput(id: id)
+    @objc func copyCommandContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyCommand(id: target.id, epoch: target.epoch)
     }
 
-    @objc private func copyBothAsMarkdownContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        copyBothAsMarkdown(id: id)
+    @objc func copyOutputContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyOutput(id: target.id, epoch: target.epoch)
     }
 
-    @objc private func rerunCommandContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        rerunCommand(id: id)
+    @objc func copyBothAsMarkdownContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        copyBothAsMarkdown(id: target.id, epoch: target.epoch)
     }
 
-    @objc private func sendOutputToAnotherPaneContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        sendOutputToAnotherPane(id: id)
+    @objc func rerunCommandContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        rerunCommand(id: target.id, epoch: target.epoch)
     }
 
-    @objc private func saveOutputToFileContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        saveOutputToFile(id: id)
+    @objc func sendOutputToAnotherPaneContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        sendOutputToAnotherPane(id: target.id, epoch: target.epoch)
     }
 
-    @objc private func openWorkingDirectoryContextAction(_ sender: Any?) {
-        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
-        openWorkingDirectory(id: id)
+    @objc func saveOutputToFileContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        saveOutputToFile(id: target.id, epoch: target.epoch)
+    }
+
+    @objc func openWorkingDirectoryContextAction(_ sender: Any?) {
+        guard let target = commandTarget(from: sender) else { return }
+        openWorkingDirectory(id: target.id, epoch: target.epoch)
     }
 
     // MARK: - Drag and Drop
@@ -4064,15 +4114,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return true
         }
         if item.action == #selector(copyCommandContextAction(_:)) {
-            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
-            if let targetId, let cmd = commandInfo(for: targetId) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
                 return cmd.input != nil
             }
             return false
         }
         if item.action == #selector(rerunCommandContextAction(_:)) {
-            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
-            if let targetId, let cmd = commandInfo(for: targetId) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
                 return cmd.input != nil && !cmd.inputTruncated && isAtShellPrompt
             }
             return false
@@ -4080,22 +4128,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         if item.action == #selector(copyOutputContextAction(_:)) ||
            item.action == #selector(sendOutputToAnotherPaneContextAction(_:)) ||
            item.action == #selector(saveOutputToFileContextAction(_:)) {
-            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
-            if let targetId {
-                return commandInfo(for: targetId) != nil
+            if let target = commandTarget(from: item) {
+                return commandOutput(for: target.id, epoch: target.epoch) != nil
             }
             return false
         }
         if item.action == #selector(copyBothAsMarkdownContextAction(_:)) {
-            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
-            if let targetId {
-                return commandInfo(for: targetId)?.input != nil
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
+                return cmd.input != nil && commandOutput(for: target.id, epoch: target.epoch) != nil
             }
             return false
         }
         if item.action == #selector(openWorkingDirectoryContextAction(_:)) {
-            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
-            if let targetId, let cmd = commandInfo(for: targetId) {
+            if let target = commandTarget(from: item), let cmd = commandInfo(for: target.id, epoch: target.epoch) {
                 return cmd.cwd != nil
             }
             return false

@@ -97,6 +97,7 @@ struct TerminalCommandPaletteView: View {
             let hasInput = !(rawInput?.isEmpty ?? true)
             let trimmedCmd = hasInput ? rawInput! : "Command #\(cmd.id)"
             let badgeText = isCurrent ? "Active Command" : "Command"
+            let outputAvailable = surfaceView.commandOutput(for: cmd.id, epoch: cmd.epoch) != nil
 
             if hasInput {
                 let copyTitle = cmd.inputTruncated ? "Command: Copy Command (Truncated)" : "Command: Copy Command"
@@ -107,21 +108,23 @@ struct TerminalCommandPaletteView: View {
                     badge: badgeText,
                     sortKey: AnySortKey(cmd.id * 10 + 1)
                 ) {
-                    surfaceView.copyCommand(id: cmd.id)
+                    surfaceView.copyCommand(id: cmd.id, epoch: cmd.epoch)
                 })
             }
 
-            options.append(CommandOption(
-                title: "Command: Copy Output",
-                subtitle: trimmedCmd,
-                leadingIcon: "doc.text",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 2)
-            ) {
-                surfaceView.copyOutput(id: cmd.id)
-            })
+            if outputAvailable {
+                options.append(CommandOption(
+                    title: "Command: Copy Output",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "doc.text",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 2)
+                ) {
+                    surfaceView.copyOutput(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
 
-            if hasInput {
+            if hasInput && outputAvailable {
                 let copyMdTitle = cmd.inputTruncated ? "Command: Copy Both as Markdown (Truncated Input)" : "Command: Copy Both as Markdown"
                 options.append(CommandOption(
                     title: copyMdTitle,
@@ -130,7 +133,7 @@ struct TerminalCommandPaletteView: View {
                     badge: badgeText,
                     sortKey: AnySortKey(cmd.id * 10 + 3)
                 ) {
-                    surfaceView.copyBothAsMarkdown(id: cmd.id)
+                    surfaceView.copyBothAsMarkdown(id: cmd.id, epoch: cmd.epoch)
                 })
             }
 
@@ -142,29 +145,31 @@ struct TerminalCommandPaletteView: View {
                     badge: badgeText,
                     sortKey: AnySortKey(cmd.id * 10 + 4)
                 ) {
-                    surfaceView.rerunCommand(id: cmd.id)
+                    surfaceView.rerunCommand(id: cmd.id, epoch: cmd.epoch)
                 })
             }
 
-            options.append(CommandOption(
-                title: "Command: Send Output to Another Pane",
-                subtitle: trimmedCmd,
-                leadingIcon: "rectangle.split.2x1",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 5)
-            ) {
-                surfaceView.sendOutputToAnotherPane(id: cmd.id)
-            })
+            if outputAvailable {
+                options.append(CommandOption(
+                    title: "Command: Send Output to Another Pane",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "rectangle.split.2x1",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 5)
+                ) {
+                    surfaceView.sendOutputToAnotherPane(id: cmd.id, epoch: cmd.epoch)
+                })
 
-            options.append(CommandOption(
-                title: "Command: Save Output to File",
-                subtitle: trimmedCmd,
-                leadingIcon: "square.and.arrow.down",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 6)
-            ) {
-                surfaceView.saveOutputToFile(id: cmd.id)
-            })
+                options.append(CommandOption(
+                    title: "Command: Save Output to File",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "square.and.arrow.down",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 6)
+                ) {
+                    surfaceView.saveOutputToFile(id: cmd.id, epoch: cmd.epoch)
+                })
+            }
 
             if let cwd = cmd.cwd {
                 let dirDisplay = cwd.hasPrefix("file://") ? (URL(string: cwd)?.path ?? cwd) : cwd
@@ -176,7 +181,7 @@ struct TerminalCommandPaletteView: View {
                     badge: badgeText,
                     sortKey: AnySortKey(cmd.id * 10 + 7)
                 ) {
-                    surfaceView.openWorkingDirectory(id: cmd.id)
+                    surfaceView.openWorkingDirectory(id: cmd.id, epoch: cmd.epoch)
                 })
             }
         }
