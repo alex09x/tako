@@ -62,6 +62,9 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
 
     /// A command action requested sending text to another pane.
     func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String)
+
+    /// The link under the pointer changed on hover or became nil (E8).
+    func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?)
 }
 
 public extension TakoTerminalNSViewDelegate {
@@ -75,6 +78,7 @@ public extension TakoTerminalNSViewDelegate {
     func terminalView(_ view: TakoTerminalNSView, didScrollTo position: Double) {}
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {}
     func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {}
+    func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?) {}
 }
 
 /// Which Option key, if any, `TakoTerminalNSView.keyDown` treats as Alt
@@ -495,6 +499,154 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
+    /// Security warnings evaluated before opening a link (E8).
+    public enum LinkSecurityWarning: Equatable, Sendable {
+        case unsafeScheme(String)
+        case urlMismatch(displayedText: String, targetURL: URL)
+    }
+
+    /// Hook for prompting confirmation before opening links that trigger a security warning (E8).
+    nonisolated(unsafe) public static var confirmOpenURL: @MainActor (
+        _ url: URL,
+        _ warning: LinkSecurityWarning,
+        _ window: NSWindow?,
+        _ completion: @escaping (Bool) -> Void
+    ) -> Void = { url, warning, window, completion in
+        let alert = NSAlert()
+        switch warning {
+        case .unsafeScheme(let scheme):
+            alert.messageText = "Open External Application?"
+            alert.informativeText = "This link uses the \"\(scheme)\" protocol:\n\n\(url.absoluteString)\n\nOpening it will launch an external application."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Open")
+            alert.addButton(withTitle: "Cancel")
+        case .urlMismatch(let displayedText, let targetURL):
+            alert.messageText = "Suspicious Link Destination"
+            alert.informativeText = "The visible link text appears to point to:\n\(displayedText)\n\nHowever, the real destination is:\n\(targetURL.absoluteString)\n\nAre you sure you want to open this link?"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Open Anyway")
+        }
+        if let window {
+            alert.beginSheetModal(for: window) { response in
+                switch warning {
+                case .unsafeScheme:
+                    completion(response == .alertFirstButtonReturn)
+                case .urlMismatch:
+                    completion(response == .alertSecondButtonReturn)
+                }
+            }
+        } else {
+            let response = alert.runModal()
+            switch warning {
+            case .unsafeScheme:
+                completion(response == .alertFirstButtonReturn)
+            case .urlMismatch:
+                completion(response == .alertSecondButtonReturn)
+            }
+        }
+    }
+
+    /// Represents a terminal link (OSC 8 hyperlink or detected plain URL) and its security metadata (E8).
+    public struct TerminalLink: Equatable, Sendable {
+        public let url: URL
+        public let text: String
+        public let row: Int
+        public let colStart: Int
+        public let colEnd: Int
+        public let isOsc8: Bool
+        public let isMismatch: Bool
+        public let isSchemeAllowedWithoutPrompt: Bool
+
+        public init(
+            url: URL,
+            text: String,
+            row: Int,
+            colStart: Int,
+            colEnd: Int,
+            isOsc8: Bool,
+            isMismatch: Bool,
+            isSchemeAllowedWithoutPrompt: Bool
+        ) {
+            self.url = url
+            self.text = text
+            self.row = row
+            self.colStart = colStart
+            self.colEnd = colEnd
+            self.isOsc8 = isOsc8
+            self.isMismatch = isMismatch
+            self.isSchemeAllowedWithoutPrompt = isSchemeAllowedWithoutPrompt
+        }
+
+        public var tooltipText: String {
+            if isMismatch {
+                return "⚠️ Suspicious destination mismatch: \(url.absoluteString)"
+            } else if !isSchemeAllowedWithoutPrompt {
+                return "External scheme (\(url.scheme ?? "unknown")): \(url.absoluteString)"
+            } else {
+                return url.absoluteString
+            }
+        }
+    }
+
+    /// Checks whether a URL scheme is considered safe to open without confirmation prompt (E8: http, https, file).
+    public static func isSafeScheme(_ scheme: String?) -> Bool {
+        guard let scheme = scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https" || scheme == "file"
+    }
+
+    private static let domainCandidateRegex: NSRegularExpression = {
+        try! NSRegularExpression(
+            pattern: #"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:/[^\s]*)?$"#,
+            options: [.caseInsensitive]
+        )
+    }()
+
+    /// Detects whether displayed text looks like a URL or domain pointing to a different destination than targetURL (E8).
+    public static func detectLinkMismatch(text: String, targetURL: URL) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let candidateString: String?
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("ftp://") || lower.hasPrefix("file://") {
+            candidateString = trimmed
+        } else if lower.hasPrefix("www.") {
+            candidateString = "https://" + trimmed
+        } else if let match = domainCandidateRegex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)),
+                  match.range.location == 0 && match.range.length == (trimmed as NSString).length {
+            candidateString = "https://" + trimmed
+        } else {
+            candidateString = nil
+        }
+
+        guard let candidateString,
+              let candidateURL = URL(string: candidateString),
+              let candidateHost = candidateURL.host?.lowercased(),
+              !candidateHost.isEmpty else {
+            return false
+        }
+
+        guard candidateHost.contains(".") || candidateHost == "localhost" else {
+            return false
+        }
+
+        if targetURL.isFileURL {
+            if candidateHost.lowercased() == targetURL.lastPathComponent.lowercased() {
+                return false
+            }
+        }
+
+        guard let targetHost = targetURL.host?.lowercased(), !targetHost.isEmpty else {
+            return true
+        }
+
+        let normCandidate = candidateHost.hasPrefix("www.") ? String(candidateHost.dropFirst(4)) : candidateHost
+        let normTarget = targetHost.hasPrefix("www.") ? String(targetHost.dropFirst(4)) : targetHost
+
+        return normCandidate != normTarget
+    }
+
     /// Matches the schemes upstream's `link-url` looks for: `http`,
     /// `https`, `file` and `mailto`.
     static let urlPattern: NSRegularExpression = {
@@ -505,7 +657,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// The link under the pointer while Command is held, if any -- an OSC 8
     /// hyperlink cell span, or `linkURLDetectionEnabled` text matched by
     /// `Self.urlPattern`. Drives the pointing-hand cursor and underline.
-    public private(set) var hoveredLink: (url: URL, row: Int, colStart: Int, colEnd: Int)?
+    public private(set) var hoveredLink: TerminalLink?
+
+    /// The link currently under the mouse pointer regardless of whether Command is held (E8).
+    public private(set) var currentHoveredLink: TerminalLink?
+
+    /// The real destination URL string of the link currently hovered by the pointer (E8).
+    public private(set) var hoveredLinkTarget: String?
 
     /// A thin bar under `hoveredLink`'s cells, positioned in view
     /// coordinates -- the same ones `cellOrigin` and `cellWidth` use.
@@ -513,6 +671,26 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let layer = CALayer()
         layer.backgroundColor = NSColor.labelColor.cgColor
         layer.isHidden = true
+        return layer
+    }()
+
+    /// Floating HUD layer displaying hovered link destination at view bottom-left (E8).
+    private lazy var linkHUDLayer: CALayer = {
+        let layer = CALayer()
+        layer.zPosition = 9600
+        layer.masksToBounds = true
+        layer.isHidden = true
+        layer.cornerRadius = 4.0
+        return layer
+    }()
+
+    private lazy var linkHUDTextLayer: CATextLayer = {
+        let layer = CATextLayer()
+        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        layer.fontSize = 11.0
+        layer.foregroundColor = NSColor.white.cgColor
+        layer.alignmentMode = .left
+        layer.truncationMode = .end
         return layer
     }()
 
@@ -627,6 +805,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         stickyHeaderLayer.addSublayer(stickyHeaderHintLayer)
 
         self.layer?.addSublayer(stickyHeaderLayer)
+
+        linkHUDLayer.addSublayer(linkHUDTextLayer)
+        self.layer?.addSublayer(linkHUDLayer)
 
         scrollbarLayer.zPosition = 9999
         scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
@@ -2880,7 +3061,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
         let cell = cellAt(convert(event.locationInWindow, from: nil))
         if event.modifierFlags.contains(.command), let link = linkRange(at: cell) {
-            Self.openURL(link.url)
+            openLink(link)
             return
         }
         nativeSelectionCurrentPress = event.modifierFlags.contains(.shift)
@@ -3030,7 +3211,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// `link-url` and OSC 8: the link under `cell`, if any. An OSC 8
     /// hyperlink cell wins regardless of `linkURLDetectionEnabled` --
     /// that flag only gates the plain-text regex scan.
-    func linkRange(at cell: (row: Int, col: Int)) -> (url: URL, row: Int, colStart: Int, colEnd: Int)? {
+    public func linkRange(at cell: (row: Int, col: Int)) -> TerminalLink? {
         if let hyperlink = core.getCell(row: UInt32(cell.row), col: UInt32(cell.col))?.hyperlinkUri,
            let url = URL(string: hyperlink) {
             var start = cell.col
@@ -3044,7 +3225,24 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                   core.getCell(row: UInt32(cell.row), col: UInt32(end + 1))?.hyperlinkUri == hyperlink {
                 end += 1
             }
-            return (url, cell.row, start, end)
+            var text = ""
+            for col in start...end {
+                if let c = core.getCell(row: UInt32(cell.row), col: UInt32(col)), c.ch != 0 {
+                    text += c.grapheme ?? TerminalRenderer.string(for: c.ch)
+                }
+            }
+            let isMismatch = Self.detectLinkMismatch(text: text, targetURL: url)
+            let isSafe = Self.isSafeScheme(url.scheme)
+            return TerminalLink(
+                url: url,
+                text: text,
+                row: cell.row,
+                colStart: start,
+                colEnd: end,
+                isOsc8: true,
+                isMismatch: isMismatch,
+                isSchemeAllowedWithoutPrompt: isSafe
+            )
         }
 
         guard linkURLDetectionEnabled else { return nil }
@@ -3063,7 +3261,17 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 matched.removeLast()
             }
             guard !matched.isEmpty, let url = URL(string: matched) else { return nil }
-            return (url, cell.row, columns[first], columns[first + (matched as NSString).length - 1])
+            let isSafe = Self.isSafeScheme(url.scheme)
+            return TerminalLink(
+                url: url,
+                text: matched,
+                row: cell.row,
+                colStart: columns[first],
+                colEnd: columns[first + (matched as NSString).length - 1],
+                isOsc8: false,
+                isMismatch: false,
+                isSchemeAllowedWithoutPrompt: isSafe
+            )
         }
         return nil
     }
@@ -3080,6 +3288,70 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             columns.append(contentsOf: repeatElement(col, count: piece.utf16.count))
         }
         return (text, columns)
+    }
+
+    /// Updates the bottom-left floating HUD pill showing hovered link destination (E8).
+    private func updateLinkHUD(link: TerminalLink?) {
+        guard let link, bounds.width > 0, bounds.height > 0 else {
+            linkHUDLayer.isHidden = true
+            return
+        }
+        let text = link.tooltipText
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        let attr = [NSAttributedString.Key.font: font]
+        let textSize = (text as NSString).size(withAttributes: attr)
+        let paddingH: CGFloat = 8.0
+        let paddingV: CGFloat = 4.0
+        let hudWidth = min(textSize.width + paddingH * 2, max(bounds.width - 20, 50))
+        let hudHeight = textSize.height + paddingV * 2
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        linkHUDLayer.frame = NSRect(
+            x: max(gridLayout.left, 8.0),
+            y: max(gridLayout.bottom(in: bounds.size), 8.0),
+            width: hudWidth,
+            height: hudHeight
+        )
+        if link.isMismatch {
+            linkHUDLayer.backgroundColor = NSColor(srgbRed: 0.75, green: 0.15, blue: 0.15, alpha: 0.95).cgColor
+        } else {
+            linkHUDLayer.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
+        }
+        linkHUDTextLayer.font = font
+        linkHUDTextLayer.fontSize = 11.0
+        linkHUDTextLayer.string = text
+        linkHUDTextLayer.frame = NSRect(
+            x: paddingH,
+            y: paddingV,
+            width: hudWidth - paddingH * 2,
+            height: hudHeight - paddingV * 2
+        )
+        linkHUDLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    /// Opens the specified link according to security policy (E8):
+    /// - Checks whether link text is deceptively mismatched with the target URL.
+    /// - Checks whether the scheme is safe (http, https, file); schemes other than those ask before opening.
+    /// - When clean, opens directly via `Self.openURL`.
+    public func openLink(_ link: TerminalLink) {
+        if link.isMismatch {
+            let warning = LinkSecurityWarning.urlMismatch(displayedText: link.text, targetURL: link.url)
+            Self.confirmOpenURL(link.url, warning, window) { confirmed in
+                guard confirmed else { return }
+                Self.openURL(link.url)
+            }
+        } else if !link.isSchemeAllowedWithoutPrompt {
+            let scheme = link.url.scheme ?? "unknown"
+            let warning = LinkSecurityWarning.unsafeScheme(scheme)
+            Self.confirmOpenURL(link.url, warning, window) { confirmed in
+                guard confirmed else { return }
+                Self.openURL(link.url)
+            }
+        } else {
+            Self.openURL(link.url)
+        }
     }
 
     /// Recomputes `hoveredLink` from `mouseCell` and whether Command is
@@ -3104,6 +3376,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             width: cellWidth * CGFloat(link.colEnd - link.colStart + 1),
             height: max((cellHeight * 0.08).rounded(.up), 1)
         )
+        if link.isMismatch {
+            linkUnderlineLayer.backgroundColor = NSColor.systemRed.cgColor
+        } else {
+            linkUnderlineLayer.backgroundColor = NSColor.labelColor.cgColor
+        }
         linkUnderlineLayer.isHidden = false
         CATransaction.commit()
         NSCursor.pointingHand.set()
@@ -3192,6 +3469,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             NSCursor.arrow.set()
         }
         mouseCell = cellAt(point)
+        let linkUnderPointer = mouseCell.flatMap(linkRange(at:))
+        if linkUnderPointer != currentHoveredLink {
+            currentHoveredLink = linkUnderPointer
+            hoveredLinkTarget = linkUnderPointer?.url.absoluteString
+            self.toolTip = linkUnderPointer?.tooltipText
+            updateLinkHUD(link: linkUnderPointer)
+            delegate?.terminalView(self, didHoverLink: hoveredLinkTarget)
+        }
         updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         if let cell = mouseCell {
             let report = mouseReportBytes(button: .none, action: .motion, cell: cell, event: event)
@@ -3213,6 +3498,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateStickyHeaderHover(false)
         }
         mouseCell = nil
+        if currentHoveredLink != nil {
+            currentHoveredLink = nil
+            hoveredLinkTarget = nil
+            self.toolTip = nil
+            updateLinkHUD(link: nil)
+            delegate?.terminalView(self, didHoverLink: nil)
+        }
         updateHoveredLink(commandHeld: false)
         super.mouseExited(with: event)
     }
@@ -3666,6 +3958,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override open func menu(for event: NSEvent) -> NSMenu? {
         let loc = convert(event.locationInWindow, from: nil)
+        let cell = cellAt(loc)
+        if let link = linkRange(at: cell) {
+            return linkContextMenu(for: link)
+        }
         if let targetId = commandIdForContext(at: loc),
            let cmd = commandInfo(for: targetId) {
             return contextMenu(for: cmd)
@@ -3798,6 +4094,46 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         selectAllItem.target = self
         menu.addItem(selectAllItem)
         return menu
+    }
+
+    /// Context menu presented when right-clicking on a hyperlink (E8).
+    public func linkContextMenu(for link: TerminalLink) -> NSMenu {
+        let menu = NSMenu(title: "Link")
+        let openTitle = link.isMismatch ? "Open Link (Suspicious Destination)..." : "Open Link"
+        let openItem = NSMenuItem(title: openTitle, action: #selector(openLinkContextAction(_:)), keyEquivalent: "")
+        openItem.representedObject = link
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let copyItem = NSMenuItem(title: "Copy Link", action: #selector(copyLinkContextAction(_:)), keyEquivalent: "")
+        copyItem.representedObject = link
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        menu.addItem(NSMenuItem.separator())
+        if core.hasSelection() {
+            let copySelectionItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copySelectionItem.target = self
+            menu.addItem(copySelectionItem)
+        }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+        menu.addItem(NSMenuItem.separator())
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+        return menu
+    }
+
+    @objc func openLinkContextAction(_ sender: Any?) {
+        guard let link = (sender as? NSMenuItem)?.representedObject as? TerminalLink else { return }
+        openLink(link)
+    }
+
+    @objc func copyLinkContextAction(_ sender: Any?) {
+        guard let link = (sender as? NSMenuItem)?.representedObject as? TerminalLink else { return }
+        copyStringConsumer(link.url.absoluteString)
     }
 
     /// Resolves the target (id and epoch) from a menu item or current context.
@@ -4144,6 +4480,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 return cmd.cwd != nil
             }
             return false
+        }
+        if item.action == #selector(openLinkContextAction(_:)) ||
+           item.action == #selector(copyLinkContextAction(_:)) {
+            return (item as? NSMenuItem)?.representedObject is TerminalLink
         }
         return false
     }

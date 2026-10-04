@@ -21,6 +21,7 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var lastWorkingDirectory: String?
     var scrollPositions: [Double] = []
     var contentChangeCount = 0
+    var hoveredLinks: [String?] = []
 
     func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
         inputDataReceived.append(data)
@@ -67,6 +68,10 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
         contentChangeCount += 1
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?) {
+        hoveredLinks.append(url)
     }
 }
 
