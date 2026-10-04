@@ -670,7 +670,9 @@ Small, independent items built on shell-integration marks. Each can ship alone.
 
 Status: shipped in [#12](https://github.com/alex09x/tako/pull/12). Step 6.
 
-### [ ] E2. Command marks in the gutter and scrollbar
+### [x] E2. Command marks in the gutter and scrollbar
+
+Status: shipped in [PR #13](https://github.com/alex09x/tako/pull/13).
 
 A thin mark beside each command's prompt line (success, failure with code, still running) and
 matching marks on the scrollbar, plus marks for search hits.
