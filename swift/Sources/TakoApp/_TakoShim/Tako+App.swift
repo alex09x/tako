@@ -2399,9 +2399,7 @@ extension Tako {
         /// called by Cmd+C or Edit > Copy -- this is the whole reason
         /// copying silently did nothing.
         @objc override public func copy(_ sender: Any?) {
-            guard let text = core.selectedText() else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            super.copy(sender)
         }
 
         /// Find items follow the find bar; everything else is the terminal

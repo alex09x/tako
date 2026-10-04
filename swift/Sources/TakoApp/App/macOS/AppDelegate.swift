@@ -41,6 +41,9 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuPaste: NSMenuItem?
     @IBOutlet private var menuPasteSelection: NSMenuItem?
     @IBOutlet private var menuSelectAll: NSMenuItem?
+    @IBOutlet var menuSelectCommandOutput: NSMenuItem?
+    @IBOutlet var menuJumpToPreviousPrompt: NSMenuItem?
+    @IBOutlet var menuJumpToNextPrompt: NSMenuItem?
     @IBOutlet private var menuFindParent: NSMenuItem?
     @IBOutlet private var menuFind: NSMenuItem?
     @IBOutlet private var menuSelectionForFind: NSMenuItem?
@@ -381,6 +384,7 @@ class AppDelegate: NSObject,
         setupWhatsNewMenuItem()
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
+        setupPromptNavigationMenuItems()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
 
@@ -1083,6 +1087,54 @@ class AppDelegate: NSObject,
         takoMenu.insertItem(updateItem, at: min(1, takoMenu.items.count))
     }
 
+    private func setupPromptNavigationMenuItems() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        // Setup in Edit menu: "Select Command Output"
+        if menuSelectCommandOutput == nil,
+           let editMenu = mainMenu.items.first(where: { $0.title == "Edit" })?.submenu {
+            let item = NSMenuItem(
+                title: "Select Command Output",
+                action: #selector(BaseTerminalController.selectCommandOutput(_:)),
+                keyEquivalent: ""
+            )
+            item.target = nil
+            if let selectAllIdx = editMenu.items.firstIndex(where: { $0.action == #selector(NSStandardKeyBindingResponding.selectAll(_:)) }) {
+                editMenu.insertItem(item, at: selectAllIdx + 1)
+            } else {
+                editMenu.addItem(item)
+            }
+            self.menuSelectCommandOutput = item
+        }
+
+        // Setup in View menu: "Jump to Previous Mark" & "Jump to Next Mark"
+        if (menuJumpToPreviousPrompt == nil || menuJumpToNextPrompt == nil),
+           let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
+            if menuJumpToPreviousPrompt == nil {
+                let prevItem = NSMenuItem(
+                    title: "Jump to Previous Mark",
+                    action: #selector(BaseTerminalController.jumpToPreviousPrompt(_:)),
+                    keyEquivalent: ""
+                )
+                prevItem.target = nil
+                prevItem.setImageIfDesired(systemSymbolName: "arrow.up.to.line")
+                viewMenu.addItem(prevItem)
+                self.menuJumpToPreviousPrompt = prevItem
+            }
+            if menuJumpToNextPrompt == nil {
+                let nextItem = NSMenuItem(
+                    title: "Jump to Next Mark",
+                    action: #selector(BaseTerminalController.jumpToNextPrompt(_:)),
+                    keyEquivalent: ""
+                )
+                nextItem.target = nil
+                nextItem.setImageIfDesired(systemSymbolName: "arrow.down.to.line")
+                viewMenu.addItem(nextItem)
+                self.menuJumpToNextPrompt = nextItem
+            }
+        }
+    }
+
     @IBAction func showHelp(_ sender: Any) {
         guard let url = Brand.docsURL else { return }
         NSWorkspace.shared.open(url)
@@ -1256,6 +1308,8 @@ extension AppDelegate {
     @MainActor private func syncMenuShortcuts(_ config: Tako.Config) {
         guard tako.readiness == .ready else { return }
 
+        setupPromptNavigationMenuItems()
+
         menuShortcutManager.reset()
 
         syncMenuShortcut(config, action: "open_config", menuItem: self.menuOpenConfig)
@@ -1279,6 +1333,7 @@ extension AppDelegate {
         syncMenuShortcut(config, action: "paste_from_clipboard", menuItem: self.menuPaste)
         syncMenuShortcut(config, action: "paste_from_selection", menuItem: self.menuPasteSelection)
         syncMenuShortcut(config, action: "select_all", menuItem: self.menuSelectAll)
+        syncMenuShortcut(config, action: "select_command_output", menuItem: self.menuSelectCommandOutput)
         syncMenuShortcut(config, action: "start_search", menuItem: self.menuFind)
         syncMenuShortcut(config, action: "find_all", menuItem: self.menuFindAll)
         syncMenuShortcut(config, action: "end_search", menuItem: self.menuHideFindBar)
@@ -1286,6 +1341,8 @@ extension AppDelegate {
         syncMenuShortcut(config, action: "scroll_to_selection", menuItem: self.menuScrollToSelection)
         syncMenuShortcut(config, action: "navigate_search:next", menuItem: self.menuFindNext)
         syncMenuShortcut(config, action: "navigate_search:previous", menuItem: self.menuFindPrevious)
+        syncMenuShortcut(config, action: "jump_to_prompt:previous", menuItem: self.menuJumpToPreviousPrompt)
+        syncMenuShortcut(config, action: "jump_to_prompt:next", menuItem: self.menuJumpToNextPrompt)
 
         syncMenuShortcut(config, action: "toggle_split_zoom", menuItem: self.menuZoomSplit)
         syncMenuShortcut(config, action: "goto_split:previous", menuItem: self.menuPreviousSplit)

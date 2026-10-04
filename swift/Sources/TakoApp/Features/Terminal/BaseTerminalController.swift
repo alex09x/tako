@@ -1521,6 +1521,18 @@ class BaseTerminalController: NSWindowController,
         focusedSurface?.findHide(sender)
     }
 
+    @IBAction func jumpToPreviousPrompt(_ sender: Any?) {
+        focusedSurface?.jumpToPreviousPrompt(sender)
+    }
+
+    @IBAction func jumpToNextPrompt(_ sender: Any?) {
+        focusedSurface?.jumpToNextPrompt(sender)
+    }
+
+    @IBAction func selectCommandOutput(_ sender: Any?) {
+        focusedSurface?.selectCommandOutput(sender)
+    }
+
     @objc func resetTerminal(_ sender: Any) {
         guard let surface = focusedSurface else { return }
         tako.resetTerminal(surface: surface)

@@ -1683,6 +1683,38 @@ impl TakoCore {
         }
     }
 
+    /// The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
+    /// 0 unset, 1 prompt, 2 prompt continuation.
+    pub fn retained_semantic_prompt(&self, row: u64) -> u8 {
+        use crate::grid::SemanticPrompt;
+        match lock_recover(&self.inner)
+            .active_grid()
+            .retained_semantic_prompt(row as usize)
+        {
+            SemanticPrompt::Unset => 0,
+            SemanticPrompt::Prompt => 1,
+            SemanticPrompt::PromptContinuation => 2,
+        }
+    }
+
+    /// Jumps the viewport up to the previous OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_previous_prompt(&self) -> bool {
+        lock_recover(&self.inner).scroll_to_previous_prompt()
+    }
+
+    /// Jumps the viewport down to the next OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_next_prompt(&self) -> bool {
+        lock_recover(&self.inner).scroll_to_next_prompt()
+    }
+
+    /// Selects the entire output of the current or previous command bounded
+    /// by OSC 133 marks. Returns true if output was selected; false otherwise.
+    pub fn select_command_output(&self) -> bool {
+        lock_recover(&self.inner).select_command_output()
+    }
+
     /// The cursor's current visual style (DECSCUSR).
     pub fn cursor_style(&self) -> FfiCursorStyle {
         lock_recover(&self.inner).cursor_style().into()
@@ -2993,15 +3025,16 @@ mod tests {
     #[test]
     fn checkpoint_version_negotiation_is_explicit() {
         let core = TakoCore::new(40, 10);
-        assert_eq!(core.checkpoint_version(), 4);
-        // v1 and v2 stay readable so a peer holding an older container is
-        // not forced to discard it; v4 is what this build writes.
+        assert_eq!(core.checkpoint_version(), 5);
+        // v1 through v4 stay readable so a peer holding an older container is
+        // not forced to discard it; v5 is what this build writes.
         assert!(core.checkpoint_supports(1));
         assert!(core.checkpoint_supports(2));
         assert!(core.checkpoint_supports(3));
         assert!(core.checkpoint_supports(4));
+        assert!(core.checkpoint_supports(5));
         assert!(!core.checkpoint_supports(0));
-        assert!(!core.checkpoint_supports(5));
+        assert!(!core.checkpoint_supports(6));
 
         core.feed(b"negotiate".to_vec());
         let blob = core.checkpoint_export(0, 1 << 20).unwrap();
@@ -3009,18 +3042,18 @@ mod tests {
         // A newer container, correctly checksummed: a version failure, not
         // corruption. A bool could not tell the two apart.
         let mut newer = blob.clone();
-        newer[4..8].copy_from_slice(&5u32.to_le_bytes());
+        newer[4..8].copy_from_slice(&6u32.to_le_bytes());
         let crc = crate::terminal::checkpoint::crc32(&newer[20..]);
         newer[16..20].copy_from_slice(&crc.to_le_bytes());
 
         let dest = TakoCore::new(20, 6);
         assert_eq!(
             dest.checkpoint_import(newer.clone()),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 5 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
         );
         assert_eq!(
             dest.checkpoint_inspect(newer),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 5 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
         );
 
         let mut corrupt = blob.clone();
@@ -3032,7 +3065,7 @@ mod tests {
         ));
 
         let info = dest.checkpoint_inspect(blob.clone()).unwrap();
-        assert_eq!((info.version, info.cols, info.rows), (4, 40, 10));
+        assert_eq!((info.version, info.cols, info.rows), (5, 40, 10));
         assert_eq!(info.payload_len as usize, blob.len() - 20);
         assert_eq!(dest.checkpoint_import(blob), Ok(()));
     }
