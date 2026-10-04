@@ -176,10 +176,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let commandId: UInt64
         var command: String
         var promptLine: UInt64?
+        var startOutputAbsLine: UInt64 = 0
+        var startCursorCol: UInt32 = 0
         var lastOutputAbsLine: UInt64
         var status: UInt8
         var exitCode: Int32?
         var hasNoOutput: Bool
+        var outputResolved: Bool = false
     }
     private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
     private var trackedCommandsEpoch: UInt64 = 0
@@ -677,23 +680,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         lastReportedScrollPosition = core.scrollPosition()
         trackedCommands.removeAll()
         trackedCommandsEpoch = core.stateEpoch()
-        activeRunningCommandId = findRunningCommandId()
-        if let runningId = activeRunningCommandId {
-            let totalScrollback = UInt64(core.scrollbackLen())
-            let cursorRow = UInt64(core.cursorRow())
-            let firstLine = core.firstRetainedLine()
-            let absLine = firstLine + totalScrollback + cursorRow
-            let cmdText = core.firstCommandAfter(after: runningId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let promptLine = core.commandMarks().first(where: { $0.commandId == runningId })?.promptLine
-            trackedCommands[runningId] = TrackedCommandOutput(
-                commandId: runningId,
-                command: cmdText,
-                promptLine: promptLine,
-                lastOutputAbsLine: absLine,
-                status: 0,
-                exitCode: nil,
-                hasNoOutput: false
-            )
+        if stickyCommandHeaderEnabled {
+            activeRunningCommandId = findRunningCommandId()
+            if let runningId = activeRunningCommandId {
+                let totalScrollback = UInt64(core.scrollbackLen())
+                let cursorRow = UInt64(core.cursorRow())
+                let firstLine = core.firstRetainedLine()
+                let absLine = firstLine + totalScrollback + cursorRow
+                let cmdText = core.firstCommandAfter(after: runningId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let promptLine = core.commandMarks().first(where: { $0.commandId == runningId })?.promptLine
+                trackedCommands[runningId] = TrackedCommandOutput(
+                    commandId: runningId,
+                    command: cmdText,
+                    promptLine: promptLine,
+                    startOutputAbsLine: absLine,
+                    startCursorCol: 0,
+                    lastOutputAbsLine: absLine,
+                    status: 0,
+                    exitCode: nil,
+                    hasNoOutput: false,
+                    outputResolved: false
+                )
+            }
+        } else {
+            activeRunningCommandId = nil
         }
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
@@ -736,73 +746,77 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalViewDidBell(self)
                 case .commandStart(let id):
                     commandStatusChanged = true
+                    guard stickyCommandHeaderEnabled else {
+                        if let cmdId = id {
+                            activeRunningCommandId = cmdId
+                        }
+                        delegate?.terminalViewCommandDidStart(self)
+                        break
+                    }
                     let currentEpoch = core.stateEpoch()
                     if trackedCommandsEpoch != currentEpoch {
                         trackedCommands.removeAll()
                         trackedCommandsEpoch = currentEpoch
                         activeRunningCommandId = nil
                     }
-                    if let cmdId = id {
+                    let targetId = id ?? core.newestCommandId()
+                    if let cmdId = targetId {
                         activeRunningCommandId = cmdId
                         let totalScrollback = UInt64(core.scrollbackLen())
                         let cursorRow = UInt64(core.cursorRow())
                         let firstLine = core.firstRetainedLine()
                         let absLine = firstLine + totalScrollback + cursorRow
+                        let cursorCol = core.cursorCol()
                         let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                         let promptLine = core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
                         trackedCommands[cmdId] = TrackedCommandOutput(
                             commandId: cmdId,
                             command: cmdText,
                             promptLine: promptLine,
+                            startOutputAbsLine: absLine,
+                            startCursorCol: cursorCol,
                             lastOutputAbsLine: absLine,
                             status: 0,
                             exitCode: nil,
-                            hasNoOutput: false
+                            hasNoOutput: false,
+                            outputResolved: false
                         )
                     }
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
                     commandStatusChanged = true
+                    guard stickyCommandHeaderEnabled else {
+                        activeRunningCommandId = nil
+                        delegate?.terminalView(self, commandDidEnd: exitCode)
+                        break
+                    }
                     let currentEpoch = core.stateEpoch()
                     if trackedCommandsEpoch != currentEpoch {
                         trackedCommands.removeAll()
                         trackedCommandsEpoch = currentEpoch
                         activeRunningCommandId = nil
                     }
-                    let totalScrollback = UInt64(core.scrollbackLen())
-                    let cursorRow = UInt64(core.cursorRow())
-                    let firstLine = core.firstRetainedLine()
                     let targetId = activeRunningCommandId ?? core.newestCommandId()
                     if let cmdId = targetId {
-                        let promptLine = trackedCommands[cmdId]?.promptLine ?? core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        let existing = trackedCommands[cmdId]
+                        let promptLine = existing?.promptLine ?? core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
                         let status: UInt8 = (exitCode == 0 ? 1 : 2)
-                        let out = core.commandOutput(id: cmdId, epoch: core.stateEpoch(), maxLines: 100_000, maxBytes: 10_000_000)
-                        let lines = UInt64(out?.lines ?? 0)
-                        let isNoOutput = (lines == 0)
-                        let endLine: UInt64
-                        if isNoOutput {
-                            endLine = promptLine ?? 0
-                        } else if let pLine = promptLine {
-                            endLine = pLine + lines
-                        } else if lines > 0 {
-                            endLine = firstLine + lines
-                        } else {
-                            endLine = firstLine + totalScrollback + cursorRow
-                        }
-                        var tracked = trackedCommands[cmdId] ?? TrackedCommandOutput(
+                        var tracked = existing ?? TrackedCommandOutput(
                             commandId: cmdId,
                             command: core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                             promptLine: promptLine,
-                            lastOutputAbsLine: endLine,
+                            startOutputAbsLine: promptLine ?? 0,
+                            startCursorCol: 0,
+                            lastOutputAbsLine: promptLine ?? 0,
                             status: status,
                             exitCode: exitCode,
-                            hasNoOutput: isNoOutput
+                            hasNoOutput: false,
+                            outputResolved: false
                         )
-                        tracked.lastOutputAbsLine = endLine
                         tracked.promptLine = promptLine
                         tracked.status = status
                         tracked.exitCode = exitCode
-                        tracked.hasNoOutput = isNoOutput
+                        tracked.outputResolved = false
                         if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
                             tracked.command = input
                         }
@@ -822,7 +836,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 }
             }
 
-            if outcome.hasDamage {
+            if stickyCommandHeaderEnabled && outcome.hasDamage {
                 if activeRunningCommandId == nil {
                     activeRunningCommandId = findRunningCommandId()
                 }
@@ -844,10 +858,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                             commandId: cmdId,
                             command: cmdText,
                             promptLine: promptLine,
+                            startOutputAbsLine: absLine,
+                            startCursorCol: 0,
                             lastOutputAbsLine: absLine,
                             status: 0,
                             exitCode: nil,
-                            hasNoOutput: false
+                            hasNoOutput: false,
+                            outputResolved: false
                         )
                     }
                 }
@@ -1169,10 +1186,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 runningCmd.lastOutputAbsLine = max(runningCmd.lastOutputAbsLine, currentBottom)
                 // Check if running command has finished
                 if let info = core.firstCommandAfter(after: targetId - 1), info.id == targetId, !info.running {
+                    let promptLine = existing.promptLine ?? marks.first(where: { $0.commandId == targetId })?.promptLine
+                    let status: UInt8 = (info.exitCode == 0 ? 1 : 2)
                     let out = core.commandOutput(id: targetId, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
                     let lines = UInt64(out?.lines ?? 0)
                     let isNoOutput = (lines == 0)
-                    let promptLine = existing.promptLine
                     let lastLine: UInt64
                     if isNoOutput {
                         lastLine = promptLine ?? 0
@@ -1181,15 +1199,17 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     } else {
                         lastLine = firstRetainedLine + lines
                     }
-                    let status: UInt8 = (info.exitCode == 0 ? 1 : 2)
                     runningCmd = TrackedCommandOutput(
                         commandId: targetId,
                         command: existing.command,
                         promptLine: promptLine,
+                        startOutputAbsLine: existing.startOutputAbsLine,
+                        startCursorCol: existing.startCursorCol,
                         lastOutputAbsLine: lastLine,
                         status: status,
                         exitCode: info.exitCode,
-                        hasNoOutput: isNoOutput
+                        hasNoOutput: isNoOutput,
+                        outputResolved: true
                     )
                     if activeRunningCommandId == targetId {
                         activeRunningCommandId = nil
@@ -1197,6 +1217,28 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 }
                 trackedCommands[targetId] = runningCmd
                 resolvedCmd = runningCmd
+            } else if !existing.outputResolved {
+                // Completed command whose output bounds have not been resolved yet
+                let promptLine = existing.promptLine ?? marks.first(where: { $0.commandId == targetId })?.promptLine
+                let epoch = core.stateEpoch()
+                let out = core.commandOutput(id: targetId, epoch: epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                let lines = UInt64(out?.lines ?? 0)
+                let isNoOutput = (lines == 0)
+                let lastLine: UInt64
+                if isNoOutput {
+                    lastLine = promptLine ?? 0
+                } else if let pLine = promptLine {
+                    lastLine = pLine + lines
+                } else {
+                    lastLine = firstRetainedLine + lines
+                }
+                var tracked = existing
+                tracked.promptLine = promptLine
+                tracked.lastOutputAbsLine = lastLine
+                tracked.hasNoOutput = isNoOutput
+                tracked.outputResolved = true
+                trackedCommands[targetId] = tracked
+                resolvedCmd = tracked
             } else {
                 resolvedCmd = existing
             }
@@ -1237,10 +1279,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     commandId: info.id,
                     command: rawInput,
                     promptLine: promptLine,
+                    startOutputAbsLine: promptLine ?? firstRetainedLine,
+                    startCursorCol: 0,
                     lastOutputAbsLine: lastLine,
                     status: status,
                     exitCode: info.exitCode,
-                    hasNoOutput: isNoOutput
+                    hasNoOutput: isNoOutput,
+                    outputResolved: !info.running
                 )
                 trackedCommands[info.id] = tracked
                 resolvedCmd = tracked

@@ -415,6 +415,23 @@ final class StickyCommandHeaderTests: XCTestCase {
         XCTAssertLessThan(textLuminance, 0.3, "header text must be dark on light theme; got \(textLuminance)")
         XCTAssertGreaterThan(bgLuminance - textLuminance, 0.5, "contrast difference between background and text must be high")
     }
+
+    func testStickyCommandHeaderDisabledDoesNotTrackCommands() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        view.stickyCommandHeaderEnabled = false
+
+        // Run command while sticky headers are disabled
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}find .\r\n\u{1b}]133;C\u{07}"
+        for i in 1...50 {
+            input += "file \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        // When disabled, no commands should be tracked in memory
+        XCTAssertEqual(view.trackedCommandsCountForTesting, 0, "trackedCommands must remain empty when disabled")
+        XCTAssertNil(view.currentStickyCommandHeader())
+    }
 }
 #endif
 
