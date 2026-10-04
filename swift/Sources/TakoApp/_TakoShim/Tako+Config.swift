@@ -183,6 +183,9 @@ extension Tako {
             "scroll_to_selection": .init("j", modifiers: .command),
             "navigate_search:next": .init("g", modifiers: .command),
             "navigate_search:previous": .init("g", modifiers: [.command, .shift]),
+            "jump_to_prompt:previous": .init(.upArrow, modifiers: .command),
+            "jump_to_prompt:next": .init(.downArrow, modifiers: .command),
+            "select_command_output": .init("a", modifiers: [.command, .shift]),
         ]
 
         private enum KeybindOverride {

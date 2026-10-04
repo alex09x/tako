@@ -171,6 +171,7 @@ pub struct ScrollbackRow {
     pub cells: Vec<Cell>,
     pub wrapped: bool,
     pub owner: RowOwner,
+    pub semantic: SemanticPrompt,
 }
 
 /// The visible terminal grid plus a bounded scrollback buffer.
@@ -568,6 +569,36 @@ impl Grid {
         self.row_semantic[self.phys(row)]
     }
 
+    /// Total retained rows across scrollback and live grid.
+    #[inline]
+    pub fn retained_rows(&self) -> usize {
+        self.scrollback.len() + self.rows
+    }
+
+    /// Owner of retained line `index` (0 = oldest retained line).
+    pub fn retained_owner(&self, index: usize) -> RowOwner {
+        let sb = self.scrollback.len();
+        if index < sb {
+            self.scrollback[index].owner
+        } else if index - sb < self.rows {
+            self.row_owner(index - sb)
+        } else {
+            RowOwner::Empty
+        }
+    }
+
+    /// The OSC 133 semantic-prompt mark for retained line `index` (0 = oldest in scrollback).
+    pub fn retained_semantic_prompt(&self, index: usize) -> SemanticPrompt {
+        let sb = self.scrollback.len();
+        if index < sb {
+            self.scrollback[index].semantic
+        } else if index - sb < self.rows {
+            self.row_semantic_prompt(index - sb)
+        } else {
+            SemanticPrompt::Unset
+        }
+    }
+
     /// Set the OSC 133 semantic-prompt mark for `row`.
     pub fn set_row_semantic_prompt(&mut self, row: usize, mark: SemanticPrompt) {
         if row >= self.rows {
@@ -878,6 +909,7 @@ impl Grid {
                 cells: Vec::with_capacity(self.cols),
                 wrapped,
                 owner: RowOwner::Empty,
+                semantic: SemanticPrompt::Unset,
             }
         };
 
@@ -886,6 +918,7 @@ impl Grid {
         entry.cells.extend_from_slice(&self.cells[physical]);
         entry.wrapped = wrapped;
         entry.owner = self.row_owner[physical];
+        entry.semantic = self.row_semantic[physical];
         self.scrollback.push_back(entry);
     }
 
@@ -913,6 +946,7 @@ impl Grid {
             cells: archived,
             wrapped,
             owner: self.row_owner[physical],
+            semantic: self.row_semantic[physical],
         });
     }
 
@@ -924,7 +958,12 @@ impl Grid {
             self.scrollback.pop_front();
             self.history_evicted += 1;
         }
-        self.scrollback.push_back(ScrollbackRow { cells: line, wrapped, owner });
+        self.scrollback.push_back(ScrollbackRow {
+            cells: line,
+            wrapped,
+            owner,
+            semantic: SemanticPrompt::Unset,
+        });
     }
 
     /// Total number of scrollback lines that have been evicted (dropped)
@@ -1512,7 +1551,7 @@ impl Grid {
                             .any(|cell| cell.is_wide_spacer || cell.is_wide_spacer_head);
                         self.cells.push(history_row.cells);
                         self.line_wrapped.push(history_row.wrapped);
-                        self.row_semantic.push(SemanticPrompt::Unset);
+                        self.row_semantic.push(history_row.semantic);
                         self.row_owner.push(history_row.owner);
                         self.dirty.push(true);
                         self.row_may_have_wide.push(may_have_wide);

@@ -382,6 +382,7 @@ extension Tako.SurfaceView {
         "scroll_to_top", "scroll_to_bottom", "scroll_page_up", "scroll_page_down", "scroll_page_lines",
         "text", "csi", "esc",
         "start_search", "search", "search_selection", "navigate_search", "end_search", "scroll_to_selection",
+        "jump_to_prompt", "select_command_output", "select_output",
     ]
 
     /// Whether `action` names something this port can do at all. The command
@@ -478,6 +479,19 @@ extension Tako.SurfaceView {
             return true
         case "scroll_to_selection":
             return revealSelection()
+        case "jump_to_prompt":
+            switch param {
+            case "previous", "up", nil:
+                _ = jumpToPreviousPrompt()
+                return true
+            case "next", "down":
+                _ = jumpToNextPrompt()
+                return true
+            default:
+                return false
+            }
+        case "select_command_output", "select_output":
+            return selectCommandOutput()
         default:
             return performResponderAction(action)
         }

@@ -1683,6 +1683,38 @@ impl TakoCore {
         }
     }
 
+    /// The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
+    /// 0 unset, 1 prompt, 2 prompt continuation.
+    pub fn retained_semantic_prompt(&self, row: u64) -> u8 {
+        use crate::grid::SemanticPrompt;
+        match lock_recover(&self.inner)
+            .active_grid()
+            .retained_semantic_prompt(row as usize)
+        {
+            SemanticPrompt::Unset => 0,
+            SemanticPrompt::Prompt => 1,
+            SemanticPrompt::PromptContinuation => 2,
+        }
+    }
+
+    /// Jumps the viewport up to the previous OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_previous_prompt(&self) -> bool {
+        lock_recover(&self.inner).scroll_to_previous_prompt()
+    }
+
+    /// Jumps the viewport down to the next OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_next_prompt(&self) -> bool {
+        lock_recover(&self.inner).scroll_to_next_prompt()
+    }
+
+    /// Selects the entire output of the current or previous command bounded
+    /// by OSC 133 marks. Returns true if output was selected; false otherwise.
+    pub fn select_command_output(&self) -> bool {
+        lock_recover(&self.inner).select_command_output()
+    }
+
     /// The cursor's current visual style (DECSCUSR).
     pub fn cursor_style(&self) -> FfiCursorStyle {
         lock_recover(&self.inner).cursor_style().into()

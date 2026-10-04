@@ -761,6 +761,41 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scheduleRedraw()
     }
 
+    /// Jump viewport to previous verified prompt marker, or fall back to scrolling up one page.
+    @discardableResult
+    @objc open func jumpToPreviousPrompt(_ sender: Any? = nil) -> Bool {
+        if core.scrollToPreviousPrompt() {
+            notifyScrollPositionIfChanged()
+            scheduleRedraw()
+            return true
+        }
+        scrollViewportUp(lines: max(1, Int(core.rows())))
+        return false
+    }
+
+    /// Jump viewport to next verified prompt marker, or fall back to scrolling down one page.
+    @discardableResult
+    @objc open func jumpToNextPrompt(_ sender: Any? = nil) -> Bool {
+        if core.scrollToNextPrompt() {
+            notifyScrollPositionIfChanged()
+            scheduleRedraw()
+            return true
+        }
+        scrollViewportDown(lines: max(1, Int(core.rows())))
+        return false
+    }
+
+    /// Select the exact output of the current or previous command cleanly bounded by prompt marks.
+    @discardableResult
+    @objc open func selectCommandOutput(_ sender: Any? = nil) -> Bool {
+        if core.selectCommandOutput() {
+            notifyScrollPositionIfChanged()
+            scheduleRedraw()
+            return true
+        }
+        return false
+    }
+
     /// Obtain bounded plain text starting at startRow for maxRows lines.
     public func plainText(startRow: Int = 0, maxRows: Int = 100) -> String {
         let totalRows = Int(core.rows())
@@ -1696,7 +1731,42 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     // MARK: - Keyboard Input
 
+    override public func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let cleanMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if cleanMods == .command {
+            if event.keyCode == 126 { // Up arrow
+                jumpToPreviousPrompt()
+                return true
+            } else if event.keyCode == 125 { // Down arrow
+                jumpToNextPrompt()
+                return true
+            }
+        } else if cleanMods == [.command, .shift] {
+            if event.keyCode == 0 || event.charactersIgnoringModifiers?.lowercased() == "a" {
+                selectCommandOutput()
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override public func keyDown(with event: NSEvent) {
+        let cleanMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if cleanMods == .command {
+            if event.keyCode == 126 { // Up arrow
+                jumpToPreviousPrompt()
+                return
+            } else if event.keyCode == 125 { // Down arrow
+                jumpToNextPrompt()
+                return
+            }
+        } else if cleanMods == [.command, .shift] {
+            if event.keyCode == 0 || event.charactersIgnoringModifiers?.lowercased() == "a" {
+                selectCommandOutput()
+                return
+            }
+        }
+
         let mods = event.modifierFlags
         if mods.contains(.command) {
             super.keyDown(with: event)
@@ -2635,6 +2705,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return pasteStringProvider() != nil
         }
         if item.action == #selector(selectAll(_:)) {
+            return true
+        }
+        if item.action == #selector(jumpToPreviousPrompt(_:)) ||
+           item.action == #selector(jumpToNextPrompt(_:)) ||
+           item.action == #selector(selectCommandOutput(_:)) {
             return true
         }
         return false

@@ -1912,7 +1912,12 @@ pub fn import_traced_reserving(
         r.charge((cells_len as u64).saturating_mul(CELL_BYTES))?;
         let cells = r.read_cells(cells_len)?;
         let owner = RowOwner::of_cells(&cells);
-        prim_sb.push(ScrollbackRow { cells, wrapped, owner });
+        prim_sb.push(ScrollbackRow {
+            cells,
+            wrapped,
+            owner,
+            semantic: SemanticPrompt::Unset,
+        });
     }
     // The whole visible grid, charged before a single row is decoded: run
     // length encoding means three payload bytes can declare ten thousand
@@ -1965,7 +1970,12 @@ pub fn import_traced_reserving(
         r.charge((cells_len as u64).saturating_mul(CELL_BYTES))?;
         let cells = r.read_cells(cells_len)?;
         let owner = RowOwner::of_cells(&cells);
-        alt_sb.push(ScrollbackRow { cells, wrapped, owner });
+        alt_sb.push(ScrollbackRow {
+            cells,
+            wrapped,
+            owner,
+            semantic: SemanticPrompt::Unset,
+        });
     }
     r.charge((rows as u64).saturating_mul(cols as u64).saturating_mul(CELL_BYTES))?;
     r.charge_spine(rows, GRID_ROW_SPINE)?;

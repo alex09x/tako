@@ -1245,6 +1245,12 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func restore(bytes: Data)  -> Bool
 
     /**
+     * The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
+     * 0 unset, 1 prompt, 2 prompt continuation.
+     */
+    func retainedSemanticPrompt(row: UInt64)  -> UInt8
+
+    /**
      * The OSC 133 semantic mark of `row`: 0 unset, 1 prompt,
      * 2 prompt continuation.
      */
@@ -1263,6 +1269,18 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * Scrolls to a specific viewport offset (lines scrolled into scrollback).
      */
     func scrollTo(offset: UInt32)
+
+    /**
+     * Jumps the viewport down to the next OSC 133 prompt mark.
+     * Returns true if a prompt mark was found and jumped to; false otherwise.
+     */
+    func scrollToNextPrompt()  -> Bool
+
+    /**
+     * Jumps the viewport up to the previous OSC 133 prompt mark.
+     * Returns true if a prompt mark was found and jumped to; false otherwise.
+     */
+    func scrollToPreviousPrompt()  -> Bool
 
     /**
      * Snaps the viewport back to the live screen.
@@ -1306,6 +1324,12 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * or a reflow never sends the selection to some other line.
      */
     func searchHitIsCurrent(needle: String, hit: FfiSearchHit)  -> Bool
+
+    /**
+     * Selects the entire output of the current or previous command bounded
+     * by OSC 133 marks. Returns true if output was selected; false otherwise.
+     */
+    func selectCommandOutput()  -> Bool
 
     /**
      * Selects the whole logical line under `(row, col)`, as a triple-click
@@ -2220,6 +2244,20 @@ open func restore(bytes: Data) -> Bool  {
 }
 
     /**
+     * The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
+     * 0 unset, 1 prompt, 2 prompt continuation.
+     */
+open func retainedSemanticPrompt(row: UInt64) -> UInt8  {
+    return try!  FfiConverterUInt8.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_retained_semantic_prompt(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(row),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * The OSC 133 semantic mark of `row`: 0 unset, 1 prompt,
      * 2 prompt continuation.
      */
@@ -2266,6 +2304,32 @@ open func scrollTo(offset: UInt32)  {try! rustCall() {
         FfiConverterUInt32.lower(offset),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Jumps the viewport down to the next OSC 133 prompt mark.
+     * Returns true if a prompt mark was found and jumped to; false otherwise.
+     */
+open func scrollToNextPrompt() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_scroll_to_next_prompt(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Jumps the viewport up to the previous OSC 133 prompt mark.
+     * Returns true if a prompt mark was found and jumped to; false otherwise.
+     */
+open func scrollToPreviousPrompt() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_scroll_to_previous_prompt(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -2361,6 +2425,19 @@ open func searchHitIsCurrent(needle: String, hit: FfiSearchHit) -> Bool  {
             self.uniffiCloneHandle(),
         FfiConverterString.lower(needle),
         FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Selects the entire output of the current or previous command bounded
+     * by OSC 133 marks. Returns true if output was selected; false otherwise.
+     */
+open func selectCommandOutput() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_command_output(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -7630,6 +7707,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_restore() != 25502) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_retained_semantic_prompt() != 47279) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_row_semantic_prompt() != 63888) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7640,6 +7720,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_scroll_to() != 42228) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_scroll_to_next_prompt() != 36194) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_scroll_to_previous_prompt() != 58449) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_bottom() != 32061) {
@@ -7661,6 +7747,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_search_hit_is_current() != 61340) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_select_command_output() != 38129) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_select_line() != 40152) {

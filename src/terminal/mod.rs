@@ -1714,6 +1714,179 @@ impl Terminal {
         self.commands.set_started_at(id, unix_ms)
     }
 
+    /// Jumps the viewport up to the previous OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_previous_prompt(&mut self) -> bool {
+        if self.active == ScreenBuffer::Alternate {
+            return false;
+        }
+        let sb_len = self.primary.scrollback_len();
+        let current_top = sb_len.saturating_sub(self.viewport_offset);
+        if current_top == 0 {
+            return false;
+        }
+        for i in (0..current_top).rev() {
+            if self.primary.retained_semantic_prompt(i) == crate::grid::SemanticPrompt::Prompt {
+                self.viewport_offset = sb_len.saturating_sub(i);
+                self.primary.mark_all_dirty();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Jumps the viewport down to the next OSC 133 prompt mark.
+    /// Returns true if a prompt mark was found and jumped to; false otherwise.
+    pub fn scroll_to_next_prompt(&mut self) -> bool {
+        if self.active == ScreenBuffer::Alternate || self.viewport_offset == 0 {
+            return false;
+        }
+        let sb_len = self.primary.scrollback_len();
+        let current_top = sb_len.saturating_sub(self.viewport_offset);
+        let total_retained = self.primary.retained_rows();
+        for i in (current_top + 1)..total_retained {
+            if self.primary.retained_semantic_prompt(i) == crate::grid::SemanticPrompt::Prompt {
+                if i < sb_len {
+                    self.viewport_offset = sb_len - i;
+                } else {
+                    self.viewport_offset = 0;
+                }
+                self.primary.mark_all_dirty();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Select the entire output of the current or previous command cleanly bounded
+    /// by OSC 133 prompt marks. Returns true if output was selected, false otherwise.
+    pub fn select_command_output(&mut self) -> bool {
+        if self.active == ScreenBuffer::Alternate {
+            return false;
+        }
+
+        let total_retained = self.primary.retained_rows();
+        let cols = self.primary.cols();
+        if total_retained == 0 || cols == 0 {
+            return false;
+        }
+
+        let sb_len = self.primary.scrollback_len();
+        let vp_top = sb_len.saturating_sub(self.viewport_offset);
+        let vp_bottom = (vp_top + self.primary.rows()).min(total_retained);
+
+        let mut target_cmd_id = None;
+        if let Some(running_id) = self.commands.running() {
+            target_cmd_id = Some(running_id);
+        } else if self.viewport_offset > 0 {
+            for r in (vp_top..vp_bottom).rev() {
+                if let crate::grid::RowOwner::Command(id) = self.primary.retained_owner(r) {
+                    target_cmd_id = Some(id);
+                    break;
+                }
+            }
+        }
+
+        if target_cmd_id.is_none() {
+            if let Some(record) = self
+                .commands
+                .records()
+                .rev()
+                .find(|r| !matches!(r.status, crate::terminal::commands::CommandStatus::Abandoned))
+            {
+                target_cmd_id = Some(record.id);
+            }
+        }
+
+        let mut output_start = None;
+        let mut output_end = None;
+
+        if let Some(id) = target_cmd_id {
+            for r in 0..total_retained {
+                if self.primary.retained_owner(r) == crate::grid::RowOwner::Command(id) {
+                    if output_start.is_none() {
+                        output_start = Some(r);
+                    }
+                    output_end = Some(r);
+                }
+            }
+        }
+
+        // Fallback: If no RowOwner::Command rows found, but we have verified prompt marks:
+        if output_start.is_none() {
+            let search_from = if self.viewport_offset == 0 {
+                sb_len + self.cursor.row
+            } else {
+                vp_bottom.min(total_retained)
+            };
+
+            let mut prompt_row = None;
+            for r in (0..search_from).rev() {
+                if self.primary.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt {
+                    prompt_row = Some(r);
+                    break;
+                }
+            }
+
+            if let Some(p_row) = prompt_row {
+                let mut start_candidate = p_row + 1;
+                while start_candidate < total_retained
+                    && self.primary.retained_semantic_prompt(start_candidate)
+                        == crate::grid::SemanticPrompt::PromptContinuation
+                {
+                    start_candidate += 1;
+                }
+
+                let mut next_prompt_row = None;
+                for r in start_candidate..total_retained {
+                    if self.primary.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt {
+                        next_prompt_row = Some(r);
+                        break;
+                    }
+                }
+
+                let end_bound = next_prompt_row.unwrap_or(total_retained);
+                let mut end_candidate = end_bound.saturating_sub(1);
+                while end_candidate >= start_candidate
+                    && self.primary.retained_owner(end_candidate) == crate::grid::RowOwner::Empty
+                {
+                    if end_candidate == 0 {
+                        break;
+                    }
+                    end_candidate -= 1;
+                }
+
+                if start_candidate <= end_candidate
+                    && self.primary.retained_owner(end_candidate) != crate::grid::RowOwner::Empty
+                {
+                    output_start = Some(start_candidate);
+                    output_end = Some(end_candidate);
+                }
+            }
+        }
+
+        let (first_row, last_row) = match (output_start, output_end) {
+            (Some(s), Some(e)) if s <= e => (s, e),
+            _ => return false,
+        };
+
+        let evicted = self.primary.history_evicted();
+        let anchor = (evicted + first_row, 0);
+        let active = (evicted + last_row, cols.saturating_sub(1));
+        self.selection = Some(Selection {
+            anchor,
+            active,
+            mode: SelectionMode::Linear,
+        });
+
+        if last_row < vp_top {
+            self.viewport_offset = sb_len.saturating_sub(first_row);
+        }
+
+        self.primary.mark_all_dirty();
+        true
+    }
+
     fn switch_screen(&mut self, to: ScreenBuffer) {
         if to != self.active {
             self.input_start = None;

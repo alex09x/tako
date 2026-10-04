@@ -94,10 +94,6 @@ pub struct CommandOutput {
 }
 
 impl Grid {
-    fn retained_rows(&self) -> usize {
-        self.scrollback.len() + self.rows
-    }
-
     /// Row `index` of the retained lines (0 = oldest), and whether it
     /// continues the row before it.
     fn retained_row(&self, index: usize) -> (&[Cell], bool) {
@@ -108,15 +104,6 @@ impl Grid {
         } else {
             let r = index - sb;
             (self.row_slice(r), self.is_line_wrapped(r))
-        }
-    }
-
-    fn retained_owner(&self, index: usize) -> RowOwner {
-        let sb = self.scrollback.len();
-        if index < sb {
-            self.scrollback[index].owner
-        } else {
-            self.row_owner(index - sb)
         }
     }
 
