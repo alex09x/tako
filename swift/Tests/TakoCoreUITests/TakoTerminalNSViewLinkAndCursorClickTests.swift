@@ -478,5 +478,27 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         }
         XCTAssertTrue(opened.isEmpty)
     }
+
+    func testMultipleOSC8SpansWithSameURIOnSameRowDoNotMergeInterveningText() {
+        let view = makeView()
+        // Row contains:
+        // col 0: OSC 8 span displaying "x" targeting https://attacker.org/steal
+        // col 1..10: Plain text " spaces " without hyperlink
+        // col 11..35: OSC 8 span displaying "https://paypal.com/login" targeting https://attacker.org/steal
+        let payload = "\u{1b}]8;;https://attacker.org/steal\u{7}x\u{1b}]8;;\u{7}  spaces  \u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Hover over the second span at col 15 (in "https://paypal.com/login")
+        let linkSecond = view.linkRange(at: (row: 0, col: 15))
+        XCTAssertNotNil(linkSecond)
+        XCTAssertEqual(linkSecond?.text, "https://paypal.com/login", "Must not merge 'x' or intervening spaces from distinct span")
+        XCTAssertTrue(linkSecond?.isMismatch ?? false, "Deceptive domain in second span must be flagged as mismatch")
+
+        // Hover over the first span at col 0 ("x")
+        let linkFirst = view.linkRange(at: (row: 0, col: 0))
+        XCTAssertNotNil(linkFirst)
+        XCTAssertEqual(linkFirst?.text, "x", "Must contain only the clicked span text")
+        XCTAssertFalse(linkFirst?.isMismatch ?? true, "Plain 'x' is not URL-shaped and not a deceptive mismatch")
+    }
 }
 #endif

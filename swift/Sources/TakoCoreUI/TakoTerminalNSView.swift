@@ -3217,73 +3217,60 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return true
     }
 
-    /// Collects the full displayed text of an OSC 8 hyperlink spanning `cell.row`,
-    /// including any wrapped preceding and succeeding rows that share the same URI.
+    /// Collects the full displayed text of the clicked contiguous OSC 8 hyperlink span,
+    /// including any wrapped preceding and succeeding rows that continue the same span.
     func fullOsc8Text(cell: (row: Int, col: Int), uri: String) -> String {
         let cols = Int(core.cols())
         let totalRows = Int(core.rows())
         guard cols > 0, totalRows > 0 else { return "" }
 
-        // Find topmost wrapped row
+        // 1. Contiguous span on cell.row containing cell.col
+        var currentStart = cell.col
+        while currentStart > 0,
+              core.getCell(row: UInt32(cell.row), col: UInt32(currentStart - 1))?.hyperlinkUri == uri {
+            currentStart -= 1
+        }
+        var currentEnd = cell.col
+        while currentEnd + 1 < cols,
+              core.getCell(row: UInt32(cell.row), col: UInt32(currentEnd + 1))?.hyperlinkUri == uri {
+            currentEnd += 1
+        }
+
+        var spans: [Int: (start: Int, end: Int)] = [cell.row: (start: currentStart, end: currentEnd)]
+
+        // 2. Trace backwards across wrapped lines
         var topRow = cell.row
         while topRow > 0 {
-            guard core.getCell(row: UInt32(topRow), col: 0)?.hyperlinkUri == uri else { break }
-            var prevRowEndsWithUri = false
-            for c in stride(from: cols - 1, through: 0, by: -1) {
-                if let prevCell = core.getCell(row: UInt32(topRow - 1), col: UInt32(c)) {
-                    if prevCell.ch != 0 && prevCell.ch != 32 {
-                        prevRowEndsWithUri = (prevCell.hyperlinkUri == uri)
-                        break
-                    }
-                    if prevCell.hyperlinkUri == uri {
-                        prevRowEndsWithUri = true
-                        break
-                    }
-                }
+            guard let curSpan = spans[topRow], curSpan.start == 0 else { break }
+            guard core.getCell(row: UInt32(topRow - 1), col: UInt32(cols - 1))?.hyperlinkUri == uri else { break }
+            var prevStart = cols - 1
+            while prevStart > 0,
+                  core.getCell(row: UInt32(topRow - 1), col: UInt32(prevStart - 1))?.hyperlinkUri == uri {
+                prevStart -= 1
             }
-            if prevRowEndsWithUri {
-                topRow -= 1
-            } else {
-                break
-            }
+            spans[topRow - 1] = (start: prevStart, end: cols - 1)
+            topRow -= 1
         }
 
-        // Find bottommost wrapped row
+        // 3. Trace forwards across wrapped lines
         var bottomRow = cell.row
         while bottomRow + 1 < totalRows {
-            var bottomRowEndsWithUri = false
-            for c in stride(from: cols - 1, through: 0, by: -1) {
-                if let curCell = core.getCell(row: UInt32(bottomRow), col: UInt32(c)) {
-                    if curCell.ch != 0 && curCell.ch != 32 {
-                        bottomRowEndsWithUri = (curCell.hyperlinkUri == uri)
-                        break
-                    }
-                    if curCell.hyperlinkUri == uri {
-                        bottomRowEndsWithUri = true
-                        break
-                    }
-                }
+            guard let curSpan = spans[bottomRow], curSpan.end == cols - 1 else { break }
+            guard core.getCell(row: UInt32(bottomRow + 1), col: 0)?.hyperlinkUri == uri else { break }
+            var nextEnd = 0
+            while nextEnd + 1 < cols,
+                  core.getCell(row: UInt32(bottomRow + 1), col: UInt32(nextEnd + 1))?.hyperlinkUri == uri {
+                nextEnd += 1
             }
-            guard bottomRowEndsWithUri else { break }
-            if core.getCell(row: UInt32(bottomRow + 1), col: 0)?.hyperlinkUri == uri {
-                bottomRow += 1
-            } else {
-                break
-            }
+            spans[bottomRow + 1] = (start: 0, end: nextEnd)
+            bottomRow += 1
         }
 
+        // 4. Assemble the text across rows strictly within the tracked contiguous spans
         var fullText = ""
         for r in topRow...bottomRow {
-            var rStart = 0
-            while rStart < cols, core.getCell(row: UInt32(r), col: UInt32(rStart))?.hyperlinkUri != uri {
-                rStart += 1
-            }
-            guard rStart < cols else { continue }
-            var rEnd = cols - 1
-            while rEnd >= rStart, core.getCell(row: UInt32(r), col: UInt32(rEnd))?.hyperlinkUri != uri {
-                rEnd -= 1
-            }
-            for col in rStart...rEnd {
+            guard let span = spans[r] else { continue }
+            for col in span.start...span.end {
                 if let c = core.getCell(row: UInt32(r), col: UInt32(col)), c.ch != 0 {
                     fullText += c.grapheme ?? TerminalRenderer.string(for: c.ch)
                 }
