@@ -175,6 +175,34 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertNotNil(view.scrollbarMarksLayer.sublayers)
         XCTAssertEqual(view.core.commandMarks().count, 1)
     }
+
+    func testCommandMarksDeferredDuringSynchronizedOutput() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.commandMarksEnabled = true
+
+        // 1. Start a command (blue/running mark)
+        view.feed(data: Data("\u{1b}]133;A\u{07}$ \u{1b}]133;C\u{07}".utf8))
+        XCTAssertEqual(view.core.commandMarks().count, 1)
+        XCTAssertEqual(view.core.commandMarks()[0].status, 0, "status should be running")
+        XCTAssertEqual(view.scrollbarMarksLayer.sublayers?.first?.backgroundColor, NSColor.systemBlue.cgColor)
+
+        // 2. Open mode 2026 (synchronized output active)
+        view.feed(data: Data("\u{1b}[?2026h".utf8))
+        XCTAssertTrue(view.core.isSynchronizedOutputActive())
+
+        // 3. Command ends while synchronized output is active
+        view.feed(data: Data("\u{1b}]133;D;0\u{07}".utf8))
+        XCTAssertEqual(view.core.commandMarks()[0].status, 1, "core reflects command exit status")
+        // But UI mark update must be deferred so no intermediate state leaks before frame presentation
+        XCTAssertTrue(view.commandMarksHeldBySynchronizedOutput)
+        XCTAssertEqual(view.scrollbarMarksLayer.sublayers?.first?.backgroundColor, NSColor.systemBlue.cgColor, "mark color must remain blue while mode 2026 is active")
+
+        // 4. Close mode 2026 (synchronized output inactive)
+        view.feed(data: Data("\u{1b}[?2026l".utf8))
+        XCTAssertFalse(view.core.isSynchronizedOutputActive())
+        XCTAssertFalse(view.commandMarksHeldBySynchronizedOutput)
+        XCTAssertEqual(view.scrollbarMarksLayer.sublayers?.first?.backgroundColor, NSColor.systemGreen.cgColor, "mark color must update to green when sync frame closes")
+    }
 }
 #endif
 

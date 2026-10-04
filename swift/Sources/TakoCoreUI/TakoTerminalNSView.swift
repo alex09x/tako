@@ -240,6 +240,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private(set) var unpresentedFrameCount: Int = 0
     /// A redraw a synchronized-output frame deferred rather than drew.
     private(set) var redrawHeldBySynchronizedOutput: Bool = false
+    /// Command mark updates deferred while a synchronized-output frame was active.
+    private(set) var commandMarksHeldBySynchronizedOutput: Bool = false
     /// Stops drawing without stopping the terminal. While this is true, the
     /// parser, model, damage tracking, scrolling and delegate callbacks keep
     /// running; only fetching and presenting a frame is deferred.
@@ -661,8 +663,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             scheduleRedraw()
         }
 
-        if commandStatusChanged && !totalDamage {
+        if commandStatusChanged && core.isSynchronizedOutputActive() {
+            commandMarksHeldBySynchronizedOutput = true
+        }
+
+        let shouldUpdateMarksForCommandStatus = (commandStatusChanged || commandMarksHeldBySynchronizedOutput)
+            && !totalDamage
+            && !core.isSynchronizedOutputActive()
+
+        if shouldUpdateMarksForCommandStatus {
+            commandMarksHeldBySynchronizedOutput = false
             updateScroller()
+        } else if totalDamage {
+            commandMarksHeldBySynchronizedOutput = false
         }
 
         if totalDamage {
