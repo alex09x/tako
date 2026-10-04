@@ -109,6 +109,7 @@ extension Tako.SurfaceView {
     @IBAction public func findHide(_ sender: Any) {
         guard searchState != nil else { return }
         searchState = nil
+        searchHitRetainedRows = []
         window?.makeFirstResponder(self)
     }
 
@@ -138,6 +139,7 @@ extension Tako.SurfaceView {
         searchNeedleCancellable = nil
         guard let searchState else {
             currentSearchMatch = nil
+            searchHitRetainedRows = []
             return
         }
         searchNeedleCancellable = searchState.$needle
@@ -152,6 +154,7 @@ extension Tako.SurfaceView {
     func runSearch(_ needle: String) {
         currentSearchMatch = nil
         let matches = searchMatches(for: needle)
+        searchHitRetainedRows = matches.map { UInt64($0.row) }
         if let newest = matches.last {
             selectSearchMatch(newest)
         }

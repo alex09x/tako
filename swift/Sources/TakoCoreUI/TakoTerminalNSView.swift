@@ -145,10 +145,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// A native scrollbar for visual UX, optionally shown depending on settings.
     private let scrollbarLayer = CALayer()
     private let scrollbarKnob = CALayer()
+    private let scrollbarMarksLayer = CALayer()
+    private let gutterMarksLayer = CALayer()
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
     private var isUpdatingScroller = false
+
+    /// Gutter marks for OSC 133 command prompt lines (green = success, red = error, blue = running).
+    /// Configured via `command-marks = true|false`, default true.
+    public var commandMarksEnabled: Bool = true {
+        didSet {
+            guard commandMarksEnabled != oldValue else { return }
+            updateGutterMarks()
+            updateScroller()
+        }
+    }
+
+    /// Retained row positions for active search hits to display on the scrollbar track (amber/yellow).
+    public var searchHitRetainedRows: [UInt64] = [] {
+        didSet {
+            guard searchHitRetainedRows != oldValue else { return }
+            updateScroller()
+        }
+    }
 
     public var theme: TerminalTheme {
         didSet {
@@ -449,10 +469,18 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             registerForDraggedTypes([.fileURL, .string])
         }
 
+        gutterMarksLayer.zPosition = 9000
+        gutterMarksLayer.masksToBounds = true
+        self.layer?.addSublayer(gutterMarksLayer)
+
         scrollbarLayer.zPosition = 9999
         scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
         scrollbarLayer.cornerRadius = 5.0
         scrollbarLayer.masksToBounds = true
+        scrollbarMarksLayer.zPosition = 10
+        scrollbarMarksLayer.masksToBounds = true
+        scrollbarLayer.addSublayer(scrollbarMarksLayer)
+        scrollbarKnob.zPosition = 20
         scrollbarKnob.cornerRadius = 3.5
         scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
         scrollbarLayer.addSublayer(scrollbarKnob)
@@ -638,6 +666,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private var lastReportedScrollPosition: Double = 1
 
     func updateScroller() {
+        updateGutterMarks()
+
         let trackHeight = bounds.height
         guard trackHeight > 0 else { return }
         
@@ -650,18 +680,24 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scrollbarLayer.opacity = 1.0
         
         let usableHeight = scrollbarLayer.bounds.height
+        scrollbarMarksLayer.frame = scrollbarLayer.bounds
+
         let modes = core.modes()
         if modes.alternateScreen && modes.alternateScroll {
+            scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
             let knobHeight: CGFloat = 44.0
             let knobY = (usableHeight - knobHeight) / 2.0
             scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
             scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
         } else if maxScroll == 0 {
+            updateScrollbarMarks(usableHeight: usableHeight, totalLines: Double(core.rows()), scrollerWidth: scrollerWidth)
             scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
             scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
         } else {
             let visibleLines = Double(core.rows())
             let totalLines = Double(maxScroll) + visibleLines
+            updateScrollbarMarks(usableHeight: usableHeight, totalLines: totalLines, scrollerWidth: scrollerWidth)
+
             let proportion = max(0.05, min(1.0, visibleLines / totalLines))
             let knobHeight = max(usableHeight * CGFloat(proportion), 24.0)
             let maxKnobTravel = max(0, usableHeight - knobHeight)
@@ -675,6 +711,150 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 : NSColor.white.withAlphaComponent(0.45).cgColor
         }
         CATransaction.commit()
+    }
+
+    /// Renders command marks and search hits on the scrollbar track.
+    private func updateScrollbarMarks(usableHeight: CGFloat, totalLines: Double, scrollerWidth: CGFloat) {
+        guard usableHeight > 0, totalLines > 0, !core.modes().alternateScreen else {
+            scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        struct TrackMark {
+            let retainedRow: UInt64
+            let color: CGColor
+        }
+
+        var marks: [TrackMark] = []
+
+        // Command marks on scrollbar
+        if commandMarksEnabled {
+            for cmd in core.commandMarks() {
+                let color: CGColor
+                switch cmd.status {
+                case 1: color = NSColor.systemGreen.cgColor
+                case 2: color = NSColor.systemRed.cgColor
+                default: color = NSColor.systemBlue.cgColor
+                }
+                marks.append(TrackMark(retainedRow: cmd.retainedRow, color: color))
+            }
+        }
+
+        // Search hit marks on scrollbar (amber / yellow)
+        if !searchHitRetainedRows.isEmpty {
+            let searchColor = NSColor(red: 1.0, green: 0.78, blue: 0.1, alpha: 0.95).cgColor
+            for row in searchHitRetainedRows {
+                marks.append(TrackMark(retainedRow: row, color: searchColor))
+            }
+        }
+
+        if marks.isEmpty {
+            scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        let markWidth: CGFloat = scrollerWidth - 2.0
+        let markHeight: CGFloat = 2.0
+        let markX: CGFloat = 1.0
+
+        var sublayers = scrollbarMarksLayer.sublayers ?? []
+        var layerIndex = 0
+
+        for mark in marks {
+            let row = Double(mark.retainedRow)
+            let frac = totalLines > 1 ? max(0.0, min(1.0, row / (totalLines - 1.0))) : 0.0
+            let markY = max(0.0, min(usableHeight - markHeight, usableHeight * CGFloat(1.0 - frac) - markHeight / 2.0))
+
+            let layer: CALayer
+            if layerIndex < sublayers.count {
+                layer = sublayers[layerIndex]
+            } else {
+                layer = CALayer()
+                layer.cornerRadius = 1.0
+                scrollbarMarksLayer.addSublayer(layer)
+                sublayers.append(layer)
+            }
+            layerIndex += 1
+
+            layer.frame = CGRect(x: markX, y: markY, width: markWidth, height: markHeight)
+            layer.backgroundColor = mark.color
+        }
+
+        while sublayers.count > layerIndex {
+            sublayers.removeLast().removeFromSuperlayer()
+        }
+    }
+
+    /// Renders thin vertical marks beside each command's prompt line in the left gutter.
+    func updateGutterMarks() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        guard commandMarksEnabled, !core.modes().alternateScreen else {
+            gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        let layout = gridLayout
+        let gutterWidth = layout.left
+        guard gutterWidth >= 2.0 else {
+            gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        gutterMarksLayer.frame = CGRect(x: 0, y: 0, width: gutterWidth, height: bounds.height)
+
+        let marks = core.commandMarks()
+        if marks.isEmpty {
+            gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        let totalScrollback = Int(core.scrollbackLen())
+        let offset = Int(core.viewportOffset())
+        let topVisible = totalScrollback - offset
+        let screenRows = Int(core.rows())
+
+        let markWidth: CGFloat = 3.0
+        let markX: CGFloat = max(1.0, gutterWidth - markWidth - 2.0)
+        let markHeight: CGFloat = max(4.0, cellHeight - 4.0)
+
+        var sublayers = gutterMarksLayer.sublayers ?? []
+        var layerIndex = 0
+
+        for mark in marks {
+            let screenRow = Int(mark.retainedRow) - topVisible
+            guard screenRow >= 0, screenRow < screenRows else { continue }
+
+            let cellY = bounds.height - layout.top - CGFloat(screenRow + 1) * cellHeight
+            let markY = cellY + (cellHeight - markHeight) / 2.0
+
+            let markLayer: CALayer
+            if layerIndex < sublayers.count {
+                markLayer = sublayers[layerIndex]
+            } else {
+                markLayer = CALayer()
+                markLayer.cornerRadius = markWidth / 2.0
+                gutterMarksLayer.addSublayer(markLayer)
+                sublayers.append(markLayer)
+            }
+            layerIndex += 1
+
+            markLayer.frame = CGRect(x: markX, y: markY, width: markWidth, height: markHeight)
+            let color: CGColor
+            switch mark.status {
+            case 1: color = NSColor.systemGreen.cgColor
+            case 2: color = NSColor.systemRed.cgColor
+            default: color = NSColor.systemBlue.cgColor
+            }
+            markLayer.backgroundColor = color
+        }
+
+        while sublayers.count > layerIndex {
+            sublayers.removeLast().removeFromSuperlayer()
+        }
     }
 
     /// Internal, not private: a host that moved the viewport in the engine

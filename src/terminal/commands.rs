@@ -35,6 +35,8 @@ pub enum CommandStatus {
 pub struct CommandRecord {
     pub id: u64,
     pub status: CommandStatus,
+    /// Absolute line where this command's prompt started (`133;A` / `133;P`).
+    pub prompt_line: Option<u64>,
     /// The last OSC 7 report before the command started.
     pub cwd: Option<String>,
     /// The command line as the screen showed it between `133;B` and
@@ -94,13 +96,20 @@ impl CommandLog {
 
     /// Open a record for a command whose output starts now, abandoning one
     /// still running. `None` when ids ran out: nothing more is recorded.
-    pub fn start(&mut self, cwd: Option<String>, input: Option<String>, truncated: bool) -> Option<u64> {
+    pub fn start(
+        &mut self,
+        cwd: Option<String>,
+        input: Option<String>,
+        truncated: bool,
+        prompt_line: Option<u64>,
+    ) -> Option<u64> {
         self.abandon_running();
         let id = self.next_id?;
         self.next_id = id.checked_add(1);
         let record = CommandRecord {
             id,
             status: CommandStatus::Running,
+            prompt_line,
             cwd,
             input,
             input_truncated: truncated,

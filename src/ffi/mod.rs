@@ -762,6 +762,34 @@ impl FfiCommandInfo {
     }
 }
 
+/// A mark associated with a recorded command prompt line.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiCommandMark {
+    pub command_id: u64,
+    pub prompt_line: u64,
+    pub retained_row: u64,
+    /// 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+    pub status: u8,
+    pub exit_code: Option<i32>,
+}
+
+impl From<crate::terminal::CommandMark> for FfiCommandMark {
+    fn from(m: crate::terminal::CommandMark) -> Self {
+        let (status, exit_code) = match m.status {
+            crate::terminal::CommandMarkStatus::Running => (0, None),
+            crate::terminal::CommandMarkStatus::Success => (1, Some(0)),
+            crate::terminal::CommandMarkStatus::Error(code) => (2, code),
+        };
+        Self {
+            command_id: m.command_id,
+            prompt_line: m.prompt_line,
+            retained_row: m.retained_row as u64,
+            status,
+            exit_code,
+        }
+    }
+}
+
 impl From<crate::grid::SearchHit> for FfiSearchHit {
     fn from(h: crate::grid::SearchHit) -> Self {
         Self {
@@ -1713,6 +1741,18 @@ impl TakoCore {
     /// by OSC 133 marks. Returns true if output was selected; false otherwise.
     pub fn select_command_output(&self) -> bool {
         lock_recover(&self.inner).select_command_output()
+    }
+
+    /// Returns command marks for all recorded commands whose prompt line is retained.
+    pub fn command_marks(&self) -> Vec<FfiCommandMark> {
+        let terminal = lock_recover(&self.inner);
+        terminal.command_marks().into_iter().map(Into::into).collect()
+    }
+
+    /// The absolute line index of the oldest retained line in the primary buffer.
+    pub fn first_retained_line(&self) -> u64 {
+        let terminal = lock_recover(&self.inner);
+        terminal.first_retained_line()
     }
 
     /// The cursor's current visual style (DECSCUSR).

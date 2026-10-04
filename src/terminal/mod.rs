@@ -203,6 +203,25 @@ pub struct GraphicsPlacement {
     pub col: usize,
 }
 
+/// The execution state of a recorded command mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandMarkStatus {
+    Running,
+    Success,
+    Error(Option<i32>),
+}
+
+/// A mark associated with a recorded command prompt line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandMark {
+    pub command_id: u64,
+    /// Absolute line where this command's prompt started.
+    pub prompt_line: u64,
+    /// Index into the retained lines buffer (0 = oldest retained line in scrollback).
+    pub retained_row: usize,
+    pub status: CommandMarkStatus,
+}
+
 /// Terminal state machine: owns a primary and alternate [`Grid`], a
 /// [`Cursor`], a scroll region, and drives a [`Parser`] over incoming bytes.
 ///
@@ -313,6 +332,8 @@ pub struct Terminal {
     pub(crate) pending_wrap: bool,
     /// The host's grapheme-width-method: mode 2027's power-on value.
     pub(crate) grapheme_width_method: GraphemeWidthMethod,
+    /// Where the prompt started (absolute line): recorded at `133;A`/`133;P`.
+    pub(crate) last_prompt_line: Option<u64>,
 }
 
 impl Terminal {
@@ -483,6 +504,7 @@ impl Terminal {
             cursor_color: None,
             pending_wrap: false,
             grapheme_width_method: GraphemeWidthMethod::Unicode,
+            last_prompt_line: None,
         }
     }
 
@@ -1653,6 +1675,7 @@ impl Terminal {
         if self.active == ScreenBuffer::Primary {
             self.commands.abandon_running();
             self.primary.set_pen_owner(None);
+            self.last_prompt_line = Some(self.cursor_absolute_line());
         }
     }
 
@@ -1666,7 +1689,8 @@ impl Terminal {
             Some(start) => self.command_line_text(start),
             None => (None, false),
         };
-        let id = self.commands.start(self.last_cwd.clone(), input, truncated);
+        let prompt_line = self.last_prompt_line.take();
+        let id = self.commands.start(self.last_cwd.clone(), input, truncated, prompt_line);
         self.primary.set_pen_owner(id);
         id
     }
@@ -1780,6 +1804,63 @@ impl Terminal {
     /// Give command `id` its start time (unix ms), once.
     pub fn set_command_started_at(&mut self, id: u64, unix_ms: u64) -> bool {
         self.commands.set_started_at(id, unix_ms)
+    }
+
+    /// Returns marks for all recorded commands whose prompt line is currently retained
+    /// in the primary buffer (scrollback or live screen).
+    pub fn command_marks(&self) -> Vec<CommandMark> {
+        if self.active == ScreenBuffer::Alternate {
+            return Vec::new();
+        }
+        let grid = &self.primary;
+        let first = grid.first_retained_line();
+        let end = grid.end_retained_line();
+        let total_retained = grid.retained_rows();
+        let mut marks = Vec::new();
+
+        for rec in self.commands.records() {
+            let Some(prompt_line) = rec.prompt_line else {
+                continue;
+            };
+            if prompt_line < first || prompt_line >= end {
+                continue;
+            }
+            let mut retained_row = (prompt_line - first) as usize;
+            if retained_row >= total_retained {
+                continue;
+            }
+
+            if grid.retained_semantic_prompt(retained_row) != crate::grid::SemanticPrompt::Prompt {
+                let min_r = retained_row.saturating_sub(10);
+                let max_r = (retained_row + 10).min(total_retained.saturating_sub(1));
+                let best = (min_r..=max_r)
+                    .filter(|&r| grid.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt)
+                    .min_by_key(|&r| (r as isize - retained_row as isize).abs());
+                if let Some(r) = best {
+                    retained_row = r;
+                }
+            }
+
+            let status = match rec.status {
+                commands::CommandStatus::Running => CommandMarkStatus::Running,
+                commands::CommandStatus::Completed(Some(0)) => CommandMarkStatus::Success,
+                commands::CommandStatus::Completed(code) => CommandMarkStatus::Error(code),
+                commands::CommandStatus::Abandoned => CommandMarkStatus::Error(None),
+            };
+
+            marks.push(CommandMark {
+                command_id: rec.id,
+                prompt_line,
+                retained_row,
+                status,
+            });
+        }
+        marks
+    }
+
+    /// The absolute line index of the oldest retained line in the primary buffer.
+    pub fn first_retained_line(&self) -> u64 {
+        self.primary.first_retained_line()
     }
 
     /// Jumps the viewport up to the previous OSC 133 prompt mark.
@@ -4431,6 +4512,7 @@ impl Terminal {
         self.commands.clear();
         self.input_start = None;
         self.last_cwd = None;
+        self.last_prompt_line = None;
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll

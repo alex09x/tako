@@ -2052,6 +2052,7 @@ extension Tako {
             cursorClickToMove = config.cursorClickToMove
             linkURLDetectionEnabled = config.linkURL
             safePaste = config.safePaste
+            commandMarksEnabled = config.commandMarks
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
 

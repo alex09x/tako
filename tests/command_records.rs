@@ -670,3 +670,88 @@ fn the_first_command_after_another_is_found_even_when_abandoned() {
     assert!(core.newest_command_id().unwrap() > next.id);
 }
 
+#[test]
+fn command_marks_track_prompt_lines_and_status() {
+    use tako_core::terminal::CommandMarkStatus;
+
+    let mut t = Terminal::new(30, 10);
+    // Command 1: success (exit 0)
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hi\r\n\x1b]133;C\x07hi\r\n\x1b]133;D;0\x07");
+    // Command 2: failure with code (exit 2)
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07exit 2\r\n\x1b]133;C\x07error\r\n\x1b]133;D;2\x07");
+    // Command 3: still running (no D)
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07sleep 10\r\n\x1b]133;C\x07working...\r\n");
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 3);
+
+    // Command 1: Success
+    assert_eq!(marks[0].command_id, 1);
+    assert_eq!(marks[0].status, CommandMarkStatus::Success);
+    assert_eq!(marks[0].prompt_line, 0);
+    assert_eq!(marks[0].retained_row, 0);
+
+    // Command 2: Error with code 2
+    assert_eq!(marks[1].command_id, 2);
+    assert_eq!(marks[1].status, CommandMarkStatus::Error(Some(2)));
+    assert_eq!(marks[1].prompt_line, 2);
+    assert_eq!(marks[1].retained_row, 2);
+
+    // Command 3: Running
+    assert_eq!(marks[2].command_id, 3);
+    assert_eq!(marks[2].status, CommandMarkStatus::Running);
+    assert_eq!(marks[2].prompt_line, 4);
+    assert_eq!(marks[2].retained_row, 4);
+
+    // Complete command 3 with exit 0
+    t.feed(b"\x1b]133;D;0\x07");
+    let marks_after = t.command_marks();
+    assert_eq!(marks_after[2].status, CommandMarkStatus::Success);
+}
+
+#[test]
+fn command_marks_empty_on_alternate_screen_and_omits_non_command_prompts() {
+    let mut t = Terminal::new(30, 10);
+    // Plain prompt with no command started (e.g. empty enter)
+    t.feed(b"\x1b]133;A\x07$ \r\n");
+    assert!(t.command_marks().is_empty());
+
+    // Now run an actual command
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07test\r\n\x1b]133;C\x07ok\r\n\x1b]133;D;0\x07");
+    assert_eq!(t.command_marks().len(), 1);
+
+    // Switch to alternate screen
+    t.feed(b"\x1b[?1049h");
+    assert!(t.command_marks().is_empty());
+
+    // Switch back to primary screen
+    t.feed(b"\x1b[?1049l");
+    assert_eq!(t.command_marks().len(), 1);
+}
+
+#[test]
+fn ffi_command_marks_and_first_retained_line() {
+    let core = TakoCore::new(30, 8);
+    assert_eq!(core.first_retained_line(), 0);
+
+    // Success command
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07true\r\n\x1b]133;C\x07\x1b]133;D;0\x07".to_vec());
+    // Failure command
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07".to_vec());
+    // Running command
+    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07cat\r\n\x1b]133;C\x07".to_vec());
+
+    let marks = core.command_marks();
+    assert_eq!(marks.len(), 3);
+
+    assert_eq!(marks[0].status, 1); // 1 = success
+    assert_eq!(marks[0].exit_code, Some(0));
+
+    assert_eq!(marks[1].status, 2); // 2 = error
+    assert_eq!(marks[1].exit_code, Some(1));
+
+    assert_eq!(marks[2].status, 0); // 0 = running
+    assert_eq!(marks[2].exit_code, None);
+}
+
+

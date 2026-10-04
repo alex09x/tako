@@ -1687,6 +1687,7 @@ fn read_commands(
         records.push(CommandRecord {
             id,
             status,
+            prompt_line: None,
             cwd,
             input,
             input_truncated,
@@ -2644,6 +2645,7 @@ pub fn import_traced_reserving(
         default_bg,
         cursor_color,
         pending_wrap,
+        last_prompt_line: None,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))
