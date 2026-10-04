@@ -803,14 +803,14 @@ deciding whether to schedule an implementation or reject it.
 
 ### [ ] G1. Control socket capabilities
 
-- Scopes per client: read (tree, text, last, find), input (send, type, key), layout (tab-new,
-  split, close, focus), signal (notify, status, progress, ask), overlay.
+- Scopes per client: read (tree, text, last, find, events, screenshot), input (send, type, key),
+  layout (tab-new, split, close, focus), signal (notify, status, progress, ask), overlay.
 - Pane-level switch: "automation may type here". Panes created by a client are writable by it;
   typing into a pane it did not create needs that switch or a one-time confirmation.
 - The existing `remote-control` modes stay as the outer switch.
 
-Done when an agent restricted to signal scope can set status and notify but cannot read or type,
-and every refusal names the missing scope.
+Done when an agent restricted to signal scope can set status and notify but cannot read, stream
+events, take screenshots or type, and every refusal names the missing scope.
 
 ### [ ] G2. Activity log
 
