@@ -762,6 +762,34 @@ impl FfiCommandInfo {
     }
 }
 
+/// A mark associated with a recorded command prompt line.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiCommandMark {
+    pub command_id: u64,
+    pub prompt_line: u64,
+    pub retained_row: u64,
+    /// 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+    pub status: u8,
+    pub exit_code: Option<i32>,
+}
+
+impl From<crate::terminal::CommandMark> for FfiCommandMark {
+    fn from(m: crate::terminal::CommandMark) -> Self {
+        let (status, exit_code) = match m.status {
+            crate::terminal::CommandMarkStatus::Running => (0, None),
+            crate::terminal::CommandMarkStatus::Success => (1, Some(0)),
+            crate::terminal::CommandMarkStatus::Error(code) => (2, code),
+        };
+        Self {
+            command_id: m.command_id,
+            prompt_line: m.prompt_line,
+            retained_row: m.retained_row as u64,
+            status,
+            exit_code,
+        }
+    }
+}
+
 impl From<crate::grid::SearchHit> for FfiSearchHit {
     fn from(h: crate::grid::SearchHit) -> Self {
         Self {
@@ -1713,6 +1741,18 @@ impl TakoCore {
     /// by OSC 133 marks. Returns true if output was selected; false otherwise.
     pub fn select_command_output(&self) -> bool {
         lock_recover(&self.inner).select_command_output()
+    }
+
+    /// Returns command marks for all recorded commands whose prompt line is retained.
+    pub fn command_marks(&self) -> Vec<FfiCommandMark> {
+        let terminal = lock_recover(&self.inner);
+        terminal.command_marks().into_iter().map(Into::into).collect()
+    }
+
+    /// The absolute line index of the oldest retained line in the primary buffer.
+    pub fn first_retained_line(&self) -> u64 {
+        let terminal = lock_recover(&self.inner);
+        terminal.first_retained_line()
     }
 
     /// The cursor's current visual style (DECSCUSR).
@@ -3025,16 +3065,17 @@ mod tests {
     #[test]
     fn checkpoint_version_negotiation_is_explicit() {
         let core = TakoCore::new(40, 10);
-        assert_eq!(core.checkpoint_version(), 5);
-        // v1 through v4 stay readable so a peer holding an older container is
-        // not forced to discard it; v5 is what this build writes.
+        assert_eq!(core.checkpoint_version(), 6);
+        // v1 through v5 stay readable so a peer holding an older container is
+        // not forced to discard it; v6 is what this build writes.
         assert!(core.checkpoint_supports(1));
         assert!(core.checkpoint_supports(2));
         assert!(core.checkpoint_supports(3));
         assert!(core.checkpoint_supports(4));
         assert!(core.checkpoint_supports(5));
+        assert!(core.checkpoint_supports(6));
         assert!(!core.checkpoint_supports(0));
-        assert!(!core.checkpoint_supports(6));
+        assert!(!core.checkpoint_supports(7));
 
         core.feed(b"negotiate".to_vec());
         let blob = core.checkpoint_export(0, 1 << 20).unwrap();
@@ -3042,18 +3083,18 @@ mod tests {
         // A newer container, correctly checksummed: a version failure, not
         // corruption. A bool could not tell the two apart.
         let mut newer = blob.clone();
-        newer[4..8].copy_from_slice(&6u32.to_le_bytes());
+        newer[4..8].copy_from_slice(&7u32.to_le_bytes());
         let crc = crate::terminal::checkpoint::crc32(&newer[20..]);
         newer[16..20].copy_from_slice(&crc.to_le_bytes());
 
         let dest = TakoCore::new(20, 6);
         assert_eq!(
             dest.checkpoint_import(newer.clone()),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
         );
         assert_eq!(
             dest.checkpoint_inspect(newer),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
         );
 
         let mut corrupt = blob.clone();
@@ -3065,7 +3106,7 @@ mod tests {
         ));
 
         let info = dest.checkpoint_inspect(blob.clone()).unwrap();
-        assert_eq!((info.version, info.cols, info.rows), (5, 40, 10));
+        assert_eq!((info.version, info.cols, info.rows), (6, 40, 10));
         assert_eq!(info.payload_len as usize, blob.len() - 20);
         assert_eq!(dest.checkpoint_import(blob), Ok(()));
     }

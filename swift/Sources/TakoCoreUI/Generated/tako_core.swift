@@ -994,6 +994,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func cols()  -> UInt32
 
     /**
+     * Returns command marks for all recorded commands whose prompt line is retained.
+     */
+    func commandMarks()  -> [FfiCommandMark]
+
+    /**
      * Command `id` of engine generation `epoch` (both from a
      * `FfiCommandInfo`), as `last_command` reports one. `None` when that
      * generation is gone (an import or reset since) or the record is.
@@ -1066,6 +1071,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * abandoned -- in the current generation.
      */
     func firstCommandAfter(after: UInt64)  -> FfiCommandInfo?
+
+    /**
+     * The absolute line index of the oldest retained line in the primary buffer.
+     */
+    func firstRetainedLine()  -> UInt64
 
     /**
      * Returns the styled cell at (row, col) in the currently active grid,
@@ -1733,6 +1743,18 @@ open func cols() -> UInt32  {
 }
 
     /**
+     * Returns command marks for all recorded commands whose prompt line is retained.
+     */
+open func commandMarks() -> [FfiCommandMark]  {
+    return try!  FfiConverterSequenceTypeFfiCommandMark.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_command_marks(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Command `id` of engine generation `epoch` (both from a
      * `FfiCommandInfo`), as `last_command` reports one. `None` when that
      * generation is gone (an import or reset since) or the record is.
@@ -1903,6 +1925,18 @@ open func firstCommandAfter(after: UInt64) -> FfiCommandInfo?  {
     uniffi_tako_core_fn_method_takocore_first_command_after(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(after),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The absolute line index of the oldest retained line in the primary buffer.
+     */
+open func firstRetainedLine() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_first_retained_line(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -3227,6 +3261,81 @@ public func FfiConverterTypeFfiCommandInfo_lift(_ buf: RustBuffer) throws -> Ffi
 #endif
 public func FfiConverterTypeFfiCommandInfo_lower(_ value: FfiCommandInfo) -> RustBuffer {
     return FfiConverterTypeFfiCommandInfo.lower(value)
+}
+
+
+/**
+ * A mark associated with a recorded command prompt line.
+ */
+public struct FfiCommandMark: Equatable, Hashable {
+    public var commandId: UInt64
+    public var promptLine: UInt64
+    public var retainedRow: UInt64
+    /**
+     * 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+     */
+    public var status: UInt8
+    public var exitCode: Int32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(commandId: UInt64, promptLine: UInt64, retainedRow: UInt64,
+        /**
+         * 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+         */status: UInt8, exitCode: Int32?) {
+        self.commandId = commandId
+        self.promptLine = promptLine
+        self.retainedRow = retainedRow
+        self.status = status
+        self.exitCode = exitCode
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiCommandMark: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiCommandMark: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiCommandMark {
+        return
+            try FfiCommandMark(
+                commandId: FfiConverterUInt64.read(from: &buf),
+                promptLine: FfiConverterUInt64.read(from: &buf),
+                retainedRow: FfiConverterUInt64.read(from: &buf),
+                status: FfiConverterUInt8.read(from: &buf),
+                exitCode: FfiConverterOptionInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiCommandMark, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.commandId, into: &buf)
+        FfiConverterUInt64.write(value.promptLine, into: &buf)
+        FfiConverterUInt64.write(value.retainedRow, into: &buf)
+        FfiConverterUInt8.write(value.status, into: &buf)
+        FfiConverterOptionInt32.write(value.exitCode, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandMark_lift(_ buf: RustBuffer) throws -> FfiCommandMark {
+    return try FfiConverterTypeFfiCommandMark.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiCommandMark_lower(_ value: FfiCommandMark) -> RustBuffer {
+    return FfiConverterTypeFfiCommandMark.lower(value)
 }
 
 
@@ -7388,6 +7497,31 @@ fileprivate struct FfiConverterSequenceTypeFfiCell: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFfiCommandMark: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiCommandMark]
+
+    public static func write(_ value: [FfiCommandMark], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiCommandMark.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiCommandMark] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiCommandMark]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiCommandMark.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeFfiGrapheme: FfiConverterRustBuffer {
     typealias SwiftType = [FfiGrapheme]
 
@@ -7605,6 +7739,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_cols() != 18796) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_command_marks() != 17400) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_command_output() != 54790) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7642,6 +7779,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_first_command_after() != 27620) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_first_retained_line() != 63445) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_get_cell() != 48280) {

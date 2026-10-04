@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::charset::{self, Charset};
 use crate::cursor_style::CursorStyle;
 use crate::graphics::{GraphicsResponse, GraphicsState};
-use crate::grid::{Cell, CellAttrs, Color, Grid};
+use crate::grid::{Cell, CellAttrs, Color, Grid, RowOwner, SemanticPrompt};
 use crate::kitty_keyboard::{KittyFlags, KittyKeyboardState};
 use crate::modes::TerminalModes;
 use crate::palette::{self, Palette};
@@ -203,6 +203,25 @@ pub struct GraphicsPlacement {
     pub col: usize,
 }
 
+/// The execution state of a recorded command mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandMarkStatus {
+    Running,
+    Success,
+    Error(Option<i32>),
+}
+
+/// A mark associated with a recorded command prompt line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandMark {
+    pub command_id: u64,
+    /// Absolute line where this command's prompt started.
+    pub prompt_line: u64,
+    /// Index into the retained lines buffer (0 = oldest retained line in scrollback).
+    pub retained_row: usize,
+    pub status: CommandMarkStatus,
+}
+
 /// Terminal state machine: owns a primary and alternate [`Grid`], a
 /// [`Cursor`], a scroll region, and drives a [`Parser`] over incoming bytes.
 ///
@@ -313,6 +332,8 @@ pub struct Terminal {
     pub(crate) pending_wrap: bool,
     /// The host's grapheme-width-method: mode 2027's power-on value.
     pub(crate) grapheme_width_method: GraphemeWidthMethod,
+    /// Where the prompt started (absolute line): recorded at `133;A`/`133;P`.
+    pub(crate) last_prompt_line: Option<u64>,
 }
 
 impl Terminal {
@@ -483,6 +504,7 @@ impl Terminal {
             cursor_color: None,
             pending_wrap: false,
             grapheme_width_method: GraphemeWidthMethod::Unicode,
+            last_prompt_line: None,
         }
     }
 
@@ -520,19 +542,21 @@ impl Terminal {
         // Reflow moves the command line being typed; where it started is
         // no longer known.
         self.input_start = None;
-        let new_cursor = if self.modes.autowrap {
+        let (new_cursor, line_remaps) = if self.modes.autowrap {
             match self.active {
                 ScreenBuffer::Primary => {
-                    let pos = self
+                    let (pos, remaps) = self
                         .primary
-                        .resize_with_cursor(cols, rows, Some(cursor_pos));
+                        .resize_with_cursor_and_remaps(cols, rows, Some(cursor_pos));
                     self.alternate.resize_with_cursor(cols, rows, None);
-                    pos
+                    (pos, remaps)
                 }
                 ScreenBuffer::Alternate => {
-                    self.primary.resize_with_cursor(cols, rows, None);
-                    self.alternate
-                        .resize_with_cursor(cols, rows, Some(cursor_pos))
+                    let (_, remaps) = self.primary.resize_with_cursor_and_remaps(cols, rows, None);
+                    let pos = self
+                        .alternate
+                        .resize_with_cursor(cols, rows, Some(cursor_pos));
+                    (pos, remaps)
                 }
             }
         } else {
@@ -540,11 +564,23 @@ impl Terminal {
             // instead of reflowing (upstream behavior).
             self.primary.resize_no_reflow(cols, rows);
             self.alternate.resize_no_reflow(cols, rows);
-            Some((
-                self.cursor.row.min(rows.saturating_sub(1)),
-                self.cursor.col.min(cols.saturating_sub(1)),
-            ))
+            (
+                Some((
+                    self.cursor.row.min(rows.saturating_sub(1)),
+                    self.cursor.col.min(cols.saturating_sub(1)),
+                )),
+                Vec::new(),
+            )
         };
+        if !line_remaps.is_empty() {
+            self.commands.remap_prompt_lines(&line_remaps);
+            let map: std::collections::HashMap<u64, u64> = line_remaps.into_iter().collect();
+            if let Some(prompt) = self.last_prompt_line
+                && let Some(&new_line) = map.get(&prompt)
+            {
+                self.last_prompt_line = Some(new_line);
+            }
+        }
         if cols_changed {
             self.tabstops = TabStops::new(cols);
         }
@@ -1651,10 +1687,15 @@ impl Terminal {
     fn command_prompt_started(&mut self) {
         self.input_start = None;
         if self.active == ScreenBuffer::Primary {
-            self.commands.abandon_running();
+            if self.commands.running().is_some() {
+                self.commands.abandon_running();
+                self.events.push(TerminalEvent::CommandEnd { exit_code: None });
+            }
             self.primary.set_pen_owner(None);
+            self.last_prompt_line = Some(self.cursor_absolute_line());
         }
     }
+
 
     /// `133;C`: open a record and claim what is written from here on for
     /// it. `None` on the alternate screen or once ids ran out.
@@ -1666,7 +1707,8 @@ impl Terminal {
             Some(start) => self.command_line_text(start),
             None => (None, false),
         };
-        let id = self.commands.start(self.last_cwd.clone(), input, truncated);
+        let prompt_line = self.last_prompt_line.take();
+        let id = self.commands.start(self.last_cwd.clone(), input, truncated, prompt_line);
         self.primary.set_pen_owner(id);
         id
     }
@@ -1780,6 +1822,62 @@ impl Terminal {
     /// Give command `id` its start time (unix ms), once.
     pub fn set_command_started_at(&mut self, id: u64, unix_ms: u64) -> bool {
         self.commands.set_started_at(id, unix_ms)
+    }
+
+    /// Returns marks for all recorded commands whose prompt line is currently retained
+    /// in the primary buffer (scrollback or live screen).
+    pub fn command_marks(&self) -> Vec<CommandMark> {
+        if self.active == ScreenBuffer::Alternate {
+            return Vec::new();
+        }
+        let grid = &self.primary;
+        let first = grid.first_retained_line();
+        let end = grid.end_retained_line();
+        let total_retained = grid.retained_rows();
+        let mut marks = Vec::new();
+
+        for rec in self.commands.records() {
+            let Some(prompt_line) = rec.prompt_line else {
+                continue;
+            };
+            if prompt_line < first || prompt_line >= end {
+                continue;
+            }
+            let mut retained_row = (prompt_line - first) as usize;
+            if retained_row >= total_retained {
+                continue;
+            }
+
+            if grid.retained_semantic_prompt(retained_row) != crate::grid::SemanticPrompt::Prompt {
+                let min_r = retained_row.saturating_sub(1);
+                let max_r = (retained_row + 1).min(total_retained.saturating_sub(1));
+                if let Some(r) = (min_r..=max_r).find(|&r| grid.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt) {
+                    retained_row = r;
+                } else {
+                    continue;
+                }
+            }
+
+            let status = match rec.status {
+                commands::CommandStatus::Running => CommandMarkStatus::Running,
+                commands::CommandStatus::Completed(Some(0)) => CommandMarkStatus::Success,
+                commands::CommandStatus::Completed(code) => CommandMarkStatus::Error(code),
+                commands::CommandStatus::Abandoned => CommandMarkStatus::Error(None),
+            };
+
+            marks.push(CommandMark {
+                command_id: rec.id,
+                prompt_line,
+                retained_row,
+                status,
+            });
+        }
+        marks
+    }
+
+    /// The absolute line index of the oldest retained line in the primary buffer.
+    pub fn first_retained_line(&self) -> u64 {
+        self.primary.first_retained_line()
     }
 
     /// Jumps the viewport up to the previous OSC 133 prompt mark.
@@ -2055,6 +2153,18 @@ impl Terminal {
         self.input_start = None;
 
         let full_width = self.h_margins_full();
+        let prompt_shift_below = if top == 0
+            && full_width
+            && bottom + 1 < rows
+            && self.active == ScreenBuffer::Primary
+        {
+            let sb = self.primary.scrollback_len() as u64;
+            let first = self.primary.first_retained_line();
+            Some((first + sb + (bottom + 1) as u64)..=(first + sb + (rows - 1) as u64))
+        } else {
+            None
+        };
+
         // A partial-height region anchored at the top of the screen still
         // feeds scrollback -- its lines leave the screen the same way a
         // full-screen scroll's do (upstream behavior).
@@ -2068,6 +2178,11 @@ impl Terminal {
             let blank = self.bce_blank();
             self.active_grid_mut()
                 .scroll_region_up_with_blank(top, bottom, n, blank);
+            if let Some(shift_range) = prompt_shift_below {
+                self.remap_prompts_below_scroll_region(shift_range, n as u64);
+            } else if top > 0 && self.active == ScreenBuffer::Primary {
+                self.remap_screen_rows_up(top, bottom, n);
+            }
             return;
         }
         if n < region_height {
@@ -2127,6 +2242,8 @@ impl Terminal {
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
                     let owner = self.active_grid().row_owner(row - n);
                     self.active_grid_mut().set_row_owner(row, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row - n);
+                    self.active_grid_mut().set_row_semantic_prompt(row, prompt);
                 }
             }
         }
@@ -2136,12 +2253,17 @@ impl Terminal {
                 .fill_cells(row, left, right + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if !full_width {
             for row in top..=bottom {
                 self.fix_wide_orphans(row);
             }
+        }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_down(top, bottom, n);
         }
         self.fix_spacer_heads();
     }
@@ -2282,6 +2404,8 @@ impl Terminal {
                     // The whole row moved: so does whose output it is.
                     let owner = self.active_grid().row_owner(row);
                     self.active_grid_mut().set_row_owner(row + n, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row);
+                    self.active_grid_mut().set_row_semantic_prompt(row + n, prompt);
                 }
             }
         }
@@ -2290,6 +2414,8 @@ impl Terminal {
             self.active_grid_mut().fill_cells(row, hl, hr + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if full_width {
@@ -2299,6 +2425,9 @@ impl Terminal {
             for row in top..=bottom {
                 self.fix_wide_orphans(row);
             }
+        }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_down(top, bottom, n);
         }
     }
 
@@ -2339,6 +2468,8 @@ impl Terminal {
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
                     let owner = self.active_grid().row_owner(row + n);
                     self.active_grid_mut().set_row_owner(row, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row + n);
+                    self.active_grid_mut().set_row_semantic_prompt(row, prompt);
                 }
             }
         }
@@ -2347,6 +2478,8 @@ impl Terminal {
             self.active_grid_mut().fill_cells(row, hl, hr + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if !full_width {
@@ -2354,7 +2487,69 @@ impl Terminal {
                 self.fix_wide_orphans(row);
             }
         }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_up(top, bottom, n);
+        }
         self.fix_spacer_heads();
+    }
+
+    fn remap_screen_rows_down(&mut self, top: usize, bottom: usize, n: usize) {
+        let sb = self.primary.scrollback_len() as u64;
+        let first = self.primary.first_retained_line();
+        let region_height = bottom - top + 1;
+        let (shift_range, discard_range) = if n >= region_height {
+            (None, (first + sb + top as u64)..=(first + sb + bottom as u64))
+        } else {
+            let shift = (first + sb + top as u64)..=(first + sb + (bottom - n) as u64);
+            let discard = (first + sb + (bottom - n + 1) as u64)..=(first + sb + bottom as u64);
+            (Some(shift), discard)
+        };
+
+        if let Some(prompt) = self.last_prompt_line {
+            if discard_range.contains(&prompt) {
+                self.last_prompt_line = None;
+            } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                self.last_prompt_line = Some(prompt + n as u64);
+            }
+        }
+
+        self.commands.shift_screen_prompts_down(shift_range, n as u64, discard_range);
+    }
+
+    fn remap_screen_rows_up(&mut self, top: usize, bottom: usize, n: usize) {
+        let sb = self.primary.scrollback_len() as u64;
+        let first = self.primary.first_retained_line();
+        let region_height = bottom - top + 1;
+        let (shift_range, discard_range) = if n >= region_height {
+            (None, (first + sb + top as u64)..=(first + sb + bottom as u64))
+        } else {
+            let discard = (first + sb + top as u64)..=(first + sb + (top + n - 1) as u64);
+            let shift = (first + sb + (top + n) as u64)..=(first + sb + bottom as u64);
+            (Some(shift), discard)
+        };
+
+        if let Some(prompt) = self.last_prompt_line {
+            if discard_range.contains(&prompt) {
+                self.last_prompt_line = None;
+            } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                self.last_prompt_line = Some(prompt - n as u64);
+            }
+        }
+
+        self.commands.shift_screen_prompts_up(shift_range, n as u64, discard_range);
+    }
+
+    fn remap_prompts_below_scroll_region(
+        &mut self,
+        shift_range: std::ops::RangeInclusive<u64>,
+        delta: u64,
+    ) {
+        if let Some(prompt) = self.last_prompt_line
+            && shift_range.contains(&prompt)
+        {
+            self.last_prompt_line = Some(prompt + delta);
+        }
+        self.commands.shift_prompts_forward(shift_range, delta);
     }
 
     /// DECIC: insert `n` blank columns at the cursor, shifting columns
@@ -3406,7 +3601,11 @@ impl Perform for Terminal {
                         self.line_feed();
                     }
                     if action == b'A' {
-                        self.command_prompt_started();
+                        if !continuation {
+                            self.command_prompt_started();
+                        } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
+                            self.last_prompt_line = Some(self.cursor_absolute_line());
+                        }
                         self.semantic_content = SemanticContent::Prompt;
                         let row = self.cursor.row;
                         let mark = if continuation {
@@ -3425,8 +3624,10 @@ impl Perform for Terminal {
                         .iter()
                         .skip(1)
                         .any(|p| p.windows(3).any(|w| w == b"k=s"));
-                    if !secondary {
+                    if !secondary && !continuation {
                         self.command_prompt_started();
+                    } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
+                        self.last_prompt_line = Some(self.cursor_absolute_line());
                     }
                     self.semantic_content = SemanticContent::Prompt;
                     let row = self.cursor.row;
@@ -4431,6 +4632,7 @@ impl Terminal {
         self.commands.clear();
         self.input_start = None;
         self.last_cwd = None;
+        self.last_prompt_line = None;
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll

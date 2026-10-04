@@ -107,8 +107,10 @@ extension Tako.SurfaceView {
     /// Closes the find bar and gives the keys back to the terminal. The last
     /// match stays selected, so it can be copied.
     @IBAction public func findHide(_ sender: Any) {
+        cancelPendingSearchHitRefresh()
         guard searchState != nil else { return }
         searchState = nil
+        searchHitRetainedRows = []
         window?.makeFirstResponder(self)
     }
 
@@ -137,7 +139,9 @@ extension Tako.SurfaceView {
     func searchStateDidChange() {
         searchNeedleCancellable = nil
         guard let searchState else {
+            cancelPendingSearchHitRefresh()
             currentSearchMatch = nil
+            searchHitRetainedRows = []
             return
         }
         searchNeedleCancellable = searchState.$needle
@@ -150,8 +154,10 @@ extension Tako.SurfaceView {
     /// Searches everything the terminal holds for `needle` and selects the
     /// newest match.
     func runSearch(_ needle: String) {
+        cancelPendingSearchHitRefresh()
         currentSearchMatch = nil
         let matches = searchMatches(for: needle)
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
         if let newest = matches.last {
             selectSearchMatch(newest)
         }
@@ -162,9 +168,11 @@ extension Tako.SurfaceView {
     /// when no search is open or nothing matches.
     @discardableResult
     func navigateSearch(_ direction: SearchDirection) -> Bool {
+        cancelPendingSearchHitRefresh()
         guard let searchState else { return false }
         searchState.writePasteboardNeedle()
         let matches = searchMatches(for: searchState.needle)
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
         guard let first = matches.first, let last = matches.last else {
             currentSearchMatch = nil
             updateSearchCounts(matches)
@@ -196,6 +204,38 @@ extension Tako.SurfaceView {
             .flatMap { matches.firstIndex(of: $0) }
             .map { UInt(matches.count - 1 - $0) }
     }
+
+    /// Recomputes search matches and updates scrollbar track hit marks whenever
+    /// terminal content changes or reflow occurs.
+    func refreshSearchHitRows() {
+        cancelPendingSearchHitRefresh()
+        guard let searchState, !searchState.needle.isEmpty else {
+            if !searchHitRetainedRows.isEmpty {
+                searchHitRetainedRows = []
+            }
+            return
+        }
+        let matches = searchMatches(for: searchState.needle)
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
+        if let current = currentSearchMatch {
+            if !matches.contains(current) {
+                let remapped = matches.min(by: {
+                    let d0 = abs($0.row - current.row)
+                    let d1 = abs($1.row - current.row)
+                    if d0 != d1 { return d0 < d1 }
+                    return abs($0.startCol - current.startCol) < abs($1.startCol - current.startCol)
+                })
+                currentSearchMatch = remapped
+                if let remapped {
+                    selectSearchMatch(remapped)
+                } else {
+                    core.clearSelection()
+                }
+            }
+        }
+        updateSearchCounts(matches)
+    }
+
 
     /// Every match of `needle` in scrollback and on screen, oldest first.
     /// Case-insensitive. A match does not continue across a soft wrap.

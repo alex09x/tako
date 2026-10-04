@@ -610,7 +610,7 @@ fn export3_writes_the_version_asked_for() {
     let text = b"versioned";
     unsafe { prod_vt_write(vt, text.as_ptr(), text.len()) };
 
-    for (asked, written) in [(0u32, 5u32), (2, 2), (3, 3), (4, 4), (5, 5)] {
+    for (asked, written) in [(0u32, 6u32), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)] {
         let mut needed = 0usize;
         assert_eq!(
             unsafe { prod_vt_checkpoint_measure3(vt, asked, 0, &mut needed) },
@@ -627,7 +627,7 @@ fn export3_writes_the_version_asked_for() {
         assert_eq!(unsafe { prod_vt_checkpoint_import2(vt, buf.as_ptr(), got) }, PROD_VT_OK);
     }
 
-    for asked in [1u32, 6] {
+    for asked in [1u32, 7] {
         let mut len = 99usize;
         assert_eq!(
             unsafe { prod_vt_checkpoint_export3(vt, asked, 0, std::ptr::null_mut(), 0, &mut len) },

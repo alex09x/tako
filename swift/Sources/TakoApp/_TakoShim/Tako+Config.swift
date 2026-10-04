@@ -518,6 +518,14 @@ extension Tako {
             rawBool("window-inherit-font-size", default: true)
         }
 
+        /// Whether thin marks appear beside command prompt lines in the gutter
+        /// and on the scrollbar track.
+        ///
+        /// Reads `command-marks`, default true.
+        var commandMarks: Bool {
+            rawBool("command-marks", default: true)
+        }
+
         /// Which bundled shell-integration script, if any, is injected into
         /// a new shell.
         enum ShellIntegration: String {

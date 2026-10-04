@@ -53,6 +53,9 @@
 //! Version 5 is version 4 with retained scrollback semantic prompt marks
 //! (OSC 133 prompt markers preserved when rows enter scrollback history).
 //! Older versions initialize restored scrollback semantic marks to Unset.
+//!
+//! Version 6 is version 5 with command prompt line retained in CommandRecord.
+//! Older versions decode prompt_line as None.
 
 use std::collections::HashMap;
 
@@ -75,7 +78,7 @@ use crate::tabstops::TabStops;
 use crate::title_stack::TitleStack;
 
 pub const MAGIC: [u8; 4] = *b"TKCK";
-pub const CURRENT_VERSION: u32 = 5;
+pub const CURRENT_VERSION: u32 = 6;
 
 /// The oldest container this build can write, for [`export_version`]. Version
 /// 1 is readable but no longer written: it carried the selection.
@@ -1476,7 +1479,7 @@ fn encode(
         write_clusters(&mut w, &term.alternate);
     }
     if version >= 4 {
-        write_commands(&mut w, term);
+        write_commands(&mut w, term, version);
     }
 
     // Write Header
@@ -1573,7 +1576,7 @@ impl<'a> CommandBlock<'a> {
 /// v4's tail: row owners of the primary grid as runs, then the command
 /// table. An owner naming a record the table no longer has is written as
 /// unowned -- it would group nothing anyway.
-fn write_commands(w: &mut Writer, term: &Terminal) {
+fn write_commands(w: &mut Writer, term: &Terminal, version: u32) {
     let grid = &term.primary;
     let log = &term.commands;
     let block = CommandBlock::of(term);
@@ -1603,10 +1606,16 @@ fn write_commands(w: &mut Writer, term: &Terminal) {
         write_opt_string(w, rec.input.as_deref());
         w.write_bool(rec.input_truncated);
         write_opt_u64(w, rec.started_at_ms);
+        if version >= 6 {
+            write_opt_u64(w, rec.prompt_line);
+        }
     }
     write_opt_string(w, term.last_cwd.as_deref());
     write_opt_u64(w, term.input_start.map(|(line, _)| line));
     w.write_u32(term.input_start.map_or(0, |(_, col)| col as u32));
+    if version >= 6 {
+        write_opt_u64(w, term.last_prompt_line);
+    }
 }
 
 /// What [`read_commands`] decoded, checked against itself and the grid.
@@ -1614,6 +1623,7 @@ struct CommandState {
     log: CommandLog,
     last_cwd: Option<String>,
     input_start: Option<(u64, usize)>,
+    last_prompt_line: Option<u64>,
 }
 
 /// [`write_commands`]' block. The runs must cover the grid's retained rows
@@ -1623,6 +1633,7 @@ fn read_commands(
     r: &mut Reader<'_>,
     grid: &mut Grid,
     written_history: usize,
+    version: u32,
 ) -> Result<CommandState, CheckpointError> {
     let bad = CheckpointError::InvalidData;
     let run_count = r.read_u32()? as usize;
@@ -1684,9 +1695,15 @@ fn read_commands(
         let input = read_opt_string(r)?;
         let input_truncated = r.read_bool()?;
         let started_at_ms = read_opt_u64(r)?;
+        let prompt_line = if version >= 6 {
+            read_opt_u64(r)?
+        } else {
+            None
+        };
         records.push(CommandRecord {
             id,
             status,
+            prompt_line,
             cwd,
             input,
             input_truncated,
@@ -1712,6 +1729,11 @@ fn read_commands(
     if input_col >= grid.cols() && input_line.is_some() {
         return Err(bad("input start outside the grid"));
     }
+    let last_prompt_line = if version >= 6 {
+        read_opt_u64(r)?
+    } else {
+        None
+    };
 
     // The grid may hold fewer history rows than were written (its capacity
     // dropped the oldest); their owners go with them.
@@ -1736,6 +1758,7 @@ fn read_commands(
         log,
         last_cwd,
         input_start: input_line.map(|line| (line, input_col)),
+        last_prompt_line,
     })
 }
 
@@ -2556,6 +2579,7 @@ pub fn import_traced_reserving(
         log: CommandLog::default(),
         last_cwd: None,
         input_start: None,
+        last_prompt_line: None,
     };
     // A v3 container says which colours and which cursor style were the
     // host's; an older one leaves the inference above in place.
@@ -2564,7 +2588,7 @@ pub fn import_traced_reserving(
         read_clusters(&mut r, &mut primary)?;
         read_clusters(&mut r, &mut alternate)?;
         if version >= 4 {
-            commands = read_commands(&mut r, &mut primary, prim_sb_len)?;
+            commands = read_commands(&mut r, &mut primary, prim_sb_len, version)?;
         }
         palette.restore_bases(host.base, host.overridden);
         palette.set_base_fg(host.base_fg);
@@ -2644,6 +2668,7 @@ pub fn import_traced_reserving(
         default_bg,
         cursor_color,
         pending_wrap,
+        last_prompt_line: commands.last_prompt_line,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))
@@ -2693,7 +2718,7 @@ mod command_block_tests {
     /// Decode against a 4x2 grid with no history: the runs must cover 2 rows.
     fn decode(bytes: &[u8]) -> Result<(), CheckpointError> {
         let mut grid = Grid::new(4, 2);
-        read_commands(&mut Reader::new(bytes), &mut grid, 0).map(|_| ())
+        read_commands(&mut Reader::new(bytes), &mut grid, 0, 4).map(|_| ())
     }
 
     fn rejected(bytes: &[u8]) -> bool {
@@ -2710,7 +2735,7 @@ mod command_block_tests {
             &[Rec(1, 0, 0)],
         );
         let mut grid = Grid::new(4, 2);
-        let state = read_commands(&mut Reader::new(&bytes), &mut grid, 0).unwrap();
+        let state = read_commands(&mut Reader::new(&bytes), &mut grid, 0, 4).unwrap();
         assert_eq!(grid.row_owner(0), RowOwner::Command(1));
         assert_eq!(grid.row_owner(1), RowOwner::Empty);
         assert_eq!(grid.pen_owner(), Some(1));

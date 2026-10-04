@@ -1502,7 +1502,12 @@ extension Tako {
         /// The pending synchronized-output watchdog, if one is armed. Main
         /// thread only; `watchdogAction` above decides what happens to it.
         private var syncOutputTimeoutItem: DispatchWorkItem?
+        /// Debounce work item for refreshing search hit marks during rapid output.
+        var searchHitDebounceItem: DispatchWorkItem?
+        /// Earliest refresh request time in the current continuous burst (bounded debounce).
+        var searchHitBurstStartTime: TimeInterval = 0
         /// Set by the watchdog to let one `draw()` past the sync-output guard.
+
         private var syncOverride = false
 
         /// Applies one batch's `WatchdogAction`. Main thread only: the timer
@@ -1986,17 +1991,69 @@ extension Tako {
         /// told or it keeps formatting for the old size.
         public func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
             pty?.resize(cols: UInt16(max(cols, 1)), rows: UInt16(max(rows, 1)))
+            scheduleSearchHitRefresh()
+        }
+
+        /// Screen content changed or checkpoint restored: refresh search hit marks if active (debounced).
+        public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
+            scheduleSearchHitRefresh()
+        }
+
+        /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
+        func cancelPendingSearchHitRefresh() {
+            searchHitDebounceItem?.cancel()
+            searchHitDebounceItem = nil
+            searchHitBurstStartTime = 0
+        }
+
+        /// Bounded-delay debounced search hit refresh to prevent walking all scrollback
+        /// on every live output batch while avoiding starvation during continuous output.
+        func scheduleSearchHitRefresh() {
+            guard let searchState, !searchState.needle.isEmpty else {
+                cancelPendingSearchHitRefresh()
+                if !searchHitRetainedRows.isEmpty {
+                    searchHitRetainedRows = []
+                }
+                return
+            }
+
+            let now = ProcessInfo.processInfo.systemUptime
+            let maxInterval: TimeInterval = 0.35
+            let debounceDelay: TimeInterval = 0.15
+
+            if searchHitDebounceItem != nil {
+                if now - searchHitBurstStartTime >= maxInterval {
+                    // Maximum interval reached: let the pending item execute without postponing it,
+                    // preventing starvation when a process emits high-frequency output.
+                    return
+                }
+                searchHitDebounceItem?.cancel()
+            } else {
+                searchHitBurstStartTime = now
+            }
+
+            let item = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.searchHitDebounceItem = nil
+                    self?.searchHitBurstStartTime = 0
+                    self?.refreshSearchHitRows()
+                }
+            }
+            searchHitDebounceItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + debounceDelay, execute: item)
         }
 
         private var configObserver: NSObjectProtocol?
         private weak var owningApp: Tako.App?
 
         deinit {
+            searchHitDebounceItem?.cancel()
             pty?.terminate()
             if let configObserver {
                 NotificationCenter.default.removeObserver(configObserver)
             }
         }
+
 
         /// `Tako.App.reloadConfig()` replaces the app's config and announces
         /// it; nothing else reaches the surfaces already on screen, so each
@@ -2052,6 +2109,7 @@ extension Tako {
             cursorClickToMove = config.cursorClickToMove
             linkURLDetectionEnabled = config.linkURL
             safePaste = config.safePaste
+            commandMarksEnabled = config.commandMarks
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
 

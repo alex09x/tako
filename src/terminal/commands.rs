@@ -35,6 +35,8 @@ pub enum CommandStatus {
 pub struct CommandRecord {
     pub id: u64,
     pub status: CommandStatus,
+    /// Absolute line where this command's prompt started (`133;A` / `133;P`).
+    pub prompt_line: Option<u64>,
     /// The last OSC 7 report before the command started.
     pub cwd: Option<String>,
     /// The command line as the screen showed it between `133;B` and
@@ -94,13 +96,20 @@ impl CommandLog {
 
     /// Open a record for a command whose output starts now, abandoning one
     /// still running. `None` when ids ran out: nothing more is recorded.
-    pub fn start(&mut self, cwd: Option<String>, input: Option<String>, truncated: bool) -> Option<u64> {
+    pub fn start(
+        &mut self,
+        cwd: Option<String>,
+        input: Option<String>,
+        truncated: bool,
+        prompt_line: Option<u64>,
+    ) -> Option<u64> {
         self.abandon_running();
         let id = self.next_id?;
         self.next_id = id.checked_add(1);
         let record = CommandRecord {
             id,
             status: CommandStatus::Running,
+            prompt_line,
             cwd,
             input,
             input_truncated: truncated,
@@ -140,9 +149,69 @@ impl CommandLog {
             }
             _ => false,
         }
+    }    /// Update prompt line numbers for records when visible rows reflow.
+    pub fn remap_prompt_lines(&mut self, remaps: &[(u64, u64)]) {
+        if remaps.is_empty() {
+            return;
+        }
+        let map: std::collections::HashMap<u64, u64> = remaps.iter().cloned().collect();
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line
+                && let Some(&new_line) = map.get(&prompt)
+            {
+                rec.prompt_line = Some(new_line);
+            }
+        }
     }
 
+    /// Shift prompt lines down by `delta` for rows within `shift_range`, clearing
+    /// any prompt lines within `discard_range` that were pushed off screen.
+    pub fn shift_screen_prompts_down(
+        &mut self,
+        shift_range: Option<std::ops::RangeInclusive<u64>>,
+        delta: u64,
+        discard_range: std::ops::RangeInclusive<u64>,
+    ) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line {
+                if discard_range.contains(&prompt) {
+                    rec.prompt_line = None;
+                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                    rec.prompt_line = Some(prompt + delta);
+                }
+            }
+        }
+    }
 
+    /// Shift prompt lines up by `delta` for rows within `shift_range`, clearing
+    /// any prompt lines within `discard_range` that were deleted/scrolled off screen.
+    pub fn shift_screen_prompts_up(
+        &mut self,
+        shift_range: Option<std::ops::RangeInclusive<u64>>,
+        delta: u64,
+        discard_range: std::ops::RangeInclusive<u64>,
+    ) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line {
+                if discard_range.contains(&prompt) {
+                    rec.prompt_line = None;
+                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                    rec.prompt_line = Some(prompt - delta);
+                }
+            }
+        }
+    }
+
+    /// Shift prompt lines forward by `delta` for rows within `range`.
+    pub fn shift_prompts_forward(&mut self, range: std::ops::RangeInclusive<u64>, delta: u64) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line
+                && range.contains(&prompt)
+            {
+                rec.prompt_line = Some(prompt + delta);
+            }
+        }
+    }
 
     /// Forget every record (reset). Ids keep counting.
     pub fn clear(&mut self) {
