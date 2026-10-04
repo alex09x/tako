@@ -216,9 +216,9 @@ Done when:
 - over SSH or in shells without integration, the keys fall back cleanly to ordinary scrollback page jumps;
 - keyboard selection allows instant copying with `Cmd+C` without requiring mouse interaction.
 
-### [ ] 7. Safe paste guard
+### [x] 7. Safe paste guard
 
-Status: candidate for post-0.1.5 testing. Part of M1.
+Status: shipped in [#10](https://github.com/alex09x/tako/pull/10). Part of M1.
 
 Starting point, verified in the code: the app already has a confirmation sheet for pastes and
 clipboard requests, and the engine already exposes an "unsafe paste" check, but nothing connects
@@ -283,9 +283,9 @@ defaults to on.
 
 Step 6, unchanged in scope.
 
-### [ ] A3. Safe paste guard
+### [x] A3. Safe paste guard
 
-Step 7, unchanged in scope.
+Status: shipped in [#10](https://github.com/alex09x/tako/pull/10). Step 7, unchanged in scope.
 
 ### [x] A4. Paste and drop hardening
 
