@@ -202,6 +202,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
         return nil
     }
+
+    /// Whether the terminal surface is currently idle at a shell prompt (not running a command, and not in alternate screen).
+    open var isAtShellPrompt: Bool {
+        guard !core.modes().alternateScreen else { return false }
+        if let runningId = findRunningCommandId(), runningId > 0 {
+            return false
+        }
+        return true
+    }
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -3393,8 +3402,22 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     guard confirmed, let self else { return }
                     self.performPaste(text)
                 }
+                return
+            } else if let window = self.window {
+                let alert = NSAlert()
+                alert.messageText = "Confirm Multiline Paste"
+                alert.informativeText = "The text to be pasted contains multiple lines or line breaks, and bracketed paste mode is disabled. Pasting it may execute commands immediately without confirmation."
+                alert.addButton(withTitle: "Paste")
+                alert.addButton(withTitle: "Cancel")
+                alert.beginSheetModal(for: window) { [weak self] response in
+                    guard response == .alertFirstButtonReturn, let self else { return }
+                    self.performPaste(text)
+                }
+                return
+            } else {
+                performPaste(text)
+                return
             }
-            return
         }
         performPaste(text)
     }
@@ -3495,14 +3518,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     /// Formats a command and its output as Markdown using backtick fences safe against content collisions.
-    public static func formatCommandAndOutputAsMarkdown(command: String, output: String, isPartial: Bool = false) -> String {
+    public static func formatCommandAndOutputAsMarkdown(
+        command: String,
+        output: String,
+        isInputTruncated: Bool = false,
+        isPartial: Bool = false
+    ) -> String {
         let cmdFence = markdownCodeFence(for: command)
-        var md = "\(cmdFence)bash\n\(command)\n\(cmdFence)"
+        let cmdNote = isInputTruncated ? "\n<!-- Note: Command input was truncated to buffer limit -->" : ""
+        var md = "\(cmdFence)bash\n\(command)\n\(cmdFence)\(cmdNote)"
         let trimmedOutput = output.hasSuffix("\n") ? String(output.dropLast()) : output
         if !trimmedOutput.isEmpty || isPartial {
             let outFence = markdownCodeFence(for: trimmedOutput)
             let note = isPartial ? "\n<!-- Note: Output was partially evicted or truncated from scrollback -->" : ""
-            md += "\(note)\n\n\(outFence)\n\(trimmedOutput)\n\(outFence)"
+            md += "\n\n\(outFence)\n\(trimmedOutput)\n\(outFence)\(note)"
         }
         return md
     }
@@ -3510,7 +3539,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// 1. Copy command to clipboard.
     public func copyCommand(id: UInt64) {
         guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
-        copyStringConsumer(input)
+        let text = cmd.inputTruncated ? "\(input) # [truncated]" : input
+        copyStringConsumer(text)
     }
 
     /// 2. Copy output to clipboard.
@@ -3524,14 +3554,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
         let outRecord = commandOutput(for: id)
         let output = outRecord?.output ?? ""
-        let md = Self.formatCommandAndOutputAsMarkdown(command: input, output: output, isPartial: outRecord?.isPartial == true)
+        let md = Self.formatCommandAndOutputAsMarkdown(
+            command: input,
+            output: output,
+            isInputTruncated: cmd.inputTruncated,
+            isPartial: outRecord?.isPartial == true
+        )
         copyStringConsumer(md)
     }
 
     /// 4. Re-run command in this pane (inserted at the prompt, not executed).
-    /// Refuses to re-run truncated command inputs to prevent executing partial commands.
+    /// Refuses to re-run truncated command inputs or when the pane is busy to prevent unintended execution.
     public func rerunCommand(id: UInt64) {
         guard let cmd = commandInfo(for: id), let input = cmd.input, !cmd.inputTruncated else { return }
+        guard isAtShellPrompt else { return }
         revealLiveScreenForUserInput()
         window?.makeFirstResponder(self)
         var text = input
@@ -3617,7 +3653,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         menu.addItem(NSMenuItem.separator())
 
         // 1. Copy Command
-        let copyCmdItem = NSMenuItem(title: "Copy Command", action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
+        let copyCmdTitle = cmd.inputTruncated ? "Copy Command (Truncated)" : "Copy Command"
+        let copyCmdItem = NSMenuItem(title: copyCmdTitle, action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
         copyCmdItem.representedObject = cmd.id
         copyCmdItem.target = self
         if cmd.input == nil {
@@ -3632,7 +3669,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         menu.addItem(copyOutItem)
 
         // 3. Copy Both as Markdown
-        let copyMdItem = NSMenuItem(title: "Copy Both as Markdown", action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
+        let copyMdTitle = cmd.inputTruncated ? "Copy Both as Markdown (Truncated Input)" : "Copy Both as Markdown"
+        let copyMdItem = NSMenuItem(title: copyMdTitle, action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
         copyMdItem.representedObject = cmd.id
         copyMdItem.target = self
         if cmd.input == nil {
@@ -3643,13 +3681,22 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         menu.addItem(NSMenuItem.separator())
 
         // 4. Re-run in This Pane
-        let rerunTitle = cmd.inputTruncated ? "Re-run in This Pane (Truncated - Unavailable)" : "Re-run in This Pane"
+        let rerunTitle: String
+        let rerunEnabled: Bool
+        if cmd.inputTruncated {
+            rerunTitle = "Re-run in This Pane (Truncated - Unavailable)"
+            rerunEnabled = false
+        } else if !isAtShellPrompt {
+            rerunTitle = "Re-run in This Pane (Pane Busy)"
+            rerunEnabled = false
+        } else {
+            rerunTitle = "Re-run in This Pane"
+            rerunEnabled = (cmd.input != nil)
+        }
         let rerunItem = NSMenuItem(title: rerunTitle, action: #selector(rerunCommandContextAction(_:)), keyEquivalent: "")
         rerunItem.representedObject = cmd.id
         rerunItem.target = self
-        if cmd.input == nil || cmd.inputTruncated {
-            rerunItem.isEnabled = false
-        }
+        rerunItem.isEnabled = rerunEnabled
         menu.addItem(rerunItem)
 
         // 5. Send Output to Another Pane
@@ -4006,7 +4053,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         if item.action == #selector(rerunCommandContextAction(_:)) {
             let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
             if let targetId, let cmd = commandInfo(for: targetId) {
-                return cmd.input != nil && !cmd.inputTruncated
+                return cmd.input != nil && !cmd.inputTruncated && isAtShellPrompt
             }
             return false
         }

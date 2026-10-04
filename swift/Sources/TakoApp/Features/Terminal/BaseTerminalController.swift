@@ -1137,7 +1137,11 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Tako.SurfaceView else { return }
-        guard target == self.focusedSurface else { return }
+        guard self.surfaceTree.contains(target) else { return }
+        if target != self.focusedSurface {
+            self.focusedSurface = target
+            self.window?.makeFirstResponder(target)
+        }
 
         // We need a window
         guard let window = self.window else { return }

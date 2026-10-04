@@ -75,15 +75,23 @@ struct TerminalCommandPaletteView: View {
         return options
     }
 
+    @State private var commandActionsPage: Int = 1
+    private static let commandsPerPage: Int = 50
+
     /// Actions on recorded commands (copy command, copy output, re-run, etc.).
+    /// Paginates history in batches of 50 to avoid materializing tens of thousands of rows on the main thread.
     private var commandActionOptions: [CommandOption] {
         let commands = surfaceView.recordedCommands()
         guard !commands.isEmpty else { return [] }
 
         let newestId = surfaceView.activeStickyCommandHeader?.commandId ?? commands.last?.id
 
+        let totalCommands = commands.count
+        let visibleCount = min(totalCommands, commandActionsPage * Self.commandsPerPage)
+        let visibleCommands = Array(commands.suffix(visibleCount).reversed())
+
         var options: [CommandOption] = []
-        for cmd in commands.reversed() {
+        for cmd in visibleCommands {
             let isCurrent = (cmd.id == newestId)
             let rawInput = cmd.input?.trimmingCharacters(in: .whitespacesAndNewlines)
             let hasInput = !(rawInput?.isEmpty ?? true)
@@ -91,8 +99,9 @@ struct TerminalCommandPaletteView: View {
             let badgeText = isCurrent ? "Active Command" : "Command"
 
             if hasInput {
+                let copyTitle = cmd.inputTruncated ? "Command: Copy Command (Truncated)" : "Command: Copy Command"
                 options.append(CommandOption(
-                    title: "Command: Copy Command",
+                    title: copyTitle,
                     subtitle: trimmedCmd,
                     leadingIcon: "doc.on.doc",
                     badge: badgeText,
@@ -113,8 +122,9 @@ struct TerminalCommandPaletteView: View {
             })
 
             if hasInput {
+                let copyMdTitle = cmd.inputTruncated ? "Command: Copy Both as Markdown (Truncated Input)" : "Command: Copy Both as Markdown"
                 options.append(CommandOption(
-                    title: "Command: Copy Both as Markdown",
+                    title: copyMdTitle,
                     subtitle: trimmedCmd,
                     leadingIcon: "text.quote",
                     badge: badgeText,
@@ -124,7 +134,7 @@ struct TerminalCommandPaletteView: View {
                 })
             }
 
-            if hasInput && !cmd.inputTruncated {
+            if hasInput && !cmd.inputTruncated && surfaceView.isAtShellPrompt {
                 options.append(CommandOption(
                     title: "Command: Re-run in This Pane",
                     subtitle: trimmedCmd,
@@ -170,6 +180,20 @@ struct TerminalCommandPaletteView: View {
                 })
             }
         }
+
+        if totalCommands > visibleCount {
+            let remaining = totalCommands - visibleCount
+            options.append(CommandOption(
+                title: "Command: Show Older Commands (\(remaining) remaining)...",
+                subtitle: "Load 50 more historical commands into palette",
+                leadingIcon: "ellipsis.circle",
+                badge: "History",
+                sortKey: AnySortKey(UInt64.max)
+            ) {
+                commandActionsPage += 1
+            })
+        }
+
         return options
     }
 

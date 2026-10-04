@@ -2006,17 +2006,26 @@ extension Tako {
 
         func sendOutputToAnotherPane(text: String) {
             if let controller = TerminalController.all.first(where: { $0.surfaceTree.contains(self) }) {
-                if let target = controller.surfaceTree.first(where: { $0 !== self }) {
+                if let target = controller.surfaceTree.first(where: { $0 !== self && $0.isAtShellPrompt }) {
+                    controller.focusSurface(target)
+                    controller.focusedSurface = target
+                    target.window?.makeFirstResponder(target)
                     target.insertInputText(text)
                     return
                 }
                 if let newSurface = controller.newSplit(at: self, direction: .right) {
+                    controller.focusSurface(newSurface)
+                    controller.focusedSurface = newSurface
+                    newSurface.window?.makeFirstResponder(newSurface)
                     newSurface.insertInputText(text)
                     return
                 }
             }
             for controller in TerminalController.all {
-                if let target = controller.surfaceTree.first(where: { $0 !== self }) {
+                if let target = controller.surfaceTree.first(where: { $0 !== self && $0.isAtShellPrompt }) {
+                    controller.focusSurface(target)
+                    controller.focusedSurface = target
+                    target.window?.makeFirstResponder(target)
                     target.insertInputText(text)
                     return
                 }
@@ -2469,6 +2478,12 @@ extension Tako {
             // well is how the two surfaces drifted apart in the first place.
             configuredTheme = newTheme
             applyTheme(newTheme)
+        }
+
+        /// Whether this surface is idle at a shell prompt (not running a command, not in alternate screen).
+        override open var isAtShellPrompt: Bool {
+            guard !isCommandRunning else { return false }
+            return super.isAtShellPrompt
         }
 
         /// Evaluates safe paste guard before sending text to the shell.

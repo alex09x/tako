@@ -419,6 +419,22 @@ final class CommandActionsTests: XCTestCase {
         if let rerunItem {
             XCTAssertFalse(view.validateUserInterfaceItem(rerunItem))
         }
+
+        // 4. Copy command must annotate truncated inputs
+        var copiedText: String?
+        view.copyStringConsumer = { copiedText = $0 }
+        view.copyCommand(id: cmd.id)
+        XCTAssertTrue(copiedText?.contains("# [truncated]") == true)
+
+        // 5. Copy both as markdown must annotate truncated input
+        view.copyBothAsMarkdown(id: cmd.id)
+        XCTAssertTrue(copiedText?.contains("<!-- Note: Command input was truncated to buffer limit -->") == true)
+
+        // 6. Context menu must label Copy Command and Markdown as truncated
+        let copyCmdItem = menu.items.first(where: { $0.title.contains("Copy Command") })
+        XCTAssertEqual(copyCmdItem?.title, "Copy Command (Truncated)")
+        let copyMdItem = menu.items.first(where: { $0.title.contains("Markdown") })
+        XCTAssertEqual(copyMdItem?.title, "Copy Both as Markdown (Truncated Input)")
     }
 
     func testSurfacesPartialOutputInContextMenuAndMarkdownAndSave() {
@@ -487,6 +503,53 @@ final class CommandActionsTests: XCTestCase {
         }
         view.insertInputText("echo 1\necho 2")
         XCTAssertFalse(delegate.sentInputData.isEmpty, "Input should be sent after confirmation")
+
+        // Test fallback when confirmPasteHandler is nil and no window is attached (headless fallback performs paste)
+        view.confirmPasteHandler = nil
+        delegate.sentInputData.removeAll()
+        view.insertInputText("echo fallback\necho headless")
+        XCTAssertFalse(delegate.sentInputData.isEmpty, "Headless fallback without window must not silently drop text")
+    }
+
+    func testRerunCommandGuardsAgainstRunningPane() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let delegate = TestTerminalDelegate()
+        view.delegate = delegate
+
+        let input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}make test\r\n\u{1b}]133;C\u{07}running...\r\n"
+        view.feed(data: Data(input.utf8))
+
+        guard let cmd = view.recordedCommands().first else {
+            XCTFail("Expected recorded command")
+            return
+        }
+
+        // Active command is running (no 133;D received yet)
+        XCTAssertFalse(view.isAtShellPrompt, "Pane must not be at prompt while command is running")
+
+        // Re-run must refuse to execute while busy
+        view.rerunCommand(id: cmd.id)
+        XCTAssertTrue(delegate.sentInputData.isEmpty, "rerunCommand must refuse to execute on a busy pane")
+
+        // Context menu must indicate pane is busy and disable rerun
+        guard let menu = view.contextMenu(for: cmd.id) else {
+            XCTFail("Expected context menu")
+            return
+        }
+        let rerunItem = menu.items.first(where: { $0.title.contains("Re-run") })
+        XCTAssertNotNil(rerunItem)
+        XCTAssertFalse(rerunItem?.isEnabled == true)
+        XCTAssertTrue(rerunItem?.title.contains("Pane Busy") == true)
+        if let rerunItem {
+            XCTAssertFalse(view.validateUserInterfaceItem(rerunItem))
+        }
+
+        // Now finish the command
+        view.feed(data: Data("\u{1b}]133;D;0\u{07}\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}".utf8))
+        XCTAssertTrue(view.isAtShellPrompt, "Pane must be at prompt after command finished")
+
+        view.rerunCommand(id: cmd.id)
+        XCTAssertFalse(delegate.sentInputData.isEmpty, "rerunCommand must insert input when at prompt")
     }
 }
 #endif
