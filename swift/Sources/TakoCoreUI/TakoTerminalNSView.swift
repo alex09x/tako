@@ -2388,12 +2388,24 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         sender.draggingPasteboard.availableType(from: [.fileURL, .string]) != nil ? .copy : []
     }
 
+    /// Shell-quotes a file path or string so it can be safely pasted or dropped
+    /// into a POSIX shell command line without unintended expansion or word splitting.
+    public static func shellQuote(_ string: String) -> String {
+        guard !string.isEmpty else { return "''" }
+        let isSafe = string.allSatisfy { c in
+            c.isASCII && (c.isLetter || c.isNumber || "_@%+=:,./-".contains(c))
+        }
+        if isSafe {
+            return string
+        }
+        return "'" + string.replacingOccurrences(of: "'", with: #"'"'"'"#) + "'"
+    }
+
     override public func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let pasteboard = sender.draggingPasteboard
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
             let text = urls.map { url -> String in
-                let path = url.path
-                return path.contains(" ") ? "'\(path)'" : path
+                Self.shellQuote(url.path)
             }.joined(separator: " ")
             revealLiveScreenForUserInput()
             let bytes = core.encodePaste(text: text)

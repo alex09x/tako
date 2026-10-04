@@ -899,6 +899,22 @@ final class TakoTerminalNSViewCoverageTests: XCTestCase {
         XCTAssertEqual(view.draggingEntered(strSender), .copy)
         XCTAssertTrue(view.performDragOperation(strSender))
         XCTAssertEqual(delegate.inputDataReceived, Data("Dropped Raw String".utf8))
+
+        // Shell-quoting tests
+        XCTAssertEqual(TakoTerminalNSView.shellQuote(""), "''")
+        XCTAssertEqual(TakoTerminalNSView.shellQuote("/usr/bin/env"), "/usr/bin/env")
+        XCTAssertEqual(TakoTerminalNSView.shellQuote("/tmp/my file.txt"), "'/tmp/my file.txt'")
+        XCTAssertEqual(TakoTerminalNSView.shellQuote("/tmp/bob's.txt"), "'/tmp/bob'\"'\"'s.txt'")
+        XCTAssertEqual(TakoTerminalNSView.shellQuote("/tmp/$HOME/a;b.txt"), "'/tmp/$HOME/a;b.txt'")
+
+        // Dropped hostile text with C0/C1/DEL controls is sanitized
+        delegate.inputDataReceived.removeAll()
+        let hostilePasteboard = NSPasteboard.withUniqueName()
+        hostilePasteboard.setString("hello\u{0003}\u{001b}[31m\u{009b}2J\u{007f}world\r\n", forType: .string)
+        let hostileSender = MockDraggingInfo(pasteboard: hostilePasteboard)
+        XCTAssertTrue(view.performDragOperation(hostileSender))
+        // Control chars stripped, newlines normalized to \r
+        XCTAssertEqual(delegate.inputDataReceived, Data("hello[31m2Jworld\r".utf8))
     }
 
     // MARK: - 14. Services Menu
