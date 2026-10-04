@@ -1043,25 +1043,27 @@ fn test_forged_scrollback_count_is_bounded_by_the_payload() {
 fn test_version_negotiation_is_explicit() {
     use tako_core::terminal::checkpoint::CheckpointError;
 
-    assert_eq!(Terminal::checkpoint_version(), 5);
-    // v1, v2, v3, and v4 stay readable -- a peer holding an older container is not
-    // forced to discard it -- while v5 is what this build writes.
+    assert_eq!(Terminal::checkpoint_version(), 6);
+    // v1, v2, v3, v4, and v5 stay readable -- a peer holding an older container is not
+    // forced to discard it -- while v6 is what this build writes.
     assert!(Terminal::checkpoint_supports(1));
     assert!(Terminal::checkpoint_supports(2));
     assert!(Terminal::checkpoint_supports(3));
     assert!(Terminal::checkpoint_supports(4));
     assert!(Terminal::checkpoint_supports(5));
+    assert!(Terminal::checkpoint_supports(6));
     assert!(!Terminal::checkpoint_supports(0));
-    assert!(!Terminal::checkpoint_supports(6));
+    assert!(!Terminal::checkpoint_supports(7));
     assert!(!Terminal::checkpoint_supports(u32::MAX));
 
-    assert_eq!(prod_vt_checkpoint_version(), 5);
+    assert_eq!(prod_vt_checkpoint_version(), 6);
     assert_eq!(prod_vt_checkpoint_supports(1), 1);
     assert_eq!(prod_vt_checkpoint_supports(2), 1);
     assert_eq!(prod_vt_checkpoint_supports(3), 1);
     assert_eq!(prod_vt_checkpoint_supports(4), 1);
     assert_eq!(prod_vt_checkpoint_supports(5), 1);
-    assert_eq!(prod_vt_checkpoint_supports(6), 0);
+    assert_eq!(prod_vt_checkpoint_supports(6), 1);
+    assert_eq!(prod_vt_checkpoint_supports(7), 0);
 
     let mut term = Terminal::new(40, 10);
     term.feed(b"negotiate");
@@ -1071,18 +1073,18 @@ fn test_version_negotiation_is_explicit() {
     // unreadable here. That has to come back as a version failure, not as
     // corruption -- the two call for different decisions.
     let mut newer = valid.clone();
-    newer[4..8].copy_from_slice(&6u32.to_le_bytes());
+    newer[4..8].copy_from_slice(&7u32.to_le_bytes());
     let newer = reseal(newer);
 
     let mut dest = Terminal::new(20, 6);
     dest.feed(b"DESTINATION");
     assert_eq!(
         dest.import_checkpoint(&newer),
-        Err(CheckpointError::UnsupportedVersion(6))
+        Err(CheckpointError::UnsupportedVersion(7))
     );
     assert_eq!(
         Terminal::inspect_checkpoint(&newer),
-        Err(CheckpointError::UnsupportedVersion(6))
+        Err(CheckpointError::UnsupportedVersion(7))
     );
     assert_eq!(row_text(&dest, 0), "DESTINATION", "fail-intact");
 
@@ -1097,7 +1099,7 @@ fn test_version_negotiation_is_explicit() {
 
     // Inspect reports what an honest container declares, without decoding it.
     let info = Terminal::inspect_checkpoint(&valid).unwrap();
-    assert_eq!((info.version, info.cols, info.rows), (5, 40, 10));
+    assert_eq!((info.version, info.cols, info.rows), (6, 40, 10));
     assert_eq!(info.payload_len as usize, valid.len() - 20);
 
     let mut c_version = 0u32;
@@ -1115,7 +1117,7 @@ fn test_version_negotiation_is_explicit() {
         ),
         1
     );
-    assert_eq!((c_version, c_cols, c_rows), (5, 40, 10));
+    assert_eq!((c_version, c_cols, c_rows), (6, 40, 10));
     assert_eq!(
         prod_vt_checkpoint_inspect(
             newer.as_ptr(),

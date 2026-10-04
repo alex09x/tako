@@ -72,5 +72,22 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertFalse(view.core.modes().alternateScreen)
         XCTAssertEqual(view.core.commandMarks().count, 1, "command marks restore when returning to primary screen")
     }
+
+    func testStatusOnlyCommandEventUpdatesMarks() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.commandMarksEnabled = true
+
+        // 1. Start command (blue/running mark)
+        view.feed(data: Data("\u{1b}]133;A\u{07}$ \u{1b}]133;C\u{07}".utf8))
+        let marks1 = view.core.commandMarks()
+        XCTAssertEqual(marks1.count, 1)
+        XCTAssertEqual(marks1[0].status, 0, "status should be running")
+
+        // 2. Feed status-only exit code (133;D;0) with NO printable cells / damage
+        view.feed(data: Data("\u{1b}]133;D;0\u{07}".utf8))
+        let marks2 = view.core.commandMarks()
+        XCTAssertEqual(marks2.count, 1)
+        XCTAssertEqual(marks2[0].status, 1, "status should update to success")
+    }
 }
 #endif

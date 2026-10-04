@@ -149,8 +149,20 @@ impl CommandLog {
             }
             _ => false,
         }
+    }    /// Update prompt line numbers for records when visible rows reflow.
+    pub fn remap_prompt_lines(&mut self, remaps: &[(u64, u64)]) {
+        if remaps.is_empty() {
+            return;
+        }
+        let map: std::collections::HashMap<u64, u64> = remaps.iter().cloned().collect();
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line
+                && let Some(&new_line) = map.get(&prompt)
+            {
+                rec.prompt_line = Some(new_line);
+            }
+        }
     }
-
 
 
     /// Forget every record (reset). Ids keep counting.

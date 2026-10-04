@@ -3,9 +3,9 @@
 // of it survives reflow, eviction, reset and checkpoints.
 
 use tako_core::ffi::TakoCore;
-use tako_core::grid::{RowOwner, SearchHit};
+use tako_core::grid::{RowOwner, SearchHit, SemanticPrompt};
 use tako_core::terminal::commands::{CommandStatus, MAX_COMMAND_RECORDS, MAX_INPUT_CHARS};
-use tako_core::terminal::{Terminal, TerminalEvent};
+use tako_core::terminal::{CommandMarkStatus, Terminal, TerminalEvent};
 
 const A: &[u8] = b"\x1b]133;A\x07";
 const B: &[u8] = b"\x1b]133;B\x07";
@@ -752,6 +752,41 @@ fn ffi_command_marks_and_first_retained_line() {
 
     assert_eq!(marks[2].status, 0); // 0 = running
     assert_eq!(marks[2].exit_code, None);
+}
+
+#[test]
+fn command_marks_remap_after_reflow() {
+    let mut t = Terminal::new(40, 10);
+    // Command 1
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hello\r\n\x1b]133;C\x07hello\r\n\x1b]133;D;0\x07");
+    // Command 2 with long output that wraps across multiple lines when narrowed
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07cat file\r\n\x1b]133;C\x07");
+    t.feed(b"123456789012345678901234567890\r\n");
+    t.feed(b"\x1b]133;D;0\x07");
+    // Command 3
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07tail\r\n\x1b]133;C\x07");
+
+    let marks_before = t.command_marks();
+    assert_eq!(marks_before.len(), 3);
+    assert_eq!(marks_before[0].status, CommandMarkStatus::Success);
+    assert_eq!(marks_before[1].status, CommandMarkStatus::Success);
+    assert_eq!(marks_before[2].status, CommandMarkStatus::Running);
+
+    // Narrow terminal to 15 columns, causing long line "123456789012345678901234567890" to wrap into 2 rows
+    t.resize(15, 10);
+
+    let marks_after = t.command_marks();
+    assert_eq!(marks_after.len(), 3);
+    assert_eq!(marks_after[0].status, CommandMarkStatus::Success);
+    assert_eq!(marks_after[1].status, CommandMarkStatus::Success);
+    assert_eq!(marks_after[2].status, CommandMarkStatus::Running);
+
+    // Ensure prompt row for command 3 matches its new remapped position and has SemanticPrompt::Prompt
+    let cmd3_mark = &marks_after[2];
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(cmd3_mark.retained_row),
+        SemanticPrompt::Prompt
+    );
 }
 
 

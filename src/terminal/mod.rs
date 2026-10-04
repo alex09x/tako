@@ -542,19 +542,21 @@ impl Terminal {
         // Reflow moves the command line being typed; where it started is
         // no longer known.
         self.input_start = None;
-        let new_cursor = if self.modes.autowrap {
+        let (new_cursor, line_remaps) = if self.modes.autowrap {
             match self.active {
                 ScreenBuffer::Primary => {
-                    let pos = self
+                    let (pos, remaps) = self
                         .primary
-                        .resize_with_cursor(cols, rows, Some(cursor_pos));
+                        .resize_with_cursor_and_remaps(cols, rows, Some(cursor_pos));
                     self.alternate.resize_with_cursor(cols, rows, None);
-                    pos
+                    (pos, remaps)
                 }
                 ScreenBuffer::Alternate => {
-                    self.primary.resize_with_cursor(cols, rows, None);
-                    self.alternate
-                        .resize_with_cursor(cols, rows, Some(cursor_pos))
+                    let (_, remaps) = self.primary.resize_with_cursor_and_remaps(cols, rows, None);
+                    let pos = self
+                        .alternate
+                        .resize_with_cursor(cols, rows, Some(cursor_pos));
+                    (pos, remaps)
                 }
             }
         } else {
@@ -562,11 +564,23 @@ impl Terminal {
             // instead of reflowing (upstream behavior).
             self.primary.resize_no_reflow(cols, rows);
             self.alternate.resize_no_reflow(cols, rows);
-            Some((
-                self.cursor.row.min(rows.saturating_sub(1)),
-                self.cursor.col.min(cols.saturating_sub(1)),
-            ))
+            (
+                Some((
+                    self.cursor.row.min(rows.saturating_sub(1)),
+                    self.cursor.col.min(cols.saturating_sub(1)),
+                )),
+                Vec::new(),
+            )
         };
+        if !line_remaps.is_empty() {
+            self.commands.remap_prompt_lines(&line_remaps);
+            let map: std::collections::HashMap<u64, u64> = line_remaps.into_iter().collect();
+            if let Some(prompt) = self.last_prompt_line
+                && let Some(&new_line) = map.get(&prompt)
+            {
+                self.last_prompt_line = Some(new_line);
+            }
+        }
         if cols_changed {
             self.tabstops = TabStops::new(cols);
         }
@@ -1831,13 +1845,12 @@ impl Terminal {
             }
 
             if grid.retained_semantic_prompt(retained_row) != crate::grid::SemanticPrompt::Prompt {
-                let min_r = retained_row.saturating_sub(10);
-                let max_r = (retained_row + 10).min(total_retained.saturating_sub(1));
-                let best = (min_r..=max_r)
-                    .filter(|&r| grid.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt)
-                    .min_by_key(|&r| (r as isize - retained_row as isize).abs());
-                if let Some(r) = best {
+                let min_r = retained_row.saturating_sub(1);
+                let max_r = (retained_row + 1).min(total_retained.saturating_sub(1));
+                if let Some(r) = (min_r..=max_r).find(|&r| grid.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt) {
                     retained_row = r;
+                } else {
+                    continue;
                 }
             }
 

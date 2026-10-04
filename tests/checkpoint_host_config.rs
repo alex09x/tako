@@ -38,11 +38,11 @@ fn header_version(blob: &[u8]) -> u32 {
 }
 
 #[test]
-fn this_build_writes_version_5() {
-    assert_eq!(CURRENT_VERSION, 5);
-    assert_eq!(Terminal::checkpoint_version(), 5);
+fn this_build_writes_version_6() {
+    assert_eq!(CURRENT_VERSION, 6);
+    assert_eq!(Terminal::checkpoint_version(), 6);
     let blob = themed_source().export_checkpoint().unwrap();
-    assert_eq!(header_version(&blob), 5);
+    assert_eq!(header_version(&blob), 6);
 }
 
 #[test]

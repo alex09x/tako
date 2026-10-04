@@ -1319,6 +1319,15 @@ impl Grid {
         new_rows: usize,
         cursor: Option<(usize, usize)>,
     ) -> Option<(usize, usize)> {
+        self.resize_with_cursor_and_remaps(new_cols, new_rows, cursor).0
+    }
+
+    pub(crate) fn resize_with_cursor_and_remaps(
+        &mut self,
+        new_cols: usize,
+        new_rows: usize,
+        cursor: Option<(usize, usize)>,
+    ) -> (Option<(usize, usize)>, Vec<(u64, u64)>) {
         let new_cols = new_cols.max(1);
         let new_rows = new_rows.max(1);
         let mut active_cursor = cursor.map(|(r, c)| {
@@ -1344,7 +1353,7 @@ impl Grid {
                 let (_, moved_cursor) = self.resize_rows_only(new_rows, active_cursor);
                 active_cursor = moved_cursor;
             }
-            return active_cursor;
+            return (active_cursor, Vec::new());
         }
 
         // Width change: unwrap visible lines into logical lines, then
@@ -1362,8 +1371,10 @@ impl Grid {
             semantic: SemanticPrompt,
             owner: RowOwner,
             cursor_offset: Option<usize>,
+            original_abs_line: u64,
         }
 
+        let base_line = (self.history_evicted() + self.scrollback_len()) as u64;
         let mut logical_lines: Vec<LogicalLine> = Vec::new();
         for row in 0..self.rows {
             let wrapped = self.is_line_wrapped(row);
@@ -1391,6 +1402,7 @@ impl Grid {
                     semantic,
                     owner,
                     cursor_offset,
+                    original_abs_line: base_line + row as u64,
                 });
             }
         }
@@ -1404,6 +1416,7 @@ impl Grid {
                 } else {
                     None
                 },
+                original_abs_line: base_line,
             });
         }
 
@@ -1435,8 +1448,14 @@ impl Grid {
 
         let mut new_rows_data: Vec<NewRow> = Vec::new();
         let mut final_cursor: Option<(usize, usize)> = None;
+        let mut line_remaps: Vec<(u64, u64)> = Vec::new();
 
         for line in logical_lines {
+            let start_new_row_idx = new_rows_data.len();
+            if line.semantic == SemanticPrompt::Prompt {
+                let new_abs_line = base_line + start_new_row_idx as u64;
+                line_remaps.push((line.original_abs_line, new_abs_line));
+            }
             let (mut wrapped_rows, line_cursor) =
                 Self::rewrap_line_with_cursor(&line.cells, new_cols, line.cursor_offset);
             if let Some((sub_r, sub_c)) = line_cursor {
@@ -1518,7 +1537,7 @@ impl Grid {
             );
         }
 
-        final_cursor
+        (final_cursor, line_remaps)
     }
 
     fn resize_rows_only(

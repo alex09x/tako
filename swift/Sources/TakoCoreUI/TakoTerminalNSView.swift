@@ -611,6 +611,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// always in the order the batches were parsed.
     private func apply(_ outcomes: [FfiFeedOutcome]) {
         var totalDamage = false
+        var commandStatusChanged = false
         for outcome in outcomes {
             // Drain device replies (DA/DSR/XTVERSION/Kitty replies)
             if !outcome.output.isEmpty {
@@ -628,8 +629,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     TakoLog.feed.debug("bell")
                     delegate?.terminalViewDidBell(self)
                 case .commandStart:
+                    commandStatusChanged = true
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
+                    commandStatusChanged = true
                     delegate?.terminalView(self, commandDidEnd: exitCode)
                 case .clipboardSet(let text):
                     TakoLog.feed.info("OSC 52 → clipboard (\(text.count) chars)")
@@ -654,6 +657,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         if redrawHeldBySynchronizedOutput && !core.isSynchronizedOutputActive() {
             redrawHeldBySynchronizedOutput = false
             scheduleRedraw()
+        }
+
+        if commandStatusChanged && !totalDamage {
+            updateScroller()
         }
 
         if totalDamage {

@@ -3065,16 +3065,17 @@ mod tests {
     #[test]
     fn checkpoint_version_negotiation_is_explicit() {
         let core = TakoCore::new(40, 10);
-        assert_eq!(core.checkpoint_version(), 5);
-        // v1 through v4 stay readable so a peer holding an older container is
-        // not forced to discard it; v5 is what this build writes.
+        assert_eq!(core.checkpoint_version(), 6);
+        // v1 through v5 stay readable so a peer holding an older container is
+        // not forced to discard it; v6 is what this build writes.
         assert!(core.checkpoint_supports(1));
         assert!(core.checkpoint_supports(2));
         assert!(core.checkpoint_supports(3));
         assert!(core.checkpoint_supports(4));
         assert!(core.checkpoint_supports(5));
+        assert!(core.checkpoint_supports(6));
         assert!(!core.checkpoint_supports(0));
-        assert!(!core.checkpoint_supports(6));
+        assert!(!core.checkpoint_supports(7));
 
         core.feed(b"negotiate".to_vec());
         let blob = core.checkpoint_export(0, 1 << 20).unwrap();
@@ -3082,18 +3083,18 @@ mod tests {
         // A newer container, correctly checksummed: a version failure, not
         // corruption. A bool could not tell the two apart.
         let mut newer = blob.clone();
-        newer[4..8].copy_from_slice(&6u32.to_le_bytes());
+        newer[4..8].copy_from_slice(&7u32.to_le_bytes());
         let crc = crate::terminal::checkpoint::crc32(&newer[20..]);
         newer[16..20].copy_from_slice(&crc.to_le_bytes());
 
         let dest = TakoCore::new(20, 6);
         assert_eq!(
             dest.checkpoint_import(newer.clone()),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
         );
         assert_eq!(
             dest.checkpoint_inspect(newer),
-            Err(TakoCheckpointError::UnsupportedVersion { version: 6 })
+            Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
         );
 
         let mut corrupt = blob.clone();
@@ -3105,7 +3106,7 @@ mod tests {
         ));
 
         let info = dest.checkpoint_inspect(blob.clone()).unwrap();
-        assert_eq!((info.version, info.cols, info.rows), (5, 40, 10));
+        assert_eq!((info.version, info.cols, info.rows), (6, 40, 10));
         assert_eq!(info.payload_len as usize, blob.len() - 20);
         assert_eq!(dest.checkpoint_import(blob), Ok(()));
     }
