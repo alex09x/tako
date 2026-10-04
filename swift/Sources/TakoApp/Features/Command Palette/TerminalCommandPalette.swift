@@ -100,8 +100,12 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyCommand(id: cmd.id)
             })
 
+            let outRecord = surfaceView.commandOutput(for: cmd.id)
+            let isOutputPartial = outRecord?.isPartial == true
+
+            let copyOutTitle = isOutputPartial ? "Command: Copy Output (Partial)" : "Command: Copy Output"
             options.append(CommandOption(
-                title: "Command: Copy Output",
+                title: copyOutTitle,
                 subtitle: trimmedCmd,
                 leadingIcon: "doc.text",
                 badge: badgeText,
@@ -110,8 +114,9 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyOutput(id: cmd.id)
             })
 
+            let copyMdTitle = isOutputPartial ? "Command: Copy Both as Markdown (Output Partial)" : "Command: Copy Both as Markdown"
             options.append(CommandOption(
-                title: "Command: Copy Both as Markdown",
+                title: copyMdTitle,
                 subtitle: trimmedCmd,
                 leadingIcon: "text.quote",
                 badge: badgeText,
@@ -120,18 +125,21 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyBothAsMarkdown(id: cmd.id)
             })
 
-            options.append(CommandOption(
-                title: "Command: Re-run in This Pane",
-                subtitle: trimmedCmd,
-                leadingIcon: "arrow.clockwise",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 4)
-            ) {
-                surfaceView.rerunCommand(id: cmd.id)
-            })
+            if !cmd.inputTruncated {
+                options.append(CommandOption(
+                    title: "Command: Re-run in This Pane",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "arrow.clockwise",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 4)
+                ) {
+                    surfaceView.rerunCommand(id: cmd.id)
+                })
+            }
 
+            let sendOutTitle = isOutputPartial ? "Command: Send Output to Another Pane (Partial)" : "Command: Send Output to Another Pane"
             options.append(CommandOption(
-                title: "Command: Send Output to Another Pane",
+                title: sendOutTitle,
                 subtitle: trimmedCmd,
                 leadingIcon: "rectangle.split.2x1",
                 badge: badgeText,
@@ -140,8 +148,9 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.sendOutputToAnotherPane(id: cmd.id)
             })
 
+            let saveOutTitle = isOutputPartial ? "Command: Save Output to File (Partial)" : "Command: Save Output to File"
             options.append(CommandOption(
-                title: "Command: Save Output to File",
+                title: saveOutTitle,
                 subtitle: trimmedCmd,
                 leadingIcon: "square.and.arrow.down",
                 badge: badgeText,

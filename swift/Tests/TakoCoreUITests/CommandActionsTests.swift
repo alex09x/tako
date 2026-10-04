@@ -355,10 +355,138 @@ final class CommandActionsTests: XCTestCase {
             return
         }
 
+        view.pasteStringProvider = { "test paste text" }
+
         for item in menu.items where item.action != nil && !item.isSeparatorItem {
             let isValid = view.validateUserInterfaceItem(item)
             XCTAssertTrue(isValid, "Item '\(item.title)' should be valid")
         }
+    }
+
+    func testMarkdownCodeFenceAvoidsCollisionsWithBacktickContent() {
+        // Plain content uses standard 3-backtick fence
+        let plainMd = TakoTerminalNSView.formatCommandAndOutputAsMarkdown(command: "echo 1", output: "1")
+        XCTAssertTrue(plainMd.hasPrefix("```bash\n"))
+        XCTAssertTrue(plainMd.hasSuffix("\n```"))
+
+        // Content containing a 3-backtick block must use at least 4 backticks for outer fence
+        let mdWithCode = TakoTerminalNSView.formatCommandAndOutputAsMarkdown(
+            command: "cat doc.md",
+            output: "```swift\nlet x = 1\n```"
+        )
+        XCTAssertTrue(mdWithCode.contains("````\n```swift\nlet x = 1\n```\n````"))
+
+        // Content containing 4 backticks must use 5 backticks
+        let mdWith4Ticks = TakoTerminalNSView.formatCommandAndOutputAsMarkdown(
+            command: "cat file.md",
+            output: "````\ninner\n````"
+        )
+        XCTAssertTrue(mdWith4Ticks.contains("`````\n````\ninner\n````\n`````"))
+    }
+
+    func testRefusesToRerunTruncatedCommandInputs() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let delegate = TestTerminalDelegate()
+        view.delegate = delegate
+
+        // Create a command longer than 512 bytes to trigger truncation in TakoCore recording
+        let longCommand = String(repeating: "echo AVeryLongArgumentStringThatExceedsTheCoreLimit;", count: 20)
+        let input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}\(longCommand)\r\n\u{1b}]133;C\u{07}done\r\n\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        guard let cmd = view.recordedCommands().first else {
+            XCTFail("Expected recorded command")
+            return
+        }
+
+        XCTAssertTrue(cmd.inputTruncated, "Command exceeding 512 bytes must be marked inputTruncated")
+
+        // 1. rerunCommand must refuse to send anything to the delegate
+        view.rerunCommand(id: cmd.id)
+        XCTAssertTrue(delegate.sentInputData.isEmpty, "rerunCommand must refuse to execute truncated inputs")
+
+        // 2. Context menu must label rerun as truncated and disable it
+        guard let menu = view.contextMenu(for: cmd.id) else {
+            XCTFail("Expected context menu")
+            return
+        }
+        let rerunItem = menu.items.first(where: { $0.title.contains("Re-run") })
+        XCTAssertNotNil(rerunItem)
+        XCTAssertFalse(rerunItem?.isEnabled == true, "Re-run item must be disabled for truncated command")
+        XCTAssertTrue(rerunItem?.title.contains("Truncated") == true)
+
+        // 3. validateUserInterfaceItem must return false
+        if let rerunItem {
+            XCTAssertFalse(view.validateUserInterfaceItem(rerunItem))
+        }
+    }
+
+    func testSurfacesPartialOutputInContextMenuAndMarkdownAndSave() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}ls\r\n\u{1b}]133;C\u{07}file.txt\r\n\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        guard let cmd = view.recordedCommands().first else {
+            XCTFail("Expected recorded command")
+            return
+        }
+
+        // Test formatCommandAndOutputAsMarkdown with isPartial == true
+        let partialMd = TakoTerminalNSView.formatCommandAndOutputAsMarkdown(
+            command: "ls",
+            output: "file.txt",
+            isPartial: true
+        )
+        XCTAssertTrue(partialMd.contains("<!-- Note: Output was partially evicted or truncated from scrollback -->"))
+
+        // Test context menu when output is partial via synthetic command info
+        let partialOutput = FfiCommandOutput(
+            command: cmd,
+            output: "file.txt",
+            lines: 1,
+            truncated: true,
+            more: false,
+            incomplete: false
+        )
+        XCTAssertTrue(partialOutput.isPartial)
+
+        // Test saveOutputToFile suggested filename when partial
+        var suggestedName: String?
+        TakoTerminalNSView.saveFilePanel = { _, filename, _, completion in
+            suggestedName = filename
+            completion(nil)
+        }
+        // Save output for command
+        view.saveOutputToFile(id: cmd.id)
+        XCTAssertEqual(suggestedName, "command-\(cmd.id)-output.txt")
+    }
+
+    func testMultilineCommandActionsWithholdUnsafeLineBreaksWhenUnbracketed() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let delegate = TestTerminalDelegate()
+        view.delegate = delegate
+
+        // Bracketed paste is OFF by default
+        XCTAssertFalse(view.core.modes().bracketedPaste)
+
+        // Test insertInputText with multiline text: unsafe line breaks must be withheld
+        var confirmationRequested = false
+        view.confirmPasteHandler = { text, completion in
+            confirmationRequested = true
+            // Do not confirm initially
+            completion(false)
+        }
+
+        view.insertInputText("echo 1\necho 2")
+        XCTAssertTrue(confirmationRequested, "Multiline input must trigger confirmation when unbracketed")
+        XCTAssertTrue(delegate.sentInputData.isEmpty, "Unsafe line breaks must be withheld when not confirmed")
+
+        // Now test when confirmed
+        view.confirmPasteHandler = { text, completion in
+            completion(true)
+        }
+        view.insertInputText("echo 1\necho 2")
+        XCTAssertFalse(delegate.sentInputData.isEmpty, "Input should be sent after confirmation")
     }
 }
 #endif

@@ -2023,17 +2023,28 @@ extension Tako {
             }
         }
 
-        public func insertInputText(_ text: String) {
+        override public func insertInputText(_ text: String) {
             revealLiveScreenForUserInput()
             var cleanText = text
             while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
                 cleanText.removeLast()
             }
             guard !cleanText.isEmpty else { return }
-            let bytes = core.encodePaste(text: cleanText)
-            if !bytes.isEmpty {
-                writeToShell([UInt8](bytes))
+
+            let isMultiLine = cleanText.contains("\n") || cleanText.contains("\r") || core.pasteIsUnsafe(text: cleanText)
+            let isUnbracketed = !core.modes().bracketedPaste
+            if isMultiLine && (safePaste || isUnbracketed) {
+                NotificationCenter.default.post(
+                    name: Tako.Notification.confirmClipboard,
+                    object: self,
+                    userInfo: [
+                        Tako.Notification.ConfirmClipboardStrKey: cleanText,
+                        Tako.Notification.ConfirmClipboardRequestKey: Tako.ClipboardRequest.paste,
+                    ]
+                )
+                return
             }
+            handlePaste(cleanText)
         }
 
         /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
@@ -2463,7 +2474,7 @@ extension Tako {
         /// Evaluates safe paste guard before sending text to the shell.
         /// If the clipboard contains newlines, safe paste is enabled, and the terminal
         /// is idle at a shell prompt, posts a confirmation request instead of pasting immediately.
-        public func handlePaste(_ text: String) {
+        override public func handlePaste(_ text: String) {
             let isMultiLine = text.contains("\n") || text.contains("\r")
             if safePaste && isMultiLine && core.cursorIsAtPrompt() && !isCommandRunning {
                 NotificationCenter.default.post(
