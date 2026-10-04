@@ -80,25 +80,27 @@ struct TerminalCommandPaletteView: View {
         let commands = surfaceView.recordedCommands()
         guard !commands.isEmpty else { return [] }
 
-        let recentCommands = Array(commands.suffix(20).reversed())
         let newestId = surfaceView.activeStickyCommandHeader?.commandId ?? commands.last?.id
 
         var options: [CommandOption] = []
-        for cmd in recentCommands {
+        for cmd in commands.reversed() {
             let isCurrent = (cmd.id == newestId)
-            guard let rawInput = cmd.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else { continue }
-            let trimmedCmd = rawInput
+            let rawInput = cmd.input?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasInput = !(rawInput?.isEmpty ?? true)
+            let trimmedCmd = hasInput ? rawInput! : "Command #\(cmd.id)"
             let badgeText = isCurrent ? "Active Command" : "Command"
 
-            options.append(CommandOption(
-                title: "Command: Copy Command",
-                subtitle: trimmedCmd,
-                leadingIcon: "doc.on.doc",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 1)
-            ) {
-                surfaceView.copyCommand(id: cmd.id)
-            })
+            if hasInput {
+                options.append(CommandOption(
+                    title: "Command: Copy Command",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "doc.on.doc",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 1)
+                ) {
+                    surfaceView.copyCommand(id: cmd.id)
+                })
+            }
 
             options.append(CommandOption(
                 title: "Command: Copy Output",
@@ -110,17 +112,19 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyOutput(id: cmd.id)
             })
 
-            options.append(CommandOption(
-                title: "Command: Copy Both as Markdown",
-                subtitle: trimmedCmd,
-                leadingIcon: "text.quote",
-                badge: badgeText,
-                sortKey: AnySortKey(cmd.id * 10 + 3)
-            ) {
-                surfaceView.copyBothAsMarkdown(id: cmd.id)
-            })
+            if hasInput {
+                options.append(CommandOption(
+                    title: "Command: Copy Both as Markdown",
+                    subtitle: trimmedCmd,
+                    leadingIcon: "text.quote",
+                    badge: badgeText,
+                    sortKey: AnySortKey(cmd.id * 10 + 3)
+                ) {
+                    surfaceView.copyBothAsMarkdown(id: cmd.id)
+                })
+            }
 
-            if !cmd.inputTruncated {
+            if hasInput && !cmd.inputTruncated {
                 options.append(CommandOption(
                     title: "Command: Re-run in This Pane",
                     subtitle: trimmedCmd,
@@ -154,9 +158,10 @@ struct TerminalCommandPaletteView: View {
 
             if cmd.cwd != nil || surfaceView.workingDirectory != nil {
                 let dir = cmd.cwd ?? surfaceView.workingDirectory ?? ""
+                let subtitle = dir.isEmpty ? trimmedCmd : "\(trimmedCmd) (\(dir))"
                 options.append(CommandOption(
                     title: "Command: Open Working Directory",
-                    subtitle: "\(trimmedCmd) (\(dir))",
+                    subtitle: subtitle,
                     leadingIcon: "folder",
                     badge: badgeText,
                     sortKey: AnySortKey(cmd.id * 10 + 7)
