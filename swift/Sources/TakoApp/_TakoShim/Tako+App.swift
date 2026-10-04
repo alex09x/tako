@@ -185,9 +185,14 @@ extension Tako {
             confirmed: Bool = false
         ) {
             // `pasteText` is main-actor isolated because it touches the view;
-            // this callback arrives from the clipboard confirmation flow with
-            // no isolation of its own.
-            DispatchQueue.main.async { surfaceView.pasteText(data) }
+            // execute directly on the main thread or dispatch asynchronously if on background.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    surfaceView.pasteText(data)
+                }
+            } else {
+                DispatchQueue.main.async { surfaceView.pasteText(data) }
+            }
         }
     }
 
@@ -2046,8 +2051,13 @@ extension Tako {
             mouseShiftCapture = config.mouseShiftCapture
             cursorClickToMove = config.cursorClickToMove
             linkURLDetectionEnabled = config.linkURL
+            safePaste = config.safePaste
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
+
+        /// Whether multi-line pastes at a shell prompt require user confirmation.
+        /// Configured via `safe-paste = true|false`, default true.
+        public var safePaste: Bool = true
 
         /// Where `copy-on-select` puts a selection by itself: a pasteboard of
         /// the app's own, which `paste_from_selection` reads.
@@ -2354,8 +2364,32 @@ extension Tako {
             applyTheme(newTheme)
         }
 
+        /// Evaluates safe paste guard before sending text to the shell.
+        /// If the clipboard contains newlines, safe paste is enabled, and the terminal
+        /// is idle at a shell prompt, posts a confirmation request instead of pasting immediately.
+        public func handlePaste(_ text: String) {
+            let isMultiLine = text.contains("\n") || text.contains("\r")
+            if safePaste && isMultiLine && core.cursorIsAtPrompt() && !isCommandRunning {
+                NotificationCenter.default.post(
+                    name: Tako.Notification.confirmClipboard,
+                    object: self,
+                    userInfo: [
+                        Tako.Notification.ConfirmClipboardStrKey: text,
+                        Tako.Notification.ConfirmClipboardRequestKey: Tako.ClipboardRequest.paste,
+                    ]
+                )
+                return
+            }
+            pasteText(text)
+        }
+
         public func pasteText(_ text: String) {
-            pty?.write([UInt8](core.encodePaste(text: text)))
+            guard !text.isEmpty else { return }
+            scrollViewportToBottom()
+            let bytes = [UInt8](core.encodePaste(text: text))
+            if !bytes.isEmpty {
+                writeToShell(bytes)
+            }
         }
 
         /// Named to match the standard Cocoa Edit-menu action (not, say,
@@ -2378,7 +2412,7 @@ extension Tako {
 
         @objc override public func paste(_ sender: Any?) {
             guard let text = NSPasteboard.general.string(forType: .string) else { return }
-            pasteText(text)
+            handlePaste(text)
         }
 
         public func write(_ text: String) {

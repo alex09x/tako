@@ -429,7 +429,7 @@ extension Tako.SurfaceView {
             return true
         case "paste_from_selection":
             guard let text = Self.selectionPasteboard.string(forType: .string) else { return false }
-            pasteText(text)
+            handlePaste(text)
             return true
         case "select_all":
             selectAll(nil)
