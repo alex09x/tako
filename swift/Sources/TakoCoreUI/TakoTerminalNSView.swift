@@ -181,6 +181,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         var exitCode: Int32?
     }
     private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
+    private var trackedCommandsEpoch: UInt64 = 0
+    var trackedCommandsCountForTesting: Int { trackedCommands.count }
     private var activeRunningCommandId: UInt64? = nil
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
@@ -661,6 +663,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         cols = restore.cols
         rows = restore.rows
         lastReportedScrollPosition = core.scrollPosition()
+        trackedCommands.removeAll()
+        trackedCommandsEpoch = core.stateEpoch()
+        activeRunningCommandId = nil
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
@@ -702,6 +707,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalViewDidBell(self)
                 case .commandStart(let id):
                     commandStatusChanged = true
+                    let currentEpoch = core.stateEpoch()
+                    if trackedCommandsEpoch != currentEpoch {
+                        trackedCommands.removeAll()
+                        trackedCommandsEpoch = currentEpoch
+                        activeRunningCommandId = nil
+                    }
                     if let cmdId = id {
                         activeRunningCommandId = cmdId
                         let totalScrollback = UInt64(core.scrollbackLen())
@@ -722,6 +733,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
                     commandStatusChanged = true
+                    let currentEpoch = core.stateEpoch()
+                    if trackedCommandsEpoch != currentEpoch {
+                        trackedCommands.removeAll()
+                        trackedCommandsEpoch = currentEpoch
+                        activeRunningCommandId = nil
+                    }
                     let totalScrollback = UInt64(core.scrollbackLen())
                     let cursorRow = UInt64(core.cursorRow())
                     let firstLine = core.firstRetainedLine()
@@ -1031,6 +1048,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return nil
         }
 
+        let currentEpoch = core.stateEpoch()
+        if trackedCommandsEpoch != currentEpoch {
+            trackedCommands.removeAll()
+            trackedCommandsEpoch = currentEpoch
+            activeRunningCommandId = nil
+        }
+
         let totalScrollback = Int(core.scrollbackLen())
         let offset = Int(core.viewportOffset())
         let vpTop = totalScrollback - offset
@@ -1078,6 +1102,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     exitCode: info.exitCode
                 )
             }
+        }
+
+        // Prune commands no longer retained in core's command log or whose output has left scrollback
+        if let oldestRecord = core.firstCommandAfter(after: 0) {
+            let oldestId = oldestRecord.id
+            trackedCommands = trackedCommands.filter { id, cmd in
+                id >= oldestId && (cmd.status == 0 || cmd.lastOutputAbsLine >= firstRetainedLine)
+            }
+        } else {
+            trackedCommands.removeAll()
         }
 
         guard !trackedCommands.isEmpty else { return nil }
@@ -1232,6 +1266,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// Reset terminal state.
     public func reset() {
         trackedCommands.removeAll()
+        trackedCommandsEpoch = core.stateEpoch()
         activeRunningCommandId = nil
         parserCoordinator.feedSynchronously(Data("\u{001B}c".utf8))
         scheduleRedraw()

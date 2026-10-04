@@ -233,6 +233,57 @@ final class StickyCommandHeaderTests: XCTestCase {
         view.jumpToPrompt(retainedRow: header!.promptRetainedRow)
         XCTAssertEqual(view.viewportOffset, view.scrollbackLength, "scrolled to top of retained scrollback")
     }
+
+    func testStickyCommandHeaderInvalidatedOnCheckpointRestore() throws {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}git log\r\n\u{1b}]133;C\u{07}"
+        for i in 1...40 {
+            input += "commit \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        XCTAssertNotNil(view.currentStickyCommandHeader())
+        XCTAssertGreaterThan(view.trackedCommandsCountForTesting, 0)
+
+        // Clean terminal exports checkpoint
+        let cleanView = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let checkpoint = try cleanView.exportCheckpoint()
+
+        // Importing checkpoint invalidates trackedCommands and sticky header
+        try view.importCheckpoint(checkpoint)
+        XCTAssertNil(view.currentStickyCommandHeader(), "sticky header must be nil after checkpoint restore")
+        XCTAssertEqual(view.trackedCommandsCountForTesting, 0, "tracked commands must be empty after checkpoint restore")
+    }
+
+    func testStickyCommandHeaderPrunedWhenOutputLeavesScrollback() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        view.core.setScrollbackLimit(lines: 10)
+
+        // Command 1
+        var input1 = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}old-cmd\r\n\u{1b}]133;C\u{07}"
+        for i in 1...15 {
+            input1 += "old output \(i)\r\n"
+        }
+        input1 += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input1.utf8))
+
+        // Command 2 with enough output to evict all of Command 1's output past firstRetainedLine
+        var input2 = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}new-cmd\r\n\u{1b}]133;C\u{07}"
+        for i in 1...80 {
+            input2 += "new output \(i)\r\n"
+        }
+        input2 += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input2.utf8))
+
+        // Trigger evaluation which prunes evicted commands
+        _ = view.currentStickyCommandHeader()
+
+        // Old command whose output completely left scrollback should be pruned
+        // Only new-cmd should remain
+        XCTAssertEqual(view.trackedCommandsCountForTesting, 1)
+    }
 }
 #endif
+
 
