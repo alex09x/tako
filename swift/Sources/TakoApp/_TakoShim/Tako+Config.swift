@@ -950,10 +950,66 @@ extension Tako {
         /// WHY: Command palette dynamically populates from available actions; default to empty list.
         var commandPaletteEntries: [Tako.Command] { [] }
 
-        /// Terminal command progress indicator style (dock icon / tab progress bar).
+        /// Terminal command progress indicator style (dock icon / tab progress bar / header / window).
         ///
-        /// WHY: Progress indicators are enabled by default.
-        var progressStyle: Bool { true }
+        /// The `progress-style` setting can turn each surface off (e.g. `dock,tab,header,window`, `none`, `all`).
+        var progressStyle: ProgressStyle {
+            guard let val = rawValue("progress-style") else { return .all }
+            let s = val.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if s.isEmpty || s == "true" || s == "all" || s == "1" || s == "yes" {
+                return .all
+            }
+            if s == "false" || s == "none" || s == "0" || s == "no" {
+                return .none
+            }
+            var style: ProgressStyle = []
+            let parts = s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            for part in parts {
+                switch part {
+                case "dock": style.insert(.dock)
+                case "tab", "tabs": style.insert(.tab)
+                case "header", "pane": style.insert(.header)
+                case "window": style.insert(.window)
+                default: break
+                }
+            }
+            return style
+        }
+    }
+}
+
+extension Tako.Config {
+    struct ProgressStyle: OptionSet, Sendable, Equatable, ExpressibleByBooleanLiteral {
+        let rawValue: Int
+
+        init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
+
+        init(booleanLiteral value: Bool) {
+            self = value ? .all : .none
+        }
+
+        static let dock = ProgressStyle(rawValue: 1 << 0)
+        static let tab = ProgressStyle(rawValue: 1 << 1)
+        static let header = ProgressStyle(rawValue: 1 << 2)
+        static let window = ProgressStyle(rawValue: 1 << 3)
+
+        static let all: ProgressStyle = [.dock, .tab, .header, .window]
+        static let none: ProgressStyle = []
+
+        var showsInDock: Bool { contains(.dock) }
+        var showsInTab: Bool { contains(.tab) }
+        var showsInHeader: Bool { contains(.header) }
+        var showsInWindow: Bool { contains(.window) }
+
+        static func == (lhs: ProgressStyle, rhs: Bool) -> Bool {
+            (lhs != .none) == rhs
+        }
+
+        static func == (lhs: Bool, rhs: ProgressStyle) -> Bool {
+            lhs == (rhs != .none)
+        }
     }
 }
 

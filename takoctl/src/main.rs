@@ -49,6 +49,7 @@ commands:
   status [get]            print the pane's status (status, text, TTL)
   status set STATUS       set the pane's explicit status (--text T, --ttl D)
   status clear            clear the pane's explicit status
+  progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -185,6 +186,82 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "progress" => {
+            if positional.is_empty() {
+                args.insert("action".into(), Value::String("get".into()));
+            } else {
+                let first = positional.remove(0);
+                let first_lower = first.to_lowercase();
+                if let Ok(num) = first.parse::<u64>() {
+                    if num > 100 {
+                        return Err("progress value must be between 0 and 100".into());
+                    }
+                    args.insert("action".into(), Value::String("set".into()));
+                    args.insert("value".into(), Value::from(num));
+                } else {
+                    match first_lower.as_str() {
+                        "get" => {
+                            args.insert("action".into(), Value::String("get".into()));
+                        }
+                        "clear" | "none" | "reset" => {
+                            args.insert("action".into(), Value::String("clear".into()));
+                        }
+                        "indeterminate" => {
+                            args.insert("action".into(), Value::String("indeterminate".into()));
+                        }
+                        "error" => {
+                            args.insert("action".into(), Value::String("error".into()));
+                            if !positional.is_empty() {
+                                let val_str = positional.remove(0);
+                                if let Ok(num) = val_str.parse::<u64>() {
+                                    if num > 100 {
+                                        return Err("progress value must be between 0 and 100".into());
+                                    }
+                                    args.insert("value".into(), Value::from(num));
+                                } else {
+                                    return Err(format!("invalid progress value \"{val_str}\""));
+                                }
+                            }
+                        }
+                        "pause" | "paused" => {
+                            args.insert("action".into(), Value::String("pause".into()));
+                            if !positional.is_empty() {
+                                let val_str = positional.remove(0);
+                                if let Ok(num) = val_str.parse::<u64>() {
+                                    if num > 100 {
+                                        return Err("progress value must be between 0 and 100".into());
+                                    }
+                                    args.insert("value".into(), Value::from(num));
+                                } else {
+                                    return Err(format!("invalid progress value \"{val_str}\""));
+                                }
+                            }
+                        }
+                        "set" | "normal" => {
+                            args.insert("action".into(), Value::String("set".into()));
+                            if !positional.is_empty() {
+                                let val_str = positional.remove(0);
+                                if let Ok(num) = val_str.parse::<u64>() {
+                                    if num > 100 {
+                                        return Err("progress value must be between 0 and 100".into());
+                                    }
+                                    args.insert("value".into(), Value::from(num));
+                                } else {
+                                    return Err(format!("invalid progress value \"{val_str}\""));
+                                }
+                            }
+                        }
+                        other => {
+                            return Err(format!("unknown progress state \"{other}\"; use 0-100, indeterminate, error, pause, or clear"));
+                        }
+                    }
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "run" => {
             // Everything after `--`, as the program's argv; the program found
             // on this shell's PATH, which goes with it.
@@ -277,10 +354,21 @@ fn render(cmd: &str, result: &Value) -> String {
         "run" if result.get("state").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "last" | "wait" | "run" => command_report(result),
         "status" => status_report(result),
+        "progress" => progress_report(result),
         "find" => find_report(result),
         "dialog" => dialog_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn progress_report(result: &Value) -> String {
+    let state = result["state"].as_str().unwrap_or("none");
+    let mut out = state.to_string();
+    if let Some(prog) = result["progress"].as_f64() {
+        out += &format!(" ({}%)", prog as u64);
+    }
+    out.push('\n');
+    out
 }
 
 fn status_report(result: &Value) -> String {
@@ -805,5 +893,76 @@ bbbbbbbb  logs -- pane 2 of 2
             "unread": false,
         });
         assert_eq!(status_report(&simple), "idle\n");
+    }
+
+    #[test]
+    fn progress_command_parses_get_set_error_pause_indeterminate_clear() {
+        // get (default)
+        let opts = parse(&args(&["progress"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "get"}}));
+
+        // get (explicit)
+        let opts = parse(&args(&["progress", "get"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "get"}}));
+
+        // number directly (e.g. 45)
+        let opts = parse(&args(&["progress", "45"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "set", "value": 45}}));
+
+        // set / normal with value
+        let opts = parse(&args(&["progress", "set", "60"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "set", "value": 60}}));
+
+        // indeterminate
+        let opts = parse(&args(&["progress", "indeterminate"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "indeterminate"}}));
+
+        // error with and without value
+        let opts = parse(&args(&["progress", "error"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "error"}}));
+
+        let opts = parse(&args(&["progress", "error", "100"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "error", "value": 100}}));
+
+        // pause with and without value
+        let opts = parse(&args(&["progress", "pause"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "pause"}}));
+
+        let opts = parse(&args(&["progress", "pause", "75"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "pause", "value": 75}}));
+
+        // clear
+        let opts = parse(&args(&["progress", "clear"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "clear"}}));
+
+        // errors
+        assert!(parse(&args(&["progress", "101"])).is_err());
+        assert!(parse(&args(&["progress", "error", "150"])).is_err());
+        assert!(parse(&args(&["progress", "unknown_state"])).is_err());
+    }
+
+    #[test]
+    fn progress_report_renders_human_output() {
+        let normal = json!({
+            "state": "normal",
+            "progress": 42.0,
+        });
+        assert_eq!(progress_report(&normal), "normal (42%)\n");
+
+        let err = json!({
+            "state": "error",
+            "progress": 99.0,
+        });
+        assert_eq!(progress_report(&err), "error (99%)\n");
+
+        let indet = json!({
+            "state": "indeterminate",
+        });
+        assert_eq!(progress_report(&indet), "indeterminate\n");
+
+        let clear = json!({
+            "state": "none",
+        });
+        assert_eq!(progress_report(&clear), "none\n");
     }
 }

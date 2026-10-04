@@ -204,6 +204,8 @@ mod tests {
             let req: Value = serde_json::from_str(&line).unwrap();
             let mut s = stream;
             writeln!(s, "{}", serde_json::json!({"ok": true, "result": {"echo": req["cmd"]}})).unwrap();
+            s.flush().unwrap();
+            std::thread::sleep(Duration::from_millis(20));
         });
         let answer = exchange(path.to_str().unwrap(), &serde_json::json!({"cmd": "tree"})).unwrap();
         server.join().unwrap();
@@ -279,7 +281,10 @@ mod tests {
         let (path, listener) = listen("big");
         let _big = std::thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 128];
+            let _ = s.read(&mut buf);
             let _ = s.write_all(&vec![b'x'; 4096]);
+            std::thread::sleep(Duration::from_millis(50));
         });
         let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
                                   Duration::from_secs(2), 1024).unwrap_err();

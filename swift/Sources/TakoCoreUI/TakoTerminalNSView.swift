@@ -167,6 +167,9 @@ public struct StickyCommandHeader: Equatable {
     }
 }
 
+/// Distinct progress states for OSC 9;4 progress reporting (B2).
+public typealias ProgressState = TakoTerminalNSView.ProgressState
+
 @MainActor
 /// Open for subclassing: the macOS app layer wraps this surface in its own
 /// `SurfaceView`, which adds windowing identity (tabs, splits, focus,
@@ -192,6 +195,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     let stickyHeaderSeparatorLayer = CALayer()
     private var isHoveringStickyHeader = false
     public private(set) var activeStickyCommandHeader: StickyCommandHeader?
+
+    public let paneProgressBarLayer = CALayer()
+    public var paneProgressBarEnabled: Bool = true {
+        didSet {
+            guard paneProgressBarEnabled != oldValue else { return }
+            if !paneProgressBarEnabled {
+                paneProgressBarLayer.isHidden = true
+            } else if activeProgressState != .none {
+                updateProgressBar(state: activeProgressState, progress: activeProgressValue)
+            }
+        }
+    }
+    public private(set) var activeProgressState: ProgressState = .none
+    public private(set) var activeProgressValue: Int? = nil
     struct TrackedCommandOutput {
         let commandId: UInt64
         var command: String
@@ -509,6 +526,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         } else {
             handler(panel.runModal())
         }
+    }
+    /// Distinct progress states for OSC 9;4 progress reporting (B2).
+    public enum ProgressState: String, Equatable, Sendable, CaseIterable {
+        case none
+        case normal
+        case error
+        case indeterminate
+        case paused
     }
 
     /// Security warnings evaluated before opening a link (E8).
@@ -855,6 +880,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         stickyHeaderLayer.addSublayer(stickyHeaderHintLayer)
 
         self.layer?.addSublayer(stickyHeaderLayer)
+
+        paneProgressBarLayer.zPosition = 9500
+        paneProgressBarLayer.masksToBounds = true
+        paneProgressBarLayer.isHidden = true
+        self.layer?.addSublayer(paneProgressBarLayer)
 
         linkHUDLayer.addSublayer(linkHUDTextLayer)
         self.layer?.addSublayer(linkHUDLayer)
@@ -1745,7 +1775,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         guard bounds.width > 0, bounds.height > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
+        defer {
+            updateProgressBarLayout()
+            CATransaction.commit()
+        }
 
         guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
             stickyHeaderLayer.isHidden = true
@@ -1805,6 +1838,68 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         stickyHeaderHintLayer.foregroundColor = stickyHeaderHintColor(hovering: isHoveringStickyHeader)
         let hintX = max(textX + availableWidth, bounds.width - hintWidth - 16.0)
         stickyHeaderHintLayer.frame = CGRect(x: hintX, y: (headerHeight - 14.0) / 2.0, width: hintWidth, height: 14.0)
+    }
+
+    /// Updates the thin progress bar rendered across the pane (B2).
+    public func updateProgressBar(state: ProgressState, progress: Int?) {
+        activeProgressState = state
+        activeProgressValue = progress
+        updateProgressBarLayout()
+    }
+
+    /// Positions and styles the pane progress bar according to current state and geometry.
+    public func updateProgressBarLayout() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        guard paneProgressBarEnabled, activeProgressState != .none else {
+            paneProgressBarLayer.isHidden = true
+            return
+        }
+
+        let barHeight: CGFloat = 2.0
+        let topY: CGFloat
+        if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden {
+            topY = stickyHeaderLayer.frame.minY - barHeight
+        } else {
+            topY = bounds.height - barHeight
+        }
+
+        let fullWidth = bounds.width
+        let barWidth: CGFloat
+        let barX: CGFloat
+        let barColor: CGColor
+
+        switch activeProgressState {
+        case .none:
+            paneProgressBarLayer.isHidden = true
+            return
+        case .normal:
+            let pct = CGFloat(min(100, max(0, activeProgressValue ?? 0))) / 100.0
+            barWidth = max(2.0, fullWidth * pct)
+            barX = 0
+            barColor = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1).cgColor
+        case .error:
+            let pct = CGFloat(min(100, max(0, activeProgressValue ?? 100))) / 100.0
+            barWidth = max(2.0, fullWidth * pct)
+            barX = 0
+            barColor = NSColor(srgbRed: 0xD5 / 255, green: 0x4E / 255, blue: 0x53 / 255, alpha: 1).cgColor
+        case .paused:
+            let pct = CGFloat(min(100, max(0, activeProgressValue ?? 100))) / 100.0
+            barWidth = max(2.0, fullWidth * pct)
+            barX = 0
+            barColor = NSColor.systemOrange.cgColor
+        case .indeterminate:
+            barWidth = fullWidth * 0.35
+            barX = (fullWidth - barWidth) / 2
+            barColor = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1).cgColor
+        }
+
+        paneProgressBarLayer.isHidden = false
+        paneProgressBarLayer.frame = CGRect(x: barX, y: max(0, topY), width: barWidth, height: barHeight)
+        paneProgressBarLayer.backgroundColor = barColor
     }
 
     /// Handles hover state updates for the sticky command header.
@@ -1884,6 +1979,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     override public func layout() {
         super.layout()
         updateScroller()
+        updateProgressBarLayout()
     }
 
     /// Reset terminal state.
