@@ -106,6 +106,29 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertEqual(marks2.count, 1)
         XCTAssertEqual(marks2[0].status, 2, "status should update to error/abandoned")
     }
+
+    func testCheckpointRestoreRefreshesMarks() throws {
+        let view1 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view1.commandMarksEnabled = true
+        view1.feed(data: Data("\u{1b}]133;A\u{07}$ \u{1b}]133;C\u{07}echo test\r\n\u{1b}]133;D;0\u{07}".utf8))
+        XCTAssertEqual(view1.core.commandMarks().count, 1)
+
+        let blob = try view1.exportCheckpoint()
+
+        // Create a fresh view with no marks
+        let view2 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view2.commandMarksEnabled = true
+        XCTAssertEqual(view2.core.commandMarks().count, 0)
+
+        // Restore checkpoint into view2
+        try view2.importCheckpoint(blob)
+
+        // Marks must be immediately present and scroller updated without requiring additional feed
+        let marks = view2.core.commandMarks()
+        XCTAssertEqual(marks.count, 1)
+        XCTAssertEqual(marks[0].status, 1)
+    }
 }
 #endif
+
 

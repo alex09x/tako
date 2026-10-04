@@ -107,6 +107,8 @@ extension Tako.SurfaceView {
     /// Closes the find bar and gives the keys back to the terminal. The last
     /// match stays selected, so it can be copied.
     @IBAction public func findHide(_ sender: Any) {
+        searchHitDebounceItem?.cancel()
+        searchHitDebounceItem = nil
         guard searchState != nil else { return }
         searchState = nil
         searchHitRetainedRows = []
@@ -138,6 +140,8 @@ extension Tako.SurfaceView {
     func searchStateDidChange() {
         searchNeedleCancellable = nil
         guard let searchState else {
+            searchHitDebounceItem?.cancel()
+            searchHitDebounceItem = nil
             currentSearchMatch = nil
             searchHitRetainedRows = []
             return
@@ -152,6 +156,8 @@ extension Tako.SurfaceView {
     /// Searches everything the terminal holds for `needle` and selects the
     /// newest match.
     func runSearch(_ needle: String) {
+        searchHitDebounceItem?.cancel()
+        searchHitDebounceItem = nil
         currentSearchMatch = nil
         let matches = searchMatches(for: needle)
         searchHitRetainedRows = matches.map { UInt64($0.row) }
@@ -165,6 +171,8 @@ extension Tako.SurfaceView {
     /// when no search is open or nothing matches.
     @discardableResult
     func navigateSearch(_ direction: SearchDirection) -> Bool {
+        searchHitDebounceItem?.cancel()
+        searchHitDebounceItem = nil
         guard let searchState else { return false }
         searchState.writePasteboardNeedle()
         let matches = searchMatches(for: searchState.needle)
@@ -204,6 +212,8 @@ extension Tako.SurfaceView {
     /// Recomputes search matches and updates scrollbar track hit marks whenever
     /// terminal content changes or reflow occurs.
     func refreshSearchHitRows() {
+        searchHitDebounceItem?.cancel()
+        searchHitDebounceItem = nil
         guard let searchState, !searchState.needle.isEmpty else {
             if !searchHitRetainedRows.isEmpty {
                 searchHitRetainedRows = []
@@ -214,6 +224,7 @@ extension Tako.SurfaceView {
         searchHitRetainedRows = matches.map { UInt64($0.row) }
         updateSearchCounts(matches)
     }
+
 
     /// Every match of `needle` in scrollback and on screen, oldest first.
     /// Case-insensitive. A match does not continue across a soft wrap.

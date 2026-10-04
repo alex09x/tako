@@ -1502,7 +1502,10 @@ extension Tako {
         /// The pending synchronized-output watchdog, if one is armed. Main
         /// thread only; `watchdogAction` above decides what happens to it.
         private var syncOutputTimeoutItem: DispatchWorkItem?
+        /// Debounce work item for refreshing search hit marks during rapid output.
+        var searchHitDebounceItem: DispatchWorkItem?
         /// Set by the watchdog to let one `draw()` past the sync-output guard.
+
         private var syncOverride = false
 
         /// Applies one batch's `WatchdogAction`. Main thread only: the timer
@@ -1986,24 +1989,46 @@ extension Tako {
         /// told or it keeps formatting for the old size.
         public func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
             pty?.resize(cols: UInt16(max(cols, 1)), rows: UInt16(max(rows, 1)))
-            refreshSearchHitRows()
+            scheduleSearchHitRefresh()
         }
 
-        /// Screen content changed or checkpoint restored: refresh search hit marks if active.
+        /// Screen content changed or checkpoint restored: refresh search hit marks if active (debounced).
         public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
-            refreshSearchHitRows()
+            scheduleSearchHitRefresh()
         }
 
+        /// Debounced search hit refresh to prevent walking all scrollback on every live output batch.
+        func scheduleSearchHitRefresh() {
+            guard let searchState, !searchState.needle.isEmpty else {
+                searchHitDebounceItem?.cancel()
+                searchHitDebounceItem = nil
+                if !searchHitRetainedRows.isEmpty {
+                    searchHitRetainedRows = []
+                }
+                return
+            }
+            searchHitDebounceItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.searchHitDebounceItem = nil
+                    self?.refreshSearchHitRows()
+                }
+            }
+            searchHitDebounceItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+        }
 
         private var configObserver: NSObjectProtocol?
         private weak var owningApp: Tako.App?
 
         deinit {
+            searchHitDebounceItem?.cancel()
             pty?.terminate()
             if let configObserver {
                 NotificationCenter.default.removeObserver(configObserver)
             }
         }
+
 
         /// `Tako.App.reloadConfig()` replaces the app's config and announces
         /// it; nothing else reaches the surfaces already on screen, so each

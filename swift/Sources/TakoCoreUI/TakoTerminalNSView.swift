@@ -592,7 +592,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         rows = restore.rows
         lastReportedScrollPosition = core.scrollPosition()
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
+        updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
+
         delegate?.terminalViewDidChangeContent(self)
         scheduleRedraw()
     }
