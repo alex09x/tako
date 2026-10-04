@@ -643,6 +643,15 @@ impl Grid {
         let owner = &mut self.row_owner[p];
         *owner = owner.after_write(self.pen_owner);
     }
+
+    /// Record a write or row advancement into logical row `row`.
+    #[inline]
+    pub fn touch_row_owner(&mut self, row: usize) {
+        if row < self.rows {
+            let p = self.phys(row);
+            self.touch_owner(p);
+        }
+    }
     /// Owner of the scrollback line at `index` (oldest-first).
     pub fn scrollback_owner(&self, index: usize) -> RowOwner {
         self.scrollback

@@ -1574,6 +1574,12 @@ impl Terminal {
             self.semantic_content,
             SemanticContent::Prompt | SemanticContent::Input
         );
+        if self.active == ScreenBuffer::Primary && self.primary.pen_owner().is_some() {
+            let row = self.cursor.row;
+            if self.primary.row_owner(row) == crate::grid::RowOwner::Empty {
+                self.primary.touch_row_owner(row);
+            }
+        }
         if self.cursor.row == bottom {
             // At the bottom margin: scroll only when inside the horizontal
             // margins, mirroring reverse_index.

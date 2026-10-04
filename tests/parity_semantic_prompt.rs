@@ -409,3 +409,19 @@ fn select_command_output_restricts_to_contiguous_run_around_target() {
     assert!(!text.contains("first block"));
 }
 
+#[test]
+fn select_command_output_preserves_interior_blank_lines() {
+    let mut term = Terminal::new(30, 10);
+    term.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07printf\r\n\x1b]133;C\x07first\r\n\r\nsecond\r\n\x1b]133;D;0\x07");
+    term.feed(b"\x1b]133;A\x07$ ");
+
+    let selected = term.select_command_output();
+    assert!(selected);
+    assert!(term.has_selection());
+    let text = term.selected_text().expect("selected text");
+    assert_eq!(text, "first\n\nsecond");
+    // Ensure no prompt bleed
+    assert!(!text.contains('$'));
+}
+
+
