@@ -172,6 +172,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     let stickyHeaderSeparatorLayer = CALayer()
     private var isHoveringStickyHeader = false
     public private(set) var activeStickyCommandHeader: StickyCommandHeader?
+    struct TrackedCommandOutput {
+        let commandId: UInt64
+        var command: String
+        var promptLine: UInt64?
+        var lastOutputAbsLine: UInt64
+        var status: UInt8
+        var exitCode: Int32?
+    }
+    private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
+    private var activeRunningCommandId: UInt64? = nil
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -690,11 +700,63 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 case .bell:
                     TakoLog.feed.debug("bell")
                     delegate?.terminalViewDidBell(self)
-                case .commandStart:
+                case .commandStart(let id):
                     commandStatusChanged = true
+                    if let cmdId = id {
+                        activeRunningCommandId = cmdId
+                        let totalScrollback = UInt64(core.scrollbackLen())
+                        let cursorRow = UInt64(core.cursorRow())
+                        let firstLine = core.firstRetainedLine()
+                        let absLine = firstLine + totalScrollback + cursorRow
+                        let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let promptLine = core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        trackedCommands[cmdId] = TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: cmdText,
+                            promptLine: promptLine,
+                            lastOutputAbsLine: absLine,
+                            status: 0,
+                            exitCode: nil
+                        )
+                    }
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
                     commandStatusChanged = true
+                    let totalScrollback = UInt64(core.scrollbackLen())
+                    let cursorRow = UInt64(core.cursorRow())
+                    let firstLine = core.firstRetainedLine()
+                    let targetId = activeRunningCommandId ?? core.newestCommandId()
+                    if let cmdId = targetId {
+                        let promptLine = trackedCommands[cmdId]?.promptLine ?? core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        let status: UInt8 = (exitCode == 0 ? 1 : 2)
+                        let out = core.commandOutput(id: cmdId, epoch: core.stateEpoch(), maxLines: 100_000, maxBytes: 10_000_000)
+                        let lines = UInt64(out?.lines ?? 0)
+                        let endLine: UInt64
+                        if let pLine = promptLine {
+                            endLine = pLine + lines
+                        } else if lines > 0 {
+                            endLine = firstLine + lines
+                        } else {
+                            endLine = firstLine + totalScrollback + cursorRow
+                        }
+                        var tracked = trackedCommands[cmdId] ?? TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                            promptLine: promptLine,
+                            lastOutputAbsLine: endLine,
+                            status: status,
+                            exitCode: exitCode
+                        )
+                        tracked.lastOutputAbsLine = endLine
+                        tracked.promptLine = promptLine
+                        tracked.status = status
+                        tracked.exitCode = exitCode
+                        if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            tracked.command = input
+                        }
+                        trackedCommands[cmdId] = tracked
+                    }
+                    activeRunningCommandId = nil
                     delegate?.terminalView(self, commandDidEnd: exitCode)
                 case .clipboardSet(let text):
                     TakoLog.feed.info("OSC 52 → clipboard (\(text.count) chars)")
@@ -705,6 +767,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalView(self, didChangeWorkingDirectory: path)
                 default:
                     break
+                }
+            }
+
+            if let cmdId = activeRunningCommandId, outcome.hasDamage {
+                let totalScrollback = UInt64(core.scrollbackLen())
+                let cursorRow = UInt64(core.cursorRow())
+                let firstLine = core.firstRetainedLine()
+                let absLine = firstLine + totalScrollback + cursorRow
+                if var tracked = trackedCommands[cmdId] {
+                    tracked.lastOutputAbsLine = max(tracked.lastOutputAbsLine, absLine)
+                    if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                        tracked.command = input
+                    }
+                    trackedCommands[cmdId] = tracked
                 }
             }
 
@@ -954,71 +1030,100 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
             return nil
         }
-        let marks = core.commandMarks()
-        guard !marks.isEmpty else { return nil }
 
         let totalScrollback = Int(core.scrollbackLen())
         let offset = Int(core.viewportOffset())
         let vpTop = totalScrollback - offset
         guard vpTop >= 0 else { return nil }
 
-        var candidateMark: FfiCommandMark?
-        for (idx, mark) in marks.enumerated() {
-            let pRow = Int(mark.retainedRow)
-            if pRow >= vpTop {
-                if pRow > vpTop && idx > 0 {
-                    candidateMark = marks[idx - 1]
+        let firstRetainedLine = core.firstRetainedLine()
+        let vpTopAbsLine = firstRetainedLine + UInt64(vpTop)
+
+        // Ensure all commands recorded in core's command log are known
+        var afterId: UInt64 = 0
+        let marks = core.commandMarks()
+        while let info = core.firstCommandAfter(after: afterId) {
+            afterId = info.id
+            if trackedCommands[info.id] == nil || (!info.running && trackedCommands[info.id]?.status == 0) {
+                guard let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else {
+                    continue
                 }
+                let mark = marks.first(where: { $0.commandId == info.id })
+                let status: UInt8
+                if info.running {
+                    status = 0
+                } else if info.finished {
+                    status = (info.exitCode == 0 ? 1 : 2)
+                } else {
+                    status = 2
+                }
+                let out = core.commandOutput(id: info.id, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                let lines = UInt64(out?.lines ?? 0)
+                if lines == 0 && status != 0 {
+                    continue
+                }
+                let promptLine = mark?.promptLine ?? trackedCommands[info.id]?.promptLine
+                let lastLine: UInt64
+                if let pLine = promptLine {
+                    lastLine = pLine + lines
+                } else {
+                    lastLine = firstRetainedLine + lines
+                }
+                trackedCommands[info.id] = TrackedCommandOutput(
+                    commandId: info.id,
+                    command: rawInput,
+                    promptLine: promptLine,
+                    lastOutputAbsLine: lastLine,
+                    status: status,
+                    exitCode: info.exitCode
+                )
+            }
+        }
+
+        guard !trackedCommands.isEmpty else { return nil }
+
+        let sortedCommands = trackedCommands.values.sorted(by: { $0.commandId < $1.commandId })
+        var candidate: TrackedCommandOutput? = nil
+
+        for cmd in sortedCommands {
+            // Check if prompt is visible on screen
+            if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
+                let pRow = Int(pLine - firstRetainedLine)
+                if pRow >= vpTop {
+                    // Prompt line is visible on screen or below vpTop
+                    break
+                }
+            }
+
+            // Zero-output completed command has no output on screen
+            let startLine = cmd.promptLine ?? 0
+            if cmd.status != 0 && cmd.lastOutputAbsLine <= startLine {
+                continue
+            }
+
+            // Check if vpTopAbsLine is within this command's output
+            if vpTopAbsLine <= cmd.lastOutputAbsLine {
+                candidate = cmd
                 break
             }
-            if idx == marks.count - 1 {
-                candidateMark = mark
-            }
         }
 
-        guard let mark = candidateMark else { return nil }
-        guard let info = core.firstCommandAfter(after: mark.commandId - 1),
-              let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawInput.isEmpty else {
-            return nil
-        }
+        guard let cmd = candidate else { return nil }
+        guard !cmd.command.isEmpty else { return nil }
 
-        let promptRow = Int(mark.retainedRow)
-        let totalRetained = totalScrollback + Int(core.rows())
-
-        var nextPromptRow: Int? = nil
-        for r in (promptRow + 1)..<totalRetained {
-            if core.retainedSemanticPrompt(row: UInt64(r)) == 1 {
-                nextPromptRow = r
-                break
-            }
-        }
-
-        let lastOutputRow: Int
-        if mark.status == 0 {
-            let cursorRow = totalScrollback + Int(core.cursorRow())
-            lastOutputRow = min(totalRetained - 1, max(promptRow, cursorRow))
-        } else if let nextPrompt = nextPromptRow {
-            lastOutputRow = max(promptRow, nextPrompt - 1)
+        let promptRetainedRow: UInt64
+        if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
+            promptRetainedRow = pLine - firstRetainedLine
         } else {
-            lastOutputRow = min(totalRetained - 1, totalScrollback + Int(core.cursorRow()))
-        }
-
-        // If no output was produced, no output is on screen
-        if lastOutputRow <= promptRow && mark.status != 0 {
-            return nil
-        }
-
-        if vpTop > lastOutputRow {
-            return nil
+            promptRetainedRow = 0
         }
 
         return StickyCommandHeader(
-            commandId: mark.commandId,
-            command: rawInput,
-            promptRetainedRow: mark.retainedRow,
-            status: mark.status,
-            exitCode: mark.exitCode
+            commandId: cmd.commandId,
+            command: cmd.command,
+            promptRetainedRow: promptRetainedRow,
+            status: cmd.status,
+            exitCode: cmd.exitCode
         )
     }
 
@@ -1126,6 +1231,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Reset terminal state.
     public func reset() {
+        trackedCommands.removeAll()
+        activeRunningCommandId = nil
         parserCoordinator.feedSynchronously(Data("\u{001B}c".utf8))
         scheduleRedraw()
     }

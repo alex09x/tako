@@ -1906,52 +1906,70 @@ impl Terminal {
             return None;
         }
 
-        let marks = self.command_marks();
-        if marks.is_empty() {
+        let total_retained = self.primary.retained_rows();
+        if total_retained == 0 {
             return None;
         }
 
         let sb_len = self.primary.scrollback_len();
         let vp_top = sb_len.saturating_sub(self.viewport_offset);
-
-        // Find which command's output spans vp_top.
-        let mut candidate_mark = None;
-        for (idx, mark) in marks.iter().enumerate() {
-            if mark.retained_row >= vp_top {
-                if mark.retained_row > vp_top && idx > 0 {
-                    candidate_mark = Some(&marks[idx - 1]);
-                }
-                break;
-            }
-            if idx == marks.len() - 1 {
-                candidate_mark = Some(mark);
-            }
+        if vp_top >= total_retained {
+            return None;
         }
 
-        let mark = candidate_mark?;
-        let rec = self.commands.get(mark.command_id)?;
+        // Find which command's output spans vp_top.
+        // 1. Check if vp_top is directly owned by a command.
+        // 2. If not, look backward from vp_top to find the most recent command owner.
+        // 3. If none found earlier, check if a command is currently running.
+        let mut candidate_id = match self.primary.retained_owner(vp_top) {
+            crate::grid::RowOwner::Command(id) => Some(id),
+            _ => {
+                let mut found = None;
+                for r in (0..vp_top).rev() {
+                    if let crate::grid::RowOwner::Command(id) = self.primary.retained_owner(r) {
+                        found = Some(id);
+                        break;
+                    }
+                }
+                found
+            }
+        };
+
+        if candidate_id.is_none() {
+            candidate_id = self.commands.running();
+        }
+
+        let cmd_id = candidate_id?;
+        let rec = self.commands.get(cmd_id)?;
         let command_text = rec.input.as_ref()?.trim();
         if command_text.is_empty() {
             return None;
         }
 
-        // Verify that vp_top does not exceed the command's output range.
-        let total_retained = self.primary.retained_rows();
-        let mut next_prompt = None;
-        let mut max_r = mark.retained_row;
-        for r in (mark.retained_row + 1)..total_retained {
-            if self.primary.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt {
-                next_prompt = Some(r);
-                break;
+        let first = self.primary.first_retained_line();
+        let prompt_retained_row = match rec.prompt_line {
+            Some(prompt_line) if prompt_line >= first => {
+                let r = (prompt_line - first) as usize;
+                if r < total_retained {
+                    Some(r)
+                } else {
+                    None
+                }
             }
-            if self.primary.retained_owner(r) == crate::grid::RowOwner::Command(mark.command_id) {
-                max_r = r;
-            }
+            _ => None,
+        };
+
+        // If the prompt line is still retained and visible on screen (at or below vp_top),
+        // the command is not pinned.
+        if prompt_retained_row.is_some_and(|p_row| p_row >= vp_top) {
+            return None;
         }
 
-        if rec.status != crate::terminal::commands::CommandStatus::Running && max_r == mark.retained_row {
-            // Zero output was produced by this command.
-            return None;
+        let mut max_r = None;
+        for r in 0..total_retained {
+            if self.primary.retained_owner(r) == crate::grid::RowOwner::Command(cmd_id) {
+                max_r = Some(r);
+            }
         }
 
         let last_output_row = match rec.status {
@@ -1959,11 +1977,11 @@ impl Terminal {
                 (sb_len + self.cursor.row).min(total_retained.saturating_sub(1))
             }
             _ => {
-                if let Some(p) = next_prompt {
-                    p.saturating_sub(1)
-                } else {
-                    max_r
-                }
+                let Some(max) = max_r else {
+                    // Zero output was produced by this completed command.
+                    return None;
+                };
+                max
             }
         };
 
@@ -1971,12 +1989,22 @@ impl Terminal {
             return None;
         }
 
+        let p_row = prompt_retained_row.unwrap_or(0);
+        let p_line = rec.prompt_line.unwrap_or(first);
+
+        let status = match rec.status {
+            crate::terminal::commands::CommandStatus::Running => CommandMarkStatus::Running,
+            crate::terminal::commands::CommandStatus::Completed(Some(0)) => CommandMarkStatus::Success,
+            crate::terminal::commands::CommandStatus::Completed(code) => CommandMarkStatus::Error(code),
+            crate::terminal::commands::CommandStatus::Abandoned => CommandMarkStatus::Error(None),
+        };
+
         Some(StickyCommandHeader {
-            command_id: mark.command_id,
+            command_id: cmd_id,
             command: command_text.to_string(),
-            prompt_line: mark.prompt_line,
-            prompt_retained_row: mark.retained_row,
-            status: mark.status,
+            prompt_line: p_line,
+            prompt_retained_row: p_row,
+            status,
         })
     }
 

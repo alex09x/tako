@@ -1122,8 +1122,59 @@ fn sticky_command_header_running_command() {
     assert!(t.sticky_command_header().is_none());
 }
 
+#[test]
+fn sticky_command_header_unowned_text_between_commands_suppresses_header() {
+    let mut t = Terminal::new(30, 10);
+    // Command 1: prompt at row 0, 20 lines of output, ends with 133;D
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07git log\r\n\x1b]133;C\x07");
+    for i in 1..=20 {
+        t.feed(format!("commit {}\r\n", i).as_bytes());
+    }
+    t.feed(b"\x1b]133;D;0\x07");
 
+    // Shell hook prints 12 unowned lines (not wrapped in 133;C/D)
+    for i in 1..=12 {
+        t.feed(format!("hook line {}\r\n", i).as_bytes());
+    }
 
+    // Prompt 2 starts
+    t.feed(b"\x1b]133;A\x07$ ");
 
+    // While sitting at bottom (scrollback_offset == 0), the visible viewport spans
+    // the unowned hook lines and prompt 2. vp_top is past the last row of "git log".
+    assert!(
+        t.sticky_command_header().is_none(),
+        "unowned shell hook text after 133;D must not show the previous command header"
+    );
 
+    // Scroll up into git log's output:
+    // Scroll back by 10 lines:
+    t.scroll_viewport_up(10);
+    let header = t.sticky_command_header().expect("should pin git log when scrolled into its output");
+    assert_eq!(header.command, "git log");
+}
 
+#[test]
+fn sticky_command_header_preserves_header_when_prompt_evicted_from_scrollback() {
+    // 5 lines viewport, 10 lines scrollback limit
+    let mut t = Terminal::with_scrollback(30, 5, 10);
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07cargo test\r\n\x1b]133;C\x07");
+    for i in 1..=30 {
+        t.feed(format!("test line {}\r\n", i).as_bytes());
+    }
+    t.feed(b"\x1b]133;D;0\x07");
+
+    // The prompt line (line 0) was evicted because 30 lines exceeded the 10-line scrollback capacity:
+    assert!(t.first_retained_line() > 0, "prompt line must have been evicted");
+    assert!(t.command_marks().is_empty(), "command_marks must omit evicted prompt");
+
+    // Scroll up into retained scrollback:
+    t.scroll_viewport_up(8);
+    let header = t.sticky_command_header().expect("header must be preserved even when prompt is evicted");
+    assert_eq!(header.command, "cargo test");
+    assert_eq!(header.prompt_retained_row, 0, "evicted prompt falls back to row 0");
+
+    // Click jump to prompt (row 0):
+    assert!(t.scroll_to_prompt(header.prompt_retained_row));
+    assert_eq!(t.viewport_offset(), 10, "scrolled to top of retained scrollback");
+}

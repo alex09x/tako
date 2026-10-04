@@ -177,5 +177,62 @@ final class StickyCommandHeaderTests: XCTestCase {
         XCTAssertNil(view.currentStickyCommandHeader())
         XCTAssertTrue(view.stickyHeaderLayer.isHidden)
     }
+
+    func testStickyCommandHeaderSuppressedOnUnownedShellHookText() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // Command 1: prompt at row 0, 20 lines of output, completed with 133;D
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}git log\r\n\u{1b}]133;C\u{07}"
+        for i in 1...20 {
+            input += "commit \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+
+        // Shell hook prints unowned lines (not wrapped in 133;C/D)
+        for i in 1...50 {
+            input += "hook line \(i)\r\n"
+        }
+
+        // Prompt 2 starts
+        input += "\u{1b}]133;A\u{07}$ "
+        view.feed(data: Data(input.utf8))
+
+        // While sitting at bottom, viewport spans unowned hook lines and prompt 2.
+        // It must NOT show the previous command header.
+        XCTAssertNil(view.currentStickyCommandHeader(), "unowned shell hook text after 133;D must not show previous command header")
+
+        // Scroll back up into git log's output:
+        view.scrollViewportUp(lines: 40)
+        let header = view.currentStickyCommandHeader()
+        XCTAssertNotNil(header, "should pin git log when scrolled into its output")
+        XCTAssertEqual(header?.command, "git log")
+    }
+
+    func testStickyCommandHeaderPreservedWhenPromptEvicted() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        view.core.setScrollbackLimit(lines: 10)
+
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}cargo test\r\n\u{1b}]133;C\u{07}"
+        for i in 1...60 {
+            input += "test line \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        // Prompt line (line 0) was evicted because 60 lines exceeded scrollback capacity
+        XCTAssertGreaterThan(view.core.firstRetainedLine(), 0, "prompt line must have been evicted")
+        XCTAssertTrue(view.core.commandMarks().isEmpty, "commandMarks must omit evicted prompt")
+
+        // Scroll up into retained scrollback
+        view.scrollViewportUp(lines: 8)
+        let header = view.currentStickyCommandHeader()
+        XCTAssertNotNil(header, "header must be preserved even when prompt is evicted")
+        XCTAssertEqual(header?.command, "cargo test")
+        XCTAssertEqual(header?.promptRetainedRow, 0, "evicted prompt falls back to row 0")
+
+        // Jump to prompt
+        view.jumpToPrompt(retainedRow: header!.promptRetainedRow)
+        XCTAssertEqual(view.viewportOffset, view.scrollbackLength, "scrolled to top of retained scrollback")
+    }
 }
 #endif
+
