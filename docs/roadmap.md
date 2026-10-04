@@ -680,7 +680,9 @@ matching marks on the scrollbar, plus marks for search hits.
 Done when marks match exit status exactly, appear only where OSC 133 reported a command, and can
 be turned off.
 
-### [ ] E3. Sticky command header
+### [x] E3. Sticky command header
+
+Status: shipped in [PR #14](https://github.com/alex09x/tako/pull/14).
 
 While scrolling through a long output, the command that produced it stays pinned at the top of the
 pane; clicking it jumps to the prompt.
