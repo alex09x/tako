@@ -14,11 +14,11 @@
 //!   and partial UTF-8 multi-byte sequences).
 //! - Viewport offset, title, title stack, palette, and Kitty keyboard state.
 //!
-//! Wire format specification (Version 4):
+//! Wire format specification (Version 5):
 //! - Header (20 bytes):
 //!   - `magic`: `[u8; 4]` = `b"TKCK"`
-//!   - `version`: `u32` (little-endian, 4; versions 1 to 3 are still
-//!     readable, and 2 or 3 can still be written for a peer that reads no
+//!   - `version`: `u32` (little-endian, 5; versions 1 to 4 are still
+//!     readable, and 2, 3 or 4 can still be written for a peer that reads no
 //!     newer)
 //!   - `flags`: `u32` (little-endian, 0)
 //!   - `payload_len`: `u32` (little-endian)
@@ -49,9 +49,16 @@
 //! status, cwd, command line and start time -- then the last OSC 7 report and
 //! where the command line being typed starts. Older versions carry none of
 //! it: their rows are owned by no command.
+//!
+//! Version 5 is version 4 with retained scrollback semantic prompt marks
+//! (OSC 133 prompt markers preserved when rows enter scrollback history).
+//! Older versions initialize restored scrollback semantic marks to Unset.
 
 use std::collections::HashMap;
 
+use super::commands::{
+    CommandLog, CommandRecord, CommandStatus, MAX_COMMAND_RECORDS, MAX_CWD_BYTES,
+};
 use super::{
     Cursor, DcsKind, GraphemeWidthMethod, GraphicsPlacement, ProtectedMode, SavedCursor,
     ScreenBuffer, SemanticContent, Terminal,
@@ -66,10 +73,9 @@ use crate::parser::{Parser, ParserSnapshot, State};
 use crate::response::ResponseQueue;
 use crate::tabstops::TabStops;
 use crate::title_stack::TitleStack;
-use super::commands::{CommandLog, CommandRecord, CommandStatus, MAX_COMMAND_RECORDS, MAX_CWD_BYTES};
 
 pub const MAGIC: [u8; 4] = *b"TKCK";
-pub const CURRENT_VERSION: u32 = 4;
+pub const CURRENT_VERSION: u32 = 5;
 
 /// The oldest container this build can write, for [`export_version`]. Version
 /// 1 is readable but no longer written: it carried the selection.
@@ -187,15 +193,27 @@ pub enum CheckpointError {
     UnexpectedEof,
     InvalidMagic,
     UnsupportedVersion(u32),
-    ChecksumMismatch { expected: u32, got: u32 },
-    InvalidPayloadLength { declared: usize, actual: usize },
+    ChecksumMismatch {
+        expected: u32,
+        got: u32,
+    },
+    InvalidPayloadLength {
+        declared: usize,
+        actual: usize,
+    },
     InvalidData(&'static str),
-    DimensionOutOfBounds { cols: usize, rows: usize },
+    DimensionOutOfBounds {
+        cols: usize,
+        rows: usize,
+    },
     AllocationLimitExceeded,
     /// The state does not fit the declared limits. Returned by export, which
     /// refuses rather than emitting a checkpoint that could not be imported
     /// back, and by import for a payload over the wire cap.
-    TooLarge { size: u64, limit: u64 },
+    TooLarge {
+        size: u64,
+        limit: u64,
+    },
 }
 
 impl std::fmt::Display for CheckpointError {
@@ -205,10 +223,16 @@ impl std::fmt::Display for CheckpointError {
             Self::InvalidMagic => write!(f, "invalid checkpoint magic"),
             Self::UnsupportedVersion(v) => write!(f, "unsupported checkpoint version: {v}"),
             Self::ChecksumMismatch { expected, got } => {
-                write!(f, "checkpoint CRC32 mismatch: expected {expected:#x}, got {got:#x}")
+                write!(
+                    f,
+                    "checkpoint CRC32 mismatch: expected {expected:#x}, got {got:#x}"
+                )
             }
             Self::InvalidPayloadLength { declared, actual } => {
-                write!(f, "invalid payload length: declared {declared}, actual {actual}")
+                write!(
+                    f,
+                    "invalid payload length: declared {declared}, actual {actual}"
+                )
             }
             Self::InvalidData(msg) => write!(f, "invalid checkpoint data: {msg}"),
             Self::DimensionOutOfBounds { cols, rows } => {
@@ -660,7 +684,9 @@ impl<'a> Reader<'a> {
             }
         }
         if cells.len() != expected_len {
-            return Err(CheckpointError::InvalidData("cells decoded length mismatch"));
+            return Err(CheckpointError::InvalidData(
+                "cells decoded length mismatch",
+            ));
         }
         Ok(cells)
     }
@@ -812,9 +838,8 @@ fn allocation_cost(term: &Terminal, version: u32) -> u64 {
         bytes = bytes.saturating_add(k.len() as u64);
     }
     bytes = bytes.saturating_add(term.title.len() as u64);
-    bytes = bytes.saturating_add(
-        (term.title_stack.items().len() as u64).saturating_mul(STRING_SPINE),
-    );
+    bytes =
+        bytes.saturating_add((term.title_stack.items().len() as u64).saturating_mul(STRING_SPINE));
     for item in term.title_stack.items() {
         bytes = bytes.saturating_add(item.len() as u64);
     }
@@ -823,13 +848,9 @@ fn allocation_cost(term: &Terminal, version: u32) -> u64 {
     );
     bytes = bytes.saturating_add(term.answerback.len() as u64);
     bytes = bytes.saturating_add(term.xtversion.len() as u64);
-    bytes = bytes.saturating_add(
-        (term.graphics_placements.len() as u64).saturating_mul(PLACEMENT_SPINE),
-    );
-    bytes = bytes.saturating_add(map_spine(
-        term.graphics.images().len() as u64,
-        IMAGE_ENTRY,
-    ));
+    bytes = bytes
+        .saturating_add((term.graphics_placements.len() as u64).saturating_mul(PLACEMENT_SPINE));
+    bytes = bytes.saturating_add(map_spine(term.graphics.images().len() as u64, IMAGE_ENTRY));
     for img in term.graphics.images().values() {
         bytes = bytes.saturating_add(img.pixels.len() as u64);
     }
@@ -843,7 +864,8 @@ fn allocation_cost(term: &Terminal, version: u32) -> u64 {
     if version >= 4 {
         let block = CommandBlock::of(term);
         bytes = bytes.saturating_add((block.runs.len() as u64).saturating_mul(OWNER_RUN_SPINE));
-        bytes = bytes.saturating_add((block.records.len() as u64).saturating_mul(COMMAND_RECORD_SPINE));
+        bytes =
+            bytes.saturating_add((block.records.len() as u64).saturating_mul(COMMAND_RECORD_SPINE));
         for rec in &block.records {
             bytes = bytes.saturating_add(rec.cwd.as_ref().map_or(0, |c| c.len() as u64));
             bytes = bytes.saturating_add(rec.input.as_ref().map_or(0, |i| i.len() as u64));
@@ -902,9 +924,7 @@ pub fn retained_cost(term: &Terminal) -> u64 {
     total = total.saturating_add(term.xtversion.capacity() as u64);
     total = total.saturating_add(term.dcs_buf.capacity() as u64);
 
-    total = total.saturating_add(
-        (term.hyperlinks.capacity() as u64).saturating_mul(STRING_SPINE),
-    );
+    total = total.saturating_add((term.hyperlinks.capacity() as u64).saturating_mul(STRING_SPINE));
     for h in &term.hyperlinks {
         total = total.saturating_add(h.capacity() as u64);
     }
@@ -1020,7 +1040,11 @@ pub fn measure_limited(term: &Terminal, max_bytes: u64) -> Result<u64, Checkpoin
 }
 
 /// [`measure_limited`] for the container [`export_version`] would write.
-pub fn measure_version(term: &Terminal, version: u32, max_bytes: u64) -> Result<u64, CheckpointError> {
+pub fn measure_version(
+    term: &Terminal,
+    version: u32,
+    max_bytes: u64,
+) -> Result<u64, CheckpointError> {
     let version = export_target(version)?;
     let limit = effective_limit(max_bytes);
     Ok(encode(term, limit, false, version)?.count as u64)
@@ -1051,7 +1075,12 @@ fn effective_limit(max_bytes: u64) -> u64 {
 ///
 /// Every refusal an export can make is made here, so a measurement and an
 /// export of the same terminal agree on success, on failure, and on the size.
-fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Writer, CheckpointError> {
+fn encode(
+    term: &Terminal,
+    limit: u64,
+    retain: bool,
+    version: u32,
+) -> Result<Writer, CheckpointError> {
     // Export refuses exactly what import refuses. A terminal may legally be
     // wider or taller than `MAX_DIM` -- nothing here resizes it -- but a
     // checkpoint of one could never be read back, and a success return on an
@@ -1098,10 +1127,10 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
     w.write_bool(term.pending_wrap);
 
     // Primary Grid
-    write_grid(&mut w, &term.primary, rows);
+    write_grid(&mut w, &term.primary, rows, version);
 
     // Alternate Grid
-    write_grid(&mut w, &term.alternate, rows);
+    write_grid(&mut w, &term.alternate, rows, version);
 
     // Cursor
     w.write_u32(term.cursor.row as u32);
@@ -1161,31 +1190,63 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
     // Terminal Modes
     let m = &term.modes;
     let mut mode_flags = 0u32;
-    if m.autowrap { mode_flags |= 1 << 0; }
-    if m.origin_mode { mode_flags |= 1 << 1; }
-    if m.cursor_key_app_mode { mode_flags |= 1 << 2; }
-    if m.mouse_utf8 { mode_flags |= 1 << 3; }
-    if m.mouse_sgr { mode_flags |= 1 << 4; }
-    if m.focus_events { mode_flags |= 1 << 5; }
-    if m.bracketed_paste { mode_flags |= 1 << 6; }
-    if m.insert { mode_flags |= 1 << 7; }
-    if m.linefeed_mode { mode_flags |= 1 << 8; }
-    if m.reverse_wrap { mode_flags |= 1 << 9; }
-    if m.reverse_wrap_extended { mode_flags |= 1 << 10; }
-    if m.left_right_margin_mode { mode_flags |= 1 << 11; }
-    if m.alternate_scroll { mode_flags |= 1 << 12; }
-    if m.synchronized_output { mode_flags |= 1 << 13; }
+    if m.autowrap {
+        mode_flags |= 1 << 0;
+    }
+    if m.origin_mode {
+        mode_flags |= 1 << 1;
+    }
+    if m.cursor_key_app_mode {
+        mode_flags |= 1 << 2;
+    }
+    if m.mouse_utf8 {
+        mode_flags |= 1 << 3;
+    }
+    if m.mouse_sgr {
+        mode_flags |= 1 << 4;
+    }
+    if m.focus_events {
+        mode_flags |= 1 << 5;
+    }
+    if m.bracketed_paste {
+        mode_flags |= 1 << 6;
+    }
+    if m.insert {
+        mode_flags |= 1 << 7;
+    }
+    if m.linefeed_mode {
+        mode_flags |= 1 << 8;
+    }
+    if m.reverse_wrap {
+        mode_flags |= 1 << 9;
+    }
+    if m.reverse_wrap_extended {
+        mode_flags |= 1 << 10;
+    }
+    if m.left_right_margin_mode {
+        mode_flags |= 1 << 11;
+    }
+    if m.alternate_scroll {
+        mode_flags |= 1 << 12;
+    }
+    if m.synchronized_output {
+        mode_flags |= 1 << 13;
+    }
     // XTSHIFTESCAPE: whether a program asked (14), and what (15). A reader
     // that predates the bits ignores them, which is what it did before.
     if let Some(capture) = m.shift_capture {
         mode_flags |= 1 << 14;
-        if capture { mode_flags |= 1 << 15; }
+        if capture {
+            mode_flags |= 1 << 15;
+        }
     }
     // XTMODKEYS modifyOtherKeys level, 0-2, in bits 16 and 17; ignored the
     // same way by a reader that predates them.
     mode_flags |= u32::from(m.modify_other_keys.min(2)) << 16;
     // Mode 2031 (colour scheme updates) in bit 18.
-    if m.color_scheme_updates { mode_flags |= 1 << 18; }
+    if m.color_scheme_updates {
+        mode_flags |= 1 << 18;
+    }
     w.write_u32(mode_flags);
     w.write_u8(match m.mouse_tracking {
         MouseTracking::Off => 0,
@@ -1348,8 +1409,10 @@ fn encode(term: &Terminal, limit: u64, retain: bool, version: u32) -> Result<Wri
 
     let pending = term.graphics.pending();
     w.write_u32(pending.len() as u32);
-    let mut pending_entries: Vec<(&crate::graphics::ChunkKey, &crate::graphics::PendingTransfer)> =
-        pending.iter().collect();
+    let mut pending_entries: Vec<(
+        &crate::graphics::ChunkKey,
+        &crate::graphics::PendingTransfer,
+    )> = pending.iter().collect();
     pending_entries.sort_by_key(|(k, _)| match k {
         crate::graphics::ChunkKey::Anonymous => (0, 0),
         crate::graphics::ChunkKey::Image(id) => (1, *id),
@@ -1473,7 +1536,11 @@ fn write_opt_string(w: &mut Writer, v: Option<&str>) {
 }
 
 fn read_opt_string(r: &mut Reader<'_>) -> Result<Option<String>, CheckpointError> {
-    if r.read_bool()? { Ok(Some(r.read_string_budgeted()?)) } else { Ok(None) }
+    if r.read_bool()? {
+        Ok(Some(r.read_string_budgeted()?))
+    } else {
+        Ok(None)
+    }
 }
 
 /// What v4 writes about commands: the owner runs, and only the records some
@@ -1552,7 +1619,11 @@ struct CommandState {
 /// [`write_commands`]' block. The runs must cover the grid's retained rows
 /// exactly; every owner must name a record; the pen must be the running
 /// command. Anything else is corrupt.
-fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) -> Result<CommandState, CheckpointError> {
+fn read_commands(
+    r: &mut Reader<'_>,
+    grid: &mut Grid,
+    written_history: usize,
+) -> Result<CommandState, CheckpointError> {
     let bad = CheckpointError::InvalidData;
     let run_count = r.read_u32()? as usize;
     // tag, id, length: 13 bytes each.
@@ -1613,13 +1684,18 @@ fn read_commands(r: &mut Reader<'_>, grid: &mut Grid, written_history: usize) ->
         let input = read_opt_string(r)?;
         let input_truncated = r.read_bool()?;
         let started_at_ms = read_opt_u64(r)?;
-        records.push(CommandRecord { id, status, cwd, input, input_truncated, started_at_ms });
+        records.push(CommandRecord {
+            id,
+            status,
+            cwd,
+            input,
+            input_truncated,
+            started_at_ms,
+        });
     }
     for (owner, _) in &runs {
-        if let RowOwner::Command(id) = *owner {
-            if id == 0 || next_id.is_some_and(|n| id >= n) {
-                return Err(bad("invalid row owner id"));
-            }
+        if matches!(*owner, RowOwner::Command(id) if id == 0 || next_id.is_some_and(|n| id >= n)) {
+            return Err(bad("invalid row owner id"));
         }
     }
     let log = CommandLog::from_parts(records, next_id, running).map_err(bad)?;
@@ -1724,7 +1800,9 @@ fn read_clusters(r: &mut Reader<'_>, grid: &mut Grid) -> Result<(), CheckpointEr
         let extra = r.read_string_budgeted()?;
         let wide = r.read_bool()?;
         if !grid.restore_cluster(line, col, &extra, wide) {
-            return Err(CheckpointError::InvalidData("grapheme cluster names no cell"));
+            return Err(CheckpointError::InvalidData(
+                "grapheme cluster names no cell",
+            ));
         }
     }
     Ok(())
@@ -1787,12 +1865,19 @@ fn read_host_config(r: &mut Reader<'_>) -> Result<HostConfig, CheckpointError> {
 /// deep-cloned every cell and every scrollback row first, which doubled the
 /// peak heap of an export and -- worse -- made a size query that keeps nothing
 /// still pay for a full copy of the state it was only measuring.
-fn write_grid(w: &mut Writer, grid: &crate::grid::Grid, rows: usize) {
+fn write_grid(w: &mut Writer, grid: &crate::grid::Grid, rows: usize, version: u32) {
     w.write_u32(grid.scrollback_capacity() as u32);
     w.write_u64(grid.history_evicted() as u64);
     w.write_u32(grid.scrollback_rows().len() as u32);
     for row in grid.scrollback_rows() {
         w.write_bool(row.wrapped);
+        if version >= 5 {
+            w.write_u8(match row.semantic {
+                SemanticPrompt::Unset => 0,
+                SemanticPrompt::Prompt => 1,
+                SemanticPrompt::PromptContinuation => 2,
+            });
+        }
         w.write_u32(row.cells.len() as u32);
         w.write_cells(&row.cells);
     }
@@ -1905,6 +1990,16 @@ pub fn import_traced_reserving(
     let mut prim_sb = Vec::with_capacity(prim_sb_len);
     for _ in 0..prim_sb_len {
         let wrapped = r.read_bool()?;
+        let semantic = if version >= 5 {
+            match r.read_u8()? {
+                0 => SemanticPrompt::Unset,
+                1 => SemanticPrompt::Prompt,
+                2 => SemanticPrompt::PromptContinuation,
+                _ => return Err(CheckpointError::InvalidData("invalid semantic prompt")),
+            }
+        } else {
+            SemanticPrompt::Unset
+        };
         let cells_len = r.read_u32()? as usize;
         if cells_len > MAX_DIM {
             return Err(CheckpointError::AllocationLimitExceeded);
@@ -1916,13 +2011,17 @@ pub fn import_traced_reserving(
             cells,
             wrapped,
             owner,
-            semantic: SemanticPrompt::Unset,
+            semantic,
         });
     }
     // The whole visible grid, charged before a single row is decoded: run
     // length encoding means three payload bytes can declare ten thousand
     // cells, so the payload length is no bound on the heap at all.
-    r.charge((rows as u64).saturating_mul(cols as u64).saturating_mul(CELL_BYTES))?;
+    r.charge(
+        (rows as u64)
+            .saturating_mul(cols as u64)
+            .saturating_mul(CELL_BYTES),
+    )?;
     r.charge_spine(rows, GRID_ROW_SPINE)?;
     let mut prim_cells = Vec::with_capacity(rows);
     let mut prim_wrapped = Vec::with_capacity(rows);
@@ -1963,6 +2062,16 @@ pub fn import_traced_reserving(
     let mut alt_sb = Vec::with_capacity(alt_sb_len);
     for _ in 0..alt_sb_len {
         let wrapped = r.read_bool()?;
+        let semantic = if version >= 5 {
+            match r.read_u8()? {
+                0 => SemanticPrompt::Unset,
+                1 => SemanticPrompt::Prompt,
+                2 => SemanticPrompt::PromptContinuation,
+                _ => return Err(CheckpointError::InvalidData("invalid semantic prompt")),
+            }
+        } else {
+            SemanticPrompt::Unset
+        };
         let cells_len = r.read_u32()? as usize;
         if cells_len > MAX_DIM {
             return Err(CheckpointError::AllocationLimitExceeded);
@@ -1974,10 +2083,14 @@ pub fn import_traced_reserving(
             cells,
             wrapped,
             owner,
-            semantic: SemanticPrompt::Unset,
+            semantic,
         });
     }
-    r.charge((rows as u64).saturating_mul(cols as u64).saturating_mul(CELL_BYTES))?;
+    r.charge(
+        (rows as u64)
+            .saturating_mul(cols as u64)
+            .saturating_mul(CELL_BYTES),
+    )?;
     r.charge_spine(rows, GRID_ROW_SPINE)?;
     let mut alt_cells = Vec::with_capacity(rows);
     let mut alt_wrapped = Vec::with_capacity(rows);
@@ -2144,7 +2257,9 @@ pub fn import_traced_reserving(
     };
     let inter_len = r.read_u8()? as usize;
     if inter_len > 16 {
-        return Err(CheckpointError::InvalidData("too many parser intermediates"));
+        return Err(CheckpointError::InvalidData(
+            "too many parser intermediates",
+        ));
     }
     let inter_bytes = r.read_exact_bytes(inter_len)?;
     let intermediates = smallvec::SmallVec::from_slice(inter_bytes);
@@ -2462,7 +2577,10 @@ pub fn import_traced_reserving(
     } else {
         // A style other than the power-on one was a program's; the host sets
         // its default again.
-        let restored = CursorStyle { shape: cursor_shape, blinking: cursor_blinking };
+        let restored = CursorStyle {
+            shape: cursor_shape,
+            blinking: cursor_blinking,
+        };
         (CursorStyle::new(), restored != CursorStyle::new())
     };
 
@@ -2539,7 +2657,13 @@ mod command_block_tests {
     /// cwd, no input, not truncated, no time.
     struct Rec(u64, u8, i32);
 
-    fn block(runs: &[(u8, u64, u32)], pen: Option<u64>, next: Option<u64>, running: Option<u64>, recs: &[Rec]) -> Vec<u8> {
+    fn block(
+        runs: &[(u8, u64, u32)],
+        pen: Option<u64>,
+        next: Option<u64>,
+        running: Option<u64>,
+        recs: &[Rec],
+    ) -> Vec<u8> {
         let mut w = Writer::with_capacity(256, usize::MAX);
         w.write_u32(runs.len() as u32);
         for &(tag, id, n) in runs {
@@ -2578,7 +2702,13 @@ mod command_block_tests {
 
     #[test]
     fn a_consistent_block_decodes_and_applies_its_owners() {
-        let bytes = block(&[(3, 1, 1), (0, 0, 1)], Some(1), Some(2), Some(1), &[Rec(1, 0, 0)]);
+        let bytes = block(
+            &[(3, 1, 1), (0, 0, 1)],
+            Some(1),
+            Some(2),
+            Some(1),
+            &[Rec(1, 0, 0)],
+        );
         let mut grid = Grid::new(4, 2);
         let state = read_commands(&mut Reader::new(&bytes), &mut grid, 0).unwrap();
         assert_eq!(grid.row_owner(0), RowOwner::Command(1));
@@ -2591,8 +2721,20 @@ mod command_block_tests {
     fn runs_must_cover_the_rows_exactly_and_be_positive() {
         assert!(rejected(&block(&[(0, 0, 1)], None, Some(1), None, &[])));
         assert!(rejected(&block(&[(0, 0, 3)], None, Some(1), None, &[])));
-        assert!(rejected(&block(&[(0, 0, 2), (0, 0, 0)], None, Some(1), None, &[])));
-        assert!(rejected(&block(&[(0, 0, u32::MAX), (0, 0, u32::MAX)], None, Some(1), None, &[])));
+        assert!(rejected(&block(
+            &[(0, 0, 2), (0, 0, 0)],
+            None,
+            Some(1),
+            None,
+            &[]
+        )));
+        assert!(rejected(&block(
+            &[(0, 0, u32::MAX), (0, 0, u32::MAX)],
+            None,
+            Some(1),
+            None,
+            &[]
+        )));
         assert!(rejected(&block(&[(9, 0, 2)], None, Some(1), None, &[])));
         assert!(rejected(&block(&[(1, 7, 2)], None, Some(1), None, &[])));
     }
@@ -2614,8 +2756,20 @@ mod command_block_tests {
     #[test]
     fn ids_must_be_unique_ascending_and_below_the_next_id() {
         let ok = [(0, 0, 2)];
-        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(2, 1, 0), Rec(2, 1, 0)])));
-        assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(3, 1, 0), Rec(2, 1, 0)])));
+        assert!(rejected(&block(
+            &ok,
+            None,
+            Some(9),
+            None,
+            &[Rec(2, 1, 0), Rec(2, 1, 0)]
+        )));
+        assert!(rejected(&block(
+            &ok,
+            None,
+            Some(9),
+            None,
+            &[Rec(3, 1, 0), Rec(2, 1, 0)]
+        )));
         assert!(rejected(&block(&ok, None, Some(2), None, &[Rec(2, 1, 0)])));
         assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(0, 1, 0)])));
         assert!(rejected(&block(&ok, None, Some(0), None, &[])));
@@ -2628,12 +2782,30 @@ mod command_block_tests {
         let ok = [(0, 0, 2)];
         // Running status without being the running id, and the reverse.
         assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(1, 0, 0)])));
-        assert!(rejected(&block(&ok, Some(1), Some(9), Some(1), &[Rec(1, 3, 0)])));
+        assert!(rejected(&block(
+            &ok,
+            Some(1),
+            Some(9),
+            Some(1),
+            &[Rec(1, 3, 0)]
+        )));
         // Running id with no record.
         assert!(rejected(&block(&ok, Some(4), Some(9), Some(4), &[])));
         // Pen on something other than the running command.
-        assert!(rejected(&block(&ok, None, Some(9), Some(1), &[Rec(1, 0, 0)])));
-        assert!(rejected(&block(&ok, Some(2), Some(9), Some(1), &[Rec(1, 0, 0), Rec(2, 1, 0)])));
+        assert!(rejected(&block(
+            &ok,
+            None,
+            Some(9),
+            Some(1),
+            &[Rec(1, 0, 0)]
+        )));
+        assert!(rejected(&block(
+            &ok,
+            Some(2),
+            Some(9),
+            Some(1),
+            &[Rec(1, 0, 0), Rec(2, 1, 0)]
+        )));
         assert!(rejected(&block(&ok, None, Some(9), None, &[Rec(1, 7, 0)])));
     }
 
@@ -2643,6 +2815,9 @@ mod command_block_tests {
         // Patch the record count (after the run, the pen, next and running).
         let at = 4 + 13 + 9 * 3;
         bytes[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert!(matches!(decode(&bytes), Err(CheckpointError::UnexpectedEof)));
+        assert!(matches!(
+            decode(&bytes),
+            Err(CheckpointError::UnexpectedEof)
+        ));
     }
 }

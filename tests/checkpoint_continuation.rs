@@ -61,23 +61,45 @@ fn test_case_1_prod_vt_snapshot_ansi_preserves_legacy_byte_compatibility() {
     let input = b"xxxxxxxxxxxxxxxxxxxx"; // 20 chars
     prod_vt_write(vt, input.as_ptr(), input.len());
 
-    let mut cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(vt, &mut cursor), 1);
-    assert_eq!((cursor.x, cursor.y), (19, 0), "source cursor must be at col 19, row 0");
+    assert_eq!(
+        (cursor.x, cursor.y),
+        (19, 0),
+        "source cursor must be at col 19, row 0"
+    );
 
-    let snap = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt, o, l)) }.expect("snapshot_ansi");
+    let snap =
+        unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt, o, l)) }.expect("snapshot_ansi");
 
     // Existing Prod contract: prod_vt_snapshot_ansi emits all 6 rows separated by CRLF without
     // omitting trailing blank lines and without appending cursor positioning escape sequences.
     let crlf_count = snap.windows(2).filter(|&w| w == b"\r\n").count();
-    assert_eq!(crlf_count, 5, "legacy snapshot_ansi must emit all rows (5 CRLFs for 6 rows)");
-    assert!(!snap.ends_with(b"H"), "must not append cursor position escape");
-    assert!(!snap.ends_with(b"?25l"), "must not append cursor visibility escape");
+    assert_eq!(
+        crlf_count, 5,
+        "legacy snapshot_ansi must emit all rows (5 CRLFs for 6 rows)"
+    );
+    assert!(
+        !snap.ends_with(b"H"),
+        "must not append cursor position escape"
+    );
+    assert!(
+        !snap.ends_with(b"?25l"),
+        "must not append cursor visibility escape"
+    );
 
     // Replay of pure ANSI lines leaves cursor at (0, 5) — the exact historical baseline in operator finding #1.
     let restored_vt = prod_vt_new(20, 6, 1000);
     prod_vt_write(restored_vt, snap.as_ptr(), snap.len());
-    let mut rest_cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut rest_cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(restored_vt, &mut rest_cursor), 1);
     assert_eq!(
         (rest_cursor.x, rest_cursor.y),
@@ -106,17 +128,30 @@ fn test_case_1_twenty_x_pending_wrap_and_next_y_via_c_abi_snapshot_v2() {
     let input = b"xxxxxxxxxxxxxxxxxxxx"; // 20 chars
     prod_vt_write(vt, input.as_ptr(), input.len());
 
-    let mut cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(vt, &mut cursor), 1);
-    assert_eq!((cursor.x, cursor.y), (19, 0), "source cursor must be at col 19, row 0");
+    assert_eq!(
+        (cursor.x, cursor.y),
+        (19, 0),
+        "source cursor must be at col 19, row 0"
+    );
 
-    let snap = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt, o, l)) }.expect("snapshot_ansi_v2");
+    let snap = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt, o, l)) }
+        .expect("snapshot_ansi_v2");
 
     // Replay snapshot_v2 into a fresh TakoCore
     let restored_vt = prod_vt_new(20, 6, 1000);
     prod_vt_write(restored_vt, snap.as_ptr(), snap.len());
 
-    let mut rest_cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut rest_cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(restored_vt, &mut rest_cursor), 1);
     assert_eq!(
         (rest_cursor.x, rest_cursor.y),
@@ -142,9 +177,13 @@ fn test_case_1_twenty_x_pending_wrap_and_next_y_via_c_abi_snapshot_v2() {
     );
 
     let src_text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt, o, l)) }.unwrap();
-    let rest_text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(restored_vt, o, l)) }.unwrap();
+    let rest_text =
+        unsafe { take_buffer(|o, l| prod_vt_viewport_text(restored_vt, o, l)) }.unwrap();
     assert_eq!(src_text, rest_text);
-    assert_eq!(String::from_utf8(rest_text).unwrap(), "xxxxxxxxxxxxxxxxxxxx\nY");
+    assert_eq!(
+        String::from_utf8(rest_text).unwrap(),
+        "xxxxxxxxxxxxxxxxxxxx\nY"
+    );
 
     prod_vt_free(vt);
     prod_vt_free(restored_vt);
@@ -166,15 +205,24 @@ fn test_case_1_twenty_x_pending_wrap_and_next_y_via_native_checkpoint() {
     prod_vt_write(vt, b"Y".as_ptr(), 1);
     prod_vt_write(restored_vt, b"Y".as_ptr(), 1);
 
-    let mut cur1 = ProdVtCursor { x: 0, y: 0, visible: 0 };
-    let mut cur2 = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut cur1 = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
+    let mut cur2 = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(vt, &mut cur1), 1);
     assert_eq!(prod_vt_cursor_state(restored_vt, &mut cur2), 1);
     assert_eq!((cur1.x, cur1.y), (1, 1));
     assert_eq!((cur2.x, cur2.y), (1, 1));
 
     let src_text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt, o, l)) }.unwrap();
-    let rest_text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(restored_vt, o, l)) }.unwrap();
+    let rest_text =
+        unsafe { take_buffer(|o, l| prod_vt_viewport_text(restored_vt, o, l)) }.unwrap();
     assert_eq!(src_text, rest_text);
 
     prod_vt_free(vt);
@@ -197,20 +245,30 @@ fn test_case_2_258x55_rows_progress_no_extra_history_row() {
     let joined = lines.join("\r\n");
     prod_vt_write(vt, joined.as_bytes().as_ptr(), joined.len());
 
-    let mut scrollbar = ProdVtScrollbar { total: 0, offset: 0, len: 0 };
+    let mut scrollbar = ProdVtScrollbar {
+        total: 0,
+        offset: 0,
+        len: 0,
+    };
     assert_eq!(prod_vt_scrollbar_state(vt, &mut scrollbar), 1);
     assert_eq!(scrollbar.len, 55);
     assert_eq!(scrollbar.total, 55, "initial scrollback must be 0");
 
-    let mut cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+    let mut cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
     assert_eq!(prod_vt_cursor_state(vt, &mut cursor), 1);
     assert_eq!(cursor.y, 54, "cursor row must be 54 (last row)");
     assert_eq!(cursor.x, 2, "cursor col must be 2 after '54'");
 
     // Test native checkpoint, legacy snapshot_ansi, and snapshot_ansi_v2
     let ckpt = unsafe { take_buffer(|o, l| prod_vt_checkpoint(vt, o, l)) }.expect("checkpoint");
-    let snap = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt, o, l)) }.expect("snapshot_ansi");
-    let snap_v2 = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt, o, l)) }.expect("snapshot_ansi_v2");
+    let snap =
+        unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt, o, l)) }.expect("snapshot_ansi");
+    let snap_v2 = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt, o, l)) }
+        .expect("snapshot_ansi_v2");
 
     for (desc, is_ckpt, payload) in [
         ("native_checkpoint", true, ckpt),
@@ -219,21 +277,35 @@ fn test_case_2_258x55_rows_progress_no_extra_history_row() {
     ] {
         let restored_vt = prod_vt_new(258, 55, 10000);
         if is_ckpt {
-            assert_eq!(prod_vt_restore(restored_vt, payload.as_ptr(), payload.len()), 1);
+            assert_eq!(
+                prod_vt_restore(restored_vt, payload.as_ptr(), payload.len()),
+                1
+            );
         } else {
             prod_vt_write(restored_vt, payload.as_ptr(), payload.len());
         }
 
-        let mut rest_cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
+        let mut rest_cursor = ProdVtCursor {
+            x: 0,
+            y: 0,
+            visible: 0,
+        };
         assert_eq!(prod_vt_cursor_state(restored_vt, &mut rest_cursor), 1);
-        assert_ne!(rest_cursor.x, 256, "{desc}: cursor must NOT be at final tab stop 256");
+        assert_ne!(
+            rest_cursor.x, 256,
+            "{desc}: cursor must NOT be at final tab stop 256"
+        );
         assert_eq!(
             (rest_cursor.x, rest_cursor.y),
             (2, 54),
             "{desc}: cursor must be at col 2, row 54"
         );
 
-        let mut rest_bar = ProdVtScrollbar { total: 0, offset: 0, len: 0 };
+        let mut rest_bar = ProdVtScrollbar {
+            total: 0,
+            offset: 0,
+            len: 0,
+        };
         assert_eq!(prod_vt_scrollbar_state(restored_vt, &mut rest_bar), 1);
         assert_eq!(rest_bar.total, 55, "{desc}: restored scrollback must be 0");
 
@@ -524,7 +596,10 @@ fn test_alternate_screen_history_styles_and_viewport() {
 
     assert_eq!(restored.active_screen(), ScreenBuffer::Primary);
     assert_eq!(t.dump_text(), restored.dump_text());
-    assert_eq!(t.active_grid().scrollback_len(), restored.active_grid().scrollback_len());
+    assert_eq!(
+        t.active_grid().scrollback_len(),
+        restored.active_grid().scrollback_len()
+    );
 
     // Viewport scrolling
     t.scroll_viewport_up(3);
@@ -548,7 +623,11 @@ fn test_validation_malformed_and_atomic_rollback() {
     // 1. Truncated buffers
     assert!(!Terminal::verify_checkpoint(&valid_ckpt[..10]));
     assert!(term.import_checkpoint(&valid_ckpt[..10]).is_err());
-    assert_eq!(row_text(&term, 0), "ORIGINAL STATE", "state must be untouched");
+    assert_eq!(
+        row_text(&term, 0),
+        "ORIGINAL STATE",
+        "state must be untouched"
+    );
 
     // 2. Bad magic
     let mut bad_magic = valid_ckpt.clone();
@@ -573,14 +652,30 @@ fn test_validation_malformed_and_atomic_rollback() {
     assert_eq!(row_text(&term, 0), "ORIGINAL STATE");
 
     // 5. C ABI null safety
-    assert_eq!(prod_vt_restore(std::ptr::null_mut(), valid_ckpt.as_ptr(), valid_ckpt.len()), 0);
+    assert_eq!(
+        prod_vt_restore(std::ptr::null_mut(), valid_ckpt.as_ptr(), valid_ckpt.len()),
+        0
+    );
     let vt = prod_vt_new(20, 6, 100);
     assert_eq!(prod_vt_restore(vt, std::ptr::null(), 100), 0);
     assert_eq!(prod_vt_restore(vt, valid_ckpt.as_ptr(), 0), 0);
-    assert_eq!(prod_vt_checkpoint(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()), 0);
+    assert_eq!(
+        prod_vt_checkpoint(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut()
+        ),
+        0
+    );
     assert_eq!(prod_vt_checkpoint_verify(std::ptr::null(), 0), 0);
-    assert_eq!(prod_vt_checkpoint_verify(bad_crc.as_ptr(), bad_crc.len()), 0);
-    assert_eq!(prod_vt_checkpoint_verify(valid_ckpt.as_ptr(), valid_ckpt.len()), 1);
+    assert_eq!(
+        prod_vt_checkpoint_verify(bad_crc.as_ptr(), bad_crc.len()),
+        0
+    );
+    assert_eq!(
+        prod_vt_checkpoint_verify(valid_ckpt.as_ptr(), valid_ckpt.len()),
+        1
+    );
 
     prod_vt_free(vt);
 }
@@ -642,7 +737,10 @@ fn test_kitty_graphics_lossless_checkpoint_continuation() {
     assert_eq!(placements_src[0].image_id, 7);
     assert_eq!(placements_src[0].row, 4);
     assert_eq!(placements_src[0].col, 4);
-    assert_eq!(term.graphics_image(7).unwrap().pixels, pixel_orange.to_vec());
+    assert_eq!(
+        term.graphics_image(7).unwrap().pixels,
+        pixel_orange.to_vec()
+    );
 
     // Export checkpoint
     let ckpt = term.export_checkpoint().unwrap();
@@ -659,7 +757,9 @@ fn test_kitty_graphics_lossless_checkpoint_continuation() {
     assert_eq!(placements_res[0].row, 4);
     assert_eq!(placements_res[0].col, 4);
 
-    let img_res = restored.graphics_image(7).expect("image 7 must be restored");
+    let img_res = restored
+        .graphics_image(7)
+        .expect("image 7 must be restored");
     assert_eq!(img_res.pixels, pixel_orange.to_vec());
     assert_eq!(img_res.width, 1);
     assert_eq!(img_res.height, 1);
@@ -674,7 +774,9 @@ fn test_kitty_graphics_lossless_checkpoint_continuation() {
     apc_chunk2.extend_from_slice(b"\x1b\\");
     restored.feed(&apc_chunk2);
 
-    let img9 = restored.graphics_image(9).expect("image 9 should complete after restore");
+    let img9 = restored
+        .graphics_image(9)
+        .expect("image 9 should complete after restore");
     assert_eq!(img9.pixels, vec![0x11, 0x22, 0x33]);
 
     // Display image 9
@@ -725,8 +827,16 @@ fn test_large_in_flight_osc_round_trips() {
     // 2 MiB payload was neither truncated nor clipped: appending a further
     // marker and the terminator dispatches one whole OSC, printing nothing.
     restored.feed(b"MARKER\x07");
-    assert_eq!(row_text(&restored, 0), "", "the OSC dispatched; nothing was printed");
-    assert_eq!(term.export_checkpoint().unwrap(), ckpt, "export does not mutate");
+    assert_eq!(
+        row_text(&restored, 0),
+        "",
+        "the OSC dispatched; nothing was printed"
+    );
+    assert_eq!(
+        term.export_checkpoint().unwrap(),
+        ckpt,
+        "export does not mutate"
+    );
 }
 
 /// The same for an unchunked Kitty APC transfer past the old 16 MiB ceiling.
@@ -744,7 +854,11 @@ fn test_large_in_flight_apc_round_trips() {
         .expect("an unchunked APC transfer must survive a round trip");
 
     restored.feed(b"\x1b\\");
-    assert_eq!(row_text(&restored, 0), "", "the APC dispatched; nothing was printed");
+    assert_eq!(
+        row_text(&restored, 0),
+        "",
+        "the APC dispatched; nothing was printed"
+    );
 }
 
 /// Export refuses, explicitly and without mutating, when the state cannot be
@@ -813,10 +927,8 @@ fn test_export_refuses_at_a_caller_supplied_cap() {
         unsafe { take_buffer(|o, l| prod_vt_checkpoint_export_limited(vt, 64, o, l)) },
         None
     );
-    let big = unsafe {
-        take_buffer(|o, l| prod_vt_checkpoint_export_limited(vt, 1 << 20, o, l))
-    }
-    .expect("a generous cap exports through the C ABI too");
+    let big = unsafe { take_buffer(|o, l| prod_vt_checkpoint_export_limited(vt, 1 << 20, o, l)) }
+        .expect("a generous cap exports through the C ABI too");
     assert!(Terminal::verify_checkpoint(&big));
     prod_vt_free(vt);
 }
@@ -848,7 +960,11 @@ fn test_forged_tab_cols_is_rejected_before_allocating() {
     // could drift from the format.
     let (_, offsets) = checkpoint::import_traced(&valid).expect("the honest checkpoint imports");
     assert_eq!(
-        u32::from_le_bytes(valid[offsets.tab_cols..offsets.tab_cols + 4].try_into().unwrap()),
+        u32::from_le_bytes(
+            valid[offsets.tab_cols..offsets.tab_cols + 4]
+                .try_into()
+                .unwrap()
+        ),
         200,
         "export writes tab_cols == cols"
     );
@@ -857,7 +973,10 @@ fn test_forged_tab_cols_is_rejected_before_allocating() {
     let mut forged = valid.clone();
     forged[offsets.tab_cols..offsets.tab_cols + 4].copy_from_slice(&30_000u32.to_le_bytes());
     let forged = reseal(forged);
-    assert!(Terminal::verify_checkpoint(&forged), "header and CRC still check out");
+    assert!(
+        Terminal::verify_checkpoint(&forged),
+        "header and CRC still check out"
+    );
 
     let mut dest = Terminal::new(20, 6);
     dest.feed(b"DESTINATION");
@@ -909,7 +1028,10 @@ fn test_forged_scrollback_count_is_bounded_by_the_payload() {
 
     let mut dest = Terminal::new(20, 6);
     dest.feed(b"DESTINATION");
-    assert_eq!(dest.import_checkpoint(&forged), Err(CheckpointError::UnexpectedEof));
+    assert_eq!(
+        dest.import_checkpoint(&forged),
+        Err(CheckpointError::UnexpectedEof)
+    );
     assert_eq!(row_text(&dest, 0), "DESTINATION", "fail-intact");
 }
 
@@ -921,23 +1043,25 @@ fn test_forged_scrollback_count_is_bounded_by_the_payload() {
 fn test_version_negotiation_is_explicit() {
     use tako_core::terminal::checkpoint::CheckpointError;
 
-    assert_eq!(Terminal::checkpoint_version(), 4);
-    // v1 and v2 stay readable -- a peer holding an older container is not
-    // forced to discard it -- while v4 is what this build writes.
+    assert_eq!(Terminal::checkpoint_version(), 5);
+    // v1, v2, v3, and v4 stay readable -- a peer holding an older container is not
+    // forced to discard it -- while v5 is what this build writes.
     assert!(Terminal::checkpoint_supports(1));
     assert!(Terminal::checkpoint_supports(2));
     assert!(Terminal::checkpoint_supports(3));
     assert!(Terminal::checkpoint_supports(4));
+    assert!(Terminal::checkpoint_supports(5));
     assert!(!Terminal::checkpoint_supports(0));
-    assert!(!Terminal::checkpoint_supports(5));
+    assert!(!Terminal::checkpoint_supports(6));
     assert!(!Terminal::checkpoint_supports(u32::MAX));
 
-    assert_eq!(prod_vt_checkpoint_version(), 4);
+    assert_eq!(prod_vt_checkpoint_version(), 5);
     assert_eq!(prod_vt_checkpoint_supports(1), 1);
     assert_eq!(prod_vt_checkpoint_supports(2), 1);
     assert_eq!(prod_vt_checkpoint_supports(3), 1);
     assert_eq!(prod_vt_checkpoint_supports(4), 1);
-    assert_eq!(prod_vt_checkpoint_supports(5), 0);
+    assert_eq!(prod_vt_checkpoint_supports(5), 1);
+    assert_eq!(prod_vt_checkpoint_supports(6), 0);
 
     let mut term = Terminal::new(40, 10);
     term.feed(b"negotiate");
@@ -1047,7 +1171,10 @@ fn test_rejected_import_leaves_the_destination_byte_identical() {
     ];
 
     for (i, blob) in rejects.iter().enumerate() {
-        assert!(dest.import_checkpoint(blob).is_err(), "blob {i} must be rejected");
+        assert!(
+            dest.import_checkpoint(blob).is_err(),
+            "blob {i} must be rejected"
+        );
         assert_eq!(
             dest.export_checkpoint().unwrap(),
             before,
@@ -1104,7 +1231,9 @@ fn test_cell_size_and_allocation_budget_arithmetic() {
     // here.
     let mut big = Terminal::new(1200, 400);
     big.feed(b"large but legal");
-    let ckpt = big.export_checkpoint().expect("1200x400 is inside the budget");
+    let ckpt = big
+        .export_checkpoint()
+        .expect("1200x400 is inside the budget");
     let mut restored = Terminal::new(1200, 400);
     restored.feed(b"the destination this import replaces");
 
@@ -1152,7 +1281,11 @@ fn peak_rss_bytes() -> u64 {
             return 0;
         }
         let raw = usage.ru_maxrss as u64;
-        if cfg!(target_os = "macos") { raw } else { raw * 1024 }
+        if cfg!(target_os = "macos") {
+            raw
+        } else {
+            raw * 1024
+        }
     }
 }
 
@@ -1215,7 +1348,8 @@ fn test_export_cap_covers_the_container_header() {
 
     // 0 is "no caller limit": the library ceiling alone, not a limit of zero.
     assert_eq!(
-        term.export_checkpoint_limited(0).expect("0 means the ceiling"),
+        term.export_checkpoint_limited(0)
+            .expect("0 means the ceiling"),
         full
     );
     // And a cap above the ceiling is clamped to it, not honoured.
@@ -1252,13 +1386,17 @@ fn test_export_cap_covers_the_container_header() {
 #[test]
 fn test_forged_geometry_is_refused_by_the_allocation_budget() {
     use tako_core::terminal::checkpoint::{
-        CheckpointError, CELL_BYTES, MAX_DIM, MAX_IMPORT_ALLOC_BYTES,
+        CELL_BYTES, CheckpointError, MAX_DIM, MAX_IMPORT_ALLOC_BYTES,
     };
 
     let mut term = Terminal::new(80, 24);
     term.feed(b"honest source");
     let valid = term.export_checkpoint().unwrap();
-    assert!(valid.len() < 64 * 1024, "the forgery is tiny: {}", valid.len());
+    assert!(
+        valid.len() < 64 * 1024,
+        "the forgery is tiny: {}",
+        valid.len()
+    );
 
     // cols and rows are the first two u32 of the payload.
     let mut forged = valid.clone();
@@ -1273,7 +1411,10 @@ fn test_forged_geometry_is_refused_by_the_allocation_budget() {
     // The declared grid is within every dimension bound and still far past the
     // memory budget -- which is the whole point of having a separate one.
     let declared = (MAX_DIM as u64) * (MAX_DIM as u64) * CELL_BYTES;
-    assert!(declared > MAX_IMPORT_ALLOC_BYTES, "{declared} vs {MAX_IMPORT_ALLOC_BYTES}");
+    assert!(
+        declared > MAX_IMPORT_ALLOC_BYTES,
+        "{declared} vs {MAX_IMPORT_ALLOC_BYTES}"
+    );
 
     let mut dest = Terminal::new(60, 20);
     dest.feed(b"DESTINATION\r\nsecond line");
@@ -1295,7 +1436,8 @@ fn test_forged_geometry_is_refused_by_the_allocation_budget() {
         dest.import_checkpoint(&forged),
         Err(CheckpointError::AllocationLimitExceeded)
     );
-    dest.import_checkpoint(&valid).expect("the honest checkpoint still imports");
+    dest.import_checkpoint(&valid)
+        .expect("the honest checkpoint still imports");
     assert_eq!(row_text(&dest, 0), "honest source");
 }
 
@@ -1394,12 +1536,7 @@ fn test_export_refuses_geometry_its_own_importer_would_reject() {
 /// coordinates and a `u8` mode. Appending that block, stamping the version
 /// back to 1 and resealing produces a container byte-for-byte identical to
 /// what a v1 build would have emitted for the same terminal.
-fn as_v1_with_selection(
-    v2: &[u8],
-    anchor: (u32, u32),
-    active: (u32, u32),
-    mode: u8,
-) -> Vec<u8> {
+fn as_v1_with_selection(v2: &[u8], anchor: (u32, u32), active: (u32, u32), mode: u8) -> Vec<u8> {
     let mut out = v2.to_vec();
     out.push(1); // selection present
     for v in [anchor.0, anchor.1, active.0, active.1] {
@@ -1423,8 +1560,8 @@ fn as_v1_with_selection(
 /// survives untouched when it fails.
 #[test]
 fn test_selection_does_not_travel_in_a_checkpoint() {
-    use tako_core::terminal::checkpoint::CheckpointError;
     use tako_core::terminal::SelectionMode;
+    use tako_core::terminal::checkpoint::CheckpointError;
 
     let mut source = Terminal::new(40, 6);
     source.feed(b"source line one\r\nsource line two");
@@ -1452,7 +1589,8 @@ fn test_selection_does_not_travel_in_a_checkpoint() {
     dest.extend_selection(1, 9);
     assert!(dest.has_selection());
 
-    dest.import_checkpoint(&blob).expect("the current version imports");
+    dest.import_checkpoint(&blob)
+        .expect("the current version imports");
     assert!(
         !dest.has_selection(),
         "a restored surface has nothing selected: the rows underneath the old \
@@ -1528,7 +1666,7 @@ fn test_selection_does_not_travel_in_a_checkpoint() {
 #[test]
 fn test_container_spines_are_charged_against_the_allocation_budget() {
     use tako_core::terminal::checkpoint::{
-        CheckpointError, CELL_BYTES, GRID_ROW_SPINE, MAX_DIM, MAX_IMPORT_ALLOC_BYTES,
+        CELL_BYTES, CheckpointError, GRID_ROW_SPINE, MAX_DIM, MAX_IMPORT_ALLOC_BYTES,
     };
 
     // The primary grid is charged first and is decoded before the alternate is
@@ -1556,7 +1694,10 @@ fn test_container_spines_are_charged_against_the_allocation_budget() {
     forged[20..24].copy_from_slice(&COLS.to_le_bytes());
     forged[24..28].copy_from_slice(&ROWS.to_le_bytes());
     let forged = reseal(forged);
-    assert!(Terminal::verify_checkpoint(&forged), "still a well-formed container");
+    assert!(
+        Terminal::verify_checkpoint(&forged),
+        "still a well-formed container"
+    );
 
     let mut dest = Terminal::new(60, 20);
     dest.feed(b"DESTINATION");
@@ -1576,7 +1717,7 @@ fn test_container_spines_are_charged_against_the_allocation_budget() {
 #[test]
 fn test_import_cost_counts_the_spines_on_both_sides() {
     use tako_core::terminal::checkpoint::{
-        import_cost, CELL_BYTES, GRID_ROW_SPINE, MAX_IMPORT_ALLOC_BYTES, SCROLLBACK_ROW_SPINE,
+        CELL_BYTES, GRID_ROW_SPINE, MAX_IMPORT_ALLOC_BYTES, SCROLLBACK_ROW_SPINE, import_cost,
     };
 
     let mut bare = Terminal::new(80, 24);
@@ -1617,13 +1758,17 @@ fn test_import_cost_counts_the_spines_on_both_sides() {
     // is what will be charged to rebuild it.
     let blob = scrolled.export_checkpoint().unwrap();
     let mut dest = Terminal::new(10, 4);
-    dest.import_checkpoint(&blob).expect("honest checkpoint imports");
+    dest.import_checkpoint(&blob)
+        .expect("honest checkpoint imports");
     assert_eq!(
         import_cost(&dest),
         scrolled_cost,
         "export and import must agree on what the state costs"
     );
-    assert!(scrolled_cost < MAX_IMPORT_ALLOC_BYTES, "and a real terminal is nowhere near the cap");
+    assert!(
+        scrolled_cost < MAX_IMPORT_ALLOC_BYTES,
+        "and a real terminal is nowhere near the cap"
+    );
 }
 
 /// The two sides of the budget are the same number.
@@ -1662,7 +1807,11 @@ fn test_export_and_import_charge_the_same_budget() {
     // container; assert that rather than trust the escape sequences.
     assert_eq!(term.graphics_placements().len(), 1, "placement vector");
     assert!(term.graphics_image(7).is_some(), "image map");
-    assert!(term.buffer_text().contains("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"), "cluster in buffer");
+    assert!(
+        term.buffer_text()
+            .contains("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"),
+        "cluster in buffer"
+    );
     term.feed(b"\x1b]0;a title that never finish");
 
     let blob = term.export_checkpoint().unwrap();
@@ -1694,7 +1843,7 @@ fn test_export_and_import_charge_the_same_budget() {
 /// is the whole point of refusing early rather than after the fact.
 #[test]
 fn test_import_refuses_when_the_retained_destination_plus_replacement_exceeds_the_budget() {
-    use tako_core::terminal::checkpoint::{import_cost, CheckpointError, MAX_IMPORT_ALLOC_BYTES};
+    use tako_core::terminal::checkpoint::{CheckpointError, MAX_IMPORT_ALLOC_BYTES, import_cost};
 
     // Primary and alternate are both charged, so a cols x rows terminal costs
     // roughly 2 * cols * rows * CELL_BYTES. 10_000 x 420 lands just over half
@@ -1705,7 +1854,9 @@ fn test_import_refuses_when_the_retained_destination_plus_replacement_exceeds_th
     let blob = {
         let mut source = Terminal::new(COLS, ROWS);
         source.feed(b"the replacement state");
-        source.export_checkpoint().expect("a big but legal state exports")
+        source
+            .export_checkpoint()
+            .expect("a big but legal state exports")
     };
 
     let mut dest = Terminal::new(COLS, ROWS);
@@ -1718,7 +1869,10 @@ fn test_import_refuses_when_the_retained_destination_plus_replacement_exceeds_th
     );
 
     let incoming = tako_core::terminal::checkpoint::inspect(&blob).expect("header parses");
-    assert_eq!((incoming.cols as usize, incoming.rows as usize), (COLS, ROWS));
+    assert_eq!(
+        (incoming.cols as usize, incoming.rows as usize),
+        (COLS, ROWS)
+    );
 
     // Each fits; together they do not.
     assert!(
@@ -1814,7 +1968,7 @@ fn test_retained_capacity_outlives_a_logical_clear() {
 #[test]
 fn test_import_counts_storage_the_destination_retained_after_a_logical_clear() {
     use tako_core::terminal::checkpoint::{
-        import_cost, retained_cost, CheckpointError, MAX_IMPORT_ALLOC_BYTES,
+        CheckpointError, MAX_IMPORT_ALLOC_BYTES, import_cost, retained_cost,
     };
 
     // 10_000 x 680, primary and alternate: ~415 MiB decoded, and a container
@@ -1822,7 +1976,9 @@ fn test_import_counts_storage_the_destination_retained_after_a_logical_clear() {
     let blob = {
         let mut source = Terminal::new(10_000, 680);
         source.feed(b"the replacement state");
-        source.export_checkpoint().expect("a big but legal state exports")
+        source
+            .export_checkpoint()
+            .expect("a big but legal state exports")
     };
     let incoming = {
         let mut probe = Terminal::new(10_000, 680);
@@ -1908,9 +2064,7 @@ fn test_import_counts_storage_the_destination_retained_after_a_logical_clear() {
 /// command exit the host never saw.
 #[test]
 fn test_import_counts_the_payloads_of_events_the_host_has_not_collected() {
-    use tako_core::terminal::checkpoint::{
-        retained_cost, CheckpointError, MAX_IMPORT_ALLOC_BYTES,
-    };
+    use tako_core::terminal::checkpoint::{CheckpointError, MAX_IMPORT_ALLOC_BYTES, retained_cost};
 
     const EVENTS: usize = 120;
     const EACH: usize = 1 << 20;
@@ -1934,7 +2088,9 @@ fn test_import_counts_the_payloads_of_events_the_host_has_not_collected() {
     let blob = {
         let mut source = Terminal::new(10_000, 680);
         source.feed(b"the replacement state");
-        source.export_checkpoint().expect("a big but legal state exports")
+        source
+            .export_checkpoint()
+            .expect("a big but legal state exports")
     };
     let incoming = {
         let mut probe = Terminal::new(10_000, 680);
@@ -1951,7 +2107,11 @@ fn test_import_counts_the_payloads_of_events_the_host_has_not_collected() {
     let blind = {
         let mut twin = destination_with_queued_events();
         let collected = twin.take_events();
-        assert_eq!(collected.len(), EVENTS, "the fixture should queue one event per OSC");
+        assert_eq!(
+            collected.len(),
+            EVENTS,
+            "the fixture should queue one event per OSC"
+        );
         drop(collected);
         retained_cost(&twin)
     };

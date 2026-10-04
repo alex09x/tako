@@ -238,8 +238,9 @@ impl std::fmt::Debug for Grid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let cells: Vec<&[Cell]> = (0..self.rows).map(|r| self.row_slice(r)).collect();
         let line_wrapped: Vec<bool> = (0..self.rows).map(|r| self.is_line_wrapped(r)).collect();
-        let row_semantic: Vec<SemanticPrompt> =
-            (0..self.rows).map(|r| self.row_semantic_prompt(r)).collect();
+        let row_semantic: Vec<SemanticPrompt> = (0..self.rows)
+            .map(|r| self.row_semantic_prompt(r))
+            .collect();
         let dirty: Vec<bool> = (0..self.rows).map(|r| self.is_dirty(r)).collect();
         f.debug_struct("Grid")
             .field("cols", &self.cols)
@@ -298,7 +299,10 @@ impl Grid {
     /// Translate a logical row into its slot in the circular row-order map.
     #[inline]
     fn slot(&self, row: usize) -> usize {
-        debug_assert!(row < self.rows, "slot() called with out-of-range logical row");
+        debug_assert!(
+            row < self.rows,
+            "slot() called with out-of-range logical row"
+        );
         let raw = self.row_offset + row;
         if raw >= self.rows {
             raw - self.rows
@@ -319,9 +323,7 @@ impl Grid {
     /// vectors wholesale (resize), where a rotation is free relative to the
     /// work they already do.
     fn normalize(&mut self) {
-        if self.row_offset == 0
-            && self.row_slots.iter().copied().eq(0..self.rows)
-        {
+        if self.row_offset == 0 && self.row_slots.iter().copied().eq(0..self.rows) {
             return;
         }
         debug_assert_eq!(self.cells.len(), self.rows);
@@ -641,13 +643,12 @@ impl Grid {
         let owner = &mut self.row_owner[p];
         *owner = owner.after_write(self.pen_owner);
     }
-
-    /// Every command id a retained row (history or screen) names.
-
-
     /// Owner of the scrollback line at `index` (oldest-first).
     pub fn scrollback_owner(&self, index: usize) -> RowOwner {
-        self.scrollback.get(index).map(|r| r.owner).unwrap_or_default()
+        self.scrollback
+            .get(index)
+            .map(|r| r.owner)
+            .unwrap_or_default()
     }
 
     /// Overwrite the owner of the scrollback line at `index` (oldest-first).
@@ -869,8 +870,7 @@ impl Grid {
             self.line_wrapped[recycled] = false;
             self.row_semantic[recycled] = SemanticPrompt::Unset;
             self.row_owner[recycled] = RowOwner::Empty;
-            self.row_may_have_wide[recycled] =
-                blank.is_wide_spacer || blank.is_wide_spacer_head;
+            self.row_may_have_wide[recycled] = blank.is_wide_spacer || blank.is_wide_spacer_head;
 
             for row in top..bottom {
                 let destination = self.slot(row);
@@ -950,7 +950,13 @@ impl Grid {
         });
     }
 
-    fn push_scrollback(&mut self, line: Vec<Cell>, wrapped: bool, owner: RowOwner) {
+    fn push_scrollback(
+        &mut self,
+        line: Vec<Cell>,
+        wrapped: bool,
+        owner: RowOwner,
+        semantic: SemanticPrompt,
+    ) {
         if self.scrollback_capacity == 0 {
             return;
         }
@@ -962,7 +968,7 @@ impl Grid {
             cells: line,
             wrapped,
             owner,
-            semantic: SemanticPrompt::Unset,
+            semantic,
         });
     }
 
@@ -1055,7 +1061,10 @@ impl Grid {
             return false;
         }
         let idx = len - 1 - index_from_bottom;
-        self.scrollback.get(idx).map(|row| row.wrapped).unwrap_or(false)
+        self.scrollback
+            .get(idx)
+            .map(|row| row.wrapped)
+            .unwrap_or(false)
     }
 
     /// Iterate scrollback lines oldest-first.
@@ -1116,7 +1125,13 @@ impl Grid {
     /// Gives the cell at `line` (numbered as in [`Self::clusters`]) and `col`
     /// the cluster `extra`. False when there is no such cell or no room in
     /// the table, leaving the cell its base character.
-    pub(crate) fn restore_cluster(&mut self, line: usize, col: usize, extra: &str, wide: bool) -> bool {
+    pub(crate) fn restore_cluster(
+        &mut self,
+        line: usize,
+        col: usize,
+        extra: &str,
+        wide: bool,
+    ) -> bool {
         let history = self.scrollback.len();
         let exists = if line < history {
             col < self.scrollback[line].cells.len()
@@ -1233,7 +1248,10 @@ impl Grid {
         }
         line_wrapped.resize(rows, false);
         row_semantic.resize(rows, SemanticPrompt::Unset);
-        let row_owner = visible_cells.iter().map(|r| RowOwner::of_cells(r)).collect();
+        let row_owner = visible_cells
+            .iter()
+            .map(|r| RowOwner::of_cells(r))
+            .collect();
         let dirty = vec![true; rows];
         let mut row_may_have_wide = vec![false; rows];
         for (i, r) in visible_cells.iter().enumerate() {
@@ -1483,7 +1501,12 @@ impl Grid {
         }
 
         for row_data in scrollback_extra {
-            self.push_scrollback(row_data.cells, row_data.wrapped, row_data.owner);
+            self.push_scrollback(
+                row_data.cells,
+                row_data.wrapped,
+                row_data.owner,
+                row_data.semantic,
+            );
         }
 
         final_cursor
@@ -1574,8 +1597,7 @@ impl Grid {
                     .extend(std::iter::repeat_n(SemanticPrompt::Unset, blank_rows));
                 self.row_owner
                     .extend(std::iter::repeat_n(RowOwner::Empty, blank_rows));
-                self.dirty
-                    .extend(std::iter::repeat_n(true, blank_rows));
+                self.dirty.extend(std::iter::repeat_n(true, blank_rows));
                 self.row_may_have_wide
                     .extend(std::iter::repeat_n(false, blank_rows));
                 self.rows = new_rows;
@@ -1585,7 +1607,8 @@ impl Grid {
                 }
                 let new_cursor = cursor.map(|(r, c)| {
                     (
-                        r.saturating_add(restored_count).min(new_rows.saturating_sub(1)),
+                        r.saturating_add(restored_count)
+                            .min(new_rows.saturating_sub(1)),
                         c.min(self.cols.saturating_sub(1)),
                     )
                 });
@@ -1607,8 +1630,7 @@ impl Grid {
                         break;
                     }
                     let has_text = self.row_slice(row).iter().any(|cell| cell.char != '\0');
-                    let has_semantic_mark =
-                        self.row_semantic_prompt(row) != SemanticPrompt::Unset;
+                    let has_semantic_mark = self.row_semantic_prompt(row) != SemanticPrompt::Unset;
                     if has_text || has_semantic_mark {
                         break;
                     }
@@ -1634,7 +1656,8 @@ impl Grid {
                     let line: Vec<Cell> = self.row_slice(row).to_vec();
                     let wrapped = self.is_line_wrapped(row);
                     let owner = self.row_owner(row);
-                    self.push_scrollback(line, wrapped, owner);
+                    let semantic = self.row_semantic_prompt(row);
+                    self.push_scrollback(line, wrapped, owner, semantic);
                 }
                 self.cells.drain(0..remove_top);
                 self.line_wrapped.drain(0..remove_top);
@@ -1725,15 +1748,16 @@ impl Grid {
         }
 
         if let Some(target_offset) = cursor_offset
-            && cursor_pos.is_none() {
-                let extra = target_offset.saturating_sub(logical.len());
-                let current_sub_row = out.len();
-                let current_sub_col = row.len();
-                let total_col = current_sub_col + extra;
-                let sub_row = current_sub_row + total_col / new_cols;
-                let sub_col = total_col % new_cols;
-                cursor_pos = Some((sub_row, sub_col));
-            }
+            && cursor_pos.is_none()
+        {
+            let extra = target_offset.saturating_sub(logical.len());
+            let current_sub_row = out.len();
+            let current_sub_col = row.len();
+            let total_col = current_sub_col + extra;
+            let sub_row = current_sub_row + total_col / new_cols;
+            let sub_col = total_col % new_cols;
+            cursor_pos = Some((sub_row, sub_col));
+        }
 
         if !row.is_empty() {
             row.resize(new_cols, Cell::default());

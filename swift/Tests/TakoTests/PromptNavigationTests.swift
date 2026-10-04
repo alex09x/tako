@@ -136,67 +136,19 @@ struct PromptNavigationTests {
 
         view.feed(data: Data("\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}echo hello\r\n".utf8))
         view.feed(data: Data("\u{1b}]133;C\u{07}hello output\r\n\u{1b}]133;D;0\u{07}".utf8))
+
+        var padding = ""
+        for i in 1...30 {
+            padding += "scroll line \(i)\r\n"
+        }
+        view.feed(data: Data(padding.utf8))
+
         view.feed(data: Data("\u{1b}]133;A\u{07}$ ".utf8))
 
-        // Cmd+Up
-        guard let cmdUpEvent = NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [.command],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: "",
-            charactersIgnoringModifiers: "",
-            isARepeat: false,
-            keyCode: 126
-        ) else {
-            Issue.record("Failed to create Cmd+Up event")
-            return
-        }
-        #expect(view.performKeyEquivalent(with: cmdUpEvent) == true)
-
-        // Cmd+Down
-        guard let cmdDownEvent = NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [.command],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: "",
-            charactersIgnoringModifiers: "",
-            isARepeat: false,
-            keyCode: 125
-        ) else {
-            Issue.record("Failed to create Cmd+Down event")
-            return
-        }
-        #expect(view.performKeyEquivalent(with: cmdDownEvent) == true)
-
-        // Cmd+Shift+A
-        guard let cmdShiftAEvent = NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [.command, .shift],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: "A",
-            charactersIgnoringModifiers: "a",
-            isARepeat: false,
-            keyCode: 0
-        ) else {
-            Issue.record("Failed to create Cmd+Shift+A event")
-            return
-        }
-        #expect(view.performKeyEquivalent(with: cmdShiftAEvent) == true)
-        #expect(view.selectedText == "hello output")
-
-        // Also test direct keyDown
-        view.core.clearSelection()
-        #expect(view.selectedText == nil)
-        view.keyDown(with: cmdShiftAEvent)
+        // Test direct action methods on the view
+        #expect(view.jumpToPreviousPrompt() == true)
+        #expect(view.jumpToNextPrompt() == true)
+        #expect(view.selectCommandOutput() == true)
         #expect(view.selectedText == "hello output")
     }
 
@@ -244,5 +196,38 @@ struct PromptNavigationTests {
         #expect(config.keyboardShortcut(for: "jump_to_prompt:previous") == .init(.upArrow, modifiers: .command))
         #expect(config.keyboardShortcut(for: "jump_to_prompt:next") == .init(.downArrow, modifiers: .command))
         #expect(config.keyboardShortcut(for: "select_command_output") == .init("a", modifiers: [.command, .shift]))
+    }
+
+    // MARK: - 8. Menu Shortcut Sync, Remapping, and Unbinding
+
+    @Test func menuItemsSyncWithConfigurableShortcuts() throws {
+        let manager = Tako.MenuShortcutManager()
+        let prevItem = NSMenuItem(title: "Jump Prev", action: nil, keyEquivalent: "")
+        let nextItem = NSMenuItem(title: "Jump Next", action: nil, keyEquivalent: "")
+        let selectItem = NSMenuItem(title: "Select Output", action: nil, keyEquivalent: "")
+
+        let defaultConfig = Tako.Config()
+        manager.syncMenuShortcut(defaultConfig, action: "jump_to_prompt:previous", menuItem: prevItem)
+        manager.syncMenuShortcut(defaultConfig, action: "jump_to_prompt:next", menuItem: nextItem)
+        manager.syncMenuShortcut(defaultConfig, action: "select_command_output", menuItem: selectItem)
+
+        #expect(prevItem.keyEquivalent == String(utf16CodeUnits: [unichar(NSUpArrowFunctionKey)], count: 1))
+        #expect(prevItem.keyEquivalentModifierMask == .command)
+        #expect(nextItem.keyEquivalent == String(utf16CodeUnits: [unichar(NSDownArrowFunctionKey)], count: 1))
+        #expect(nextItem.keyEquivalentModifierMask == .command)
+        #expect(selectItem.keyEquivalent == "a")
+        #expect(selectItem.keyEquivalentModifierMask == [.command, .shift])
+
+        // Remap jump_to_prompt:previous to cmd+k
+        let remappedConfig = try TemporaryConfig("keybind = cmd+k=jump_to_prompt:previous")
+        manager.syncMenuShortcut(remappedConfig, action: "jump_to_prompt:previous", menuItem: prevItem)
+        #expect(prevItem.keyEquivalent == "k")
+        #expect(prevItem.keyEquivalentModifierMask == .command)
+
+        // Unbind select_command_output
+        let unboundConfig = try TemporaryConfig("keybind = cmd+shift+a=unbind")
+        manager.syncMenuShortcut(unboundConfig, action: "select_command_output", menuItem: selectItem)
+        #expect(selectItem.keyEquivalent == "")
+        #expect(selectItem.keyEquivalentModifierMask.isEmpty)
     }
 }

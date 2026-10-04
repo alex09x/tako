@@ -14,8 +14,8 @@ use crate::response::{self, ResponseQueue};
 use crate::tabstops::TabStops;
 use crate::title_stack::TitleStack;
 
-pub mod checksum;
 pub mod checkpoint;
+pub mod checksum;
 pub mod commands;
 mod dsr;
 mod dump;
@@ -141,19 +141,29 @@ pub enum TerminalEvent {
     /// OSC 52 query: the host should reply with its clipboard contents.
     ClipboardQuery,
     /// OSC 9 / OSC 777;notify desktop notification.
-    Notification { title: String, body: String },
+    Notification {
+        title: String,
+        body: String,
+    },
     /// OSC 7: working-directory URL report.
     PwdChanged(String),
     /// ConEmu OSC 9;4 progress report (state 0=remove,1=set,2=error,
     /// 3=indeterminate,4=pause); `value` is absent when not sent.
-    Progress { state: u8, value: Option<u8> },
+    Progress {
+        state: u8,
+        value: Option<u8>,
+    },
     /// OSC 133;C -- the shell handed control to a command. A host can start
     /// timing here, and give the command its start time with `id` (absent
     /// on the alternate screen, where commands are not recorded).
-    CommandStart { id: Option<u64> },
+    CommandStart {
+        id: Option<u64>,
+    },
     /// OSC 133;D -- the command finished. `exit_code` is present when the
     /// shell reported one (`OSC 133;D;<code>`).
-    CommandEnd { exit_code: Option<i32> },
+    CommandEnd {
+        exit_code: Option<i32>,
+    },
 }
 
 /// Which flavor of character protection the pen is currently applying
@@ -513,13 +523,16 @@ impl Terminal {
         let new_cursor = if self.modes.autowrap {
             match self.active {
                 ScreenBuffer::Primary => {
-                    let pos = self.primary.resize_with_cursor(cols, rows, Some(cursor_pos));
+                    let pos = self
+                        .primary
+                        .resize_with_cursor(cols, rows, Some(cursor_pos));
                     self.alternate.resize_with_cursor(cols, rows, None);
                     pos
                 }
                 ScreenBuffer::Alternate => {
                     self.primary.resize_with_cursor(cols, rows, None);
-                    self.alternate.resize_with_cursor(cols, rows, Some(cursor_pos))
+                    self.alternate
+                        .resize_with_cursor(cols, rows, Some(cursor_pos))
                 }
             }
         } else {
@@ -555,7 +568,9 @@ impl Terminal {
             sel.anchor = clamp(sel.anchor);
             sel.active = clamp(sel.active);
         }
-        self.viewport_offset = self.viewport_offset.min(self.active_grid().scrollback_len());
+        self.viewport_offset = self
+            .viewport_offset
+            .min(self.active_grid().scrollback_len());
     }
 
     /// Convert a viewport row/col coordinate to a lifetime document coordinate.
@@ -609,7 +624,9 @@ impl Terminal {
 
     /// Selection mode of the current selection, or [`SelectionMode::Linear`].
     pub fn selection_mode(&self) -> SelectionMode {
-        self.selection.map(|s| s.mode).unwrap_or(SelectionMode::Linear)
+        self.selection
+            .map(|s| s.mode)
+            .unwrap_or(SelectionMode::Linear)
     }
 
     /// Whether a selection is currently active and overlaps retained history/screen.
@@ -661,7 +678,11 @@ impl Terminal {
                     (end_lt.0 - evicted, end_lt.1.min(cols - 1))
                 };
 
-                Some((SelectionMode::Linear, (start_abs_row, start_col), (end_abs_row, end_col)))
+                Some((
+                    SelectionMode::Linear,
+                    (start_abs_row, start_col),
+                    (end_abs_row, end_col),
+                ))
             }
             SelectionMode::Rectangular => {
                 let min_lt_row = sel.anchor.0.min(sel.active.0);
@@ -680,7 +701,11 @@ impl Terminal {
                 };
                 let end_abs_row = (max_lt_row.saturating_sub(evicted)).min(total_rows - 1);
 
-                Some((SelectionMode::Rectangular, (start_abs_row, min_col), (end_abs_row, max_col)))
+                Some((
+                    SelectionMode::Rectangular,
+                    (start_abs_row, min_col),
+                    (end_abs_row, max_col),
+                ))
             }
         }
     }
@@ -794,8 +819,16 @@ impl Terminal {
             SelectionMode::Linear => {
                 let mut out = String::new();
                 for abs_row in start_abs_row..=end_abs_row {
-                    let from = if abs_row == start_abs_row { start_col } else { 0 };
-                    let to = if abs_row == end_abs_row { end_col } else { cols.saturating_sub(1) };
+                    let from = if abs_row == start_abs_row {
+                        start_col
+                    } else {
+                        0
+                    };
+                    let to = if abs_row == end_abs_row {
+                        end_col
+                    } else {
+                        cols.saturating_sub(1)
+                    };
                     let mut line = abs_row_text(abs_row, from, to);
 
                     let wraps_to_next = self.is_line_wrapped_abs(abs_row + 1);
@@ -1110,15 +1143,31 @@ impl Terminal {
 
     /// Live default fg / bg / cursor colors: the host base (if any) until a
     /// program overrides them via OSC 10/11/12.
-    pub fn default_colors(&self) -> (Option<(u8, u8, u8)>, Option<(u8, u8, u8)>, Option<(u8, u8, u8)>) {
+    pub fn default_colors(
+        &self,
+    ) -> (
+        Option<(u8, u8, u8)>,
+        Option<(u8, u8, u8)>,
+        Option<(u8, u8, u8)>,
+    ) {
         (self.default_fg, self.default_bg, self.cursor_color)
     }
 
     /// Host-configured base fg / bg / cursor colors, set through
     /// `set_base_colors`. `None` per-slot means the host hasn't configured
     /// one for that slot.
-    pub fn base_colors(&self) -> (Option<(u8, u8, u8)>, Option<(u8, u8, u8)>, Option<(u8, u8, u8)>) {
-        (self.palette.base_fg(), self.palette.base_bg(), self.palette.base_cursor())
+    pub fn base_colors(
+        &self,
+    ) -> (
+        Option<(u8, u8, u8)>,
+        Option<(u8, u8, u8)>,
+        Option<(u8, u8, u8)>,
+    ) {
+        (
+            self.palette.base_fg(),
+            self.palette.base_bg(),
+            self.palette.base_cursor(),
+        )
     }
 
     /// Sets the host's base fg / bg / cursor colors and base palette
@@ -1165,8 +1214,9 @@ impl Terminal {
         let grid = self.active_grid();
         let mut fresh = Terminal::new(grid.cols(), grid.rows());
         let (fg, bg, cursor) = self.base_colors();
-        let palette: Vec<(u8, (u8, u8, u8))> =
-            (0..=255u8).map(|index| (index, self.palette.base(index))).collect();
+        let palette: Vec<(u8, (u8, u8, u8))> = (0..=255u8)
+            .map(|index| (index, self.palette.base(index)))
+            .collect();
         fresh.set_base_colors(fg, bg, cursor, &palette);
         fresh.set_default_cursor_style(self.default_cursor_style);
         fresh.set_scrollback_capacity(self.primary.scrollback_capacity());
@@ -1420,7 +1470,9 @@ impl Terminal {
         let mut current = String::new();
         for row in 0..grid.rows() {
             for col in 0..grid.cols() {
-                let Some(cell) = grid.get(row, col) else { continue };
+                let Some(cell) = grid.get(row, col) else {
+                    continue;
+                };
                 // Wide tails collapse into their head; a spacer head is
                 // reflow padding, not text, so it collapses too.
                 if cell.is_wide_spacer || cell.is_wide_spacer_head {
@@ -1497,8 +1549,12 @@ impl Terminal {
         let (is_spacer, next_is_spacer) = {
             let grid = self.active_grid();
             (
-                grid.get(row, col).map(|c| c.is_wide_spacer).unwrap_or(false),
-                grid.get(row, col + 1).map(|c| c.is_wide_spacer).unwrap_or(false),
+                grid.get(row, col)
+                    .map(|c| c.is_wide_spacer)
+                    .unwrap_or(false),
+                grid.get(row, col + 1)
+                    .map(|c| c.is_wide_spacer)
+                    .unwrap_or(false),
             )
         };
         if is_spacer {
@@ -1645,8 +1701,16 @@ impl Terminal {
                 text.push('\n');
                 count += 1;
             }
-            let from = if line == start_line { start_col.min(cells.len()) } else { 0 };
-            let to = if line == end_line { self.cursor.col.min(cells.len()) } else { cells.len() };
+            let from = if line == start_line {
+                start_col.min(cells.len())
+            } else {
+                0
+            };
+            let to = if line == end_line {
+                self.cursor.col.min(cells.len())
+            } else {
+                cells.len()
+            };
             for cell in cells.get(from..to.max(from)).unwrap_or(&[]) {
                 if cell.is_wide_spacer || cell.is_wide_spacer_head {
                     continue;
@@ -1671,8 +1735,6 @@ impl Terminal {
         }
         (Some(trimmed.to_string()), truncated)
     }
-
-
 
     /// The commands recorded on the primary screen.
     pub fn commands(&self) -> &commands::CommandLog {
@@ -1788,14 +1850,17 @@ impl Terminal {
         }
 
         if target_cmd_id.is_none() {
-            if let Some(record) = self
+            target_cmd_id = self
                 .commands
                 .records()
                 .rev()
-                .find(|r| !matches!(r.status, crate::terminal::commands::CommandStatus::Abandoned))
-            {
-                target_cmd_id = Some(record.id);
-            }
+                .find(|r| {
+                    !matches!(
+                        r.status,
+                        crate::terminal::commands::CommandStatus::Abandoned
+                    )
+                })
+                .map(|r| r.id);
         }
 
         let mut output_start = None;
@@ -1839,7 +1904,9 @@ impl Terminal {
 
                 let mut next_prompt_row = None;
                 for r in start_candidate..total_retained {
-                    if self.primary.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt {
+                    if self.primary.retained_semantic_prompt(r)
+                        == crate::grid::SemanticPrompt::Prompt
+                    {
                         next_prompt_row = Some(r);
                         break;
                     }
@@ -1967,14 +2034,19 @@ impl Terminal {
         if n < region_height {
             for row in top..=(bottom - n) {
                 for col in left..=right {
-                    let cell = self.active_grid().get(row + n, col).copied().unwrap_or_default();
+                    let cell = self
+                        .active_grid()
+                        .get(row + n, col)
+                        .copied()
+                        .unwrap_or_default();
                     self.active_grid_mut().set(row, col, cell);
                 }
             }
         }
         let blank = self.bce_blank();
         for row in (bottom + 1 - n)..=bottom {
-            self.active_grid_mut().fill_cells(row, left, right + 1, blank);
+            self.active_grid_mut()
+                .fill_cells(row, left, right + 1, blank);
         }
         for row in top..=bottom {
             self.fix_wide_orphans(row);
@@ -2004,7 +2076,11 @@ impl Terminal {
         if n < region_height {
             for row in (top + n..=bottom).rev() {
                 for col in left..=right {
-                    let cell = self.active_grid().get(row - n, col).copied().unwrap_or_default();
+                    let cell = self
+                        .active_grid()
+                        .get(row - n, col)
+                        .copied()
+                        .unwrap_or_default();
                     self.active_grid_mut().set(row, col, cell);
                 }
                 if full_width {
@@ -2017,7 +2093,8 @@ impl Terminal {
         }
         let blank = self.bce_blank();
         for row in top..(top + n) {
-            self.active_grid_mut().fill_cells(row, left, right + 1, blank);
+            self.active_grid_mut()
+                .fill_cells(row, left, right + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
             }
@@ -2051,9 +2128,11 @@ impl Terminal {
                 if self.input_start.is_some_and(|(line, _)| line > here) {
                     self.input_start = None;
                 }
-                self.active_grid_mut().fill_cells_respecting(row, col, cols, blank, respect);
+                self.active_grid_mut()
+                    .fill_cells_respecting(row, col, cols, blank, respect);
                 for r in (row + 1)..rows {
-                    self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
+                    self.active_grid_mut()
+                        .fill_cells_respecting(r, 0, cols, blank, respect);
                     self.active_grid_mut().set_line_wrapped(r, false);
                 }
             }
@@ -2065,16 +2144,23 @@ impl Terminal {
                     self.input_start = None;
                 }
                 for r in 0..row {
-                    self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
+                    self.active_grid_mut()
+                        .fill_cells_respecting(r, 0, cols, blank, respect);
                     self.active_grid_mut().set_line_wrapped(r, false);
                 }
-                self.active_grid_mut()
-                    .fill_cells_respecting(row, 0, col.saturating_add(1), blank, respect);
+                self.active_grid_mut().fill_cells_respecting(
+                    row,
+                    0,
+                    col.saturating_add(1),
+                    blank,
+                    respect,
+                );
             }
             2 | 3 => {
                 self.input_start = None;
                 for r in 0..rows {
-                    self.active_grid_mut().fill_cells_respecting(r, 0, cols, blank, respect);
+                    self.active_grid_mut()
+                        .fill_cells_respecting(r, 0, cols, blank, respect);
                     self.active_grid_mut().set_line_wrapped(r, false);
                 }
             }
@@ -2096,13 +2182,20 @@ impl Terminal {
             0 => self
                 .active_grid_mut()
                 .fill_cells_respecting(row, col, cols, blank, respect),
-            1 => self
-                .active_grid_mut()
-                .fill_cells_respecting(row, 0, col.saturating_add(1), blank, respect),
+            1 => self.active_grid_mut().fill_cells_respecting(
+                row,
+                0,
+                col.saturating_add(1),
+                blank,
+                respect,
+            ),
             2 => {
                 // A whole input line erased: what C finds there is not what
                 // B started.
-                if self.input_start.is_some_and(|(line, _)| self.cursor_absolute_line() >= line) {
+                if self
+                    .input_start
+                    .is_some_and(|(line, _)| self.cursor_absolute_line() >= line)
+                {
                     self.input_start = None;
                 }
                 self.active_grid_mut()
@@ -2137,7 +2230,11 @@ impl Terminal {
         if n < region_height {
             for row in (top..=(bottom - n)).rev() {
                 for col in hl..=hr {
-                    let cell = self.active_grid().get(row, col).copied().unwrap_or_default();
+                    let cell = self
+                        .active_grid()
+                        .get(row, col)
+                        .copied()
+                        .unwrap_or_default();
                     self.active_grid_mut().set(row + n, col, cell);
                 }
                 if full_width {
@@ -2191,7 +2288,11 @@ impl Terminal {
         if n < region_height {
             for row in top..=(bottom - n) {
                 for col in hl..=hr {
-                    let cell = self.active_grid().get(row + n, col).copied().unwrap_or_default();
+                    let cell = self
+                        .active_grid()
+                        .get(row + n, col)
+                        .copied()
+                        .unwrap_or_default();
                     self.active_grid_mut().set(row, col, cell);
                 }
                 if full_width {
@@ -2221,8 +2322,16 @@ impl Terminal {
     /// right within the margin box. No-op when the cursor is outside it.
     fn insert_columns(&mut self, n: usize) {
         let (hl, hr) = self.h_margins();
-        let (top, bottom) = (self.scroll_top, self.scroll_bottom.min(self.active_grid().rows().saturating_sub(1)));
-        if self.cursor.col < hl || self.cursor.col > hr || self.cursor.row < top || self.cursor.row > bottom {
+        let (top, bottom) = (
+            self.scroll_top,
+            self.scroll_bottom
+                .min(self.active_grid().rows().saturating_sub(1)),
+        );
+        if self.cursor.col < hl
+            || self.cursor.col > hr
+            || self.cursor.row < top
+            || self.cursor.row > bottom
+        {
             return;
         }
         self.pending_wrap = false;
@@ -2231,7 +2340,11 @@ impl Terminal {
         let blank = self.bce_blank();
         for row in top..=bottom {
             for col in (start..=hr.saturating_sub(n)).rev() {
-                let cell = self.active_grid().get(row, col).copied().unwrap_or_default();
+                let cell = self
+                    .active_grid()
+                    .get(row, col)
+                    .copied()
+                    .unwrap_or_default();
                 self.active_grid_mut().set(row, col + n, cell);
             }
             for col in start..(start + n).min(hr + 1) {
@@ -2245,8 +2358,16 @@ impl Terminal {
     /// within the margin box. No-op when the cursor is outside it.
     fn delete_columns(&mut self, n: usize) {
         let (hl, hr) = self.h_margins();
-        let (top, bottom) = (self.scroll_top, self.scroll_bottom.min(self.active_grid().rows().saturating_sub(1)));
-        if self.cursor.col < hl || self.cursor.col > hr || self.cursor.row < top || self.cursor.row > bottom {
+        let (top, bottom) = (
+            self.scroll_top,
+            self.scroll_bottom
+                .min(self.active_grid().rows().saturating_sub(1)),
+        );
+        if self.cursor.col < hl
+            || self.cursor.col > hr
+            || self.cursor.row < top
+            || self.cursor.row > bottom
+        {
             return;
         }
         self.pending_wrap = false;
@@ -2256,7 +2377,10 @@ impl Terminal {
         for row in top..=bottom {
             for col in start..=hr {
                 let cell = if col + n <= hr {
-                    self.active_grid().get(row, col + n).copied().unwrap_or_default()
+                    self.active_grid()
+                        .get(row, col + n)
+                        .copied()
+                        .unwrap_or_default()
                 } else {
                     blank
                 };
@@ -2292,7 +2416,8 @@ impl Terminal {
             self.delete_columns(1);
             self.cursor.col = saved;
         } else {
-            self.cursor.col = (self.cursor.col + 1).min(self.active_grid().cols().saturating_sub(1));
+            self.cursor.col =
+                (self.cursor.col + 1).min(self.active_grid().cols().saturating_sub(1));
         }
     }
 
@@ -2319,10 +2444,9 @@ impl Terminal {
                 && grid
                     .get(row + 1, 0)
                     .is_some_and(|c| !c.is_wide_spacer && grid.cell_is_wide(c));
-            if !next_starts_wide
-                && let Some(cell) = self.active_grid_mut().get_mut(row, cols - 1) {
-                    cell.is_wide_spacer_head = false;
-                }
+            if !next_starts_wide && let Some(cell) = self.active_grid_mut().get_mut(row, cols - 1) {
+                cell.is_wide_spacer_head = false;
+            }
         }
     }
 
@@ -2334,7 +2458,9 @@ impl Terminal {
         for col in 0..cols {
             let (is_wide, is_spacer) = {
                 let grid = self.active_grid();
-                let Some(cell) = grid.get(row, col) else { continue };
+                let Some(cell) = grid.get(row, col) else {
+                    continue;
+                };
                 (grid.cell_is_wide(cell), cell.is_wide_spacer)
             };
             if is_spacer {
@@ -2380,7 +2506,11 @@ impl Terminal {
         let shift_count = end - start - n;
         if shift_count > 0 {
             for col in (start..start + shift_count).rev() {
-                let cell = self.active_grid().get(row, col).copied().unwrap_or_default();
+                let cell = self
+                    .active_grid()
+                    .get(row, col)
+                    .copied()
+                    .unwrap_or_default();
                 self.active_grid_mut().set(row, col + n, cell);
             }
         }
@@ -2412,7 +2542,11 @@ impl Terminal {
         let shift_count = end - start - n;
         for i in 0..shift_count {
             let col = start + i;
-            let cell = self.active_grid().get(row, col + n).copied().unwrap_or_default();
+            let cell = self
+                .active_grid()
+                .get(row, col + n)
+                .copied()
+                .unwrap_or_default();
             self.active_grid_mut().set(row, col, cell);
         }
         let blank = self.bce_blank();
@@ -2511,9 +2645,7 @@ impl Terminal {
                             .flat_map(|gr| gr.iter().copied())
                             .collect();
                         match rest.first() {
-                            Some(5) if rest.len() >= 2 => {
-                                (Some(Color::Indexed(rest[1] as u8)), 2)
-                            }
+                            Some(5) if rest.len() >= 2 => (Some(Color::Indexed(rest[1] as u8)), 2),
                             Some(2) if rest.len() >= 4 => (
                                 Some(Color::Rgb(rest[1] as u8, rest[2] as u8, rest[3] as u8)),
                                 4,
@@ -2555,7 +2687,6 @@ impl Terminal {
         }
     }
 
-
     /// Puts the cursor at the origin of the coordinate system currently in
     /// force: the scroll region's top-left under DECOM, the screen's
     /// otherwise. This is `CUP` with no parameters.
@@ -2575,7 +2706,9 @@ impl Terminal {
     /// receive SIGWINCH, then restore it; both axes must be clamped at the
     /// point of use just like upstream clamps a saved column after reflow.
     fn restore_saved_cursor(&mut self) {
-        let Some(saved) = self.cursor.saved else { return };
+        let Some(saved) = self.cursor.saved else {
+            return;
+        };
         let rows = self.active_grid().rows();
         let cols = self.active_grid().cols();
         self.cursor.row = saved.row.min(rows.saturating_sub(1));
@@ -2694,13 +2827,11 @@ impl Terminal {
         });
 
         let id = match explicit_id {
-            Some(explicit_id) => {
-                *self.hyperlink_ids.entry(explicit_id).or_insert_with(|| {
-                    let new_id = self.hyperlinks.len() as u32 + 1;
-                    self.hyperlinks.push(uri.clone());
-                    new_id
-                })
-            }
+            Some(explicit_id) => *self.hyperlink_ids.entry(explicit_id).or_insert_with(|| {
+                let new_id = self.hyperlinks.len() as u32 + 1;
+                self.hyperlinks.push(uri.clone());
+                new_id
+            }),
             None => {
                 let new_id = self.hyperlinks.len() as u32 + 1;
                 self.hyperlinks.push(uri);
@@ -2776,7 +2907,9 @@ impl Perform for Terminal {
         let c = charset::translate(charset, c);
         // A 7-bit national/graphics charset can't represent non-ASCII:
         // upstream prints a blank in its place.
-        let c = if charset != Charset::Ascii && (c as u32) > 0x7F && charset::translate(charset, c) == c
+        let c = if charset != Charset::Ascii
+            && (c as u32) > 0x7F
+            && charset::translate(charset, c) == c
         {
             match charset {
                 Charset::DecSpecialGraphics | Charset::British => {
@@ -3009,7 +3142,14 @@ impl Perform for Terminal {
         }
     }
 
-    fn hook(&mut self, _params: &[u16], _params_sep: u32, intermediates: &[u8], _ignore: bool, action: char) {
+    fn hook(
+        &mut self,
+        _params: &[u16],
+        _params_sep: u32,
+        intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
         self.dcs_buf.clear();
         self.dcs = match (intermediates, action) {
             ([b'$'], 'q') => Some(DcsKind::Decrqss),
@@ -3049,7 +3189,8 @@ impl Perform for Terminal {
         }
         if params.len() >= 2 && (params[0] == b"0" || params[0] == b"2") {
             self.title = String::from_utf8_lossy(params[1]).into_owned();
-            self.events.push(TerminalEvent::TitleChanged(self.title.clone()));
+            self.events
+                .push(TerminalEvent::TitleChanged(self.title.clone()));
             return;
         }
         if params[0] == b"8" {
@@ -3092,9 +3233,7 @@ impl Perform for Terminal {
                     self.events.push(TerminalEvent::ClipboardQuery);
                 } else {
                     use base64::Engine as _;
-                    if let Ok(bytes) =
-                        base64::engine::general_purpose::STANDARD.decode(payload)
-                    {
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
                         let text = String::from_utf8_lossy(&bytes).into_owned();
                         self.events.push(TerminalEvent::ClipboardSet(text));
                     }
@@ -3215,7 +3354,10 @@ impl Perform for Terminal {
         if params[0] == b"133" {
             let arg = params.get(1).copied().unwrap_or(b"");
             let action = arg.first().copied().unwrap_or(0);
-            let continuation = params.iter().skip(1).any(|p| p.windows(3).any(|w| w == b"k=c"));
+            let continuation = params
+                .iter()
+                .skip(1)
+                .any(|p| p.windows(3).any(|w| w == b"k=c"));
             match action {
                 b'A' | b'L' => {
                     // Fresh line: move to column 0 of a new line if the
@@ -3240,7 +3382,10 @@ impl Perform for Terminal {
                     // prompt_start without the fresh-line behavior. A
                     // secondary prompt (`k=s`, PS2) continues the command
                     // line being typed; any other starts a new one.
-                    let secondary = params.iter().skip(1).any(|p| p.windows(3).any(|w| w == b"k=s"));
+                    let secondary = params
+                        .iter()
+                        .skip(1)
+                        .any(|p| p.windows(3).any(|w| w == b"k=s"));
                     if !secondary {
                         self.command_prompt_started();
                     }
@@ -3313,7 +3458,14 @@ impl Perform for Terminal {
         }
     }
 
-    fn csi_dispatch(&mut self, params: &[u16], _params_sep: u32, intermediates: &[u8], _ignore: bool, action: char) {
+    fn csi_dispatch(
+        &mut self,
+        params: &[u16],
+        _params_sep: u32,
+        intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
         // DECRQCRA. The only way an out-of-process harness can read the
         // screen back, which is what esctest and vttest rely on.
         if intermediates == *b"*" && action == 'y' {
@@ -3338,7 +3490,9 @@ impl Perform for Terminal {
                     69 => set(self.modes.left_right_margin_mode),
                     47 | 1047 | 1049 => set(self.active == ScreenBuffer::Alternate),
                     1000 => set(self.modes.mouse_tracking == crate::modes::MouseTracking::Normal),
-                    1002 => set(self.modes.mouse_tracking == crate::modes::MouseTracking::ButtonEvent),
+                    1002 => {
+                        set(self.modes.mouse_tracking == crate::modes::MouseTracking::ButtonEvent)
+                    }
                     1003 => set(self.modes.mouse_tracking == crate::modes::MouseTracking::AnyEvent),
                     1004 => set(self.modes.focus_events),
                     1005 => set(self.modes.mouse_utf8),
@@ -3395,7 +3549,8 @@ impl Perform for Terminal {
                         _ => None,
                     };
                     if let Some(value) = value {
-                        self.response.push_str(&format!("\x1b[>{resource};{value}m"));
+                        self.response
+                            .push_str(&format!("\x1b[>{resource};{value}m"));
                     }
                 }
                 _ => {}
@@ -3405,7 +3560,8 @@ impl Perform for Terminal {
         if intermediates == *b">" {
             match action {
                 'u' => {
-                    let flags = KittyFlags::from_bits_truncate(param_or_default(params, 0, 0) as u8);
+                    let flags =
+                        KittyFlags::from_bits_truncate(param_or_default(params, 0, 0) as u8);
                     self.kitty_keyboard.push(flags);
                 }
                 'c' => self.response.push_str(&response::da2_response()),
@@ -3539,8 +3695,22 @@ impl Perform for Terminal {
         // reverse wrap treats a pending wrap as one column of movement.
         if matches!(
             action,
-            'A' | 'B' | 'C' | 'E' | 'F' | 'G' | 'H' | 'd' | 'f' | 'J' | 'K' | 'X' | 'r'
-                | '@' | 'P' | 'L' | 'M'
+            'A' | 'B'
+                | 'C'
+                | 'E'
+                | 'F'
+                | 'G'
+                | 'H'
+                | 'd'
+                | 'f'
+                | 'J'
+                | 'K'
+                | 'X'
+                | 'r'
+                | '@'
+                | 'P'
+                | 'L'
+                | 'M'
         ) {
             self.pending_wrap = false;
         }
@@ -3548,7 +3718,9 @@ impl Perform for Terminal {
         match action {
             'A' => {
                 let n = param_nonzero_or(params, 0, 1) as usize;
-                let floor = if self.cursor.row >= self.scroll_top && self.cursor.row <= self.scroll_bottom {
+                let floor = if self.cursor.row >= self.scroll_top
+                    && self.cursor.row <= self.scroll_bottom
+                {
                     self.scroll_top
                 } else {
                     0
@@ -3557,7 +3729,9 @@ impl Perform for Terminal {
             }
             'B' => {
                 let n = param_nonzero_or(params, 0, 1) as usize;
-                let ceiling = if self.cursor.row >= self.scroll_top && self.cursor.row <= self.scroll_bottom {
+                let ceiling = if self.cursor.row >= self.scroll_top
+                    && self.cursor.row <= self.scroll_bottom
+                {
                     self.scroll_bottom
                 } else {
                     self.active_grid().rows().saturating_sub(1)
@@ -3835,7 +4009,9 @@ impl Perform for Terminal {
             'E' => {
                 // CNL: down n rows (clamped like CUD), column 0.
                 let n = param_nonzero_or(params, 0, 1) as usize;
-                let ceiling = if self.cursor.row >= self.scroll_top && self.cursor.row <= self.scroll_bottom {
+                let ceiling = if self.cursor.row >= self.scroll_top
+                    && self.cursor.row <= self.scroll_bottom
+                {
                     self.scroll_bottom
                 } else {
                     self.active_grid().rows().saturating_sub(1)
@@ -3846,7 +4022,9 @@ impl Perform for Terminal {
             'F' => {
                 // CPL: up n rows (clamped like CUU), column 0.
                 let n = param_nonzero_or(params, 0, 1) as usize;
-                let floor = if self.cursor.row >= self.scroll_top && self.cursor.row <= self.scroll_bottom {
+                let floor = if self.cursor.row >= self.scroll_top
+                    && self.cursor.row <= self.scroll_bottom
+                {
                     self.scroll_top
                 } else {
                     0
@@ -3922,8 +4100,8 @@ impl Perform for Terminal {
             b'8' => {
                 self.restore_saved_cursor();
             }
-            b'D' => self.line_feed(),      // IND
-            b'M' => self.reverse_index(),  // RI
+            b'D' => self.line_feed(),     // IND
+            b'M' => self.reverse_index(), // RI
             b'E' => {
                 // NEL: CR then LF.
                 self.cursor.col = 0;
@@ -3931,12 +4109,12 @@ impl Perform for Terminal {
             }
             b'N' => self.single_shift = Some(self.g2), // SS2
             b'O' => self.single_shift = Some(self.g3), // SS3
-            b'~' => self.gr_slot = 1, // LS1R
-            b'}' => self.gr_slot = 2, // LS2R
-            b'|' => self.gr_slot = 3, // LS3R
-            b'6' => self.back_index(),    // DECBI
-            b'9' => self.forward_index(), // DECFI
-            b'c' => self.hard_reset(), // RIS
+            b'~' => self.gr_slot = 1,                  // LS1R
+            b'}' => self.gr_slot = 2,                  // LS2R
+            b'|' => self.gr_slot = 3,                  // LS3R
+            b'6' => self.back_index(),                 // DECBI
+            b'9' => self.forward_index(),              // DECFI
+            b'c' => self.hard_reset(),                 // RIS
             b'V' => self.protected_mode = ProtectedMode::Iso, // SPA
             b'W' => self.protected_mode = ProtectedMode::Off, // EPA
             _ => {}
@@ -4030,9 +4208,7 @@ impl Terminal {
                 match self.cursor.fg {
                     Color::Default => {}
                     Color::Indexed(n) if n < 8 => out.push_str(&format!(";{}", 30 + n as u16)),
-                    Color::Indexed(n) if n < 16 => {
-                        out.push_str(&format!(";{}", 90 + n as u16 - 8))
-                    }
+                    Color::Indexed(n) if n < 16 => out.push_str(&format!(";{}", 90 + n as u16 - 8)),
                     Color::Indexed(n) => out.push_str(&format!(";38:5:{}", n)),
                     Color::Rgb(r, g, b) => out.push_str(&format!(";38:2::{}:{}:{}", r, g, b)),
                 }
@@ -4048,7 +4224,11 @@ impl Terminal {
                 out.push('m');
                 Some(out)
             }
-            b"r" => Some(format!("{};{}r", self.scroll_top + 1, self.scroll_bottom + 1)),
+            b"r" => Some(format!(
+                "{};{}r",
+                self.scroll_top + 1,
+                self.scroll_bottom + 1
+            )),
             b"s" => {
                 let (hl, hr) = self.h_margins();
                 Some(format!("{};{}s", hl + 1, hr + 1))

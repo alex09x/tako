@@ -1731,42 +1731,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     // MARK: - Keyboard Input
 
-    override public func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let cleanMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if cleanMods == .command {
-            if event.keyCode == 126 { // Up arrow
-                jumpToPreviousPrompt()
-                return true
-            } else if event.keyCode == 125 { // Down arrow
-                jumpToNextPrompt()
-                return true
-            }
-        } else if cleanMods == [.command, .shift] {
-            if event.keyCode == 0 || event.charactersIgnoringModifiers?.lowercased() == "a" {
-                selectCommandOutput()
-                return true
-            }
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
     override public func keyDown(with event: NSEvent) {
-        let cleanMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if cleanMods == .command {
-            if event.keyCode == 126 { // Up arrow
-                jumpToPreviousPrompt()
-                return
-            } else if event.keyCode == 125 { // Down arrow
-                jumpToNextPrompt()
-                return
-            }
-        } else if cleanMods == [.command, .shift] {
-            if event.keyCode == 0 || event.charactersIgnoringModifiers?.lowercased() == "a" {
-                selectCommandOutput()
-                return
-            }
-        }
-
         let mods = event.modifierFlags
         if mods.contains(.command) {
             super.keyDown(with: event)

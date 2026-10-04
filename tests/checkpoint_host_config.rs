@@ -10,9 +10,7 @@
 use tako_core::cursor_style::{CursorShape, CursorStyle};
 use tako_core::ffi::TakoCore;
 use tako_core::terminal::Terminal;
-use tako_core::terminal::checkpoint::{
-    self, CURRENT_VERSION, CheckpointError, MIN_EXPORT_VERSION,
-};
+use tako_core::terminal::checkpoint::{self, CURRENT_VERSION, CheckpointError, MIN_EXPORT_VERSION};
 
 const THEME_A_IDX2: (u8, u8, u8) = (100, 110, 120);
 const THEME_B_IDX2: (u8, u8, u8) = (130, 140, 150);
@@ -40,11 +38,11 @@ fn header_version(blob: &[u8]) -> u32 {
 }
 
 #[test]
-fn this_build_writes_version_4() {
-    assert_eq!(CURRENT_VERSION, 4);
-    assert_eq!(Terminal::checkpoint_version(), 4);
+fn this_build_writes_version_5() {
+    assert_eq!(CURRENT_VERSION, 5);
+    assert_eq!(Terminal::checkpoint_version(), 5);
     let blob = themed_source().export_checkpoint().unwrap();
-    assert_eq!(header_version(&blob), 4);
+    assert_eq!(header_version(&blob), 5);
 }
 
 #[test]
@@ -59,14 +57,29 @@ fn a_theme_change_after_restore_reaches_what_the_theme_coloured() {
     assert_eq!(term.default_colors().0, Some(THEME_A_FG));
 
     term.set_base_colors(Some(THEME_B_FG), None, None, &[(2, THEME_B_IDX2)]);
-    assert_eq!(term.palette().get(2), THEME_B_IDX2, "the theme's entry follows the new theme");
-    assert_eq!(term.default_colors().0, Some(THEME_B_FG), "so does the theme's foreground");
-    assert_eq!(term.palette().get(1), PROGRAM_IDX1, "the program's entry stays the program's");
+    assert_eq!(
+        term.palette().get(2),
+        THEME_B_IDX2,
+        "the theme's entry follows the new theme"
+    );
+    assert_eq!(
+        term.default_colors().0,
+        Some(THEME_B_FG),
+        "so does the theme's foreground"
+    );
+    assert_eq!(
+        term.palette().get(1),
+        PROGRAM_IDX1,
+        "the program's entry stays the program's"
+    );
 
     // And a reset goes to the base the checkpoint carried, not the built-in.
     let mut again = restored(&blob);
     again.feed(b"\x1b]104\x07");
-    assert_eq!(again.palette().get(1), tako_core::palette::Palette::new().get(1));
+    assert_eq!(
+        again.palette().get(1),
+        tako_core::palette::Palette::new().get(1)
+    );
     assert_eq!(again.palette().get(2), THEME_A_IDX2);
 }
 
@@ -88,22 +101,36 @@ fn a_v2_checkpoint_still_infers_what_it_does_not_carry() {
 
 #[test]
 fn the_default_cursor_style_travels_and_a_programs_style_stays_a_programs() {
-    const BAR: CursorStyle = CursorStyle { shape: CursorShape::Bar, blinking: true };
-    const UNDERLINE: CursorStyle = CursorStyle { shape: CursorShape::Underline, blinking: false };
+    const BAR: CursorStyle = CursorStyle {
+        shape: CursorShape::Bar,
+        blinking: true,
+    };
+    const UNDERLINE: CursorStyle = CursorStyle {
+        shape: CursorShape::Underline,
+        blinking: false,
+    };
 
     let mut host_styled = Terminal::new(20, 4);
     host_styled.set_default_cursor_style(BAR);
     let mut term = restored(&host_styled.export_checkpoint().unwrap());
     assert_eq!(term.cursor_style(), BAR);
     term.set_default_cursor_style(UNDERLINE);
-    assert_eq!(term.cursor_style(), UNDERLINE, "the host's default follows the host");
+    assert_eq!(
+        term.cursor_style(),
+        UNDERLINE,
+        "the host's default follows the host"
+    );
 
     let mut program_styled = Terminal::new(20, 4);
     program_styled.set_default_cursor_style(BAR);
     program_styled.feed(b"\x1b[4 q"); // DECSCUSR steady underline
     let mut term = restored(&program_styled.export_checkpoint().unwrap());
     term.set_default_cursor_style(BAR);
-    assert_eq!(term.cursor_style(), UNDERLINE, "a program's choice outlives a host default");
+    assert_eq!(
+        term.cursor_style(),
+        UNDERLINE,
+        "a program's choice outlives a host default"
+    );
     // DECSCUSR 0 goes back to the default the checkpoint carried.
     let mut term = restored(&program_styled.export_checkpoint().unwrap());
     term.feed(b"\x1b[0 q");
@@ -114,9 +141,18 @@ fn the_default_cursor_style_travels_and_a_programs_style_stays_a_programs() {
 fn export_version_writes_what_was_asked_or_refuses() {
     let term = themed_source();
     assert_eq!(MIN_EXPORT_VERSION, 2);
-    assert_eq!(header_version(&term.export_checkpoint_version(0, 0).unwrap()), 4);
-    assert_eq!(header_version(&term.export_checkpoint_version(3, 0).unwrap()), 3);
-    assert_eq!(header_version(&term.export_checkpoint_version(4, 0).unwrap()), 4);
+    assert_eq!(
+        header_version(&term.export_checkpoint_version(0, 0).unwrap()),
+        4
+    );
+    assert_eq!(
+        header_version(&term.export_checkpoint_version(3, 0).unwrap()),
+        3
+    );
+    assert_eq!(
+        header_version(&term.export_checkpoint_version(4, 0).unwrap()),
+        4
+    );
     for version in [1, 5, u32::MAX] {
         assert_eq!(
             term.export_checkpoint_version(version, 0),
@@ -131,7 +167,10 @@ fn export_version_writes_what_was_asked_or_refuses() {
     // plus the host block.
     for version in [2, 3] {
         let blob = term.export_checkpoint_version(version, 0).unwrap();
-        assert_eq!(term.measure_checkpoint_version(version, 0).unwrap(), blob.len() as u64);
+        assert_eq!(
+            term.measure_checkpoint_version(version, 0).unwrap(),
+            blob.len() as u64
+        );
         assert!(checkpoint::verify(&blob));
     }
     let v2 = term.export_checkpoint_version(2, 0).unwrap().len();
@@ -160,8 +199,14 @@ fn a_truncated_host_block_is_refused_not_half_applied() {
 
     let mut dest = Terminal::new(20, 4);
     dest.feed(b"DEST");
-    assert_eq!(dest.import_checkpoint(&short), Err(CheckpointError::UnexpectedEof));
-    assert_eq!(dest.palette().get(1), tako_core::palette::Palette::new().get(1));
+    assert_eq!(
+        dest.import_checkpoint(&short),
+        Err(CheckpointError::UnexpectedEof)
+    );
+    assert_eq!(
+        dest.palette().get(1),
+        tako_core::palette::Palette::new().get(1)
+    );
 }
 
 #[test]
@@ -170,7 +215,10 @@ fn ffi_exports_the_version_a_peer_asks_for() {
     core.feed(b"negotiate".to_vec());
     let v2 = core.checkpoint_export_version(2, 0).unwrap();
     assert_eq!(header_version(&v2), 2);
-    assert_eq!(header_version(&core.checkpoint_export_version(0, 0).unwrap()), 4);
+    assert_eq!(
+        header_version(&core.checkpoint_export_version(0, 0).unwrap()),
+        4
+    );
     assert!(core.checkpoint_export_version(1, 0).is_err());
 
     let dest = TakoCore::new(20, 4);
@@ -236,12 +284,20 @@ fn clusters_survive_a_v3_round_trip_on_screen_in_scrollback_and_on_the_alternate
     assert!(before.contains(FAMILY) && before.contains(DEVANAGARI) && before.contains('\u{0302}'));
 
     let restored = restored(&term.export_checkpoint().unwrap());
-    assert_eq!(text(&restored), before, "the clusters did not come back whole");
+    assert_eq!(
+        text(&restored),
+        before,
+        "the clusters did not come back whole"
+    );
 
     let mut alt = Terminal::new(20, 4);
     alt.feed(format!("\x1b[?1049h{FAMILY}").as_bytes());
     let alt_before = text(&alt);
-    assert_eq!(text(&restored_from(&alt)), alt_before, "the alternate screen's cluster was lost");
+    assert_eq!(
+        text(&restored_from(&alt)),
+        alt_before,
+        "the alternate screen's cluster was lost"
+    );
 }
 
 fn restored_from(term: &Terminal) -> Terminal {
@@ -268,7 +324,10 @@ fn a_v2_checkpoint_keeps_only_each_clusters_first_character() {
     let restored = restored(&term.export_checkpoint_version(2, 0).unwrap());
     let back = text(&restored);
     // e + U+0301 folded to é on input; the circumflex was the cluster.
-    assert!(back.starts_with('\u{00E9}') && !back.contains('\u{0302}'), "{back:?}");
+    assert!(
+        back.starts_with('\u{00E9}') && !back.contains('\u{0302}'),
+        "{back:?}"
+    );
 }
 
 #[test]
@@ -292,7 +351,10 @@ fn a_cluster_that_names_no_cell_is_refused() {
 
     let mut dest = Terminal::new(20, 4);
     dest.feed(b"DEST");
-    assert!(matches!(dest.import_checkpoint(&forged), Err(CheckpointError::InvalidData(_))));
+    assert!(matches!(
+        dest.import_checkpoint(&forged),
+        Err(CheckpointError::InvalidData(_))
+    ));
     assert!(text(&dest).starts_with("DEST"), "fail-intact");
 }
 
@@ -319,4 +381,3 @@ fn cluster_import_cost_matches_allocated_budget() {
     );
     assert_eq!(import_cost(&restored), predicted);
 }
-
