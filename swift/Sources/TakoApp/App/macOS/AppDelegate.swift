@@ -174,7 +174,8 @@ class AppDelegate: NSObject,
     var replyToTermination: @MainActor (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
 
     static var notificationCenterProvider: () -> UNUserNotificationCenter? = {
-        UNUserNotificationCenter.current()
+        guard Bundle.main.bundleIdentifier != nil else { return nil }
+        return UNUserNotificationCenter.current()
     }
 
     override init() {

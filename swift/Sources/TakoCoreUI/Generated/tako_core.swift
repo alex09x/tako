@@ -5462,6 +5462,23 @@ public enum FfiEvent: Equatable, Hashable {
     case statusSet(status: String, text: String?
     )
     case statusClear
+    case structuredNotification(
+        id: String?,
+        title: String,
+        body: String,
+        appName: String?,
+        urgency: UInt8,
+        actions: [String],
+        reportActivation: Bool,
+        focus: Bool,
+        reportClose: Bool,
+        timeoutMs: UInt64?,
+        onlyWhenUnfocused: Bool
+    )
+    case notificationClose(
+        id: String,
+        reportClose: Bool
+    )
 
 
 
@@ -5513,6 +5530,25 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         )
 
         case 12: return .statusClear
+
+        case 13: return .structuredNotification(
+            id: try FfiConverterOptionString.read(from: &buf),
+            title: try FfiConverterString.read(from: &buf),
+            body: try FfiConverterString.read(from: &buf),
+            appName: try FfiConverterOptionString.read(from: &buf),
+            urgency: try FfiConverterUInt8.read(from: &buf),
+            actions: try FfiConverterSequenceString.read(from: &buf),
+            reportActivation: try FfiConverterBool.read(from: &buf),
+            focus: try FfiConverterBool.read(from: &buf),
+            reportClose: try FfiConverterBool.read(from: &buf),
+            timeoutMs: try FfiConverterOptionUInt64.read(from: &buf),
+            onlyWhenUnfocused: try FfiConverterBool.read(from: &buf)
+        )
+
+        case 14: return .notificationClose(
+            id: try FfiConverterString.read(from: &buf),
+            reportClose: try FfiConverterBool.read(from: &buf)
+        )
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5579,6 +5615,27 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
 
         case .statusClear:
             writeInt(&buf, Int32(12))
+
+
+        case let .structuredNotification(id, title, body, appName, urgency, actions, reportActivation, focus, reportClose, timeoutMs, onlyWhenUnfocused):
+            writeInt(&buf, Int32(13))
+            FfiConverterOptionString.write(id, into: &buf)
+            FfiConverterString.write(title, into: &buf)
+            FfiConverterString.write(body, into: &buf)
+            FfiConverterOptionString.write(appName, into: &buf)
+            FfiConverterUInt8.write(urgency, into: &buf)
+            FfiConverterSequenceString.write(actions, into: &buf)
+            FfiConverterBool.write(reportActivation, into: &buf)
+            FfiConverterBool.write(focus, into: &buf)
+            FfiConverterBool.write(reportClose, into: &buf)
+            FfiConverterOptionUInt64.write(timeoutMs, into: &buf)
+            FfiConverterBool.write(onlyWhenUnfocused, into: &buf)
+
+
+        case let .notificationClose(id, reportClose):
+            writeInt(&buf, Int32(14))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterBool.write(reportClose, into: &buf)
 
         }
     }

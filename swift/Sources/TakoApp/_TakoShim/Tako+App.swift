@@ -148,23 +148,44 @@ extension Tako {
 
         /// A notification names the pane it is about (`surface` in its
         /// user info): clicking it brings that pane forward, if it is open.
+        /// If structured notification requested activation or close reporting,
+        /// write the escape sequence back to the PTY.
         public func handleUserNotification(response: UNNotificationResponse) {
-            guard let raw = response.notification.request.content.userInfo[Tako.notificationSurfaceKey] as? String,
+            let userInfo = response.notification.request.content.userInfo
+            guard let raw = userInfo[Tako.notificationSurfaceKey] as? String,
                   let id = UUID(uuidString: raw) else { return }
-            DispatchQueue.main.async {
+            if Thread.isMainThread {
                 MainActor.assumeIsolated {
                     guard let pane = ControlCommands.panes().first(where: { $0.surface.id == id }) else { return }
-                    NSApp.activate(ignoringOtherApps: true)
-                    ControlLayout.focus(pane.surface)
+                    Tako.dispatchNotificationResponse(surface: pane.surface, response: response)
+                }
+            } else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let pane = ControlCommands.panes().first(where: { $0.surface.id == id }) else { return }
+                        Tako.dispatchNotificationResponse(surface: pane.surface, response: response)
+                    }
                 }
             }
         }
 
         /// While Tako is in front its own notifications stay quiet -- the
         /// tab shows what happened -- except one a script posted on purpose
-        /// with `takoctl notify`.
+        /// with `takoctl notify`, or an explicit structured notification
+        /// unless suppressed by macOS Focus or only-when-unfocused mode.
         public func shouldPresentNotification(notification: UNNotification) -> Bool {
-            notification.request.content.userInfo[Tako.notificationFromControlKey] as? Bool == true
+            let userInfo = notification.request.content.userInfo
+            var isLookedAt = false
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    if let surfaceRaw = userInfo[Tako.notificationSurfaceKey] as? String,
+                       let surfaceId = UUID(uuidString: surfaceRaw) {
+                        let pane = ControlCommands.panes().first(where: { $0.surface.id == surfaceId })
+                        isLookedAt = pane?.surface.isBeingLookedAt ?? false
+                    }
+                }
+            }
+            return Tako.shouldPresent(userInfo: userInfo, surfaceLookedAt: isLookedAt)
         }
 
         /// Completes an asynchronous clipboard read or paste operation.
@@ -1717,11 +1738,136 @@ extension Tako {
             }
             if actions.contains(.notify) {
                 let content = Tako.commandFinishContent(exitCode: exitCode, ran: ran, title: title)
-                content.userInfo = [Tako.notificationSurfaceKey: id.uuidString]
-                AppDelegate.notificationCenterProvider()?.add(
-                    UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+                content.userInfo = [
+                    Tako.notificationSurfaceKey: id.uuidString,
+                    Tako.notificationPaneTitleKey: title,
+                    Tako.notificationProjectKey: Tako.projectFromWorkingDirectory(pwd, fallbackTitle: title)
+                ]
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+                AppDelegate.notificationCenterProvider()?.add(request)
+                Tako.onNotificationPosted?(request)
             }
             commandFinishSignals += 1
+        }
+
+        /// The active command currently running, as reported by OSC 133 or shell integration.
+        public private(set) var activeRunningCommandText: String?
+
+        /// Test hook for intercepting replies written to PTY.
+        public var onPtyReply: ((String) -> Void)?
+
+        public func writePtyReply(_ text: String) {
+            if let onPtyReply = onPtyReply {
+                onPtyReply(text)
+            } else if selfTestCapturing {
+                selfTestBytes += [UInt8](text.utf8)
+            } else {
+                pty?.write(Data(text.utf8))
+            }
+        }
+
+        public func postStructuredNotification(
+            id: String?,
+            title: String,
+            body: String,
+            appName: String?,
+            urgency: UInt8,
+            actions: [String],
+            reportActivation: Bool,
+            focus: Bool,
+            reportClose: Bool,
+            timeoutMs: UInt64?,
+            onlyWhenUnfocused: Bool
+        ) {
+            let action = NotificationCoalescer.shared.process(
+                surfaceId: self.id,
+                title: title,
+                body: body
+            )
+
+            switch action {
+            case .duplicateSuppressed:
+                return
+
+            case .coalesce(let count):
+                let reqId = "tako-notif-coalesced-\(self.id.uuidString)"
+                let content = Tako.buildNotificationContent(
+                    title: title.isEmpty ? "Notifications Coalesced" : title,
+                    body: "\(count) notifications from this pane were coalesced.",
+                    appName: appName,
+                    surfaceId: self.id,
+                    paneTitle: self.title,
+                    pwd: self.pwd,
+                    command: self.activeRunningCommandText ?? self.runProgram?.joined(separator: " "),
+                    id: id,
+                    urgency: urgency,
+                    actions: actions,
+                    reportActivation: reportActivation,
+                    focus: focus,
+                    reportClose: reportClose,
+                    onlyWhenUnfocused: onlyWhenUnfocused,
+                    coalescedCount: count
+                )
+                let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
+                AppDelegate.notificationCenterProvider()?.add(request)
+                Tako.onNotificationPosted?(request)
+                return
+
+            case .postNormal:
+                let reqId: String
+                if let id = id, !id.isEmpty {
+                    reqId = "tako-notif-\(self.id.uuidString)-\(id)"
+                } else {
+                    reqId = "tako-notif-\(self.id.uuidString)-\(UUID().uuidString)"
+                }
+
+                let content = Tako.buildNotificationContent(
+                    title: title,
+                    body: body,
+                    appName: appName,
+                    surfaceId: self.id,
+                    paneTitle: self.title,
+                    pwd: self.pwd,
+                    command: self.activeRunningCommandText ?? self.runProgram?.joined(separator: " "),
+                    id: id,
+                    urgency: urgency,
+                    actions: actions,
+                    reportActivation: reportActivation,
+                    focus: focus,
+                    reportClose: reportClose,
+                    onlyWhenUnfocused: onlyWhenUnfocused
+                )
+
+                let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
+                AppDelegate.notificationCenterProvider()?.add(request)
+                Tako.onNotificationPosted?(request)
+
+                if let timeoutMs = timeoutMs, timeoutMs > 0 {
+                    let delay = Double(timeoutMs) / 1000.0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard let self = self else { return }
+                        AppDelegate.notificationCenterProvider()?.removeDeliveredNotifications(withIdentifiers: [reqId])
+                        AppDelegate.notificationCenterProvider()?.removePendingNotificationRequests(withIdentifiers: [reqId])
+                        Tako.onNotificationRemoved?([reqId])
+                        if reportClose {
+                            let replyId = id ?? "0"
+                            let reply = "\u{1b}]99;i=\(replyId):p=close;\u{1b}\\"
+                            self.writePtyReply(reply)
+                        }
+                    }
+                }
+            }
+        }
+
+        public func closeStructuredNotification(id: String, reportClose: Bool) {
+            let reqId = "tako-notif-\(self.id.uuidString)-\(id)"
+            AppDelegate.notificationCenterProvider()?.removeDeliveredNotifications(withIdentifiers: [reqId])
+            AppDelegate.notificationCenterProvider()?.removePendingNotificationRequests(withIdentifiers: [reqId])
+            Tako.onNotificationRemoved?([reqId])
+            if reportClose {
+                let reply = "\u{1b}]99;i=\(id):p=close;\u{1b}\\"
+                writePtyReply(reply)
+            }
         }
 
         /// How many finished commands signalled; for tests.
@@ -2395,12 +2541,38 @@ extension Tako {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(text, forType: .string)
                             case .notification(let title, let body):
-                                let content = UNMutableNotificationContent()
-                                content.title = title
-                                content.body = body
-                                UNUserNotificationCenter.current().add(
-                                    UNNotificationRequest(identifier: UUID().uuidString,
-                                                          content: content, trigger: nil))
+                                self.postStructuredNotification(
+                                    id: nil,
+                                    title: title,
+                                    body: body,
+                                    appName: nil,
+                                    urgency: 1,
+                                    actions: [],
+                                    reportActivation: false,
+                                    focus: true,
+                                    reportClose: false,
+                                    timeoutMs: nil,
+                                    onlyWhenUnfocused: false
+                                )
+                            case let .structuredNotification(
+                                id, title, body, appName, urgency, actions,
+                                reportActivation, focus, reportClose, timeoutMs, onlyWhenUnfocused
+                            ):
+                                self.postStructuredNotification(
+                                    id: id,
+                                    title: title,
+                                    body: body,
+                                    appName: appName,
+                                    urgency: urgency,
+                                    actions: actions,
+                                    reportActivation: reportActivation,
+                                    focus: focus,
+                                    reportClose: reportClose,
+                                    timeoutMs: timeoutMs,
+                                    onlyWhenUnfocused: onlyWhenUnfocused
+                                )
+                            case let .notificationClose(id, reportClose):
+                                self.closeStructuredNotification(id: id, reportClose: reportClose)
                             case .progress(let state, let value):
                                 self.crab.progressReported(state: state, value: value)
                                 self.progressReport = state == 0 ? nil : .init(
@@ -2413,7 +2585,12 @@ extension Tako {
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandStarted()
                                 self.commandStarted()
+                                if let id = self.core.newestCommandId(),
+                                   let info = self.core.firstCommandAfter(after: id > 0 ? id - 1 : 0) {
+                                    self.activeRunningCommandText = info.input
+                                }
                             case .commandEnd(let exitCode):
+                                self.activeRunningCommandText = nil
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandEnded(exitCode: exitCode)
                                 self.progressReport = nil

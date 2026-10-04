@@ -409,6 +409,23 @@ pub enum FfiEvent {
     PromptMark,
     StatusSet { status: String, text: Option<String> },
     StatusClear,
+    StructuredNotification {
+        id: Option<String>,
+        title: String,
+        body: String,
+        app_name: Option<String>,
+        urgency: u8,
+        actions: Vec<String>,
+        report_activation: bool,
+        focus: bool,
+        report_close: bool,
+        timeout_ms: Option<u64>,
+        only_when_unfocused: bool,
+    },
+    NotificationClose {
+        id: String,
+        report_close: bool,
+    },
 }
 
 impl From<TerminalEvent> for FfiEvent {
@@ -426,6 +443,34 @@ impl From<TerminalEvent> for FfiEvent {
             TerminalEvent::PromptMark => FfiEvent::PromptMark,
             TerminalEvent::StatusSet { status, text } => FfiEvent::StatusSet { status, text },
             TerminalEvent::StatusClear => FfiEvent::StatusClear,
+            TerminalEvent::StructuredNotification {
+                id,
+                title,
+                body,
+                app_name,
+                urgency,
+                actions,
+                report_activation,
+                focus,
+                report_close,
+                timeout_ms,
+                only_when_unfocused,
+            } => FfiEvent::StructuredNotification {
+                id,
+                title,
+                body,
+                app_name,
+                urgency,
+                actions,
+                report_activation,
+                focus,
+                report_close,
+                timeout_ms,
+                only_when_unfocused,
+            },
+            TerminalEvent::NotificationClose { id, report_close } => {
+                FfiEvent::NotificationClose { id, report_close }
+            }
         }
     }
 }

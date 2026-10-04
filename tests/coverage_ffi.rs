@@ -224,6 +224,8 @@ fn take_events_reports_every_variant() {
     core.feed(b"\x1b]9;4;1;50\x07".to_vec()); // OSC 9;4 progress
     core.feed(b"\x1b]133;C\x07".to_vec()); // command start
     core.feed(b"\x1b]133;D;0\x07".to_vec()); // command end with exit code
+    core.feed(b"\x1b]99;;Hello OSC 99\x1b\\".to_vec()); // OSC 99 notification
+    core.feed(b"\x1b]99;i=c1:p=close:c=1;\x1b\\".to_vec()); // OSC 99 close
 
     let events = core.take_events();
     assert!(events.contains(&FfiEvent::Bell));
@@ -235,6 +237,8 @@ fn take_events_reports_every_variant() {
     assert!(events.iter().any(|e| matches!(e, FfiEvent::Progress { .. })));
     assert!(events.contains(&FfiEvent::CommandStart { id: Some(1) }));
     assert!(events.contains(&FfiEvent::CommandEnd { exit_code: Some(0) }));
+    assert!(events.iter().any(|e| matches!(e, FfiEvent::StructuredNotification { title, .. } if title == "Hello OSC 99")));
+    assert!(events.contains(&FfiEvent::NotificationClose { id: "c1".to_string(), report_close: true }));
 }
 
 // -----------------------------------------------------------------------
