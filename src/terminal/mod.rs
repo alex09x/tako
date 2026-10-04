@@ -1687,11 +1687,15 @@ impl Terminal {
     fn command_prompt_started(&mut self) {
         self.input_start = None;
         if self.active == ScreenBuffer::Primary {
-            self.commands.abandon_running();
+            if self.commands.running().is_some() {
+                self.commands.abandon_running();
+                self.events.push(TerminalEvent::CommandEnd { exit_code: None });
+            }
             self.primary.set_pen_owner(None);
             self.last_prompt_line = Some(self.cursor_absolute_line());
         }
     }
+
 
     /// `133;C`: open a record and claim what is written from here on for
     /// it. `None` on the alternate screen or once ids ran out.
@@ -3500,7 +3504,11 @@ impl Perform for Terminal {
                         self.line_feed();
                     }
                     if action == b'A' {
-                        self.command_prompt_started();
+                        if !continuation {
+                            self.command_prompt_started();
+                        } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
+                            self.last_prompt_line = Some(self.cursor_absolute_line());
+                        }
                         self.semantic_content = SemanticContent::Prompt;
                         let row = self.cursor.row;
                         let mark = if continuation {
@@ -3519,8 +3527,10 @@ impl Perform for Terminal {
                         .iter()
                         .skip(1)
                         .any(|p| p.windows(3).any(|w| w == b"k=s"));
-                    if !secondary {
+                    if !secondary && !continuation {
                         self.command_prompt_started();
+                    } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
+                        self.last_prompt_line = Some(self.cursor_absolute_line());
                     }
                     self.semantic_content = SemanticContent::Prompt;
                     let row = self.cursor.row;

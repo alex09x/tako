@@ -809,6 +809,38 @@ fn pending_prompt_line_preserved_across_checkpoint() {
     assert_eq!(marks[0].retained_row, 0);
 }
 
+#[test]
+fn continuation_prompts_preserve_initial_prompt_line_and_emit_marks() {
+    let mut t = Terminal::new(40, 10);
+    // Line 0: Initial prompt
+    t.feed(b"\x1b]133;A\x07$ prompt line 1\r\n");
+    // Line 1: Continuation prompt (k=c)
+    t.feed(b"\x1b]133;A;k=c\x07> prompt line 2\r\n");
+    // Line 2: Second continuation prompt (k=c)
+    t.feed(b"\x1b]133;A;k=c\x07> prompt line 3\r\n");
+    // Command line input
+    t.feed(b"\x1b]133;B\x07echo multiline\r\n");
+    // Command execution and completion
+    t.feed(b"\x1b]133;C\x07output\r\n\x1b]133;D;0\x07");
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].prompt_line, 0);
+    assert_eq!(marks[0].retained_row, 0);
+    assert_eq!(marks[0].status, CommandMarkStatus::Success);
+
+    // Reflow: resize terminal to narrower width
+    t.resize(20, 10);
+    let marks_after = t.command_marks();
+    assert_eq!(marks_after.len(), 1);
+    assert_eq!(marks_after[0].status, CommandMarkStatus::Success);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(marks_after[0].retained_row),
+        SemanticPrompt::Prompt
+    );
+}
+
+
 
 
 

@@ -63,3 +63,16 @@ fn events_drain_between_commands() {
         vec![TerminalEvent::CommandEnd { exit_code: Some(0) }]
     );
 }
+
+#[test]
+fn prompt_start_after_running_command_emits_command_end() {
+    let mut term = Terminal::new(20, 5);
+    term.feed(b"\x1b]133;C\x07");
+    term.take_events();
+    term.feed(b"\x1b]133;A\x07");
+    assert_eq!(
+        term.take_events(),
+        vec![TerminalEvent::CommandEnd { exit_code: None }]
+    );
+}
+
