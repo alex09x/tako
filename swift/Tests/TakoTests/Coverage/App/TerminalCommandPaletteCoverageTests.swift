@@ -161,4 +161,26 @@ struct TerminalCommandPaletteViewTests {
         // documented caveats on the same caveat.
         try? await Task.sleep(nanoseconds: 200_000_000)
     }
+
+    @Test func rendersCommandActionOptionsForRecordedCommands() {
+        let window = makeHostedWindow()
+        defer { window.close() }
+
+        let tako = Tako.App()
+        let surface = Tako.SurfaceView(tako, baseConfig: nil)
+        defer { surface.pty?.terminate() }
+
+        let input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}echo test\r\n\u{1b}]133;C\u{07}test-output\r\n\u{1b}]133;D;0\u{07}"
+        surface.feed(data: Data(input.utf8))
+
+        #expect(surface.recordedCommands().count == 1)
+
+        host(
+            TerminalCommandPaletteView(
+                surfaceView: surface,
+                isPresented: .constant(true),
+                takoConfig: tako.config,
+                onAction: { _ in }),
+            in: window)
+    }
 }

@@ -1999,6 +1999,43 @@ extension Tako {
             scheduleSearchHitRefresh()
         }
 
+        /// A command action requested sending text to another pane.
+        public func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {
+            sendOutputToAnotherPane(text: text)
+        }
+
+        func sendOutputToAnotherPane(text: String) {
+            if let controller = TerminalController.all.first(where: { $0.surfaceTree.contains(self) }) {
+                if let target = controller.surfaceTree.first(where: { $0 !== self }) {
+                    target.insertInputText(text)
+                    return
+                }
+                if let newSurface = controller.newSplit(at: self, direction: .right) {
+                    newSurface.insertInputText(text)
+                    return
+                }
+            }
+            for controller in TerminalController.all {
+                if let target = controller.surfaceTree.first(where: { $0 !== self }) {
+                    target.insertInputText(text)
+                    return
+                }
+            }
+        }
+
+        public func insertInputText(_ text: String) {
+            revealLiveScreenForUserInput()
+            var cleanText = text
+            while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
+                cleanText.removeLast()
+            }
+            guard !cleanText.isEmpty else { return }
+            let bytes = core.encodePaste(text: cleanText)
+            if !bytes.isEmpty {
+                writeToShell([UInt8](bytes))
+            }
+        }
+
         /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
         func cancelPendingSearchHitRefresh() {
             searchHitDebounceItem?.cancel()

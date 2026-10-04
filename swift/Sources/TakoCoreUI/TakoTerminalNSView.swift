@@ -59,6 +59,9 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
     /// a copy action or an accessibility element -- refreshes on this rather
     /// than polling.
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView)
+
+    /// A command action requested sending text to another pane.
+    func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String)
 }
 
 public extension TakoTerminalNSViewDelegate {
@@ -71,6 +74,7 @@ public extension TakoTerminalNSViewDelegate {
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {}
     func terminalView(_ view: TakoTerminalNSView, didScrollTo position: Double) {}
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {}
+    func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {}
 }
 
 /// Which Option key, if any, `TakoTerminalNSView.keyDown` treats as Alt
@@ -373,6 +377,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// Handler invoked when a command action requests sending text to another pane.
+    public var sendTextToAnotherPaneHandler: ((String) -> Void)?
+
     // Screen buffer & private mode properties
     public var isAlternateScreen: Bool { core.modes().alternateScreen }
     public var isAlternateScroll: Bool { core.modes().alternateScroll }
@@ -425,6 +432,35 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// an app.
     nonisolated(unsafe) public static var openURL: (URL) -> Void = { url in
         NSWorkspace.shared.open(url)
+    }
+
+    /// Hook for presenting a save panel; can be replaced in tests to avoid modal UI.
+    public static var saveFilePanel: (
+        _ text: String,
+        _ suggestedFilename: String,
+        _ window: NSWindow?,
+        _ completion: @escaping (URL?) -> Void
+    ) -> Void = { text, suggestedFilename, window, completion in
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename
+        panel.prompt = "Save"
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let targetURL = panel.url else {
+                completion(nil)
+                return
+            }
+            do {
+                try text.write(to: targetURL, atomically: true, encoding: .utf8)
+                completion(targetURL)
+            } catch {
+                completion(nil)
+            }
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            handler(panel.runModal())
+        }
     }
 
     /// Matches the schemes upstream's `link-url` looks for: `http`,
@@ -2709,7 +2745,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scheduleRedraw()
     }
 
-    private func revealLiveScreenForUserInput() {
+    func revealLiveScreenForUserInput() {
         guard viewportOffset > 0 else { return }
         scrollViewportToBottom()
     }
@@ -3043,10 +3079,18 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     override public func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let cell = cellAt(convert(event.locationInWindow, from: nil))
-        let report = mouseReportBytes(button: .right, action: .press, cell: cell, event: event)
-        if !report.isEmpty {
-            delegate?.terminalView(self, sendInputData: report)
+        let loc = convert(event.locationInWindow, from: nil)
+        let isStickyClick = stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(loc)
+        if !isStickyClick {
+            let cell = cellAt(loc)
+            let report = mouseReportBytes(button: .right, action: .press, cell: cell, event: event)
+            if !report.isEmpty {
+                delegate?.terminalView(self, sendInputData: report)
+                return
+            }
+        }
+        if let menu = menu(for: event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
         } else {
             super.rightMouseDown(with: event)
         }
@@ -3331,6 +3375,296 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         scheduleRedraw()
     }
 
+    // MARK: - Command Actions
+
+    /// Returns all recorded commands currently kept in the engine's memory.
+    public func recordedCommands() -> [FfiCommandInfo] {
+        var commands: [FfiCommandInfo] = []
+        var after: UInt64 = 0
+        while let cmd = core.firstCommandAfter(after: after) {
+            commands.append(cmd)
+            after = cmd.id
+        }
+        return commands
+    }
+
+    /// Looks up command info for a specific command ID.
+    public func commandInfo(for id: UInt64) -> FfiCommandInfo? {
+        guard id > 0 else { return nil }
+        if let info = core.firstCommandAfter(after: id - 1), info.id == id {
+            return info
+        }
+        return nil
+    }
+
+    /// Resolves the full output string of a recorded command.
+    public func commandOutputString(for commandId: UInt64) -> String {
+        let epoch = core.stateEpoch()
+        if let out = core.commandOutput(id: commandId, epoch: epoch, maxLines: 500_000, maxBytes: 50_000_000) {
+            return out.output
+        }
+        return ""
+    }
+
+    /// Identifies the command ID associated with a view point or the current context.
+    public func commandIdForContext(at point: NSPoint? = nil) -> UInt64? {
+        if let point {
+            if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(point) {
+                if let header = activeStickyCommandHeader ?? currentStickyCommandHeader() {
+                    return header.commandId
+                }
+            }
+            let cell = cellAt(point)
+            let totalScrollback = Int(core.scrollbackLen())
+            let offset = Int(core.viewportOffset())
+            let vpTop = totalScrollback - offset
+            let firstRetainedLine = core.firstRetainedLine()
+            let cellAbsLine = firstRetainedLine + UInt64(max(0, vpTop + cell.row))
+
+            let marks = core.commandMarks().sorted(by: { $0.promptLine < $1.promptLine })
+            if let mark = marks.last(where: { $0.promptLine <= cellAbsLine }) {
+                return mark.commandId
+            } else if let firstMark = marks.first, cellAbsLine < firstMark.promptLine {
+                if firstMark.commandId > 1 {
+                    return firstMark.commandId - 1
+                }
+            }
+        }
+
+        return activeStickyCommandHeader?.commandId
+            ?? activeRunningCommandId
+            ?? findRunningCommandId()
+            ?? core.newestCommandId()
+    }
+
+    /// Formats a command and its output as Markdown.
+    public static func formatCommandAndOutputAsMarkdown(command: String, output: String) -> String {
+        var md = "```bash\n\(command)\n```"
+        let trimmedOutput = output.hasSuffix("\n") ? String(output.dropLast()) : output
+        if !trimmedOutput.isEmpty {
+            md += "\n\n```\n\(trimmedOutput)\n```"
+        }
+        return md
+    }
+
+    /// 1. Copy command to clipboard.
+    public func copyCommand(id: UInt64) {
+        guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
+        copyStringConsumer(input)
+    }
+
+    /// 2. Copy output to clipboard.
+    public func copyOutput(id: UInt64) {
+        let output = commandOutputString(for: id)
+        copyStringConsumer(output)
+    }
+
+    /// 3. Copy both command and output as a Markdown block.
+    public func copyBothAsMarkdown(id: UInt64) {
+        guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
+        let output = commandOutputString(for: id)
+        let md = Self.formatCommandAndOutputAsMarkdown(command: input, output: output)
+        copyStringConsumer(md)
+    }
+
+    /// 4. Re-run command in this pane (inserted at the prompt, not executed).
+    public func rerunCommand(id: UInt64) {
+        guard let cmd = commandInfo(for: id), let input = cmd.input else { return }
+        revealLiveScreenForUserInput()
+        window?.makeFirstResponder(self)
+        var text = input
+        while text.hasSuffix("\n") || text.hasSuffix("\r") {
+            text.removeLast()
+        }
+        guard !text.isEmpty else { return }
+        let bytes = core.encodePaste(text: text)
+        if !bytes.isEmpty {
+            delegate?.terminalView(self, sendInputData: bytes)
+        }
+    }
+
+    /// 5. Send output to another pane as text (inserted at the prompt, not executed).
+    public func sendOutputToAnotherPane(id: UInt64) {
+        let output = commandOutputString(for: id)
+        var cleanText = output
+        while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
+            cleanText.removeLast()
+        }
+        if let sendTextToAnotherPaneHandler {
+            sendTextToAnotherPaneHandler(cleanText)
+        } else {
+            delegate?.terminalView(self, sendTextToAnotherPane: cleanText)
+        }
+    }
+
+    /// 6. Save output to a file via save panel.
+    public func saveOutputToFile(id: UInt64, completion: ((URL?) -> Void)? = nil) {
+        let output = commandOutputString(for: id)
+        let suggestedFilename = "command-\(id)-output.txt"
+        Self.saveFilePanel(output, suggestedFilename, window) { url in
+            completion?(url)
+        }
+    }
+
+    /// Directly save output to a file URL.
+    public func saveOutput(for id: UInt64, to url: URL) throws {
+        let output = commandOutputString(for: id)
+        try output.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// 7. Open working directory in Finder.
+    public func openWorkingDirectory(id: UInt64) {
+        guard let cmd = commandInfo(for: id), let cwd = cmd.cwd ?? workingDirectory else { return }
+        let url: URL
+        if cwd.hasPrefix("file://") {
+            url = URL(string: cwd) ?? URL(fileURLWithPath: cwd)
+        } else {
+            url = URL(fileURLWithPath: cwd)
+        }
+        Self.openURL(url)
+    }
+
+    // MARK: - Context Menu
+
+    override open func menu(for event: NSEvent) -> NSMenu? {
+        let loc = convert(event.locationInWindow, from: nil)
+        if let targetId = commandIdForContext(at: loc),
+           let cmd = commandInfo(for: targetId) {
+            return contextMenu(for: cmd)
+        }
+        return defaultContextMenu()
+    }
+
+    public func contextMenu(for commandId: UInt64) -> NSMenu? {
+        guard let cmd = commandInfo(for: commandId) else { return nil }
+        return contextMenu(for: cmd)
+    }
+
+    public func contextMenu(for cmd: FfiCommandInfo) -> NSMenu {
+        let menu = NSMenu(title: "Command")
+
+        if core.hasSelection() {
+            let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copyItem.target = self
+            menu.addItem(copyItem)
+        }
+
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 1. Copy Command
+        let copyCmdItem = NSMenuItem(title: "Copy Command", action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
+        copyCmdItem.representedObject = cmd.id
+        copyCmdItem.target = self
+        menu.addItem(copyCmdItem)
+
+        // 2. Copy Output
+        let copyOutItem = NSMenuItem(title: "Copy Output", action: #selector(copyOutputContextAction(_:)), keyEquivalent: "")
+        copyOutItem.representedObject = cmd.id
+        copyOutItem.target = self
+        menu.addItem(copyOutItem)
+
+        // 3. Copy Both as Markdown
+        let copyMdItem = NSMenuItem(title: "Copy Both as Markdown", action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
+        copyMdItem.representedObject = cmd.id
+        copyMdItem.target = self
+        menu.addItem(copyMdItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 4. Re-run in This Pane
+        let rerunItem = NSMenuItem(title: "Re-run in This Pane", action: #selector(rerunCommandContextAction(_:)), keyEquivalent: "")
+        rerunItem.representedObject = cmd.id
+        rerunItem.target = self
+        menu.addItem(rerunItem)
+
+        // 5. Send Output to Another Pane
+        let sendItem = NSMenuItem(title: "Send Output to Another Pane", action: #selector(sendOutputToAnotherPaneContextAction(_:)), keyEquivalent: "")
+        sendItem.representedObject = cmd.id
+        sendItem.target = self
+        menu.addItem(sendItem)
+
+        // 6. Save Output to File…
+        let saveItem = NSMenuItem(title: "Save Output to File…", action: #selector(saveOutputToFileContextAction(_:)), keyEquivalent: "")
+        saveItem.representedObject = cmd.id
+        saveItem.target = self
+        menu.addItem(saveItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 7. Open Working Directory
+        let openDirItem = NSMenuItem(title: "Open Working Directory", action: #selector(openWorkingDirectoryContextAction(_:)), keyEquivalent: "")
+        openDirItem.representedObject = cmd.id
+        openDirItem.target = self
+        if cmd.cwd == nil && workingDirectory == nil {
+            openDirItem.isEnabled = false
+        }
+        menu.addItem(openDirItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+
+        return menu
+    }
+
+    public func defaultContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Terminal")
+        if core.hasSelection() {
+            let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copyItem.target = self
+            menu.addItem(copyItem)
+        }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+        menu.addItem(NSMenuItem.separator())
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+        return menu
+    }
+
+    @objc private func copyCommandContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        copyCommand(id: id)
+    }
+
+    @objc private func copyOutputContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        copyOutput(id: id)
+    }
+
+    @objc private func copyBothAsMarkdownContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        copyBothAsMarkdown(id: id)
+    }
+
+    @objc private func rerunCommandContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        rerunCommand(id: id)
+    }
+
+    @objc private func sendOutputToAnotherPaneContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        sendOutputToAnotherPane(id: id)
+    }
+
+    @objc private func saveOutputToFileContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        saveOutputToFile(id: id)
+    }
+
+    @objc private func openWorkingDirectoryContextAction(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext() else { return }
+        openWorkingDirectory(id: id)
+    }
+
     // MARK: - Drag and Drop
 
     override public func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -3590,6 +3924,22 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
            item.action == #selector(jumpToNextPrompt(_:)) ||
            item.action == #selector(selectCommandOutput(_:)) {
             return true
+        }
+        if item.action == #selector(copyCommandContextAction(_:)) ||
+           item.action == #selector(copyOutputContextAction(_:)) ||
+           item.action == #selector(copyBothAsMarkdownContextAction(_:)) ||
+           item.action == #selector(rerunCommandContextAction(_:)) ||
+           item.action == #selector(sendOutputToAnotherPaneContextAction(_:)) ||
+           item.action == #selector(saveOutputToFileContextAction(_:)) {
+            return true
+        }
+        if item.action == #selector(openWorkingDirectoryContextAction(_:)) {
+            if let menuItem = item as? NSMenuItem,
+               let cmdId = menuItem.representedObject as? UInt64,
+               let cmd = commandInfo(for: cmdId) {
+                return cmd.cwd != nil || workingDirectory != nil
+            }
+            return workingDirectory != nil
         }
         return false
     }
