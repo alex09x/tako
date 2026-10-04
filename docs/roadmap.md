@@ -287,9 +287,9 @@ Step 6, unchanged in scope.
 
 Step 7, unchanged in scope.
 
-### [ ] A4. Paste and drop hardening
+### [x] A4. Paste and drop hardening
 
-Status: needed; found while reviewing the paste path.
+Status: shipped in [#8](https://github.com/alex09x/tako/pull/8).
 
 Today the engine removes the bracketed-paste terminator and normalizes newlines, but other
 control characters in pasted text (for example `0x03`, `ESC`, C1 controls) reach the program
@@ -824,9 +824,9 @@ pane header and exportable. The log is local, bounded and follows the snapshot p
 
 Done when every automated action from G1's scopes appears in the log with its client.
 
-### [ ] G3. Paste and drop hardening
+### [x] G3. Paste and drop hardening
 
-Item A4.
+Item A4; shipped in [#8](https://github.com/alex09x/tako/pull/8).
 
 ### [ ] G4. Escape-sequence policy
 
