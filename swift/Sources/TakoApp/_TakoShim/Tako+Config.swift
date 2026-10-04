@@ -676,6 +676,12 @@ extension Tako {
             rawBool("link-url", default: true)
         }
 
+        /// Reads `safe-paste`, default true.
+        /// Protects against accidental execution of pasted multi-line snippets at a shell prompt.
+        var safePaste: Bool {
+            rawBool("safe-paste", default: true)
+        }
+
         /// Where a finished selection is copied.
         enum CopyOnSelect: String {
             /// Nowhere.

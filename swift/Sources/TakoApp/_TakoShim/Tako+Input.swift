@@ -243,7 +243,7 @@ enum Tako {
 
     /// Why the app is asking the user to confirm a clipboard operation.
     /// The case names are upstream's, taken from the OSC sequence numbers.
-    enum ClipboardRequest {
+    enum ClipboardRequest: Equatable {
         case paste
         case osc_52_read
         case osc_52_write(NSPasteboard?)

@@ -74,7 +74,7 @@ class BaseTerminalController: NSWindowController,
     private var asking = false
 
     /// The clipboard confirmation window, if shown.
-    private var clipboardConfirmation: ClipboardConfirmationController?
+    var clipboardConfirmation: ClipboardConfirmationController?
 
     /// Fullscreen state management.
     private(set) var fullscreenStyle: FullscreenStyle?
@@ -1138,32 +1138,32 @@ class BaseTerminalController: NSWindowController,
     @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Tako.SurfaceView else { return }
         guard target == self.focusedSurface else { return }
-        guard let surface = target.surface else { return }
 
         // We need a window
         guard let window = self.window else { return }
 
         // Check whether we use non-native fullscreen
         guard let str = notification.userInfo?[Tako.Notification.ConfirmClipboardStrKey] as? String else { return }
-        guard let state = notification.userInfo?[Tako.Notification.ConfirmClipboardStateKey] as? UnsafeMutableRawPointer? else { return }
+        let state = notification.userInfo?[Tako.Notification.ConfirmClipboardStateKey] as? UnsafeMutableRawPointer?
         guard let request = notification.userInfo?[Tako.Notification.ConfirmClipboardRequestKey] as? Tako.ClipboardRequest else { return }
 
         // If we already have a clipboard confirmation view up, we ignore this request.
         // This shouldn't be possible...
         guard self.clipboardConfirmation == nil else {
-            Tako.App.completeClipboardRequest(surface, data: "", state: state, confirmed: true)
             return
         }
 
         // Show our paste confirmation
-        self.clipboardConfirmation = ClipboardConfirmationController(
-            surface: surface,
+        let cc = ClipboardConfirmationController(
+            surfaceView: target,
             contents: str,
             request: request,
-            state: state,
+            state: state ?? nil,
             delegate: self
         )
-        window.beginSheet(self.clipboardConfirmation!.window!)
+        self.clipboardConfirmation = cc
+        guard let ccWindow = cc.window else { return }
+        window.beginSheet(ccWindow)
     }
 
     func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Tako.ClipboardRequest) {
@@ -1183,16 +1183,19 @@ class BaseTerminalController: NSWindowController,
             pb.declareTypes([.string], owner: nil)
             pb.setString(cc.contents, forType: .string)
         case .osc_52_read, .paste:
-            let str: String
             switch action {
             case .cancel:
-                str = ""
-
+                // Cancel: dismiss without emitting characters to the PTY
+                if let surface = cc.surface {
+                    Tako.App.completeClipboardRequest(surface, data: "", state: cc.state, confirmed: false)
+                }
             case .confirm:
-                str = cc.contents
+                if let surfaceView = cc.surfaceView {
+                    Tako.App.completeClipboardRequest(surfaceView, data: cc.contents, state: cc.state, confirmed: true)
+                } else if let surface = cc.surface {
+                    Tako.App.completeClipboardRequest(surface, data: cc.contents, state: cc.state, confirmed: true)
+                }
             }
-
-            Tako.App.completeClipboardRequest(cc.surface, data: str, state: cc.state, confirmed: true)
         }
     }
 
