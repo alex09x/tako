@@ -381,6 +381,40 @@ final class StickyCommandHeaderTests: XCTestCase {
             "Restoring checkpoint must not synchronously extract all historical commands; resolved \(view2.trackedCommandsCountForTesting)"
         )
     }
+
+    func testStickyCommandHeaderLegibleWithLightTheme() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let lightBg = NSColor.white.cgColor
+        let darkFg = NSColor(calibratedRed: 0.125, green: 0.13, blue: 0.133, alpha: 1.0).cgColor // #202122
+        view.theme = TerminalTheme(background: lightBg, foreground: darkFg)
+
+        XCTAssertTrue(view.isLightTheme, "theme must be detected as light theme")
+
+        // Feed command with 40 lines of output
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}git diff\r\n\u{1b}]133;C\u{07}"
+        for i in 1...40 {
+            input += "diff line \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        view.updateScroller()
+        XCTAssertFalse(view.stickyHeaderLayer.isHidden, "sticky header should be visible")
+
+        guard let headerBg = view.stickyHeaderLayer.backgroundColor,
+              let headerNsColor = NSColor(cgColor: headerBg)?.usingColorSpace(.sRGB),
+              let textNsColor = NSColor(cgColor: view.stickyHeaderTextLayer.foregroundColor ?? darkFg)?.usingColorSpace(.sRGB) else {
+            XCTFail("Could not inspect header colors")
+            return
+        }
+
+        let bgLuminance = 0.2126 * headerNsColor.redComponent + 0.7152 * headerNsColor.greenComponent + 0.0722 * headerNsColor.blueComponent
+        let textLuminance = 0.2126 * textNsColor.redComponent + 0.7152 * textNsColor.greenComponent + 0.0722 * textNsColor.blueComponent
+
+        XCTAssertGreaterThan(bgLuminance, 0.7, "header background must be light on light theme; got \(bgLuminance)")
+        XCTAssertLessThan(textLuminance, 0.3, "header text must be dark on light theme; got \(textLuminance)")
+        XCTAssertGreaterThan(bgLuminance - textLuminance, 0.5, "contrast difference between background and text must be high")
+    }
 }
 #endif
 
