@@ -129,6 +129,24 @@ public enum MouseShiftCapture: String, Sendable {
 /// Transport-neutral: accepts ordered bytes via `feed(data:)` or `enqueue(data:)`,
 /// and emits user input, device replies and resize events through its `delegate`.
 /// Constructing this view never spawns child processes or local PTYs.
+/// A pinned command header at the top of the terminal pane while scrolling through long command output.
+public struct StickyCommandHeader: Equatable {
+    public let commandId: UInt64
+    public let command: String
+    public let promptRetainedRow: UInt64
+    /// 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+    public let status: UInt8
+    public let exitCode: Int32?
+
+    public init(commandId: UInt64, command: String, promptRetainedRow: UInt64, status: UInt8, exitCode: Int32?) {
+        self.commandId = commandId
+        self.command = command
+        self.promptRetainedRow = promptRetainedRow
+        self.status = status
+        self.exitCode = exitCode
+    }
+}
+
 @MainActor
 /// Open for subclassing: the macOS app layer wraps this surface in its own
 /// `SurfaceView`, which adds windowing identity (tabs, splits, focus,
@@ -147,6 +165,39 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private let scrollbarKnob = CALayer()
     let scrollbarMarksLayer = CALayer()
     let gutterMarksLayer = CALayer()
+    let stickyHeaderLayer = CALayer()
+    let stickyHeaderIndicatorLayer = CALayer()
+    let stickyHeaderTextLayer = CATextLayer()
+    let stickyHeaderHintLayer = CATextLayer()
+    let stickyHeaderSeparatorLayer = CALayer()
+    private var isHoveringStickyHeader = false
+    public private(set) var activeStickyCommandHeader: StickyCommandHeader?
+    struct TrackedCommandOutput {
+        let commandId: UInt64
+        var command: String
+        var promptLine: UInt64?
+        var startOutputAbsLine: UInt64 = 0
+        var startCursorCol: UInt32 = 0
+        var lastOutputAbsLine: UInt64
+        var status: UInt8
+        var exitCode: Int32?
+        var hasNoOutput: Bool
+        var outputResolved: Bool = false
+    }
+    private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
+    private var trackedCommandsEpoch: UInt64 = 0
+    var trackedCommandsCountForTesting: Int { trackedCommands.count }
+    var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
+    var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
+    private var activeRunningCommandId: UInt64? = nil
+
+    private func findRunningCommandId() -> UInt64? {
+        guard let newestId = core.newestCommandId(), newestId > 0 else { return nil }
+        if let info = core.firstCommandAfter(after: newestId - 1), info.id == newestId, info.running {
+            return newestId
+        }
+        return nil
+    }
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -159,6 +210,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             guard commandMarksEnabled != oldValue else { return }
             updateGutterMarks()
             updateScroller()
+        }
+    }
+
+    /// Whether the sticky command header stays pinned at the top while scrolling through long output.
+    /// Configured via `sticky-command-header = true|false`, default true.
+    public var stickyCommandHeaderEnabled: Bool = true {
+        didSet {
+            guard stickyCommandHeaderEnabled != oldValue else { return }
+            updateStickyCommandHeader()
         }
     }
 
@@ -190,6 +250,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             rebuildMetalRenderer()
             updateBlinkTimer()
             needsDisplay = true
+            updateStickyCommandHeader()
         }
     }
     public private(set) var renderer: TerminalRenderer
@@ -475,6 +536,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         gutterMarksLayer.masksToBounds = true
         self.layer?.addSublayer(gutterMarksLayer)
 
+        stickyHeaderLayer.zPosition = 9500
+        stickyHeaderLayer.masksToBounds = true
+        stickyHeaderLayer.isHidden = true
+        stickyHeaderLayer.backgroundColor = stickyHeaderBackgroundColor(hovering: false)
+
+        stickyHeaderSeparatorLayer.backgroundColor = stickyHeaderSeparatorColor()
+        stickyHeaderLayer.addSublayer(stickyHeaderSeparatorLayer)
+
+        stickyHeaderIndicatorLayer.cornerRadius = 3.5
+        stickyHeaderIndicatorLayer.masksToBounds = true
+        stickyHeaderLayer.addSublayer(stickyHeaderIndicatorLayer)
+
+        stickyHeaderTextLayer.truncationMode = .end
+        stickyHeaderTextLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderLayer.addSublayer(stickyHeaderTextLayer)
+
+        stickyHeaderHintLayer.string = "Jump to prompt ↑"
+        stickyHeaderHintLayer.alignmentMode = .right
+        stickyHeaderHintLayer.foregroundColor = stickyHeaderHintColor(hovering: false)
+        stickyHeaderHintLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderLayer.addSublayer(stickyHeaderHintLayer)
+
+        self.layer?.addSublayer(stickyHeaderLayer)
+
         scrollbarLayer.zPosition = 9999
         scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
         scrollbarLayer.cornerRadius = 5.0
@@ -593,6 +678,38 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         cols = restore.cols
         rows = restore.rows
         lastReportedScrollPosition = core.scrollPosition()
+        trackedCommands.removeAll()
+        trackedCommandsEpoch = core.stateEpoch()
+        if stickyCommandHeaderEnabled {
+            activeRunningCommandId = findRunningCommandId()
+            if let runningId = activeRunningCommandId {
+                let firstLine = core.firstRetainedLine()
+                let totalScrollback = Int(core.scrollbackLen())
+                let cmdText = core.firstCommandAfter(after: runningId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let promptLine = core.commandMarks().first(where: { $0.commandId == runningId })?.promptLine
+                let startLine = computeStartOutputAbsLine(
+                    promptLine: promptLine,
+                    cmdText: cmdText,
+                    firstRetainedLine: firstLine,
+                    totalScrollback: totalScrollback
+                )
+                let absLine = firstLine + UInt64(totalScrollback) + UInt64(core.cursorRow())
+                trackedCommands[runningId] = TrackedCommandOutput(
+                    commandId: runningId,
+                    command: cmdText,
+                    promptLine: promptLine,
+                    startOutputAbsLine: startLine,
+                    startCursorCol: core.cursorCol(),
+                    lastOutputAbsLine: max(absLine, startLine),
+                    status: 0,
+                    exitCode: nil,
+                    hasNoOutput: false,
+                    outputResolved: false
+                )
+            }
+        } else {
+            activeRunningCommandId = nil
+        }
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
@@ -632,11 +749,104 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 case .bell:
                     TakoLog.feed.debug("bell")
                     delegate?.terminalViewDidBell(self)
-                case .commandStart:
+                case .commandStart(let id):
                     commandStatusChanged = true
+                    guard stickyCommandHeaderEnabled else {
+                        if let cmdId = id {
+                            activeRunningCommandId = cmdId
+                        }
+                        delegate?.terminalViewCommandDidStart(self)
+                        break
+                    }
+                    let currentEpoch = core.stateEpoch()
+                    if trackedCommandsEpoch != currentEpoch {
+                        trackedCommands.removeAll()
+                        trackedCommandsEpoch = currentEpoch
+                        activeRunningCommandId = nil
+                    }
+                    let targetId = id ?? core.newestCommandId()
+                    if let cmdId = targetId {
+                        activeRunningCommandId = cmdId
+                        let firstLine = core.firstRetainedLine()
+                        let totalScrollback = Int(core.scrollbackLen())
+                        let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let promptLine = core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        let startLine = computeStartOutputAbsLine(
+                            promptLine: promptLine,
+                            cmdText: cmdText,
+                            firstRetainedLine: firstLine,
+                            totalScrollback: totalScrollback
+                        )
+                        let absLine = firstLine + UInt64(totalScrollback) + UInt64(core.cursorRow())
+                        trackedCommands[cmdId] = TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: cmdText,
+                            promptLine: promptLine,
+                            startOutputAbsLine: startLine,
+                            startCursorCol: core.cursorCol(),
+                            lastOutputAbsLine: max(absLine, startLine),
+                            status: 0,
+                            exitCode: nil,
+                            hasNoOutput: false,
+                            outputResolved: false
+                        )
+                    }
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
                     commandStatusChanged = true
+                    guard stickyCommandHeaderEnabled else {
+                        activeRunningCommandId = nil
+                        delegate?.terminalView(self, commandDidEnd: exitCode)
+                        break
+                    }
+                    let currentEpoch = core.stateEpoch()
+                    if trackedCommandsEpoch != currentEpoch {
+                        trackedCommands.removeAll()
+                        trackedCommandsEpoch = currentEpoch
+                        activeRunningCommandId = nil
+                    }
+                    let targetId = activeRunningCommandId ?? core.newestCommandId()
+                    if let cmdId = targetId {
+                        let existing = trackedCommands[cmdId]
+                        let promptLine = existing?.promptLine ?? core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        let status: UInt8 = (exitCode == 0 ? 1 : 2)
+                        let cmdText = (existing?.command.isEmpty == false)
+                            ? existing!.command
+                            : (core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                        let startLine: UInt64
+                        if let existingStart = existing?.startOutputAbsLine, existingStart > (promptLine ?? 0) {
+                            startLine = existingStart
+                        } else {
+                            startLine = computeStartOutputAbsLine(
+                                promptLine: promptLine,
+                                cmdText: cmdText,
+                                firstRetainedLine: core.firstRetainedLine(),
+                                totalScrollback: Int(core.scrollbackLen())
+                            )
+                        }
+                        var tracked = existing ?? TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: cmdText,
+                            promptLine: promptLine,
+                            startOutputAbsLine: startLine,
+                            startCursorCol: 0,
+                            lastOutputAbsLine: startLine,
+                            status: status,
+                            exitCode: exitCode,
+                            hasNoOutput: false,
+                            outputResolved: false
+                        )
+                        tracked.promptLine = promptLine
+                        tracked.startOutputAbsLine = startLine
+                        tracked.status = status
+                        tracked.exitCode = exitCode
+                        tracked.outputResolved = false
+                        if tracked.command.isEmpty, !cmdText.isEmpty {
+                            tracked.command = cmdText
+                        }
+                        trackedCommands[cmdId] = tracked
+                    }
+                    activeRunningCommandId = nil
                     delegate?.terminalView(self, commandDidEnd: exitCode)
                 case .clipboardSet(let text):
                     TakoLog.feed.info("OSC 52 → clipboard (\(text.count) chars)")
@@ -647,6 +857,40 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalView(self, didChangeWorkingDirectory: path)
                 default:
                     break
+                }
+            }
+
+            if stickyCommandHeaderEnabled && outcome.hasDamage {
+                if activeRunningCommandId == nil {
+                    activeRunningCommandId = findRunningCommandId()
+                }
+                if let cmdId = activeRunningCommandId {
+                    let totalScrollback = UInt64(core.scrollbackLen())
+                    let cursorRow = UInt64(core.cursorRow())
+                    let firstLine = core.firstRetainedLine()
+                    let absLine = firstLine + totalScrollback + cursorRow
+                    if var tracked = trackedCommands[cmdId] {
+                        tracked.lastOutputAbsLine = max(tracked.lastOutputAbsLine, absLine)
+                        if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            tracked.command = input
+                        }
+                        trackedCommands[cmdId] = tracked
+                    } else {
+                        let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let promptLine = core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        trackedCommands[cmdId] = TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: cmdText,
+                            promptLine: promptLine,
+                            startOutputAbsLine: absLine,
+                            startCursorCol: 0,
+                            lastOutputAbsLine: absLine,
+                            status: 0,
+                            exitCode: nil,
+                            hasNoOutput: false,
+                            outputResolved: false
+                        )
+                    }
                 }
             }
 
@@ -689,6 +933,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     func updateScroller() {
         updateGutterMarks()
+        updateStickyCommandHeader()
 
         let trackHeight = bounds.height
         guard trackHeight > 0 else { return }
@@ -890,6 +1135,436 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
+    /// Computes the absolute line index where a command's output begins, accounting for
+    /// multiline input, wrapped lines, and secondary continuation prompts (OSC 133;A;k=s).
+    private func computeStartOutputAbsLine(
+        promptLine: UInt64?,
+        cmdText: String,
+        firstRetainedLine: UInt64,
+        totalScrollback: Int
+    ) -> UInt64 {
+        guard let pLine = promptLine else {
+            return firstRetainedLine
+        }
+
+        var promptContinuations: UInt64 = 0
+        if pLine >= firstRetainedLine {
+            var r = pLine - firstRetainedLine + 1
+            let totalRetained = UInt64(totalScrollback + Int(core.rows()))
+            while r < totalRetained && core.retainedSemanticPrompt(row: r) == 2 {
+                promptContinuations += 1
+                r += 1
+            }
+        }
+
+        let terminalCols = max(1, Int(core.cols()))
+        let lines = cmdText.split(separator: "\n", omittingEmptySubsequences: false)
+        var wrappedInputRows: UInt64 = 0
+        for line in lines {
+            let rowsForLine = max(1, (line.count + terminalCols - 1) / terminalCols)
+            wrappedInputRows += UInt64(rowsForLine)
+        }
+
+        let inputRows = max(wrappedInputRows, promptContinuations + 1)
+        return max(firstRetainedLine, pLine + inputRows)
+    }
+
+    /// Computes the sticky command header for the current viewport state, or nil if unpinned.
+    public func currentStickyCommandHeader() -> StickyCommandHeader? {
+        guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
+            return nil
+        }
+
+        let currentEpoch = core.stateEpoch()
+        if trackedCommandsEpoch != currentEpoch {
+            trackedCommands.removeAll()
+            trackedCommandsEpoch = currentEpoch
+            activeRunningCommandId = findRunningCommandId()
+        }
+
+        let totalScrollback = Int(core.scrollbackLen())
+        let offset = Int(core.viewportOffset())
+        let vpTop = totalScrollback - offset
+        guard vpTop >= 0 else { return nil }
+
+        let firstRetainedLine = core.firstRetainedLine()
+        let vpTopAbsLine = firstRetainedLine + UInt64(vpTop)
+        let currentBottom = firstRetainedLine + UInt64(totalScrollback) + UInt64(core.cursorRow())
+
+        // Refresh/prune existing tracked commands for evicted outputs or removed history
+        if let oldestRecord = core.firstCommandAfter(after: 0) {
+            let oldestId = oldestRecord.id
+            for (id, cmd) in trackedCommands {
+                if cmd.status != 0 && !cmd.hasNoOutput && cmd.lastOutputAbsLine < firstRetainedLine {
+                    trackedCommands[id]?.hasNoOutput = true
+                }
+            }
+            trackedCommands = trackedCommands.filter { id, _ in
+                id >= oldestId
+            }
+        } else {
+            trackedCommands.removeAll()
+        }
+
+        // Bound memory: if tracked cache grows, prune distant records
+        if trackedCommands.count > 128 {
+            let sortedKeys = trackedCommands.keys.sorted()
+            let pruneCount = trackedCommands.count - 64
+            for id in sortedKeys.prefix(pruneCount) {
+                if id != activeRunningCommandId {
+                    trackedCommands.removeValue(forKey: id)
+                }
+            }
+        }
+
+        let marks = core.commandMarks().sorted(by: { $0.promptLine < $1.promptLine })
+
+        // Find candidate command that intersects or precedes vpTopAbsLine
+        let candidateId: UInt64?
+        if let precedingMark = marks.last(where: { $0.promptLine <= vpTopAbsLine }) {
+            candidateId = precedingMark.commandId
+        } else if let firstMark = marks.first {
+            // All retained prompt marks start below vpTopAbsLine.
+            // If an earlier command's output extends into the retained buffer, its prompt was evicted.
+            candidateId = firstMark.commandId > 1 ? firstMark.commandId - 1 : nil
+        } else {
+            // No prompt marks retained in scrollback (prompt evicted or running command)
+            candidateId = activeRunningCommandId ?? findRunningCommandId() ?? core.newestCommandId()
+        }
+
+        guard let targetId = candidateId else {
+            return nil
+        }
+
+        let resolvedCmd: TrackedCommandOutput?
+        if let existing = trackedCommands[targetId] {
+            if existing.status == 0 {
+                // Refresh bounds for running command
+                var runningCmd = existing
+                runningCmd.lastOutputAbsLine = max(runningCmd.lastOutputAbsLine, currentBottom)
+                if runningCmd.startOutputAbsLine <= (existing.promptLine ?? 0) {
+                    runningCmd.startOutputAbsLine = computeStartOutputAbsLine(
+                        promptLine: existing.promptLine,
+                        cmdText: existing.command,
+                        firstRetainedLine: firstRetainedLine,
+                        totalScrollback: totalScrollback
+                    )
+                }
+                // Check if running command has finished
+                if let info = core.firstCommandAfter(after: targetId - 1), info.id == targetId, !info.running {
+                    let promptLine = existing.promptLine ?? marks.first(where: { $0.commandId == targetId })?.promptLine
+                    let status: UInt8 = (info.exitCode == 0 ? 1 : 2)
+                    let out = core.commandOutput(id: targetId, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                    let lines = UInt64(out?.lines ?? 0)
+                    let isNoOutput = (lines == 0)
+                    let startLine = computeStartOutputAbsLine(
+                        promptLine: promptLine,
+                        cmdText: existing.command,
+                        firstRetainedLine: firstRetainedLine,
+                        totalScrollback: totalScrollback
+                    )
+                    let lastLine: UInt64
+                    if isNoOutput {
+                        lastLine = promptLine ?? 0
+                    } else {
+                        lastLine = max(startLine, startLine + (lines > 0 ? lines - 1 : 0))
+                    }
+                    runningCmd = TrackedCommandOutput(
+                        commandId: targetId,
+                        command: existing.command,
+                        promptLine: promptLine,
+                        startOutputAbsLine: startLine,
+                        startCursorCol: existing.startCursorCol,
+                        lastOutputAbsLine: lastLine,
+                        status: status,
+                        exitCode: info.exitCode,
+                        hasNoOutput: isNoOutput,
+                        outputResolved: true
+                    )
+                    if activeRunningCommandId == targetId {
+                        activeRunningCommandId = nil
+                    }
+                }
+                trackedCommands[targetId] = runningCmd
+                resolvedCmd = runningCmd
+            } else if !existing.outputResolved {
+                // Completed command whose output bounds have not been resolved yet
+                let promptLine = existing.promptLine ?? marks.first(where: { $0.commandId == targetId })?.promptLine
+                let epoch = core.stateEpoch()
+                let out = core.commandOutput(id: targetId, epoch: epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                let lines = UInt64(out?.lines ?? 0)
+                let isNoOutput = (lines == 0)
+                let startLine = computeStartOutputAbsLine(
+                    promptLine: promptLine,
+                    cmdText: existing.command,
+                    firstRetainedLine: firstRetainedLine,
+                    totalScrollback: totalScrollback
+                )
+                let lastLine: UInt64
+                if isNoOutput {
+                    lastLine = promptLine ?? 0
+                } else {
+                    lastLine = max(startLine, startLine + (lines > 0 ? lines - 1 : 0))
+                }
+                var tracked = existing
+                tracked.promptLine = promptLine
+                tracked.startOutputAbsLine = startLine
+                tracked.lastOutputAbsLine = lastLine
+                tracked.hasNoOutput = isNoOutput
+                tracked.outputResolved = true
+                trackedCommands[targetId] = tracked
+                resolvedCmd = tracked
+            } else {
+                var tracked = existing
+                if tracked.startOutputAbsLine <= (tracked.promptLine ?? 0) {
+                    let startLine = computeStartOutputAbsLine(
+                        promptLine: tracked.promptLine,
+                        cmdText: tracked.command,
+                        firstRetainedLine: firstRetainedLine,
+                        totalScrollback: totalScrollback
+                    )
+                    if !tracked.hasNoOutput {
+                        let diff = startLine > tracked.startOutputAbsLine ? (startLine - tracked.startOutputAbsLine) : 0
+                        tracked.lastOutputAbsLine += diff
+                    }
+                    tracked.startOutputAbsLine = startLine
+                    trackedCommands[targetId] = tracked
+                }
+                resolvedCmd = tracked
+            }
+        } else {
+            // Not in cache: query only this single candidate command
+            if let info = core.firstCommandAfter(after: targetId - 1), info.id == targetId {
+                if info.running && activeRunningCommandId == nil {
+                    activeRunningCommandId = info.id
+                }
+                guard let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else {
+                    return nil
+                }
+                let mark = marks.first(where: { $0.commandId == info.id })
+                let promptLine = mark?.promptLine
+
+                let startLine = computeStartOutputAbsLine(
+                    promptLine: promptLine,
+                    cmdText: rawInput,
+                    firstRetainedLine: firstRetainedLine,
+                    totalScrollback: totalScrollback
+                )
+
+                let status: UInt8
+                let isNoOutput: Bool
+                let lastLine: UInt64
+
+                if info.running {
+                    status = 0
+                    isNoOutput = false
+                    lastLine = max(currentBottom, startLine)
+                } else {
+                    status = (info.finished ? (info.exitCode == 0 ? 1 : 2) : 2)
+                    let out = core.commandOutput(id: info.id, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                    let lines = UInt64(out?.lines ?? 0)
+                    isNoOutput = (lines == 0)
+                    if isNoOutput {
+                        lastLine = promptLine ?? 0
+                    } else {
+                        lastLine = max(startLine, startLine + (lines > 0 ? lines - 1 : 0))
+                    }
+                }
+
+                let tracked = TrackedCommandOutput(
+                    commandId: info.id,
+                    command: rawInput,
+                    promptLine: promptLine,
+                    startOutputAbsLine: startLine,
+                    startCursorCol: 0,
+                    lastOutputAbsLine: lastLine,
+                    status: status,
+                    exitCode: info.exitCode,
+                    hasNoOutput: isNoOutput,
+                    outputResolved: !info.running
+                )
+                trackedCommands[info.id] = tracked
+                resolvedCmd = tracked
+            } else {
+                resolvedCmd = nil
+            }
+        }
+
+        guard let cmd = resolvedCmd, !cmd.hasNoOutput, !cmd.command.isEmpty else {
+            return nil
+        }
+
+        // Check if prompt is visible on screen
+        if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
+            let pRow = Int(pLine - firstRetainedLine)
+            if pRow >= vpTop {
+                // Prompt line is visible on screen or below vpTop
+                return nil
+            }
+        }
+
+        // Check if prompt or prompt continuation mark is at the top of the viewport
+        let semPrompt = core.retainedSemanticPrompt(row: UInt64(vpTop))
+        if semPrompt != 0 {
+            return nil
+        }
+
+        // Zero-output completed command has no output on screen
+        if cmd.status != 0 && cmd.lastOutputAbsLine <= (cmd.promptLine ?? 0) {
+            return nil
+        }
+
+        // Check if vpTopAbsLine is within this command's output bounds (both lower and upper bounds)
+        if vpTopAbsLine < cmd.startOutputAbsLine || vpTopAbsLine > cmd.lastOutputAbsLine {
+            return nil
+        }
+
+        let promptRetainedRow: UInt64
+        if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
+            promptRetainedRow = pLine - firstRetainedLine
+        } else {
+            promptRetainedRow = 0
+        }
+
+        return StickyCommandHeader(
+            commandId: cmd.commandId,
+            command: cmd.command,
+            promptRetainedRow: promptRetainedRow,
+            status: cmd.status,
+            exitCode: cmd.exitCode
+        )
+    }
+
+    /// Updates the pinned sticky command header layer based on current viewport offset and command marks.
+    func updateStickyCommandHeader() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
+            stickyHeaderLayer.isHidden = true
+            activeStickyCommandHeader = nil
+            return
+        }
+
+        guard let header = currentStickyCommandHeader() else {
+            stickyHeaderLayer.isHidden = true
+            activeStickyCommandHeader = nil
+            return
+        }
+
+        activeStickyCommandHeader = header
+
+        let layout = gridLayout
+        let headerHeight = max(cellHeight, 22.0)
+        let headerY = bounds.height - layout.top - headerHeight
+        stickyHeaderLayer.frame = CGRect(x: 0, y: headerY, width: bounds.width, height: headerHeight)
+        stickyHeaderLayer.isHidden = false
+        stickyHeaderLayer.backgroundColor = stickyHeaderBackgroundColor(hovering: isHoveringStickyHeader)
+
+        stickyHeaderSeparatorLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1.0)
+        stickyHeaderSeparatorLayer.backgroundColor = stickyHeaderSeparatorColor()
+
+        let indicatorSize: CGFloat = 7.0
+        let indicatorX = max(layout.left, 6.0)
+        let indicatorY = (headerHeight - indicatorSize) / 2.0
+        stickyHeaderIndicatorLayer.frame = CGRect(x: indicatorX, y: indicatorY, width: indicatorSize, height: indicatorSize)
+
+        let indicatorColor: CGColor
+        switch header.status {
+        case 1: indicatorColor = NSColor.systemGreen.cgColor
+        case 2: indicatorColor = NSColor.systemRed.cgColor
+        default: indicatorColor = NSColor.systemBlue.cgColor
+        }
+        stickyHeaderIndicatorLayer.backgroundColor = indicatorColor
+
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderTextLayer.contentsScale = scale
+        stickyHeaderHintLayer.contentsScale = scale
+
+        let textX = indicatorX + indicatorSize + 8.0
+        let hintWidth: CGFloat = 110.0
+        let availableWidth = max(0, bounds.width - textX - hintWidth - 20.0)
+        stickyHeaderTextLayer.frame = CGRect(x: textX, y: (headerHeight - 16.0) / 2.0, width: availableWidth, height: 16.0)
+
+        let font = NSFont.monospacedSystemFont(ofSize: min(theme.fontSize, 12.0), weight: .semibold)
+        stickyHeaderTextLayer.font = font
+        stickyHeaderTextLayer.fontSize = font.pointSize
+        stickyHeaderTextLayer.foregroundColor = stickyHeaderTextColor()
+        stickyHeaderTextLayer.string = header.command
+
+        let hintFont = NSFont.systemFont(ofSize: 10.0, weight: .regular)
+        stickyHeaderHintLayer.font = hintFont
+        stickyHeaderHintLayer.fontSize = hintFont.pointSize
+        stickyHeaderHintLayer.foregroundColor = stickyHeaderHintColor(hovering: isHoveringStickyHeader)
+        let hintX = max(textX + availableWidth, bounds.width - hintWidth - 16.0)
+        stickyHeaderHintLayer.frame = CGRect(x: hintX, y: (headerHeight - 14.0) / 2.0, width: hintWidth, height: 14.0)
+    }
+
+    /// Handles hover state updates for the sticky command header.
+    private func updateStickyHeaderHover(_ hovering: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        stickyHeaderLayer.backgroundColor = stickyHeaderBackgroundColor(hovering: hovering)
+        stickyHeaderHintLayer.foregroundColor = stickyHeaderHintColor(hovering: hovering)
+    }
+
+    var isLightTheme: Bool {
+        guard let bg = NSColor(cgColor: theme.background)?.usingColorSpace(.sRGB) else {
+            return false
+        }
+        let luminance = 0.2126 * bg.redComponent + 0.7152 * bg.greenComponent + 0.0722 * bg.blueComponent
+        return luminance > 0.5
+    }
+
+    func stickyHeaderBackgroundColor(hovering: Bool) -> CGColor {
+        if isLightTheme {
+            let base = NSColor(cgColor: theme.background) ?? NSColor.white
+            let fraction: CGFloat = hovering ? 0.14 : 0.06
+            let blended = base.blended(withFraction: fraction, of: .black)
+                ?? (hovering ? NSColor(white: 0.86, alpha: 0.98) : NSColor(white: 0.94, alpha: 0.96))
+            return blended.withAlphaComponent(hovering ? 0.98 : 0.95).cgColor
+        } else {
+            let base = NSColor(cgColor: theme.background) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1.0)
+            let fraction: CGFloat = hovering ? 0.16 : 0.08
+            let blended = base.blended(withFraction: fraction, of: .white)
+                ?? (hovering ? NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.20, alpha: 0.98) : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 0.94))
+            return blended.withAlphaComponent(hovering ? 0.98 : 0.94).cgColor
+        }
+    }
+
+    func stickyHeaderTextColor() -> CGColor {
+        theme.foreground
+    }
+
+    func stickyHeaderHintColor(hovering: Bool) -> CGColor {
+        if isLightTheme {
+            let fg = NSColor(cgColor: theme.foreground) ?? NSColor.black
+            return fg.withAlphaComponent(hovering ? 0.85 : 0.55).cgColor
+        } else {
+            let fg = NSColor(cgColor: theme.foreground) ?? NSColor.white
+            return fg.withAlphaComponent(hovering ? 0.85 : 0.5).cgColor
+        }
+    }
+
+    func stickyHeaderSeparatorColor() -> CGColor {
+        if isLightTheme {
+            return NSColor.black.withAlphaComponent(0.12).cgColor
+        } else {
+            return NSColor.white.withAlphaComponent(0.15).cgColor
+        }
+    }
+
+    /// Jumps the viewport so that the given retained prompt row is pinned at the top.
+    public func jumpToPrompt(retainedRow: UInt64) {
+        let totalScrollback = Int(core.scrollbackLen())
+        let targetOffset = max(0, totalScrollback - Int(retainedRow))
+        scrollToOffset(targetOffset)
+        updateScroller()
+    }
+
     /// Internal, not private: a host that moved the viewport in the engine
     /// directly (a search selecting a hit) calls it so the scrollbar follows.
     func notifyScrollPositionIfChanged() {
@@ -908,6 +1583,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Reset terminal state.
     public func reset() {
+        trackedCommands.removeAll()
+        trackedCommandsEpoch = core.stateEpoch()
+        activeRunningCommandId = nil
         parserCoordinator.feedSynchronously(Data("\u{001B}c".utf8))
         scheduleRedraw()
     }
@@ -2126,6 +2804,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return
         }
         isDraggingScrollbar = false
+        if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(loc) {
+            if let header = activeStickyCommandHeader ?? currentStickyCommandHeader() {
+                jumpToPrompt(retainedRow: header.promptRetainedRow)
+                return
+            }
+        }
         let cell = cellAt(convert(event.locationInWindow, from: nil))
         if event.modifierFlags.contains(.command), let link = linkRange(at: cell) {
             Self.openURL(link.url)
@@ -2419,6 +3103,18 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 : NSColor.white.withAlphaComponent(0.45).cgColor
             CATransaction.commit()
         }
+        if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(point) {
+            if !isHoveringStickyHeader {
+                isHoveringStickyHeader = true
+                updateStickyHeaderHover(true)
+            }
+            NSCursor.pointingHand.set()
+            return
+        } else if isHoveringStickyHeader {
+            isHoveringStickyHeader = false
+            updateStickyHeaderHover(false)
+            NSCursor.arrow.set()
+        }
         mouseCell = cellAt(point)
         updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         if let cell = mouseCell {
@@ -2436,6 +3132,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     override public func mouseExited(with event: NSEvent) {
+        if isHoveringStickyHeader {
+            isHoveringStickyHeader = false
+            updateStickyHeaderHover(false)
+        }
         mouseCell = nil
         updateHoveredLink(commandHeld: false)
         super.mouseExited(with: event)

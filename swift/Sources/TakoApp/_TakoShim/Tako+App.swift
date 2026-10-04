@@ -2110,6 +2110,7 @@ extension Tako {
             linkURLDetectionEnabled = config.linkURL
             safePaste = config.safePaste
             commandMarksEnabled = config.commandMarks
+            stickyCommandHeaderEnabled = config.stickyCommandHeader
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
 

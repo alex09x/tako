@@ -526,6 +526,13 @@ extension Tako {
             rawBool("command-marks", default: true)
         }
 
+        /// Whether the sticky command header stays pinned at the top while scrolling through long output.
+        ///
+        /// Reads `sticky-command-header`, default true.
+        var stickyCommandHeader: Bool {
+            rawBool("sticky-command-header", default: true)
+        }
+
         /// Which bundled shell-integration script, if any, is injected into
         /// a new shell.
         enum ShellIntegration: String {
