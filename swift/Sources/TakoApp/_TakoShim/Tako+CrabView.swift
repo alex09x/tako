@@ -169,6 +169,35 @@ extension Tako {
         }()
         private var cancellables: Set<AnyCancellable> = []
 
+        private static func surfaces(in window: NSWindow) -> [SurfaceView] {
+            func collect(_ view: NSView, into list: inout [SurfaceView]) {
+                if let surface = view as? SurfaceView {
+                    list.append(surface)
+                }
+                for sub in view.subviews {
+                    collect(sub, into: &list)
+                }
+            }
+            var list: [SurfaceView] = []
+            if let content = window.contentView {
+                collect(content, into: &list)
+            }
+            return list
+        }
+
+        private func refresh(for surfaces: [SurfaceView]) {
+            guard !surfaces.isEmpty else { return }
+            let dominant = surfaces.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority }) ?? surfaces[0]
+            crabView.state = dominant.crab.state
+            crabView.unread = surfaces.contains(where: { $0.crab.unread })
+            if let progress = dominant.crab.progress {
+                elapsedLabel.stringValue = "\(progress)%"
+            } else {
+                elapsedLabel.stringValue = dominant.crab.elapsedLabel ?? ""
+            }
+            elapsedLabel.isHidden = elapsedLabel.stringValue.isEmpty
+        }
+
         /// Puts the crab at the head of upstream's tab accessory stack.
         ///
         /// A view can be re-added to the same window (splits, tab moves), so
@@ -187,30 +216,28 @@ extension Tako {
             crabView.widthAnchor.constraint(equalToConstant: 16).isActive = true
             crabView.heightAnchor.constraint(equalToConstant: 16).isActive = true
 
-            let crab = surface.crab
-            crab.$state
-                .receive(on: RunLoop.main)
-                .sink { [weak self] in self?.crabView.state = $0 }
-                .store(in: &cancellables)
-            crab.$unread
-                .receive(on: RunLoop.main)
-                .sink { [weak self] in self?.crabView.unread = $0 }
-                .store(in: &cancellables)
-            // The timer text and the progress share one slot: progress wins
-            // when the program reports it, because it says more.
-            crab.$elapsed
-                .combineLatest(crab.$progress)
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _, progress in
-                    guard let self else { return }
-                    if let progress {
-                        self.elapsedLabel.stringValue = "\(progress)%"
-                    } else {
-                        self.elapsedLabel.stringValue = crab.elapsedLabel ?? ""
-                    }
-                    self.elapsedLabel.isHidden = self.elapsedLabel.stringValue.isEmpty
-                }
-                .store(in: &cancellables)
+            let allSurfaces = Self.surfaces(in: window)
+            let surfacesToWatch = allSurfaces.contains(where: { $0 === surface }) ? allSurfaces : (allSurfaces + [surface])
+
+            for s in surfacesToWatch {
+                s.crab.$paneStatus
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
+                    .store(in: &cancellables)
+                s.crab.$unread
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
+                    .store(in: &cancellables)
+                s.crab.$elapsed
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
+                    .store(in: &cancellables)
+                s.crab.$progress
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
+                    .store(in: &cancellables)
+            }
+            refresh(for: surfacesToWatch)
         }
     }
 }

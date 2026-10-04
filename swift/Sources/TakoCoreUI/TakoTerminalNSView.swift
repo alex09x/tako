@@ -65,6 +65,15 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
 
     /// The link under the pointer changed on hover or became nil (E8).
     func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?)
+
+    /// The shell reached an OSC 133 prompt mark (B1).
+    func terminalViewPromptMark(_ view: TakoTerminalNSView)
+
+    /// A program set explicit pane status via escape sequence (OSC 1337 / OSC 9;5) (B1).
+    func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?)
+
+    /// A program cleared explicit pane status via escape sequence (B1).
+    func terminalViewDidClearStatus(_ view: TakoTerminalNSView)
 }
 
 public extension TakoTerminalNSViewDelegate {
@@ -79,6 +88,9 @@ public extension TakoTerminalNSViewDelegate {
     func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {}
     func terminalView(_ view: TakoTerminalNSView, sendTextToAnotherPane text: String) {}
     func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?) {}
+    func terminalViewPromptMark(_ view: TakoTerminalNSView) {}
+    func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {}
+    func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {}
 }
 
 /// Which Option key, if any, `TakoTerminalNSView.keyDown` treats as Alt
@@ -1142,6 +1154,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     let path = URL(string: url)?.path ?? url
                     self.workingDirectory = path
                     delegate?.terminalView(self, didChangeWorkingDirectory: path)
+                case .promptMark:
+                    delegate?.terminalViewPromptMark(self)
+                case let .statusSet(status, text):
+                    delegate?.terminalView(self, didReportStatus: status, text: text)
+                case .statusClear:
+                    delegate?.terminalViewDidClearStatus(self)
                 default:
                     break
                 }

@@ -64,7 +64,9 @@ meant to be consumed that way.
 - **Size:** tell the program the new size when the view reports one (on a
   pty, `TIOCSWINSZ`).
 - **Events:** title, bell, clipboard requests (OSC 52), working directory
-  (OSC 7) and command start and end (OSC 133) arrive as delegate calls or
+  (OSC 7), command start and end (OSC 133), prompt marks (OSC 133;A / OSC 133;P),
+  and pane status (`OSC 1337 ; SetStatus=<status>[;<text>] ST`, `OSC 1337 ; ClearStatus ST`,
+  `OSC 9 ; 5 ; <status>[;<text>] ST`, `OSC 9 ; 5 ; clear ST`) arrive as delegate calls or
   events. A host that ignores them in C calls `prod_vt_discard_events` so
   they do not pile up. Writing to the system clipboard on a program's request
   is a policy decision the engine leaves to the host.

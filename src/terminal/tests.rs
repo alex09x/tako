@@ -1361,3 +1361,128 @@ fn has_damage_reflects_synchronized_output_state() {
     term.feed(b"\x1b[?2026l");
     assert!(term.has_damage(), "must report damage after sync frame closes");
 }
+
+#[test]
+fn osc_133_prompt_mark_emits_prompt_mark_event() {
+    use crate::terminal::TerminalEvent;
+    let mut term = Terminal::new(80, 24);
+
+    // OSC 133;A
+    term.feed(b"\x1b]133;A\x07");
+    let events = term.take_events();
+    assert!(events.iter().any(|e| matches!(e, TerminalEvent::PromptMark)));
+
+    // OSC 133;P without k=s or k=c (initial prompt)
+    term.feed(b"\x1b]133;P;k=i\x07");
+    let events = term.take_events();
+    assert!(events.iter().any(|e| matches!(e, TerminalEvent::PromptMark)));
+
+    // OSC 133;P with k=s (secondary prompt) should not emit PromptMark
+    term.feed(b"\x1b]133;P;k=s\x07");
+    let events = term.take_events();
+    assert!(!events.iter().any(|e| matches!(e, TerminalEvent::PromptMark)));
+
+    // OSC 133;P with k=c (continuation prompt) should not emit PromptMark
+    term.feed(b"\x1b]133;P;k=c\x07");
+    let events = term.take_events();
+    assert!(!events.iter().any(|e| matches!(e, TerminalEvent::PromptMark)));
+}
+
+#[test]
+fn osc_1337_set_status_and_clear_status() {
+    use crate::terminal::TerminalEvent;
+    let mut term = Terminal::new(80, 24);
+
+    // SetStatus with status and text
+    term.feed(b"\x1b]1337;SetStatus=working;compiling crate\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StatusSet {
+            status: "working".into(),
+            text: Some("compiling crate".into())
+        }]
+    );
+
+    // SetStatus thinking alias normalized to working
+    term.feed(b"\x1b]1337;SetStatus=thinking;analyzing code\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StatusSet {
+            status: "working".into(),
+            text: Some("analyzing code".into())
+        }]
+    );
+
+    // ClearStatus
+    term.feed(b"\x1b]1337;ClearStatus\x07");
+    let events = term.take_events();
+    assert_eq!(events, vec![TerminalEvent::StatusClear]);
+}
+
+#[test]
+fn osc_9_5_status_and_clear() {
+    use crate::terminal::TerminalEvent;
+    let mut term = Terminal::new(80, 24);
+
+    // OSC 9;5;status;text
+    term.feed(b"\x1b]9;5;waiting_for_input;prompting user\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StatusSet {
+            status: "waiting_for_input".into(),
+            text: Some("prompting user".into())
+        }]
+    );
+
+    // OSC 9;5;clear
+    term.feed(b"\x1b]9;5;clear\x07");
+    let events = term.take_events();
+    assert_eq!(events, vec![TerminalEvent::StatusClear]);
+}
+
+#[test]
+fn status_sanitization_and_length_limit() {
+    use crate::terminal::TerminalEvent;
+    let mut term = Terminal::new(80, 24);
+
+    // Text with control characters, whitespace, and length > 128 characters
+    let long_text = "a".repeat(200);
+    let payload = format!("\x1b]1337;SetStatus=running;  \x01\x08hello\t {long_text}  \x07");
+    term.feed(payload.as_bytes());
+
+    let events = term.take_events();
+    assert_eq!(events.len(), 1);
+    if let TerminalEvent::StatusSet { status, text } = &events[0] {
+        assert_eq!(status, "running");
+        let t = text.as_ref().unwrap();
+        assert!(t.len() <= 128);
+        assert!(!t.contains('\x01'));
+        assert!(!t.contains('\x08'));
+        assert!(!t.starts_with(' '));
+        assert!(!t.ends_with(' '));
+    } else {
+        panic!("expected StatusSet event");
+    }
+
+    // Invalid status rejected
+    term.feed(b"\x1b]1337;SetStatus=invalid_status;testing\x07");
+    let events = term.take_events();
+    assert!(events.is_empty(), "invalid status must be rejected");
+}
+
+#[test]
+fn status_pane_isolation() {
+    let mut term1 = Terminal::new(80, 24);
+    let mut term2 = Terminal::new(80, 24);
+
+    // Feed sequence to term1 only
+    term1.feed(b"\x1b]1337;SetStatus=needs_approval;confirm diff\x07");
+    let events1 = term1.take_events();
+    let events2 = term2.take_events();
+
+    assert_eq!(events1.len(), 1);
+    assert!(events2.is_empty(), "pane 2 must not receive events from pane 1");
+}

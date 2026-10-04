@@ -51,6 +51,95 @@ extension Tako {
         }
     }
 
+    /// One explicit status per pane from reported signals (B1).
+    public enum PaneStatus: String, Codable, CaseIterable, Equatable, Sendable {
+        case idle
+        case running
+        case working
+        case waitingForInput = "waiting_for_input"
+        case needsApproval = "needs_approval"
+        case done
+        case error
+        case disconnected
+        case unknown
+
+        public static func parse(_ raw: String) -> PaneStatus? {
+            let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "thinking" {
+                return .working
+            }
+            return PaneStatus(rawValue: normalized)
+        }
+
+        /// Priority across panes in a tab:
+        /// disconnected > error > needs_approval > waiting_for_input > working > running > done > idle > unknown
+        public var priority: Int {
+            switch self {
+            case .disconnected: return 8
+            case .error: return 7
+            case .needsApproval: return 6
+            case .waitingForInput: return 5
+            case .working: return 4
+            case .running: return 3
+            case .done: return 2
+            case .idle: return 1
+            case .unknown: return 0
+            }
+        }
+
+        public var crabState: CrabState {
+            switch self {
+            case .disconnected: return .ghost
+            case .error: return .failed(code: nil)
+            case .needsApproval, .waitingForInput: return .attention
+            case .working, .running: return .running
+            case .done: return .succeeded
+            case .idle, .unknown: return .idle
+            }
+        }
+    }
+
+    /// Sanitizes status text: strips C0/C1 control characters, trims whitespace, limits length to 128 characters.
+    public static func sanitizeStatusText(_ raw: String) -> String? {
+        let filtered = raw.filter { char in
+            guard let scalar = char.unicodeScalars.first, char.unicodeScalars.count == 1 else { return true }
+            let val = scalar.value
+            return !(val < 0x20 || val == 0x7f || (val >= 0x80 && val <= 0x9f))
+        }
+        let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        return String(trimmed.prefix(128))
+    }
+
+    /// Parses a duration string (e.g. "10m", "30s", "1h", "600") into seconds.
+    public static func parseStatusDuration(_ raw: String) -> TimeInterval? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !s.isEmpty else { return nil }
+        let multiplier: Double
+        let numStr: Substring
+        if s.hasSuffix("ms") {
+            multiplier = 0.001
+            numStr = s.dropLast(2)
+        } else if s.hasSuffix("s") {
+            multiplier = 1.0
+            numStr = s.dropLast(1)
+        } else if s.hasSuffix("m") {
+            multiplier = 60.0
+            numStr = s.dropLast(1)
+        } else if s.hasSuffix("h") {
+            multiplier = 3600.0
+            numStr = s.dropLast(1)
+        } else if s.hasSuffix("d") {
+            multiplier = 86400.0
+            numStr = s.dropLast(1)
+        } else {
+            multiplier = 1.0
+            numStr = s[...]
+        }
+        guard let val = Double(numStr), val > 0, val.isFinite else { return nil }
+        return val * multiplier
+    }
+
     /// The brand palette.
     enum Brand {
         static let ember = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1)
@@ -66,8 +155,8 @@ extension Tako {
         static let error = NSColor(srgbRed: 0xD5 / 255, green: 0x4E / 255, blue: 0x53 / 255, alpha: 1)
     }
 
-    /// Tracks one surface's command lifecycle and turns it into a crab state
-    /// and an elapsed time.
+    /// Tracks one surface's command lifecycle and turns it into a crab state,
+    /// pane status, and elapsed time.
     @MainActor
     final class CrabTracker: ObservableObject {
         /// A command shorter than this never shows: `ls` and `cd` should not
@@ -85,6 +174,22 @@ extension Tako {
         /// Set when something happened that the user has not looked at.
         @Published private(set) var unread = false
 
+        /// Explicit pane status model (B1).
+        @Published public private(set) var paneStatus: PaneStatus = .idle
+        @Published public private(set) var statusText: String?
+        @Published public private(set) var statusExpiresAt: Date?
+
+        var signalStatus: PaneStatus = .idle {
+            didSet {
+                recomputeEffectiveStatus()
+            }
+        }
+        private var explicitStatus: (status: PaneStatus, text: String?)?
+        private var ttlTimer: Timer?
+
+        /// Whether this pane is currently focused / looked at by user.
+        public var isFocused: Bool = false
+
         private var startedAt: Date?
         private var ticker: Timer?
         private var successTimer: Timer?
@@ -96,9 +201,21 @@ extension Tako {
             self.now = now
         }
 
+        convenience init(clock: @escaping () -> Date) {
+            self.init(now: clock)
+        }
+
         deinit {
             ticker?.invalidate()
             successTimer?.invalidate()
+            ttlTimer?.invalidate()
+        }
+
+        func promptMark() {
+            if !unread {
+                signalStatus = .idle
+            }
+            recomputeEffectiveStatus()
         }
 
         func commandStarted() {
@@ -106,6 +223,10 @@ extension Tako {
             elapsed = nil
             progress = nil
             successTimer?.invalidate()
+            signalStatus = .running
+            unread = false
+            recomputeEffectiveStatus()
+
             // The state only becomes `.running` once the command has lasted
             // long enough to be worth showing.
             ticker?.invalidate()
@@ -123,18 +244,30 @@ extension Tako {
             progress = nil
 
             if let exitCode, exitCode != 0 {
+                signalStatus = .error
                 state = .failed(code: exitCode)
                 unread = true
+                recomputeEffectiveStatus()
                 return
             }
+
+            if isFocused {
+                signalStatus = .idle
+                unread = false
+            } else {
+                signalStatus = .done
+                unread = true
+            }
+
             // A command too short to have shown as running should not flash
             // green either.
             guard let ran, ran >= Self.minimumVisibleDuration else {
                 state = .idle
+                recomputeEffectiveStatus()
                 return
             }
             state = .succeeded
-            unread = true
+            recomputeEffectiveStatus()
             successTimer?.invalidate()
             successTimer = Timer.scheduledTimer(withTimeInterval: Self.successLinger, repeats: false) {
                 [weak self] _ in
@@ -156,16 +289,111 @@ extension Tako {
             progress = progressState == 0 ? nil : value.map(Int.init)
         }
 
-        func connectionLost() { state = .ghost; unread = true }
-        func reconnecting() { state = .reconnecting }
+        func connectionLost() {
+            signalStatus = .disconnected
+            state = .ghost
+            unread = true
+            recomputeEffectiveStatus()
+        }
 
-        /// The user looked at this tab: clear what was waiting for them.
+        func reconnecting() {
+            state = .reconnecting
+        }
+
+        /// Set explicit pane status, with optional text and TTL.
+        func setStatus(_ statusString: String, text: String?, ttl: TimeInterval? = nil) {
+            guard let parsed = PaneStatus.parse(statusString) else { return }
+            setStatus(parsed, text: text, ttl: ttl)
+        }
+
+        /// Set explicit pane status, with optional text and TTL.
+        func setStatus(_ status: PaneStatus, text: String?, ttl: TimeInterval? = nil) {
+            ttlTimer?.invalidate()
+            ttlTimer = nil
+
+            let sanitizedText = text.flatMap(Tako.sanitizeStatusText)
+            explicitStatus = (status: status, text: sanitizedText)
+            statusText = sanitizedText
+
+            if let ttl, ttl > 0 {
+                let expires = now().addingTimeInterval(ttl)
+                statusExpiresAt = expires
+                ttlTimer = Timer.scheduledTimer(withTimeInterval: ttl, repeats: false) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.ttlExpired()
+                    }
+                }
+            } else {
+                statusExpiresAt = nil
+            }
+            recomputeEffectiveStatus()
+        }
+
+        /// Clears explicit status, reverting to signal-derived state.
+        func clearStatus() {
+            ttlTimer?.invalidate()
+            ttlTimer = nil
+            explicitStatus = nil
+            statusText = nil
+            statusExpiresAt = nil
+            recomputeEffectiveStatus()
+        }
+
+        /// Called when TTL timer fires: status expires to unknown.
+        func ttlExpired() {
+            ttlTimer?.invalidate()
+            ttlTimer = nil
+            explicitStatus = (status: .unknown, text: nil)
+            statusText = nil
+            statusExpiresAt = nil
+            recomputeEffectiveStatus()
+        }
+
+        /// Remaining seconds on the TTL timer, or nil if none is armed.
+        public var remainingTTL: TimeInterval? {
+            guard let expiresAt = statusExpiresAt else { return nil }
+            let remaining = expiresAt.timeIntervalSince(now())
+            return max(0, remaining)
+        }
+
+        private func recomputeEffectiveStatus() {
+            if let explicit = explicitStatus {
+                paneStatus = explicit.status
+                statusText = explicit.text
+                state = paneStatus.crabState
+            } else {
+                paneStatus = signalStatus
+                statusText = nil
+                if case .failed = state, signalStatus == .error {
+                    // keep failed state
+                } else if case .succeeded = state {
+                    // keep succeeded state
+                } else if case .ghost = state, signalStatus == .disconnected {
+                    // keep ghost state
+                } else if case .running = state, signalStatus == .running {
+                    // keep running state
+                } else {
+                    state = paneStatus.crabState
+                }
+            }
+        }
+
+        /// The user looked at this tab/pane: clear what was waiting for them.
         func focused() {
+            isFocused = true
             unread = false
+            if signalStatus == .done || signalStatus == .error {
+                signalStatus = .idle
+            }
             switch state {
             case .succeeded, .failed, .attention: state = .idle
             default: break
             }
+            recomputeEffectiveStatus()
+        }
+
+        func unfocused() {
+            isFocused = false
         }
 
         /// Advance the running clock. Public so a test can drive it without

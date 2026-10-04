@@ -970,11 +970,16 @@ fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
         E::Notification { title, body } => {
             (title.capacity() as u64).saturating_add(body.capacity() as u64)
         }
+        E::StatusSet { status, text } => {
+            (status.capacity() as u64).saturating_add(text.as_ref().map_or(0, |t| t.capacity() as u64))
+        }
         E::Bell
         | E::ClipboardQuery
         | E::Progress { .. }
         | E::CommandStart { .. }
-        | E::CommandEnd { .. } => 0,
+        | E::CommandEnd { .. }
+        | E::PromptMark
+        | E::StatusClear => 0,
     }
 }
 
