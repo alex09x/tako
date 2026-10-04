@@ -446,8 +446,27 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         NSWorkspace.shared.open(url)
     }
 
+    /// Hook for presenting alerts; can be replaced in tests to verify error presentation without modal UI.
+    nonisolated(unsafe) public static var presentAlert: @MainActor (_ alert: NSAlert, _ window: NSWindow?) -> Void = { alert, window in
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    /// Report save errors to the user via an alert modal or sheet.
+    public static func reportSaveError(_ error: Error, window: NSWindow?) {
+        let alert = NSAlert(error: error)
+        alert.messageText = "Failed to Save Output"
+        alert.informativeText = error.localizedDescription
+        DispatchQueue.main.async {
+            presentAlert(alert, window)
+        }
+    }
+
     /// Hook for presenting a save panel; can be replaced in tests to avoid modal UI.
-    public static var saveFilePanel: (
+    nonisolated(unsafe) public static var saveFilePanel: @MainActor (
         _ text: String,
         _ suggestedFilename: String,
         _ window: NSWindow?,
@@ -465,6 +484,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 try text.write(to: targetURL, atomically: true, encoding: .utf8)
                 completion(targetURL)
             } catch {
+                reportSaveError(error, window: window)
                 completion(nil)
             }
         }

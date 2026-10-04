@@ -197,6 +197,32 @@ final class CommandActionsTests: XCTestCase {
         XCTAssertTrue(panelContent.contains("report data"))
     }
 
+    func testReportSaveErrorPresentsAlert() {
+        var presentedAlert: NSAlert?
+        let originalPresentAlert = TakoTerminalNSView.presentAlert
+        defer { TakoTerminalNSView.presentAlert = originalPresentAlert }
+
+        TakoTerminalNSView.presentAlert = { alert, _ in
+            presentedAlert = alert
+        }
+
+        struct DummyError: LocalizedError {
+            var errorDescription: String? { "Disk full or permission denied" }
+        }
+
+        TakoTerminalNSView.reportSaveError(DummyError(), window: nil)
+
+        let exp = expectation(description: "Alert presented")
+        DispatchQueue.main.async {
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1.0)
+
+        XCTAssertNotNil(presentedAlert)
+        XCTAssertEqual(presentedAlert?.messageText, "Failed to Save Output")
+        XCTAssertEqual(presentedAlert?.informativeText, "Disk full or permission denied")
+    }
+
     func testOpenWorkingDirectoryOpensCorrectURL() {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         var openedURL: URL?

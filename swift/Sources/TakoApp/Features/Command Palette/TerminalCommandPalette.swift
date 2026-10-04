@@ -188,7 +188,8 @@ struct TerminalCommandPaletteView: View {
                 subtitle: "Load 50 more historical commands into palette",
                 leadingIcon: "ellipsis.circle",
                 badge: "History",
-                sortKey: AnySortKey(UInt64.max)
+                sortKey: AnySortKey(UInt64.max),
+                dismissesOnAction: false
             ) {
                 commandActionsPage += 1
             })
