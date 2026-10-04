@@ -267,6 +267,8 @@ final class StickyCommandHeaderTests: XCTestCase {
         }
         input1 += "\u{1b}]133;D;0\u{07}"
         view.feed(data: Data(input1.utf8))
+        _ = view.currentStickyCommandHeader()
+        XCTAssertEqual(view.activeTrackedCommandsCountForTesting, 1)
 
         // Command 2 with enough output to evict all of Command 1's output past firstRetainedLine
         var input2 = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}new-cmd\r\n\u{1b}]133;C\u{07}"
@@ -347,6 +349,37 @@ final class StickyCommandHeaderTests: XCTestCase {
         _ = view.currentStickyCommandHeader()
         XCTAssertEqual(view.trackedCommandsCountForTesting, 1)
         XCTAssertTrue(view.trackedCommandsForTesting[1]?.hasNoOutput == true)
+    }
+
+    func testCheckpointRestoreWithSubstantialHistoryDoesNotMaterializeAllOutputs() throws {
+        let view1 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // Create 20 commands in history
+        for cmdIdx in 1...20 {
+            var cmd = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}echo cmd\(cmdIdx)\r\n\u{1b}]133;C\u{07}"
+            for line in 1...3 {
+                cmd += "out \(cmdIdx)_\(line)\r\n"
+            }
+            cmd += "\u{1b}]133;D;0\u{07}"
+            view1.feed(data: Data(cmd.utf8))
+        }
+        // At bottom, prompt 21
+        view1.feed(data: Data("\u{1b}]133;A\u{07}$ ".utf8))
+
+        let checkpoint = try view1.exportCheckpoint()
+
+        let view2 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        try view2.importCheckpoint(checkpoint)
+
+        // Update scroller / evaluate sticky header
+        view2.updateScroller()
+
+        // trackedCommands must NOT have materialized all 20 historical commands!
+        // At most the single command intersecting the viewport is resolved.
+        XCTAssertLessThanOrEqual(
+            view2.trackedCommandsCountForTesting,
+            1,
+            "Restoring checkpoint must not synchronously extract all historical commands; resolved \(view2.trackedCommandsCountForTesting)"
+        )
     }
 }
 #endif

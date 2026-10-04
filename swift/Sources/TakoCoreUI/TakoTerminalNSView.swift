@@ -189,12 +189,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private var activeRunningCommandId: UInt64? = nil
 
     private func findRunningCommandId() -> UInt64? {
-        var afterId: UInt64 = 0
-        while let info = core.firstCommandAfter(after: afterId) {
-            if info.running {
-                return info.id
-            }
-            afterId = info.id
+        guard let newestId = core.newestCommandId(), newestId > 0 else { return nil }
+        if let info = core.firstCommandAfter(after: newestId - 1), info.id == newestId, info.running {
+            return newestId
         }
         return nil
     }
@@ -1118,64 +1115,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let vpTopAbsLine = firstRetainedLine + UInt64(vpTop)
         let currentBottom = firstRetainedLine + UInt64(totalScrollback) + UInt64(core.cursorRow())
 
-        // Ensure all commands recorded in core's command log are known
-        var afterId: UInt64 = 0
-        let marks = core.commandMarks()
-        while let info = core.firstCommandAfter(after: afterId) {
-            afterId = info.id
-            if info.running && activeRunningCommandId == nil {
-                activeRunningCommandId = info.id
-            }
-
-            let existing = trackedCommands[info.id]
-            if existing == nil || (!info.running && existing?.status == 0) {
-                guard let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else {
-                    continue
-                }
-                let mark = marks.first(where: { $0.commandId == info.id })
-                let status: UInt8
-                if info.running {
-                    status = 0
-                } else if info.finished {
-                    status = (info.exitCode == 0 ? 1 : 2)
-                } else {
-                    status = 2
-                }
-                let out = core.commandOutput(id: info.id, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
-                let lines = UInt64(out?.lines ?? 0)
-                let promptLine = mark?.promptLine ?? existing?.promptLine
-                let isNoOutput = (!info.running && lines == 0)
-                let lastLine: UInt64
-                if isNoOutput {
-                    lastLine = promptLine ?? 0
-                } else if info.running {
-                    lastLine = max(currentBottom, (promptLine ?? firstRetainedLine) + lines)
-                } else if let pLine = promptLine {
-                    lastLine = pLine + lines
-                } else {
-                    lastLine = firstRetainedLine + lines
-                }
-                trackedCommands[info.id] = TrackedCommandOutput(
-                    commandId: info.id,
-                    command: rawInput,
-                    promptLine: promptLine,
-                    lastOutputAbsLine: lastLine,
-                    status: status,
-                    exitCode: info.exitCode,
-                    hasNoOutput: isNoOutput
-                )
-            } else if info.running, var runningCmd = existing {
-                // Refresh bounds for cached running records
-                runningCmd.lastOutputAbsLine = max(runningCmd.lastOutputAbsLine, currentBottom)
-                if runningCmd.command.isEmpty, let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty {
-                    runningCmd.command = rawInput
-                }
-                trackedCommands[info.id] = runningCmd
-            }
-        }
-
-        // Mark commands whose output has left scrollback as having no output, and prune commands
-        // no longer retained in core's command log.
+        // Refresh/prune existing tracked commands for evicted outputs or removed history
         if let oldestRecord = core.firstCommandAfter(after: 0) {
             let oldestId = oldestRecord.id
             for (id, cmd) in trackedCommands {
@@ -1190,35 +1130,146 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             trackedCommands.removeAll()
         }
 
-        guard !trackedCommands.isEmpty else { return nil }
-
-        let sortedCommands = trackedCommands.values.sorted(by: { $0.commandId < $1.commandId })
-        var candidate: TrackedCommandOutput? = nil
-
-        for cmd in sortedCommands {
-            // Check if prompt is visible on screen
-            if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
-                let pRow = Int(pLine - firstRetainedLine)
-                if pRow >= vpTop {
-                    // Prompt line is visible on screen or below vpTop
-                    break
+        // Bound memory: if tracked cache grows, prune distant records
+        if trackedCommands.count > 128 {
+            let sortedKeys = trackedCommands.keys.sorted()
+            let pruneCount = trackedCommands.count - 64
+            for id in sortedKeys.prefix(pruneCount) {
+                if id != activeRunningCommandId {
+                    trackedCommands.removeValue(forKey: id)
                 }
-            }
-
-            // Zero-output completed command has no output on screen
-            if cmd.hasNoOutput || (cmd.status != 0 && cmd.lastOutputAbsLine <= (cmd.promptLine ?? 0)) {
-                continue
-            }
-
-            // Check if vpTopAbsLine is within this command's output
-            if vpTopAbsLine <= cmd.lastOutputAbsLine {
-                candidate = cmd
-                break
             }
         }
 
-        guard let cmd = candidate else { return nil }
-        guard !cmd.command.isEmpty else { return nil }
+        let marks = core.commandMarks().sorted(by: { $0.promptLine < $1.promptLine })
+
+        // Find candidate command that intersects or precedes vpTopAbsLine
+        let candidateId: UInt64?
+        if let precedingMark = marks.last(where: { $0.promptLine <= vpTopAbsLine }) {
+            candidateId = precedingMark.commandId
+        } else if let firstMark = marks.first {
+            // All retained prompt marks start below vpTopAbsLine.
+            // If an earlier command's output extends into the retained buffer, its prompt was evicted.
+            candidateId = firstMark.commandId > 1 ? firstMark.commandId - 1 : nil
+        } else {
+            // No prompt marks retained in scrollback (prompt evicted or running command)
+            candidateId = activeRunningCommandId ?? findRunningCommandId() ?? core.newestCommandId()
+        }
+
+        guard let targetId = candidateId else {
+            return nil
+        }
+
+        let resolvedCmd: TrackedCommandOutput?
+        if let existing = trackedCommands[targetId] {
+            if existing.status == 0 {
+                // Refresh bounds for running command
+                var runningCmd = existing
+                runningCmd.lastOutputAbsLine = max(runningCmd.lastOutputAbsLine, currentBottom)
+                // Check if running command has finished
+                if let info = core.firstCommandAfter(after: targetId - 1), info.id == targetId, !info.running {
+                    let out = core.commandOutput(id: targetId, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                    let lines = UInt64(out?.lines ?? 0)
+                    let isNoOutput = (lines == 0)
+                    let promptLine = existing.promptLine
+                    let lastLine: UInt64
+                    if isNoOutput {
+                        lastLine = promptLine ?? 0
+                    } else if let pLine = promptLine {
+                        lastLine = pLine + lines
+                    } else {
+                        lastLine = firstRetainedLine + lines
+                    }
+                    let status: UInt8 = (info.exitCode == 0 ? 1 : 2)
+                    runningCmd = TrackedCommandOutput(
+                        commandId: targetId,
+                        command: existing.command,
+                        promptLine: promptLine,
+                        lastOutputAbsLine: lastLine,
+                        status: status,
+                        exitCode: info.exitCode,
+                        hasNoOutput: isNoOutput
+                    )
+                    if activeRunningCommandId == targetId {
+                        activeRunningCommandId = nil
+                    }
+                }
+                trackedCommands[targetId] = runningCmd
+                resolvedCmd = runningCmd
+            } else {
+                resolvedCmd = existing
+            }
+        } else {
+            // Not in cache: query only this single candidate command
+            if let info = core.firstCommandAfter(after: targetId - 1), info.id == targetId {
+                if info.running && activeRunningCommandId == nil {
+                    activeRunningCommandId = info.id
+                }
+                guard let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else {
+                    return nil
+                }
+                let mark = marks.first(where: { $0.commandId == info.id })
+                let promptLine = mark?.promptLine
+                let status: UInt8
+                let isNoOutput: Bool
+                let lastLine: UInt64
+
+                if info.running {
+                    status = 0
+                    isNoOutput = false
+                    lastLine = max(currentBottom, (promptLine ?? firstRetainedLine))
+                } else {
+                    status = (info.finished ? (info.exitCode == 0 ? 1 : 2) : 2)
+                    let out = core.commandOutput(id: info.id, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
+                    let lines = UInt64(out?.lines ?? 0)
+                    isNoOutput = (lines == 0)
+                    if isNoOutput {
+                        lastLine = promptLine ?? 0
+                    } else if let pLine = promptLine {
+                        lastLine = pLine + lines
+                    } else {
+                        lastLine = firstRetainedLine + lines
+                    }
+                }
+
+                let tracked = TrackedCommandOutput(
+                    commandId: info.id,
+                    command: rawInput,
+                    promptLine: promptLine,
+                    lastOutputAbsLine: lastLine,
+                    status: status,
+                    exitCode: info.exitCode,
+                    hasNoOutput: isNoOutput
+                )
+                trackedCommands[info.id] = tracked
+                resolvedCmd = tracked
+            } else {
+                resolvedCmd = nil
+            }
+        }
+
+        guard let cmd = resolvedCmd, !cmd.hasNoOutput, !cmd.command.isEmpty else {
+            return nil
+        }
+
+        // Check if prompt is visible on screen
+        if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
+            let pRow = Int(pLine - firstRetainedLine)
+            if pRow >= vpTop {
+                // Prompt line is visible on screen or below vpTop
+                return nil
+            }
+        }
+
+        // Zero-output completed command has no output on screen
+        if cmd.status != 0 && cmd.lastOutputAbsLine <= (cmd.promptLine ?? 0) {
+            return nil
+        }
+
+        // Check if vpTopAbsLine is within this command's output
+        if vpTopAbsLine > cmd.lastOutputAbsLine {
+            return nil
+        }
 
         let promptRetainedRow: UInt64
         if let pLine = cmd.promptLine, pLine >= firstRetainedLine {
