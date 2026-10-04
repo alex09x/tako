@@ -386,6 +386,8 @@ class AppDelegate: NSObject,
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
         setupPromptNavigationMenuItems()
+        setupNotificationMenuItems()
+        setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
 
@@ -835,11 +837,17 @@ class AppDelegate: NSObject,
 
     @MainActor
     func setDockBadge() {
-        let bellCount = NSApp.windows
-            .compactMap { $0.windowController as? BaseTerminalController }
-            .reduce(0) { $0 + ($1.bell ? 1 : 0) }
-        let wantsBadge = tako.config.bellFeatures.contains(.attention) && bellCount > 0
-        var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        guard let app = NSApp else { return }
+        let unreadCount = NotificationStore.shared.totalUnreadCount()
+        var label: String? = unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil
+
+        if label == nil {
+            let bellCount = app.windows
+                .compactMap { $0.windowController as? BaseTerminalController }
+                .reduce(0) { $0 + ($1.bell ? 1 : 0) }
+            let wantsBadge = tako.config.bellFeatures.contains(.attention) && bellCount > 0
+            label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        }
         if label == nil, tako.config.progressStyle.showsInDock {
             let allSurfaces = ControlCommands.panes().map { $0.surface }
             if let agg = Tako.CrabTabBinding.aggregateProgress(for: allSurfaces) {
@@ -856,8 +864,8 @@ class AppDelegate: NSObject,
                 }
             }
         }
-        NSApp.dockTile.badgeLabel = label
-        NSApp.dockTile.display()
+        app.dockTile.badgeLabel = label
+        app.dockTile.display()
     }
 
     private func takoConfigDidChange(config: Tako.Config) {
@@ -1151,6 +1159,76 @@ class AppDelegate: NSObject,
                 self.menuJumpToNextPrompt = nextItem
             }
         }
+    }
+
+    private func setupNotificationMenuItems() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        // Setup in Window menu
+        if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
+            windowMenu.addItem(NSMenuItem.separator())
+
+            let centerItem = NSMenuItem(
+                title: "Notification Center",
+                action: #selector(BaseTerminalController.toggleNotificationCenter(_:)),
+                keyEquivalent: "n"
+            )
+            centerItem.keyEquivalentModifierMask = [.command, .option]
+            centerItem.target = nil
+            centerItem.setImageIfDesired(systemSymbolName: "bell")
+            windowMenu.addItem(centerItem)
+
+            let jumpItem = NSMenuItem(
+                title: "Jump to Latest Unread",
+                action: #selector(BaseTerminalController.jumpToLatestUnread(_:)),
+                keyEquivalent: "N"
+            )
+            jumpItem.keyEquivalentModifierMask = [.command, .shift]
+            jumpItem.target = nil
+            jumpItem.setImageIfDesired(systemSymbolName: "arrow.right.circle")
+            windowMenu.addItem(jumpItem)
+
+            let markReadItem = NSMenuItem(
+                title: "Mark Read",
+                action: #selector(BaseTerminalController.markFocusedPaneRead(_:)),
+                keyEquivalent: ""
+            )
+            markReadItem.target = nil
+            markReadItem.setImageIfDesired(systemSymbolName: "checkmark")
+            windowMenu.addItem(markReadItem)
+
+            let markAllReadItem = NSMenuItem(
+                title: "Mark All Read",
+                action: #selector(BaseTerminalController.markAllRead(_:)),
+                keyEquivalent: "U"
+            )
+            markAllReadItem.keyEquivalentModifierMask = [.command, .shift]
+            markAllReadItem.target = nil
+            markAllReadItem.setImageIfDesired(systemSymbolName: "checkmark.circle")
+            windowMenu.addItem(markAllReadItem)
+        }
+    }
+
+    @IBAction func toggleNotificationCenter(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.toggleNotificationCenter(sender)
+    }
+
+    @IBAction func jumpToLatestUnread(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.jumpToLatestUnread(sender)
+    }
+
+    @IBAction func markFocusedPaneRead(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.markFocusedPaneRead(sender)
+    }
+
+    @IBAction func markAllRead(_ sender: Any?) {
+        NotificationStore.shared.markAllRead()
     }
 
     @IBAction func showHelp(_ sender: Any) {
@@ -1484,6 +1562,12 @@ extension AppDelegate: NSMenuItemValidation {
                 item.title = "Redo"
             }
             return undoManager.canRedo
+
+        case #selector(jumpToLatestUnread(_:)):
+            return NotificationStore.shared.latestUnread() != nil
+
+        case #selector(markAllRead(_:)):
+            return NotificationStore.shared.totalUnreadCount() > 0
 
         default:
             return true

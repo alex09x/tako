@@ -35,6 +35,9 @@ protocol TerminalViewModel: ObservableObject {
 
     /// Whether the Find in All Tabs panel shows.
     var findAllIsShowing: Bool { get set }
+
+    /// Whether the Notification Center panel shows (B4).
+    var notificationCenterIsShowing: Bool { get set }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -109,6 +112,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         takoConfig: tako.config) { action in
                         handlePerformAction(action, on: surfaceView)
                     }
+                }
+
+                if viewModel.notificationCenterIsShowing {
+                    NotificationCenterView(
+                        isPresented: $viewModel.notificationCenterIsShowing,
+                        backgroundColor: tako.config.backgroundColor)
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)

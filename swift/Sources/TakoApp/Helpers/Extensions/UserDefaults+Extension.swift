@@ -1,7 +1,7 @@
 import Foundation
 
 extension UserDefaults {
-    static var takoSuite: String? {
+    public static var takoSuite: String? {
         #if DEBUG
         ProcessInfo.processInfo.environment["TAKO_USER_DEFAULTS_SUITE"]
         #else
@@ -9,7 +9,7 @@ extension UserDefaults {
         #endif
     }
 
-    static var tako: UserDefaults {
+    public static var tako: UserDefaults {
         takoSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
     }
 }

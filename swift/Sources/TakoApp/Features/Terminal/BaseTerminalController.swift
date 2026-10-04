@@ -60,6 +60,16 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Whether the Notification Center panel is over this window (B4).
+    @Published var notificationCenterIsShowing: Bool = false {
+        didSet {
+            guard oldValue, !notificationCenterIsShowing else { return }
+            DispatchQueue.main.async { [weak self] in
+                Tako.moveFocus(to: self?.focusedSurface)
+            }
+        }
+    }
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 
@@ -779,6 +789,9 @@ class BaseTerminalController: NSWindowController,
         Tako.moveFocus(to: target)
         Tako.moveFocus(to: target, delay: 0.1)
 
+        // Focusing a pane marks it read (B4)
+        NotificationStore.shared.markRead(surfaceId: target.id)
+
         // Show a brief highlight to help the user locate the presented terminal.
         target.highlight()
     }
@@ -857,6 +870,10 @@ class BaseTerminalController: NSWindowController,
     func focusedSurfaceDidChange(to: Tako.SurfaceView?) {
         let lastFocusedSurface = focusedSurface
         focusedSurface = to
+
+        if let focused = to {
+            NotificationStore.shared.markRead(surfaceId: focused.id)
+        }
 
         // Important to cancel any prior subscriptions
         focusedSurfaceCancellables = []
@@ -1482,6 +1499,45 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    @IBAction func toggleNotificationCenter(_ sender: Any?) {
+        notificationCenterIsShowing.toggle()
+        if notificationCenterIsShowing {
+            _ = focusedSurface?.resignFirstResponder()
+        }
+    }
+
+    @IBAction func jumpToLatestUnread(_ sender: Any?) {
+        guard let latest = NotificationStore.shared.latestUnread() else {
+            NSSound.beep()
+            return
+        }
+        notificationCenterIsShowing = false
+        if let target = Self.surface(withID: latest.surfaceId) {
+            NotificationCenter.default.post(name: Tako.Notification.takoPresentTerminal, object: target)
+            NotificationStore.shared.markRead(surfaceId: latest.surfaceId)
+        } else {
+            NotificationStore.shared.markNotificationRead(id: latest.id)
+        }
+    }
+
+    @IBAction func markFocusedPaneRead(_ sender: Any?) {
+        guard let focused = focusedSurface else { return }
+        NotificationStore.shared.markRead(surfaceId: focused.id)
+    }
+
+    @IBAction func markAllRead(_ sender: Any?) {
+        NotificationStore.shared.markAllRead()
+    }
+
+    private static func surface(withID id: UUID) -> Tako.SurfaceView? {
+        for controller in TerminalController.all {
+            if let surface = controller.surfaceTree.first(where: { $0.id == id }) {
+                return surface
+            }
+        }
+        return nil
+    }
+
     @IBAction func toggleCommandPalette(_ sender: Any?) {
         commandPaletteIsShowing.toggle()
         if commandPaletteIsShowing {
@@ -1585,6 +1641,19 @@ extension BaseTerminalController: NSMenuItemValidation {
         case #selector(toggleTerminalInspector(_:)):
             // Unsupported: there is no inspector to show.
             return false
+
+        case #selector(toggleNotificationCenter(_:)):
+            return true
+
+        case #selector(jumpToLatestUnread(_:)):
+            return NotificationStore.shared.latestUnread() != nil
+
+        case #selector(markFocusedPaneRead(_:)):
+            guard let focused = focusedSurface else { return false }
+            return NotificationStore.shared.unreadCount(for: focused.id) > 0
+
+        case #selector(markAllRead(_:)):
+            return NotificationStore.shared.totalUnreadCount() > 0
 
         default:
             return true

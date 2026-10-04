@@ -29,11 +29,24 @@ extension Tako {
     /// them a window keeps the placeholder title forever.
     struct InspectableSurface: View {
         @ObservedObject var surfaceView: SurfaceView
+        @ObservedObject var notificationStore: NotificationStore = .shared
+        @ObservedObject private var crab: CrabTracker
         var isSplit: Bool = false
 
         init(surfaceView: SurfaceView, isSplit: Bool = false) {
             self.surfaceView = surfaceView
+            self._crab = ObservedObject(wrappedValue: surfaceView.crab)
             self.isSplit = isSplit
+        }
+
+        public var needsAttention: Bool {
+            !surfaceView.isBeingLookedAt && (
+                notificationStore.unreadCount(for: surfaceView.id) > 0 ||
+                crab.unread ||
+                crab.state == .attention ||
+                crab.paneStatus == .needsApproval ||
+                crab.paneStatus == .waitingForInput
+            )
         }
 
         var body: some View {
@@ -42,6 +55,13 @@ extension Tako {
                 if let searchState = surfaceView.searchState {
                     SurfaceSearchBar(surfaceView: surfaceView, searchState: searchState)
                         .padding(8)
+                }
+            }
+            .overlay {
+                if needsAttention {
+                    RoundedRectangle(cornerRadius: isSplit ? 4 : 0)
+                        .strokeBorder(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
+                        .allowsHitTesting(false)
                 }
             }
             .focusedValue(\.takoSurfaceView, surfaceView)
