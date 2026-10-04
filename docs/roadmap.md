@@ -743,9 +743,9 @@ Step 4 and A1.
 Bounded recovery for SSH sessions interrupted by transient disconnects. The tab indicator already
 has designed `reconnecting` and `disconnected` states for this.
 
-- Phase 1 handles SSH exit status 255 with a bounded probe and exponential backoff retry while preserving the local scrollback buffer; leaves broader network-change/sleep retries to later evaluation.
+- Phase 1 bases automatic retry strictly on confirmed transport errors distinguished by the SSH client wrapper or transport layer from normal remote command exits (never inferring disconnect from bare exit status 255 alone, auth/config failures, or screen/stderr text scraping), with a bounded probe and exponential backoff while preserving the local scrollback buffer; ambiguous or unconfirmed exits remain in the `disconnected` state without automatic retry. Leaves broader network-change/sleep retries to later evaluation.
 
-Done when: an SSH disconnect (exit code 255) marks the session as disconnected rather than immediately closing the tab; attempts bounded probe reconnection; allows the user to cancel or start a fresh shell with a single click.
+Done when: an explicit transport-loss event marks the session as `reconnecting` (or `disconnected` if unconfirmed or exhausted) rather than immediately closing the tab; attempts bounded probe reconnection only for confirmed transport drops; allows the user to cancel retry or start a fresh shell with a single click.
 
 ### [ ] F3. Shell integration over SSH
 
