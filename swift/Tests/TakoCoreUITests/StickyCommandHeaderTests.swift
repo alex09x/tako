@@ -432,6 +432,93 @@ final class StickyCommandHeaderTests: XCTestCase {
         XCTAssertEqual(view.trackedCommandsCountForTesting, 0, "trackedCommands must remain empty when disabled")
         XCTAssertNil(view.currentStickyCommandHeader())
     }
+
+    func testStickyCommandHeaderSuppressedOnMultilineCommandContinuationRows() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // Multiline command:
+        // Line 0: prompt + input line 1
+        // Line 1: input continuation line 2
+        // Line 2: input continuation line 3
+        // Line 3..52: output lines
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}cat << 'EOF' | grep -v exclude\r\n"
+        input += "continuation row 1\r\n"
+        input += "continuation row 2\r\n"
+        input += "\u{1b}]133;C\u{07}"
+        for i in 1...50 {
+            input += "output row \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        let totalScrollback = Int(view.core.scrollbackLen())
+        XCTAssertGreaterThan(totalScrollback, 10, "terminal should have accumulated scrollback")
+
+        // Viewport at bottom: sitting in output, sticky header must be pinned
+        let bottomHeader = view.currentStickyCommandHeader()
+        XCTAssertNotNil(bottomHeader, "must be pinned while in output")
+        XCTAssertEqual(bottomHeader?.status, 1)
+
+        // Scroll so viewport top sits on input continuation row 1 (row 1)
+        // vpTop = totalScrollback - offset -> offset = totalScrollback - 1
+        view.scrollToOffset(totalScrollback - 1)
+        XCTAssertNil(
+            view.currentStickyCommandHeader(),
+            "sticky header must be suppressed when viewport top sits on input continuation row 1"
+        )
+
+        // Scroll so viewport top sits on input continuation row 2 (row 2)
+        view.scrollToOffset(totalScrollback - 2)
+        XCTAssertNil(
+            view.currentStickyCommandHeader(),
+            "sticky header must be suppressed when viewport top sits on input continuation row 2"
+        )
+
+        // Scroll so viewport top sits on prompt line (row 0)
+        view.scrollToOffset(totalScrollback)
+        XCTAssertNil(
+            view.currentStickyCommandHeader(),
+            "sticky header must be suppressed when prompt line is visible"
+        )
+
+        // Scroll so viewport top sits on first output row (row 3)
+        view.scrollToOffset(totalScrollback - 3)
+        let outputHeader = view.currentStickyCommandHeader()
+        XCTAssertNotNil(
+            outputHeader,
+            "sticky header must pin once viewport top reaches command output"
+        )
+        XCTAssertEqual(outputHeader?.status, 1)
+    }
+
+    func testStickyCommandHeaderSuppressedOnSecondaryPromptContinuationRows() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // Secondary prompt continuation (OSC 133;A;k=s)
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}python3 -c '\r\n"
+        input += "\u{1b}]133;A;k=s\u{07}> \u{1b}]133;B\u{07}print(\"hello\")'\r\n"
+        input += "\u{1b}]133;C\u{07}"
+        for i in 1...50 {
+            input += "output \(i)\r\n"
+        }
+        input += "\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input.utf8))
+
+        let totalScrollback = Int(view.core.scrollbackLen())
+        XCTAssertGreaterThan(totalScrollback, 10)
+
+        // Viewport at secondary prompt continuation row (row 1)
+        view.scrollToOffset(totalScrollback - 1)
+        XCTAssertNil(
+            view.currentStickyCommandHeader(),
+            "sticky header must be suppressed on secondary prompt continuation row"
+        )
+
+        // Viewport at output row (row 2)
+        view.scrollToOffset(totalScrollback - 2)
+        XCTAssertNotNil(
+            view.currentStickyCommandHeader(),
+            "sticky header must pin once scrolled into output"
+        )
+    }
 }
 #endif
 
