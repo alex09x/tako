@@ -19,7 +19,10 @@ class AboutController: NSWindowController, NSWindowDelegate {
     // MARK: - Functions
 
     func show() {
+        if window == nil { _ = self.window }
+        window?.center()
         window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         viewModel.startCyclingIcons()
     }
 

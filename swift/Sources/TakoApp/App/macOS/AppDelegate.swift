@@ -378,8 +378,10 @@ class AppDelegate: NSObject,
 
         // Setup our menu
         setupMenuImages()
+        setupWhatsNewMenuItem()
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
+        WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
 
         // Setup signal handlers
@@ -1032,6 +1034,20 @@ class AppDelegate: NSObject,
 
     @IBAction func showAbout(_ sender: Any?) {
         AboutController.shared.show()
+    }
+
+    @IBAction func showWhatsNew(_ sender: Any?) {
+        WhatsNewNotice.showWhatsNew(force: true, theme: tako.config.theme)
+    }
+
+    private func setupWhatsNewMenuItem() {
+        guard let takoMenu = NSApp.mainMenu?.items.first?.submenu,
+              !takoMenu.items.contains(where: { $0.action == #selector(showWhatsNew) })
+        else { return }
+        let item = NSMenuItem(title: "What's New in Tako…", action: #selector(showWhatsNew), keyEquivalent: "")
+        item.target = self
+        item.setImageIfDesired(systemSymbolName: "sparkles")
+        takoMenu.insertItem(item, at: min(1, takoMenu.items.count))
     }
 
     @IBAction func checkForUpdates(_ sender: Any?) {

@@ -437,11 +437,11 @@ struct TabBarViewCoverageTests {
         mount(bar, in: anchor)
         draw(bar)
 
-        // Scrolled to the end: the last tab sits against the buttons.
-        click(bar, at: NSPoint(x: bar.bounds.width - 68 - 1, y: 14), in: anchor)
+        // Scrolled to the end: the last tab sits against the buttons (100pt reserved for ⓘ/◫/+).
+        click(bar, at: NSPoint(x: bar.bounds.width - 100 - 1, y: 14), in: anchor)
         #expect(group.selectedWindow === windows[24])
         // Neighbouring 34pt slots are different tabs: none is squeezed thinner.
-        click(bar, at: NSPoint(x: bar.bounds.width - 68 - 1 - 34, y: 14), in: anchor)
+        click(bar, at: NSPoint(x: bar.bounds.width - 100 - 1 - 34, y: 14), in: anchor)
         #expect(group.selectedWindow === windows[23])
     }
 
@@ -517,6 +517,10 @@ struct TabBarViewCoverageTests {
         let afterSplitHover = snapshot(bar)
         #expect(!bitmapsEqual(afterPlusHover, afterSplitHover))
 
+        move(to: NSPoint(x: 314, y: 19)) // The info / about button.
+        let afterInfoHover = snapshot(bar)
+        #expect(!bitmapsEqual(afterSplitHover, afterInfoHover))
+
         move(to: NSPoint(x: 5, y: 5)) // Empty bar area: clears all hover state.
         #expect(bitmapsEqual(snapshot(bar), baseline))
 
@@ -571,8 +575,10 @@ struct TabBarViewCoverageTests {
     private final class ButtonActionRecorder: NSObject, NSApplicationDelegate {
         var newTabInvoked = false
         var splitInvoked = false
+        var aboutInvoked = false
         @objc func newTab(_ sender: Any?) { newTabInvoked = true }
         @objc func splitRight(_ sender: Any) { splitInvoked = true }
+        @objc func showAbout(_ sender: Any?) { aboutInvoked = true }
     }
 
     @Test func clickingTheNewTabButtonSendsTheAction() {
@@ -609,6 +615,80 @@ struct TabBarViewCoverageTests {
 
         click(bar, at: NSPoint(x: 346, y: 19), in: window)
         #expect(recorder.splitInvoked)
+    }
+
+    @Test func clickingTheAboutButtonSendsTheAction() {
+        let window = makeWindow(title: "solo")
+        defer { Tako.CustomTabGroup.leave(window) }
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+
+        Tako.CustomTabGroup.join(makeWindow(title: "b"), to: window, select: false)
+        draw(bar)
+
+        let recorder = ButtonActionRecorder()
+        let originalDelegate = NSApplication.shared.delegate
+        NSApplication.shared.delegate = recorder
+        defer { NSApplication.shared.delegate = originalDelegate }
+
+        click(bar, at: NSPoint(x: 314, y: 19), in: window)
+        #expect(recorder.aboutInvoked)
+    }
+
+    @Test func buttonsAreClickableInLoneWindowMode() {
+        let window = makeWindow(title: "lone")
+        defer { Tako.CustomTabGroup.leave(window) }
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+        draw(bar)
+
+        let recorder = ButtonActionRecorder()
+        let originalDelegate = NSApplication.shared.delegate
+        NSApplication.shared.delegate = recorder
+        defer { NSApplication.shared.delegate = originalDelegate }
+
+        click(bar, at: NSPoint(x: 314, y: 19), in: window)
+        #expect(recorder.aboutInvoked)
+
+        click(bar, at: NSPoint(x: 346, y: 19), in: window)
+        #expect(recorder.splitInvoked)
+
+        click(bar, at: NSPoint(x: 378, y: 19), in: window)
+        #expect(recorder.newTabInvoked)
+    }
+
+    @Test func toolTipsReportCorrectLabels() {
+        let window = makeWindow(title: "tooltips")
+        defer { Tako.CustomTabGroup.leave(window) }
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+        draw(bar)
+
+        func move(to point: NSPoint) {
+            let event = NSEvent.mouseEvent(
+                with: .mouseMoved,
+                location: point,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 0,
+                pressure: 0)!
+            bar.mouseMoved(with: event)
+        }
+
+        move(to: NSPoint(x: 314, y: 19))
+        #expect(bar.toolTip?.contains("About Tako") == true)
+
+        move(to: NSPoint(x: 346, y: 19))
+        #expect(bar.toolTip?.contains("Split Terminal") == true)
+
+        move(to: NSPoint(x: 378, y: 19))
+        #expect(bar.toolTip?.contains("New Tab") == true)
+
+        move(to: NSPoint(x: 5, y: 5))
+        #expect(bar.toolTip == nil)
     }
 
     @Test func clickingATabSelectsIt() {

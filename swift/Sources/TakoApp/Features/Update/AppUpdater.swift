@@ -344,12 +344,55 @@ final class AppUpdater: @unchecked Sendable {
 
     @MainActor
     private func showUpdateSuccessAlert(tagName: String) {
+        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            let lines = [
+                TUIText.Line(runs: [TUIText.Run(text: "Tako \(tagName) is ready to use.", kind: .bold)]),
+                TUIText.Line(runs: []),
+                TUIText.Line(runs: [TUIText.Run(text: "The update was installed successfully. Would you like to relaunch Tako now to start using the new version, or keep working and relaunch later?", kind: .plain)])
+            ]
+            Task { @MainActor in
+                let answer = await TerminalDialogView.choose(
+                    in: window,
+                    title: "Tako \(tagName) Installed",
+                    lines: lines,
+                    choices: [
+                        .init(title: "Keep Working", kind: .normal),
+                        .init(title: "Relaunch Now", kind: .primary)
+                    ],
+                    selected: 1,
+                    cancelIndex: 0,
+                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+                )
+                if answer == 1 {
+                    Self.relaunchApp()
+                }
+            }
+            return
+        }
+
         let alert = NSAlert()
         alert.messageText = "Tako \(tagName) Installed!"
-        alert.informativeText = "The update has been installed successfully to \(Bundle.main.bundleURL.path).\n\nYour current terminal windows remain active and will not be interrupted. The updated version will take effect the next time you launch Tako."
+        alert.informativeText = "The update has been installed successfully.\n\nWould you like to relaunch Tako now to use \(tagName), or keep working and relaunch later?"
         alert.alertStyle = .informational
+        alert.addButton(withTitle: "Relaunch Now")
         alert.addButton(withTitle: "Keep Working")
-        alert.runModal()
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            Self.relaunchApp()
+        }
+    }
+
+    /// Terminates the current app process and relaunches the updated application bundle.
+    static func relaunchApp() {
+        guard NSClassFromString("XCTestCase") == nil else { return }
+        let bundleURL = Bundle.main.bundleURL
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"\(bundleURL.path)\""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script]
+        try? process.run()
+        NSApp.terminate(nil)
     }
 }
 

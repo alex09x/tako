@@ -200,8 +200,9 @@ extension Tako {
             static let activeBarHeight: CGFloat = 2
             static let closeSize: CGFloat = 16
             static let closeHitSize: CGFloat = 24
-            /// "кнопки справа 28×28, gap 4, отступ 8" -- two buttons (◫
-            /// split, + new tab), not one.
+            /// "кнопки справа 28×28, gap 4, отступ 8" -- three buttons (ⓘ
+            /// about, ◫ split, + new tab).
+            static let buttonCount: CGFloat = 3
             static let buttonSize: CGFloat = 28
             static let buttonRadius: CGFloat = 7
             static let buttonGap: CGFloat = 4
@@ -209,6 +210,7 @@ extension Tako {
             static let buttonY: CGFloat = (barHeight - buttonSize) / 2
             static let splitGlyphSize: CGFloat = 13
             static let plusGlyphSize: CGFloat = 15
+            static let infoGlyphSize: CGFloat = 14
         }
 
         private enum Palette {
@@ -249,6 +251,7 @@ extension Tako {
         private var hoveredClose = false
         private var plusHovered = false
         private var splitHovered = false
+        private var infoHovered = false
         /// Command-number badges show only while the key is actually held,
         /// after a beat, so they do not flash during ordinary shortcuts.
         private var showingBadges = false
@@ -269,10 +272,9 @@ extension Tako {
 
         // MARK: Layout
 
-        /// Right edge reserved for the ◫/+ pair: two 28px buttons, a 4px
-        /// gap between them, and an 8px margin from the window edge.
+        /// Right edge reserved for buttons: ⓘ info, ◫ split, + new tab.
         private var buttonsReservedWidth: CGFloat {
-            Metrics.buttonSize * 2 + Metrics.buttonGap + Metrics.buttonMarginRight
+            Metrics.buttonSize * Metrics.buttonCount + Metrics.buttonGap * (Metrics.buttonCount - 1) + Metrics.buttonMarginRight
         }
 
         /// "ширина: по контенту, clamp 120-220px. НИКОГДА не justify на
@@ -361,6 +363,7 @@ extension Tako {
                 hovered = nil
                 hoveredClose = false
                 drawLoneTitle()
+                drawButtons(in: ctx)
                 return
             }
             layoutTabs()
@@ -376,14 +379,30 @@ extension Tako {
             guard !title.isEmpty else { return }
             guard let ctx = NSGraphicsContext.current?.cgContext else { return }
             let width = TabText.width(of: title, font: Fonts.loneTitle)
-            TabText.draw(
-                title,
-                atX: (bounds.width - width) / 2,
-                centeredAtY: Metrics.barHeight / 2,
-                font: Fonts.loneTitle,
-                color: Palette.windowTitle,
-                context: ctx
-            )
+            let maxTitleWidth = max(0, infoRect.minX - Metrics.firstTabX - 16)
+            let drawnX = max(Metrics.firstTabX, (bounds.width - min(width, maxTitleWidth)) / 2)
+            if drawnX + width > infoRect.minX - 8 {
+                ctx.saveGState()
+                ctx.clip(to: CGRect(x: Metrics.firstTabX, y: 0, width: maxTitleWidth, height: Metrics.barHeight))
+                TabText.draw(
+                    title,
+                    atX: Metrics.firstTabX,
+                    centeredAtY: Metrics.barHeight / 2,
+                    font: Fonts.loneTitle,
+                    color: Palette.windowTitle,
+                    context: ctx
+                )
+                ctx.restoreGState()
+            } else {
+                TabText.draw(
+                    title,
+                    atX: drawnX,
+                    centeredAtY: Metrics.barHeight / 2,
+                    font: Fonts.loneTitle,
+                    color: Palette.windowTitle,
+                    context: ctx
+                )
+            }
         }
 
         private func draw(_ tab: Tab, in ctx: CGContext) {
@@ -501,7 +520,7 @@ extension Tako {
         }
 
         /// "кнопки справа 28×28, gap 4, отступ 8": + is rightmost (window
-        /// edge minus the 8px margin), ◫ sits 4px to its left.
+        /// edge minus the 8px margin), ◫ sits 4px to its left, ⓘ sits 4px to the left of ◫.
         private var plusRect: CGRect {
             CGRect(x: bounds.width - Metrics.buttonMarginRight - Metrics.buttonSize,
                    y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
@@ -509,6 +528,11 @@ extension Tako {
 
         private var splitRect: CGRect {
             CGRect(x: plusRect.minX - Metrics.buttonGap - Metrics.buttonSize,
+                   y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
+        }
+
+        private var infoRect: CGRect {
+            CGRect(x: splitRect.minX - Metrics.buttonGap - Metrics.buttonSize,
                    y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
         }
 
@@ -522,6 +546,26 @@ extension Tako {
         }
 
         private func drawButtons(in ctx: CGContext) {
+            drawButton(infoRect, hovered: infoHovered, in: ctx) { ctx, rect in
+                let r: CGFloat = Metrics.infoGlyphSize / 2
+                let circleRect = CGRect(x: rect.midX - r, y: rect.midY - r, width: r * 2, height: r * 2)
+                ctx.setStrokeColor(Palette.dim.cgColor)
+                ctx.setLineWidth(1.2)
+                ctx.strokeEllipse(in: circleRect)
+
+                // Info dot (at top)
+                let dotRadius: CGFloat = 1.0
+                let dotCenterY = rect.midY + 2.5
+                ctx.setFillColor(Palette.dim.cgColor)
+                ctx.fillEllipse(in: CGRect(x: rect.midX - dotRadius, y: dotCenterY - dotRadius,
+                                           width: dotRadius * 2, height: dotRadius * 2))
+
+                // Info stem (downwards)
+                ctx.setLineWidth(1.3)
+                ctx.move(to: CGPoint(x: rect.midX, y: rect.midY + 0.5))
+                ctx.addLine(to: CGPoint(x: rect.midX, y: rect.midY - 3.5))
+                ctx.strokePath()
+            }
             drawButton(splitRect, hovered: splitHovered, in: ctx) { ctx, rect in
                 // rectangle.split.2x1: two cells side by side, 13pt optical.
                 let glyphSize: CGFloat = Metrics.splitGlyphSize
@@ -614,11 +658,25 @@ extension Tako {
             let previousTab = hovered
             let previousPlus = plusHovered
             let previousSplit = splitHovered
+            let previousInfo = infoHovered
             hovered = stripRect.contains(point) ? tabs.first { $0.frame.contains(point) }?.index : nil
             hoveredClose = hovered.map { closeRect(of: tabs[$0]).contains(point) } ?? false
             plusHovered = plusRect.contains(point)
             splitHovered = splitRect.contains(point)
-            if hovered != previousTab || plusHovered != previousPlus || splitHovered != previousSplit {
+            infoHovered = infoRect.contains(point)
+
+            if infoHovered {
+                let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+                toolTip = v.isEmpty ? "About Tako" : "About Tako (v\(v))"
+            } else if splitHovered {
+                toolTip = "Split Terminal Right (⌘D)"
+            } else if plusHovered {
+                toolTip = "New Tab (⌘T)"
+            } else {
+                toolTip = nil
+            }
+
+            if hovered != previousTab || plusHovered != previousPlus || splitHovered != previousSplit || infoHovered != previousInfo {
                 needsDisplay = true
             }
         }
@@ -627,6 +685,8 @@ extension Tako {
             hovered = nil
             plusHovered = false
             splitHovered = false
+            infoHovered = false
+            toolTip = nil
             needsDisplay = true
         }
 
@@ -643,6 +703,10 @@ extension Tako {
         override func mouseDown(with event: NSEvent) {
             let point = convert(event.locationInWindow, from: nil)
             // Same as mouseMoved: use the cached tabs from the last draw() pass.
+            if infoRect.contains(point) {
+                NSApp.sendAction(#selector(AppDelegate.showAbout(_:)), to: nil, from: self)
+                return
+            }
             if plusRect.contains(point) {
                 NSApp.sendAction(#selector(TerminalController.newTab(_:)), to: nil, from: self)
                 return

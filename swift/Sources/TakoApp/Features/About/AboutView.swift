@@ -121,6 +121,10 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
+                    Button("What's New") {
+                        AboutController.shared.hide()
+                        WhatsNewNotice.showWhatsNew(force: true)
+                    }
                     if let url = docsURL {
                         Button("Docs") {
                             openURL(url)
