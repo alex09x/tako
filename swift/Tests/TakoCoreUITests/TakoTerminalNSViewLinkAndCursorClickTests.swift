@@ -439,11 +439,11 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
 
     func testWrappedOSC8LinkDetectsMismatchAcrossRows() {
         let view = makeView()
-        // Row 0 has "https://" (cols 72..79) and wraps onto Row 1 with "paypal.com/login" (cols 0..15)
+        // Row 0 has "https://" (cols 72..79) and soft-wraps onto Row 1 with "paypal.com/login" (cols 0..15)
         // Both cells belong to the same OSC 8 hyperlink targeting https://attacker.org/steal
         let padCols = Int(view.core.cols()) - 8
         let padding = String(repeating: " ", count: max(0, padCols))
-        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}https://\r\npaypal.com/login\u{1b}]8;;\u{7}"
+        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
         view.feed(data: Data(payload.utf8))
 
         // Check link at row 0 (contains only "https://")
@@ -477,6 +477,28 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
             XCTFail("Expected urlMismatch warning on row 0")
         }
         XCTAssertTrue(opened.isEmpty)
+    }
+
+    func testHardEndedRowWithSameURIAtNextRowCol0DoesNotMerge() {
+        let view = makeView()
+        // Row 0 has "x" at the final column (cols - 1) and ends with a hard CRLF
+        // Row 1 starts at col 0 with "https://paypal.com/login" targeting the same attacker URI
+        let padCols = Int(view.core.cols()) - 1
+        let padding = String(repeating: " ", count: max(0, padCols))
+        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}x\u{1b}]8;;\u{7}\r\n\u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Hover over row 1 col 4 (in "https://paypal.com/login")
+        let linkRow1 = view.linkRange(at: (row: 1, col: 4))
+        XCTAssertNotNil(linkRow1)
+        XCTAssertEqual(linkRow1?.text, "https://paypal.com/login", "Must not merge 'x' across hard-ended row boundary")
+        XCTAssertTrue(linkRow1?.isMismatch ?? false, "Deceptive domain on row 1 must be flagged as mismatch")
+
+        // Hover over row 0 at the last column ("x")
+        let linkRow0 = view.linkRange(at: (row: 0, col: Int(view.core.cols()) - 1))
+        XCTAssertNotNil(linkRow0)
+        XCTAssertEqual(linkRow0?.text, "x", "Must contain only row 0 span text")
+        XCTAssertFalse(linkRow0?.isMismatch ?? true, "Plain 'x' is not URL-shaped and not a deceptive mismatch")
     }
 
     func testMultipleOSC8SpansWithSameURIOnSameRowDoNotMergeInterveningText() {

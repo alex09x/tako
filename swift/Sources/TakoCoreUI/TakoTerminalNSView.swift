@@ -3217,6 +3217,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return true
     }
 
+    /// Returns true if viewport `row` is a soft-wrapped continuation of `row - 1`.
+    func isViewportLineWrapped(row: Int) -> Bool {
+        guard row > 0, row < Int(core.rows()) else { return false }
+        let text = core.getPlainText(startRow: UInt32(row - 1), maxRows: 2)
+        return !text.contains("\n")
+    }
+
     /// Collects the full displayed text of the clicked contiguous OSC 8 hyperlink span,
     /// including any wrapped preceding and succeeding rows that continue the same span.
     func fullOsc8Text(cell: (row: Int, col: Int), uri: String) -> String {
@@ -3238,9 +3245,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         var spans: [Int: (start: Int, end: Int)] = [cell.row: (start: currentStart, end: currentEnd)]
 
-        // 2. Trace backwards across wrapped lines
+        // 2. Trace backwards across soft-wrapped lines
         var topRow = cell.row
         while topRow > 0 {
+            guard isViewportLineWrapped(row: topRow) else { break }
             guard let curSpan = spans[topRow], curSpan.start == 0 else { break }
             guard core.getCell(row: UInt32(topRow - 1), col: UInt32(cols - 1))?.hyperlinkUri == uri else { break }
             var prevStart = cols - 1
@@ -3252,9 +3260,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             topRow -= 1
         }
 
-        // 3. Trace forwards across wrapped lines
+        // 3. Trace forwards across soft-wrapped lines
         var bottomRow = cell.row
         while bottomRow + 1 < totalRows {
+            guard isViewportLineWrapped(row: bottomRow + 1) else { break }
             guard let curSpan = spans[bottomRow], curSpan.end == cols - 1 else { break }
             guard core.getCell(row: UInt32(bottomRow + 1), col: 0)?.hyperlinkUri == uri else { break }
             var nextEnd = 0
