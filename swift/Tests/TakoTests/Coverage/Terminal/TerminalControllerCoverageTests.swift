@@ -334,7 +334,7 @@ struct TerminalControllerCloseTests {
         #expect(window.isVisible)
     }
 
-    @Test func windowShouldCloseRoutesThroughTheTabGroupCoordinator() {
+    @Test func windowShouldCloseClosesTheSingleWindowGroup() {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }
         controller.showWindow(nil)

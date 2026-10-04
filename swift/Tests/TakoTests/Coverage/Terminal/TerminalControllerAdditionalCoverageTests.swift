@@ -331,6 +331,53 @@ struct TerminalControllerCloseWindowUndoTests {
             }
         }
     }
+
+    @Test func redCloseButtonClosesTheEntireTabGroup() throws {
+        try withRealAppDelegate { _ in
+            try withInjectedWindowSystem {
+                let (a, aWindow) = TerminalTestSupport.loaded()
+                let (b, bWindow) = TerminalTestSupport.loaded()
+                defer {
+                    TerminalTestSupport.tearDown(a, aWindow)
+                    TerminalTestSupport.tearDown(b, bWindow)
+                }
+                Tako.CustomTabGroup.join(bWindow, to: aWindow, select: true)
+                aWindow.orderFrontRegardless()
+                bWindow.makeKeyAndOrderFront(nil)
+                #expect(aWindow.isVisible)
+                #expect(bWindow.isVisible)
+
+                let shouldClose = b.windowShouldClose(bWindow)
+
+                #expect(!shouldClose)
+                #expect(!aWindow.isVisible)
+                #expect(!bWindow.isVisible)
+            }
+        }
+    }
+
+    @Test func closeTabActionClosesOnlyTheSelectedTab() throws {
+        try withRealAppDelegate { _ in
+            try withInjectedWindowSystem {
+                let (a, aWindow) = TerminalTestSupport.loaded()
+                let (b, bWindow) = TerminalTestSupport.loaded()
+                defer {
+                    TerminalTestSupport.tearDown(a, aWindow)
+                    TerminalTestSupport.tearDown(b, bWindow)
+                }
+                Tako.CustomTabGroup.join(bWindow, to: aWindow, select: true)
+                aWindow.orderFrontRegardless()
+                bWindow.makeKeyAndOrderFront(nil)
+                #expect(aWindow.isVisible)
+                #expect(bWindow.isVisible)
+
+                b.closeTab(nil)
+
+                #expect(aWindow.isVisible)
+                #expect(!bWindow.isVisible)
+            }
+        }
+    }
 }
 
 @MainActor
