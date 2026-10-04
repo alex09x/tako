@@ -1504,6 +1504,8 @@ extension Tako {
         private var syncOutputTimeoutItem: DispatchWorkItem?
         /// Debounce work item for refreshing search hit marks during rapid output.
         var searchHitDebounceItem: DispatchWorkItem?
+        /// Earliest refresh request time in the current continuous burst (bounded debounce).
+        var searchHitBurstStartTime: TimeInterval = 0
         /// Set by the watchdog to let one `draw()` past the sync-output guard.
 
         private var syncOverride = false
@@ -1997,25 +1999,48 @@ extension Tako {
             scheduleSearchHitRefresh()
         }
 
-        /// Debounced search hit refresh to prevent walking all scrollback on every live output batch.
+        /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
+        func cancelPendingSearchHitRefresh() {
+            searchHitDebounceItem?.cancel()
+            searchHitDebounceItem = nil
+            searchHitBurstStartTime = 0
+        }
+
+        /// Bounded-delay debounced search hit refresh to prevent walking all scrollback
+        /// on every live output batch while avoiding starvation during continuous output.
         func scheduleSearchHitRefresh() {
             guard let searchState, !searchState.needle.isEmpty else {
-                searchHitDebounceItem?.cancel()
-                searchHitDebounceItem = nil
+                cancelPendingSearchHitRefresh()
                 if !searchHitRetainedRows.isEmpty {
                     searchHitRetainedRows = []
                 }
                 return
             }
-            searchHitDebounceItem?.cancel()
+
+            let now = ProcessInfo.processInfo.systemUptime
+            let maxInterval: TimeInterval = 0.35
+            let debounceDelay: TimeInterval = 0.15
+
+            if searchHitDebounceItem != nil {
+                if now - searchHitBurstStartTime >= maxInterval {
+                    // Maximum interval reached: let the pending item execute without postponing it,
+                    // preventing starvation when a process emits high-frequency output.
+                    return
+                }
+                searchHitDebounceItem?.cancel()
+            } else {
+                searchHitBurstStartTime = now
+            }
+
             let item = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
                     self?.searchHitDebounceItem = nil
+                    self?.searchHitBurstStartTime = 0
                     self?.refreshSearchHitRows()
                 }
             }
             searchHitDebounceItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + debounceDelay, execute: item)
         }
 
         private var configObserver: NSObjectProtocol?
