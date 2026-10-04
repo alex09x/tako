@@ -202,9 +202,9 @@ the Mac can reach it.
 
 Status: shipped in 0.1.5.
 
-### [ ] 6. Prompt navigation and command selection
+### [x] 6. Prompt navigation and command selection
 
-Status: planned as a feature candidate once initial user feedback is gathered. Part of M1.
+Status: shipped in [#12](https://github.com/alex09x/tako/pull/12). Part of M1.
 
 Jump between commands and select their exact output using shell integration boundaries (OSC 133):
 - `Cmd+Up` and `Cmd+Down` to navigate directly between prompt markers without scrolling manually.
@@ -279,9 +279,9 @@ live sessions with per-session memory and provide an explicit end action; detach
 scrollback limits are enforced with documented eviction/cap semantics; and `session-persistence`
 defaults to on.
 
-### [ ] A2. Prompt navigation and command selection
+### [x] A2. Prompt navigation and command selection
 
-Step 6, unchanged in scope.
+Status: shipped in [#12](https://github.com/alex09x/tako/pull/12). Step 6, unchanged in scope.
 
 ### [x] A3. Safe paste guard
 
@@ -666,9 +666,9 @@ implementation or closes the item as not planned.
 
 Small, independent items built on shell-integration marks. Each can ship alone.
 
-### [ ] E1. Prompt navigation and command selection
+### [x] E1. Prompt navigation and command selection
 
-Step 6.
+Status: shipped in [#12](https://github.com/alex09x/tako/pull/12). Step 6.
 
 ### [ ] E2. Command marks in the gutter and scrollbar
 
