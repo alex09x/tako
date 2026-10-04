@@ -1613,6 +1613,9 @@ fn write_commands(w: &mut Writer, term: &Terminal, version: u32) {
     write_opt_string(w, term.last_cwd.as_deref());
     write_opt_u64(w, term.input_start.map(|(line, _)| line));
     w.write_u32(term.input_start.map_or(0, |(_, col)| col as u32));
+    if version >= 6 {
+        write_opt_u64(w, term.last_prompt_line);
+    }
 }
 
 /// What [`read_commands`] decoded, checked against itself and the grid.
@@ -1620,6 +1623,7 @@ struct CommandState {
     log: CommandLog,
     last_cwd: Option<String>,
     input_start: Option<(u64, usize)>,
+    last_prompt_line: Option<u64>,
 }
 
 /// [`write_commands`]' block. The runs must cover the grid's retained rows
@@ -1725,6 +1729,11 @@ fn read_commands(
     if input_col >= grid.cols() && input_line.is_some() {
         return Err(bad("input start outside the grid"));
     }
+    let last_prompt_line = if version >= 6 {
+        read_opt_u64(r)?
+    } else {
+        None
+    };
 
     // The grid may hold fewer history rows than were written (its capacity
     // dropped the oldest); their owners go with them.
@@ -1749,6 +1758,7 @@ fn read_commands(
         log,
         last_cwd,
         input_start: input_line.map(|line| (line, input_col)),
+        last_prompt_line,
     })
 }
 
@@ -2569,6 +2579,7 @@ pub fn import_traced_reserving(
         log: CommandLog::default(),
         last_cwd: None,
         input_start: None,
+        last_prompt_line: None,
     };
     // A v3 container says which colours and which cursor style were the
     // host's; an older one leaves the inference above in place.
@@ -2657,7 +2668,7 @@ pub fn import_traced_reserving(
         default_bg,
         cursor_color,
         pending_wrap,
-        last_prompt_line: None,
+        last_prompt_line: commands.last_prompt_line,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))

@@ -168,6 +168,7 @@ extension Tako.SurfaceView {
         guard let searchState else { return false }
         searchState.writePasteboardNeedle()
         let matches = searchMatches(for: searchState.needle)
+        searchHitRetainedRows = matches.map { UInt64($0.row) }
         guard let first = matches.first, let last = matches.last else {
             currentSearchMatch = nil
             updateSearchCounts(matches)
@@ -198,6 +199,20 @@ extension Tako.SurfaceView {
         searchState.selected = currentSearchMatch
             .flatMap { matches.firstIndex(of: $0) }
             .map { UInt(matches.count - 1 - $0) }
+    }
+
+    /// Recomputes search matches and updates scrollbar track hit marks whenever
+    /// terminal content changes or reflow occurs.
+    func refreshSearchHitRows() {
+        guard let searchState, !searchState.needle.isEmpty else {
+            if !searchHitRetainedRows.isEmpty {
+                searchHitRetainedRows = []
+            }
+            return
+        }
+        let matches = searchMatches(for: searchState.needle)
+        searchHitRetainedRows = matches.map { UInt64($0.row) }
+        updateSearchCounts(matches)
     }
 
     /// Every match of `needle` in scrollback and on screen, oldest first.

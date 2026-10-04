@@ -789,4 +789,26 @@ fn command_marks_remap_after_reflow() {
     );
 }
 
+#[test]
+fn pending_prompt_line_preserved_across_checkpoint() {
+    let mut t = Terminal::new(40, 10);
+    // OSC 133;A establishes prompt line, 133;B command starts, but 133;C has not arrived yet
+    t.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hello\r\n");
+
+    let data = t.export_checkpoint().expect("export checkpoint");
+
+    let mut restored = Terminal::new(40, 10);
+    restored.import_checkpoint(&data).expect("import checkpoint");
+
+    // Command output begins and finishes in restored terminal
+    restored.feed(b"\x1b]133;C\x07hello\r\n\x1b]133;D;0\x07");
+
+    let marks = restored.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].status, CommandMarkStatus::Success);
+    assert_eq!(marks[0].retained_row, 0);
+}
+
+
+
 

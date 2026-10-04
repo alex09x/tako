@@ -1986,7 +1986,14 @@ extension Tako {
         /// told or it keeps formatting for the old size.
         public func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
             pty?.resize(cols: UInt16(max(cols, 1)), rows: UInt16(max(rows, 1)))
+            refreshSearchHitRows()
         }
+
+        /// Screen content changed or checkpoint restored: refresh search hit marks if active.
+        public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
+            refreshSearchHitRows()
+        }
+
 
         private var configObserver: NSObjectProtocol?
         private weak var owningApp: Tako.App?
