@@ -20,11 +20,11 @@ the people using it say it helps, not when a list of items is done.
   (experimental, in progress, candidate).
 - Every new item has an ID (`A1`, `B4`, ...) so issues, branches and commits can name it.
   The numbered steps 1-8 keep their original numbers.
-- Every item ends with **Done when**: the observable behaviour that closes it. An item is not
+- Every actionable item ends with **Done when**: the observable behaviour that closes it. An item is not
   done because code exists; it is done when that behaviour holds and has tests.
 - Milestones group items into releases. Versions are indicative; the order is what matters.
-- Items marked *evaluate* are questions, not commitments: they are decided with a written
-  reason before any work starts.
+- Items marked *evaluate* (D5, F4, F7) are open questions, not commitments: they close with a written
+  decision record based on verified evidence before any implementation is scheduled.
 
 ## Principles
 
@@ -589,7 +589,7 @@ hostile file can run a command.
 Out-of-the-box skill packages and MCP integration for popular coding agents so they automatically discover and leverage Tako's pane splitting, background execution, and overlay features.
 
 - `takoctl mcp`: a stdio MCP server exposing tree, split, run, wait, last, find, notify, status,
-  progress, ask and overlay, each tool behind the capability model of G1.
+  progress, and ask (with overlay added when D1 lands in M4), each tool behind the capability model of G1.
 - `takoctl skills install <agent>`: writes a skill description of these tools into the agent's
   skill directory, with the same diff-and-confirm flow as B8.
 - The skill teaches agents to address their own pane, run long work in a split and wait for it
@@ -650,6 +650,9 @@ stream cannot exceed the cap.
 
 The text-sizing protocol (OSC 66) lets programs print larger headings in the grid. Decide with a
 written reason whether Tako supports it, based on adoption by tools people use.
+
+Done when: a written evaluation records current terminal tool adoption and either schedules an engine
+implementation or closes the item as not planned.
 
 ---
 
@@ -762,6 +765,9 @@ one setting, and nothing persists on the host unless the user chose to install i
 Decide between a small remote helper that keeps shells alive across disconnects and attaching to
 the user's existing remote multiplexer, based on security, maintenance and what testers use.
 
+Done when: a written evaluation documents the trade-offs between a dedicated helper and multiplexer
+attachment against user workflows and records an architectural decision.
+
 ### [ ] F5. iPhone companion for Mac sessions
 
 Tako already has an iOS app with its own SSH transport. Extend it to pair with the Mac:
@@ -786,6 +792,9 @@ Done when the iOS walkthrough covers each of these against local test servers.
 
 Share one pane read-only with another device on the local network for pairing or demos, with an
 explicit, visible, time-limited share.
+
+Done when: a written evaluation assesses local discovery, encryption, and authorization trade-offs,
+deciding whether to schedule an implementation or reject it.
 
 ---
 
