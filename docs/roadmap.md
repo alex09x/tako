@@ -351,6 +351,8 @@ through tabs to find the one that is waiting, and never miss the one that finish
 
 ### [x] B1. Pane status model
 
+Status: shipped in [PR #17](https://github.com/alex09x/tako/pull/17).
+
 One explicit status per pane, from reported signals only:
 
 | Status | Meaning | Typical sources |
