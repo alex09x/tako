@@ -665,6 +665,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// The real destination URL string of the link currently hovered by the pointer (E8).
     public private(set) var hoveredLinkTarget: String?
 
+    /// Last known mouse location in view coordinates, used to refresh link preview when underlying content or viewport changes.
+    private var lastMousePoint: NSPoint?
+
     /// A thin bar under `hoveredLink`'s cells, positioned in view
     /// coordinates -- the same ones `cellOrigin` and `cellWidth` use.
     private lazy var linkUnderlineLayer: CALayer = {
@@ -2241,6 +2244,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         redrawPending = true
         guard !isPresentationPaused else { return }
         drivePresentationIfNeeded()
+        refreshHoveredLink()
     }
 
     private func armPresentationRetry() {
@@ -2331,6 +2335,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         if customShaderKeepsAnimating {
             scheduleRedraw()
         }
+        refreshHoveredLink()
     }
 
     /// Custom shaders are running and `custom-shader-animation` wants
@@ -2654,6 +2659,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             )
         }
         context.restoreGState()
+        refreshHoveredLink()
     }
 
     // MARK: - Cursor Blink
@@ -3060,9 +3066,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             }
         }
         let cell = cellAt(convert(event.locationInWindow, from: nil))
-        if event.modifierFlags.contains(.command), let link = linkRange(at: cell) {
-            openLink(link)
-            return
+        if event.modifierFlags.contains(.command) {
+            refreshHoveredLink()
+            if let link = currentHoveredLink ?? linkRange(at: cell) {
+                openLink(link)
+                return
+            }
         }
         nativeSelectionCurrentPress = event.modifierFlags.contains(.shift)
             && !mouseShiftCapture.capturesShift(programRequest: core.mouseShiftCapture())
@@ -3208,6 +3217,81 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return true
     }
 
+    /// Collects the full displayed text of an OSC 8 hyperlink spanning `cell.row`,
+    /// including any wrapped preceding and succeeding rows that share the same URI.
+    func fullOsc8Text(cell: (row: Int, col: Int), uri: String) -> String {
+        let cols = Int(core.cols())
+        let totalRows = Int(core.rows())
+        guard cols > 0, totalRows > 0 else { return "" }
+
+        // Find topmost wrapped row
+        var topRow = cell.row
+        while topRow > 0 {
+            guard core.getCell(row: UInt32(topRow), col: 0)?.hyperlinkUri == uri else { break }
+            var prevRowEndsWithUri = false
+            for c in stride(from: cols - 1, through: 0, by: -1) {
+                if let prevCell = core.getCell(row: UInt32(topRow - 1), col: UInt32(c)) {
+                    if prevCell.ch != 0 && prevCell.ch != 32 {
+                        prevRowEndsWithUri = (prevCell.hyperlinkUri == uri)
+                        break
+                    }
+                    if prevCell.hyperlinkUri == uri {
+                        prevRowEndsWithUri = true
+                        break
+                    }
+                }
+            }
+            if prevRowEndsWithUri {
+                topRow -= 1
+            } else {
+                break
+            }
+        }
+
+        // Find bottommost wrapped row
+        var bottomRow = cell.row
+        while bottomRow + 1 < totalRows {
+            var bottomRowEndsWithUri = false
+            for c in stride(from: cols - 1, through: 0, by: -1) {
+                if let curCell = core.getCell(row: UInt32(bottomRow), col: UInt32(c)) {
+                    if curCell.ch != 0 && curCell.ch != 32 {
+                        bottomRowEndsWithUri = (curCell.hyperlinkUri == uri)
+                        break
+                    }
+                    if curCell.hyperlinkUri == uri {
+                        bottomRowEndsWithUri = true
+                        break
+                    }
+                }
+            }
+            guard bottomRowEndsWithUri else { break }
+            if core.getCell(row: UInt32(bottomRow + 1), col: 0)?.hyperlinkUri == uri {
+                bottomRow += 1
+            } else {
+                break
+            }
+        }
+
+        var fullText = ""
+        for r in topRow...bottomRow {
+            var rStart = 0
+            while rStart < cols, core.getCell(row: UInt32(r), col: UInt32(rStart))?.hyperlinkUri != uri {
+                rStart += 1
+            }
+            guard rStart < cols else { continue }
+            var rEnd = cols - 1
+            while rEnd >= rStart, core.getCell(row: UInt32(r), col: UInt32(rEnd))?.hyperlinkUri != uri {
+                rEnd -= 1
+            }
+            for col in rStart...rEnd {
+                if let c = core.getCell(row: UInt32(r), col: UInt32(col)), c.ch != 0 {
+                    fullText += c.grapheme ?? TerminalRenderer.string(for: c.ch)
+                }
+            }
+        }
+        return fullText
+    }
+
     /// `link-url` and OSC 8: the link under `cell`, if any. An OSC 8
     /// hyperlink cell wins regardless of `linkURLDetectionEnabled` --
     /// that flag only gates the plain-text regex scan.
@@ -3225,17 +3309,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                   core.getCell(row: UInt32(cell.row), col: UInt32(end + 1))?.hyperlinkUri == hyperlink {
                 end += 1
             }
-            var text = ""
+            var rowText = ""
             for col in start...end {
                 if let c = core.getCell(row: UInt32(cell.row), col: UInt32(col)), c.ch != 0 {
-                    text += c.grapheme ?? TerminalRenderer.string(for: c.ch)
+                    rowText += c.grapheme ?? TerminalRenderer.string(for: c.ch)
                 }
             }
-            let isMismatch = Self.detectLinkMismatch(text: text, targetURL: url)
+            let fullText = fullOsc8Text(cell: cell, uri: hyperlink)
+            let displayedText = fullText.isEmpty ? rowText : fullText
+            let isMismatch = Self.detectLinkMismatch(text: displayedText, targetURL: url)
             let isSafe = Self.isSafeScheme(url.scheme)
             return TerminalLink(
                 url: url,
-                text: text,
+                text: displayedText,
                 row: cell.row,
                 colStart: start,
                 colEnd: end,
@@ -3437,12 +3523,57 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     override public func flagsChanged(with event: NSEvent) {
-        updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
+        refreshHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         super.flagsChanged(with: event)
+    }
+
+    /// Recomputes hovered link state and HUD preview for the current pointer position.
+    /// Called when pointer moves, when viewport scrolls, or when content updates under stationary pointer (E8).
+    public func refreshHoveredLink(commandHeld: Bool? = nil) {
+        let point: NSPoint?
+        if let win = self.window {
+            let winPoint = win.mouseLocationOutsideOfEventStream
+            let localPoint = convert(winPoint, from: nil)
+            point = bounds.contains(localPoint) ? localPoint : nil
+        } else if let last = lastMousePoint {
+            point = bounds.contains(last) ? last : nil
+        } else {
+            point = nil
+        }
+
+        guard let point else {
+            if currentHoveredLink != nil {
+                clearHoveredLink()
+            }
+            return
+        }
+
+        mouseCell = cellAt(point)
+        let linkUnderPointer = mouseCell.flatMap(linkRange(at:))
+        if linkUnderPointer != currentHoveredLink {
+            currentHoveredLink = linkUnderPointer
+            hoveredLinkTarget = linkUnderPointer?.url.absoluteString
+            self.toolTip = linkUnderPointer?.tooltipText
+            updateLinkHUD(link: linkUnderPointer)
+            delegate?.terminalView(self, didHoverLink: hoveredLinkTarget)
+        }
+        let isCmd = commandHeld ?? (NSApp.currentEvent?.modifierFlags.contains(.command) == true || NSEvent.modifierFlags.contains(.command))
+        updateHoveredLink(commandHeld: isCmd)
+    }
+
+    private func clearHoveredLink() {
+        mouseCell = nil
+        currentHoveredLink = nil
+        hoveredLinkTarget = nil
+        self.toolTip = nil
+        updateLinkHUD(link: nil)
+        delegate?.terminalView(self, didHoverLink: nil)
+        updateHoveredLink(commandHeld: false)
     }
 
     override public func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        lastMousePoint = point
         if scrollbarLayer.frame.contains(point) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -3468,16 +3599,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateStickyHeaderHover(false)
             NSCursor.arrow.set()
         }
-        mouseCell = cellAt(point)
-        let linkUnderPointer = mouseCell.flatMap(linkRange(at:))
-        if linkUnderPointer != currentHoveredLink {
-            currentHoveredLink = linkUnderPointer
-            hoveredLinkTarget = linkUnderPointer?.url.absoluteString
-            self.toolTip = linkUnderPointer?.tooltipText
-            updateLinkHUD(link: linkUnderPointer)
-            delegate?.terminalView(self, didHoverLink: hoveredLinkTarget)
-        }
-        updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
+        refreshHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         if let cell = mouseCell {
             let report = mouseReportBytes(button: .none, action: .motion, cell: cell, event: event)
             if !report.isEmpty {
@@ -3497,15 +3619,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             isHoveringStickyHeader = false
             updateStickyHeaderHover(false)
         }
-        mouseCell = nil
-        if currentHoveredLink != nil {
-            currentHoveredLink = nil
-            hoveredLinkTarget = nil
-            self.toolTip = nil
-            updateLinkHUD(link: nil)
-            delegate?.terminalView(self, didHoverLink: nil)
-        }
-        updateHoveredLink(commandHeld: false)
+        lastMousePoint = nil
+        clearHoveredLink()
         super.mouseExited(with: event)
     }
 
@@ -3675,6 +3790,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         guard lines != 0 || presentedSubCellRows != 0 else { return }
         notifyScrollPositionIfChanged()
         scheduleRedraw()
+        refreshHoveredLink()
     }
 
     // MARK: - Copy & Paste

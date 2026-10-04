@@ -416,5 +416,67 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         click(column: 2, row: 0, modifiers: [.option], in: view)
         XCTAssertFalse(delegate.inputDataReceived.isEmpty, "Option+click on another row of the same prompt must move the cursor")
     }
+
+    func testStationaryPointerLinkHUDUpdatesOnTerminalContentChange() {
+        let view = makeView()
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+        view.feed(data: Data("\u{1b}]8;;https://example.com/first\u{7}LinkOne\u{1b}]8;;\u{7}".utf8))
+
+        // Hover over the link at row 0, col 3
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 3, row: 0, in: view, modifiers: []))
+        XCTAssertEqual(view.hoveredLinkTarget, "https://example.com/first")
+        XCTAssertEqual(view.toolTip, "https://example.com/first")
+
+        // New output arrives that overwrites row 0 with plain non-link text
+        view.feed(data: Data("\u{1b}[HPlain text without links here".utf8))
+        view.redrawNow()
+
+        // Without any mouseMoved event, hoveredLinkTarget and tooltip must be cleared or updated
+        XCTAssertNil(view.hoveredLinkTarget)
+        XCTAssertNil(view.toolTip)
+    }
+
+    func testWrappedOSC8LinkDetectsMismatchAcrossRows() {
+        let view = makeView()
+        // Row 0 has "https://" (cols 72..79) and wraps onto Row 1 with "paypal.com/login" (cols 0..15)
+        // Both cells belong to the same OSC 8 hyperlink targeting https://attacker.org/steal
+        let padCols = Int(view.core.cols()) - 8
+        let padding = String(repeating: " ", count: max(0, padCols))
+        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}https://\r\npaypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Check link at row 0 (contains only "https://")
+        let linkRow0 = view.linkRange(at: (row: 0, col: Int(view.core.cols()) - 4))
+        XCTAssertNotNil(linkRow0)
+        XCTAssertTrue(linkRow0?.isMismatch ?? false, "Wrapped link on row 0 must detect mismatch from full assembled text")
+        XCTAssertTrue(linkRow0?.text.contains("paypal.com") ?? false)
+
+        // Check link at row 1 (contains "paypal.com/login")
+        let linkRow1 = view.linkRange(at: (row: 1, col: 4))
+        XCTAssertNotNil(linkRow1)
+        XCTAssertTrue(linkRow1?.isMismatch ?? false, "Wrapped link on row 1 must detect mismatch from full assembled text")
+        XCTAssertTrue(linkRow1?.text.contains("https://") ?? false)
+
+        // Command-clicking row 0 prompts for mismatch confirmation
+        var opened: [URL] = []
+        var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+        withConfirmOpenURL({ _, warning, _, completion in
+            observedWarning = warning
+            completion(false)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: Int(view.core.cols()) - 4, row: 0, in: view, modifiers: [.command]))
+            }
+        }
+        XCTAssertNotNil(observedWarning)
+        if case .urlMismatch(let text, let target) = observedWarning {
+            XCTAssertTrue(text.contains("paypal.com"))
+            XCTAssertEqual(target, URL(string: "https://attacker.org/steal")!)
+        } else {
+            XCTFail("Expected urlMismatch warning on row 0")
+        }
+        XCTAssertTrue(opened.isEmpty)
+    }
 }
 #endif
