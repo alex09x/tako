@@ -172,7 +172,7 @@ final class MetalPixelTests: XCTestCase {
         /// How many pixels of a cell differ from `colour`. Ink, in other
         /// words, when `colour` is the background.
         func pixels(inCol col: Int, row: Int, differingFrom colour: (r: UInt8, g: UInt8, b: UInt8)) -> Int {
-            cell(col: col, row: row).count { $0 != colour }
+            cell(col: col, row: row).filter { $0 != colour }.count
         }
     }
 

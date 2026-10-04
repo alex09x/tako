@@ -40,11 +40,22 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         body()
     }
 
+    private func withConfirmOpenURL(
+        _ hook: @escaping (URL, TakoTerminalNSView.LinkSecurityWarning, NSWindow?, @escaping (Bool) -> Void) -> Void,
+        _ body: () -> Void
+    ) {
+        let previous = TakoTerminalNSView.confirmOpenURL
+        TakoTerminalNSView.confirmOpenURL = hook
+        defer { TakoTerminalNSView.confirmOpenURL = previous }
+        body()
+    }
+
     // MARK: - link-url: plain-text URL detection
 
     func testCommandClickOnAPlainURLOpensIt() {
         let view = makeView()
         view.feed(data: Data("see https://example.com/path for docs".utf8))
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 10, in: view, modifiers: []))
         var opened: [URL] = []
         withOpener({ opened.append($0) }) {
             view.mouseDown(with: mouseEvent(.leftMouseDown, column: 10, in: view, modifiers: [.command]))
@@ -91,11 +102,269 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         let view = makeView()
         view.linkURLDetectionEnabled = false
         view.feed(data: Data("\u{1b}]8;;http://osc8.example\u{7}click me\u{1b}]8;;\u{7}".utf8))
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 2, in: view, modifiers: []))
         var opened: [URL] = []
         withOpener({ opened.append($0) }) {
             view.mouseDown(with: mouseEvent(.leftMouseDown, column: 2, in: view, modifiers: [.command]))
         }
         XCTAssertEqual(opened, [URL(string: "http://osc8.example")!])
+    }
+
+    // MARK: - E8: Safer hyperlinks
+
+    func testOSC8LinkHoverShowsRealTargetAndTooltipAndHUD() {
+        let view = makeView()
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+        view.feed(data: Data("\u{1b}]8;;https://example.org/destination\u{7}Documentation\u{1b}]8;;\u{7}".utf8))
+
+        // Hover over the link without Command held
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 2, in: view, modifiers: []))
+        XCTAssertEqual(view.hoveredLinkTarget, "https://example.org/destination")
+        XCTAssertEqual(view.toolTip, "https://example.org/destination")
+        XCTAssertEqual(view.currentHoveredLink?.url.absoluteString, "https://example.org/destination")
+        XCTAssertEqual(view.currentHoveredLink?.text, "Documentation")
+        XCTAssertFalse(view.currentHoveredLink?.isMismatch ?? true)
+        XCTAssertTrue(view.currentHoveredLink?.isSchemeAllowedWithoutPrompt ?? false)
+        XCTAssertEqual(delegate.hoveredLinks.last, "https://example.org/destination")
+
+        // Hover off the link
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 40, in: view, modifiers: []))
+        XCTAssertNil(view.hoveredLinkTarget)
+        XCTAssertNil(view.toolTip)
+        XCTAssertNil(view.currentHoveredLink)
+        XCTAssertNil(delegate.hoveredLinks.last!)
+    }
+
+    func testSafeSchemesOpenWithoutConfirmationPrompt() {
+        let view = makeView()
+        let safeURLs = [
+            "https://example.com/secure",
+            "http://example.com/insecure",
+            "file:///Users/alex/test.txt"
+        ]
+
+        for urlString in safeURLs {
+            view.feed(data: Data("\u{1b}[2J\u{1b}[H".utf8))
+            view.feed(data: Data("\u{1b}]8;;\(urlString)\u{7}Link\u{1b}]8;;\u{7}".utf8))
+            let link = view.linkRange(at: (row: 0, col: 1))
+            XCTAssertNotNil(link)
+            XCTAssertTrue(link?.isSchemeAllowedWithoutPrompt ?? false)
+
+            // Hover to present preview first
+            view.mouseMoved(with: mouseEvent(.mouseMoved, column: 1, in: view, modifiers: []))
+            XCTAssertTrue(view.hasPresentedMatchingPreview)
+
+            var opened: [URL] = []
+            var promptTriggered = false
+            withConfirmOpenURL({ _, _, _, completion in
+                promptTriggered = true
+                completion(true)
+            }) {
+                withOpener({ opened.append($0) }) {
+                    view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+                }
+            }
+
+            XCTAssertFalse(promptTriggered, "Safe scheme \(urlString) with prior preview must not prompt for confirmation")
+            XCTAssertEqual(opened, [URL(string: urlString)!])
+        }
+    }
+
+    func testCommandClickWithoutPriorHoverPromptsConfirmation() {
+        let view = makeView()
+        let urlString = "https://example.com/direct-click"
+        view.feed(data: Data("\u{1b}[2J\u{1b}[H".utf8))
+        view.feed(data: Data("\u{1b}]8;;\(urlString)\u{7}Link\u{1b}]8;;\u{7}".utf8))
+
+        XCTAssertFalse(view.hasPresentedMatchingPreview)
+
+        var opened: [URL] = []
+        var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+
+        // 1. When user declines, link is not opened
+        withConfirmOpenURL({ _, warning, _, completion in
+            observedWarning = warning
+            completion(false)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+            }
+        }
+
+        XCTAssertNotNil(observedWarning)
+        if case .unconfirmedDestination(let url) = observedWarning {
+            XCTAssertEqual(url, URL(string: urlString)!)
+        } else {
+            XCTFail("Expected unconfirmedDestination warning but got \(String(describing: observedWarning))")
+        }
+        XCTAssertTrue(opened.isEmpty)
+
+        // 2. When user accepts, link is opened
+        withConfirmOpenURL({ _, _, _, completion in
+            completion(true)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+            }
+        }
+        XCTAssertEqual(opened, [URL(string: urlString)!])
+    }
+
+    func testUnsafeSchemesRequireConfirmationPrompt() {
+        let view = makeView()
+        let unsafeURLs = [
+            "mailto:user@example.com",
+            "ssh://user@remote.host",
+            "tel:1234567890",
+            "custom-app://open/thing"
+        ]
+
+        for urlString in unsafeURLs {
+            view.feed(data: Data("\u{1b}[2J\u{1b}[H".utf8))
+            view.feed(data: Data("\u{1b}]8;;\(urlString)\u{7}Unsafe\u{1b}]8;;\u{7}".utf8))
+            let link = view.linkRange(at: (row: 0, col: 1))
+            XCTAssertNotNil(link)
+            XCTAssertFalse(link?.isSchemeAllowedWithoutPrompt ?? true)
+
+            // 1. When user declines confirmation, openURL is NOT called
+            var opened: [URL] = []
+            var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+            withConfirmOpenURL({ _, warning, _, completion in
+                observedWarning = warning
+                completion(false)
+            }) {
+                withOpener({ opened.append($0) }) {
+                    view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+                }
+            }
+
+            XCTAssertNotNil(observedWarning)
+            if case .unsafeScheme(let scheme) = observedWarning {
+                XCTAssertEqual(scheme, URL(string: urlString)!.scheme)
+            } else {
+                XCTFail("Expected unsafeScheme warning but got \(String(describing: observedWarning))")
+            }
+            XCTAssertTrue(opened.isEmpty, "Declined confirmation must abort opening URL")
+
+            // 2. When user approves confirmation, openURL IS called
+            withConfirmOpenURL({ _, _, _, completion in
+                completion(true)
+            }) {
+                withOpener({ opened.append($0) }) {
+                    view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+                }
+            }
+
+            XCTAssertEqual(opened, [URL(string: urlString)!])
+        }
+    }
+
+    func testDeceptiveLinkMismatchTriggersSuspiciousWarningAndCriticalPrompt() {
+        let view = makeView()
+        // Text looks like paypal.com, but target URL is attacker.org
+        let payload = "\u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        let link = view.linkRange(at: (row: 0, col: 5))
+        XCTAssertNotNil(link)
+        XCTAssertTrue(link?.isMismatch ?? false)
+        XCTAssertTrue(link?.tooltipText.contains("Suspicious destination mismatch") ?? false)
+
+        // Hover shows mismatch tooltip and hoveredLinkTarget
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 5, in: view, modifiers: []))
+        XCTAssertEqual(view.hoveredLinkTarget, "https://attacker.org/steal")
+        XCTAssertTrue(view.toolTip?.contains("Suspicious destination mismatch") ?? false)
+
+        // Command-click prompts for confirmation with .urlMismatch warning
+        var opened: [URL] = []
+        var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+
+        // Decline first
+        withConfirmOpenURL({ _, warning, _, completion in
+            observedWarning = warning
+            completion(false)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 5, in: view, modifiers: [.command]))
+            }
+        }
+
+        XCTAssertNotNil(observedWarning)
+        if case .urlMismatch(let text, let target) = observedWarning {
+            XCTAssertTrue(text.contains("paypal.com"))
+            XCTAssertEqual(target, URL(string: "https://attacker.org/steal")!)
+        } else {
+            XCTFail("Expected urlMismatch warning but got \(String(describing: observedWarning))")
+        }
+        XCTAssertTrue(opened.isEmpty)
+
+        // Approve
+        withConfirmOpenURL({ _, _, _, completion in
+            completion(true)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 5, in: view, modifiers: [.command]))
+            }
+        }
+
+        XCTAssertEqual(opened, [URL(string: "https://attacker.org/steal")!])
+    }
+
+    func testDetectLinkMismatchRules() {
+        // Plain text should not trigger mismatch
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "Click here for release notes", targetURL: URL(string: "https://github.com/release")!))
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "documentation", targetURL: URL(string: "https://docs.example.com")!))
+
+        // Same domain (with or without www, with or without scheme)
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "https://example.com/docs", targetURL: URL(string: "https://example.com/other")!))
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "example.com", targetURL: URL(string: "https://www.example.com")!))
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "www.example.com", targetURL: URL(string: "https://example.com")!))
+
+        // Different domain -> Mismatch!
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "paypal.com", targetURL: URL(string: "https://evil.com")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "https://apple.com/support", targetURL: URL(string: "https://phishing.site/apple")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "www.bank.com", targetURL: URL(string: "https://other.com")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "subdomain.example.com", targetURL: URL(string: "https://attacker.com")!))
+
+        // File URL matching filename is safe
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "report.pdf", targetURL: URL(fileURLWithPath: "/tmp/report.pdf")))
+
+        // Mailto links
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "mailto:support@paypal.com")!))
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "https://paypal.com/help")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "https://evil.com")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "mailto:phish@evil.com")!))
+    }
+
+    func testLinkContextMenuProvidesOpenAndCopy() {
+        let view = makeView()
+        view.feed(data: Data("\u{1b}]8;;https://example.com/destination\u{7}Docs\u{1b}]8;;\u{7}".utf8))
+
+        let menu = view.menu(for: mouseEvent(.rightMouseDown, column: 2, in: view))
+        XCTAssertNotNil(menu)
+        XCTAssertEqual(menu?.title, "Link")
+
+        let openItem = menu?.items.first { $0.action == #selector(TakoTerminalNSView.openLinkContextAction(_:)) }
+        XCTAssertNotNil(openItem)
+        XCTAssertEqual(openItem?.title, "Open https://example.com/destination")
+        XCTAssertTrue(view.validateUserInterfaceItem(openItem!), "Open Link must be enabled by validateUserInterfaceItem")
+
+        let copyItem = menu?.items.first { $0.action == #selector(TakoTerminalNSView.copyLinkContextAction(_:)) }
+        XCTAssertNotNil(copyItem)
+        XCTAssertEqual(copyItem?.title, "Copy Link")
+        XCTAssertTrue(view.validateUserInterfaceItem(copyItem!), "Copy Link must be enabled by validateUserInterfaceItem")
+
+        var copiedText: String?
+        view.copyStringConsumer = { copiedText = $0 }
+        view.perform(copyItem!.action, with: copyItem)
+        XCTAssertEqual(copiedText, "https://example.com/destination")
+
+        var opened: [URL] = []
+        withOpener({ opened.append($0) }) {
+            view.perform(openItem!.action, with: openItem)
+        }
+        XCTAssertEqual(opened, [URL(string: "https://example.com/destination")!])
     }
 
     // MARK: - cursor-click-to-move
@@ -198,6 +467,112 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
 
         click(column: 2, row: 0, modifiers: [.option], in: view)
         XCTAssertFalse(delegate.inputDataReceived.isEmpty, "Option+click on another row of the same prompt must move the cursor")
+    }
+
+    func testStationaryPointerLinkHUDUpdatesOnTerminalContentChange() {
+        let view = makeView()
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+        view.feed(data: Data("\u{1b}]8;;https://example.com/first\u{7}LinkOne\u{1b}]8;;\u{7}".utf8))
+
+        // Hover over the link at row 0, col 3
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 3, row: 0, in: view, modifiers: []))
+        XCTAssertEqual(view.hoveredLinkTarget, "https://example.com/first")
+        XCTAssertEqual(view.toolTip, "https://example.com/first")
+
+        // New output arrives that overwrites row 0 with plain non-link text
+        view.feed(data: Data("\u{1b}[HPlain text without links here".utf8))
+        view.redrawNow()
+
+        // Without any mouseMoved event, hoveredLinkTarget and tooltip must be cleared or updated
+        XCTAssertNil(view.hoveredLinkTarget)
+        XCTAssertNil(view.toolTip)
+    }
+
+    func testWrappedOSC8LinkDetectsMismatchAcrossRows() {
+        let view = makeView()
+        // Row 0 has "https://" (cols 72..79) and soft-wraps onto Row 1 with "paypal.com/login" (cols 0..15)
+        // Both cells belong to the same OSC 8 hyperlink targeting https://attacker.org/steal
+        let padCols = Int(view.core.cols()) - 8
+        let padding = String(repeating: " ", count: max(0, padCols))
+        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Check link at row 0 (contains only "https://")
+        let linkRow0 = view.linkRange(at: (row: 0, col: Int(view.core.cols()) - 4))
+        XCTAssertNotNil(linkRow0)
+        XCTAssertTrue(linkRow0?.isMismatch ?? false, "Wrapped link on row 0 must detect mismatch from full assembled text")
+        XCTAssertTrue(linkRow0?.text.contains("paypal.com") ?? false)
+
+        // Check link at row 1 (contains "paypal.com/login")
+        let linkRow1 = view.linkRange(at: (row: 1, col: 4))
+        XCTAssertNotNil(linkRow1)
+        XCTAssertTrue(linkRow1?.isMismatch ?? false, "Wrapped link on row 1 must detect mismatch from full assembled text")
+        XCTAssertTrue(linkRow1?.text.contains("https://") ?? false)
+
+        // Command-clicking row 0 prompts for mismatch confirmation
+        var opened: [URL] = []
+        var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+        withConfirmOpenURL({ _, warning, _, completion in
+            observedWarning = warning
+            completion(false)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: Int(view.core.cols()) - 4, row: 0, in: view, modifiers: [.command]))
+            }
+        }
+        XCTAssertNotNil(observedWarning)
+        if case .urlMismatch(let text, let target) = observedWarning {
+            XCTAssertTrue(text.contains("paypal.com"))
+            XCTAssertEqual(target, URL(string: "https://attacker.org/steal")!)
+        } else {
+            XCTFail("Expected urlMismatch warning on row 0")
+        }
+        XCTAssertTrue(opened.isEmpty)
+    }
+
+    func testHardEndedRowWithSameURIAtNextRowCol0DoesNotMerge() {
+        let view = makeView()
+        // Row 0 has "x" at the final column (cols - 1) and ends with a hard CRLF
+        // Row 1 starts at col 0 with "https://paypal.com/login" targeting the same attacker URI
+        let padCols = Int(view.core.cols()) - 1
+        let padding = String(repeating: " ", count: max(0, padCols))
+        let payload = "\(padding)\u{1b}]8;;https://attacker.org/steal\u{7}x\u{1b}]8;;\u{7}\r\n\u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Hover over row 1 col 4 (in "https://paypal.com/login")
+        let linkRow1 = view.linkRange(at: (row: 1, col: 4))
+        XCTAssertNotNil(linkRow1)
+        XCTAssertEqual(linkRow1?.text, "https://paypal.com/login", "Must not merge 'x' across hard-ended row boundary")
+        XCTAssertTrue(linkRow1?.isMismatch ?? false, "Deceptive domain on row 1 must be flagged as mismatch")
+
+        // Hover over row 0 at the last column ("x")
+        let linkRow0 = view.linkRange(at: (row: 0, col: Int(view.core.cols()) - 1))
+        XCTAssertNotNil(linkRow0)
+        XCTAssertEqual(linkRow0?.text, "x", "Must contain only row 0 span text")
+        XCTAssertFalse(linkRow0?.isMismatch ?? true, "Plain 'x' is not URL-shaped and not a deceptive mismatch")
+    }
+
+    func testMultipleOSC8SpansWithSameURIOnSameRowDoNotMergeInterveningText() {
+        let view = makeView()
+        // Row contains:
+        // col 0: OSC 8 span displaying "x" targeting https://attacker.org/steal
+        // col 1..10: Plain text " spaces " without hyperlink
+        // col 11..35: OSC 8 span displaying "https://paypal.com/login" targeting https://attacker.org/steal
+        let payload = "\u{1b}]8;;https://attacker.org/steal\u{7}x\u{1b}]8;;\u{7}  spaces  \u{1b}]8;;https://attacker.org/steal\u{7}https://paypal.com/login\u{1b}]8;;\u{7}"
+        view.feed(data: Data(payload.utf8))
+
+        // Hover over the second span at col 15 (in "https://paypal.com/login")
+        let linkSecond = view.linkRange(at: (row: 0, col: 15))
+        XCTAssertNotNil(linkSecond)
+        XCTAssertEqual(linkSecond?.text, "https://paypal.com/login", "Must not merge 'x' or intervening spaces from distinct span")
+        XCTAssertTrue(linkSecond?.isMismatch ?? false, "Deceptive domain in second span must be flagged as mismatch")
+
+        // Hover over the first span at col 0 ("x")
+        let linkFirst = view.linkRange(at: (row: 0, col: 0))
+        XCTAssertNotNil(linkFirst)
+        XCTAssertEqual(linkFirst?.text, "x", "Must contain only the clicked span text")
+        XCTAssertFalse(linkFirst?.isMismatch ?? true, "Plain 'x' is not URL-shaped and not a deceptive mismatch")
     }
 }
 #endif

@@ -134,10 +134,10 @@ final class GraphemeClusterRenderingTests: XCTestCase {
 
         /// Pixels whose channels disagree: colour, not grey text.
         func colourful(columns: Range<Int>) -> Int {
-            ink(columns: columns).count { point in
+            ink(columns: columns).filter { point in
                 let (a, b, c) = pixel(x: point.x, y: point.y)
                 return max(a, b, c) - min(a, b, c) > 16
-            }
+            }.count
         }
 
         func differing(from other: Pixels, columns: Range<Int>? = nil) -> Int {
