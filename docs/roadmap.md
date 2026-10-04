@@ -690,7 +690,9 @@ pane; clicking it jumps to the prompt.
 Done when the header always names the command whose output is on screen and never appears without
 OSC 133 boundaries.
 
-### [ ] E4. Command actions
+### [x] E4. Command actions
+
+Status: shipped in [PR #15](https://github.com/alex09x/tako/pull/15).
 
 A context menu and palette actions on any command: copy command, copy output, copy both as a
 Markdown block, re-run in this pane (inserted at the prompt, not executed), send the output to
