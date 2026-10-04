@@ -722,7 +722,9 @@ Opt-in rules for text highlighting or system notifications on specific output ma
 
 Done when: user-defined regex rules can highlight matching text with specific colors or styles; triggers macOS notifications when long-running background tasks match while unfocused; strictly passive: never injects keystrokes, commands, or automated input into the terminal.
 
-### [ ] E8. Safer hyperlinks
+### [x] E8. Safer hyperlinks
+
+Status: shipped in [PR #16](https://github.com/alex09x/tako/pull/16).
 
 OSC 8 links show their real target on hover; schemes other than `http`, `https` and `file` ask
 before opening; a link whose text looks like a different URL than its target is flagged.
