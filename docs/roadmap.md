@@ -41,9 +41,11 @@ left out.
 3. **Provider-neutral.** Tako works with any agent that runs in a terminal. Integrations with
    particular agent tools are optional adapters shipped as data (hook configs, skill files),
    never patches to someone else's binary and never vendor panels in the core UI.
-4. **The human stays in control.** Automation can only do what the user allowed. Input from a
-   script or an agent is visible as such; nothing escalates on its own; anything that would run a
-   command on the user's behalf asks first or is limited to commands the user approved.
+4. **The human stays in control.** Automation can only do what the user allowed. Scripted and
+   agent input is targeted to carry visible attribution badges (landing in C7 and G2; currently
+   `takoctl` writes directly to the target PTY without an actor mark); nothing escalates on its
+   own; anything that would run a command on the user's behalf asks first or is limited to commands
+   the user approved.
 5. **Native, fast and calm under load.** AppKit and Metal, no web runtime for the terminal
    itself. Twenty panes streaming agent output must not make typing in the twenty-first slower.
 6. **Engine first.** When an app feature needs something new from the engine, it is designed and
@@ -272,7 +274,10 @@ Status: experimental since 0.1.4 (step 4).
   written down.
 
 Done when step 4's acceptance holds on a test Mac through 50 quit/relaunch cycles, 10 sleep/wake
-cycles and one app update with live sessions, and `session-persistence` defaults to on.
+cycles and one app update with live sessions; `takoctl sessions` and the window menu list all
+live sessions with per-session memory and provide an explicit end action; detached-session and
+scrollback limits are enforced with documented eviction/cap semantics; and `session-persistence`
+defaults to on.
 
 ### [ ] A2. Prompt navigation and command selection
 
