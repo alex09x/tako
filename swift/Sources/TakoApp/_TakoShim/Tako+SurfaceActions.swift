@@ -160,7 +160,7 @@ extension Tako.SurfaceView {
         searchHitDebounceItem = nil
         currentSearchMatch = nil
         let matches = searchMatches(for: needle)
-        searchHitRetainedRows = matches.map { UInt64($0.row) }
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
         if let newest = matches.last {
             selectSearchMatch(newest)
         }
@@ -176,7 +176,7 @@ extension Tako.SurfaceView {
         guard let searchState else { return false }
         searchState.writePasteboardNeedle()
         let matches = searchMatches(for: searchState.needle)
-        searchHitRetainedRows = matches.map { UInt64($0.row) }
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
         guard let first = matches.first, let last = matches.last else {
             currentSearchMatch = nil
             updateSearchCounts(matches)
@@ -221,7 +221,7 @@ extension Tako.SurfaceView {
             return
         }
         let matches = searchMatches(for: searchState.needle)
-        searchHitRetainedRows = matches.map { UInt64($0.row) }
+        searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
         updateSearchCounts(matches)
     }
 

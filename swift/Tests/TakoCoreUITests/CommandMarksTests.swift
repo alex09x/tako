@@ -128,6 +128,19 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertEqual(marks.count, 1)
         XCTAssertEqual(marks[0].status, 1)
     }
+
+    func testScrollbarMarksCoalescingCapsSublayerCount() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        // Pass 5,000 search hits
+        let manyHits = (0..<5000).map { UInt64($0) }
+        view.searchHitRetainedRows = manyHits
+        view.updateScroller()
+
+        // Usable height is <= 400, so layer count must never exceed 400 despite 5000 hits
+        let count = view.scrollbarMarksLayer.sublayers?.count ?? 0
+        XCTAssertLessThanOrEqual(count, 400)
+        XCTAssertGreaterThan(count, 0)
+    }
 }
 #endif
 

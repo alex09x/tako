@@ -145,8 +145,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// A native scrollbar for visual UX, optionally shown depending on settings.
     private let scrollbarLayer = CALayer()
     private let scrollbarKnob = CALayer()
-    private let scrollbarMarksLayer = CALayer()
-    private let gutterMarksLayer = CALayer()
+    let scrollbarMarksLayer = CALayer()
+    let gutterMarksLayer = CALayer()
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -729,12 +729,25 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return
         }
 
-        struct TrackMark {
-            let retainedRow: UInt64
-            let color: CGColor
-        }
+        let markWidth: CGFloat = scrollerWidth - 2.0
+        let markHeight: CGFloat = 2.0
+        let markX: CGFloat = 1.0
 
-        var marks: [TrackMark] = []
+        // Coalesce / bin marks by rendered integer Y coordinate so that multiple
+        // search hits or command marks mapping to the same pixel row don't allocate
+        // duplicate CALayers (capped at usableHeight layers).
+        var binnedMarks: [Int: CGColor] = [:]
+
+        // Search hits first so command marks (success/error/running) take precedence over search marks
+        if !searchHitRetainedRows.isEmpty {
+            let searchColor = NSColor(red: 1.0, green: 0.78, blue: 0.1, alpha: 0.95).cgColor
+            let uniqueRows = Set(searchHitRetainedRows)
+            for row in uniqueRows {
+                let frac = totalLines > 1 ? max(0.0, min(1.0, Double(row) / (totalLines - 1.0))) : 0.0
+                let markY = max(0.0, min(usableHeight - markHeight, usableHeight * CGFloat(1.0 - frac) - markHeight / 2.0))
+                binnedMarks[Int(round(markY))] = searchColor
+            }
+        }
 
         // Command marks on scrollbar
         if commandMarksEnabled {
@@ -745,35 +758,22 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 case 2: color = NSColor.systemRed.cgColor
                 default: color = NSColor.systemBlue.cgColor
                 }
-                marks.append(TrackMark(retainedRow: cmd.retainedRow, color: color))
+                let frac = totalLines > 1 ? max(0.0, min(1.0, Double(cmd.retainedRow) / (totalLines - 1.0))) : 0.0
+                let markY = max(0.0, min(usableHeight - markHeight, usableHeight * CGFloat(1.0 - frac) - markHeight / 2.0))
+                binnedMarks[Int(round(markY))] = color
             }
         }
 
-        // Search hit marks on scrollbar (amber / yellow)
-        if !searchHitRetainedRows.isEmpty {
-            let searchColor = NSColor(red: 1.0, green: 0.78, blue: 0.1, alpha: 0.95).cgColor
-            for row in searchHitRetainedRows {
-                marks.append(TrackMark(retainedRow: row, color: searchColor))
-            }
-        }
-
-        if marks.isEmpty {
+        if binnedMarks.isEmpty {
             scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
             return
         }
 
-        let markWidth: CGFloat = scrollerWidth - 2.0
-        let markHeight: CGFloat = 2.0
-        let markX: CGFloat = 1.0
-
         var sublayers = scrollbarMarksLayer.sublayers ?? []
         var layerIndex = 0
 
-        for mark in marks {
-            let row = Double(mark.retainedRow)
-            let frac = totalLines > 1 ? max(0.0, min(1.0, row / (totalLines - 1.0))) : 0.0
-            let markY = max(0.0, min(usableHeight - markHeight, usableHeight * CGFloat(1.0 - frac) - markHeight / 2.0))
-
+        for (yInt, color) in binnedMarks.sorted(by: { $0.key < $1.key }) {
+            let markY = CGFloat(yInt)
             let layer: CALayer
             if layerIndex < sublayers.count {
                 layer = sublayers[layerIndex]
@@ -786,13 +786,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             layerIndex += 1
 
             layer.frame = CGRect(x: markX, y: markY, width: markWidth, height: markHeight)
-            layer.backgroundColor = mark.color
+            layer.backgroundColor = color
         }
 
         while sublayers.count > layerIndex {
             sublayers.removeLast().removeFromSuperlayer()
         }
     }
+
 
     /// Renders thin vertical marks beside each command's prompt line in the left gutter.
     func updateGutterMarks() {
