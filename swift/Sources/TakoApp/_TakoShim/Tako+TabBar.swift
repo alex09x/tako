@@ -371,13 +371,25 @@ extension Tako {
             ctx.clip(to: stripRect)
             for tab in tabs where tab.frame.intersects(stripRect) { draw(tab, in: ctx) }
             ctx.restoreGState()
+            if let w = window {
+                let style = progressStyle(for: w)
+                if style.showsInWindow && !style.showsInTab, let prog = aggregateProgress(for: w) {
+                    drawProgressBar(in: bounds, progress: prog, context: ctx)
+                }
+            }
             drawButtons(in: ctx)
         }
 
         private func drawLoneTitle() {
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+            if let w = window {
+                let style = progressStyle(for: w)
+                if style.showsInWindow, let prog = aggregateProgress(for: w) {
+                    drawProgressBar(in: bounds, progress: prog, context: ctx)
+                }
+            }
             let title = window?.title ?? ""
             guard !title.isEmpty else { return }
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return }
             let width = TabText.width(of: title, font: Fonts.loneTitle)
             let maxTitleWidth = max(0, infoRect.minX - Metrics.firstTabX - 16)
             let drawnX = max(Metrics.firstTabX, (bounds.width - min(width, maxTitleWidth)) / 2)
@@ -421,7 +433,10 @@ extension Tako {
                 ctx.fill(CGRect(x: tab.frame.minX, y: tab.frame.midY - 6, width: 1, height: 12))
             }
 
-            if tab.isActive {
+            let style = progressStyle(for: tab.window)
+            if style.showsInTab, let prog = aggregateProgress(for: tab.window) {
+                drawProgressBar(in: tab.frame, progress: prog, context: ctx)
+            } else if tab.isActive {
                 ctx.setFillColor(Brand.ember.cgColor)
                 ctx.fill(CGRect(x: tab.frame.minX, y: tab.frame.minY,
                                 width: tab.frame.width, height: Metrics.activeBarHeight))
@@ -656,6 +671,47 @@ extension Tako {
 
         private func crabColor(for window: NSWindow) -> NSColor {
             aggregateCrab(for: window)?.state.color ?? Brand.ember
+        }
+
+        private func progressStyle(for window: NSWindow) -> Tako.Config.ProgressStyle {
+            if let app = (NSApp?.delegate as? AppDelegate)?.tako {
+                return app.config.progressStyle
+            }
+            return Tako.Config.ProgressStyle.all
+        }
+
+        private func aggregateProgress(for window: NSWindow) -> (state: ProgressState, progress: Int?)? {
+            let all = surfaces(in: window)
+            guard !all.isEmpty else { return nil }
+            return CrabTabBinding.aggregateProgress(for: all)
+        }
+
+        private func drawProgressBar(in rect: CGRect, progress: (state: ProgressState, progress: Int?), context ctx: CGContext) {
+            let barHeight: CGFloat = 2.5
+            let widthFraction: CGFloat
+            let color: NSColor
+            switch progress.state {
+            case .none:
+                return
+            case .normal:
+                widthFraction = CGFloat(min(100, max(0, progress.progress ?? 0))) / 100.0
+                color = Brand.ok
+            case .error:
+                widthFraction = CGFloat(min(100, max(0, progress.progress ?? 100))) / 100.0
+                color = Brand.error
+            case .paused:
+                widthFraction = CGFloat(min(100, max(0, progress.progress ?? 100))) / 100.0
+                color = NSColor.systemOrange
+            case .indeterminate:
+                widthFraction = 0.35
+                color = Brand.ember
+            }
+            if widthFraction > 0 {
+                let fillWidth = max(2.0, rect.width * widthFraction)
+                let fillX = progress.state == .indeterminate ? rect.minX + (rect.width - fillWidth) / 2 : rect.minX
+                ctx.setFillColor(color.cgColor)
+                ctx.fill(CGRect(x: fillX, y: rect.minY, width: fillWidth, height: barHeight))
+            }
         }
 
         // MARK: Input

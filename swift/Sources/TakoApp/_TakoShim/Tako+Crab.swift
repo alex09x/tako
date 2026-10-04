@@ -167,10 +167,14 @@ extension Tako {
         static let successLinger: TimeInterval = 2
 
         @Published private(set) var state: CrabState = .idle
+        public typealias ProgressState = TakoTerminalNSView.ProgressState
+
         /// Seconds since the running command started, or nil when idle.
         @Published private(set) var elapsed: TimeInterval?
         /// 0...100 from OSC 9;4, when the program reports it.
-        @Published private(set) var progress: Int?
+        @Published public private(set) var progress: Int?
+        /// The progress state from OSC 9;4.
+        @Published public private(set) var progressState: ProgressState = .none
         /// Set when something happened that the user has not looked at.
         @Published private(set) var unread = false
 
@@ -242,6 +246,7 @@ extension Tako {
             startedAt = nil
             elapsed = nil
             progress = nil
+            progressState = .none
 
             if let exitCode, exitCode != 0 {
                 signalStatus = .error
@@ -284,12 +289,32 @@ extension Tako {
             unread = true
         }
 
-        func progressReported(state progressState: UInt8, value: UInt8?) {
-            // 0 removes the report; anything else sets or replaces it.
-            progress = progressState == 0 ? nil : value.map(Int.init)
+        func progressReported(state: UInt8, value: UInt8?) {
+            switch state {
+            case 0:
+                progressState = .none
+                progress = nil
+            case 1:
+                progressState = .normal
+                progress = value.map(Int.init)
+            case 2:
+                progressState = .error
+                progress = value.map(Int.init)
+            case 3:
+                progressState = .indeterminate
+                progress = value.map(Int.init)
+            case 4:
+                progressState = .paused
+                progress = value.map(Int.init)
+            default:
+                progressState = .none
+                progress = nil
+            }
         }
 
         func connectionLost() {
+            progress = nil
+            progressState = .none
             signalStatus = .disconnected
             state = .ghost
             unread = true

@@ -185,12 +185,45 @@ extension Tako {
             return list
         }
 
+        static func aggregateProgress(for surfaces: [SurfaceView]) -> (state: ProgressState, progress: Int?)? {
+            guard !surfaces.isEmpty else { return nil }
+            if let err = surfaces.first(where: { $0.crab.progressState == .error }) {
+                return (.error, err.crab.progress)
+            }
+            if let paused = surfaces.first(where: { $0.crab.progressState == .paused }) {
+                return (.paused, paused.crab.progress)
+            }
+            let normalPanes = surfaces.filter { $0.crab.progressState == .normal }
+            if !normalPanes.isEmpty {
+                let values = normalPanes.compactMap { $0.crab.progress }
+                let avg = values.isEmpty ? nil : values.reduce(0, +) / values.count
+                return (.normal, avg)
+            }
+            if surfaces.contains(where: { $0.crab.progressState == .indeterminate }) {
+                return (.indeterminate, nil)
+            }
+            return nil
+        }
+
         private func refresh(for surfaces: [SurfaceView]) {
             guard !surfaces.isEmpty else { return }
             let dominant = surfaces.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority }) ?? surfaces[0]
             crabView.state = dominant.crab.state
             crabView.unread = surfaces.contains(where: { $0.crab.unread })
-            if let progress = dominant.crab.progress {
+            if let prog = Self.aggregateProgress(for: surfaces) {
+                switch prog.state {
+                case .none:
+                    elapsedLabel.stringValue = dominant.crab.elapsedLabel ?? ""
+                case .normal:
+                    elapsedLabel.stringValue = prog.progress.map { "\($0)%" } ?? ""
+                case .error:
+                    elapsedLabel.stringValue = prog.progress.map { "\($0)% !" } ?? "error"
+                case .paused:
+                    elapsedLabel.stringValue = prog.progress.map { "\($0)% ||" } ?? "paused"
+                case .indeterminate:
+                    elapsedLabel.stringValue = "..."
+                }
+            } else if let progress = dominant.crab.progress {
                 elapsedLabel.stringValue = "\(progress)%"
             } else {
                 elapsedLabel.stringValue = dominant.crab.elapsedLabel ?? ""
@@ -233,6 +266,10 @@ extension Tako {
                     .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
                     .store(in: &cancellables)
                 s.crab.$progress
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
+                    .store(in: &cancellables)
+                s.crab.$progressState
                     .receive(on: RunLoop.main)
                     .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
                     .store(in: &cancellables)

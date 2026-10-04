@@ -832,12 +832,29 @@ class AppDelegate: NSObject,
         _ = TerminalController.newTab(tako, from: window, withBaseConfig: config)
     }
 
+    @MainActor
     func setDockBadge() {
         let bellCount = NSApp.windows
             .compactMap { $0.windowController as? BaseTerminalController }
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = tako.config.bellFeatures.contains(.attention) && bellCount > 0
-        let label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        if label == nil, tako.config.progressStyle.showsInDock {
+            let allSurfaces = ControlCommands.panes().map { $0.surface }
+            if let agg = Tako.CrabTabBinding.aggregateProgress(for: allSurfaces) {
+                switch agg.state {
+                case .none: break
+                case .normal:
+                    if let p = agg.progress { label = "\(p)%" }
+                case .error:
+                    label = agg.progress.map { "\($0)%!" } ?? "!"
+                case .paused:
+                    label = agg.progress.map { "\($0)%||" } ?? "||"
+                case .indeterminate:
+                    label = "..."
+                }
+            }
+        }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()
     }

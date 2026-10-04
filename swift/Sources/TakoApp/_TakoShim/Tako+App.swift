@@ -2188,6 +2188,7 @@ extension Tako {
             safePaste = config.safePaste
             commandMarksEnabled = config.commandMarks
             stickyCommandHeaderEnabled = config.stickyCommandHeader
+            paneProgressBarEnabled = config.progressStyle.showsInHeader
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
 
@@ -2403,8 +2404,11 @@ extension Tako {
                             case .progress(let state, let value):
                                 self.crab.progressReported(state: state, value: value)
                                 self.progressReport = state == 0 ? nil : .init(
-                                    state: state == 2 ? .error : (state == 3 ? .indeterminate : .set),
+                                    state: state == 2 ? .error : (state == 3 ? .indeterminate : (state == 4 ? .pause : .set)),
                                     progress: value)
+                                self.updateProgressBar(state: self.crab.progressState, progress: self.crab.progress)
+                                (NSApp.delegate as? AppDelegate)?.setDockBadge()
+                                Tako.TabBarController.refreshAll()
                             case .commandStart:
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandStarted()
@@ -2412,6 +2416,10 @@ extension Tako {
                             case .commandEnd(let exitCode):
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandEnded(exitCode: exitCode)
+                                self.progressReport = nil
+                                self.updateProgressBar(state: .none, progress: nil)
+                                (NSApp.delegate as? AppDelegate)?.setDockBadge()
+                                Tako.TabBarController.refreshAll()
                                 self.commandEnded(exitCode: exitCode)
                             case .promptMark:
                                 self.crab.promptMark()
@@ -2470,6 +2478,11 @@ extension Tako {
             // Only the current process decides: one replaced since (a
             // reattach check, a session that started anew) is history.
             guard let process, process === pty else { return }
+            self.progressReport = nil
+            self.crab.progressReported(state: 0, value: nil)
+            self.updateProgressBar(state: .none, progress: nil)
+            (NSApp.delegate as? AppDelegate)?.setDockBadge()
+            Tako.TabBarController.refreshAll()
             if persistence?.clientExited(self) == true { return }
             onExit?(self)
         }
