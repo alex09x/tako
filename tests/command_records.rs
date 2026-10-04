@@ -840,6 +840,51 @@ fn continuation_prompts_preserve_initial_prompt_line_and_emit_marks() {
     );
 }
 
+#[test]
+fn prompt_mark_tracked_when_scrollback_is_zero() {
+    let mut t = Terminal::new(40, 5);
+    t.set_scrollback_capacity(0);
+
+    // Initial prompt on row 2
+    t.feed(b"\r\n\r\n\x1b]133;A\x07$ \x1b]133;C\x07sleep 10\r\n");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 2);
+    assert_eq!(marks[0].status, CommandMarkStatus::Running);
+
+    // One more line reaches bottom row (row 4)
+    t.feed(b"running...\r\n");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 2);
+
+    // Printing newline at bottom causes scroll up by 1: prompt moves to row 1
+    t.feed(b"scroll 1\r\n");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 1);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(marks[0].retained_row),
+        SemanticPrompt::Prompt
+    );
+
+    // Another scroll up: prompt moves to row 0
+    t.feed(b"scroll 2\r\n");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 0);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(marks[0].retained_row),
+        SemanticPrompt::Prompt
+    );
+
+    // Another scroll: prompt scrolls off the screen; with 0 scrollback, it is evicted
+    t.feed(b"scroll 3\r\n");
+    let marks = t.command_marks();
+    assert!(marks.is_empty(), "evicted prompt with zero scrollback has no mark");
+}
+
+
 
 
 

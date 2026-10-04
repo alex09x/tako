@@ -907,6 +907,7 @@ impl Grid {
     /// independently owned.
     fn push_scrollback_row(&mut self, row: usize, wrapped: bool) {
         if self.scrollback_capacity == 0 {
+            self.history_evicted += 1;
             return;
         }
 
@@ -937,6 +938,7 @@ impl Grid {
     fn archive_scrolled_row(&mut self, row: usize, wrapped: bool, blank: Cell) {
         let physical = self.phys(row);
         if self.scrollback_capacity == 0 {
+            self.history_evicted += 1;
             self.cells[physical].fill(blank);
             return;
         }
@@ -967,6 +969,7 @@ impl Grid {
         semantic: SemanticPrompt,
     ) {
         if self.scrollback_capacity == 0 {
+            self.history_evicted += 1;
             return;
         }
         if self.scrollback.len() >= self.scrollback_capacity {
