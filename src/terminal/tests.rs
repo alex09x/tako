@@ -1486,3 +1486,144 @@ fn status_pane_isolation() {
     assert_eq!(events1.len(), 1);
     assert!(events2.is_empty(), "pane 2 must not receive events from pane 1");
 }
+
+#[test]
+fn test_osc99_simple_notification() {
+    let mut term = Terminal::new(80, 24);
+    term.feed(b"\x1b]99;;Hello World\x1b\\");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StructuredNotification {
+            id: None,
+            title: "Hello World".into(),
+            body: String::new(),
+            app_name: None,
+            urgency: 1,
+            actions: Vec::new(),
+            report_activation: false,
+            focus: true,
+            report_close: false,
+            timeout_ms: None,
+            only_when_unfocused: false,
+        }]
+    );
+}
+
+#[test]
+fn test_osc99_chunked_title_body_and_buttons() {
+    let mut term = Terminal::new(80, 24);
+    // Chunk 1: id=test1, not done yet (d=0), title="Build Done"
+    term.feed(b"\x1b]99;i=test1:d=0;Build Done\x1b\\");
+    assert!(term.take_events().is_empty());
+
+    // Chunk 2: id=test1, not done yet (d=0), body="42 passed"
+    term.feed(b"\x1b]99;i=test1:d=0:p=body;42 passed\x1b\\");
+    assert!(term.take_events().is_empty());
+
+    // Chunk 3: id=test1, done (d=1 by default), buttons="View\u{2028}Cancel", report activation, urgency=2
+    term.feed(" \x1b]99;i=test1:u=2:a=report:p=buttons;View\u{2028}Cancel\x1b\\".as_bytes());
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StructuredNotification {
+            id: Some("test1".into()),
+            title: "Build Done".into(),
+            body: "42 passed".into(),
+            app_name: None,
+            urgency: 2,
+            actions: vec!["View".into(), "Cancel".into()],
+            report_activation: true,
+            focus: true,
+            report_close: false,
+            timeout_ms: None,
+            only_when_unfocused: false,
+        }]
+    );
+}
+
+#[test]
+fn test_osc99_base64_and_app_name() {
+    let mut term = Terminal::new(80, 24);
+    // f=bXlhcHA= ("myapp"), payload=SGVsbG8= ("Hello"), e=1
+    term.feed(b"\x1b]99;i=b64:e=1:f=bXlhcHA=;SGVsbG8=\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StructuredNotification {
+            id: Some("b64".into()),
+            title: "Hello".into(),
+            body: String::new(),
+            app_name: Some("myapp".into()),
+            urgency: 1,
+            actions: Vec::new(),
+            report_activation: false,
+            focus: true,
+            report_close: false,
+            timeout_ms: None,
+            only_when_unfocused: false,
+        }]
+    );
+}
+
+#[test]
+fn test_osc99_close_notification() {
+    let mut term = Terminal::new(80, 24);
+    term.feed(b"\x1b]99;i=job42:p=close:c=1;\x1b\\");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::NotificationClose {
+            id: "job42".into(),
+            report_close: true,
+        }]
+    );
+}
+
+#[test]
+fn test_osc99_capability_and_alive_query() {
+    let mut term = Terminal::new(80, 24);
+    // Capability query with ST
+    term.feed(b"\x1b]99;i=q1:p=?;\x1b\\");
+    let reply = term.take_output();
+    assert_eq!(
+        reply,
+        b"\x1b]99;i=q1:p=?;a=focus,report:c=1:o=always,unfocused,invisible:p=title,body,buttons,close:u=0,1,2\x1b\\".to_vec()
+    );
+
+    // Capability query with BEL
+    term.feed(b"\x1b]99;i=q2:p=?;\x07");
+    let reply2 = term.take_output();
+    assert_eq!(
+        reply2,
+        b"\x1b]99;i=q2:p=?;a=focus,report:c=1:o=always,unfocused,invisible:p=title,body,buttons,close:u=0,1,2\x07".to_vec()
+    );
+
+    // Alive query
+    term.feed(b"\x1b]99;i=q3:p=alive;\x1b\\");
+    let reply3 = term.take_output();
+    assert_eq!(reply3, b"\x1b]99;i=q3:p=alive;\x1b\\".to_vec());
+}
+
+#[test]
+fn test_osc99_occasion_and_timeout() {
+    let mut term = Terminal::new(80, 24);
+    term.feed(b"\x1b]99;i=unf1:o=unfocused:w=5000;Background Alert\x1b\\");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::StructuredNotification {
+            id: Some("unf1".into()),
+            title: "Background Alert".into(),
+            body: String::new(),
+            app_name: None,
+            urgency: 1,
+            actions: Vec::new(),
+            report_activation: false,
+            focus: true,
+            report_close: false,
+            timeout_ms: Some(5000),
+            only_when_unfocused: true,
+        }]
+    );
+}

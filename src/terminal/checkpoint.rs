@@ -973,6 +973,27 @@ fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
         E::StatusSet { status, text } => {
             (status.capacity() as u64).saturating_add(text.as_ref().map_or(0, |t| t.capacity() as u64))
         }
+        E::StructuredNotification {
+            id,
+            title,
+            body,
+            app_name,
+            actions,
+            ..
+        } => {
+            let mut bytes = (title.capacity() as u64).saturating_add(body.capacity() as u64);
+            if let Some(id) = id {
+                bytes = bytes.saturating_add(id.capacity() as u64);
+            }
+            if let Some(app) = app_name {
+                bytes = bytes.saturating_add(app.capacity() as u64);
+            }
+            for act in actions {
+                bytes = bytes.saturating_add(act.capacity() as u64);
+            }
+            bytes
+        }
+        E::NotificationClose { id, .. } => id.capacity() as u64,
         E::Bell
         | E::ClipboardQuery
         | E::Progress { .. }
@@ -2674,6 +2695,8 @@ pub fn import_traced_reserving(
         cursor_color,
         pending_wrap,
         last_prompt_line: commands.last_prompt_line,
+        in_flight_osc99: std::collections::HashMap::new(),
+        unidentified_osc99: None,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))
