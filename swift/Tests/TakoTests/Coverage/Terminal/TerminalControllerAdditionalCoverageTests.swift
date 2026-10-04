@@ -378,6 +378,98 @@ struct TerminalControllerCloseWindowUndoTests {
             }
         }
     }
+
+    @Test func clickingTheTabBarCloseButtonClosesOnlyTheSelectedTab() throws {
+        try withRealAppDelegate { _ in
+            try withInjectedWindowSystem {
+                let (a, aWindow) = TerminalTestSupport.loaded()
+                let (b, bWindow) = TerminalTestSupport.loaded()
+                aWindow.windowController = a
+                aWindow.delegate = a
+                bWindow.windowController = b
+                bWindow.delegate = b
+                defer {
+                    TerminalTestSupport.tearDown(a, aWindow)
+                    TerminalTestSupport.tearDown(b, bWindow)
+                }
+                Tako.CustomTabGroup.join(bWindow, to: aWindow, select: false)
+                aWindow.makeKeyAndOrderFront(nil)
+                bWindow.orderFrontRegardless()
+                #expect(aWindow.isVisible)
+                #expect(bWindow.isVisible)
+
+                let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 400, height: 38))
+                aWindow.contentView?.addSubview(bar)
+                let image = NSImage(size: bar.bounds.size)
+                image.lockFocus()
+                bar.draw(bar.bounds)
+                image.unlockFocus()
+
+                // Tab 0 (aWindow) is active and sits at x: 90...195.
+                // Its close glyph is centered near x: 195.
+                let clickEvent = NSEvent.mouseEvent(
+                    with: .leftMouseDown,
+                    location: NSPoint(x: 195, y: 14),
+                    modifierFlags: [],
+                    timestamp: 0,
+                    windowNumber: aWindow.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 1)!
+                bar.mouseDown(with: clickEvent)
+
+                #expect(!aWindow.isVisible)
+                #expect(bWindow.isVisible)
+            }
+        }
+    }
+
+    @Test func clickingTheTabBarCloseButtonOnBackgroundTabClosesBackgroundTab() throws {
+        try withRealAppDelegate { _ in
+            try withInjectedWindowSystem {
+                let (a, aWindow) = TerminalTestSupport.loaded()
+                let (b, bWindow) = TerminalTestSupport.loaded()
+                aWindow.windowController = a
+                aWindow.delegate = a
+                bWindow.windowController = b
+                bWindow.delegate = b
+                defer {
+                    TerminalTestSupport.tearDown(a, aWindow)
+                    TerminalTestSupport.tearDown(b, bWindow)
+                }
+                Tako.CustomTabGroup.join(bWindow, to: aWindow, select: false)
+                aWindow.makeKeyAndOrderFront(nil)
+                bWindow.orderFrontRegardless()
+                #expect(aWindow.isVisible)
+                #expect(bWindow.isVisible)
+
+                let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 38))
+                aWindow.contentView?.addSubview(bar)
+                let image = NSImage(size: bar.bounds.size)
+                image.lockFocus()
+                bar.draw(bar.bounds)
+                image.unlockFocus()
+
+                // Tab 1 (bWindow) is in the background and sits at x: 210...330.
+                // Its close glyph is centered near x: 314.
+                let clickEvent = NSEvent.mouseEvent(
+                    with: .leftMouseDown,
+                    location: NSPoint(x: 314, y: 14),
+                    modifierFlags: [],
+                    timestamp: 0,
+                    windowNumber: aWindow.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 1)!
+                bar.mouseDown(with: clickEvent)
+
+                #expect(aWindow.isVisible)
+                #expect(!bWindow.isVisible)
+            }
+        }
+    }
 }
 
 @MainActor
