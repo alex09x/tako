@@ -141,6 +141,26 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertLessThanOrEqual(count, 400)
         XCTAssertGreaterThan(count, 0)
     }
+
+    func testScrollPositionAssignmentRefreshesGutterMarks() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.commandMarksEnabled = true
+        // Feed commands with scrollback
+        for i in 0..<50 {
+            let seq = "\u{1b}]133;A\u{07}$ cmd\(i)\r\n\u{1b}]133;C\u{07}out\(i)\r\n\u{1b}]133;D;0\u{07}"
+            view.feed(data: Data(seq.utf8))
+        }
+
+        // Programmatically scroll to top (scrollPosition = 0.0)
+        view.scrollPosition = 0.0
+        let topCount = view.gutterMarksLayer.sublayers?.count ?? 0
+        XCTAssertGreaterThan(topCount, 0)
+
+        // Programmatically scroll to bottom (scrollPosition = 1.0)
+        view.scrollPosition = 1.0
+        let bottomCount = view.gutterMarksLayer.sublayers?.count ?? 0
+        XCTAssertGreaterThan(bottomCount, 0)
+    }
 }
 #endif
 

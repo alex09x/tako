@@ -905,7 +905,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         get { core.scrollPosition() }
         set {
             core.setScrollPosition(position: newValue)
-            lastReportedScrollPosition = core.scrollPosition()
+            notifyScrollPositionIfChanged()
             scheduleRedraw()
         }
     }
