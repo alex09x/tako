@@ -380,7 +380,9 @@ Done when every status can be produced by a reported signal in an e2e test, no s
 derived from screen text, TTL expiry works, and a remote program can set its own pane's status but
 no other's.
 
-### [ ] B2. Progress everywhere
+### [x] B2. Progress everywhere
+
+Status: shipped in [PR #18](https://github.com/alex09x/tako/pull/18).
 
 OSC 9;4 progress already shows in the dock and the tab title. Add:
 
