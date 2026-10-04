@@ -503,6 +503,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public enum LinkSecurityWarning: Equatable, Sendable {
         case unsafeScheme(String)
         case urlMismatch(displayedText: String, targetURL: URL)
+        case unconfirmedDestination(URL)
     }
 
     /// Hook for prompting confirmation before opening links that trigger a security warning (E8).
@@ -526,11 +527,17 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             alert.alertStyle = .critical
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Open Anyway")
+        case .unconfirmedDestination(let targetURL):
+            alert.messageText = "Open Link?"
+            alert.informativeText = "Are you sure you want to open this link?\n\n\(targetURL.absoluteString)"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Open")
+            alert.addButton(withTitle: "Cancel")
         }
         if let window {
             alert.beginSheetModal(for: window) { response in
                 switch warning {
-                case .unsafeScheme:
+                case .unsafeScheme, .unconfirmedDestination:
                     completion(response == .alertFirstButtonReturn)
                 case .urlMismatch:
                     completion(response == .alertSecondButtonReturn)
@@ -539,7 +546,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         } else {
             let response = alert.runModal()
             switch warning {
-            case .unsafeScheme:
+            case .unsafeScheme, .unconfirmedDestination:
                 completion(response == .alertFirstButtonReturn)
             case .urlMismatch:
                 completion(response == .alertSecondButtonReturn)
@@ -611,6 +618,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let lower = trimmed.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("ftp://") || lower.hasPrefix("file://") {
             candidateString = trimmed
+        } else if lower.hasPrefix("mailto:") {
+            let emailPart = String(trimmed.dropFirst(7))
+            let emailWithoutQuery = emailPart.components(separatedBy: "?").first ?? ""
+            if let atIdx = emailWithoutQuery.lastIndex(of: "@") {
+                let domain = String(emailWithoutQuery[emailWithoutQuery.index(after: atIdx)...]).trimmingCharacters(in: .whitespaces)
+                candidateString = domain.isEmpty ? nil : "https://" + domain
+            } else {
+                candidateString = nil
+            }
         } else if lower.hasPrefix("www.") {
             candidateString = "https://" + trimmed
         } else if let match = domainCandidateRegex.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)),
@@ -637,7 +653,23 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             }
         }
 
-        guard let targetHost = targetURL.host?.lowercased(), !targetHost.isEmpty else {
+        let targetHost: String?
+        if let host = targetURL.host?.lowercased(), !host.isEmpty {
+            targetHost = host
+        } else if targetURL.scheme?.lowercased() == "mailto" {
+            let abs = targetURL.absoluteString
+            let emailPart = abs.lowercased().hasPrefix("mailto:") ? String(abs.dropFirst(7)) : abs
+            let targetEmail = emailPart.components(separatedBy: "?").first ?? ""
+            if let atIdx = targetEmail.lastIndex(of: "@") {
+                targetHost = String(targetEmail[targetEmail.index(after: atIdx)...]).trimmingCharacters(in: .whitespaces).lowercased()
+            } else {
+                targetHost = nil
+            }
+        } else {
+            targetHost = nil
+        }
+
+        guard let targetHost, !targetHost.isEmpty else {
             return true
         }
 
@@ -664,6 +696,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// The real destination URL string of the link currently hovered by the pointer (E8).
     public private(set) var hoveredLinkTarget: String?
+
+    /// Whether a link destination preview was visibly presented to the user before an action (E8).
+    public private(set) var hasPresentedMatchingPreview: Bool = false
 
     /// Last known mouse location in view coordinates, used to refresh link preview when underlying content or viewport changes.
     private var lastMousePoint: NSPoint?
@@ -3065,11 +3100,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 return
             }
         }
-        let cell = cellAt(convert(event.locationInWindow, from: nil))
+        lastMousePoint = loc
+        let cell = cellAt(loc)
         if event.modifierFlags.contains(.command) {
-            refreshHoveredLink()
-            if let link = currentHoveredLink ?? linkRange(at: cell) {
-                openLink(link)
+            let cellLink = linkRange(at: cell)
+            let alreadyPreviewed = (hasPresentedMatchingPreview && currentHoveredLink?.url == cellLink?.url)
+            refreshHoveredLink(at: loc, commandHeld: true)
+            if let link = currentHoveredLink ?? cellLink {
+                openLink(link, previewAlreadyPresented: alreadyPreviewed)
                 return
             }
         }
@@ -3375,9 +3413,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// Updates the bottom-left floating HUD pill showing hovered link destination (E8).
     private func updateLinkHUD(link: TerminalLink?) {
         guard let link, bounds.width > 0, bounds.height > 0 else {
+            hasPresentedMatchingPreview = false
             linkHUDLayer.isHidden = true
             return
         }
+        hasPresentedMatchingPreview = true
         let text = link.tooltipText
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
         let attr = [NSAttributedString.Key.font: font]
@@ -3416,8 +3456,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// Opens the specified link according to security policy (E8):
     /// - Checks whether link text is deceptively mismatched with the target URL.
     /// - Checks whether the scheme is safe (http, https, file); schemes other than those ask before opening.
-    /// - When clean, opens directly via `Self.openURL`.
-    public func openLink(_ link: TerminalLink) {
+    /// - When clean, opens directly if a matching preview was already presented, or prompts confirmation showing destination.
+    public func openLink(_ link: TerminalLink, previewAlreadyPresented: Bool = false) {
         if link.isMismatch {
             let warning = LinkSecurityWarning.urlMismatch(displayedText: link.text, targetURL: link.url)
             Self.confirmOpenURL(link.url, warning, window) { confirmed in
@@ -3427,6 +3467,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         } else if !link.isSchemeAllowedWithoutPrompt {
             let scheme = link.url.scheme ?? "unknown"
             let warning = LinkSecurityWarning.unsafeScheme(scheme)
+            Self.confirmOpenURL(link.url, warning, window) { confirmed in
+                guard confirmed else { return }
+                Self.openURL(link.url)
+            }
+        } else if !previewAlreadyPresented {
+            let warning = LinkSecurityWarning.unconfirmedDestination(link.url)
             Self.confirmOpenURL(link.url, warning, window) { confirmed in
                 guard confirmed else { return }
                 Self.openURL(link.url)
@@ -3525,9 +3571,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Recomputes hovered link state and HUD preview for the current pointer position.
     /// Called when pointer moves, when viewport scrolls, or when content updates under stationary pointer (E8).
-    public func refreshHoveredLink(commandHeld: Bool? = nil) {
+    public func refreshHoveredLink(at pointOverride: NSPoint? = nil, commandHeld: Bool? = nil) {
         let point: NSPoint?
-        if let win = self.window {
+        if let override = pointOverride {
+            point = bounds.contains(override) ? override : nil
+        } else if let win = self.window {
             let winPoint = win.mouseLocationOutsideOfEventStream
             let localPoint = convert(winPoint, from: nil)
             point = bounds.contains(localPoint) ? localPoint : nil
@@ -3558,6 +3606,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     private func clearHoveredLink() {
+        hasPresentedMatchingPreview = false
         mouseCell = nil
         currentHoveredLink = nil
         hoveredLinkTarget = nil
@@ -4211,7 +4260,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// Context menu presented when right-clicking on a hyperlink (E8).
     public func linkContextMenu(for link: TerminalLink) -> NSMenu {
         let menu = NSMenu(title: "Link")
-        let openTitle = link.isMismatch ? "Open Link (Suspicious Destination)..." : "Open Link"
+        let openTitle = link.isMismatch ? "Open Link (Suspicious Destination)..." : "Open \(link.url.absoluteString)"
         let openItem = NSMenuItem(title: openTitle, action: #selector(openLinkContextAction(_:)), keyEquivalent: "")
         openItem.representedObject = link
         openItem.target = self
@@ -4240,7 +4289,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     @objc func openLinkContextAction(_ sender: Any?) {
         guard let link = (sender as? NSMenuItem)?.representedObject as? TerminalLink else { return }
-        openLink(link)
+        openLink(link, previewAlreadyPresented: true)
     }
 
     @objc func copyLinkContextAction(_ sender: Any?) {

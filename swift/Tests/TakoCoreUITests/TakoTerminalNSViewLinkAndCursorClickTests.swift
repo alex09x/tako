@@ -55,6 +55,7 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
     func testCommandClickOnAPlainURLOpensIt() {
         let view = makeView()
         view.feed(data: Data("see https://example.com/path for docs".utf8))
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 10, in: view, modifiers: []))
         var opened: [URL] = []
         withOpener({ opened.append($0) }) {
             view.mouseDown(with: mouseEvent(.leftMouseDown, column: 10, in: view, modifiers: [.command]))
@@ -101,6 +102,7 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         let view = makeView()
         view.linkURLDetectionEnabled = false
         view.feed(data: Data("\u{1b}]8;;http://osc8.example\u{7}click me\u{1b}]8;;\u{7}".utf8))
+        view.mouseMoved(with: mouseEvent(.mouseMoved, column: 2, in: view, modifiers: []))
         var opened: [URL] = []
         withOpener({ opened.append($0) }) {
             view.mouseDown(with: mouseEvent(.leftMouseDown, column: 2, in: view, modifiers: [.command]))
@@ -149,6 +151,10 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
             XCTAssertNotNil(link)
             XCTAssertTrue(link?.isSchemeAllowedWithoutPrompt ?? false)
 
+            // Hover to present preview first
+            view.mouseMoved(with: mouseEvent(.mouseMoved, column: 1, in: view, modifiers: []))
+            XCTAssertTrue(view.hasPresentedMatchingPreview)
+
             var opened: [URL] = []
             var promptTriggered = false
             withConfirmOpenURL({ _, _, _, completion in
@@ -160,9 +166,49 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
                 }
             }
 
-            XCTAssertFalse(promptTriggered, "Safe scheme \(urlString) must not prompt for confirmation")
+            XCTAssertFalse(promptTriggered, "Safe scheme \(urlString) with prior preview must not prompt for confirmation")
             XCTAssertEqual(opened, [URL(string: urlString)!])
         }
+    }
+
+    func testCommandClickWithoutPriorHoverPromptsConfirmation() {
+        let view = makeView()
+        let urlString = "https://example.com/direct-click"
+        view.feed(data: Data("\u{1b}[2J\u{1b}[H".utf8))
+        view.feed(data: Data("\u{1b}]8;;\(urlString)\u{7}Link\u{1b}]8;;\u{7}".utf8))
+
+        XCTAssertFalse(view.hasPresentedMatchingPreview)
+
+        var opened: [URL] = []
+        var observedWarning: TakoTerminalNSView.LinkSecurityWarning?
+
+        // 1. When user declines, link is not opened
+        withConfirmOpenURL({ _, warning, _, completion in
+            observedWarning = warning
+            completion(false)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+            }
+        }
+
+        XCTAssertNotNil(observedWarning)
+        if case .unconfirmedDestination(let url) = observedWarning {
+            XCTAssertEqual(url, URL(string: urlString)!)
+        } else {
+            XCTFail("Expected unconfirmedDestination warning but got \(String(describing: observedWarning))")
+        }
+        XCTAssertTrue(opened.isEmpty)
+
+        // 2. When user accepts, link is opened
+        withConfirmOpenURL({ _, _, _, completion in
+            completion(true)
+        }) {
+            withOpener({ opened.append($0) }) {
+                view.mouseDown(with: mouseEvent(.leftMouseDown, column: 1, in: view, modifiers: [.command]))
+            }
+        }
+        XCTAssertEqual(opened, [URL(string: urlString)!])
     }
 
     func testUnsafeSchemesRequireConfirmationPrompt() {
@@ -283,6 +329,12 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
 
         // File URL matching filename is safe
         XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "report.pdf", targetURL: URL(fileURLWithPath: "/tmp/report.pdf")))
+
+        // Mailto links
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "mailto:support@paypal.com")!))
+        XCTAssertFalse(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "https://paypal.com/help")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "https://evil.com")!))
+        XCTAssertTrue(TakoTerminalNSView.detectLinkMismatch(text: "mailto:support@paypal.com", targetURL: URL(string: "mailto:phish@evil.com")!))
     }
 
     func testLinkContextMenuProvidesOpenAndCopy() {
@@ -295,7 +347,7 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
 
         let openItem = menu?.items.first { $0.action == #selector(TakoTerminalNSView.openLinkContextAction(_:)) }
         XCTAssertNotNil(openItem)
-        XCTAssertEqual(openItem?.title, "Open Link")
+        XCTAssertEqual(openItem?.title, "Open https://example.com/destination")
         XCTAssertTrue(view.validateUserInterfaceItem(openItem!), "Open Link must be enabled by validateUserInterfaceItem")
 
         let copyItem = menu?.items.first { $0.action == #selector(TakoTerminalNSView.copyLinkContextAction(_:)) }
