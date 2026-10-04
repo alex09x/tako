@@ -58,6 +58,10 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
         clipboardCopies.append(text)
     }
 
+    var promptMarkCount = 0
+    var reportedStatuses: [(status: String, text: String?)] = []
+    var clearStatusCount = 0
+
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {
         lastWorkingDirectory = url
     }
@@ -72,6 +76,18 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalView(_ view: TakoTerminalNSView, didHoverLink url: String?) {
         hoveredLinks.append(url)
+    }
+
+    func terminalViewPromptMark(_ view: TakoTerminalNSView) {
+        promptMarkCount += 1
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {
+        reportedStatuses.append((status, text))
+    }
+
+    func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {
+        clearStatusCount += 1
     }
 }
 
@@ -760,6 +776,43 @@ final class TakoTerminalNSViewTests: XCTestCase {
         await MainActor.run {
             XCTAssertTrue(view.isBlinkStateVisibleForTesting, "firing blinkTimer again should toggle blinkStateVisible back to true")
         }
+    }
+
+    @MainActor
+    func testTerminalViewEmitsPromptMarkDelegateCall() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+
+        view.feed(data: Data("\u{1b}]133;A\u{07}".utf8))
+        XCTAssertEqual(delegate.promptMarkCount, 1, "OSC 133;A must emit prompt mark delegate call")
+    }
+
+    @MainActor
+    func testTerminalViewEmitsStatusDelegateCalls() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+
+        // OSC 1337 SetStatus
+        view.feed(data: Data("\u{1b}]1337;SetStatus=working;compiling Tako\u{07}".utf8))
+        XCTAssertEqual(delegate.reportedStatuses.count, 1)
+        XCTAssertEqual(delegate.reportedStatuses.first?.status, "working")
+        XCTAssertEqual(delegate.reportedStatuses.first?.text, "compiling Tako")
+
+        // OSC 1337 ClearStatus
+        view.feed(data: Data("\u{1b}]1337;ClearStatus\u{07}".utf8))
+        XCTAssertEqual(delegate.clearStatusCount, 1)
+
+        // OSC 9;5 status
+        view.feed(data: Data("\u{1b}]9;5;waiting_for_input;prompt text\u{07}".utf8))
+        XCTAssertEqual(delegate.reportedStatuses.count, 2)
+        XCTAssertEqual(delegate.reportedStatuses.last?.status, "waiting_for_input")
+        XCTAssertEqual(delegate.reportedStatuses.last?.text, "prompt text")
+
+        // OSC 9;5 clear
+        view.feed(data: Data("\u{1b}]9;5;clear\u{07}".utf8))
+        XCTAssertEqual(delegate.clearStatusCount, 2)
     }
 }
 #endif

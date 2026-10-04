@@ -2004,6 +2004,26 @@ extension Tako {
             sendOutputToAnotherPane(text: text)
         }
 
+        public func terminalViewPromptMark(_ view: TakoTerminalNSView) {
+            crab.promptMark()
+        }
+
+        public func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {
+            crab.setStatus(status, text: text)
+        }
+
+        public func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {
+            crab.clearStatus()
+        }
+
+        public func setStatus(_ status: String, text: String? = nil, ttl: TimeInterval? = nil) {
+            crab.setStatus(status, text: text, ttl: ttl)
+        }
+
+        public func clearStatus() {
+            crab.clearStatus()
+        }
+
         func sendOutputToAnotherPane(text: String) {
             if let controller = TerminalController.all.first(where: { $0.surfaceTree.contains(self) }) {
                 if let target = controller.surfaceTree.first(where: { $0 !== self && $0.isAtShellPrompt }) {
@@ -2386,11 +2406,19 @@ extension Tako {
                                     state: state == 2 ? .error : (state == 3 ? .indeterminate : .set),
                                     progress: value)
                             case .commandStart:
+                                self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandStarted()
                                 self.commandStarted()
                             case .commandEnd(let exitCode):
+                                self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandEnded(exitCode: exitCode)
                                 self.commandEnded(exitCode: exitCode)
+                            case .promptMark:
+                                self.crab.promptMark()
+                            case .statusSet(let status, let text):
+                                self.crab.setStatus(status, text: text)
+                            case .statusClear:
+                                self.crab.clearStatus()
                             case .clipboardQuery:
                                 let text = NSPasteboard.general.string(forType: .string) ?? ""
                                 let replyOutcome = self.core.feedWithOutcome(bytes: Data("\u{1b}]52;c;\(Data(text.utf8).base64EncodedString())\u{07}".utf8))
@@ -2468,7 +2496,28 @@ extension Tako {
 
         public func focusDidChange(_ focused: Bool) {
             self.focused = focused
+            if focused {
+                crab.focused()
+            } else {
+                crab.unfocused()
+            }
             needsDisplay = true
+        }
+
+        override open func becomeFirstResponder() -> Bool {
+            let result = super.becomeFirstResponder()
+            if result {
+                crab.focused()
+            }
+            return result
+        }
+
+        override open func resignFirstResponder() -> Bool {
+            let result = super.resignFirstResponder()
+            if result {
+                crab.unfocused()
+            }
+            return result
         }
 
         public func updateTheme(_ newTheme: TerminalTheme) {

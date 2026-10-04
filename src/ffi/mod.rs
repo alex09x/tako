@@ -406,6 +406,9 @@ pub enum FfiEvent {
     CommandStart { id: Option<u64> },
     /// OSC 133;D -- a command finished, with its exit code when reported.
     CommandEnd { exit_code: Option<i32> },
+    PromptMark,
+    StatusSet { status: String, text: Option<String> },
+    StatusClear,
 }
 
 impl From<TerminalEvent> for FfiEvent {
@@ -420,6 +423,9 @@ impl From<TerminalEvent> for FfiEvent {
             TerminalEvent::Progress { state, value } => FfiEvent::Progress { state, value },
             TerminalEvent::CommandStart { id } => FfiEvent::CommandStart { id },
             TerminalEvent::CommandEnd { exit_code } => FfiEvent::CommandEnd { exit_code },
+            TerminalEvent::PromptMark => FfiEvent::PromptMark,
+            TerminalEvent::StatusSet { status, text } => FfiEvent::StatusSet { status, text },
+            TerminalEvent::StatusClear => FfiEvent::StatusClear,
         }
     }
 }

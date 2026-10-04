@@ -505,7 +505,8 @@ extension Tako {
                 )
                 return
             }
-            CrabPainter.draw(in: rect, color: crabColor(for: tab.window), context: ctx)
+            let unread = surfaces(in: tab.window).contains(where: { $0.crab.unread })
+            CrabPainter.draw(in: rect, color: crabColor(for: tab.window), unread: unread, context: ctx)
         }
 
         private func drawClose(in rect: CGRect, ctx: CGContext) {
@@ -627,12 +628,34 @@ extension Tako {
             return raw
         }
 
+        private func surfaces(in window: NSWindow) -> [SurfaceView] {
+            func collect(_ view: NSView, into list: inout [SurfaceView]) {
+                if let surface = view as? SurfaceView {
+                    list.append(surface)
+                }
+                for sub in view.subviews {
+                    collect(sub, into: &list)
+                }
+            }
+            var list: [SurfaceView] = []
+            if let content = window.contentView {
+                collect(content, into: &list)
+            }
+            return list
+        }
+
+        private func aggregateCrab(for window: NSWindow) -> CrabTracker? {
+            let all = surfaces(in: window)
+            guard !all.isEmpty else { return nil }
+            return all.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority })?.crab
+        }
+
         private func elapsedFor(_ window: NSWindow) -> String? {
-            surface(in: window)?.crab.elapsedLabel
+            aggregateCrab(for: window)?.elapsedLabel
         }
 
         private func crabColor(for window: NSWindow) -> NSColor {
-            surface(in: window)?.crab.state.color ?? Brand.ember
+            aggregateCrab(for: window)?.state.color ?? Brand.ember
         }
 
         // MARK: Input
@@ -774,7 +797,7 @@ extension Tako {
 
         /// Whole-pixel cells only: the mark is a pixel grid and a fractional
         /// cell turns it to mush.
-        static func draw(in rect: CGRect, color: NSColor, context ctx: CGContext) {
+        static func draw(in rect: CGRect, color: NSColor, unread: Bool = false, context ctx: CGContext) {
             let step = min(rect.width / 10, rect.height / 7).rounded(.down)
             guard step >= 1 else { return }
             let cell = max(step - 1, 1)
@@ -797,6 +820,11 @@ extension Tako {
             ctx.setBlendMode(.clear)
             fill { $0 == "o" }
             ctx.setBlendMode(.normal)
+
+            if unread {
+                ctx.setFillColor(Brand.claw.cgColor)
+                ctx.fillEllipse(in: CGRect(x: rect.maxX - 3, y: rect.maxY - 3, width: 3, height: 3))
+            }
         }
     }
 }

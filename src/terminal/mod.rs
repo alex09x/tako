@@ -164,6 +164,15 @@ pub enum TerminalEvent {
     CommandEnd {
         exit_code: Option<i32>,
     },
+    /// OSC 133;A / OSC 133;P prompt mark: shell is at a prompt, ready for input.
+    PromptMark,
+    /// In-band escape sequence status report (OSC 1337;SetStatus=... or OSC 9;5;...).
+    StatusSet {
+        status: String,
+        text: Option<String>,
+    },
+    /// In-band escape sequence clearing explicit status (OSC 1337;ClearStatus or OSC 9;5;clear).
+    StatusClear,
 }
 
 /// Which flavor of character protection the pen is currently applying
@@ -3223,6 +3232,33 @@ impl Terminal {
 
         self.current_hyperlink = Some(id);
     }
+
+    pub(crate) fn normalize_status_string(raw: &str) -> Option<String> {
+        let trimmed = raw.trim().to_ascii_lowercase();
+        match trimmed.as_str() {
+            "idle" => Some("idle".into()),
+            "running" => Some("running".into()),
+            "working" | "thinking" => Some("working".into()),
+            "waiting_for_input" => Some("waiting_for_input".into()),
+            "needs_approval" => Some("needs_approval".into()),
+            "done" => Some("done".into()),
+            "error" => Some("error".into()),
+            "disconnected" => Some("disconnected".into()),
+            "unknown" => Some("unknown".into()),
+            "clear" => Some("clear".into()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn sanitize_status_text(raw: &str) -> Option<String> {
+        let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+        let trimmed = filtered.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let limited: String = trimmed.chars().take(128).collect();
+        Some(limited)
+    }
 }
 
 /// `params[idx]`, defaulting to `default` when absent. Used where an
@@ -3643,6 +3679,26 @@ impl Perform for Terminal {
             self.events.push(TerminalEvent::Progress { state, value });
             return;
         }
+        if params[0] == b"9" && params.get(1).map(|p| p.as_ref()) == Some(b"5".as_ref()) {
+            // Pane status: OSC 9;5;status[;text] or OSC 9;5;clear
+            let raw_status = params.get(2).map(|p| String::from_utf8_lossy(p)).unwrap_or_default();
+            if raw_status.is_empty() || raw_status.eq_ignore_ascii_case("clear") {
+                self.events.push(TerminalEvent::StatusClear);
+            } else if let Some(status) = Self::normalize_status_string(&raw_status) {
+                if status == "clear" {
+                    self.events.push(TerminalEvent::StatusClear);
+                } else {
+                    let text = if params.len() > 3 {
+                        let joined = params[3..].iter().map(|p| String::from_utf8_lossy(p)).collect::<Vec<_>>().join(";");
+                        Self::sanitize_status_text(&joined)
+                    } else {
+                        None
+                    };
+                    self.events.push(TerminalEvent::StatusSet { status, text });
+                }
+            }
+            return;
+        }
         if params[0] == b"9" {
             if let Some(body) = params.get(1) {
                 self.events.push(TerminalEvent::Notification {
@@ -3751,6 +3807,7 @@ impl Perform for Terminal {
                     if action == b'A' {
                         if !continuation {
                             self.command_prompt_started();
+                            self.events.push(TerminalEvent::PromptMark);
                         } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
                             self.last_prompt_line = Some(self.cursor_absolute_line());
                         }
@@ -3774,6 +3831,7 @@ impl Perform for Terminal {
                         .any(|p| p.windows(3).any(|w| w == b"k=s"));
                     if !secondary && !continuation {
                         self.command_prompt_started();
+                        self.events.push(TerminalEvent::PromptMark);
                     } else if self.last_prompt_line.is_none() && self.active == ScreenBuffer::Primary {
                         self.last_prompt_line = Some(self.cursor_absolute_line());
                     }
@@ -3831,7 +3889,7 @@ impl Perform for Terminal {
             return;
         }
         if params[0] == b"1337" {
-            // iTerm2 extensions; only Copy=:<base64> is supported.
+            // iTerm2 extensions
             if let Some(rest) = params.get(1) {
                 let rest = String::from_utf8_lossy(rest);
                 if let Some(b64) = rest.strip_prefix("Copy=:") {
@@ -3840,6 +3898,35 @@ impl Perform for Terminal {
                         self.events.push(TerminalEvent::ClipboardSet(
                             String::from_utf8_lossy(&bytes).into_owned(),
                         ));
+                    }
+                } else if rest == "ClearStatus" {
+                    self.events.push(TerminalEvent::StatusClear);
+                } else if let Some(status_part) = rest.strip_prefix("SetStatus=") {
+                    let mut status_val = status_part.to_string();
+                    let mut text_val = None;
+                    if let Some((s, t)) = status_part.split_once(';') {
+                        status_val = s.to_string();
+                        text_val = Some(t.to_string());
+                    } else if params.len() > 2 {
+                        let joined = params[2..]
+                            .iter()
+                            .map(|p| String::from_utf8_lossy(p))
+                            .collect::<Vec<_>>()
+                            .join(";");
+                        text_val = Some(joined);
+                    }
+                    if let Some(ref t) = text_val {
+                        if let Some(stripped) = t.strip_prefix("text=") {
+                            text_val = Some(stripped.to_string());
+                        }
+                    }
+                    if let Some(status) = Self::normalize_status_string(&status_val) {
+                        if status == "clear" {
+                            self.events.push(TerminalEvent::StatusClear);
+                        } else {
+                            let text = text_val.as_deref().and_then(Self::sanitize_status_text);
+                            self.events.push(TerminalEvent::StatusSet { status, text });
+                        }
                     }
                 }
             }

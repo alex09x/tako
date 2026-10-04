@@ -46,10 +46,15 @@ commands:
   run -- PROGRAM ARGS...  run PROGRAM, as given -- no shell -- in a new tab (--split
                           right|down|left|up: a split; --cwd DIR); prints the pane id, or
                           with --wait its exit status and output (--timeout S)
+  status [get]            print the pane's status (status, text, TTL)
+  status set STATUS       set the pane's explicit status (--text T, --ttl D)
+  status clear            clear the pane's explicit status
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
   --lines N               last, wait, run --wait: at most the last N lines of output
+  --text TEXT             status text (truncated to 128 characters)
+  --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
   --json                  print the app's raw JSON answer
   --socket PATH           the control socket (default: $TAKO_SOCKET, or the app's)
   --bundle-id ID          find the socket of this build of Tako (default com.tako-core.terminal)
@@ -122,6 +127,14 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--split" => {
                 args.insert("split".into(), Value::String(value("--split")?));
             }
+            "--text" => {
+                args.insert("text".into(), Value::String(value("--text")?));
+            }
+            "--ttl" => {
+                let s = value("--ttl")?;
+                let seconds = parse_duration(&s).map_err(|e| format!("--ttl {e}"))?;
+                args.insert("ttl".into(), Value::from(seconds));
+            }
             "--timeout" => {
                 let s: f64 = value("--timeout")?.parse().map_err(|_| "--timeout needs seconds".to_string())?;
                 if !(s.is_finite() && (0.0..=7.0 * 24.0 * 3600.0).contains(&s)) {
@@ -139,6 +152,39 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
         "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" => None,
+        "status" => {
+            let sub = if positional.is_empty() {
+                "get".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "get" => {
+                    args.insert("action".into(), Value::String("get".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "set" => {
+                    args.insert("action".into(), Value::String("set".into()));
+                    if positional.is_empty() {
+                        return Err("status set needs a status (e.g. idle, running, working, done, error, ...)".into());
+                    }
+                    args.insert("status".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "clear" => {
+                    args.insert("action".into(), Value::String("clear".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => return Err(format!("unknown status action \"{other}\"; use get, set, or clear")),
+            }
+            None
+        }
         "run" => {
             // Everything after `--`, as the program's argv; the program found
             // on this shell's PATH, which goes with it.
@@ -230,10 +276,31 @@ fn render(cmd: &str, result: &Value) -> String {
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
         "run" if result.get("state").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "last" | "wait" | "run" => command_report(result),
+        "status" => status_report(result),
         "find" => find_report(result),
         "dialog" => dialog_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn status_report(result: &Value) -> String {
+    let status = result["status"].as_str().unwrap_or("unknown");
+    let mut out = status.to_string();
+    if let Some(text) = result["text"].as_str() {
+        out += &format!(" ({text})");
+    }
+    if let Some(ttl) = result["ttl"].as_f64() {
+        if ttl < 60.0 {
+            out += &format!(" [TTL: {:.1}s]", ttl);
+        } else {
+            out += &format!(" [TTL: {}m {}s]", (ttl as u64) / 60, (ttl as u64) % 60);
+        }
+    }
+    if result["unread"].as_bool() == Some(true) {
+        out += " [unread]";
+    }
+    out.push('\n');
+    out
 }
 
 /// A command as `last` reports it: `$ line   (cwd)   exit N`, then its output.
@@ -374,16 +441,62 @@ fn answer_limit(opts: &Options) -> std::time::Duration {
     }
 }
 
-/// One pane: `*` when it has the keyboard, its id, directory and title.
+/// One pane: `*` when it has the keyboard, its id, directory and title, and status if set.
 fn pane_line(pane: &Value, depth: usize) -> String {
     let mark = if pane["focused"].as_bool() == Some(true) { "*" } else { " " };
-    format!(
-        "{}{mark}{}  {}  {}\n",
+    let mut line = format!(
+        "{}{mark}{}  {}  {}",
         "  ".repeat(depth),
         pane["id"].as_str().unwrap_or(""),
         pane["cwd"].as_str().unwrap_or("-"),
         pane["title"].as_str().unwrap_or("")
-    )
+    );
+    if let Some(status) = pane["status"].as_str() {
+        if status != "unknown" {
+            line += &format!("  [{status}");
+            if let Some(text) = pane["statusText"].as_str() {
+                line += &format!(": {text}");
+            }
+            line.push(']');
+        }
+    }
+    line.push('\n');
+    line
+}
+
+fn parse_duration(s: &str) -> Result<f64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("cannot be empty".into());
+    }
+    if let Some(rest) = s.strip_suffix("ms") {
+        let ms: f64 = rest.trim().parse().map_err(|_| format!("invalid milliseconds in \"{s}\""))?;
+        if ms < 0.0 || !ms.is_finite() { return Err("must be positive".into()); }
+        return Ok(ms / 1000.0);
+    }
+    if let Some(rest) = s.strip_suffix('s') {
+        let sec: f64 = rest.trim().parse().map_err(|_| format!("invalid seconds in \"{s}\""))?;
+        if sec < 0.0 || !sec.is_finite() { return Err("must be positive".into()); }
+        return Ok(sec);
+    }
+    if let Some(rest) = s.strip_suffix('m') {
+        let min: f64 = rest.trim().parse().map_err(|_| format!("invalid minutes in \"{s}\""))?;
+        if min < 0.0 || !min.is_finite() { return Err("must be positive".into()); }
+        return Ok(min * 60.0);
+    }
+    if let Some(rest) = s.strip_suffix('h') {
+        let hr: f64 = rest.trim().parse().map_err(|_| format!("invalid hours in \"{s}\""))?;
+        if hr < 0.0 || !hr.is_finite() { return Err("must be positive".into()); }
+        return Ok(hr * 3600.0);
+    }
+    if let Some(rest) = s.strip_suffix('d') {
+        let days: f64 = rest.trim().parse().map_err(|_| format!("invalid days in \"{s}\""))?;
+        if days < 0.0 || !days.is_finite() { return Err("must be positive".into()); }
+        return Ok(days * 86400.0);
+    }
+    let sec: f64 = s.parse().map_err(|_| format!("invalid duration \"{s}\" (expected e.g. 10m, 30s, 1h, 500ms)"))?;
+    if sec < 0.0 || !sec.is_finite() { return Err("must be positive".into()); }
+    Ok(sec)
 }
 
 /// A tab's splits as an indented outline, panes at their leaves.
@@ -643,5 +756,54 @@ bbbbbbbb  logs -- pane 2 of 2
             {"id": "p2", "cwd": null, "title": "", "focused": false}]}]}]});
         assert_eq!(render("tree", &result),
             "window w1\n  tab t1\n    *p1  /src  zsh\n     p2  -  \n");
+    }
+
+    #[test]
+    fn status_command_parses_get_set_clear_and_options() {
+        // get (default)
+        let opts = parse(&args(&["status"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "get"}}));
+
+        // get (explicit)
+        let opts = parse(&args(&["status", "get"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "get"}}));
+
+        // set
+        let opts = parse(&args(&["status", "set", "working", "--text", "compiling", "--ttl", "10m"])).unwrap();
+        assert_eq!(request(&opts, None), json!({
+            "cmd": "status",
+            "args": {
+                "action": "set",
+                "status": "working",
+                "text": "compiling",
+                "ttl": 600.0,
+            }
+        }));
+
+        // clear
+        let opts = parse(&args(&["status", "clear"])).unwrap();
+        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "clear"}}));
+
+        // errors
+        assert!(parse(&args(&["status", "set"])).is_err());
+        assert!(parse(&args(&["status", "unknown_action"])).is_err());
+        assert!(parse(&args(&["status", "--ttl", "invalid"])).is_err());
+    }
+
+    #[test]
+    fn status_report_renders_human_output() {
+        let result = json!({
+            "status": "working",
+            "text": "compiling",
+            "ttl": 298.5,
+            "unread": true,
+        });
+        assert_eq!(status_report(&result), "working (compiling) [TTL: 4m 58s] [unread]\n");
+
+        let simple = json!({
+            "status": "idle",
+            "unread": false,
+        });
+        assert_eq!(status_report(&simple), "idle\n");
     }
 }

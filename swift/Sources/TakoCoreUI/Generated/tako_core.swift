@@ -5458,7 +5458,10 @@ public enum FfiEvent: Equatable, Hashable {
      */
     case commandEnd(exitCode: Int32?
     )
-
+    case promptMark
+    case statusSet(status: String, text: String?
+    )
+    case statusClear
 
 
 
@@ -5503,6 +5506,13 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
 
         case 9: return .commandEnd(exitCode: try FfiConverterOptionInt32.read(from: &buf)
         )
+
+        case 10: return .promptMark
+
+        case 11: return .statusSet(status: try FfiConverterString.read(from: &buf), text: try FfiConverterOptionString.read(from: &buf)
+        )
+
+        case 12: return .statusClear
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5555,6 +5565,20 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case let .commandEnd(exitCode):
             writeInt(&buf, Int32(9))
             FfiConverterOptionInt32.write(exitCode, into: &buf)
+
+
+        case .promptMark:
+            writeInt(&buf, Int32(10))
+
+
+        case let .statusSet(status, text):
+            writeInt(&buf, Int32(11))
+            FfiConverterString.write(status, into: &buf)
+            FfiConverterOptionString.write(text, into: &buf)
+
+
+        case .statusClear:
+            writeInt(&buf, Int32(12))
 
         }
     }
