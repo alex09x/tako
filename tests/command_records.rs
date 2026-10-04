@@ -972,6 +972,48 @@ fn prompt_marks_remap_below_top_anchored_scroll_region() {
     );
 }
 
+#[test]
+fn prompt_marks_remap_when_prompt_begins_on_wrapped_row() {
+    let mut t = Terminal::new(10, 10);
+    // Print 15 characters to wrap line 0 onto line 1
+    t.feed(b"1234567890abcde");
+    // Issue OSC 133;P on the wrapped line 1
+    t.feed(b"\x1b]133;P\x07$ \x1b]133;C\x07cmd\r\n\x1b]133;D;0\x07");
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 1);
+    assert_eq!(marks[0].prompt_line, 1);
+
+    // Widen terminal to 30 columns: line 0 and line 1 merge into a single row 0
+    t.resize(30, 10);
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1, "mark must be retained after widening merges wrapped row");
+    assert_eq!(marks[0].retained_row, 0, "mark must remap to merged row 0");
+    assert_eq!(marks[0].prompt_line, 0, "prompt_line must remap to 0");
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(0),
+        SemanticPrompt::Prompt
+    );
+
+    // Now narrow terminal to 5 columns: row 0 wraps into multiple rows
+    t.resize(5, 10);
+
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1, "mark must be retained after narrowing");
+    assert_eq!(marks[0].retained_row, 0, "mark must be at start of prompt line (row 0)");
+    assert_eq!(marks[0].prompt_line, 0, "prompt_line must remain 0");
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(0),
+        SemanticPrompt::Prompt
+    );
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(1),
+        SemanticPrompt::PromptContinuation
+    );
+}
+
 
 
 
