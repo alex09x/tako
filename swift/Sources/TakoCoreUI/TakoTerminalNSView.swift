@@ -844,13 +844,29 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let markX: CGFloat = max(1.0, gutterWidth - markWidth - 2.0)
         let markHeight: CGFloat = max(4.0, cellHeight - 4.0)
 
-        var sublayers = gutterMarksLayer.sublayers ?? []
-        var layerIndex = 0
-
+        var binnedGutterMarks: [Int: CGColor] = [:]
         for mark in marks {
             let screenRow = Int(mark.retainedRow) - topVisible
             guard screenRow >= 0, screenRow < screenRows else { continue }
 
+            let color: CGColor
+            switch mark.status {
+            case 1: color = NSColor.systemGreen.cgColor
+            case 2: color = NSColor.systemRed.cgColor
+            default: color = NSColor.systemBlue.cgColor
+            }
+            binnedGutterMarks[screenRow] = color
+        }
+
+        if binnedGutterMarks.isEmpty {
+            gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
+
+        var sublayers = gutterMarksLayer.sublayers ?? []
+        var layerIndex = 0
+
+        for (screenRow, color) in binnedGutterMarks.sorted(by: { $0.key < $1.key }) {
             let cellY = bounds.height - layout.top - CGFloat(screenRow + 1) * cellHeight
             let markY = cellY + (cellHeight - markHeight) / 2.0
 
@@ -866,12 +882,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             layerIndex += 1
 
             markLayer.frame = CGRect(x: markX, y: markY, width: markWidth, height: markHeight)
-            let color: CGColor
-            switch mark.status {
-            case 1: color = NSColor.systemGreen.cgColor
-            case 2: color = NSColor.systemRed.cgColor
-            default: color = NSColor.systemBlue.cgColor
-            }
             markLayer.backgroundColor = color
         }
 

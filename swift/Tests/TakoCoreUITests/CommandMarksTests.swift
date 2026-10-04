@@ -203,6 +203,23 @@ final class CommandMarksTests: XCTestCase {
         XCTAssertFalse(view.commandMarksHeldBySynchronizedOutput)
         XCTAssertEqual(view.scrollbarMarksLayer.sublayers?.first?.backgroundColor, NSColor.systemGreen.cgColor, "mark color must update to green when sync frame closes")
     }
+
+    func testGutterMarksCoalescingCapsSublayerCount() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.commandMarksEnabled = true
+
+        // Feed 50 commands on the same prompt row without cursor advancement
+        for i in 0..<50 {
+            view.feed(data: Data("\u{1b}]133;A\u{07}$ \u{1b}]133;C\u{07}cmd\u{1b}]133;D;\(i % 2)\u{07}\r".utf8))
+        }
+        XCTAssertEqual(view.core.commandMarks().count, 50)
+
+        view.updateScroller()
+
+        // Even though there are 50 command records on row 0, gutter marks must coalesce to 1 CALayer
+        let gutterCount = view.gutterMarksLayer.sublayers?.count ?? 0
+        XCTAssertEqual(gutterCount, 1)
+    }
 }
 #endif
 
