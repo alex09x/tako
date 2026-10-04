@@ -129,6 +129,24 @@ public enum MouseShiftCapture: String, Sendable {
 /// Transport-neutral: accepts ordered bytes via `feed(data:)` or `enqueue(data:)`,
 /// and emits user input, device replies and resize events through its `delegate`.
 /// Constructing this view never spawns child processes or local PTYs.
+/// A pinned command header at the top of the terminal pane while scrolling through long command output.
+public struct StickyCommandHeader: Equatable {
+    public let commandId: UInt64
+    public let command: String
+    public let promptRetainedRow: UInt64
+    /// 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
+    public let status: UInt8
+    public let exitCode: Int32?
+
+    public init(commandId: UInt64, command: String, promptRetainedRow: UInt64, status: UInt8, exitCode: Int32?) {
+        self.commandId = commandId
+        self.command = command
+        self.promptRetainedRow = promptRetainedRow
+        self.status = status
+        self.exitCode = exitCode
+    }
+}
+
 @MainActor
 /// Open for subclassing: the macOS app layer wraps this surface in its own
 /// `SurfaceView`, which adds windowing identity (tabs, splits, focus,
@@ -147,6 +165,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     private let scrollbarKnob = CALayer()
     let scrollbarMarksLayer = CALayer()
     let gutterMarksLayer = CALayer()
+    let stickyHeaderLayer = CALayer()
+    let stickyHeaderIndicatorLayer = CALayer()
+    let stickyHeaderTextLayer = CATextLayer()
+    let stickyHeaderHintLayer = CATextLayer()
+    let stickyHeaderSeparatorLayer = CALayer()
+    private var isHoveringStickyHeader = false
+    public private(set) var activeStickyCommandHeader: StickyCommandHeader?
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -159,6 +184,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             guard commandMarksEnabled != oldValue else { return }
             updateGutterMarks()
             updateScroller()
+        }
+    }
+
+    /// Whether the sticky command header stays pinned at the top while scrolling through long output.
+    /// Configured via `sticky-command-header = true|false`, default true.
+    public var stickyCommandHeaderEnabled: Bool = true {
+        didSet {
+            guard stickyCommandHeaderEnabled != oldValue else { return }
+            updateStickyCommandHeader()
         }
     }
 
@@ -475,6 +509,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         gutterMarksLayer.masksToBounds = true
         self.layer?.addSublayer(gutterMarksLayer)
 
+        stickyHeaderLayer.zPosition = 9500
+        stickyHeaderLayer.masksToBounds = true
+        stickyHeaderLayer.isHidden = true
+        stickyHeaderLayer.backgroundColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 0.94).cgColor
+
+        stickyHeaderSeparatorLayer.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        stickyHeaderLayer.addSublayer(stickyHeaderSeparatorLayer)
+
+        stickyHeaderIndicatorLayer.cornerRadius = 3.5
+        stickyHeaderIndicatorLayer.masksToBounds = true
+        stickyHeaderLayer.addSublayer(stickyHeaderIndicatorLayer)
+
+        stickyHeaderTextLayer.truncationMode = .end
+        stickyHeaderTextLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderLayer.addSublayer(stickyHeaderTextLayer)
+
+        stickyHeaderHintLayer.string = "Jump to prompt ↑"
+        stickyHeaderHintLayer.alignmentMode = .right
+        stickyHeaderHintLayer.foregroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
+        stickyHeaderHintLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderLayer.addSublayer(stickyHeaderHintLayer)
+
+        self.layer?.addSublayer(stickyHeaderLayer)
+
         scrollbarLayer.zPosition = 9999
         scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
         scrollbarLayer.cornerRadius = 5.0
@@ -689,6 +747,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     func updateScroller() {
         updateGutterMarks()
+        updateStickyCommandHeader()
 
         let trackHeight = bounds.height
         guard trackHeight > 0 else { return }
@@ -888,6 +947,165 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         while sublayers.count > layerIndex {
             sublayers.removeLast().removeFromSuperlayer()
         }
+    }
+
+    /// Computes the sticky command header for the current viewport state, or nil if unpinned.
+    public func currentStickyCommandHeader() -> StickyCommandHeader? {
+        guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
+            return nil
+        }
+        let marks = core.commandMarks()
+        guard !marks.isEmpty else { return nil }
+
+        let totalScrollback = Int(core.scrollbackLen())
+        let offset = Int(core.viewportOffset())
+        let vpTop = totalScrollback - offset
+        guard vpTop >= 0 else { return nil }
+
+        var candidateMark: FfiCommandMark?
+        for (idx, mark) in marks.enumerated() {
+            let pRow = Int(mark.retainedRow)
+            if pRow >= vpTop {
+                if pRow > vpTop && idx > 0 {
+                    candidateMark = marks[idx - 1]
+                }
+                break
+            }
+            if idx == marks.count - 1 {
+                candidateMark = mark
+            }
+        }
+
+        guard let mark = candidateMark else { return nil }
+        guard let info = core.firstCommandAfter(after: mark.commandId - 1),
+              let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawInput.isEmpty else {
+            return nil
+        }
+
+        let promptRow = Int(mark.retainedRow)
+        let totalRetained = totalScrollback + Int(core.rows())
+
+        var nextPromptRow: Int? = nil
+        for r in (promptRow + 1)..<totalRetained {
+            if core.retainedSemanticPrompt(row: UInt64(r)) == 1 {
+                nextPromptRow = r
+                break
+            }
+        }
+
+        let lastOutputRow: Int
+        if mark.status == 0 {
+            let cursorRow = totalScrollback + Int(core.cursorRow())
+            lastOutputRow = min(totalRetained - 1, max(promptRow, cursorRow))
+        } else if let nextPrompt = nextPromptRow {
+            lastOutputRow = max(promptRow, nextPrompt - 1)
+        } else {
+            lastOutputRow = min(totalRetained - 1, totalScrollback + Int(core.cursorRow()))
+        }
+
+        // If no output was produced, no output is on screen
+        if lastOutputRow <= promptRow && mark.status != 0 {
+            return nil
+        }
+
+        if vpTop > lastOutputRow {
+            return nil
+        }
+
+        return StickyCommandHeader(
+            commandId: mark.commandId,
+            command: rawInput,
+            promptRetainedRow: mark.retainedRow,
+            status: mark.status,
+            exitCode: mark.exitCode
+        )
+    }
+
+    /// Updates the pinned sticky command header layer based on current viewport offset and command marks.
+    func updateStickyCommandHeader() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        guard stickyCommandHeaderEnabled, !core.modes().alternateScreen else {
+            stickyHeaderLayer.isHidden = true
+            activeStickyCommandHeader = nil
+            return
+        }
+
+        guard let header = currentStickyCommandHeader() else {
+            stickyHeaderLayer.isHidden = true
+            activeStickyCommandHeader = nil
+            return
+        }
+
+        activeStickyCommandHeader = header
+
+        let layout = gridLayout
+        let headerHeight = max(cellHeight, 22.0)
+        let headerY = bounds.height - layout.top - headerHeight
+        stickyHeaderLayer.frame = CGRect(x: 0, y: headerY, width: bounds.width, height: headerHeight)
+        stickyHeaderLayer.isHidden = false
+
+        stickyHeaderSeparatorLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1.0)
+
+        let indicatorSize: CGFloat = 7.0
+        let indicatorX = max(layout.left, 6.0)
+        let indicatorY = (headerHeight - indicatorSize) / 2.0
+        stickyHeaderIndicatorLayer.frame = CGRect(x: indicatorX, y: indicatorY, width: indicatorSize, height: indicatorSize)
+
+        let indicatorColor: CGColor
+        switch header.status {
+        case 1: indicatorColor = NSColor.systemGreen.cgColor
+        case 2: indicatorColor = NSColor.systemRed.cgColor
+        default: indicatorColor = NSColor.systemBlue.cgColor
+        }
+        stickyHeaderIndicatorLayer.backgroundColor = indicatorColor
+
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        stickyHeaderTextLayer.contentsScale = scale
+        stickyHeaderHintLayer.contentsScale = scale
+
+        let textX = indicatorX + indicatorSize + 8.0
+        let hintWidth: CGFloat = 110.0
+        let availableWidth = max(0, bounds.width - textX - hintWidth - 20.0)
+        stickyHeaderTextLayer.frame = CGRect(x: textX, y: (headerHeight - 16.0) / 2.0, width: availableWidth, height: 16.0)
+
+        let font = NSFont.monospacedSystemFont(ofSize: min(theme.fontSize, 12.0), weight: .semibold)
+        stickyHeaderTextLayer.font = font
+        stickyHeaderTextLayer.fontSize = font.pointSize
+        stickyHeaderTextLayer.foregroundColor = theme.foreground
+        stickyHeaderTextLayer.string = header.command
+
+        let hintFont = NSFont.systemFont(ofSize: 10.0, weight: .regular)
+        stickyHeaderHintLayer.font = hintFont
+        stickyHeaderHintLayer.fontSize = hintFont.pointSize
+        let hintX = max(textX + availableWidth, bounds.width - hintWidth - 16.0)
+        stickyHeaderHintLayer.frame = CGRect(x: hintX, y: (headerHeight - 14.0) / 2.0, width: hintWidth, height: 14.0)
+    }
+
+    /// Handles hover state updates for the sticky command header.
+    private func updateStickyHeaderHover(_ hovering: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        if hovering {
+            stickyHeaderLayer.backgroundColor = NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.20, alpha: 0.98).cgColor
+            stickyHeaderHintLayer.foregroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+        } else {
+            stickyHeaderLayer.backgroundColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 0.94).cgColor
+            stickyHeaderHintLayer.foregroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
+        }
+    }
+
+    /// Jumps the viewport so that the given retained prompt row is pinned at the top.
+    public func jumpToPrompt(retainedRow: UInt64) {
+        let totalScrollback = Int(core.scrollbackLen())
+        let targetOffset = max(0, totalScrollback - Int(retainedRow))
+        scrollToOffset(targetOffset)
+        updateScroller()
     }
 
     /// Internal, not private: a host that moved the viewport in the engine
@@ -2126,6 +2344,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return
         }
         isDraggingScrollbar = false
+        if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(loc) {
+            if let header = activeStickyCommandHeader ?? currentStickyCommandHeader() {
+                jumpToPrompt(retainedRow: header.promptRetainedRow)
+                return
+            }
+        }
         let cell = cellAt(convert(event.locationInWindow, from: nil))
         if event.modifierFlags.contains(.command), let link = linkRange(at: cell) {
             Self.openURL(link.url)
@@ -2419,6 +2643,18 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 : NSColor.white.withAlphaComponent(0.45).cgColor
             CATransaction.commit()
         }
+        if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(point) {
+            if !isHoveringStickyHeader {
+                isHoveringStickyHeader = true
+                updateStickyHeaderHover(true)
+            }
+            NSCursor.pointingHand.set()
+            return
+        } else if isHoveringStickyHeader {
+            isHoveringStickyHeader = false
+            updateStickyHeaderHover(false)
+            NSCursor.arrow.set()
+        }
         mouseCell = cellAt(point)
         updateHoveredLink(commandHeld: event.modifierFlags.contains(.command))
         if let cell = mouseCell {
@@ -2436,6 +2672,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
     override public func mouseExited(with event: NSEvent) {
+        if isHoveringStickyHeader {
+            isHoveringStickyHeader = false
+            updateStickyHeaderHover(false)
+        }
         mouseCell = nil
         updateHoveredLink(commandHeld: false)
         super.mouseExited(with: event)

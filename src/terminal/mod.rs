@@ -222,6 +222,16 @@ pub struct CommandMark {
     pub status: CommandMarkStatus,
 }
 
+/// A sticky header pinned at the top of the pane while scrolling through long command output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StickyCommandHeader {
+    pub command_id: u64,
+    pub command: String,
+    pub prompt_line: u64,
+    pub prompt_retained_row: usize,
+    pub status: CommandMarkStatus,
+}
+
 /// Terminal state machine: owns a primary and alternate [`Grid`], a
 /// [`Cursor`], a scroll region, and drives a [`Parser`] over incoming bytes.
 ///
@@ -1878,6 +1888,116 @@ impl Terminal {
     /// The absolute line index of the oldest retained line in the primary buffer.
     pub fn first_retained_line(&self) -> u64 {
         self.primary.first_retained_line()
+    }
+
+    /// Returns the sticky command header for the currently visible viewport, if any.
+    ///
+    /// While scrolling through a long command output, the command that produced it
+    /// stays pinned at the top of the pane.
+    ///
+    /// Returns `None` if:
+    /// - The active screen is the alternate buffer.
+    /// - There are no recorded commands with OSC 133 boundaries.
+    /// - The prompt for the command whose output is at the top of the viewport is
+    ///   currently visible on screen (i.e. `prompt_retained_row >= vp_top`).
+    /// - The top of the viewport precedes all command prompts or is past the command's output.
+    pub fn sticky_command_header(&self) -> Option<StickyCommandHeader> {
+        if self.active == ScreenBuffer::Alternate {
+            return None;
+        }
+
+        let marks = self.command_marks();
+        if marks.is_empty() {
+            return None;
+        }
+
+        let sb_len = self.primary.scrollback_len();
+        let vp_top = sb_len.saturating_sub(self.viewport_offset);
+
+        // Find which command's output spans vp_top.
+        let mut candidate_mark = None;
+        for (idx, mark) in marks.iter().enumerate() {
+            if mark.retained_row >= vp_top {
+                if mark.retained_row > vp_top && idx > 0 {
+                    candidate_mark = Some(&marks[idx - 1]);
+                }
+                break;
+            }
+            if idx == marks.len() - 1 {
+                candidate_mark = Some(mark);
+            }
+        }
+
+        let mark = candidate_mark?;
+        let rec = self.commands.get(mark.command_id)?;
+        let command_text = rec.input.as_ref()?.trim();
+        if command_text.is_empty() {
+            return None;
+        }
+
+        // Verify that vp_top does not exceed the command's output range.
+        let total_retained = self.primary.retained_rows();
+        let mut next_prompt = None;
+        let mut max_r = mark.retained_row;
+        for r in (mark.retained_row + 1)..total_retained {
+            if self.primary.retained_semantic_prompt(r) == crate::grid::SemanticPrompt::Prompt {
+                next_prompt = Some(r);
+                break;
+            }
+            if self.primary.retained_owner(r) == crate::grid::RowOwner::Command(mark.command_id) {
+                max_r = r;
+            }
+        }
+
+        if rec.status != crate::terminal::commands::CommandStatus::Running && max_r == mark.retained_row {
+            // Zero output was produced by this command.
+            return None;
+        }
+
+        let last_output_row = match rec.status {
+            crate::terminal::commands::CommandStatus::Running => {
+                (sb_len + self.cursor.row).min(total_retained.saturating_sub(1))
+            }
+            _ => {
+                if let Some(p) = next_prompt {
+                    p.saturating_sub(1)
+                } else {
+                    max_r
+                }
+            }
+        };
+
+        if vp_top > last_output_row {
+            return None;
+        }
+
+        Some(StickyCommandHeader {
+            command_id: mark.command_id,
+            command: command_text.to_string(),
+            prompt_line: mark.prompt_line,
+            prompt_retained_row: mark.retained_row,
+            status: mark.status,
+        })
+    }
+
+    /// Jumps the viewport to make the prompt at `prompt_retained_row` visible at the top.
+    /// Returns true if the viewport offset changed; false otherwise.
+    pub fn scroll_to_prompt(&mut self, prompt_retained_row: usize) -> bool {
+        if self.active == ScreenBuffer::Alternate {
+            return false;
+        }
+        let total_retained = self.primary.retained_rows();
+        if prompt_retained_row >= total_retained {
+            return false;
+        }
+        let sb_len = self.primary.scrollback_len();
+        let target_offset = sb_len.saturating_sub(prompt_retained_row);
+        if self.viewport_offset == target_offset {
+            return false;
+        }
+        self.viewport_offset = target_offset;
+        self.primary.mark_all_dirty();
+        true
     }
 
     /// Jumps the viewport up to the previous OSC 133 prompt mark.
