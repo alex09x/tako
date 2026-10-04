@@ -279,9 +279,74 @@ final class StickyCommandHeaderTests: XCTestCase {
         // Trigger evaluation which prunes evicted commands
         _ = view.currentStickyCommandHeader()
 
-        // Old command whose output completely left scrollback should be pruned
-        // Only new-cmd should remain
+        // Old command whose output completely left scrollback is marked as having no output (sentinel)
+        // Only new-cmd should remain active
+        XCTAssertEqual(view.activeTrackedCommandsCountForTesting, 1)
+        XCTAssertTrue(view.trackedCommandsForTesting[1]?.hasNoOutput == true)
+    }
+
+    func testStickyCommandHeaderResumesRunningCommandAfterCheckpointRestore() throws {
+        let view1 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        var input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}find /\r\n\u{1b}]133;C\u{07}"
+        for i in 1...60 {
+            input += "file \(i)\r\n"
+        }
+        // Note: command is still running (no 133;D)
+        view1.feed(data: Data(input.utf8))
+
+        let checkpoint = try view1.exportCheckpoint()
+
+        // View 2 imports checkpoint
+        let view2 = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        try view2.importCheckpoint(checkpoint)
+
+        // Scrolled into output
+        view2.scrollViewportUp(lines: 10)
+        let header1 = view2.currentStickyCommandHeader()
+        XCTAssertNotNil(header1)
+        XCTAssertEqual(header1?.command, "find /")
+        XCTAssertEqual(header1?.status, 0, "status must be running (0)")
+
+        // Continued output after restore advances lastOutputAbsLine
+        var moreOutput = ""
+        for i in 61...110 {
+            moreOutput += "file \(i)\r\n"
+        }
+        view2.feed(data: Data(moreOutput.utf8))
+
+        // Viewport moves past the old checkpoint endpoint;
+        // header must still be present because command is still running and owns visible rows
+        view2.scrollViewportUp(lines: 20)
+        let header2 = view2.currentStickyCommandHeader()
+        XCTAssertNotNil(header2, "header must not disappear as running command output continues after restore")
+        XCTAssertEqual(header2?.command, "find /")
+        XCTAssertEqual(header2?.status, 0, "status remains running (0)")
+
+        // Command ends with exit code 0
+        view2.feed(data: Data("\u{1b}]133;D;0\u{07}".utf8))
+        let header3 = view2.currentStickyCommandHeader()
+        XCTAssertNotNil(header3)
+        XCTAssertEqual(header3?.command, "find /")
+        XCTAssertEqual(header3?.status, 1, "status transitions to success (1)")
+    }
+
+    func testStickyCommandHeaderCachesZeroOutputCommandsWithoutRepeatedQueries() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let input = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}true\r\n\u{1b}]133;C\u{07}\u{1b}]133;D;0\u{07}\u{1b}]133;A\u{07}$ "
+        view.feed(data: Data(input.utf8))
+
+        // Zero-output command should produce no sticky header
+        XCTAssertNil(view.currentStickyCommandHeader(), "zero-output command must never pin sticky header")
+
+        // Zero-output command is cached in trackedCommands as a no-output sentinel
+        XCTAssertEqual(view.activeTrackedCommandsCountForTesting, 0, "no active commands with output")
+        XCTAssertEqual(view.trackedCommandsCountForTesting, 1, "command is cached as sentinel")
+        XCTAssertTrue(view.trackedCommandsForTesting[1]?.hasNoOutput == true, "sentinel hasNoOutput is true")
+
+        // Repeated evaluations preserve the sentinel without repeatedly scanning grid
+        _ = view.currentStickyCommandHeader()
         XCTAssertEqual(view.trackedCommandsCountForTesting, 1)
+        XCTAssertTrue(view.trackedCommandsForTesting[1]?.hasNoOutput == true)
     }
 }
 #endif

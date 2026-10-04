@@ -179,11 +179,25 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         var lastOutputAbsLine: UInt64
         var status: UInt8
         var exitCode: Int32?
+        var hasNoOutput: Bool
     }
     private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
     private var trackedCommandsEpoch: UInt64 = 0
     var trackedCommandsCountForTesting: Int { trackedCommands.count }
+    var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
+    var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
     private var activeRunningCommandId: UInt64? = nil
+
+    private func findRunningCommandId() -> UInt64? {
+        var afterId: UInt64 = 0
+        while let info = core.firstCommandAfter(after: afterId) {
+            if info.running {
+                return info.id
+            }
+            afterId = info.id
+        }
+        return nil
+    }
     private var isDraggingScrollbar = false
     private var scrollbarDragStartKnobY: CGFloat = 0.0
     private var scrollbarDragStartMouseY: CGFloat = 0.0
@@ -665,7 +679,24 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         lastReportedScrollPosition = core.scrollPosition()
         trackedCommands.removeAll()
         trackedCommandsEpoch = core.stateEpoch()
-        activeRunningCommandId = nil
+        activeRunningCommandId = findRunningCommandId()
+        if let runningId = activeRunningCommandId {
+            let totalScrollback = UInt64(core.scrollbackLen())
+            let cursorRow = UInt64(core.cursorRow())
+            let firstLine = core.firstRetainedLine()
+            let absLine = firstLine + totalScrollback + cursorRow
+            let cmdText = core.firstCommandAfter(after: runningId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let promptLine = core.commandMarks().first(where: { $0.commandId == runningId })?.promptLine
+            trackedCommands[runningId] = TrackedCommandOutput(
+                commandId: runningId,
+                command: cmdText,
+                promptLine: promptLine,
+                lastOutputAbsLine: absLine,
+                status: 0,
+                exitCode: nil,
+                hasNoOutput: false
+            )
+        }
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
@@ -727,7 +758,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                             promptLine: promptLine,
                             lastOutputAbsLine: absLine,
                             status: 0,
-                            exitCode: nil
+                            exitCode: nil,
+                            hasNoOutput: false
                         )
                     }
                     delegate?.terminalViewCommandDidStart(self)
@@ -748,8 +780,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                         let status: UInt8 = (exitCode == 0 ? 1 : 2)
                         let out = core.commandOutput(id: cmdId, epoch: core.stateEpoch(), maxLines: 100_000, maxBytes: 10_000_000)
                         let lines = UInt64(out?.lines ?? 0)
+                        let isNoOutput = (lines == 0)
                         let endLine: UInt64
-                        if let pLine = promptLine {
+                        if isNoOutput {
+                            endLine = promptLine ?? 0
+                        } else if let pLine = promptLine {
                             endLine = pLine + lines
                         } else if lines > 0 {
                             endLine = firstLine + lines
@@ -762,12 +797,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                             promptLine: promptLine,
                             lastOutputAbsLine: endLine,
                             status: status,
-                            exitCode: exitCode
+                            exitCode: exitCode,
+                            hasNoOutput: isNoOutput
                         )
                         tracked.lastOutputAbsLine = endLine
                         tracked.promptLine = promptLine
                         tracked.status = status
                         tracked.exitCode = exitCode
+                        tracked.hasNoOutput = isNoOutput
                         if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
                             tracked.command = input
                         }
@@ -787,17 +824,34 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 }
             }
 
-            if let cmdId = activeRunningCommandId, outcome.hasDamage {
-                let totalScrollback = UInt64(core.scrollbackLen())
-                let cursorRow = UInt64(core.cursorRow())
-                let firstLine = core.firstRetainedLine()
-                let absLine = firstLine + totalScrollback + cursorRow
-                if var tracked = trackedCommands[cmdId] {
-                    tracked.lastOutputAbsLine = max(tracked.lastOutputAbsLine, absLine)
-                    if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                        tracked.command = input
+            if outcome.hasDamage {
+                if activeRunningCommandId == nil {
+                    activeRunningCommandId = findRunningCommandId()
+                }
+                if let cmdId = activeRunningCommandId {
+                    let totalScrollback = UInt64(core.scrollbackLen())
+                    let cursorRow = UInt64(core.cursorRow())
+                    let firstLine = core.firstRetainedLine()
+                    let absLine = firstLine + totalScrollback + cursorRow
+                    if var tracked = trackedCommands[cmdId] {
+                        tracked.lastOutputAbsLine = max(tracked.lastOutputAbsLine, absLine)
+                        if tracked.command.isEmpty, let info = core.firstCommandAfter(after: cmdId - 1), let input = info.input?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            tracked.command = input
+                        }
+                        trackedCommands[cmdId] = tracked
+                    } else {
+                        let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let promptLine = core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
+                        trackedCommands[cmdId] = TrackedCommandOutput(
+                            commandId: cmdId,
+                            command: cmdText,
+                            promptLine: promptLine,
+                            lastOutputAbsLine: absLine,
+                            status: 0,
+                            exitCode: nil,
+                            hasNoOutput: false
+                        )
                     }
-                    trackedCommands[cmdId] = tracked
                 }
             }
 
@@ -1052,7 +1106,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         if trackedCommandsEpoch != currentEpoch {
             trackedCommands.removeAll()
             trackedCommandsEpoch = currentEpoch
-            activeRunningCommandId = nil
+            activeRunningCommandId = findRunningCommandId()
         }
 
         let totalScrollback = Int(core.scrollbackLen())
@@ -1062,13 +1116,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         let firstRetainedLine = core.firstRetainedLine()
         let vpTopAbsLine = firstRetainedLine + UInt64(vpTop)
+        let currentBottom = firstRetainedLine + UInt64(totalScrollback) + UInt64(core.cursorRow())
 
         // Ensure all commands recorded in core's command log are known
         var afterId: UInt64 = 0
         let marks = core.commandMarks()
         while let info = core.firstCommandAfter(after: afterId) {
             afterId = info.id
-            if trackedCommands[info.id] == nil || (!info.running && trackedCommands[info.id]?.status == 0) {
+            if info.running && activeRunningCommandId == nil {
+                activeRunningCommandId = info.id
+            }
+
+            let existing = trackedCommands[info.id]
+            if existing == nil || (!info.running && existing?.status == 0) {
                 guard let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty else {
                     continue
                 }
@@ -1083,12 +1143,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 }
                 let out = core.commandOutput(id: info.id, epoch: info.epoch, maxLines: 100_000, maxBytes: 10_000_000)
                 let lines = UInt64(out?.lines ?? 0)
-                if lines == 0 && status != 0 {
-                    continue
-                }
-                let promptLine = mark?.promptLine ?? trackedCommands[info.id]?.promptLine
+                let promptLine = mark?.promptLine ?? existing?.promptLine
+                let isNoOutput = (!info.running && lines == 0)
                 let lastLine: UInt64
-                if let pLine = promptLine {
+                if isNoOutput {
+                    lastLine = promptLine ?? 0
+                } else if info.running {
+                    lastLine = max(currentBottom, (promptLine ?? firstRetainedLine) + lines)
+                } else if let pLine = promptLine {
                     lastLine = pLine + lines
                 } else {
                     lastLine = firstRetainedLine + lines
@@ -1099,16 +1161,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     promptLine: promptLine,
                     lastOutputAbsLine: lastLine,
                     status: status,
-                    exitCode: info.exitCode
+                    exitCode: info.exitCode,
+                    hasNoOutput: isNoOutput
                 )
+            } else if info.running, var runningCmd = existing {
+                // Refresh bounds for cached running records
+                runningCmd.lastOutputAbsLine = max(runningCmd.lastOutputAbsLine, currentBottom)
+                if runningCmd.command.isEmpty, let rawInput = info.input?.trimmingCharacters(in: .whitespacesAndNewlines), !rawInput.isEmpty {
+                    runningCmd.command = rawInput
+                }
+                trackedCommands[info.id] = runningCmd
             }
         }
 
-        // Prune commands no longer retained in core's command log or whose output has left scrollback
+        // Mark commands whose output has left scrollback as having no output, and prune commands
+        // no longer retained in core's command log.
         if let oldestRecord = core.firstCommandAfter(after: 0) {
             let oldestId = oldestRecord.id
-            trackedCommands = trackedCommands.filter { id, cmd in
-                id >= oldestId && (cmd.status == 0 || cmd.lastOutputAbsLine >= firstRetainedLine)
+            for (id, cmd) in trackedCommands {
+                if cmd.status != 0 && !cmd.hasNoOutput && cmd.lastOutputAbsLine < firstRetainedLine {
+                    trackedCommands[id]?.hasNoOutput = true
+                }
+            }
+            trackedCommands = trackedCommands.filter { id, _ in
+                id >= oldestId
             }
         } else {
             trackedCommands.removeAll()
@@ -1130,8 +1206,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             }
 
             // Zero-output completed command has no output on screen
-            let startLine = cmd.promptLine ?? 0
-            if cmd.status != 0 && cmd.lastOutputAbsLine <= startLine {
+            if cmd.hasNoOutput || (cmd.status != 0 && cmd.lastOutputAbsLine <= (cmd.promptLine ?? 0)) {
                 continue
             }
 
