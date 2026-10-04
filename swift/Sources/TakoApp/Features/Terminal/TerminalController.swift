@@ -1218,17 +1218,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     lazy private(set) var tabGroupCloseCoordinator = TabGroupCloseCoordinator()
 
     override func windowShouldClose(_ sender: NSWindow) -> Bool {
-        tabGroupCloseCoordinator.windowShouldClose(sender) { [weak self] scope in
-            guard let self else { return }
-            switch scope {
-            case .tab: closeTab(nil)
-            case .window:
-                guard self.window?.isFirstWindowInTabGroup ?? false else { return }
-                closeWindow(nil)
-            }
-        }
-
-        // We will always explicitly close the window using the above
+        // The window's red close button closes the whole terminal group;
+        // individual tab close buttons use closeTab(_:) directly.
+        closeWindow(sender)
         return false
     }
 
