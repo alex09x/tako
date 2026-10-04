@@ -725,10 +725,13 @@ extension Tako {
                 return
             }
             if closeRect(of: tab).contains(point) {
-                if let controller = tab.window.windowController as? TerminalController {
+                let controller = (tab.window.windowController as? TerminalController)
+                    ?? (tab.window.delegate as? TerminalController)
+                if let controller {
+                    if controller.surfaceTree.contains(where: { $0.needsConfirmClose }) {
+                        group?.select(tab.window)
+                    }
                     controller.closeTab(self)
-                } else if let delegate = tab.window.delegate as? TerminalController {
-                    delegate.closeTab(self)
                 } else {
                     tab.window.performClose(nil)
                 }
