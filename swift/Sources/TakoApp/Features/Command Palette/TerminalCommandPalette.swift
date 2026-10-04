@@ -100,12 +100,8 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyCommand(id: cmd.id)
             })
 
-            let outRecord = surfaceView.commandOutput(for: cmd.id)
-            let isOutputPartial = outRecord?.isPartial == true
-
-            let copyOutTitle = isOutputPartial ? "Command: Copy Output (Partial)" : "Command: Copy Output"
             options.append(CommandOption(
-                title: copyOutTitle,
+                title: "Command: Copy Output",
                 subtitle: trimmedCmd,
                 leadingIcon: "doc.text",
                 badge: badgeText,
@@ -114,9 +110,8 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.copyOutput(id: cmd.id)
             })
 
-            let copyMdTitle = isOutputPartial ? "Command: Copy Both as Markdown (Output Partial)" : "Command: Copy Both as Markdown"
             options.append(CommandOption(
-                title: copyMdTitle,
+                title: "Command: Copy Both as Markdown",
                 subtitle: trimmedCmd,
                 leadingIcon: "text.quote",
                 badge: badgeText,
@@ -137,9 +132,8 @@ struct TerminalCommandPaletteView: View {
                 })
             }
 
-            let sendOutTitle = isOutputPartial ? "Command: Send Output to Another Pane (Partial)" : "Command: Send Output to Another Pane"
             options.append(CommandOption(
-                title: sendOutTitle,
+                title: "Command: Send Output to Another Pane",
                 subtitle: trimmedCmd,
                 leadingIcon: "rectangle.split.2x1",
                 badge: badgeText,
@@ -148,9 +142,8 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.sendOutputToAnotherPane(id: cmd.id)
             })
 
-            let saveOutTitle = isOutputPartial ? "Command: Save Output to File (Partial)" : "Command: Save Output to File"
             options.append(CommandOption(
-                title: saveOutTitle,
+                title: "Command: Save Output to File",
                 subtitle: trimmedCmd,
                 leadingIcon: "square.and.arrow.down",
                 badge: badgeText,

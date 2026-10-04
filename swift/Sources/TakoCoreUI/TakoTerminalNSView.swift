@@ -3616,9 +3616,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         menu.addItem(NSMenuItem.separator())
 
-        let outputRecord = commandOutput(for: cmd.id)
-        let isOutputPartial = outputRecord?.isPartial == true
-
         // 1. Copy Command
         let copyCmdItem = NSMenuItem(title: "Copy Command", action: #selector(copyCommandContextAction(_:)), keyEquivalent: "")
         copyCmdItem.representedObject = cmd.id
@@ -3629,21 +3626,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         menu.addItem(copyCmdItem)
 
         // 2. Copy Output
-        let copyOutTitle = isOutputPartial ? "Copy Output (Partial)" : "Copy Output"
-        let copyOutItem = NSMenuItem(title: copyOutTitle, action: #selector(copyOutputContextAction(_:)), keyEquivalent: "")
+        let copyOutItem = NSMenuItem(title: "Copy Output", action: #selector(copyOutputContextAction(_:)), keyEquivalent: "")
         copyOutItem.representedObject = cmd.id
         copyOutItem.target = self
-        if outputRecord == nil {
-            copyOutItem.isEnabled = false
-        }
         menu.addItem(copyOutItem)
 
         // 3. Copy Both as Markdown
-        let copyMdTitle = isOutputPartial ? "Copy Both as Markdown (Output Partial)" : "Copy Both as Markdown"
-        let copyMdItem = NSMenuItem(title: copyMdTitle, action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
+        let copyMdItem = NSMenuItem(title: "Copy Both as Markdown", action: #selector(copyBothAsMarkdownContextAction(_:)), keyEquivalent: "")
         copyMdItem.representedObject = cmd.id
         copyMdItem.target = self
-        if cmd.input == nil || outputRecord == nil {
+        if cmd.input == nil {
             copyMdItem.isEnabled = false
         }
         menu.addItem(copyMdItem)
@@ -3661,23 +3653,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         menu.addItem(rerunItem)
 
         // 5. Send Output to Another Pane
-        let sendTitle = isOutputPartial ? "Send Output to Another Pane (Partial)" : "Send Output to Another Pane"
-        let sendItem = NSMenuItem(title: sendTitle, action: #selector(sendOutputToAnotherPaneContextAction(_:)), keyEquivalent: "")
+        let sendItem = NSMenuItem(title: "Send Output to Another Pane", action: #selector(sendOutputToAnotherPaneContextAction(_:)), keyEquivalent: "")
         sendItem.representedObject = cmd.id
         sendItem.target = self
-        if outputRecord == nil {
-            sendItem.isEnabled = false
-        }
         menu.addItem(sendItem)
 
         // 6. Save Output to File…
-        let saveTitle = isOutputPartial ? "Save Output to File (Partial)…" : "Save Output to File…"
-        let saveItem = NSMenuItem(title: saveTitle, action: #selector(saveOutputToFileContextAction(_:)), keyEquivalent: "")
+        let saveItem = NSMenuItem(title: "Save Output to File…", action: #selector(saveOutputToFileContextAction(_:)), keyEquivalent: "")
         saveItem.representedObject = cmd.id
         saveItem.target = self
-        if outputRecord == nil {
-            saveItem.isEnabled = false
-        }
         menu.addItem(saveItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -4031,14 +4015,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
            item.action == #selector(saveOutputToFileContextAction(_:)) {
             let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
             if let targetId {
-                return commandOutput(for: targetId) != nil
+                return commandInfo(for: targetId) != nil
             }
             return false
         }
         if item.action == #selector(copyBothAsMarkdownContextAction(_:)) {
             let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
             if let targetId {
-                return commandInfo(for: targetId)?.input != nil && commandOutput(for: targetId) != nil
+                return commandInfo(for: targetId)?.input != nil
             }
             return false
         }
