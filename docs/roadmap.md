@@ -394,7 +394,9 @@ OSC 9;4 progress already shows in the dock and the tab title. Add:
 Done when every OSC 9;4 state renders distinctly, clearing works, the `progress-style` setting can
 turn each surface off, and a pane that exits clears its progress.
 
-### [ ] B3. Structured notifications
+### [x] B3. Structured notifications
+
+Status: shipped in [PR #19](https://github.com/alex09x/tako/pull/19).
 
 - Engine support for the structured desktop-notification sequence (OSC 99): identifiers, title
   and body, urgency, updating and closing a notification, action buttons, and reporting
