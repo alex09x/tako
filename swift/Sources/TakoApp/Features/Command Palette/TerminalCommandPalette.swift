@@ -166,9 +166,9 @@ struct TerminalCommandPaletteView: View {
                 surfaceView.saveOutputToFile(id: cmd.id)
             })
 
-            if cmd.cwd != nil || surfaceView.workingDirectory != nil {
-                let dir = cmd.cwd ?? surfaceView.workingDirectory ?? ""
-                let subtitle = dir.isEmpty ? trimmedCmd : "\(trimmedCmd) (\(dir))"
+            if let cwd = cmd.cwd {
+                let dirDisplay = cwd.hasPrefix("file://") ? (URL(string: cwd)?.path ?? cwd) : cwd
+                let subtitle = "\(trimmedCmd) (\(dirDisplay))"
                 options.append(CommandOption(
                     title: "Command: Open Working Directory",
                     subtitle: subtitle,

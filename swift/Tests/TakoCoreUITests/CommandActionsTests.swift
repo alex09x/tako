@@ -247,6 +247,48 @@ final class CommandActionsTests: XCTestCase {
         XCTAssertEqual(openedURL?.path, "/tmp/tako_project")
     }
 
+    func testOpenWorkingDirectoryDisabledWhenCommandCwdIsNil() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        var openedURL: URL?
+        let originalOpenURL = TakoTerminalNSView.openURL
+        defer { TakoTerminalNSView.openURL = originalOpenURL }
+
+        TakoTerminalNSView.openURL = { url in
+            openedURL = url
+        }
+
+        // 1. Command executed without OSC 7 (cwd is nil)
+        let input1 = "\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}echo first\r\n\u{1b}]133;C\u{07}1\r\n\u{1b}]133;D;0\u{07}"
+        view.feed(data: Data(input1.utf8))
+
+        guard let cmd1 = view.recordedCommands().first else {
+            XCTFail("Expected recorded command")
+            return
+        }
+        XCTAssertNil(cmd1.cwd, "Command must not have a recorded cwd")
+
+        // 2. Later OSC 7 updates the view's current working directory
+        let input2 = "\u{1b}]7;file:///tmp/later_dir\u{07}"
+        view.feed(data: Data(input2.utf8))
+        XCTAssertEqual(view.workingDirectory, "/tmp/later_dir")
+
+        // 3. Opening working directory for cmd1 must NOT fall back to later working directory
+        view.openWorkingDirectory(id: cmd1.id)
+        XCTAssertNil(openedURL, "openWorkingDirectory must refuse to open an unrelated later working directory")
+
+        // 4. Context menu for cmd1 must have Open Working Directory disabled
+        guard let menu = view.contextMenu(for: cmd1.id) else {
+            XCTFail("Expected context menu")
+            return
+        }
+        let openDirItem = menu.items.first(where: { $0.title == "Open Working Directory" })
+        XCTAssertNotNil(openDirItem)
+        XCTAssertFalse(openDirItem?.isEnabled == true, "Open Working Directory must be disabled when cmd.cwd is nil")
+        if let openDirItem {
+            XCTAssertFalse(view.validateUserInterfaceItem(openDirItem), "validateUserInterfaceItem must return false when cmd.cwd is nil")
+        }
+    }
+
     func testContextMenuContainsAllSevenActions() {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let input = "\u{1b}]7;file:///tmp/test\u{07}\u{1b}]133;A\u{07}$ \u{1b}]133;B\u{07}make build\r\n\u{1b}]133;C\u{07}built\r\n\u{1b}]133;D;0\u{07}"

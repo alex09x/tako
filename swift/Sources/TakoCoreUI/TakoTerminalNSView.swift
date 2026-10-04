@@ -3631,7 +3631,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// 7. Open working directory in Finder.
     public func openWorkingDirectory(id: UInt64) {
-        guard let cmd = commandInfo(for: id), let cwd = cmd.cwd ?? workingDirectory else { return }
+        guard let cmd = commandInfo(for: id), let cwd = cmd.cwd else { return }
         let url: URL
         if cwd.hasPrefix("file://") {
             url = URL(string: cwd) ?? URL(fileURLWithPath: cwd)
@@ -3737,7 +3737,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let openDirItem = NSMenuItem(title: "Open Working Directory", action: #selector(openWorkingDirectoryContextAction(_:)), keyEquivalent: "")
         openDirItem.representedObject = cmd.id
         openDirItem.target = self
-        if cmd.cwd == nil && workingDirectory == nil {
+        if cmd.cwd == nil {
             openDirItem.isEnabled = false
         }
         menu.addItem(openDirItem)
@@ -4094,12 +4094,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             return false
         }
         if item.action == #selector(openWorkingDirectoryContextAction(_:)) {
-            if let menuItem = item as? NSMenuItem,
-               let cmdId = menuItem.representedObject as? UInt64,
-               let cmd = commandInfo(for: cmdId) {
-                return cmd.cwd != nil || workingDirectory != nil
+            let targetId = (item as? NSMenuItem)?.representedObject as? UInt64 ?? commandIdForContext()
+            if let targetId, let cmd = commandInfo(for: targetId) {
+                return cmd.cwd != nil
             }
-            return workingDirectory != nil
+            return false
         }
         return false
     }
