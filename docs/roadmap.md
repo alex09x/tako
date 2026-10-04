@@ -349,7 +349,7 @@ reproduce, and contains no terminal contents unless the user explicitly adds the
 The core of the agent-first direction. A developer running several agents should never cycle
 through tabs to find the one that is waiting, and never miss the one that finished or failed.
 
-### [ ] B1. Pane status model
+### [x] B1. Pane status model
 
 One explicit status per pane, from reported signals only:
 
