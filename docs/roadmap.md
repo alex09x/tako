@@ -297,7 +297,8 @@ unchanged. Hidden control characters in copied text are a known command-injectio
 
 Done when engine tests cover each control class in both modes, a hostile clipboard (embedded
 `ESC [ 201 ~`, `0x03`, `0x9b`, OSC introducers) cannot leave bracketed paste or interrupt the
-foreground program, and ordinary pastes of code (tabs, Unicode, CRLF) arrive unchanged.
+foreground program, and ordinary pastes of code (tabs, Unicode, multi-line blocks) preserve line
+boundaries and content under standard terminal newline normalization.
 
 ### [ ] A5. Engine and iOS conformance backlog
 
