@@ -116,6 +116,28 @@ the Mac can reach it.
 
 Status: shipped in 0.1.5.
 
+### [ ] 6. Prompt navigation and command selection
+
+Status: planned as a feature candidate once initial user feedback is gathered.
+
+Jump between commands and select their exact output using shell integration boundaries (OSC 133):
+- `Cmd+Up` and `Cmd+Down` to navigate directly between prompt markers.
+- `Cmd+Shift+A` to select the entire output of the current or previous command cleanly bounded by prompt marks.
+
+Done when:
+- prompt navigation relies strictly on verified OSC 133 marks without guessing;
+- command output selection never bleeds into adjacent commands or prompts;
+- over SSH or in shells without integration, the keys fall back cleanly to ordinary scrollback jumps.
+
+### [ ] 7. Safe paste guard
+
+Status: candidate for post-0.1.5 testing.
+
+Protects against accidental execution of pasted multi-line snippets:
+- Warns with a confirmation sheet when the clipboard contains multiple lines with a trailing newline.
+- Active only when shell integration reports that the session is at a shell prompt, avoiding false positives inside full-screen terminal applications (editors, pagers, TUIs).
+- Purely structural: no fragile keyword or regex heuristics (such as matching `sudo` or `rm`).
+
 ## TakoCore
 
 A small track that runs alongside the app:
@@ -148,8 +170,14 @@ put it in Tako.
 
 ## Later, only if users need it
 
+- [x] **Native scrollbars:** Status: shipped in 0.1.6 (draggable overlay with hover states and fast jumps).
+- [x] **Font ligatures:** Status: shipped in 0.1.6 (`font-feature` setting and core font shaper support).
+- [ ] **Semantic path clicks (`Cmd+Click`):** Parse file paths with line/column numbers (`file:line[:col]`) and open in the user's configured editor. Strictly scoped to the shell-reported working directory (OSC 7) with no path guessing or unprompted file access.
+- [ ] **Output filtering:** Temporary live view projection over the scrollback buffer by regex or text match to isolate errors or compiler output without mutating the underlying session history.
+- [ ] **In-terminal artifact overlays:** Embedded sandboxed WKWebView overlay over a pane (driven via `takoctl overlay open --html <file>`) to preview agent-generated HTML test summaries, coverage reports, or diffs styled with terminal theme variables.
+- [ ] **Provider-neutral agent status:** General-purpose session status indicator in the tab bar or pane header via an explicit API (`takoctl status` or OSC signals), without vendor-specific hooks.
+- [ ] **Resilient remote sessions:** Background probe for SSH sessions and automatic reconnect attempts upon network interruption while preserving local scrollback buffers.
+- [ ] **Passive regex triggers:** Opt-in rules for text highlighting or system notifications on specific output matches (e.g. build completion), strictly passive with no automated input dispatch.
 - [ ] **Reconnecting to sessions:** (Other machines, companion devices, new transports). The first version leaves out cloud sync, vendor-specific agent panels and inferring state from screen text. No telemetry is sent by default.
 - [ ] **AI / Copilot integration:** Revisit only if there is direct demand. Must be opt-in with explicit control over context sharing. (A user's external agent can already drive Tako through `takoctl`).
 - [ ] **tmux control mode:** Revisit only if users need Tako to host or control existing tmux workflows (large compatibility surface).
-- [ ] **Native scrollbars:** Revisit only if users specifically need a clearer position indicator to navigate history (scrollback search is already present).
-- [ ] **Font ligatures:** Consider adding as a setting only if explicitly requested.
