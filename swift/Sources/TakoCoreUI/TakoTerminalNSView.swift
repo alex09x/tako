@@ -1591,6 +1591,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// The resize once the engine has actually adopted it, in parser order
     /// and after the outcomes of every byte parsed at the old geometry.
     private func applyOrderedResize(cols appliedCols: Int, rows appliedRows: Int) {
+        updateScroller()
         delegate?.terminalView(self, didResizeCols: appliedCols, rows: appliedRows)
         scheduleRedraw()
     }

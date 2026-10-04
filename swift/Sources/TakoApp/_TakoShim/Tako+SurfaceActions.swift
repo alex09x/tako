@@ -217,6 +217,16 @@ extension Tako.SurfaceView {
         }
         let matches = searchMatches(for: searchState.needle)
         searchHitRetainedRows = Array(Set(matches.map { UInt64($0.row) })).sorted()
+        if let current = currentSearchMatch {
+            if !matches.contains(current) {
+                currentSearchMatch = matches.min(by: {
+                    let d0 = abs($0.row - current.row)
+                    let d1 = abs($1.row - current.row)
+                    if d0 != d1 { return d0 < d1 }
+                    return abs($0.startCol - current.startCol) < abs($1.startCol - current.startCol)
+                })
+            }
+        }
         updateSearchCounts(matches)
     }
 

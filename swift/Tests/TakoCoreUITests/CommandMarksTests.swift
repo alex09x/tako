@@ -161,6 +161,20 @@ final class CommandMarksTests: XCTestCase {
         let bottomCount = view.gutterMarksLayer.sublayers?.count ?? 0
         XCTAssertGreaterThan(bottomCount, 0)
     }
+
+    func testOrderedResizeRefreshesMarks() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.commandMarksEnabled = true
+        view.feed(data: Data("\u{1b}]133;A\u{07}$ echo test\r\n\u{1b}]133;C\u{07}line1\r\nline2\r\n\u{1b}]133;D;0\u{07}".utf8))
+        XCTAssertEqual(view.core.commandMarks().count, 1)
+
+        // Trigger ordered resize by setting frame size and flushing
+        view.setFrameSize(NSSize(width: 300, height: 200))
+        view.flushPendingResizeForTesting()
+
+        XCTAssertNotNil(view.scrollbarMarksLayer.sublayers)
+        XCTAssertEqual(view.core.commandMarks().count, 1)
+    }
 }
 #endif
 

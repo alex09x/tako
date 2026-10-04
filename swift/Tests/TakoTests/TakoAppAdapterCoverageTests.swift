@@ -868,6 +868,30 @@ struct SurfaceViewCoverageTests {
         #expect(view.visibleText.contains("visible-text-marker"))
     }
 
+    @Test func refreshSearchHitRowsReconcilesCurrentSearchMatch() {
+        let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        defer { view.close() }
+        view.core.feed(bytes: Data("alpha\r\nbeta\r\ngamma\r\n".utf8))
+        _ = view.core.takeOutput()
+
+        view.startSearch(needle: "alpha")
+        view.runSearch("alpha")
+        #expect(view.currentSearchMatch != nil)
+        #expect(view.searchState?.total == 1)
+
+        // Change search state needle to match multiple lines
+        view.searchState?.needle = "a"
+        view.refreshSearchHitRows()
+        #expect(view.currentSearchMatch != nil)
+        #expect((view.searchState?.total ?? 0) > 1)
+
+        // Search for nonexistent string
+        view.searchState?.needle = "nonexistent_string_xyz"
+        view.refreshSearchHitRows()
+        #expect(view.currentSearchMatch == nil)
+        #expect(view.searchState?.total == 0)
+    }
+
     @Test func writeToShellSplitsBetweenSelfTestCaptureAndTheRealPty() {
         let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         defer { view.close() }
