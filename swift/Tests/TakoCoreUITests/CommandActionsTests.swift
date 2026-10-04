@@ -539,6 +539,8 @@ final class CommandActionsTests: XCTestCase {
 
         // Test saveOutputToFile suggested filename when partial
         var suggestedName: String?
+        let originalPanel = TakoTerminalNSView.saveFilePanel
+        defer { TakoTerminalNSView.saveFilePanel = originalPanel }
         TakoTerminalNSView.saveFilePanel = { _, filename, _, completion in
             suggestedName = filename
             completion(nil)
