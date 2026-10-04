@@ -390,3 +390,22 @@ fn checkpoint_roundtrip_preserves_scrollback_prompt_marks() {
         "v4 checkpoint restore initializes scrollback prompts to Unset"
     );
 }
+
+#[test]
+fn select_command_output_restricts_to_contiguous_run_around_target() {
+    let mut term = Terminal::new(30, 10);
+    // Command starts
+    term.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07jumpy_cmd\r\n\x1b]133;C\x07");
+    term.feed(b"first block\r\n");
+    // Jump cursor down leaving an unowned/empty gap (CUP: row 5, col 1)
+    term.feed(b"\x1b[5;1Hsecond block\r\n\x1b]133;D;0\x07");
+    term.feed(b"\x1b]133;A\x07$ ");
+
+    // Selecting output at prompt should restrict to the contiguous run around target (second block)
+    let selected = term.select_command_output();
+    assert!(selected);
+    let text = term.selected_text().expect("selected text");
+    assert_eq!(text, "second block");
+    assert!(!text.contains("first block"));
+}
+

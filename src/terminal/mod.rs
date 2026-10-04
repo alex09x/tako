@@ -1838,12 +1838,15 @@ impl Terminal {
         let vp_bottom = (vp_top + self.primary.rows()).min(total_retained);
 
         let mut target_cmd_id = None;
+        let mut target_row = None;
         if let Some(running_id) = self.commands.running() {
             target_cmd_id = Some(running_id);
+            target_row = Some((sb_len + self.cursor.row).min(total_retained.saturating_sub(1)));
         } else if self.viewport_offset > 0 {
             for r in (vp_top..vp_bottom).rev() {
                 if let crate::grid::RowOwner::Command(id) = self.primary.retained_owner(r) {
                     target_cmd_id = Some(id);
+                    target_row = Some(r);
                     break;
                 }
             }
@@ -1861,18 +1864,48 @@ impl Terminal {
                     )
                 })
                 .map(|r| r.id);
+            target_row = Some((sb_len + self.cursor.row).min(total_retained.saturating_sub(1)));
         }
 
         let mut output_start = None;
         let mut output_end = None;
 
         if let Some(id) = target_cmd_id {
+            let mut runs: Vec<(usize, usize)> = Vec::new();
+            let mut current_run: Option<(usize, usize)> = None;
+
             for r in 0..total_retained {
                 if self.primary.retained_owner(r) == crate::grid::RowOwner::Command(id) {
-                    if output_start.is_none() {
-                        output_start = Some(r);
+                    match current_run {
+                        Some((start, _)) => current_run = Some((start, r)),
+                        None => current_run = Some((r, r)),
                     }
-                    output_end = Some(r);
+                } else if let Some(run) = current_run.take() {
+                    runs.push(run);
+                }
+            }
+            if let Some(run) = current_run {
+                runs.push(run);
+            }
+
+            if !runs.is_empty() {
+                let selected_run = if let Some(focal) = target_row {
+                    if let Some(&run) = runs.iter().find(|(s, e)| *s <= focal && focal <= *e) {
+                        Some(run)
+                    } else {
+                        runs.iter()
+                            .rev()
+                            .find(|(_, e)| *e <= focal)
+                            .copied()
+                            .or_else(|| runs.first().copied())
+                    }
+                } else {
+                    runs.last().copied()
+                };
+
+                if let Some((start, end)) = selected_run {
+                    output_start = Some(start);
+                    output_end = Some(end);
                 }
             }
         }
