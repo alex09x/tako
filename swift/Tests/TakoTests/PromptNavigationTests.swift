@@ -224,6 +224,14 @@ struct PromptNavigationTests {
         #expect(prevItem.keyEquivalent == "k")
         #expect(prevItem.keyEquivalentModifierMask == .command)
 
+        // Remap via alias `select_output`
+        let aliasConfig = try TemporaryConfig("keybind = cmd+l=select_output")
+        manager.syncMenuShortcut(aliasConfig, action: "select_command_output", menuItem: selectItem)
+        #expect(selectItem.keyEquivalent == "l")
+        #expect(selectItem.keyEquivalentModifierMask == .command)
+        #expect(aliasConfig.keyboardShortcut(for: "select_output") == .init("l", modifiers: .command))
+        #expect(aliasConfig.keyboardShortcut(for: "select_command_output") == .init("l", modifiers: .command))
+
         // Unbind select_command_output
         let unboundConfig = try TemporaryConfig("keybind = cmd+shift+a=unbind")
         manager.syncMenuShortcut(unboundConfig, action: "select_command_output", menuItem: selectItem)

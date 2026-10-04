@@ -121,15 +121,31 @@ extension Tako {
         }
 
         #if os(macOS)
+        /// Map action aliases to their canonical name so configuration bindings using
+        /// aliases (e.g. `select_output`) synchronize with canonical menu items and vice versa.
+        static func canonicalActionName(_ action: String) -> String {
+            switch action {
+            case "select_output":
+                return "select_command_output"
+            case "jump_to_prompt:up", "jump_to_prompt":
+                return "jump_to_prompt:previous"
+            case "jump_to_prompt:down":
+                return "jump_to_prompt:next"
+            default:
+                return action
+            }
+        }
+
         /// The shortcut for a named action: the config's `keybind` lines, then the
         /// defaults below. Menu items, tab labels and the command palette show it, and
         /// the menu is what makes it fire -- there is no other keybinding layer, so a
         /// `keybind` for an action with no menu item does nothing.
         func keyboardShortcut(for action: String) -> SwiftUI.KeyboardShortcut? {
-            switch keybindOverrides[action] {
+            let canonical = Self.canonicalActionName(action)
+            switch keybindOverrides[canonical] ?? keybindOverrides[action] {
             case .shortcut(let s): return s
             case .unbound: return nil
-            case nil: return Self.defaultKeyboardShortcuts[action]
+            case nil: return Self.defaultKeyboardShortcuts[canonical] ?? Self.defaultKeyboardShortcuts[action]
             }
         }
 
@@ -203,10 +219,11 @@ extension Tako {
         private static func parseKeybindOverrides(_ lines: [String]) -> [String: KeybindOverride] {
             var result: [String: KeybindOverride] = [:]
             func current(_ action: String) -> SwiftUI.KeyboardShortcut? {
-                switch result[action] {
+                let canonical = canonicalActionName(action)
+                switch result[canonical] ?? result[action] {
                 case .shortcut(let s): return s
                 case .unbound: return nil
-                case nil: return defaultKeyboardShortcuts[action]
+                case nil: return defaultKeyboardShortcuts[canonical] ?? defaultKeyboardShortcuts[action]
                 }
             }
 
@@ -217,15 +234,21 @@ extension Tako {
                     continue
                 }
                 guard let eq = triggerSeparator(in: line) else { continue }
-                let action = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-                guard !action.isEmpty, let shortcut = parseTrigger(line[..<eq]) else { continue }
+                let rawAction = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+                guard !rawAction.isEmpty, let shortcut = parseTrigger(line[..<eq]) else { continue }
+                let canonical = canonicalActionName(rawAction)
 
                 let holders = Set(defaultKeyboardShortcuts.keys).union(result.keys)
                 for holder in holders where current(holder) == shortcut {
                     result[holder] = .unbound
+                    let holderCanonical = canonicalActionName(holder)
+                    result[holderCanonical] = .unbound
                 }
-                if action != "unbind" {
-                    result[action] = .shortcut(shortcut)
+                if rawAction != "unbind" {
+                    result[canonical] = .shortcut(shortcut)
+                    if canonical != rawAction {
+                        result[rawAction] = .shortcut(shortcut)
+                    }
                 }
             }
             return result

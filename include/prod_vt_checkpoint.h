@@ -156,9 +156,9 @@ int prod_vt_checkpoint_measure2(ProdVt *vt, uint64_t max_bytes, size_t *out_len)
  * prod_vt_checkpoint_version(); a version this build cannot write fails with
  * PROD_VT_ERR_UNSUPPORTED_VERSION and *out_len 0. Version 2 leaves out what
  * version 3 adds (the host's base colours, which colours a program set, and
- * the default cursor style), so its import falls back to inferring them.
  * Version 3 leaves out what version 4 adds (the shell's command records), so
- * its import knows no commands.
+ * its import knows no commands. Version 4 leaves out what version 5 adds (retained
+ * scrollback semantic prompt marks).
  */
 int prod_vt_checkpoint_export3(ProdVt *vt,
                                uint32_t version,

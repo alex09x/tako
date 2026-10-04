@@ -1071,18 +1071,18 @@ fn test_version_negotiation_is_explicit() {
     // unreadable here. That has to come back as a version failure, not as
     // corruption -- the two call for different decisions.
     let mut newer = valid.clone();
-    newer[4..8].copy_from_slice(&5u32.to_le_bytes());
+    newer[4..8].copy_from_slice(&6u32.to_le_bytes());
     let newer = reseal(newer);
 
     let mut dest = Terminal::new(20, 6);
     dest.feed(b"DESTINATION");
     assert_eq!(
         dest.import_checkpoint(&newer),
-        Err(CheckpointError::UnsupportedVersion(5))
+        Err(CheckpointError::UnsupportedVersion(6))
     );
     assert_eq!(
         Terminal::inspect_checkpoint(&newer),
-        Err(CheckpointError::UnsupportedVersion(5))
+        Err(CheckpointError::UnsupportedVersion(6))
     );
     assert_eq!(row_text(&dest, 0), "DESTINATION", "fail-intact");
 
@@ -1097,7 +1097,7 @@ fn test_version_negotiation_is_explicit() {
 
     // Inspect reports what an honest container declares, without decoding it.
     let info = Terminal::inspect_checkpoint(&valid).unwrap();
-    assert_eq!((info.version, info.cols, info.rows), (4, 40, 10));
+    assert_eq!((info.version, info.cols, info.rows), (5, 40, 10));
     assert_eq!(info.payload_len as usize, valid.len() - 20);
 
     let mut c_version = 0u32;
@@ -1115,7 +1115,7 @@ fn test_version_negotiation_is_explicit() {
         ),
         1
     );
-    assert_eq!((c_version, c_cols, c_rows), (4, 40, 10));
+    assert_eq!((c_version, c_cols, c_rows), (5, 40, 10));
     assert_eq!(
         prod_vt_checkpoint_inspect(
             newer.as_ptr(),
