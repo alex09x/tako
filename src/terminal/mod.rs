@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::charset::{self, Charset};
 use crate::cursor_style::CursorStyle;
 use crate::graphics::{GraphicsResponse, GraphicsState};
-use crate::grid::{Cell, CellAttrs, Color, Grid};
+use crate::grid::{Cell, CellAttrs, Color, Grid, RowOwner, SemanticPrompt};
 use crate::kitty_keyboard::{KittyFlags, KittyKeyboardState};
 use crate::modes::TerminalModes;
 use crate::palette::{self, Palette};
@@ -2166,6 +2166,9 @@ impl Terminal {
             let blank = self.bce_blank();
             self.active_grid_mut()
                 .scroll_region_up_with_blank(top, bottom, n, blank);
+            if top > 0 && self.active == ScreenBuffer::Primary {
+                self.remap_screen_rows_up(top, bottom, n);
+            }
             return;
         }
         if n < region_height {
@@ -2225,6 +2228,8 @@ impl Terminal {
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
                     let owner = self.active_grid().row_owner(row - n);
                     self.active_grid_mut().set_row_owner(row, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row - n);
+                    self.active_grid_mut().set_row_semantic_prompt(row, prompt);
                 }
             }
         }
@@ -2234,12 +2239,17 @@ impl Terminal {
                 .fill_cells(row, left, right + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if !full_width {
             for row in top..=bottom {
                 self.fix_wide_orphans(row);
             }
+        }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_down(top, bottom, n);
         }
         self.fix_spacer_heads();
     }
@@ -2380,6 +2390,8 @@ impl Terminal {
                     // The whole row moved: so does whose output it is.
                     let owner = self.active_grid().row_owner(row);
                     self.active_grid_mut().set_row_owner(row + n, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row);
+                    self.active_grid_mut().set_row_semantic_prompt(row + n, prompt);
                 }
             }
         }
@@ -2388,6 +2400,8 @@ impl Terminal {
             self.active_grid_mut().fill_cells(row, hl, hr + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if full_width {
@@ -2397,6 +2411,9 @@ impl Terminal {
             for row in top..=bottom {
                 self.fix_wide_orphans(row);
             }
+        }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_down(top, bottom, n);
         }
     }
 
@@ -2437,6 +2454,8 @@ impl Terminal {
                     self.active_grid_mut().set_line_wrapped(row, wrapped);
                     let owner = self.active_grid().row_owner(row + n);
                     self.active_grid_mut().set_row_owner(row, owner);
+                    let prompt = self.active_grid().row_semantic_prompt(row + n);
+                    self.active_grid_mut().set_row_semantic_prompt(row, prompt);
                 }
             }
         }
@@ -2445,6 +2464,8 @@ impl Terminal {
             self.active_grid_mut().fill_cells(row, hl, hr + 1, blank);
             if full_width {
                 self.active_grid_mut().set_line_wrapped(row, false);
+                self.active_grid_mut().set_row_owner(row, RowOwner::Empty);
+                self.active_grid_mut().set_row_semantic_prompt(row, SemanticPrompt::Unset);
             }
         }
         if !full_width {
@@ -2452,7 +2473,56 @@ impl Terminal {
                 self.fix_wide_orphans(row);
             }
         }
+        if full_width && self.active == ScreenBuffer::Primary {
+            self.remap_screen_rows_up(top, bottom, n);
+        }
         self.fix_spacer_heads();
+    }
+
+    fn remap_screen_rows_down(&mut self, top: usize, bottom: usize, n: usize) {
+        let sb = self.primary.scrollback_len() as u64;
+        let first = self.primary.first_retained_line();
+        let region_height = bottom - top + 1;
+        let (shift_range, discard_range) = if n >= region_height {
+            (None, (first + sb + top as u64)..=(first + sb + bottom as u64))
+        } else {
+            let shift = (first + sb + top as u64)..=(first + sb + (bottom - n) as u64);
+            let discard = (first + sb + (bottom - n + 1) as u64)..=(first + sb + bottom as u64);
+            (Some(shift), discard)
+        };
+
+        if let Some(prompt) = self.last_prompt_line {
+            if discard_range.contains(&prompt) {
+                self.last_prompt_line = None;
+            } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                self.last_prompt_line = Some(prompt + n as u64);
+            }
+        }
+
+        self.commands.shift_screen_prompts_down(shift_range, n as u64, discard_range);
+    }
+
+    fn remap_screen_rows_up(&mut self, top: usize, bottom: usize, n: usize) {
+        let sb = self.primary.scrollback_len() as u64;
+        let first = self.primary.first_retained_line();
+        let region_height = bottom - top + 1;
+        let (shift_range, discard_range) = if n >= region_height {
+            (None, (first + sb + top as u64)..=(first + sb + bottom as u64))
+        } else {
+            let discard = (first + sb + top as u64)..=(first + sb + (top + n - 1) as u64);
+            let shift = (first + sb + (top + n) as u64)..=(first + sb + bottom as u64);
+            (Some(shift), discard)
+        };
+
+        if let Some(prompt) = self.last_prompt_line {
+            if discard_range.contains(&prompt) {
+                self.last_prompt_line = None;
+            } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                self.last_prompt_line = Some(prompt - n as u64);
+            }
+        }
+
+        self.commands.shift_screen_prompts_up(shift_range, n as u64, discard_range);
     }
 
     /// DECIC: insert `n` blank columns at the cursor, shifting columns

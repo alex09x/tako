@@ -884,6 +884,55 @@ fn prompt_mark_tracked_when_scrollback_is_zero() {
     assert!(marks.is_empty(), "evicted prompt with zero scrollback has no mark");
 }
 
+#[test]
+fn prompt_marks_remap_through_vertical_row_edits() {
+    let mut t = Terminal::new(40, 10);
+    // Write prompt at row 2
+    t.feed(b"\r\n\r\n\x1b]133;A\x07$ \x1b]133;C\x07cmd\r\n\x1b]133;D;0\x07");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 2);
+    assert_eq!(marks[0].prompt_line, 2);
+
+    // 1. Insert line above prompt: cursor at row 1 (1-based: 2), CSI 1 L
+    t.feed(b"\x1b[2;1H\x1b[1L");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 3);
+    assert_eq!(marks[0].prompt_line, 3);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(3),
+        SemanticPrompt::Prompt
+    );
+
+    // 2. Delete line above prompt: cursor at row 1 (1-based: 2), CSI 1 M
+    t.feed(b"\x1b[2;1H\x1b[1M");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 2);
+    assert_eq!(marks[0].prompt_line, 2);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(2),
+        SemanticPrompt::Prompt
+    );
+
+    // 3. Scroll region down: CSI 1 T
+    t.feed(b"\x1b[1T");
+    let marks = t.command_marks();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].retained_row, 3);
+    assert_eq!(marks[0].prompt_line, 3);
+    assert_eq!(
+        t.active_grid().retained_semantic_prompt(3),
+        SemanticPrompt::Prompt
+    );
+
+    // 4. Delete the line containing prompt: cursor at row 3 (1-based: 4), CSI 1 M
+    t.feed(b"\x1b[4;1H\x1b[1M");
+    let marks = t.command_marks();
+    assert!(marks.is_empty(), "deleted prompt line should have its mark removed");
+}
+
 
 
 

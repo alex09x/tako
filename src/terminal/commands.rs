@@ -164,6 +164,44 @@ impl CommandLog {
         }
     }
 
+    /// Shift prompt lines down by `delta` for rows within `shift_range`, clearing
+    /// any prompt lines within `discard_range` that were pushed off screen.
+    pub fn shift_screen_prompts_down(
+        &mut self,
+        shift_range: Option<std::ops::RangeInclusive<u64>>,
+        delta: u64,
+        discard_range: std::ops::RangeInclusive<u64>,
+    ) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line {
+                if discard_range.contains(&prompt) {
+                    rec.prompt_line = None;
+                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                    rec.prompt_line = Some(prompt + delta);
+                }
+            }
+        }
+    }
+
+    /// Shift prompt lines up by `delta` for rows within `shift_range`, clearing
+    /// any prompt lines within `discard_range` that were deleted/scrolled off screen.
+    pub fn shift_screen_prompts_up(
+        &mut self,
+        shift_range: Option<std::ops::RangeInclusive<u64>>,
+        delta: u64,
+        discard_range: std::ops::RangeInclusive<u64>,
+    ) {
+        for rec in &mut self.records {
+            if let Some(prompt) = rec.prompt_line {
+                if discard_range.contains(&prompt) {
+                    rec.prompt_line = None;
+                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                    rec.prompt_line = Some(prompt - delta);
+                }
+            }
+        }
+    }
+
 
     /// Forget every record (reset). Ids keep counting.
     pub fn clear(&mut self) {
