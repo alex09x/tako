@@ -208,6 +208,9 @@ final class PassiveRegexTriggerTests: XCTestCase {
             "((a*a*))",
             "a*(a*)",
             "a*a*",
+            "a?a?",
+            "^a?a?a?a?a?a?a?b$",
+            String(repeating: "a?", count: 50) + "b$",
             ".*.*",
             #"\w+\w+"#,
             "a*b*a*"

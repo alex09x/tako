@@ -116,7 +116,7 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         }
         let kind: Kind
         let raw: String
-        var isRepetition: Bool = false
+        var isBranching: Bool = false
         var isNullable: Bool = false
 
         func canOverlap(with other: Atom) -> Bool {
@@ -376,7 +376,7 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                         }
                         atoms.append(contentsOf: innerSub.atoms)
                     } else {
-                        atoms.append(Atom(kind: .barrier, raw: String(chars[p..<closeP]), isRepetition: false, isNullable: false))
+                        atoms.append(Atom(kind: .barrier, raw: String(chars[p..<closeP]), isBranching: false, isNullable: false))
                     }
                 }
 
@@ -407,24 +407,24 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         raw: String
     ) -> (atom: Atom, nextP: Int) {
         var p = nextP
-        var isRepetition = false
+        var isBranching = false
         var isNullable = false
         var qStr = ""
 
         if p < range.upperBound {
             let qc = chars[p]
             if qc == "*" {
-                isRepetition = true
+                isBranching = true
                 isNullable = true
                 qStr = "*"
                 p += 1
             } else if qc == "+" {
-                isRepetition = true
+                isBranching = true
                 isNullable = false
                 qStr = "+"
                 p += 1
             } else if qc == "?" {
-                isRepetition = false
+                isBranching = true
                 isNullable = true
                 qStr = "?"
                 p += 1
@@ -437,14 +437,12 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                     let inner = String(chars[(p + 1)..<braceEnd])
                     qStr = String(chars[p...braceEnd])
                     p = braceEnd + 1
+                    isBranching = true
                     if inner.contains(",") {
-                        isRepetition = true
                         let parts = inner.split(separator: ",", omittingEmptySubsequences: false)
                         if let first = parts.first, let minVal = Int(first.trimmingCharacters(in: .whitespaces)), minVal == 0 {
                             isNullable = true
                         }
-                    } else if let exact = Int(inner.trimmingCharacters(in: .whitespaces)), exact > 1 {
-                        isRepetition = true
                     }
                 }
             }
@@ -454,27 +452,27 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
             }
         }
 
-        return (Atom(kind: kind, raw: raw + qStr, isRepetition: isRepetition, isNullable: isNullable), p)
+        return (Atom(kind: kind, raw: raw + qStr, isBranching: isBranching, isNullable: isNullable), p)
     }
 
     private static func checkAtomSequence(_ atoms: [Atom]) -> (isSafe: Bool, reason: String?) {
-        var repetitionCount = 0
-        for atom in atoms where atom.isRepetition {
-            repetitionCount += 1
+        var branchingCount = 0
+        for atom in atoms where atom.isBranching {
+            branchingCount += 1
         }
-        if repetitionCount > 6 {
-            return (false, "pattern exceeds maximum allowed repetition quantifiers (6)")
+        if branchingCount > 6 {
+            return (false, "pattern exceeds maximum allowed branching quantifiers (6)")
         }
 
         for i in 0..<atoms.count {
             let atom1 = atoms[i]
-            guard atom1.isRepetition else { continue }
+            guard atom1.isBranching else { continue }
 
             for j in (i + 1)..<atoms.count {
                 let atom2 = atoms[j]
-                if atom2.isRepetition {
+                if atom2.isBranching {
                     if atom1.canOverlap(with: atom2) {
-                        return (false, "pathological regex: ambiguous overlapping repetitions '\(atom1.raw)' and '\(atom2.raw)'")
+                        return (false, "pathological regex: ambiguous overlapping branching atoms '\(atom1.raw)' and '\(atom2.raw)'")
                     }
                     if !atom2.isNullable {
                         break
