@@ -409,7 +409,9 @@ Status: shipped in [PR #19](https://github.com/alex09x/tako/pull/19).
 Done when a program can post, update and close a notification and learn that the user clicked it;
 a flood of notifications is coalesced; and clicking any notification brings its pane forward.
 
-### [ ] B4. Notification center and unread state
+### [x] B4. Notification center and unread state
+
+Status: shipped in [PR #20](https://github.com/alex09x/tako/pull/20).
 
 - A per-window panel listing notifications with pane, time and text; unread state per pane and
   tab; a ring around a pane that needs attention; a count on the Dock icon.
