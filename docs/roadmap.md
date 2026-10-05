@@ -439,7 +439,7 @@ prefer the tab bar.
 Done when the sidebar shows correct data for 30 tabs without measurable cost to typing latency
 (A6 budget), every field has its source documented, and each opt-in field is off until enabled.
 
-### [ ] B6. Pane overview
+### [x] B6. Pane overview
 
 A full-window overview of every pane across tabs and windows as live thumbnails, coloured by
 status; type to filter by title, directory or status; Enter jumps to the pane.
