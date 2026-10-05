@@ -227,4 +227,57 @@ struct WorkspaceTests {
         #expect(deleteResp["deleted"]?.string == "CLI Workspace")
         #expect(WorkspaceStore.shared.activeWorkspaceId == WorkspaceStore.defaultWorkspaceId)
     }
+
+    @Test func testSurfaceContextAndAssignResolvesToStableTabId() throws {
+        WorkspaceStore.shared.resetForTesting()
+        _ = WorkspaceStore.shared.createWorkspace(name: "Alpha")
+        _ = WorkspaceStore.shared.createWorkspace(name: "Beta")
+        _ = WorkspaceStore.shared.switchWorkspace(named: "Alpha")
+
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let tree = SplitTree<Tako.SurfaceView>(view: surface)
+        let controller = BaseTerminalController(Tako.App(), surfaceTree: tree)
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        win.windowController = controller
+        controller.window = win
+
+        let stableTabId = win.stableTabIdentifier
+        let controlTabId = "tab-mock-control"
+        let pane = ControlCommands.Pane(
+            surface: surface,
+            windowID: "win-1",
+            tabID: controlTabId,
+            stableTabID: stableTabId,
+            controller: controller
+        )
+
+        // 1. Assign to Beta using target pane resolution
+        let assignReq = ControlRequest(
+            cmd: "workspace",
+            args: [
+                "action": .string("assign"),
+                "workspace": .string("Beta")
+            ],
+            from: nil
+        )
+        let assignResp = try ControlCommands.workspaceCommand(assignReq, all: [pane])
+        #expect(assignResp["tab"]?.string == stableTabId)
+        #expect(assignResp["workspace"]?.string == "Beta")
+        #expect(WorkspaceStore.shared.workspace(forTab: stableTabId)?.name == "Beta")
+
+        // 2. Assign using controlTabId directly resolves to stableTabId
+        let assignByControlTabReq = ControlRequest(
+            cmd: "workspace",
+            args: [
+                "action": .string("assign"),
+                "workspace": .string("Alpha"),
+                "tab": .string(controlTabId)
+            ],
+            from: nil
+        )
+        let assignByControlResp = try ControlCommands.workspaceCommand(assignByControlTabReq, all: [pane])
+        #expect(assignByControlResp["tab"]?.string == stableTabId)
+        #expect(assignByControlResp["workspace"]?.string == "Alpha")
+        #expect(WorkspaceStore.shared.workspace(forTab: stableTabId)?.name == "Alpha")
+    }
 }

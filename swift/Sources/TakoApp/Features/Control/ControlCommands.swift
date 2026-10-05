@@ -62,7 +62,16 @@ enum ControlCommands {
         let surface: Tako.SurfaceView
         let windowID: String
         let tabID: String
+        let stableTabID: String
         let controller: BaseTerminalController
+
+        init(surface: Tako.SurfaceView, windowID: String, tabID: String, stableTabID: String? = nil, controller: BaseTerminalController) {
+            self.surface = surface
+            self.windowID = windowID
+            self.tabID = tabID
+            self.stableTabID = stableTabID ?? controller.window?.stableTabIdentifier ?? tabID
+            self.controller = controller
+        }
     }
 
     static func panes() -> [Pane] {
@@ -75,17 +84,19 @@ enum ControlCommands {
             controllers.append(app.quickController)
         }
         for controller in controllers {
-            let windowID: String, tabID: String
+            let windowID: String, tabID: String, stableTabID: String
             if controller is QuickTerminalController {
                 windowID = "quick-terminal"
                 tabID = "quick-terminal"
+                stableTabID = "quick-terminal"
             } else {
                 guard let window = controller.window else { continue }
                 windowID = "window-\(ObjectIdentifier(Tako.CustomTabGroup.group(for: window)).hexString)"
                 tabID = "tab-\(ObjectIdentifier(controller).hexString)"
+                stableTabID = window.stableTabIdentifier
             }
             for surface in controller.surfaceTree {
-                result.append(Pane(surface: surface, windowID: windowID, tabID: tabID, controller: controller))
+                result.append(Pane(surface: surface, windowID: windowID, tabID: tabID, stableTabID: stableTabID, controller: controller))
             }
         }
         return result
@@ -95,7 +106,7 @@ enum ControlCommands {
     static func surfaceContext(_ surface: Tako.SurfaceView) -> (window: String?, tab: String?, workspace: String?) {
         for pane in panes() {
             if pane.surface === surface {
-                let wsName = WorkspaceStore.shared.workspace(forTab: pane.tabID)?.name ?? WorkspaceStore.shared.activeWorkspace.name
+                let wsName = WorkspaceStore.shared.workspace(forTab: pane.stableTabID)?.name ?? WorkspaceStore.shared.activeWorkspace.name
                 return (pane.windowID, pane.tabID, wsName)
             }
         }
@@ -793,14 +804,17 @@ enum ControlCommands {
             }
             let tabId: String
             if let directTab = request.args["tab"]?.string, !directTab.isEmpty {
-                tabId = directTab
+                if let matchedPane = all.first(where: { $0.tabID == directTab || $0.stableTabID == directTab }) {
+                    tabId = matchedPane.stableTabID
+                } else {
+                    tabId = directTab
+                }
             } else {
                 let surface = try Self.target(request, all)
-                let ctx = surfaceContext(surface)
-                guard let tid = ctx.tab else {
+                guard let matchedPane = all.first(where: { $0.surface === surface }) else {
                     throw ControlError(.notFound, "cannot determine tab for pane")
                 }
-                tabId = tid
+                tabId = matchedPane.stableTabID
             }
             WorkspaceStore.shared.assignTab(tabIdentifier: tabId, to: targetWorkspace.id)
             return [
