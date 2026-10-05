@@ -72,17 +72,42 @@ public final class OverlayStore: ObservableObject {
             }
         }()
 
-        let fileURL = URL(fileURLWithPath: resolvedPath).standardizedFileURL
+        let rawFileURL = URL(fileURLWithPath: resolvedPath).standardizedFileURL
 
-        // Validate file exists
+        // Validate file exists before symlink resolution
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir), !isDir.boolValue else {
+        guard FileManager.default.fileExists(atPath: rawFileURL.path, isDirectory: &isDir), !isDir.boolValue else {
             throw NSError(
                 domain: "TakoOverlay",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "File does not exist or is a directory: \(path)"]
             )
         }
+
+        // Canonicalize working directory and file path (resolving all symlinks)
+        let pwdPath = (surfacePwd != nil && !surfacePwd!.isEmpty) ? surfacePwd! : FileManager.default.currentDirectoryPath
+        let sandboxedDirectory = URL(fileURLWithPath: pwdPath).resolvingSymlinksInPath().standardizedFileURL
+        let canonicalFileURL = rawFileURL.resolvingSymlinksInPath().standardizedFileURL
+
+        // Strict sandboxing check: file MUST remain beneath the pane working directory
+        let canonicalFilePath = canonicalFileURL.path
+        let canonicalSandboxPath = sandboxedDirectory.path
+        let isContained = canonicalFilePath == canonicalSandboxPath ||
+            canonicalFilePath.hasPrefix(canonicalSandboxPath.hasSuffix("/") ? canonicalSandboxPath : canonicalSandboxPath + "/")
+
+        let rawFilePath = rawFileURL.path
+        let rawContained = rawFilePath == canonicalSandboxPath ||
+            rawFilePath.hasPrefix(canonicalSandboxPath.hasSuffix("/") ? canonicalSandboxPath : canonicalSandboxPath + "/")
+
+        guard isContained && rawContained else {
+            throw NSError(
+                domain: "TakoOverlay",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Security refusal: path '\(path)' is outside pane working directory sandbox '\(sandboxedDirectory.path)'"]
+            )
+        }
+
+        let fileURL = canonicalFileURL
 
         // Determine file type
         let fileType: OverlayFileType = {
@@ -91,17 +116,6 @@ public final class OverlayStore: ObservableObject {
                 return explicit
             }
             return OverlayFileType.infer(from: fileURL)
-        }()
-
-        // Derive sandboxed directory: pane working directory if file is within it, else file's parent directory
-        let sandboxedDirectory: URL = {
-            if let pwd = surfacePwd, !pwd.isEmpty {
-                let pwdURL = URL(fileURLWithPath: pwd).standardizedFileURL
-                if fileURL.path.hasPrefix(pwdURL.path) {
-                    return pwdURL
-                }
-            }
-            return fileURL.deletingLastPathComponent().standardizedFileURL
         }()
 
         // Stop prior watcher if this pane had an active overlay

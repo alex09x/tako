@@ -70,7 +70,7 @@ import Testing
         try "Content".write(to: mdFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: mdFile) }
 
-        let s1 = try store.openOverlay(paneId: UUID(), path: mdFile.path)
+        let s1 = try store.openOverlay(paneId: UUID(), path: mdFile.path, surfacePwd: tempDir.path)
         #expect(s1.fileType == .markdown)
 
         // 2. HTML
@@ -78,7 +78,7 @@ import Testing
         try "<h1>Title</h1>".write(to: htmlFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: htmlFile) }
 
-        let s2 = try store.openOverlay(paneId: UUID(), path: htmlFile.path)
+        let s2 = try store.openOverlay(paneId: UUID(), path: htmlFile.path, surfacePwd: tempDir.path)
         #expect(s2.fileType == .html)
 
         // 3. Diff
@@ -86,7 +86,7 @@ import Testing
         try "--- a/file\n+++ b/file".write(to: diffFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: diffFile) }
 
-        let s3 = try store.openOverlay(paneId: UUID(), path: diffFile.path)
+        let s3 = try store.openOverlay(paneId: UUID(), path: diffFile.path, surfacePwd: tempDir.path)
         #expect(s3.fileType == .diff)
 
         // 4. Override
@@ -94,28 +94,71 @@ import Testing
         try "--- a\n+++ b".write(to: txtFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: txtFile) }
 
-        let s4 = try store.openOverlay(paneId: UUID(), path: txtFile.path, typeString: "diff")
+        let s4 = try store.openOverlay(paneId: UUID(), path: txtFile.path, typeString: "diff", surfacePwd: tempDir.path)
         #expect(s4.fileType == .diff)
     }
 
-    @Test func testSandboxingDerivation() throws {
+    @Test func testSandboxingRejectionOutsideWorkingDirectory() throws {
         let store = OverlayStore()
         let tempDir = FileManager.default.temporaryDirectory
-        let subDir = tempDir.appendingPathComponent("project-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: subDir) }
+        let projectDir = tempDir.appendingPathComponent("project-\(UUID().uuidString)")
+        let outsideDir = tempDir.appendingPathComponent("outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: projectDir)
+            try? FileManager.default.removeItem(at: outsideDir)
+        }
 
-        let fileInSub = subDir.appendingPathComponent("report.html")
-        try "<p>Done</p>".write(to: fileInSub, atomically: true, encoding: .utf8)
+        let insideFile = projectDir.appendingPathComponent("report.html")
+        try "<p>Inside</p>".write(to: insideFile, atomically: true, encoding: .utf8)
 
-        // When surfacePwd contains the file, sandboxedDirectory is surfacePwd
-        let s1 = try store.openOverlay(paneId: UUID(), path: fileInSub.path, surfacePwd: subDir.path)
-        #expect(s1.sandboxedDirectory.path == subDir.standardizedFileURL.path)
+        let outsideFile = outsideDir.appendingPathComponent("secret.txt")
+        try "secret".write(to: outsideFile, atomically: true, encoding: .utf8)
 
-        // When surfacePwd does NOT contain the file, sandboxedDirectory is the file's parent directory
-        let otherDir = tempDir.appendingPathComponent("other-\(UUID().uuidString)")
-        let s2 = try store.openOverlay(paneId: UUID(), path: fileInSub.path, surfacePwd: otherDir.path)
-        #expect(s2.sandboxedDirectory.path == subDir.standardizedFileURL.path)
+        // 1. Inside file succeeds
+        let s1 = try store.openOverlay(paneId: UUID(), path: insideFile.path, surfacePwd: projectDir.path)
+        #expect(s1.sandboxedDirectory.path == projectDir.resolvingSymlinksInPath().standardizedFileURL.path)
+
+        // 2. Outside file is strictly rejected
+        #expect(throws: Error.self) {
+            try store.openOverlay(paneId: UUID(), path: outsideFile.path, surfacePwd: projectDir.path)
+        }
+
+        // 3. Symlink pointing outside sandbox is strictly rejected
+        let symlinkPath = projectDir.appendingPathComponent("symlink_to_secret.txt")
+        try FileManager.default.createSymbolicLink(at: symlinkPath, withDestinationURL: outsideFile)
+        #expect(throws: Error.self) {
+            try store.openOverlay(paneId: UUID(), path: symlinkPath.path, surfacePwd: projectDir.path)
+        }
+
+        // 4. Dot-dot path traversal escaping sandbox is strictly rejected
+        let dotDotPath = projectDir.appendingPathComponent("../outside-\(outsideDir.lastPathComponent)/secret.txt")
+        #expect(throws: Error.self) {
+            try store.openOverlay(paneId: UUID(), path: dotDotPath.path, surfacePwd: projectDir.path)
+        }
+    }
+
+    @Test func testImageFilenameEscapingAndCSPInjection() {
+        let tempDir = FileManager.default.temporaryDirectory
+        let maliciousFilename = "crafted\" onerror=\"alert(1)'.png"
+        let fileURL = tempDir.appendingPathComponent(maliciousFilename)
+
+        let html = DocumentRenderer.renderImageHTML(fileURL: fileURL, theme: nil)
+
+        // Verifies no raw unescaped breakout attribute
+        #expect(!html.contains("src=\"crafted\" onerror=\"alert(1)'.png\""))
+        #expect(!html.contains("alt=\"crafted\" onerror=\"alert(1)'.png\""))
+
+        // Verifies properly escaped attributes and caption
+        #expect(html.contains("alt=\"crafted&quot; onerror=&quot;alert(1)&#39;.png\""))
+        #expect(html.contains("crafted&quot; onerror=&quot;alert(1)&#39;.png</div>"))
+
+        // Verifies strict Content-Security-Policy blocking all scripts and network
+        #expect(html.contains("http-equiv=\"Content-Security-Policy\""))
+        #expect(html.contains("default-src 'none'"))
+        #expect(html.contains("script-src 'none'"))
+        #expect(html.contains("connect-src 'none'"))
     }
 
     @Test func testReloadOverlay() throws {
@@ -126,7 +169,7 @@ import Testing
         try "# Initial".write(to: tempFile, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempFile) }
 
-        try store.openOverlay(paneId: paneId, path: tempFile.path)
+        try store.openOverlay(paneId: paneId, path: tempFile.path, surfacePwd: tempDir.path)
         let initialToken = store.reloadTokens[paneId]
         #expect(initialToken != nil)
 

@@ -66,6 +66,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -167,6 +168,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -228,6 +230,9 @@ public enum DocumentRenderer {
     public static func renderImageHTML(fileURL: URL, theme: TerminalTheme?) -> String {
         let css = cssVariables(for: theme)
         let filename = fileURL.lastPathComponent
+        let escapedFilename = escapeHTML(filename)
+        let urlEncoded = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        let escapedSrc = escapeHTML(urlEncoded)
 
         return """
         <!DOCTYPE html>
@@ -235,6 +240,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -279,12 +285,35 @@ public enum DocumentRenderer {
         </head>
         <body>
           <div class="image-card">
-            <img src="\(fileURL.lastPathComponent)" alt="\(filename)">
-            <div class="caption">\(filename)</div>
+            <img src="\(escapedSrc)" alt="\(escapedFilename)">
+            <div class="caption">\(escapedFilename)</div>
           </div>
         </body>
         </html>
         """
+    }
+
+    /// Injects Content-Security-Policy and theme variables into arbitrary HTML documents.
+    public static func injectThemeAndCSP(into rawHTML: String, theme: TerminalTheme?) -> String {
+        let css = cssVariables(for: theme)
+        let injection = """
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; style-src 'unsafe-inline' file:; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+        <style id="tako-theme-vars">
+        \(css)
+        </style>
+        """
+
+        if let headRange = rawHTML.range(of: "<head>", options: .caseInsensitive) {
+            var modified = rawHTML
+            modified.insert(contentsOf: "\n" + injection + "\n", at: headRange.upperBound)
+            return modified
+        } else if let htmlRange = rawHTML.range(of: "<html>", options: .caseInsensitive) {
+            var modified = rawHTML
+            modified.insert(contentsOf: "\n<head>\n" + injection + "\n</head>\n", at: htmlRange.upperBound)
+            return modified
+        } else {
+            return "<head>\n" + injection + "\n</head>\n" + rawHTML
+        }
     }
 
     // MARK: - Helpers

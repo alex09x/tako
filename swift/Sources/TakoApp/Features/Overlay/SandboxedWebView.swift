@@ -33,8 +33,31 @@ public struct SandboxedWebView: NSViewRepresentable {
 
     public func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         config.preferences.isElementFullscreenEnabled = false
+
+        // Block all network requests (http, https, ws, wss, ftp)
+        let blockRules = """
+        [
+          {
+            "trigger": {
+              "url-filter": "^https?://|^wss?://|^ftp://"
+            },
+            "action": {
+              "type": "block"
+            }
+          }
+        ]
+        """
+        WKContentRuleListStore.default()?.compileContentRuleList(
+            forIdentifier: "TakoBlockNetwork",
+            encodedContentRuleList: blockRules
+        ) { ruleList, _ in
+            if let ruleList = ruleList {
+                config.userContentController.add(ruleList)
+            }
+        }
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -57,7 +80,12 @@ public struct SandboxedWebView: NSViewRepresentable {
     private func loadContent(into webView: WKWebView, coordinator: Coordinator) {
         switch overlay.fileType {
         case .html:
-            webView.loadFileURL(overlay.fileURL, allowingReadAccessTo: overlay.sandboxedDirectory)
+            if let content = try? String(contentsOf: overlay.fileURL, encoding: .utf8) {
+                let styled = DocumentRenderer.injectThemeAndCSP(into: content, theme: theme)
+                webView.loadHTMLString(styled, baseURL: overlay.sandboxedDirectory)
+            } else {
+                webView.loadFileURL(overlay.fileURL, allowingReadAccessTo: overlay.sandboxedDirectory)
+            }
 
         case .markdown:
             if let content = try? String(contentsOf: overlay.fileURL, encoding: .utf8) {
@@ -113,11 +141,13 @@ public struct SandboxedWebView: NSViewRepresentable {
                 return
             }
 
-            // Strictly permit only file:// URLs inside the sandboxed directory
+            // Strictly permit only file:// URLs inside the canonical sandboxed directory
             if url.isFileURL {
-                let standardURL = url.standardizedFileURL
-                let sandboxedPath = overlay.sandboxedDirectory.standardizedFileURL.path
-                if standardURL.path == sandboxedPath || standardURL.path.hasPrefix(sandboxedPath + "/") {
+                let canonicalURL = url.resolvingSymlinksInPath().standardizedFileURL
+                let canonicalSandboxPath = overlay.sandboxedDirectory.resolvingSymlinksInPath().standardizedFileURL.path
+                let isInside = canonicalURL.path == canonicalSandboxPath ||
+                    canonicalURL.path.hasPrefix(canonicalSandboxPath.hasSuffix("/") ? canonicalSandboxPath : canonicalSandboxPath + "/")
+                if isInside {
                     decisionHandler(.allow)
                     return
                 }
@@ -125,26 +155,6 @@ public struct SandboxedWebView: NSViewRepresentable {
 
             // Refuse all network, cross-directory, or arbitrary protocol requests
             decisionHandler(.cancel)
-        }
-
-        public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Inject terminal theme CSS variables into the rendered DOM
-            let cssVars = DocumentRenderer.cssVariables(for: theme)
-                .replacingOccurrences(of: "\n", with: " ")
-                .replacingOccurrences(of: "'", with: "\\'")
-
-            let js = """
-            (function() {
-              var style = document.getElementById('tako-theme-vars');
-              if (!style) {
-                style = document.createElement('style');
-                style.id = 'tako-theme-vars';
-                document.head.appendChild(style);
-              }
-              style.textContent = '\(cssVars)';
-            })();
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 }
