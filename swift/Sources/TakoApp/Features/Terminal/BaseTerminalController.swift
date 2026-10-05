@@ -70,6 +70,22 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Whether the Session Sidebar panel is showing for this window (B5).
+    @Published var sessionSidebarIsShowing: Bool = SessionSidebarStore.shared.isShowing {
+        didSet {
+            if SessionSidebarStore.shared.isShowing != sessionSidebarIsShowing {
+                SessionSidebarStore.shared.isShowing = sessionSidebarIsShowing
+            }
+            guard oldValue, !sessionSidebarIsShowing else { return }
+            DispatchQueue.main.async { [weak self] in
+                Tako.moveFocus(to: self?.focusedSurface)
+            }
+        }
+    }
+
+    /// The window hosting this terminal view controller (TerminalViewModel).
+    var containingWindow: NSWindow? { self.window }
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 
@@ -109,6 +125,9 @@ class BaseTerminalController: NSWindowController,
 
     /// Cancellable for aggregating bell state across all surfaces in this controller.
     private var bellStateCancellable: AnyCancellable?
+
+    /// Cancellable for synchronizing session sidebar visibility across all controllers (B5).
+    private var sidebarStateCancellable: AnyCancellable?
 
     /// An override title for the tab/window set by the user via prompt_tab_title.
     /// When set, this takes precedence over the computed title from the terminal.
@@ -168,6 +187,9 @@ class BaseTerminalController: NSWindowController,
 
         // Setup our bell state for the window
         setupBellNotificationPublisher()
+
+        // Synchronize sidebar visibility across window controllers (B5)
+        setupSidebarStatePublisher()
 
         // Setup our notifications for behaviors
         let center = NotificationCenter.default
@@ -874,6 +896,7 @@ class BaseTerminalController: NSWindowController,
         if let focused = to {
             NotificationStore.shared.markRead(surfaceId: focused.id)
         }
+        SessionSidebarStore.shared.objectWillChange.send()
 
         // Important to cancel any prior subscriptions
         focusedSurfaceCancellables = []
@@ -1529,6 +1552,10 @@ class BaseTerminalController: NSWindowController,
         NotificationStore.shared.markAllRead()
     }
 
+    @IBAction func toggleSessionSidebar(_ sender: Any?) {
+        sessionSidebarIsShowing.toggle()
+    }
+
     private static func surface(withID id: UUID) -> Tako.SurfaceView? {
         for controller in TerminalController.all {
             if let surface = controller.surfaceTree.first(where: { $0.id == id }) {
@@ -1645,6 +1672,12 @@ extension BaseTerminalController: NSMenuItemValidation {
         case #selector(toggleNotificationCenter(_:)):
             return true
 
+        case #selector(toggleSessionSidebar(_:)):
+            if let menu = item as? NSMenuItem {
+                menu.state = sessionSidebarIsShowing ? .on : .off
+            }
+            return true
+
         case #selector(jumpToLatestUnread(_:)):
             return NotificationStore.shared.latestUnread() != nil
 
@@ -1710,6 +1743,17 @@ extension BaseTerminalController {
                     object: self,
                     userInfo: [Notification.Name.terminalWindowHasBellKey: hasBell]
                 )
+            }
+    }
+
+    /// Subscribes to the shared SessionSidebarStore.isShowing publisher so all controllers
+    /// and tabs remain in sync when sidebar visibility is toggled (B5).
+    private func setupSidebarStatePublisher() {
+        sidebarStateCancellable = SessionSidebarStore.shared.$isShowing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] showing in
+                guard let self, self.sessionSidebarIsShowing != showing else { return }
+                self.sessionSidebarIsShowing = showing
             }
     }
 
