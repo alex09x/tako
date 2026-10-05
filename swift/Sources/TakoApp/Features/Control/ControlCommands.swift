@@ -195,6 +195,76 @@ enum ControlCommands {
         }
     }
 
+    /// Hook for testability or custom confirmation UI: takes (client, scopes, description, completionHandler).
+    static var userGrantPrompt: (@MainActor (String, Set<ControlScope>, String?, @escaping @Sendable (Bool) -> Void) -> Void)? = nil
+
+    private static func handleGrantRequest(_ request: ControlRequest, reply: @escaping @Sendable (ControlResponse) -> Void) {
+        do {
+            let client = (request.args["client"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !client.isEmpty else {
+                throw ControlError(.invalid, "missing or empty \"client\" for grant request")
+            }
+            let parsed = try ControlScope.parseScopes(from: request.args["scopes"])
+            let candidateScopes = parsed ?? Set(ControlScope.allCases).subtracting([.approval])
+            let effectiveScopes = candidateScopes.subtracting([.approval])
+            guard !effectiveScopes.isEmpty else {
+                throw ControlError(.invalid, "grant request cannot grant approval scope; requested scopes must contain at least one standard scope")
+            }
+            let desc = request.args["description"]?.string
+
+            if let customPrompt = userGrantPrompt {
+                customPrompt(client, effectiveScopes, desc) { approved in
+                    if approved {
+                        let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
+                        reply(.ok([
+                            "token": .string(grant.token),
+                            "client": .string(grant.client),
+                            "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                        ]))
+                    } else {
+                        reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+                    }
+                }
+                return
+            }
+
+            guard NSApp != nil else {
+                reply(.failure(ControlError(.disabled, "user-mediated grant confirmation is unavailable without application host")))
+                return
+            }
+
+            let alert = NSAlert()
+            alert.messageText = "Authorize Remote Control Access"
+            let scopeList = effectiveScopes.map(\.rawValue).sorted().joined(separator: ", ")
+            var info = "The client \"\(client)\" is requesting remote control access with scopes:\n[\(scopeList)]."
+            if let d = desc, !d.isEmpty {
+                info += "\n\nDescription: \(d)"
+            }
+            info += "\n\nDo you want to allow this client to control Tako?"
+            alert.informativeText = info
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Allow")
+            alert.addButton(withTitle: "Deny")
+
+            let appDelegate = NSApp?.delegate as? AppDelegate
+            let response = appDelegate?.runModalAlert(alert) ?? alert.runModal()
+            if response == .alertFirstButtonReturn {
+                let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
+                reply(.ok([
+                    "token": .string(grant.token),
+                    "client": .string(grant.client),
+                    "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                ]))
+            } else {
+                reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+            }
+        } catch let err as ControlError {
+            reply(.failure(err))
+        } catch {
+            reply(.failure(ControlError(.internalError, "\(error)")))
+        }
+    }
+
     static func handle(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
         let request = authorize(request)
         do {
@@ -204,6 +274,13 @@ enum ControlCommands {
             }
             try checkScope(for: request)
             switch request.cmd {
+            case "grant":
+                let sub = request.args["subcommand"]?.string ?? ""
+                if sub == "request" {
+                    handleGrantRequest(request, reply: reply)
+                    return
+                }
+                reply(handle(request, all: all))
             case "text":
                 let surface = try target(request, all)
                 guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
@@ -439,6 +516,8 @@ enum ControlCommands {
             case "grant":
                 let sub = request.args["subcommand"]?.string ?? ""
                 switch sub {
+                case "request":
+                    throw ControlError(.invalid, "grant request requires user confirmation and must be handled via socket or with completion handler")
                 case "create":
                     guard let client = request.args["client"]?.string, !client.isEmpty else {
                         throw ControlError(.invalid, "missing or empty \"client\" for grant create")
@@ -469,7 +548,7 @@ enum ControlCommands {
                     }
                     return .ok(["grants": .array(items)])
                 default:
-                    throw ControlError(.invalid, "unknown grant subcommand '\(sub)'; use create, revoke, or list")
+                    throw ControlError(.invalid, "unknown grant subcommand '\(sub)'; use request, create, revoke, or list")
                 }
             case "broadcast":
                 let surface = try target(request, all)

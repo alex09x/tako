@@ -208,6 +208,10 @@ struct ControlProtocolTests {
         #expect(ControlScope.required(for: "input", args: ["subcommand": .string("disallow-automation")]) == [.approval])
         #expect(ControlScope.required(for: "input", args: ["subcommand": .string("confirm-automation")]) == [.approval])
         #expect(ControlScope.required(for: "grant") == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("request")]) == [])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("create")]) == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("revoke")]) == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("list")]) == [.approval])
 
         // run requires both layout and input (execution authority)
         #expect(ControlScope.required(for: "run") == [.layout, .input])
@@ -337,6 +341,88 @@ struct ControlServerTests {
         #expect(result?["from"] as? String == a.uuidString)
         let bad = try await ask(path, "not json")
         #expect((bad["error"] as? [String: Any])?["code"] as? String == "invalid")
+    }
+
+    @Test func grantRequestBootstrapFlow() async throws {
+        let dir = try privateDir()
+        let path = dir + "/c.sock"
+        ControlCommands.apply(mode: .on)
+        defer {
+            ControlCommands.apply(mode: .off)
+            ControlCommands.userGrantPrompt = nil
+        }
+
+        let server = ControlServer(path: path) { request, reply in
+            ControlCommands.handle(request, all: [], reply: reply)
+        }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+
+        // 1. User denies grant request
+        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+            #expect(client == "agent-denied")
+            reply(false)
+        }
+        let deniedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"agent-denied"}}"#)
+        #expect(deniedAns["ok"] as? Bool == false)
+        let deniedErr = deniedAns["error"] as? [String: Any]
+        #expect(deniedErr?["code"] as? String == "disabled")
+
+        // 2. Requesting only approval scope is rejected without prompt
+        var promptCalled = false
+        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+            promptCalled = true
+            reply(true)
+        }
+        let rogueAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"rogue","scopes":"approval"}}"#)
+        #expect(rogueAns["ok"] as? Bool == false)
+        #expect(!promptCalled, "Should not prompt user when only approval scope is requested")
+
+        // 3. User approves grant request for read,layout (stripping any requested approval)
+        var promptedScopes: Set<ControlScope> = []
+        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+            #expect(client == "cli-client")
+            #expect(!scopes.contains(.approval), "Approval scope must be stripped from grant request")
+            promptedScopes = scopes
+            reply(true)
+        }
+        let approvedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","scopes":"read,layout,approval","description":"Test CLI"}}"#)
+        #expect(approvedAns["ok"] as? Bool == true)
+        let res = try #require(approvedAns["result"] as? [String: Any])
+        let token = try #require(res["token"] as? String)
+        #expect(res["client"] as? String == "cli-client")
+        let issuedScopes = (res["scopes"] as? [String]) ?? []
+        #expect(issuedScopes == ["layout", "read"])
+        #expect(promptedScopes == [.layout, .read])
+
+        // 4. Token can be used for granted scopes
+        let authedReq = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(token)"}"#.utf8))
+        let authed = ControlCommands.authorize(authedReq)
+        #expect(authed.client == "cli-client")
+        #expect(authed.scopes == [.read, .layout])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authed) }
+
+        // 5. Token cannot be used for ungranted scopes (e.g. signal)
+        let ungrantedReq = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(token)"}"#.utf8))
+        let ungrantedAuth = ControlCommands.authorize(ungrantedReq)
+        do {
+            try ControlCommands.checkScope(for: ungrantedAuth)
+            #expect(Bool(false), "Should have failed with missingScope")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "signal")
+        }
+
+        // 6. Token cannot be used to manage grants (approval scope required)
+        let grantCreateReq = try ControlRequest.parse(Data(#"{"cmd":"grant","token":"\#(token)","args":{"subcommand":"create","client":"sub"}}"#.utf8))
+        let grantCreateAuth = ControlCommands.authorize(grantCreateReq)
+        do {
+            try ControlCommands.checkScope(for: grantCreateAuth)
+            #expect(Bool(false), "Should have failed with missingScope approval")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "approval")
+        }
     }
 
     @Test func aSecondCopyLeavesTheSocketToTheFirst() async throws {

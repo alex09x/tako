@@ -132,10 +132,14 @@ commands:
   review open [PATH]      open diff review pane for worktree (--base BRANCH, --target-pane ID)
   review close            close active diff review pane
   review status           show review session status and pending comments count
-  review files            list changed files in review session
+   review files            list changed files in review session
   review diff [FILE]      show unified diff of all files or specific FILE
   review comment [ACTION] manage review comments (add, list, remove, clear; --file FILE, --line N)
   review send             send collected review comments as feedback to target pane
+  grant request [NAME]    request an authorization grant from user (--client NAME, --scope SCOPES, --desc DESC)
+  grant create            create a scoped authorization grant (--client NAME, --scope SCOPES, --desc DESC)
+  grant revoke TOKEN      revoke an authorization grant
+  grant list              list active authorization grants
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -175,6 +179,7 @@ options:
   --diff-only             print proposed diff without writing files
   --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN or $TAKO_AUTH_TOKEN)
   --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay,approval)
+  --description, --desc DESC description of grant or client purpose
   --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,approval; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
@@ -217,6 +222,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 .filter(|p| !p.is_empty())
                 .collect::<Vec<_>>()
         });
+    let mut description: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
     let mut it = argv.iter();
@@ -457,6 +463,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     }
                 }
                 scopes = Some(list);
+            }
+            "--desc" | "--description" => {
+                let d = value(arg.as_str())?;
+                description = Some(d.clone());
+                args.insert("description".into(), Value::String(d));
             }
             "--owner" => {
                 args.insert("owner".into(), Value::String(value("--owner")?));
@@ -1211,16 +1222,40 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 positional.remove(0)
             };
             match sub.as_str() {
-                "create" => {
+                "request" => {
                     args.insert("subcommand".into(), Value::String(sub));
                     if let Some(c) = client.as_ref() {
                         args.insert("client".into(), Value::String(c.clone()));
+                    } else if !positional.is_empty() {
+                        args.insert("client".into(), Value::String(positional.remove(0)));
+                    } else {
+                        args.insert("client".into(), Value::String("takoctl".into()));
                     }
                     if let Some(sc) = scopes.as_ref() {
                         args.insert(
                             "scopes".into(),
                             Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
                         );
+                    }
+                    if let Some(d) = description.as_ref() {
+                        args.insert("description".into(), Value::String(d.clone()));
+                    }
+                }
+                "create" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if let Some(c) = client.as_ref() {
+                        args.insert("client".into(), Value::String(c.clone()));
+                    } else if !positional.is_empty() {
+                        args.insert("client".into(), Value::String(positional.remove(0)));
+                    }
+                    if let Some(sc) = scopes.as_ref() {
+                        args.insert(
+                            "scopes".into(),
+                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
+                        );
+                    }
+                    if let Some(d) = description.as_ref() {
+                        args.insert("description".into(), Value::String(d.clone()));
                     }
                 }
                 "revoke" => {
@@ -1238,7 +1273,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 }
                 other => {
                     return Err(format!(
-                        "unknown grant action \"{other}\"; use create, revoke, or list"
+                        "unknown grant action \"{other}\"; use request, create, revoke, or list"
                     ));
                 }
             }
@@ -2896,7 +2931,8 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .map(String::from)
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
-    let server = mcp::McpServer::new(socket_path, capabilities, surface_id);
+    let server = mcp::McpServer::new(socket_path, capabilities, surface_id)
+        .with_token(opts.token.clone());
     server
         .run_stdio()
         .map_err(|e| format!("MCP stdio server error: {e}"))
@@ -5356,6 +5392,35 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(rep_create.contains("token: tok_xyz"));
         assert!(rep_create.contains("client: subagent-2"));
         assert!(rep_create.contains("scopes: [signal]"));
+
+        let grant_req_default = parse(&["grant".into(), "request".into()]).unwrap();
+        assert_eq!(grant_req_default.args["subcommand"], "request");
+        assert_eq!(grant_req_default.args["client"], "takoctl");
+
+        let grant_req_custom = parse(&[
+            "grant".into(),
+            "request".into(),
+            "--client".into(),
+            "my-agent".into(),
+            "--scope".into(),
+            "read,layout".into(),
+            "--desc".into(),
+            "Test description".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_req_custom.args["subcommand"], "request");
+        assert_eq!(grant_req_custom.args["client"], "my-agent");
+        assert_eq!(grant_req_custom.args["scopes"], json!(["read", "layout"]));
+        assert_eq!(grant_req_custom.args["description"], "Test description");
+
+        let rep_req = grant_report(&json!({
+            "token": "tok_bootstrap",
+            "client": "my-agent",
+            "scopes": ["layout", "read"]
+        }));
+        assert!(rep_req.contains("token: tok_bootstrap"));
+        assert!(rep_req.contains("client: my-agent"));
+        assert!(rep_req.contains("scopes: [layout, read]"));
     }
 }
 

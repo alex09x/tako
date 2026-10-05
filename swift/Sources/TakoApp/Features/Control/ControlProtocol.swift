@@ -41,6 +41,10 @@ enum ControlScope: String, CaseIterable, Sendable, Codable {
             }
             return [.input]
         case "grant":
+            let sub = args["subcommand"]?.string ?? ""
+            if sub == "request" {
+                return []
+            }
             return [.approval]
         case "run":
             return [.layout, .input]

@@ -605,6 +605,7 @@ pub struct McpServer {
     pub socket_path: String,
     pub capabilities: Capabilities,
     pub surface_id: Option<String>,
+    pub token: Option<String>,
 }
 
 impl McpServer {
@@ -613,7 +614,13 @@ impl McpServer {
             socket_path,
             capabilities,
             surface_id,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
+        self
     }
 
     /// Handles a single incoming JSON-RPC 2.0 message and produces a response if required.
@@ -1138,9 +1145,11 @@ impl McpServer {
         if let Some(s) = &self.surface_id {
             req.insert("from".into(), Value::String(s.clone()));
         }
-        let token = std::env::var("TAKO_CONTROL_TOKEN")
-            .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
-            .ok();
+        let token = self.token.clone().or_else(|| {
+            std::env::var("TAKO_CONTROL_TOKEN")
+                .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+                .ok()
+        });
         if let Some(tok) = token {
             req.insert("token".into(), Value::String(tok));
         }
