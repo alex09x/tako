@@ -119,6 +119,7 @@ final class SessionSidebarStore: ObservableObject {
     private var gitCache: [String: LocalGitInspection.GitInfo?] = [:]
     private var dirToRepoRoot: [String: String] = [:]
     private var repoRootToDirs: [String: Set<String>] = [:]
+    private var gitRepoGenerations: [String: Int] = [:]
     private var portsCache: [Int: [Int]] = [:]
     private var pendingGitInspections: Set<String> = []
     private var pendingPortsInspections: Set<Int> = []
@@ -159,8 +160,14 @@ final class SessionSidebarStore: ObservableObject {
 
     /// Invalidates Git cache for a specific directory and all directories in the same repository, discarding in-flight inspections.
     func invalidateGitCache(for directory: String) {
-        let root = dirToRepoRoot[directory] ?? repoRootToDirs.keys.first(where: { directory == $0 || directory.hasPrefix($0 + "/") })
+        let root = dirToRepoRoot[directory]
+            ?? repoRootToDirs.keys.first(where: { directory == $0 || directory.hasPrefix($0 + "/") })
+            ?? LocalGitInspection.resolveBranch(directory: directory)?.repoRoot
         if let root {
+            dirToRepoRoot[directory] = root
+            repoRootToDirs[root, default: []].insert(directory)
+            repoRootToDirs[root, default: []].insert(root)
+            gitRepoGenerations[root, default: 0] += 1
             let dirs = (repoRootToDirs[root] ?? []).union([root, directory])
             for d in dirs {
                 gitCache.removeValue(forKey: d)
@@ -172,6 +179,7 @@ final class SessionSidebarStore: ObservableObject {
             pendingGitInspections.remove(directory)
             gitGenerations[directory, default: 0] += 1
         }
+        objectWillChange.send()
     }
 
     /// Checks whether an asynchronous Git inspection is currently in flight for a directory.
@@ -220,6 +228,7 @@ final class SessionSidebarStore: ObservableObject {
         portsGenerations.removeAll()
         dirToRepoRoot.removeAll()
         repoRootToDirs.removeAll()
+        gitRepoGenerations.removeAll()
     }
 
     /// Dynamically binds to live surfaces across open tab groups to observe status, progress, elapsed, title, and pwd changes in real time.
@@ -340,25 +349,33 @@ final class SessionSidebarStore: ObservableObject {
                     pendingGitInspections.insert(dir)
                     let gen = gitGenerations[dir, default: 0]
                     let epoch = globalCacheEpoch
+                    let repoGenSnapshot = gitRepoGenerations
                     Task.detached(priority: .utility) {
                         let inspected = LocalGitInspection.inspect(directory: dir)
                         await MainActor.run { [weak self] in
                             guard let self else { return }
                             self.pendingGitInspections.remove(dir)
-                            if self.globalCacheEpoch == epoch && self.gitGenerations[dir, default: 0] == gen {
-                                if let root = inspected?.repoRoot {
-                                    self.dirToRepoRoot[dir] = root
-                                    self.repoRootToDirs[root, default: []].insert(dir)
-                                    self.repoRootToDirs[root, default: []].insert(root)
-                                    self.gitCache[root] = inspected
-                                    for d in self.repoRootToDirs[root, default: []] {
-                                        self.gitCache[d] = inspected
-                                    }
-                                } else {
-                                    self.gitCache[dir] = inspected
-                                }
+                            guard self.globalCacheEpoch == epoch && self.gitGenerations[dir, default: 0] == gen else {
                                 self.objectWillChange.send()
+                                return
                             }
+                            if let root = inspected?.repoRoot {
+                                let startRootGen = repoGenSnapshot[root, default: 0]
+                                if self.gitRepoGenerations[root, default: 0] != startRootGen {
+                                    self.objectWillChange.send()
+                                    return
+                                }
+                                self.dirToRepoRoot[dir] = root
+                                self.repoRootToDirs[root, default: []].insert(dir)
+                                self.repoRootToDirs[root, default: []].insert(root)
+                                self.gitCache[root] = inspected
+                                for d in self.repoRootToDirs[root, default: []] {
+                                    self.gitCache[d] = inspected
+                                }
+                            } else {
+                                self.gitCache[dir] = inspected
+                            }
+                            self.objectWillChange.send()
                         }
                     }
                 }
@@ -388,8 +405,8 @@ final class SessionSidebarStore: ObservableObject {
                                 self.pendingPortsInspections.remove(pid)
                                 if self.globalCacheEpoch == epoch && self.portsGenerations[pid, default: 0] == gen {
                                     self.portsCache[pid] = inspected
-                                    self.objectWillChange.send()
                                 }
+                                self.objectWillChange.send()
                             }
                         }
                     }

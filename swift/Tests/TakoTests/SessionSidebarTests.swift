@@ -1053,4 +1053,88 @@ struct SessionSidebarTests {
         #expect(updatedItems[0].gitBranch == "feature-branch")
         #expect(updatedItems[1].gitBranch == "feature-branch")
     }
+
+    @Test func concurrentSubdirectoryInspectionDiscardedIfInvalidatedBeforeDiscovery() async throws {
+        let repoURL = try createTestGitRepository(branch: "main")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let pkgA = repoURL.appendingPathComponent("pkgA")
+        let pkgB = repoURL.appendingPathComponent("pkgB")
+        try FileManager.default.createDirectory(at: pkgA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pkgB, withIntermediateDirectories: true)
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pwd = pkgA.path
+        win1.contentView = surf1
+
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pwd = pkgB.path
+        win2.contentView = surf2
+
+        Tako.CustomTabGroup.join(win2, to: win1, select: false)
+
+        // Kick off concurrent inspection for win1 and win2 before repository root is known
+        _ = store.items(for: win1)
+
+        // Invalidate repository cache while inspections are in flight
+        store.invalidateGitCache(for: pkgA.path)
+
+        // Switch branch on disk to new-branch
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/new-branch\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Query items again to launch post-invalidation inspections
+        _ = store.items(for: win1)
+        try await waitForGitInspection(store: store, directory: pkgA.path)
+        try await waitForGitInspection(store: store, directory: pkgB.path)
+
+        let items = store.items(for: win1)
+        #expect(items.count == 2)
+        #expect(items[0].gitBranch == "new-branch")
+        #expect(items[1].gitBranch == "new-branch")
+    }
+
+    @Test func commandInOneRepositoryDoesNotDiscardConcurrentInspectionInUnrelatedRepository() async throws {
+        let repo1URL = try createTestGitRepository(branch: "repo1-main")
+        defer { try? FileManager.default.removeItem(at: repo1URL) }
+        let repo2URL = try createTestGitRepository(branch: "repo2-feature")
+        defer { try? FileManager.default.removeItem(at: repo2URL) }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pwd = repo1URL.path
+        win1.contentView = surf1
+
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pwd = repo2URL.path
+        win2.contentView = surf2
+
+        Tako.CustomTabGroup.join(win2, to: win1, select: false)
+
+        // Launch concurrent inspections for both repositories
+        _ = store.items(for: win1)
+
+        // Invalidate repository 1 while inspections are running
+        store.invalidateGitCache(for: repo1URL.path)
+
+        // Wait for repository 2 inspection to complete
+        try await waitForGitInspection(store: store, directory: repo2URL.path)
+
+        let items = store.items(for: win1)
+        #expect(items.count == 2)
+        // Repo 2 must NOT have been discarded by Repo 1's command completion
+        #expect(items[1].gitBranch == "repo2-feature")
+    }
 }
+
