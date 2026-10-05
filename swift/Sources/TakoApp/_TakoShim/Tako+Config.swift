@@ -202,6 +202,8 @@ extension Tako {
             "jump_to_prompt:previous": .init(.upArrow, modifiers: .command),
             "jump_to_prompt:next": .init(.downArrow, modifiers: .command),
             "select_command_output": .init("a", modifiers: [.command, .shift]),
+            "toggle_output_filter": .init("f", modifiers: [.command, .option]),
+            "focus_mode": .init("f", modifiers: [.command, .option]),
         ]
 
         private enum KeybindOverride {
@@ -531,6 +533,12 @@ extension Tako {
         /// Reads `sticky-command-header`, default true.
         var stickyCommandHeader: Bool {
             rawBool("sticky-command-header", default: true)
+        }
+
+        /// The configured editor command for opening semantic paths (Cmd+Click) (E6).
+        /// Reads `editor`, falls back to $EDITOR, $VISUAL, or "code".
+        var editor: String? {
+            rawValue("editor")
         }
 
         /// Which bundled shell-integration script, if any, is injected into

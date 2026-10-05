@@ -84,6 +84,9 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
 
     /// A program cleared explicit pane status via escape sequence (B1).
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView)
+
+    /// A validated source file path was clicked under Command (E6).
+    func terminalView(_ view: TakoTerminalNSView, didClickSemanticPath payload: TakoTerminalNSView.SemanticPathPayload)
 }
 
 public extension TakoTerminalNSViewDelegate {
@@ -101,6 +104,7 @@ public extension TakoTerminalNSViewDelegate {
     func terminalViewPromptMark(_ view: TakoTerminalNSView) {}
     func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {}
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {}
+    func terminalView(_ view: TakoTerminalNSView, didClickSemanticPath payload: TakoTerminalNSView.SemanticPathPayload) {}
 }
 
 /// Which Option key, if any, `TakoTerminalNSView.keyDown` treats as Alt
@@ -649,6 +653,67 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
+    /// Event payload emitted when a source code file path is clicked under Command (E6).
+    public struct SemanticPathPayload: Equatable, Sendable {
+        public let path: String
+        public let line: Int?
+        public let col: Int?
+        public let cwd: String?
+        public let resolvedPath: String
+
+        public init(path: String, line: Int? = nil, col: Int? = nil, cwd: String? = nil, resolvedPath: String) {
+            self.path = path
+            self.line = line
+            self.col = col
+            self.cwd = cwd
+            self.resolvedPath = resolvedPath
+        }
+    }
+
+    /// Validated file path target under the mouse cursor in terminal coordinates (E6).
+    public struct SemanticPathTarget: Equatable, Sendable {
+        public let rawPath: String
+        public let line: Int?
+        public let col: Int?
+        public let resolvedPath: String
+        public let row: Int
+        public let colStart: Int
+        public let colEnd: Int
+
+        public init(
+            rawPath: String,
+            line: Int? = nil,
+            col: Int? = nil,
+            resolvedPath: String,
+            row: Int,
+            colStart: Int,
+            colEnd: Int
+        ) {
+            self.rawPath = rawPath
+            self.line = line
+            self.col = col
+            self.resolvedPath = resolvedPath
+            self.row = row
+            self.colStart = colStart
+            self.colEnd = colEnd
+        }
+    }
+
+    /// One retained line captured for output filtering (Focus mode - E5).
+    public struct FilteredOutputLine: Equatable, Sendable {
+        public let retainedRowIndex: Int
+        public let text: String
+        public let packedCells: Data
+        public let graphemes: [FfiGrapheme]
+
+        public init(retainedRowIndex: Int, text: String, packedCells: Data, graphemes: [FfiGrapheme] = []) {
+            self.retainedRowIndex = retainedRowIndex
+            self.text = text
+            self.packedCells = packedCells
+            self.graphemes = graphemes
+        }
+    }
+
     /// Checks whether a URL scheme is considered safe to open without confirmation prompt (E8: http, https, file).
     public static func isSafeScheme(_ scheme: String?) -> Bool {
         guard let scheme = scheme?.lowercased() else { return false }
@@ -739,10 +804,52 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         try! NSRegularExpression(pattern: #"(?:https?|file)://[^\s<>"']+|mailto:[^\s<>"']+"#)
     }()
 
+    /// Matches tokens of the form path[:line[:col]], bounded by whitespace, quotes, or brackets (E6).
+    /// Group 1: path, Group 2: optional line, Group 3: optional col.
+    public static let semanticPathPattern: NSRegularExpression = {
+        try! NSRegularExpression(
+            pattern: #"(?<=^|[\s"'\[\]()<>])([a-zA-Z0-9_.~/][a-zA-Z0-9_.~/-]*?)(?::([0-9]+)(?::([0-9]+))?)?(?=$|[\s"'\[\]()<>,;:])"#,
+            options: []
+        )
+    }()
+
     /// The link under the pointer while Command is held, if any -- an OSC 8
     /// hyperlink cell span, or `linkURLDetectionEnabled` text matched by
     /// `Self.urlPattern`. Drives the pointing-hand cursor and underline.
     public private(set) var hoveredLink: TerminalLink?
+
+    /// Whether semantic path detection (Cmd+Click to open in editor) is enabled (E6).
+    public var semanticPathDetectionEnabled: Bool = true
+
+    /// User-configured editor command (e.g. "code", "cursor", "vim").
+    public var configuredEditorCommand: String?
+
+    /// Callback invoked when a semantic path is clicked under Command.
+    public var onSemanticPathClick: ((SemanticPathPayload) -> Void)?
+
+    /// Pluggable launcher for editor execution (useful for testing or customized dispatch).
+    public static var editorLauncher: ((_ command: String, _ args: [String], _ cwd: String?) -> Bool)?
+
+    /// The semantic path target under the pointer while Command is held, if any.
+    public private(set) var hoveredSemanticPath: SemanticPathTarget?
+
+    /// Whether focus mode (output filtering) is active (E5).
+    public private(set) var isOutputFilterActive: Bool = false
+
+    /// The active query string for output filtering.
+    public private(set) var outputFilterQuery: String = ""
+
+    /// Whether outputFilterQuery is treated as regular expression.
+    public private(set) var outputFilterIsRegex: Bool = false
+
+    /// Cached list of matching lines while output filtering is active.
+    public private(set) var outputFilterMatchingLines: [FilteredOutputLine] = []
+
+    /// Current scroll offset within outputFilterMatchingLines.
+    public private(set) var outputFilterScrollOffset: Int = 0
+
+    /// Notification hook when output filtering status or match count changes.
+    public var onOutputFilterChanged: ((_ active: Bool, _ matchCount: Int, _ totalCount: Int) -> Void)?
 
     /// The link currently under the mouse pointer regardless of whether Command is held (E8).
     public private(set) var currentHoveredLink: TerminalLink?
@@ -1298,6 +1405,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             TakoLog.render.debug("damage → scheduleRedraw (\(outcomes.count) outcomes)")
             delegate?.terminalViewDidChangeContent(self)
             notifyScrollPositionIfChanged()
+            if isOutputFilterActive {
+                refreshOutputFilterMatches()
+            }
         }
     }
 
@@ -1320,6 +1430,30 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         
         let usableHeight = scrollbarLayer.bounds.height
         scrollbarMarksLayer.frame = scrollbarLayer.bounds
+
+        if isOutputFilterActive {
+            scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            let matchCount = outputFilterMatchingLines.count
+            let visibleLines = Double(core.rows())
+            if matchCount <= Int(visibleLines) {
+                scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
+                scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+            } else {
+                let totalLines = Double(matchCount)
+                let proportion = max(0.05, min(1.0, visibleLines / totalLines))
+                let knobHeight = max(usableHeight * CGFloat(proportion), 24.0)
+                let maxKnobTravel = max(0, usableHeight - knobHeight)
+                let maxOffset = max(1, matchCount - Int(visibleLines))
+                let fraction = CGFloat(outputFilterScrollOffset) / CGFloat(maxOffset)
+                let knobY = maxKnobTravel * fraction
+                scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
+                scrollbarKnob.backgroundColor = isDraggingScrollbar
+                    ? NSColor.white.withAlphaComponent(0.85).cgColor
+                    : NSColor.white.withAlphaComponent(0.45).cgColor
+            }
+            CATransaction.commit()
+            return
+        }
 
         let modes = core.modes()
         if modes.alternateScreen && modes.alternateScroll {
@@ -2139,6 +2273,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Scroll viewport up by lines.
     public func scrollViewportUp(lines: Int = 1) {
+        if isOutputFilterActive {
+            let maxOffset = max(0, outputFilterMatchingLines.count - Int(core.rows()))
+            outputFilterScrollOffset = min(maxOffset, outputFilterScrollOffset + max(lines, 1))
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
         core.scrollViewportUp(lines: UInt32(max(lines, 1)))
         notifyScrollPositionIfChanged()
         scheduleRedraw()
@@ -2146,6 +2287,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Scroll viewport down by lines.
     public func scrollViewportDown(lines: Int = 1) {
+        if isOutputFilterActive {
+            outputFilterScrollOffset = max(0, outputFilterScrollOffset - max(lines, 1))
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
         core.scrollViewportDown(lines: UInt32(max(lines, 1)))
         notifyScrollPositionIfChanged()
         scheduleRedraw()
@@ -2153,6 +2300,12 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Snap scroll to bottom (live screen).
     public func scrollViewportToBottom() {
+        if isOutputFilterActive {
+            outputFilterScrollOffset = 0
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
         core.scrollViewportBottom()
         notifyScrollPositionIfChanged()
         scheduleRedraw()
@@ -2160,6 +2313,13 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Scroll to specific viewport offset.
     public func scrollToOffset(_ offset: Int) {
+        if isOutputFilterActive {
+            let maxOffset = max(0, outputFilterMatchingLines.count - Int(core.rows()))
+            outputFilterScrollOffset = max(0, min(offset, maxOffset))
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
         core.scrollViewportBottom()
         if offset > 0 {
             core.scrollViewportUp(lines: UInt32(offset))
@@ -2205,6 +2365,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     /// Obtain bounded plain text starting at startRow for maxRows lines.
     public func plainText(startRow: Int = 0, maxRows: Int = 100) -> String {
+        if isOutputFilterActive {
+            let totalMatches = outputFilterMatchingLines.count
+            guard totalMatches > 0 else { return "" }
+            let totalRows = Int(core.rows())
+            let maxOffset = max(0, totalMatches - totalRows)
+            let clampedOffset = max(0, min(outputFilterScrollOffset, maxOffset))
+            let startIndex = max(0, totalMatches - totalRows - clampedOffset)
+            let endIndex = min(totalMatches, startIndex + totalRows)
+            let slice = Array(outputFilterMatchingLines[startIndex..<endIndex])
+            let effectiveStart = min(startRow, slice.count)
+            let effectiveCount = min(maxRows, slice.count - effectiveStart)
+            guard effectiveCount > 0 else { return "" }
+            return slice[effectiveStart..<(effectiveStart + effectiveCount)].map(\.text).joined(separator: "\n")
+        }
         let totalRows = Int(core.rows())
         let start = max(startRow, 0)
         guard start < totalRows else { return "" }
@@ -2616,6 +2790,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     private func currentRenderFrame() -> FfiRenderFrame {
         frameFetchCount += 1
+        if isOutputFilterActive {
+            frameOverscanRows = 0
+            return filteredRenderFrame()
+        }
         guard presentedSubCellRows != 0 else {
             // On a row boundary this is the frame it has always been, with no
             // extra rows fetched and no translation applied.
@@ -3278,6 +3456,35 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         window?.makeFirstResponder(self)
         let loc = convert(event.locationInWindow, from: nil)
         if scrollbarLayer.frame.contains(loc) {
+            if isOutputFilterActive {
+                let matchCount = outputFilterMatchingLines.count
+                let visibleLines = Int(core.rows())
+                if matchCount > visibleLines {
+                    isDraggingScrollbar = true
+                    let locInLayer = CGPoint(x: loc.x - scrollbarLayer.frame.origin.x, y: loc.y - scrollbarLayer.frame.origin.y)
+                    if scrollbarKnob.frame.contains(locInLayer) {
+                        scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
+                        scrollbarDragStartMouseY = loc.y
+                    } else {
+                        let usableHeight = scrollbarLayer.bounds.height
+                        let knobHeight = scrollbarKnob.frame.height
+                        let maxKnobTravel = max(0, usableHeight - knobHeight)
+                        let targetKnobY = max(0, min(locInLayer.y - knobHeight / 2.0, maxKnobTravel))
+                        let fraction = maxKnobTravel > 0 ? (targetKnobY / maxKnobTravel) : 0
+                        let maxOffset = max(0, matchCount - visibleLines)
+                        outputFilterScrollOffset = Int(round(fraction * CGFloat(maxOffset)))
+                        updateScroller()
+                        scheduleRedraw()
+                        scrollbarDragStartKnobY = targetKnobY
+                        scrollbarDragStartMouseY = loc.y
+                    }
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+                    CATransaction.commit()
+                }
+                return
+            }
             let maxScroll = scrollbackLength
             let modes = core.modes()
             if modes.alternateScreen && modes.alternateScroll {
@@ -3339,6 +3546,10 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 openLink(link, previewAlreadyPresented: alreadyPreviewed)
                 return
             }
+            if let target = hoveredSemanticPath ?? semanticPath(at: cell) {
+                openSemanticPath(target)
+                return
+            }
         }
         nativeSelectionCurrentPress = event.modifierFlags.contains(.shift)
             && !mouseShiftCapture.capturesShift(programRequest: core.mouseShiftCapture())
@@ -3375,6 +3586,26 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     override public func mouseDragged(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         if isDraggingScrollbar {
+            if isOutputFilterActive {
+                let usableHeight = scrollbarLayer.bounds.height
+                let matchCount = outputFilterMatchingLines.count
+                let visibleLines = Int(core.rows())
+                let totalLines = Double(matchCount)
+                let proportion = max(0.05, min(1.0, Double(visibleLines) / totalLines))
+                let knobHeight = max(usableHeight * CGFloat(proportion), 24.0)
+                let maxKnobTravel = max(0, usableHeight - knobHeight)
+                guard maxKnobTravel > 0 else { return }
+
+                let dy = loc.y - scrollbarDragStartMouseY
+                var newKnobY = scrollbarDragStartKnobY + dy
+                newKnobY = max(0, min(newKnobY, maxKnobTravel))
+                let fraction = newKnobY / maxKnobTravel
+                let maxOffset = max(0, matchCount - visibleLines)
+                outputFilterScrollOffset = Int(round(fraction * CGFloat(maxOffset)))
+                updateScroller()
+                scheduleRedraw()
+                return
+            }
             let maxScroll = scrollbackLength
             let modes = core.modes()
             if modes.alternateScreen && modes.alternateScroll {
@@ -3625,6 +3856,432 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         return nil
     }
 
+    // MARK: - Semantic Path Detection (E6)
+
+    /// Validates a raw path extracted from terminal text according to the E6 safety gate.
+    /// Rejects control characters, shell metacharacters, leading hyphens, and non-existent files.
+    /// Returns standardized absolute path on success, nil on failure.
+    public func validateSemanticPath(rawPath: String) -> String? {
+        guard !rawPath.isEmpty else { return nil }
+
+        // Reject control characters (ASCII < 32 or 127)
+        guard !rawPath.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {
+            return nil
+        }
+
+        // Reject shell metacharacters and whitespace
+        let forbidden = CharacterSet(charactersIn: ";|<>&`$!\"'*?[]{}() \t\r\n\\")
+        guard rawPath.rangeOfCharacter(from: forbidden) == nil else {
+            return nil
+        }
+
+        // Reject leading hyphen or path components with leading hyphen (e.g. CLI flags)
+        guard !rawPath.hasPrefix("-") else { return nil }
+        let components = rawPath.split(separator: "/")
+        guard !components.contains(where: { $0.hasPrefix("-") }) else { return nil }
+
+        let resolvedPath: String
+        if rawPath == "~" {
+            resolvedPath = FileManager.default.homeDirectoryForCurrentUser.path
+        } else if rawPath.hasPrefix("~/") {
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            resolvedPath = (home as NSString).appendingPathComponent(String(rawPath.dropFirst(2)))
+        } else if rawPath.hasPrefix("/") {
+            resolvedPath = rawPath
+        } else {
+            let baseDir = workingDirectory ?? FileManager.default.currentDirectoryPath
+            resolvedPath = (baseDir as NSString).appendingPathComponent(rawPath)
+        }
+        let standardized = (resolvedPath as NSString).standardizingPath
+
+        // Safety gate: ignore non-existent files without side effects
+        guard FileManager.default.fileExists(atPath: standardized) else {
+            return nil
+        }
+        return standardized
+    }
+
+    /// Detects a validated source file path (with optional line and column) at the specified cell (E6).
+    public func semanticPath(at cell: (row: Int, col: Int)) -> SemanticPathTarget? {
+        guard semanticPathDetectionEnabled else { return nil }
+
+        // Safety gate: reject disguised OSC 8 targets
+        guard core.getCell(row: UInt32(cell.row), col: UInt32(cell.col))?.hyperlinkUri == nil else {
+            return nil
+        }
+
+        let (lineText, columns) = Self.rowText(core.viewportRow(row: UInt32(cell.row)))
+        guard !lineText.isEmpty, !columns.isEmpty else { return nil }
+
+        let nsText = lineText as NSString
+        let matches = Self.semanticPathPattern.matches(in: lineText, range: NSRange(location: 0, length: nsText.length))
+
+        for match in matches {
+            guard match.numberOfRanges >= 2 else { continue }
+            let fullRange = match.range
+            let first = fullRange.location
+            let last = fullRange.location + fullRange.length - 1
+            guard first < columns.count, last < columns.count else { continue }
+
+            let colStart = columns[first]
+            let colEnd = columns[last]
+
+            guard colStart <= cell.col, cell.col <= colEnd else { continue }
+
+            let rawPath = nsText.substring(with: match.range(at: 1))
+            var lineNum: Int? = nil
+            if match.numberOfRanges >= 3 && match.range(at: 2).location != NSNotFound {
+                lineNum = Int(nsText.substring(with: match.range(at: 2)))
+            }
+            var colNum: Int? = nil
+            if match.numberOfRanges >= 4 && match.range(at: 3).location != NSNotFound {
+                colNum = Int(nsText.substring(with: match.range(at: 3)))
+            }
+
+            guard let validated = validateSemanticPath(rawPath: rawPath) else {
+                continue
+            }
+
+            return SemanticPathTarget(
+                rawPath: rawPath,
+                line: lineNum,
+                col: colNum,
+                resolvedPath: validated,
+                row: cell.row,
+                colStart: colStart,
+                colEnd: colEnd
+            )
+        }
+
+        return nil
+    }
+
+    /// Passes the validated semantic path target strictly as data arguments to configured editor or event hook (E6).
+    public func openSemanticPath(_ target: SemanticPathTarget) {
+        let payload = SemanticPathPayload(
+            path: target.rawPath,
+            line: target.line,
+            col: target.col,
+            cwd: workingDirectory,
+            resolvedPath: target.resolvedPath
+        )
+        onSemanticPathClick?(payload)
+        delegate?.terminalView(self, didClickSemanticPath: payload)
+
+        let editor = configuredEditorCommand ?? ProcessInfo.processInfo.environment["EDITOR"] ?? ProcessInfo.processInfo.environment["VISUAL"] ?? "code"
+
+        // Safety gate on editor command: reject shell metacharacters and leading hyphens
+        let forbidden = CharacterSet(charactersIn: ";|<>&`$!\"'*?[]{}() \t\r\n\\")
+        guard editor.rangeOfCharacter(from: forbidden) == nil, !editor.hasPrefix("-") else {
+            return
+        }
+
+        let args: [String]
+        let editorLower = editor.lowercased()
+        if editorLower.contains("code") || editorLower.contains("cursor") {
+            if let line = target.line {
+                let loc = "\(target.resolvedPath):\(line)\(target.col != nil ? ":\(target.col!)" : "")"
+                args = ["-g", loc]
+            } else {
+                args = [target.resolvedPath]
+            }
+        } else if editorLower.contains("vim") || editorLower.contains("vi") {
+            if let line = target.line {
+                args = ["+\(line)", target.resolvedPath]
+            } else {
+                args = [target.resolvedPath]
+            }
+        } else if editorLower.contains("subl") {
+            if let line = target.line {
+                let loc = "\(target.resolvedPath):\(line)\(target.col != nil ? ":\(target.col!)" : "")"
+                args = [loc]
+            } else {
+                args = [target.resolvedPath]
+            }
+        } else if editorLower.contains("nano") {
+            if let line = target.line {
+                let loc = target.col != nil ? "+\(line),\(target.col!)" : "+\(line)"
+                args = [loc, target.resolvedPath]
+            } else {
+                args = [target.resolvedPath]
+            }
+        } else if editorLower.contains("emacs") {
+            if let line = target.line {
+                args = ["+\(line)", target.resolvedPath]
+            } else {
+                args = [target.resolvedPath]
+            }
+        } else {
+            if let line = target.line {
+                let loc = "\(target.resolvedPath):\(line)\(target.col != nil ? ":\(target.col!)" : "")"
+                args = ["-g", loc]
+            } else {
+                args = [target.resolvedPath]
+            }
+        }
+
+        if let launcher = Self.editorLauncher {
+            _ = launcher(editor, args, workingDirectory)
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [editor] + args
+        if let cwd = workingDirectory {
+            process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        }
+        try? process.run()
+    }
+
+    /// Context menu presented when right-clicking on a validated source code path (E6).
+    public func semanticPathContextMenu(for target: SemanticPathTarget) -> NSMenu {
+        let menu = NSMenu(title: "Semantic Path")
+        let editorName = configuredEditorCommand ?? ProcessInfo.processInfo.environment["EDITOR"] ?? "Editor"
+        let openTitle = "Open \(target.rawPath) in \(editorName)"
+        let openItem = NSMenuItem(title: openTitle, action: #selector(openSemanticPathContextAction(_:)), keyEquivalent: "")
+        openItem.representedObject = target
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let copyItem = NSMenuItem(title: "Copy Path", action: #selector(copySemanticPathContextAction(_:)), keyEquivalent: "")
+        copyItem.representedObject = target
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        menu.addItem(NSMenuItem.separator())
+        if core.hasSelection() {
+            let copySelectionItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+            copySelectionItem.target = self
+            menu.addItem(copySelectionItem)
+        }
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        menu.addItem(pasteItem)
+        menu.addItem(NSMenuItem.separator())
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+        return menu
+    }
+
+    @objc func openSemanticPathContextAction(_ sender: Any?) {
+        guard let target = (sender as? NSMenuItem)?.representedObject as? SemanticPathTarget else { return }
+        openSemanticPath(target)
+    }
+
+    @objc func copySemanticPathContextAction(_ sender: Any?) {
+        guard let target = (sender as? NSMenuItem)?.representedObject as? SemanticPathTarget else { return }
+        copyStringConsumer(target.resolvedPath)
+    }
+
+    // MARK: - Output Filtering / Focus Mode (E5)
+
+    /// Packs a simple ASCII string into terminal cell data for notification or placeholder rows.
+    static func packAsciiRow(_ text: String, cols: Int) -> Data {
+        var data = Data(count: cols * 16)
+        let scalars = Array(text.unicodeScalars)
+        for i in 0..<min(scalars.count, cols) {
+            let ch = scalars[i].value
+            let byteOffset = i * 16
+            var val = ch.littleEndian
+            withUnsafeBytes(of: &val) { ptr in
+                data.replaceSubrange(byteOffset..<(byteOffset + 4), with: ptr)
+            }
+            data[byteOffset + 4] = 160
+            data[byteOffset + 5] = 160
+            data[byteOffset + 6] = 160
+        }
+        return data
+    }
+
+    /// Collects all retained scrollback and live viewport lines in chronological order without mutating session history (E5).
+    public func collectAllRetainedLines() -> [FilteredOutputLine] {
+        let totalScrollback = Int(core.scrollbackLen())
+        let totalViewport = Int(core.rows())
+        let cols = Int(core.cols())
+        let bytesPerRow = cols * 16
+
+        let originalOffset = core.viewportOffset()
+        defer {
+            core.scrollTo(offset: originalOffset)
+        }
+
+        var collectedBlocks: [(offset: Int, lines: [FilteredOutputLine])] = []
+
+        var offset = 0
+        while offset <= totalScrollback {
+            core.scrollTo(offset: UInt32(offset))
+            let frameData = core.viewportPacked()
+            let graphemes = core.viewportGraphemes()
+
+            var blockLines: [FilteredOutputLine] = []
+            for r in 0..<totalViewport {
+                let (lineText, _) = Self.rowText(core.viewportRow(row: UInt32(r)))
+                let byteStart = r * bytesPerRow
+                let byteEnd = min(byteStart + bytesPerRow, frameData.count)
+                let packedRow = byteStart < frameData.count ? frameData.subdata(in: byteStart..<byteEnd) : Data(count: bytesPerRow)
+                blockLines.append(FilteredOutputLine(
+                    retainedRowIndex: 0,
+                    text: lineText,
+                    packedCells: packedRow,
+                    graphemes: graphemes
+                ))
+            }
+            collectedBlocks.append((offset: offset, lines: blockLines))
+
+            if offset == totalScrollback {
+                break
+            }
+            if offset + totalViewport >= totalScrollback {
+                offset = totalScrollback
+            } else {
+                offset += totalViewport
+            }
+        }
+
+        var result: [FilteredOutputLine] = []
+        var nextExpectedIndex = 0
+        for i in (0..<collectedBlocks.count).reversed() {
+            let block = collectedBlocks[i]
+            let lines = block.lines
+            if i == collectedBlocks.count - 1 && collectedBlocks.count > 1 {
+                let nextBlockOffset = collectedBlocks[i - 1].offset
+                let takeCount = block.offset - nextBlockOffset
+                let slice = lines.prefix(takeCount)
+                for l in slice {
+                    result.append(FilteredOutputLine(retainedRowIndex: nextExpectedIndex, text: l.text, packedCells: l.packedCells, graphemes: l.graphemes))
+                    nextExpectedIndex += 1
+                }
+            } else {
+                for l in lines {
+                    result.append(FilteredOutputLine(retainedRowIndex: nextExpectedIndex, text: l.text, packedCells: l.packedCells, graphemes: l.graphemes))
+                    nextExpectedIndex += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// Constructs the temporary rendered frame projecting only matching lines (Focus mode - E5).
+    private func filteredRenderFrame() -> FfiRenderFrame {
+        var baseFrame = core.renderFrame()
+        let totalCols = Int(core.cols())
+        let totalRows = Int(core.rows())
+        let bytesPerRow = totalCols * 16
+
+        var packedData = Data(count: totalRows * bytesPerRow)
+        var allGraphemes: [FfiGrapheme] = []
+
+        let matchCount = outputFilterMatchingLines.count
+        if matchCount == 0 {
+            if !outputFilterQuery.isEmpty {
+                let msg = " [Focus mode: no lines match '\(outputFilterQuery)']"
+                let msgRow = Self.packAsciiRow(msg, cols: totalCols)
+                packedData.replaceSubrange(0..<min(bytesPerRow, msgRow.count), with: msgRow)
+            }
+        } else {
+            let maxOffset = max(0, matchCount - totalRows)
+            let clampedOffset = max(0, min(outputFilterScrollOffset, maxOffset))
+            let startIndex = max(0, matchCount - totalRows - clampedOffset)
+            let endIndex = min(matchCount, startIndex + totalRows)
+            let slice = outputFilterMatchingLines[startIndex..<endIndex]
+
+            var targetRow = 0
+            for line in slice {
+                guard targetRow < totalRows else { break }
+                let rowData = line.packedCells.prefix(bytesPerRow)
+                let destOffset = targetRow * bytesPerRow
+                if rowData.count == bytesPerRow {
+                    packedData.replaceSubrange(destOffset..<(destOffset + bytesPerRow), with: rowData)
+                } else if rowData.count > 0 {
+                    packedData.replaceSubrange(destOffset..<(destOffset + rowData.count), with: rowData)
+                }
+                allGraphemes.append(contentsOf: line.graphemes)
+                targetRow += 1
+            }
+        }
+
+        baseFrame.packedCells = packedData
+        baseFrame.graphemes = allGraphemes
+        baseFrame.snapshot.cursorVisible = false
+        return baseFrame
+    }
+
+    /// Sets or updates the active output filter (Focus mode - E5).
+    @objc open func setOutputFilter(query: String, isRegex: Bool = false) {
+        outputFilterQuery = query
+        outputFilterIsRegex = isRegex
+        isOutputFilterActive = !query.isEmpty
+        outputFilterScrollOffset = 0
+        refreshOutputFilterMatches()
+    }
+
+    /// Deactivates focus mode and immediately restores the complete scrollback without buffer mutation (E5).
+    @objc open func clearOutputFilter() {
+        isOutputFilterActive = false
+        outputFilterQuery = ""
+        outputFilterIsRegex = false
+        outputFilterMatchingLines.removeAll()
+        outputFilterScrollOffset = 0
+        updateScroller()
+        scheduleRedraw()
+        onOutputFilterChanged?(false, 0, 0)
+    }
+
+    /// Toggles output filtering / focus mode on or off (E5).
+    @objc open func toggleOutputFilter() {
+        if isOutputFilterActive {
+            clearOutputFilter()
+        } else {
+            isOutputFilterActive = true
+            refreshOutputFilterMatches()
+        }
+    }
+
+    /// Refreshes matching lines for the active query across all retained scrollback lines.
+    public func refreshOutputFilterMatches() {
+        guard isOutputFilterActive else {
+            outputFilterMatchingLines.removeAll()
+            return
+        }
+        let allLines = collectAllRetainedLines()
+        guard !outputFilterQuery.isEmpty else {
+            outputFilterMatchingLines = allLines
+            onOutputFilterChanged?(true, allLines.count, allLines.count)
+            updateScroller()
+            scheduleRedraw()
+            return
+        }
+
+        let matching: [FilteredOutputLine]
+        if outputFilterIsRegex {
+            if let regex = try? NSRegularExpression(pattern: outputFilterQuery, options: [.caseInsensitive]) {
+                matching = allLines.filter { line in
+                    let range = NSRange(location: 0, length: (line.text as NSString).length)
+                    return regex.firstMatch(in: line.text, options: [], range: range) != nil
+                }
+            } else {
+                matching = allLines.filter { line in
+                    line.text.localizedCaseInsensitiveContains(outputFilterQuery)
+                }
+            }
+        } else {
+            matching = allLines.filter { line in
+                line.text.localizedCaseInsensitiveContains(outputFilterQuery)
+            }
+        }
+
+        outputFilterMatchingLines = matching
+        let maxOffset = max(0, matching.count - Int(core.rows()))
+        if outputFilterScrollOffset > maxOffset {
+            outputFilterScrollOffset = maxOffset
+        }
+        onOutputFilterChanged?(true, matching.count, allLines.count)
+        updateScroller()
+        scheduleRedraw()
+    }
+
     /// A row's text, each cell's whole cluster, and the column every UTF-16
     /// unit of it came from: a cluster or a wide glyph is not one unit per
     /// column.
@@ -3717,30 +4374,53 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// change what should be underlined.
     private func updateHoveredLink(commandHeld: Bool) {
         let link = commandHeld ? mouseCell.flatMap(linkRange(at:)) : nil
-        guard link?.url != hoveredLink?.url || link?.colStart != hoveredLink?.colStart
-                || link?.row != hoveredLink?.row else { return }
+        let semantic = (commandHeld && link == nil && semanticPathDetectionEnabled) ? mouseCell.flatMap(semanticPath(at:)) : nil
+
+        let linkChanged = link?.url != hoveredLink?.url || link?.colStart != hoveredLink?.colStart || link?.row != hoveredLink?.row
+        let semanticChanged = semantic != hoveredSemanticPath
+        guard linkChanged || semanticChanged else { return }
+
         hoveredLink = link
-        guard let link else {
-            linkUnderlineLayer.isHidden = true
-            NSCursor.arrow.set()
+        hoveredSemanticPath = semantic
+
+        if let link {
+            let origin = cellOrigin(row: link.row, col: link.colStart)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            linkUnderlineLayer.frame = NSRect(
+                x: origin.x, y: origin.y,
+                width: cellWidth * CGFloat(link.colEnd - link.colStart + 1),
+                height: max((cellHeight * 0.08).rounded(.up), 1)
+            )
+            if link.isMismatch {
+                linkUnderlineLayer.backgroundColor = NSColor.systemRed.cgColor
+            } else {
+                linkUnderlineLayer.backgroundColor = NSColor.labelColor.cgColor
+            }
+            linkUnderlineLayer.isHidden = false
+            CATransaction.commit()
+            NSCursor.pointingHand.set()
             return
         }
-        let origin = cellOrigin(row: link.row, col: link.colStart)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        linkUnderlineLayer.frame = NSRect(
-            x: origin.x, y: origin.y,
-            width: cellWidth * CGFloat(link.colEnd - link.colStart + 1),
-            height: max((cellHeight * 0.08).rounded(.up), 1)
-        )
-        if link.isMismatch {
-            linkUnderlineLayer.backgroundColor = NSColor.systemRed.cgColor
-        } else {
+
+        if let semantic {
+            let origin = cellOrigin(row: semantic.row, col: semantic.colStart)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            linkUnderlineLayer.frame = NSRect(
+                x: origin.x, y: origin.y,
+                width: cellWidth * CGFloat(semantic.colEnd - semantic.colStart + 1),
+                height: max((cellHeight * 0.08).rounded(.up), 1)
+            )
             linkUnderlineLayer.backgroundColor = NSColor.labelColor.cgColor
+            linkUnderlineLayer.isHidden = false
+            CATransaction.commit()
+            NSCursor.pointingHand.set()
+            return
         }
-        linkUnderlineLayer.isHidden = false
-        CATransaction.commit()
-        NSCursor.pointingHand.set()
+
+        linkUnderlineLayer.isHidden = true
+        NSCursor.arrow.set()
     }
 
     override public func rightMouseDown(with event: NSEvent) {
@@ -3838,6 +4518,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         hasPresentedMatchingPreview = false
         mouseCell = nil
         currentHoveredLink = nil
+        hoveredSemanticPath = nil
         hoveredLinkTarget = nil
         self.toolTip = nil
         updateLinkHUD(link: nil)
@@ -4352,6 +5033,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let cell = cellAt(loc)
         if let link = linkRange(at: cell) {
             return linkContextMenu(for: link)
+        }
+        if let pathTarget = semanticPath(at: cell) {
+            return semanticPathContextMenu(for: pathTarget)
         }
         if let targetId = commandIdForContext(at: loc),
            let cmd = commandInfo(for: targetId) {
@@ -4884,6 +5568,9 @@ extension TakoTerminalNSView: NSTextInputClient {}
 
 public typealias TakoTerminalView = TakoTerminalNSView
 public typealias TakoTerminalViewDelegate = TakoTerminalNSViewDelegate
+public typealias SemanticPathPayload = TakoTerminalNSView.SemanticPathPayload
+public typealias SemanticPathTarget = TakoTerminalNSView.SemanticPathTarget
+public typealias FilteredOutputLine = TakoTerminalNSView.FilteredOutputLine
 
 public extension FfiCommandOutput {
     /// True when any part of the command's original output was evicted, overwritten, or truncated.
