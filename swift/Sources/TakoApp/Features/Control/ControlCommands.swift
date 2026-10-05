@@ -1909,8 +1909,14 @@ enum ControlCommands {
             return "show"
         }()
 
+        let isSecure = SecureInput.shared.isSecure(for: surface) || surface.isSecureInput
+
         switch action {
         case "set":
+            guard !isSecure else {
+                ResumeSessionStore.shared.clear(for: surface.id)
+                throw ControlError(.disabled, "secure-input panes cannot record resume state")
+            }
             let argv: [String] = try {
                 guard let argVal = request.args["argv"] else {
                     throw ControlError(.invalid, "missing \"argv\" argument for resume set")
@@ -1937,7 +1943,7 @@ enum ControlCommands {
                 }
             }
             let record = ResumeSessionRecord(argv: argv, cwd: cwd, env: env, recordedAt: Date(), isImported: false)
-            ResumeSessionStore.shared.set(record: record, for: surface.id)
+            ResumeSessionStore.shared.set(record: record, for: surface.id, isSecure: isSecure)
             let isApproved = ResumeTrustStore.shared.isApproved(argv: record.argv, cwd: cwd)
             return .ok([
                 "id": .string(surface.id.uuidString.lowercased()),
@@ -1947,6 +1953,13 @@ enum ControlCommands {
             ])
 
         case "show":
+            if isSecure {
+                ResumeSessionStore.shared.clear(for: surface.id)
+                return .ok([
+                    "id": .string(surface.id.uuidString.lowercased()),
+                    "has_resume": .bool(false),
+                ])
+            }
             guard let record = ResumeSessionStore.shared.record(for: surface.id) else {
                 return .ok([
                     "id": .string(surface.id.uuidString.lowercased()),
@@ -1978,6 +1991,9 @@ enum ControlCommands {
             ])
 
         case "run":
+            guard !isSecure else {
+                throw ControlError(.disabled, "secure-input panes cannot run resume state")
+            }
             guard let record = ResumeSessionStore.shared.record(for: surface.id) else {
                 throw ControlError(.notFound, "no resume session recorded for this pane")
             }

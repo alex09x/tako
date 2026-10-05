@@ -37,19 +37,12 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
     public init() {}
 
     /// Validates whether a user-supplied regex pattern is safe from catastrophic backtracking (ReDoS).
+    /// Uses proven safe-pattern grammar rejecting ambiguous adjacent repetitions, nested quantifiers,
+    /// and branching explosions.
     public static func isPatternSafe(_ pattern: String) -> Bool {
         guard pattern.count <= 256 else { return false }
-        // Check for nested quantifiers: parentheses containing repetition followed by another repetition operator
-        // Examples: (a+)+, (.*)*, ([0-9]+)+, ((a+)?)+
-        let nestedQuantifiers = #"\([^\)]*[\+\*\{][^\)]*\)[\+\*\{]"#
-        if pattern.range(of: nestedQuantifiers, options: .regularExpression) != nil {
-            return false
-        }
-        // Check for multiple unanchored wildcards
-        let multipleWildcards = #"\.\*.*\.\*|\.\+.*\.\+"#
-        if pattern.range(of: multipleWildcards, options: .regularExpression) != nil {
-            return false
-        }
+        let safety = TerminalRegexTrigger.isSafePattern(pattern)
+        guard safety.isSafe else { return false }
         return true
     }
 
@@ -74,7 +67,7 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
         guard !trimmed.isEmpty else { return false }
 
         guard Self.isPatternSafe(trimmed) else {
-            throw RedactionPatternError.unsafePattern("Pattern contains nested quantifiers or dangerous repetitions prone to catastrophic backtracking")
+            throw RedactionPatternError.unsafePattern("Pattern contains nested quantifiers, ambiguous repeated atoms, or dangerous repetitions prone to catastrophic backtracking")
         }
 
         let regex = try NSRegularExpression(pattern: trimmed, options: [])
@@ -117,27 +110,59 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
     }
 
     /// Redacts all matches in a text string, replacing them with `[REDACTED]`.
-    public func redact(_ text: String) -> String {
+    /// Bounded by a deadline and line chunking to prevent terminal output from hanging session export.
+    public func redact(_ text: String, timeout: TimeInterval = 0.5) -> String {
         lock.lock()
         let regexes = compiledRegexes
         lock.unlock()
 
         guard !regexes.isEmpty, !text.isEmpty else { return text }
 
+        let deadline = Date().addingTimeInterval(timeout)
+
         // Process line-by-line to bound regex matching work and avoid monolithic reallocations
         let lines = text.components(separatedBy: "\n")
-        let redactedLines = lines.map { line -> String in
-            var modified = line
-            for regex in regexes {
-                let range = NSRange(modified.startIndex..<modified.endIndex, in: modified)
-                modified = regex.stringByReplacingMatches(
-                    in: modified,
-                    options: [],
-                    range: range,
-                    withTemplate: "[REDACTED]"
-                )
+        var redactedLines: [String] = []
+        redactedLines.reserveCapacity(lines.count)
+
+        for line in lines {
+            if Date() > deadline {
+                redactedLines.append(line)
+                continue
             }
-            return modified
+            if line.count > 16384 {
+                var chunkedLine = ""
+                var idx = line.startIndex
+                while idx < line.endIndex {
+                    let nextIdx = line.index(idx, offsetBy: 4096, limitedBy: line.endIndex) ?? line.endIndex
+                    let chunk = String(line[idx..<nextIdx])
+                    var modifiedChunk = chunk
+                    for regex in regexes {
+                        let range = NSRange(modifiedChunk.startIndex..<modifiedChunk.endIndex, in: modifiedChunk)
+                        modifiedChunk = regex.stringByReplacingMatches(
+                            in: modifiedChunk,
+                            options: [],
+                            range: range,
+                            withTemplate: "[REDACTED]"
+                        )
+                    }
+                    chunkedLine.append(modifiedChunk)
+                    idx = nextIdx
+                }
+                redactedLines.append(chunkedLine)
+            } else {
+                var modified = line
+                for regex in regexes {
+                    let range = NSRange(modified.startIndex..<modified.endIndex, in: modified)
+                    modified = regex.stringByReplacingMatches(
+                        in: modified,
+                        options: [],
+                        range: range,
+                        withTemplate: "[REDACTED]"
+                    )
+                }
+                redactedLines.append(modified)
+            }
         }
         return redactedLines.joined(separator: "\n")
     }
@@ -340,6 +365,68 @@ private struct CheckpointRedactionEngine {
         }
     }
 
+    mutating func copyUInt16() -> Bool {
+        guard let d = readBytes(2) else { return false }
+        out.append(d)
+        return true
+    }
+
+    mutating func copyColor() -> Bool {
+        guard let c = readColor() else { return false }
+        out.append(c.bytes)
+        return true
+    }
+
+    mutating func copyLengthPrefixedBytes() -> Bool {
+        guard let len = readUInt32() else { return false }
+        var lenLE = len.littleEndian
+        withUnsafeBytes(of: &lenLE) { out.append(contentsOf: $0) }
+        return copyBytes(Int(len))
+    }
+
+    mutating func redactLengthPrefixedString() -> Bool {
+        guard let len = readUInt32() else { return false }
+        let l = Int(len)
+        guard let strBytes = readBytes(l) else { return false }
+        let str = String(data: strBytes, encoding: .utf8) ?? ""
+        let redacted = redactText(str)
+        let utf8Bytes = Data(redacted.utf8)
+        var newLen = UInt32(utf8Bytes.count).littleEndian
+        withUnsafeBytes(of: &newLen) { out.append(contentsOf: $0) }
+        out.append(utf8Bytes)
+        return true
+    }
+
+    mutating func redactOptionalString() -> Bool {
+        guard let present = readBool() else { return false }
+        out.append(present ? 0x01 : 0x00)
+        if present {
+            return redactLengthPrefixedString()
+        }
+        return true
+    }
+
+    mutating func copyOptionalUInt64() -> Bool {
+        guard let present = readBool() else { return false }
+        out.append(present ? 0x01 : 0x00)
+        return copyUInt64()
+    }
+
+    func redactText(_ str: String) -> String {
+        guard !regexes.isEmpty, !str.isEmpty else { return str }
+        var modified = str
+        for regex in regexes {
+            let range = NSRange(modified.startIndex..<modified.endIndex, in: modified)
+            modified = regex.stringByReplacingMatches(
+                in: modified,
+                options: [],
+                range: range,
+                withTemplate: "[REDACTED]"
+            )
+        }
+        return modified
+    }
+
     mutating func readSingleCell() -> DecodedCell? {
         guard let cp = readUInt32() else { return nil }
         var content = Data()
@@ -535,32 +622,258 @@ private struct CheckpointRedactionEngine {
             writeCells(cells, into: &out)
         }
 
-        // 4. Remaining payload: Cursor, Modes, Parser, Hyperlinks, Title, Graphics, Commands
-        // Copy the remaining bytes, applying byte-level text redaction if any regex matches in trailing strings
-        guard offset <= input.count else { return nil }
-        var tailData = input.subdata(in: offset..<input.count)
-        if let tailString = String(data: tailData, encoding: .isoLatin1) {
-            var modifiedTail = [UInt8](tailData)
-            var didModifyTail = false
-            for regex in regexes {
-                let nsRange = NSRange(location: 0, length: tailString.utf16.count)
-                let matches = regex.matches(in: tailString, options: [], range: nsRange)
-                for match in matches {
-                    guard let range = Range(match.range, in: tailString) else { continue }
-                    let startOffset = tailString.utf8.distance(from: tailString.startIndex, to: range.lowerBound)
-                    let matchLen = tailString.utf8.distance(from: range.lowerBound, to: range.upperBound)
-                    guard startOffset >= 0, startOffset + matchLen <= modifiedTail.count else { continue }
-                    for i in 0..<matchLen {
-                        modifiedTail[startOffset + i] = 0x2A
+        // 4. Cursor
+        guard copyUInt32() else { return nil } // row
+        guard copyUInt32() else { return nil } // col
+        guard copyColor() else { return nil }  // fg
+        guard copyColor() else { return nil }  // bg
+        guard copyUInt16() else { return nil } // attrs
+        guard copyUInt8() else { return nil }  // underline_style
+        guard copyColor() else { return nil }  // underline_color
+        guard copyBool() else { return nil }   // cursor_visible
+        guard copyUInt8() else { return nil }  // shape
+        guard copyBool() else { return nil }   // blinking
+
+        // 5. Saved Cursor
+        guard let hasSaved = readBool() else { return nil }
+        out.append(hasSaved ? 0x01 : 0x00)
+        if hasSaved {
+            guard copyUInt32() else { return nil } // s_row
+            guard copyUInt32() else { return nil } // s_col
+            guard copyColor() else { return nil }  // s_fg
+            guard copyColor() else { return nil }  // s_bg
+            guard copyUInt16() else { return nil } // s_attrs
+            guard copyUInt8() else { return nil }  // s_g0
+            guard copyUInt8() else { return nil }  // s_g1
+            guard copyBool() else { return nil }   // s_shift_out
+            guard copyBool() else { return nil }   // s_origin_mode
+            guard copyBool() else { return nil }   // s_pending_wrap
+            guard copyUInt8() else { return nil }  // s_prot
+            guard copyUInt8() else { return nil }  // s_gr_slot
+        }
+
+        // 6. Tab Stops
+        guard let tabCols = readUInt32() else { return nil }
+        var tabColsLE = tabCols.littleEndian
+        withUnsafeBytes(of: &tabColsLE) { out.append(contentsOf: $0) }
+        let bitsetLen = (Int(tabCols) + 7) / 8
+        guard copyBytes(bitsetLen) else { return nil }
+
+        // 7. Modes
+        guard copyUInt32() else { return nil } // mode_flags
+        guard copyUInt8() else { return nil }  // mouse_tracking
+
+        // 8. Parser State
+        guard copyUInt8() else { return nil }  // state
+        guard let interLen = readUInt8() else { return nil }
+        out.append(interLen)
+        guard copyBytes(Int(interLen)) else { return nil }
+        guard let paramsLen = readUInt8() else { return nil }
+        out.append(paramsLen)
+        guard copyBytes(Int(paramsLen) * 2) else { return nil }
+        guard copyUInt32() else { return nil } // params_sep
+        guard copyBool() else { return nil }   // ignore
+        guard copyLengthPrefixedBytes() else { return nil } // osc_raw
+        guard copyLengthPrefixedBytes() else { return nil } // apc_raw
+        guard copyUInt8() else { return nil }  // utf8_need
+        guard copyUInt32() else { return nil } // utf8_cp
+
+        // 9. DCS
+        guard copyUInt8() else { return nil } // dcs_kind
+        guard copyLengthPrefixedBytes() else { return nil } // dcs_buf
+
+        // 10. Charsets & Shift
+        guard copyUInt8() else { return nil } // g0
+        guard copyUInt8() else { return nil } // g1
+        guard copyUInt8() else { return nil } // g2
+        guard copyUInt8() else { return nil } // g3
+        guard copyBool() else { return nil }  // shift_out
+        guard copyUInt8() else { return nil } // gr_slot
+        guard let hasSingleShift = readBool() else { return nil }
+        out.append(hasSingleShift ? 0x01 : 0x00)
+        if hasSingleShift {
+            guard copyUInt8() else { return nil }
+        }
+
+        // 11. Hyperlinks
+        guard let hCount = readUInt32() else { return nil }
+        var hCountLE = hCount.littleEndian
+        withUnsafeBytes(of: &hCountLE) { out.append(contentsOf: $0) }
+        for _ in 0..<hCount {
+            guard redactLengthPrefixedString() else { return nil }
+        }
+        guard let hIdCount = readUInt32() else { return nil }
+        var hIdCountLE = hIdCount.littleEndian
+        withUnsafeBytes(of: &hIdCountLE) { out.append(contentsOf: $0) }
+        for _ in 0..<hIdCount {
+            guard redactLengthPrefixedString() else { return nil } // URL key
+            guard copyUInt32() else { return nil }                 // ID value
+        }
+        guard let hasCurHlink = readBool() else { return nil }
+        out.append(hasCurHlink ? 0x01 : 0x00)
+        if hasCurHlink {
+            guard copyUInt32() else { return nil }
+        }
+
+        // 12. Title & Title Stack
+        guard redactLengthPrefixedString() else { return nil } // title
+        guard let tsCount = readUInt32() else { return nil }
+        var tsCountLE = tsCount.littleEndian
+        withUnsafeBytes(of: &tsCountLE) { out.append(contentsOf: $0) }
+        for _ in 0..<tsCount {
+            guard redactLengthPrefixedString() else { return nil }
+        }
+
+        // 13. Palette
+        guard copyBytes(768) else { return nil } // 256 * 3 colors
+        guard let hasDefFg = readBool() else { return nil }
+        out.append(hasDefFg ? 0x01 : 0x00)
+        if hasDefFg { guard copyBytes(3) else { return nil } }
+        guard let hasDefBg = readBool() else { return nil }
+        out.append(hasDefBg ? 0x01 : 0x00)
+        if hasDefBg { guard copyBytes(3) else { return nil } }
+        guard let hasCurCol = readBool() else { return nil }
+        out.append(hasCurCol ? 0x01 : 0x00)
+        if hasCurCol { guard copyBytes(3) else { return nil } }
+
+        // 14. Kitty Keyboard
+        guard let kkCount = readUInt8() else { return nil }
+        out.append(kkCount)
+        guard copyBytes(Int(kkCount)) else { return nil }
+
+        // 15. Graphics Placements
+        guard let pCount = readUInt32() else { return nil }
+        var pCountLE = pCount.littleEndian
+        withUnsafeBytes(of: &pCountLE) { out.append(contentsOf: $0) }
+        guard copyBytes(Int(pCount) * 16) else { return nil } // image_id, placement_id, row, col
+
+        // 16. Graphics Images & Pending Transfers
+        guard copyUInt32() else { return nil } // next_image_id
+        guard copyUInt64() else { return nil } // next_image_generation
+        guard let imagesCount = readUInt32() else { return nil }
+        var imgCountLE = imagesCount.littleEndian
+        withUnsafeBytes(of: &imgCountLE) { out.append(contentsOf: $0) }
+        for _ in 0..<imagesCount {
+            guard copyUInt32() else { return nil } // id
+            guard copyUInt8() else { return nil }  // format
+            guard copyUInt32() else { return nil } // width
+            guard copyUInt32() else { return nil } // height
+            guard copyUInt64() else { return nil } // generation
+            guard copyLengthPrefixedBytes() else { return nil } // pixels
+        }
+
+        guard let pendingCount = readUInt32() else { return nil }
+        var penCountLE = pendingCount.littleEndian
+        withUnsafeBytes(of: &penCountLE) { out.append(contentsOf: $0) }
+        for _ in 0..<pendingCount {
+            guard let keyTag = readUInt8() else { return nil }
+            out.append(keyTag)
+            if keyTag == 1 {
+                guard copyUInt32() else { return nil } // image id
+            }
+            guard copyUInt8() else { return nil } // format
+            guard copyUInt32() else { return nil } // width
+            guard copyUInt32() else { return nil } // height
+            guard copyLengthPrefixedBytes() else { return nil } // data
+        }
+
+        // 17. Remaining State
+        guard let hasLastPrinted = readBool() else { return nil }
+        out.append(hasLastPrinted ? 0x01 : 0x00)
+        if hasLastPrinted { guard copyUInt32() else { return nil } }
+        guard copyUInt8() else { return nil }  // protected_mode
+        guard redactLengthPrefixedString() else { return nil } // answerback
+        guard redactLengthPrefixedString() else { return nil } // xtversion
+        guard copyUInt32() else { return nil } // width_px
+        guard copyUInt32() else { return nil } // height_px
+        guard copyUInt8() else { return nil }  // dark_scheme
+        guard copyUInt8() else { return nil }  // semantic_content
+        guard copyUInt16() else { return nil } // checksum_ext
+
+        // 18. Version 1 selection
+        if version == 1 {
+            guard let hasSel = readBool() else { return nil }
+            out.append(hasSel ? 0x01 : 0x00)
+            if hasSel { guard copyBytes(17) else { return nil } }
+        }
+
+        // 19. Version >= 3 Host Config & Clusters
+        if version >= 3 {
+            // Host config
+            guard copyBytes(768) else { return nil } // base colors (256 * 3)
+            guard copyBytes(32) else { return nil }  // overridden bitmask (32 bytes)
+            for _ in 0..<3 { // base_fg, base_bg, base_cursor
+                guard let hasBase = readBool() else { return nil }
+                out.append(hasBase ? 0x01 : 0x00)
+                if hasBase { guard copyBytes(3) else { return nil } }
+            }
+            guard copyBool() else { return nil } // fg_overridden
+            guard copyBool() else { return nil } // bg_overridden
+            guard copyBool() else { return nil } // cursor_overridden
+            guard copyUInt8() else { return nil } // default_cursor_style shape
+            guard copyBool() else { return nil }  // default_cursor_style blinking
+            guard copyBool() else { return nil }  // cursor_style_overridden
+
+            // Clusters (Primary)
+            guard let primClustersCount = readUInt32() else { return nil }
+            var pcCountLE = primClustersCount.littleEndian
+            withUnsafeBytes(of: &pcCountLE) { out.append(contentsOf: $0) }
+            for _ in 0..<primClustersCount {
+                guard copyUInt32() else { return nil } // line
+                guard copyUInt32() else { return nil } // col
+                guard redactLengthPrefixedString() else { return nil } // extra
+                guard copyBool() else { return nil }   // wide
+            }
+
+            // Clusters (Alternate)
+            guard let altClustersCount = readUInt32() else { return nil }
+            var acCountLE = altClustersCount.littleEndian
+            withUnsafeBytes(of: &acCountLE) { out.append(contentsOf: $0) }
+            for _ in 0..<altClustersCount {
+                guard copyUInt32() else { return nil } // line
+                guard copyUInt32() else { return nil } // col
+                guard redactLengthPrefixedString() else { return nil } // extra
+                guard copyBool() else { return nil }   // wide
+            }
+
+            // Version >= 4 Commands
+            if version >= 4 {
+                guard let runCount = readUInt32() else { return nil }
+                var rcLE = runCount.littleEndian
+                withUnsafeBytes(of: &rcLE) { out.append(contentsOf: $0) }
+                guard copyBytes(Int(runCount) * 13) else { return nil } // tag(1) + id(8) + n(4) = 13 bytes
+
+                guard copyOptionalUInt64() else { return nil } // pen
+                guard copyOptionalUInt64() else { return nil } // next_id
+                guard copyOptionalUInt64() else { return nil } // running
+
+                guard let recCount = readUInt32() else { return nil }
+                var recCountLE = recCount.littleEndian
+                withUnsafeBytes(of: &recCountLE) { out.append(contentsOf: $0) }
+                for _ in 0..<recCount {
+                    guard copyUInt64() else { return nil } // id
+                    guard copyUInt8() else { return nil }  // status
+                    guard copyUInt32() else { return nil } // code
+                    guard redactOptionalString() else { return nil } // cwd
+                    guard redactOptionalString() else { return nil } // input!
+                    guard copyBool() else { return nil }   // input_truncated
+                    guard copyOptionalUInt64() else { return nil } // started_at_ms
+                    if version >= 6 {
+                        guard copyOptionalUInt64() else { return nil } // prompt_line
                     }
-                    didModifyTail = true
+                }
+
+                guard redactOptionalString() else { return nil } // last_cwd
+                guard copyOptionalUInt64() else { return nil }   // input_start line
+                guard copyUInt32() else { return nil }           // input_start col
+                if version >= 6 {
+                    guard copyOptionalUInt64() else { return nil } // last_prompt_line
                 }
             }
-            if didModifyTail {
-                tailData = Data(modifiedTail)
-            }
         }
-        out.append(tailData)
+
+        // Must consume entire payload
+        guard offset == input.count else { return nil }
         return out
     }
 }

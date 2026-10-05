@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
@@ -144,6 +154,9 @@ final class SessionSnapshotSaver {
     let store: SessionSnapshotStore
     /// The parse count each tab had when it was last written.
     private var written: [UUID: UInt64] = [:]
+    /// Monotonic token per pane to ensure out-of-order or stale async saves never commit.
+    private var activeTokens: [UUID: UInt64] = [:]
+    private let writeQueue = DispatchQueue(label: "codes.prod.tako.snapshots.writer", qos: .utility)
     private var timer: Timer?
 
     nonisolated init(store: SessionSnapshotStore = .shared) {
@@ -171,6 +184,7 @@ final class SessionSnapshotSaver {
         guard settings.enabled, !settings.secureInput else {
             store.removeAll()
             written = [:]
+            activeTokens = [:]
             return
         }
         let share = surfaces.isEmpty ? 0 : settings.limit / UInt64(surfaces.count)
@@ -180,6 +194,7 @@ final class SessionSnapshotSaver {
             if SecureInput.shared.isSecure(for: surface) || surface.isSecureInput {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
                 continue
             }
             live.insert(surface.id)
@@ -189,6 +204,7 @@ final class SessionSnapshotSaver {
             guard budget > 0 else {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
                 continue
             }
             // A file written under a bigger share (fewer tabs, a higher limit)
@@ -197,6 +213,7 @@ final class SessionSnapshotSaver {
             if let size = store.size(id: surface.id), size > share {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
             }
             switch surface.exportSnapshotState(maxBytes: budget, unlessGeneration: written[surface.id]) {
             case .unchanged:
@@ -206,14 +223,33 @@ final class SessionSnapshotSaver {
                 // older screen than the one it had.
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
             case .exported(let checkpoint, let generation):
                 let surfaceId = surface.id
+                let token = (activeTokens[surfaceId] ?? 0) + 1
+                activeTokens[surfaceId] = token
                 if asynchronous {
-                    written[surfaceId] = generation
                     let currentStore = self.store
-                    DispatchQueue.global(qos: .utility).async {
+                    writeQueue.async { [weak self] in
                         let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
-                        try? currentStore.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                        Task { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            // Only commit if the captured token is still current (not superseded or invalidated)
+                            guard self.activeTokens[surfaceId] == token else { return }
+                            if let s = surfaces.first(where: { $0.id == surfaceId }) {
+                                if SecureInput.shared.isSecure(for: s) || s.isSecureInput {
+                                    self.store.remove(id: surfaceId)
+                                    self.written[surfaceId] = nil
+                                    return
+                                }
+                            }
+                            do {
+                                try currentStore.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                                self.written[surfaceId] = generation
+                            } catch {
+                                self.written[surfaceId] = nil
+                            }
+                        }
                     }
                 } else {
                     do {
@@ -228,5 +264,6 @@ final class SessionSnapshotSaver {
         }
         store.removeAll(except: live)
         written = written.filter { live.contains($0.key) }
+        activeTokens = activeTokens.filter { live.contains($0.key) }
     }
 }

@@ -388,4 +388,150 @@ import Testing
         #expect(restoredText.contains("Secret API: ***********************"))
         #expect(restoredText.contains("DATABASE_URL=********************************************"))
     }
+
+    // MARK: - Finding 1: Resume Set Rejection on Secure-Input Panes
+
+    @Test func testResumeSetRejectedOnSecureInputPanes() async throws {
+        let surface = makeSurfaceView()
+        defer { surface.close() }
+
+        surface.isSecureInputMode = true
+        defer { surface.isSecureInputMode = false }
+
+        let pane = ControlCommands.Pane(surface: surface, windowID: "win-1", tabID: "tab-1", stableTabID: "tab-1")
+        let all = [pane]
+        let allScopes = Set(ControlScope.allCases)
+
+        let req = ControlRequest(
+            cmd: "resume",
+            args: [
+                "action": .string("set"),
+                "target": .string(surface.id.uuidString),
+                "argv": .array([.string("sh"), .string("-c"), .string("echo secret")]),
+                "cwd": .string("/tmp"),
+            ],
+            from: nil,
+            scopes: allScopes
+        )
+
+        let res = ControlCommands.handle(req, all: all)
+        guard case .failure(let err) = res else {
+            Issue.record("resume set must be rejected for secure-input panes")
+            return
+        }
+        #expect(err.code == ControlError.Code.disabled)
+        #expect(ResumeSessionStore.shared.record(for: surface.id) == nil)
+    }
+
+    // MARK: - Finding 2: Legacy Resume Records Sanitized on Load
+
+    @Test func testLegacyResumeRecordsSanitizedOnLoadAndRewritten() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let store = ResumeSessionStore(directory: tempDir)
+        let paneId = UUID()
+
+        // Create a raw legacy JSON file directly on disk containing sensitive keys
+        let legacyJson: [String: Any] = [
+            "argv": ["python3", "app.py"],
+            "cwd": "/app",
+            "env": [
+                "PATH": "/usr/bin:/bin",
+                "DATABASE_URL": "postgres://user:password@db.local:5432/mydb",
+                "MY_PASSPHRASE": "super-secret-phrase",
+                "NORMAL_VAR": "hello"
+            ],
+            "recordedAt": Date().timeIntervalSinceReferenceDate,
+            "isImported": false
+        ]
+        let data = try JSONSerialization.data(withJSONObject: legacyJson)
+        let fileUrl = tempDir.appendingPathComponent(paneId.uuidString).appendingPathExtension("json")
+        try data.write(to: fileUrl)
+
+        // Verify the raw file on disk currently has DATABASE_URL
+        let initialDiskContent = try String(contentsOf: fileUrl, encoding: .utf8)
+        #expect(initialDiskContent.contains("DATABASE_URL"))
+        #expect(initialDiskContent.contains("MY_PASSPHRASE"))
+
+        // Load record via store.record(for:)
+        guard let loaded = store.record(for: paneId) else {
+            Issue.record("Failed to load legacy resume record")
+            return
+        }
+
+        // Environment must be sanitized in memory
+        #expect(loaded.env["PATH"] == "/usr/bin:/bin")
+        #expect(loaded.env["NORMAL_VAR"] == "hello")
+        #expect(loaded.env["DATABASE_URL"] == nil)
+        #expect(loaded.env["MY_PASSPHRASE"] == nil)
+
+        // The file on disk must have been rewritten without the sensitive keys
+        let rewrittenDiskContent = try String(contentsOf: fileUrl, encoding: .utf8)
+        #expect(!rewrittenDiskContent.contains("DATABASE_URL"))
+        #expect(!rewrittenDiskContent.contains("MY_PASSPHRASE"))
+        #expect(rewrittenDiskContent.contains("NORMAL_VAR"))
+    }
+
+    // MARK: - Finding 3: ReDoS Safe Pattern Grammar Rejection
+
+    @Test func testRedactionPatternRejectsAmbiguousAdjacentRepetitions() {
+        // Repeated identical / overlapping quantifiers that cause catastrophic backtracking
+        #expect(!SessionSnapshotRedactor.isPatternSafe("^a*a*a*a*a*a*a*b$"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe("a*a*"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe(".*.*"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe("\\w+\\w+"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe("([0-9]+)+"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe("((a+)?)+"))
+        #expect(!SessionSnapshotRedactor.isPatternSafe("(a*)*"))
+
+        // Legitimate safe patterns
+        #expect(SessionSnapshotRedactor.isPatternSafe("sk-[A-Za-z0-9\\-_]+"))
+        #expect(SessionSnapshotRedactor.isPatternSafe("Bearer\\s+[A-Za-z0-9\\-_]+"))
+        #expect(SessionSnapshotRedactor.isPatternSafe("AKIA[0-9A-Z]{16}"))
+        #expect(SessionSnapshotRedactor.isPatternSafe("ghp_[0-9a-zA-Z]{36}"))
+    }
+
+    // MARK: - Finding 4 & 5: Checkpoint Tail Redaction & Async Stale Invalidation
+
+    @Test func testCheckpointTailAndAsyncSaveInvalidation() throws {
+        let redactor = SessionSnapshotRedactor.shared
+        defer { redactor.clearPatterns() }
+        try redactor.addPattern("SUPER_SECRET_[0-9]+")
+
+        // 1. Checkpoint with command input in tail
+        let core = TakoCore(cols: 80, rows: 24)
+        // Feed an OSC 133 command so that commands log records input line
+        core.feed(bytes: Data("\u{1b}]133;A\u{07}SUPER_SECRET_987654321\u{1b}]133;B\u{07}\r\n".utf8))
+        let checkpoint = try core.checkpointExport(flags: 0, maxBytes: 0)
+
+        let redactedCheckpoint = redactor.redact(checkpoint: checkpoint)
+        let redactedStr = String(decoding: redactedCheckpoint, as: UTF8.self)
+        #expect(!redactedStr.contains("SUPER_SECRET_987654321"))
+
+        // Must still import cleanly
+        let restored = TakoCore(cols: 80, rows: 24)
+        try restored.checkpointImport(blob: redactedCheckpoint)
+
+        // 2. Async save invalidation on secure-input transition
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = SessionSnapshotStore(directory: tempDir)
+        let saver = SessionSnapshotSaver(store: store)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let surface = makeSurfaceView()
+        defer { surface.close() }
+
+        // Start save, immediately transition to secure input
+        surface.core.feed(bytes: Data("Normal text\r\n".utf8))
+        saver.save([surface], settings: .init(enabled: true, limit: 10_000_000, secureInput: false), asynchronous: true)
+
+        // Enter secure input and save again
+        surface.isSecureInputMode = true
+        saver.save([surface], settings: .init(enabled: true, limit: 10_000_000, secureInput: false), asynchronous: true)
+
+        // Store must not have any snapshot for the surface
+        #expect(store.read(id: surface.id) == nil)
+    }
 }
