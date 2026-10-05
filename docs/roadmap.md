@@ -446,7 +446,7 @@ status; type to filter by title, directory or status; Enter jumps to the pane.
 
 Done when the overview opens in under 150 ms with 30 panes and reflects status changes live.
 
-### [ ] B7. Attention navigation
+### [x] B7. Attention navigation
 
 - Next and previous "needs attention" shortcuts, across windows.
 - "Go back" to the pane the user was in before the jump.
