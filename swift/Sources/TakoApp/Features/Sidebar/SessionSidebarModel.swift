@@ -90,10 +90,12 @@ enum LocalGitInspection {
     struct GitInfo: Equatable, Sendable {
         let branch: String
         let isDirty: Bool?
+        let repoRoot: String?
 
-        init(branch: String, isDirty: Bool? = nil) {
+        init(branch: String, isDirty: Bool? = nil, repoRoot: String? = nil) {
             self.branch = branch
             self.isDirty = isDirty
+            self.repoRoot = repoRoot
         }
     }
 
@@ -151,7 +153,7 @@ enum LocalGitInspection {
     static func inspect(directory: String) -> GitInfo? {
         guard let resolved = resolveBranch(directory: directory) else { return nil }
         let isDirty = checkDirtyState(repoRoot: resolved.repoRoot)
-        return GitInfo(branch: resolved.branch, isDirty: isDirty)
+        return GitInfo(branch: resolved.branch, isDirty: isDirty, repoRoot: resolved.repoRoot)
     }
 
     private static func checkDirtyState(repoRoot: String) -> Bool? {

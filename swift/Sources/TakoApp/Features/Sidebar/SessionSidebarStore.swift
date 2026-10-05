@@ -117,6 +117,8 @@ final class SessionSidebarStore: ObservableObject {
     // In-memory caches to avoid redundant filesystem/process inspections during rendering.
     // Refreshed only on explicit invalidation, directory change, command completion, or opt-in toggle.
     private var gitCache: [String: LocalGitInspection.GitInfo?] = [:]
+    private var dirToRepoRoot: [String: String] = [:]
+    private var repoRootToDirs: [String: Set<String>] = [:]
     private var portsCache: [Int: [Int]] = [:]
     private var pendingGitInspections: Set<String> = []
     private var pendingPortsInspections: Set<Int> = []
@@ -155,21 +157,39 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    /// Invalidates Git cache for a specific directory, discarding in-flight inspections.
+    /// Invalidates Git cache for a specific directory and all directories in the same repository, discarding in-flight inspections.
     func invalidateGitCache(for directory: String) {
-        gitCache.removeValue(forKey: directory)
-        pendingGitInspections.remove(directory)
-        gitGenerations[directory, default: 0] += 1
+        let root = dirToRepoRoot[directory] ?? repoRootToDirs.keys.first(where: { directory == $0 || directory.hasPrefix($0 + "/") })
+        if let root {
+            let dirs = (repoRootToDirs[root] ?? []).union([root, directory])
+            for d in dirs {
+                gitCache.removeValue(forKey: d)
+                pendingGitInspections.remove(d)
+                gitGenerations[d, default: 0] += 1
+            }
+        } else {
+            gitCache.removeValue(forKey: directory)
+            pendingGitInspections.remove(directory)
+            gitGenerations[directory, default: 0] += 1
+        }
     }
 
     /// Checks whether an asynchronous Git inspection is currently in flight for a directory.
     func isGitInspectionPending(for directory: String) -> Bool {
-        pendingGitInspections.contains(directory)
+        if pendingGitInspections.contains(directory) { return true }
+        if let root = dirToRepoRoot[directory] ?? repoRootToDirs.keys.first(where: { directory == $0 || directory.hasPrefix($0 + "/") }) {
+            return pendingGitInspections.contains(root)
+        }
+        return false
     }
 
     /// Checks whether Git metadata is cached for a directory.
     func hasGitCache(for directory: String) -> Bool {
-        gitCache[directory] != nil
+        if gitCache[directory] != nil { return true }
+        if let root = dirToRepoRoot[directory] ?? repoRootToDirs.keys.first(where: { directory == $0 || directory.hasPrefix($0 + "/") }) {
+            return gitCache[root] != nil
+        }
+        return false
     }
 
     /// Checks whether an asynchronous ports inspection is currently in flight for a PID.
@@ -198,6 +218,8 @@ final class SessionSidebarStore: ObservableObject {
         pendingPortsInspections.removeAll()
         gitGenerations.removeAll()
         portsGenerations.removeAll()
+        dirToRepoRoot.removeAll()
+        repoRootToDirs.removeAll()
     }
 
     /// Dynamically binds to live surfaces across open tab groups to observe status, progress, elapsed, title, and pwd changes in real time.
@@ -249,19 +271,13 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    /// Sets or updates a custom user description for a tab or surface.
-    func setDescription(_ text: String, for id: String, surfaceIds: Set<UUID> = []) {
+    /// Sets or updates a custom user description for a tab.
+    func setDescription(_ text: String, for id: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             descriptions.removeValue(forKey: id)
-            for sid in surfaceIds {
-                descriptions.removeValue(forKey: sid.uuidString)
-            }
         } else {
             descriptions[id] = trimmed
-            for sid in surfaceIds {
-                descriptions[sid.uuidString] = trimmed
-            }
         }
     }
 
@@ -292,7 +308,9 @@ final class SessionSidebarStore: ObservableObject {
 
         for (index, win) in windows.enumerated() {
             let winSurfaces = surfaces(in: win)
-            let surface = winSurfaces.first
+            let controller = win.windowController as? BaseTerminalController
+            let focused = controller?.focusedSurface
+            let surface = (focused != nil && winSurfaces.contains(where: { $0 === focused })) ? focused : winSurfaces.first
             let surfaceIds = Set(winSurfaces.map(\.id))
             let surfaceId = surface?.id
             let id = win.stableTabIdentifier
@@ -309,10 +327,16 @@ final class SessionSidebarStore: ObservableObject {
             var gitBranch: String?
             var gitDirty: Bool?
             if optInGit, let dir = pwd, !dir.isEmpty {
-                if let cached = gitCache[dir] {
+                let knownRoot = dirToRepoRoot[dir] ?? repoRootToDirs.keys.first(where: { dir == $0 || dir.hasPrefix($0 + "/") })
+                if let knownRoot {
+                    dirToRepoRoot[dir] = knownRoot
+                    repoRootToDirs[knownRoot, default: []].insert(dir)
+                }
+                let cacheKey = knownRoot ?? dir
+                if let cached = gitCache[dir] ?? gitCache[cacheKey] {
                     gitBranch = cached?.branch
                     gitDirty = cached?.isDirty
-                } else if !pendingGitInspections.contains(dir) {
+                } else if !pendingGitInspections.contains(dir) && (knownRoot == nil || !pendingGitInspections.contains(knownRoot!)) {
                     pendingGitInspections.insert(dir)
                     let gen = gitGenerations[dir, default: 0]
                     let epoch = globalCacheEpoch
@@ -322,7 +346,17 @@ final class SessionSidebarStore: ObservableObject {
                             guard let self else { return }
                             self.pendingGitInspections.remove(dir)
                             if self.globalCacheEpoch == epoch && self.gitGenerations[dir, default: 0] == gen {
-                                self.gitCache[dir] = inspected
+                                if let root = inspected?.repoRoot {
+                                    self.dirToRepoRoot[dir] = root
+                                    self.repoRootToDirs[root, default: []].insert(dir)
+                                    self.repoRootToDirs[root, default: []].insert(root)
+                                    self.gitCache[root] = inspected
+                                    for d in self.repoRootToDirs[root, default: []] {
+                                        self.gitCache[d] = inspected
+                                    }
+                                } else {
+                                    self.gitCache[dir] = inspected
+                                }
                                 self.objectWillChange.send()
                             }
                         }
@@ -374,13 +408,14 @@ final class SessionSidebarStore: ObservableObject {
                 rec.title.isEmpty ? (rec.body.isEmpty ? nil : rec.body) : rec.title
             }
 
-            // User-editable description (for tab window ID or any surface ID in this tab)
+            // User-editable description (for stable tab ID, with legacy surface ID fallback)
             var userDesc = descriptions[id]
             if userDesc == nil {
                 for sid in surfaceIds {
                     if let desc = descriptions[sid.uuidString] {
                         userDesc = desc
                         descriptions[id] = desc
+                        descriptions.removeValue(forKey: sid.uuidString)
                         break
                     }
                 }
@@ -491,8 +526,14 @@ final class SessionSidebarStore: ObservableObject {
     }
 
     private func titleFor(window: NSWindow, surface: Tako.SurfaceView?) -> String {
-        let raw = surface?.title ?? window.title
-        guard !raw.isEmpty else { return "~" }
+        let winTitle = window.title
+        let raw: String
+        if !winTitle.isEmpty && winTitle != "👻" {
+            raw = winTitle
+        } else {
+            raw = (surface?.title.isEmpty == false ? surface?.title : winTitle) ?? ""
+        }
+        guard !raw.isEmpty, raw != "👻" else { return "~" }
         if raw.hasPrefix("/") || raw.hasPrefix("~") {
             return Tako.titleForDirectory(raw)
         }

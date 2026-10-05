@@ -896,6 +896,7 @@ class BaseTerminalController: NSWindowController,
         if let focused = to {
             NotificationStore.shared.markRead(surfaceId: focused.id)
         }
+        SessionSidebarStore.shared.objectWillChange.send()
 
         // Important to cancel any prior subscriptions
         focusedSurfaceCancellables = []

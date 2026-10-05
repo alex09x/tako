@@ -395,7 +395,7 @@ struct SessionSidebarView: View {
             if editingItemId == item.id {
                 HStack(spacing: 4) {
                     TextField("Add description...", text: $editingDescriptionText, onCommit: {
-                        store.setDescription(editingDescriptionText, for: item.id, surfaceIds: item.surfaceIds)
+                        store.setDescription(editingDescriptionText, for: item.id)
                         editingItemId = nil
                     })
                     .textFieldStyle(.plain)
@@ -403,7 +403,7 @@ struct SessionSidebarView: View {
                     .foregroundColor(Color(nsColor: Palette.activeText))
 
                     Button(action: {
-                        store.setDescription(editingDescriptionText, for: item.id, surfaceIds: item.surfaceIds)
+                        store.setDescription(editingDescriptionText, for: item.id)
                         editingItemId = nil
                     }) {
                         Image(systemName: "checkmark")

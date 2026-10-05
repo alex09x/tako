@@ -261,7 +261,7 @@ struct SessionSidebarTests {
         win2.contentView = surf2
 
         Tako.CustomTabGroup.join(win2, to: win1, select: false)
-        store.setDescription("React Vite UI", for: surf1.id.uuidString)
+        store.setDescription("React Vite UI", for: win1.stableTabIdentifier)
 
         store.filterNeedsAttention = false
 
@@ -628,8 +628,8 @@ struct SessionSidebarTests {
         let tabId = initialItems[0].id
         #expect(tabId == win.stableTabIdentifier)
 
-        // Set description using both tabId and surfaceIds
-        store.setDescription("Critical Dev Server", for: tabId, surfaceIds: [surf1.id])
+        // Set description using tabId
+        store.setDescription("Critical Dev Server", for: tabId)
         #expect(store.items(for: win)[0].userDescription == "Critical Dev Server")
 
         // Simulate encode restorable state
@@ -651,11 +651,19 @@ struct SessionSidebarTests {
         #expect(restoredItems[0].id == tabId)
         #expect(restoredItems[0].userDescription == "Critical Dev Server")
 
-        // Also verify surfaceIds fallback when window restoration did not have tabIdentifier (legacy)
-        let legacyRestoredWin = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
-        legacyRestoredWin.contentView = surf1
-        let legacyItems = store.items(for: legacyRestoredWin)
-        #expect(legacyItems[0].userDescription == "Critical Dev Server")
+        // Also verify surfaceIds fallback when window restoration did not have tabIdentifier (legacy migration)
+        let legacyDefaults = createTestDefaults()
+        let legacySurf = Tako.SurfaceView(frame: .zero)
+        legacyDefaults.set([legacySurf.id.uuidString: "Legacy Note"], forKey: SessionSidebarStore.descriptionsKey)
+        let legacyStore = SessionSidebarStore(defaults: legacyDefaults)
+        let legacyWin = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        legacyWin.contentView = legacySurf
+        let legacyItems = legacyStore.items(for: legacyWin)
+        #expect(legacyItems[0].userDescription == "Legacy Note")
+        // Migrated into stableTabIdentifier
+        #expect(legacyStore.description(for: legacyWin.stableTabIdentifier) == "Legacy Note")
+        // Removed from surface ID to prevent leakage
+        #expect(legacyStore.description(for: legacySurf.id.uuidString) == nil)
     }
 
     @Test func latestNotificationSelectsRecordWithLatestTimestamp() {
@@ -920,5 +928,129 @@ struct SessionSidebarTests {
 
         let finalItems = store.items(for: win)
         #expect(finalItems.first?.listeningPorts == [8000, 9000])
+    }
+
+    @Test func tabDescriptionsDoNotLeakToPanesWhenSplitPaneIsDraggedToNewWindow() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        let surf1 = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        let surf2 = Tako.SurfaceView(frame: NSRect(x: 200, y: 0, width: 200, height: 400))
+        container.addSubview(surf1)
+        container.addSubview(surf2)
+        win.contentView = container
+
+        let tabId = win.stableTabIdentifier
+        store.setDescription("Multi-pane tab note", for: tabId)
+
+        let items = store.items(for: win)
+        #expect(items.count == 1)
+        #expect(items[0].userDescription == "Multi-pane tab note")
+
+        // Descriptions must NOT be keyed under individual pane surface IDs
+        #expect(store.description(for: surf1.id.uuidString) == nil)
+        #expect(store.description(for: surf2.id.uuidString) == nil)
+
+        // Dragging surf2 into a new window creates a tab that does NOT inherit the old tab's description
+        let newWin = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        newWin.contentView = surf2
+        let newItems = store.items(for: newWin)
+        #expect(newItems.count == 1)
+        #expect(newItems[0].userDescription == nil)
+    }
+
+    @Test func focusedSplitResolvesSidebarMetadata() throws {
+        let app = Tako.App()
+        let surf1 = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        let surf2 = Tako.SurfaceView(frame: NSRect(x: 200, y: 0, width: 200, height: 400))
+        surf1.title = "Pane 1"
+        surf1.pwd = "/Users/dev/pane1"
+        surf2.title = "Pane 2"
+        surf2.pwd = "/Users/dev/pane2"
+
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        var tree = SplitTree<Tako.SurfaceView>(view: surf1)
+        tree = try tree.inserting(view: surf2, at: surf1, direction: .right)
+        let controller = BaseTerminalController(app, surfaceTree: tree)
+        win.windowController = controller
+        controller.window = win
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        container.addSubview(surf1)
+        container.addSubview(surf2)
+        win.contentView = container
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        // When focused surface is surf1
+        controller.focusedSurfaceDidChange(to: surf1)
+        let items1 = store.items(for: win)
+        #expect(items1.count == 1)
+        #expect(items1[0].surfaceId == surf1.id)
+        #expect(items1[0].title == "Pane 1")
+        #expect(items1[0].workingDirectory == "/Users/dev/pane1")
+
+        // When focus moves to surf2
+        controller.focusedSurfaceDidChange(to: surf2)
+        let items2 = store.items(for: win)
+        #expect(items2.count == 1)
+        #expect(items2[0].surfaceId == surf2.id)
+        #expect(items2[0].title == "Pane 2")
+        #expect(items2[0].workingDirectory == "/Users/dev/pane2")
+    }
+
+    @Test func gitMetadataInvalidatesAcrossAllSubdirectoriesInRepository() async throws {
+        let repoURL = try createTestGitRepository(branch: "main")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let pkgA = repoURL.appendingPathComponent("pkgA")
+        let pkgB = repoURL.appendingPathComponent("pkgB")
+        try FileManager.default.createDirectory(at: pkgA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pkgB, withIntermediateDirectories: true)
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pwd = pkgA.path
+        win1.contentView = surf1
+
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pwd = pkgB.path
+        win2.contentView = surf2
+
+        Tako.CustomTabGroup.join(win2, to: win1, select: false)
+
+        _ = store.items(for: win1)
+        try await waitForGitInspection(store: store, directory: pkgA.path)
+        try await waitForGitInspection(store: store, directory: pkgB.path)
+
+        let initialItems = store.items(for: win1)
+        #expect(initialItems.count == 2)
+        #expect(initialItems[0].gitBranch == "main")
+        #expect(initialItems[1].gitBranch == "main")
+
+        // Switch branch on disk
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/feature-branch\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Command finishes in pkgA
+        surf1.crab.setStatus(.running, text: nil)
+        surf1.crab.setStatus(.done, text: nil)
+
+        // Invalidating pkgA must invalidate the whole repo, including pkgB
+        _ = store.items(for: win1)
+        try await waitForGitInspection(store: store, directory: pkgA.path)
+        try await waitForGitInspection(store: store, directory: pkgB.path)
+
+        let updatedItems = store.items(for: win1)
+        #expect(updatedItems.count == 2)
+        #expect(updatedItems[0].gitBranch == "feature-branch")
+        #expect(updatedItems[1].gitBranch == "feature-branch")
     }
 }
