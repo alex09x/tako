@@ -423,6 +423,7 @@ extension Tako.SurfaceView {
         "text", "csi", "esc",
         "start_search", "search", "search_selection", "navigate_search", "end_search", "scroll_to_selection",
         "jump_to_prompt", "select_command_output", "select_output",
+        "toggle_output_filter", "focus_mode",
     ]
 
     /// Whether `action` names something this port can do at all. The command
@@ -532,6 +533,9 @@ extension Tako.SurfaceView {
             }
         case "select_command_output", "select_output":
             return selectCommandOutput()
+        case "toggle_output_filter", "focus_mode":
+            toggleOutputFilter()
+            return true
         default:
             return performResponderAction(action)
         }
@@ -578,3 +582,21 @@ extension Tako.SurfaceView {
         return out
     }
 }
+
+/// Observable state for the Output Filter (Focus Mode) overlay bar (E5).
+public final class OutputFilterState: ObservableObject, @unchecked Sendable {
+    @Published public var query: String = ""
+    @Published public var isRegex: Bool = false
+    @Published public var matchCount: Int = 0
+    @Published public var totalCount: Int = 0
+
+    public init(query: String = "", isRegex: Bool = false, matchCount: Int = 0, totalCount: Int = 0) {
+        self.query = query
+        self.isRegex = isRegex
+        self.matchCount = matchCount
+        self.totalCount = totalCount
+    }
+}
+
+
+

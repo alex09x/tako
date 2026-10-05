@@ -709,13 +709,13 @@ another pane as text, save the output to a file, open the working directory.
 Done when each action works on any recorded command and none of them executes anything without
 the user pressing Enter.
 
-### [ ] E5. Output filtering (Focus mode)
+### [x] E5. Output filtering (Focus mode)
 
 Temporary live view projection over the scrollback buffer by regex or text match to isolate compiler errors or test failures without mutating session history.
 
 Done when: toggling the filter (`Cmd+Option+F` or configurable) opens an inline query bar that filters visible lines in real-time; non-matching lines are temporarily hidden while relative line ordering and timestamps are preserved; closing the filter immediately restores the complete scrollback without buffer mutation or process interruption.
 
-### [ ] E6. Semantic path clicks (`Cmd+Click`)
+### [x] E6. Semantic path clicks (`Cmd+Click`)
 
 Parse file paths with line/column numbers (`file:line[:col]`) from terminal text and pass them to the user's configured editor.
 

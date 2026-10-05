@@ -77,6 +77,13 @@ extension Tako {
                             .padding(8)
                     }
                 }
+                if let filterState = surfaceView.outputFilterState {
+                    HStack {
+                        Spacer()
+                        OutputFilterBar(surfaceView: surfaceView, filterState: filterState)
+                            .padding(8)
+                    }
+                }
                 if let overlay = overlayStore.overlay(for: surfaceView.id), overlay.splitDirection == nil {
                     ArtifactOverlayView(overlay: overlay, surfaceView: surfaceView)
                         .transition(.opacity)
@@ -154,6 +161,56 @@ extension Tako {
             guard let total else { return "" }
             guard let selected, total > 0 else { return "0/\(total)" }
             return "\(selected + 1)/\(total)"
+        }
+    }
+
+    /// The output filter bar over a surface (Focus mode - E5).
+    /// Text or regex query filters scrollback in-place without buffer mutation.
+    /// Escape closes the bar, restoring complete scrollback immediately.
+    struct OutputFilterBar: View {
+        let surfaceView: SurfaceView
+        @ObservedObject var filterState: OutputFilterState
+        @FocusState private var fieldFocused: Bool
+
+        init(surfaceView: SurfaceView, filterState: OutputFilterState) {
+            self.surfaceView = surfaceView
+            self.filterState = filterState
+        }
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                TextField("Focus filter (text or regex)", text: $filterState.query)
+                    .textFieldStyle(.plain)
+                    .frame(width: 200)
+                    .focused($fieldFocused)
+                    .onChange(of: filterState.query) { newQuery in
+                        surfaceView.updateOutputFilter(query: newQuery, isRegex: filterState.isRegex)
+                    }
+                    .onExitCommand {
+                        surfaceView.closeOutputFilter()
+                    }
+                Toggle("Regex", isOn: $filterState.isRegex)
+                    .toggleStyle(.button)
+                    .font(.caption2)
+                    .onChange(of: filterState.isRegex) { isRegex in
+                        surfaceView.updateOutputFilter(query: filterState.query, isRegex: isRegex)
+                    }
+                Text("\(filterState.matchCount)/\(filterState.totalCount)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button {
+                    surfaceView.closeOutputFilter()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Exit Focus Mode (Esc)")
+            }
+            .padding(6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .onAppear { fieldFocused = true }
         }
     }
 

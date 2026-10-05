@@ -2145,7 +2145,55 @@ extension Tako {
         @Published var searchState: Tako.OSSurfaceView.SearchState? = nil {
             didSet { searchStateDidChange() }
         }
+
+        /// The open output filter bar (Focus mode), or nil when it is closed (E5).
+        @Published public var outputFilterState: OutputFilterState? = nil
         public var scrollbar: Tako.Action.Scrollbar? = nil
+
+        // MARK: - Output Filtering / Focus Mode (E5)
+
+        open override func toggleOutputFilter() {
+            if outputFilterState != nil {
+                closeOutputFilter()
+            } else {
+                let total = Int(core.scrollbackLen() + core.rows())
+                let state = OutputFilterState(
+                    query: outputFilterQuery,
+                    isRegex: outputFilterIsRegex,
+                    matchCount: outputFilterMatchingLines.count,
+                    totalCount: total
+                )
+                outputFilterState = state
+                onOutputFilterChanged = { [weak self, weak state] active, matchCount, totalCount in
+                    guard let self, let state else { return }
+                    DispatchQueue.main.async {
+                        state.matchCount = matchCount
+                        state.totalCount = totalCount
+                        self.objectWillChange.send()
+                    }
+                }
+                if !state.query.isEmpty {
+                    setOutputFilter(query: state.query, isRegex: state.isRegex)
+                } else {
+                    super.toggleOutputFilter()
+                }
+                objectWillChange.send()
+            }
+        }
+
+        public func updateOutputFilter(query: String, isRegex: Bool) {
+            setOutputFilter(query: query, isRegex: isRegex)
+            outputFilterState?.matchCount = outputFilterMatchingLines.count
+            outputFilterState?.totalCount = Int(core.scrollbackLen() + core.rows())
+            objectWillChange.send()
+        }
+
+        public func closeOutputFilter() {
+            clearOutputFilter()
+            outputFilterState = nil
+            onOutputFilterChanged = nil
+            objectWillChange.send()
+        }
 
         public var onExit: ((SurfaceView) -> Void)?
         public var onTitleChange: ((SurfaceView) -> Void)?
@@ -2564,6 +2612,7 @@ extension Tako {
             commandMarksEnabled = config.commandMarks
             stickyCommandHeaderEnabled = config.stickyCommandHeader
             paneProgressBarEnabled = config.progressStyle.showsInHeader
+            configuredEditorCommand = config.editor
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
         }
 
