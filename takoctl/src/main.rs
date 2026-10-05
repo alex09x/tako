@@ -38,7 +38,8 @@ commands:
   send TEXT               type TEXT into the pane and press Enter (--no-enter: don't)
   type TEXT               type TEXT into the pane, no Enter
   key CHORD               press a key: enter, esc, up, f5, ctrl+c, alt+left, ...
-  text                    print the pane's text (--lines N: the last N lines)
+  text                    print the pane's text (--lines N, --styled: preserve colors/attributes as ANSI SGR)
+  screenshot [PATH]       capture pane as rendered PNG (--out PATH; default: stdout or file)
   tab-new                 a new tab in the pane's window (--cwd DIR, --no-select); prints its pane id
   split [DIRECTION]       split the pane: right, left, down or up (--cwd DIR, --child-of PANE,
                           --label NAME); defaults to right; prints the new pane id
@@ -145,7 +146,9 @@ options:
   --icon ICON             workspace create: workspace icon name
   --type TYPES            events: filter by comma-separated event types
   --cursor N              events: resume streaming from cursor N
-  --lines N               last, wait, run --wait: at most the last N lines of output
+  --lines N               text, last, wait, run --wait: at most the last N lines of output
+  --styled                text: include ANSI SGR color/styling escape codes
+  --out PATH              screenshot: output PNG file path
   --text TEXT             status text (truncated to 128 characters)
   --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
@@ -380,6 +383,13 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--window" => {
                 args.insert("window".into(), Value::String(value("--window")?));
             }
+            "--styled" => {
+                args.insert("styled".into(), Value::Bool(true));
+            }
+            "--out" => {
+                let out_val = value("--out")?;
+                args.insert("out".into(), Value::String(expand_path(&out_val)));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
@@ -391,6 +401,16 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let wants = match cmd.as_str() {
         "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
         | "dialog" | "events" | "mcp" => None,
+        "screenshot" => {
+            if !positional.is_empty() {
+                let p = positional.remove(0);
+                args.insert("out".into(), Value::String(expand_path(&p)));
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "status" => {
             let sub = if positional.is_empty() {
                 "get".to_string()
@@ -1248,6 +1268,12 @@ fn render(cmd: &str, result: &Value) -> String {
             let mut out = result["text"].as_str().unwrap_or("").to_string();
             out.push('\n');
             out
+        }
+        "screenshot" => {
+            let width = result["width"].as_f64().unwrap_or(0.0) as u64;
+            let height = result["height"].as_f64().unwrap_or(0.0) as u64;
+            let id = result["id"].as_str().unwrap_or("");
+            format!("screenshot of pane {id} ({width}x{height} png)\n")
         }
         "send" | "type" | "key" | "focus" | "title" | "notify" => String::new(),
         "tab-new" | "split" | "collapse" | "expand" => {
@@ -2208,6 +2234,143 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
     server.run_stdio().map_err(|e| format!("MCP stdio server error: {e}"))
 }
 
+fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity((s.len() * 3) / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for &b in s.as_bytes() {
+        let val = match b {
+            b'A'..=b'Z' => (b - b'A') as u32,
+            b'a'..=b'z' => (b - b'a' + 26) as u32,
+            b'0'..=b'9' => (b - b'0' + 52) as u32,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' | b'\r' | b'\n' | b' ' => continue,
+            _ => return Err(format!("invalid base64 character: {}", b as char)),
+        };
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+fn random_hex(num_bytes: usize) -> String {
+    let mut buf = vec![0u8; num_bytes];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut buf))
+        .is_ok();
+    if !ok {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        hasher.update(now.as_nanos().to_le_bytes());
+        hasher.update(std::process::id().to_le_bytes());
+        let hash = hasher.finalize();
+        for (i, b) in hash.iter().take(num_bytes).enumerate() {
+            buf[i] = *b;
+        }
+    }
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn write_exclusive_temp_file(id: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {
+    let temp_dir = std::env::temp_dir();
+    let clean_id: String = id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+    let safe_id = if clean_id.is_empty() { "pane" } else { &clean_id };
+    let mut last_err = None;
+
+    for _ in 0..5 {
+        let token = random_hex(16);
+        let path = temp_dir.join(format!("tako-screenshot-{safe_id}-{token}.png"));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+            opts.custom_flags(libc::O_NOFOLLOW);
+        }
+        match opts.open(&path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                if let Err(e) = file.write_all(bytes) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!("failed to write screenshot data to {}: {e}", path.display()));
+                }
+                let _ = file.flush();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                }
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_err = Some(e);
+                continue;
+            }
+            Err(e) => {
+                return Err(format!(
+                    "failed to create private screenshot file at {}: {e}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "failed to create exclusive screenshot file after multiple attempts: {last_err:?}"
+    ))
+}
+
+fn handle_screenshot_output(opts: &Options, result: &Value) -> Result<String, String> {
+    let b64 = result["data"]
+        .as_str()
+        .ok_or_else(|| "missing screenshot data in response".to_string())?;
+    let bytes = decode_base64(b64)?;
+    let id = result["id"].as_str().unwrap_or("pane");
+    let width = result["width"].as_f64().unwrap_or(0.0) as u64;
+    let height = result["height"].as_f64().unwrap_or(0.0) as u64;
+
+    if let Some(out_path) = opts.args.get("out").and_then(Value::as_str) {
+        let path = std::path::Path::new(out_path);
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(path, &bytes)
+            .map_err(|e| format!("failed to write screenshot to {}: {e}", path.display()))?;
+        return Ok(format!(
+            "saved screenshot of pane {id} to {} ({width}x{height} png)\n",
+            path.display()
+        ));
+    }
+
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        use std::io::Write;
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(&bytes)
+            .map_err(|e| format!("failed to write screenshot to stdout: {e}"))?;
+        let _ = stdout.flush();
+        Ok(String::new())
+    } else {
+        let path = write_exclusive_temp_file(id, &bytes)?;
+        Ok(format!(
+            "saved screenshot of pane {id} to {} ({width}x{height} png)\n",
+            path.display()
+        ))
+    }
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let opts = match parse(&argv) {
@@ -2329,7 +2492,21 @@ fn main() -> ExitCode {
     if opts.json {
         println!("{answer}");
     } else if ok {
-        print!("{}", render(&opts.cmd, &answer["result"]));
+        if opts.cmd == "screenshot" {
+            match handle_screenshot_output(&opts, &answer["result"]) {
+                Ok(msg) => {
+                    if !msg.is_empty() {
+                        print!("{msg}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("takoctl: {e}");
+                    return ExitCode::from(1);
+                }
+            }
+        } else {
+            print!("{}", render(&opts.cmd, &answer["result"]));
+        }
     } else {
         let error = &answer["error"];
         eprintln!(
@@ -3887,5 +4064,89 @@ bbbbbbbb  logs -- pane 2 of 2
         let rep_reload = render("overlay", &json!({"id": "pane-1", "reloaded": true}));
         assert_eq!(rep_reload, "Reloaded overlay for pane pane-1.\n");
     }
+
+    #[test]
+    fn test_text_styled_and_screenshot_options() {
+        // 1. Text with --styled and --lines
+        let opts_text = parse(&["text".into(), "--lines".into(), "50".into(), "--styled".into()]).unwrap();
+        assert_eq!(opts_text.cmd, "text");
+        assert_eq!(opts_text.args["lines"], 50);
+        assert_eq!(opts_text.args["styled"], true);
+
+        // 2. Screenshot with positional path
+        let opts_ss1 = parse(&["screenshot".into(), "/tmp/screen.png".into()]).unwrap();
+        assert_eq!(opts_ss1.cmd, "screenshot");
+        assert_eq!(opts_ss1.args["out"], "/tmp/screen.png");
+
+        // 3. Screenshot with --out flag
+        let opts_ss2 = parse(&["screenshot".into(), "--out".into(), "/tmp/out.png".into()]).unwrap();
+        assert_eq!(opts_ss2.cmd, "screenshot");
+        assert_eq!(opts_ss2.args["out"], "/tmp/out.png");
+
+        // 4. Render screenshot
+        let ss_val = json!({
+            "id": "pane-1",
+            "width": 800,
+            "height": 600,
+            "format": "png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg=="
+        });
+        let rep_ss = render("screenshot", &ss_val);
+        assert_eq!(rep_ss, "screenshot of pane pane-1 (800x600 png)\n");
+
+        // 5. Base64 decode verification
+        let bytes = decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==").unwrap();
+        assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    }
+
+    #[test]
+    fn test_write_exclusive_temp_screenshot() {
+        let fake_png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let path = write_exclusive_temp_file("testpane", &fake_png).unwrap();
+        assert!(path.exists());
+        let file_name = path.file_name().unwrap().to_str().unwrap();
+        assert!(file_name.starts_with("tako-screenshot-testpane-"));
+        assert!(file_name.ends_with(".png"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(&path).unwrap();
+            let mode = metadata.permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        let read_bytes = std::fs::read(&path).unwrap();
+        assert_eq!(read_bytes, fake_png);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_screenshot_temp_refuses_symlink_overwrite() {
+        use std::os::unix::fs::{symlink, OpenOptionsExt};
+        let temp_dir = std::env::temp_dir();
+        let target_file = temp_dir.join(format!("test-target-{}.txt", random_hex(8)));
+        std::fs::write(&target_file, b"secret original data").unwrap();
+
+        let link_path = temp_dir.join(format!("test-link-{}.png", random_hex(8)));
+        symlink(&target_file, &link_path).unwrap();
+
+        // Attempting to exclusively create a file at link_path must fail
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        opts.custom_flags(libc::O_NOFOLLOW);
+        let res = opts.open(&link_path);
+        assert!(res.is_err(), "exclusive open must refuse existing symlink");
+
+        // Target content must remain untouched
+        let content = std::fs::read_to_string(&target_file).unwrap();
+        assert_eq!(content, "secret original data");
+
+        let _ = std::fs::remove_file(&link_path);
+        let _ = std::fs::remove_file(&target_file);
+    }
 }
+
 

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 
 /// Typing into a pane and reading it back, for `takoctl send|type|key|text`.
@@ -113,16 +123,132 @@ enum ControlInput {
         }
     }
 
+    private struct CellStyleKey: Hashable, Sendable {
+        let fgR: UInt8
+        let fgG: UInt8
+        let fgB: UInt8
+        let bgR: UInt8
+        let bgG: UInt8
+        let bgB: UInt8
+        let bold: Bool
+        let dim: Bool
+        let italic: Bool
+        let underline: Bool
+        let blink: Bool
+        let reverse: Bool
+        let hidden: Bool
+        let strikethrough: Bool
+    }
+
+    nonisolated private static func isBlankCell(_ cell: FfiCell) -> Bool {
+        (cell.ch == 0 || cell.ch == 32) &&
+        !cell.bold && !cell.dim && !cell.italic &&
+        !cell.underline && !cell.blink && !cell.reverse &&
+        !cell.hidden && !cell.strikethrough &&
+        (cell.grapheme == nil || cell.grapheme!.isEmpty)
+    }
+
     /// The pane's last lines, read off the main thread from the end of its
-    /// history only as far as asked.
-    nonisolated static func read(_ core: TakoCore, lines: Int) -> [String: JSON] {
-        let tail = core.textTail(maxLines: UInt32(lines), maxBytes: maxTextBytes)
+    /// history or viewport. When `styled` is true, cells are serialized with ANSI SGR escape codes.
+    nonisolated static func read(_ core: TakoCore, lines: Int, styled: Bool = false) -> [String: JSON] {
+        if !styled {
+            let tail = core.textTail(maxLines: UInt32(lines), maxBytes: maxTextBytes)
+            return [
+                "text": .string(tail.text),
+                "lines": .number(Double(tail.lines)),
+                "truncated": .bool(tail.truncated),
+                "more": .bool(tail.more),
+            ]
+        }
+
+        let totalRows = Int(core.rows())
+        var allFormattedRows: [String] = []
+        for r in 0..<totalRows {
+            let cells = core.viewportRow(row: UInt32(r))
+            allFormattedRows.append(formatRowAnsi(cells))
+        }
+
+        var lastContentRow = totalRows - 1
+        while lastContentRow > 0 && allFormattedRows[lastContentRow].isEmpty {
+            lastContentRow -= 1
+        }
+
+        let endRow = allFormattedRows[lastContentRow].isEmpty ? 0 : lastContentRow + 1
+        let startRow = max(0, endRow - lines)
+        let resultLines = Array(allFormattedRows[startRow..<endRow])
+
+        let text = resultLines.joined(separator: "\n")
         return [
-            "text": .string(tail.text),
-            "lines": .number(Double(tail.lines)),
-            "truncated": .bool(tail.truncated),
-            "more": .bool(tail.more),
+            "text": .string(text),
+            "lines": .number(Double(resultLines.count)),
+            "truncated": .bool(false),
+            "more": .bool(startRow > 0),
         ]
+    }
+
+    /// Formats a single row of cells into a string containing ANSI SGR styling codes.
+    nonisolated static func formatRowAnsi(_ cells: [FfiCell]) -> String {
+        var lastCol = cells.count - 1
+        while lastCol >= 0 && isBlankCell(cells[lastCol]) {
+            lastCol -= 1
+        }
+        if lastCol < 0 {
+            return ""
+        }
+        let activeCells = cells[0...lastCol]
+
+        var out = ""
+        var currentStyle: CellStyleKey? = nil
+
+        for cell in activeCells {
+            // Wide spacer tail (covered by wide glyph)
+            if cell.ch == 0 && !cell.wide && cell.grapheme == nil {
+                continue
+            }
+
+            let style = CellStyleKey(
+                fgR: cell.fgR, fgG: cell.fgG, fgB: cell.fgB,
+                bgR: cell.bgR, bgG: cell.bgG, bgB: cell.bgB,
+                bold: cell.bold, dim: cell.dim, italic: cell.italic,
+                underline: cell.underline, blink: cell.blink,
+                reverse: cell.reverse, hidden: cell.hidden,
+                strikethrough: cell.strikethrough
+            )
+
+            let chStr: String
+            if let g = cell.grapheme, !g.isEmpty {
+                chStr = g
+            } else if let scalar = UnicodeScalar(cell.ch) {
+                chStr = String(scalar)
+            } else {
+                chStr = " "
+            }
+
+            if style != currentStyle {
+                var sgrParts: [String] = ["0"] // always reset first
+                if style.bold { sgrParts.append("1") }
+                if style.dim { sgrParts.append("2") }
+                if style.italic { sgrParts.append("3") }
+                if style.underline { sgrParts.append("4") }
+                if style.blink { sgrParts.append("5") }
+                if style.reverse { sgrParts.append("7") }
+                if style.hidden { sgrParts.append("8") }
+                if style.strikethrough { sgrParts.append("9") }
+                sgrParts.append("38;2;\(style.fgR);\(style.fgG);\(style.fgB)")
+                sgrParts.append("48;2;\(style.bgR);\(style.bgG);\(style.bgB)")
+
+                out += "\u{1b}[\(sgrParts.joined(separator: ";"))m"
+                currentStyle = style
+            }
+
+            out += chStr
+        }
+
+        if currentStyle != nil {
+            out += "\u{1b}[0m"
+        }
+
+        return out
     }
 }
 
