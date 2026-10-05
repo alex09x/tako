@@ -62,6 +62,10 @@ commands:
   workspace create NAME   create a new workspace (--root DIR, --color C, --icon I)
   workspace delete NAME   delete workspace NAME (tabs move to Default)
   workspace assign [TAB]  assign a tab to a workspace (--workspace NAME)
+  layout apply FILE       apply declarative layout from FILE (--approve: trust and run programs)
+  layout save FILE        save current window's layout to FILE
+  layout approve FILE     trust programs in layout FILE
+  layout status FILE      show trust status of layout FILE (trusted, untrusted, changed)
   hooks list              list supported coding-agent hook adapters and their install status
   hooks status [AGENT]    show hook installation status for AGENT or all agents
   hooks install AGENT     install Tako lifecycle hooks into AGENT's configuration
@@ -71,6 +75,7 @@ commands:
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --approve               layout apply: trust layout file and allow running its programs
   --choice CHOICE         ask: add a choice (can be repeated)
   --choices C1,C2,...     ask: comma-separated list of choices
   --confirm               ask: prompt for confirmation (Yes/No)
@@ -237,6 +242,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--yes" | "-y" => {
                 args.insert("yes".into(), Value::Bool(true));
+            }
+            "--approve" => {
+                args.insert("approve".into(), Value::Bool(true));
             }
             "--diff-only" => {
                 args.insert("diff_only".into(), Value::Bool(true));
@@ -550,6 +558,79 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "layout" => {
+            let sub = if positional.is_empty() {
+                return Err("layout needs an action: apply, save, approve, or status".into());
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "apply" => {
+                    args.insert("action".into(), Value::String("apply".into()));
+                    if positional.is_empty() {
+                        return Err("layout apply needs a layout file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    let content = std::fs::read_to_string(&expanded)
+                        .map_err(|e| format!("cannot read layout file '{}': {}", file, e))?;
+                    args.insert("path".into(), Value::String(expanded));
+                    args.insert("content".into(), Value::String(content));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "save" => {
+                    args.insert("action".into(), Value::String("save".into()));
+                    if positional.is_empty() {
+                        return Err("layout save needs a target file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    args.insert("path".into(), Value::String(expanded));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "approve" => {
+                    args.insert("action".into(), Value::String("approve".into()));
+                    if positional.is_empty() {
+                        return Err("layout approve needs a layout file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    let content = std::fs::read_to_string(&expanded)
+                        .map_err(|e| format!("cannot read layout file '{}': {}", file, e))?;
+                    args.insert("path".into(), Value::String(expanded));
+                    args.insert("content".into(), Value::String(content));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("action".into(), Value::String("status".into()));
+                    if positional.is_empty() {
+                        return Err("layout status needs a layout file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    let content = std::fs::read_to_string(&expanded)
+                        .map_err(|e| format!("cannot read layout file '{}': {}", file, e))?;
+                    args.insert("path".into(), Value::String(expanded));
+                    args.insert("content".into(), Value::String(content));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown layout action '{}'; expected apply, save, approve, or status",
+                        other
+                    ));
+                }
+            }
+            None
+        }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
@@ -644,8 +725,90 @@ fn render(cmd: &str, result: &Value) -> String {
         "dialog" => dialog_report(result),
         "ask" => format!("{}\n", serde_json::to_string(result).unwrap_or_default()),
         "workspace" => workspace_report(result),
+        "layout" => layout_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn expand_path(file: &str) -> String {
+    if let Some(stripped) = file.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{stripped}");
+        }
+    } else if file == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    } else if !file.starts_with('/') {
+        if let Ok(cwd) = std::env::current_dir() {
+            return cwd.join(file).to_string_lossy().to_string();
+        }
+    }
+    file.to_string()
+}
+
+fn layout_report(result: &Value) -> String {
+    if result.get("saved") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("layout.json");
+        let tabs = result["tabs"].as_f64().unwrap_or(0.0) as u64;
+        let panes = result["panes"].as_f64().unwrap_or(0.0) as u64;
+        return format!(
+            "Saved layout to {path} ({tabs} tab{}, {panes} pane{})\n",
+            if tabs == 1 { "" } else { "s" },
+            if panes == 1 { "" } else { "s" }
+        );
+    }
+    if result.get("applied") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("");
+        let tabs = result["tabs"].as_f64().unwrap_or(0.0) as u64;
+        let panes = result["panes"].as_f64().unwrap_or(0.0) as u64;
+        let started = result["programs_started"].as_f64().unwrap_or(0.0) as u64;
+        let suppressed = result["programs_suppressed"].as_f64().unwrap_or(0.0) as u64;
+        let trusted = result["trusted"].as_bool().unwrap_or(true);
+
+        let mut msg = if path.is_empty() {
+            format!(
+                "Applied layout ({tabs} tab{}, {panes} pane{})",
+                if tabs == 1 { "" } else { "s" },
+                if panes == 1 { "" } else { "s" }
+            )
+        } else {
+            format!(
+                "Applied layout from {path} ({tabs} tab{}, {panes} pane{})",
+                if tabs == 1 { "" } else { "s" },
+                if panes == 1 { "" } else { "s" }
+            )
+        };
+        if started > 0 {
+            msg.push_str(&format!(
+                ", {started} program{} started",
+                if started == 1 { "" } else { "s" }
+            ));
+        }
+        if suppressed > 0 {
+            msg.push_str(&format!(
+                ", {suppressed} program{} suppressed (untrusted layout)",
+                if suppressed == 1 { "" } else { "s" }
+            ));
+        } else if !trusted {
+            msg.push_str(" (untrusted layout: programs not started)");
+        }
+        msg.push('\n');
+        return msg;
+    }
+    if result.get("approved") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("");
+        let sha = result["sha256"].as_str().unwrap_or("");
+        let short_sha = if sha.len() >= 12 { &sha[..12] } else { sha };
+        return format!("Approved layout {path} (sha256: {short_sha})\n");
+    }
+    if let Some(status) = result["status"].as_str() {
+        let path = result["path"].as_str().unwrap_or("");
+        let sha = result["sha256"].as_str().unwrap_or("");
+        let short_sha = if sha.len() >= 12 { &sha[..12] } else { sha };
+        return format!("Layout {path}: {status} (sha256: {short_sha})\n");
+    }
+    format!("{result}\n")
 }
 
 fn workspace_report(result: &Value) -> String {
@@ -1206,6 +1369,13 @@ fn main() -> ExitCode {
         }
     }
     if ok {
+        if opts.cmd == "layout" && opts.args.get("action").and_then(Value::as_str) == Some("save") {
+            if let Some(content) = answer["result"]["content"].as_str() {
+                if let Some(path) = opts.args.get("path").and_then(Value::as_str) {
+                    let _ = std::fs::write(path, content);
+                }
+            }
+        }
         ExitCode::SUCCESS
     } else if opts.cmd == "ask" {
         let code = answer["error"]["code"].as_str().unwrap_or("");
@@ -1910,5 +2080,119 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(parse(&args(&["workspace", "create"])).is_err());
         assert!(parse(&args(&["workspace", "delete"])).is_err());
         assert!(parse(&args(&["workspace", "assign"])).is_err());
+    }
+
+    #[test]
+    fn layout_subcommands_and_options_parsed_and_rendered() {
+        // Layout save
+        let opts = parse(&args(&["layout", "save", "my-layout.json"])).unwrap();
+        assert_eq!(opts.cmd, "layout");
+        assert_eq!(opts.args["action"], "save");
+        assert!(opts.args["path"].as_str().unwrap().ends_with("my-layout.json"));
+
+        // Create temporary layout file for apply/approve/status tests
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("tako_test_layout_{}.json", std::process::id()));
+        let dummy_json = r#"{"version":1,"windows":[{"tabs":[{"root":{"cwd":"/tmp","command":["ls"]}}]}]}"#;
+        std::fs::write(&temp_file, dummy_json).unwrap();
+        let temp_path = temp_file.to_str().unwrap();
+
+        // Layout apply
+        let opts = parse(&args(&["layout", "apply", temp_path])).unwrap();
+        assert_eq!(opts.cmd, "layout");
+        assert_eq!(opts.args["action"], "apply");
+        assert_eq!(opts.args["path"], temp_path);
+        assert_eq!(opts.args["content"], dummy_json);
+        assert_eq!(opts.args.get("approve"), None);
+
+        // Layout apply with --approve
+        let opts = parse(&args(&["layout", "apply", "--approve", temp_path])).unwrap();
+        assert_eq!(opts.args["approve"], true);
+
+        // Layout approve
+        let opts = parse(&args(&["layout", "approve", temp_path])).unwrap();
+        assert_eq!(opts.args["action"], "approve");
+        assert_eq!(opts.args["path"], temp_path);
+        assert_eq!(opts.args["content"], dummy_json);
+
+        // Layout status
+        let opts = parse(&args(&["layout", "status", temp_path])).unwrap();
+        assert_eq!(opts.args["action"], "status");
+        assert_eq!(opts.args["path"], temp_path);
+
+        // Render save
+        let save_json = json!({
+            "saved": true,
+            "path": "my-layout.json",
+            "tabs": 2.0,
+            "panes": 4.0
+        });
+        assert_eq!(
+            render("layout", &save_json),
+            "Saved layout to my-layout.json (2 tabs, 4 panes)\n"
+        );
+
+        // Render apply (trusted / programs started)
+        let apply_trusted_json = json!({
+            "applied": true,
+            "path": "my-layout.json",
+            "tabs": 1.0,
+            "panes": 2.0,
+            "programs_started": 2.0,
+            "programs_suppressed": 0.0,
+            "trusted": true
+        });
+        assert_eq!(
+            render("layout", &apply_trusted_json),
+            "Applied layout from my-layout.json (1 tab, 2 panes), 2 programs started\n"
+        );
+
+        // Render apply (untrusted / programs suppressed)
+        let apply_untrusted_json = json!({
+            "applied": true,
+            "path": "my-layout.json",
+            "tabs": 1.0,
+            "panes": 2.0,
+            "programs_started": 0.0,
+            "programs_suppressed": 2.0,
+            "trusted": false
+        });
+        assert_eq!(
+            render("layout", &apply_untrusted_json),
+            "Applied layout from my-layout.json (1 tab, 2 panes), 2 programs suppressed (untrusted layout)\n"
+        );
+
+        // Render approve
+        let approve_json = json!({
+            "approved": true,
+            "path": "/path/to/layout.json",
+            "sha256": "abcdef1234567890abcdef"
+        });
+        assert_eq!(
+            render("layout", &approve_json),
+            "Approved layout /path/to/layout.json (sha256: abcdef123456)\n"
+        );
+
+        // Render status
+        let status_json = json!({
+            "path": "/path/to/layout.json",
+            "status": "trusted",
+            "sha256": "abcdef1234567890abcdef"
+        });
+        assert_eq!(
+            render("layout", &status_json),
+            "Layout /path/to/layout.json: trusted (sha256: abcdef123456)\n"
+        );
+
+        // Clean up temp file
+        let _ = std::fs::remove_file(temp_file);
+
+        // Errors
+        assert!(parse(&args(&["layout"])).is_err());
+        assert!(parse(&args(&["layout", "save"])).is_err());
+        assert!(parse(&args(&["layout", "apply"])).is_err());
+        assert!(parse(&args(&["layout", "apply", "/nonexistent/file/path.json"])).is_err());
+        assert!(parse(&args(&["layout", "approve"])).is_err());
+        assert!(parse(&args(&["layout", "status"])).is_err());
     }
 }
