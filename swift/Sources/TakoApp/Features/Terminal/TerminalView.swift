@@ -38,6 +38,9 @@ protocol TerminalViewModel: ObservableObject {
 
     /// Whether the Notification Center panel shows (B4).
     var notificationCenterIsShowing: Bool { get set }
+
+    /// Whether the Session Sidebar panel shows (B5).
+    var sessionSidebarIsShowing: Bool { get set }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -75,25 +78,33 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             ErrorView()
         case .ready:
             ZStack {
-                VStack(spacing: 0) {
-                    // If we're running in debug mode we show a warning so that users
-                    // know that performance will be degraded.
-                    if Tako.info.mode == TAKO_BUILD_MODE_DEBUG || Tako.info.mode == TAKO_BUILD_MODE_RELEASE_SAFE {
-                        DebugBuildWarningView()
+                HStack(spacing: 0) {
+                    if viewModel.sessionSidebarIsShowing {
+                        SessionSidebarView(
+                            isPresented: $viewModel.sessionSidebarIsShowing,
+                            backgroundColor: tako.config.backgroundColor)
                     }
 
-                    TerminalSplitTreeView(
-                        tree: viewModel.surfaceTree,
-                        action: { handleSplitAction($0) })
-                        .environmentObject(tako)
-                        .takoLastFocusedSurface(lastFocusedSurface)
-                        .focused($focused)
-                        .onAppear { self.focused = true }
-                        .onChange(of: focusedSurface) { handleFocusedSurfaceChange($0) }
-                        .onChange(of: pwdURL) { handlePwdChange($0) }
-                        .onChange(of: cellSize) { handleCellSizeChange($0) }
-                        .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
-                               idealHeight: lastFocusedSurface?.value?.initialSize?.height)
+                    VStack(spacing: 0) {
+                        // If we're running in debug mode we show a warning so that users
+                        // know that performance will be degraded.
+                        if Tako.info.mode == TAKO_BUILD_MODE_DEBUG || Tako.info.mode == TAKO_BUILD_MODE_RELEASE_SAFE {
+                            DebugBuildWarningView()
+                        }
+
+                        TerminalSplitTreeView(
+                            tree: viewModel.surfaceTree,
+                            action: { handleSplitAction($0) })
+                            .environmentObject(tako)
+                            .takoLastFocusedSurface(lastFocusedSurface)
+                            .focused($focused)
+                            .onAppear { self.focused = true }
+                            .onChange(of: focusedSurface) { handleFocusedSurfaceChange($0) }
+                            .onChange(of: pwdURL) { handlePwdChange($0) }
+                            .onChange(of: cellSize) { handleCellSizeChange($0) }
+                            .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
+                                   idealHeight: lastFocusedSurface?.value?.initialSize?.height)
+                    }
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
                 .ignoresSafeArea(.container, edges: tako.config.macosTitlebarStyle == .hidden ? .top : [])

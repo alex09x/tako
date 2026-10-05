@@ -13,6 +13,7 @@ private final class RecordingDelegate: TerminalViewModel, TerminalViewDelegate {
     @Published var commandPaletteIsShowing = false
     @Published var findAllIsShowing = false
     @Published var notificationCenterIsShowing = false
+    @Published var sessionSidebarIsShowing = false
 
     var focusedSurfaceDidChangeCalls: [Tako.SurfaceView?] = []
     var pwdDidChangeCalls: [URL?] = []

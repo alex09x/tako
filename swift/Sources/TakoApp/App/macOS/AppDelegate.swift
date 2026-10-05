@@ -387,6 +387,7 @@ class AppDelegate: NSObject,
         setupCommandLineToolMenuItem()
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
+        setupSidebarMenuItem()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
@@ -1209,6 +1210,30 @@ class AppDelegate: NSObject,
         }
     }
 
+    private func setupSidebarMenuItem() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
+            viewMenu.addItem(NSMenuItem.separator())
+
+            let sidebarItem = NSMenuItem(
+                title: "Session Sidebar",
+                action: #selector(BaseTerminalController.toggleSessionSidebar(_:)),
+                keyEquivalent: "s"
+            )
+            sidebarItem.keyEquivalentModifierMask = [.command, .option]
+            sidebarItem.target = nil
+            sidebarItem.setImageIfDesired(systemSymbolName: "sidebar.left")
+            viewMenu.addItem(sidebarItem)
+        }
+    }
+
+    @IBAction func toggleSessionSidebar(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.toggleSessionSidebar(sender)
+    }
+
     @IBAction func toggleNotificationCenter(_ sender: Any?) {
         guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
                 TerminalController.all.first else { return }
@@ -1565,6 +1590,9 @@ extension AppDelegate: NSMenuItemValidation {
 
         case #selector(jumpToLatestUnread(_:)):
             return NotificationStore.shared.latestUnread() != nil
+
+        case #selector(toggleSessionSidebar(_:)):
+            return true
 
         case #selector(markAllRead(_:)):
             return NotificationStore.shared.totalUnreadCount() > 0

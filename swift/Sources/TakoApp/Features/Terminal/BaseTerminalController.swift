@@ -70,6 +70,17 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Whether the Session Sidebar panel is showing for this window (B5).
+    @Published var sessionSidebarIsShowing: Bool = false {
+        didSet {
+            SessionSidebarStore.shared.isShowing = sessionSidebarIsShowing
+            guard oldValue, !sessionSidebarIsShowing else { return }
+            DispatchQueue.main.async { [weak self] in
+                Tako.moveFocus(to: self?.focusedSurface)
+            }
+        }
+    }
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 
@@ -1529,6 +1540,10 @@ class BaseTerminalController: NSWindowController,
         NotificationStore.shared.markAllRead()
     }
 
+    @IBAction func toggleSessionSidebar(_ sender: Any?) {
+        sessionSidebarIsShowing.toggle()
+    }
+
     private static func surface(withID id: UUID) -> Tako.SurfaceView? {
         for controller in TerminalController.all {
             if let surface = controller.surfaceTree.first(where: { $0.id == id }) {
@@ -1643,6 +1658,9 @@ extension BaseTerminalController: NSMenuItemValidation {
             return false
 
         case #selector(toggleNotificationCenter(_:)):
+            return true
+
+        case #selector(toggleSessionSidebar(_:)):
             return true
 
         case #selector(jumpToLatestUnread(_:)):

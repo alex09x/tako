@@ -1611,7 +1611,7 @@ extension Tako {
 
         /// The shell's current directory. Published so the app can follow it
         /// into window titles and the tab bar.
-        @Published public private(set) var pwd: String?
+        @Published public internal(set) var pwd: String?
         override public var workingDirectory: String? { pwd }
 
         public var surface: tako_surface_t? { nil }
