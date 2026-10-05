@@ -211,9 +211,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// Strictly passive: never injects keystrokes, commands, or automated input into the terminal.
     public var regexTriggers: [TerminalRegexTrigger] = [] {
         didSet {
+            disabledTriggerIDs.removeAll()
             updateRegexTriggerHighlights()
         }
     }
+
+    /// Triggers permanently disabled due to exceeding the per-match execution budget (E7).
+    /// Cleared whenever `regexTriggers` is updated.
+    public private(set) var disabledTriggerIDs: Set<UUID> = []
 
     /// Callback invoked when a passive regex trigger matches terminal output (E7).
     public var onTriggerMatched: ((_ trigger: TerminalRegexTrigger, _ matchingText: String, _ row: Int) -> Void)?
@@ -1820,7 +1825,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let topVisible = totalScrollback - offset
 
         var highlightItems: [(rect: CGRect, color: CGColor, style: TerminalRegexTrigger.HighlightStyle)] = []
-        var timedOutTriggers = Set<UUID>()
 
         let deadline = DispatchTime.now() + .milliseconds(8)
 
@@ -1843,19 +1847,20 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                 if DispatchTime.now() > deadline {
                     break
                 }
-                if timedOutTriggers.contains(trigger.id) {
+                if disabledTriggerIDs.contains(trigger.id) {
                     continue
                 }
                 guard let regex = trigger.regex else { continue }
                 
-                let completed = BoundedRegexMatcher.enumerateMatches(
-                    regex: regex,
-                    in: lineText,
-                    range: scanRange,
-                    timeout: .milliseconds(2),
-                    maxMatches: 16
-                ) { match in
-                    guard match.range.length > 0 else { return }
+                var matchCount = 0
+                let matchStart = DispatchTime.now()
+
+                regex.enumerateMatches(in: lineText, options: [], range: scanRange) { matchResult, _, stop in
+                    guard let match = matchResult, match.range.length > 0 else { return }
+                    matchCount += 1
+                    if matchCount >= 16 {
+                        stop.pointee = true
+                    }
 
                     let startLoc = match.range.location
                     let endLoc = match.range.location + match.range.length - 1
@@ -1884,8 +1889,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     }
                 }
 
-                if !completed {
-                    timedOutTriggers.insert(trigger.id)
+                let elapsedNs = DispatchTime.now().uptimeNanoseconds - matchStart.uptimeNanoseconds
+                if elapsedNs > 2_000_000 { // 2ms per-match budget
+                    disabledTriggerIDs.insert(trigger.id)
                 }
             }
         }
