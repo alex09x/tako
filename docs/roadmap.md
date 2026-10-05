@@ -456,7 +456,7 @@ Done when the overview opens in under 150 ms with 30 panes and reflects status c
 Done when attention navigation never lands on a muted or already-seen pane and "go back" always
 returns to the previous one.
 
-### [ ] B8. Agent hook adapters
+### [x] B8. Agent hook adapters
 
 Most coding-agent tools can run a command on lifecycle events (prompt submitted, permission
 requested, waiting for input, turn finished, subagent started or finished, session ended).
