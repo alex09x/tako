@@ -64,7 +64,10 @@ extension Tako {
         var body: some View {
             ZStack(alignment: .top) {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
-                InputOwnershipHeaderView(paneId: surfaceView.id)
+                VStack(spacing: 4) {
+                    BroadcastInputBannerView(paneId: surfaceView.id)
+                    InputOwnershipHeaderView(paneId: surfaceView.id)
+                }
                 if let searchState = surfaceView.searchState {
                     HStack {
                         Spacer()

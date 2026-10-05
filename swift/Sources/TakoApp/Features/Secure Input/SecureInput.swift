@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Carbon
 import Cocoa
 import OSLog
@@ -8,6 +18,11 @@ import OSLog
 // application with keyboard focus and is not echoed to other applications that
 // might be using the event monitor target to watch keyboard input."
 //
+/// An object (like a SurfaceView) that can report whether it is currently in secure input mode (C8).
+public protocol SecureInputCheckable: AnyObject {
+    var isSecureInput: Bool { get }
+}
+
 // Secure input is global and stateful so you need a singleton class to manage
 // it. You have to yield secure input on application deactivation (because
 // it'll affect other apps) and reacquire on reactivation, and every enable
@@ -44,7 +59,7 @@ class SecureInput: ObservableObject {
     // calls are process-wide, and a test host is never the active app, so
     // `apply()` would never get past its first guard.
     struct System {
-        var isActive: () -> Bool = { NSApp.isActive }
+        var isActive: () -> Bool = { NSApp?.isActive ?? false }
         var enable: () -> OSStatus = { EnableSecureEventInput() }
         var disable: () -> OSStatus = { DisableSecureEventInput() }
     }
@@ -89,10 +104,36 @@ class SecureInput: ObservableObject {
         apply()
     }
 
+    /// Convenience method to register or unregister an object in the scoped secure registry.
+    func setScoped(_ object: AnyObject, isSecure: Bool, focused: Bool = true) {
+        let id = ObjectIdentifier(object)
+        if isSecure {
+            scoped[id] = focused
+        } else {
+            scoped.removeValue(forKey: id)
+        }
+        apply()
+    }
+
     // Remove a scoped object completely.
     func removeScoped(_ object: ObjectIdentifier) {
         scoped[object] = nil
         apply()
+    }
+
+    /// True if secure input is enabled globally or specifically for this object (C8).
+    func isSecure(for object: AnyObject) -> Bool {
+        if global { return true }
+        if scoped[ObjectIdentifier(object)] != nil { return true }
+        if let checkable = object as? SecureInputCheckable, checkable.isSecureInput {
+            return true
+        }
+        return false
+    }
+
+    /// True if secure input is enabled for an object identifier (C8).
+    func isSecure(for objectId: ObjectIdentifier) -> Bool {
+        global || scoped[objectId] != nil
     }
 
     private func apply() {

@@ -863,6 +863,14 @@ final class PTY {
     /// the program's.
     private(set) var startError: Int32?
 
+    /// Whether the process has turned off terminal echo (e.g. during a password prompt).
+    var isPasswordMode: Bool {
+        guard master >= 0 else { return false }
+        var attr = termios()
+        guard tcgetattr(master, &attr) == 0 else { return false }
+        return (attr.c_lflag & tcflag_t(ECHO)) == 0
+    }
+
     private var exitSource: DispatchSourceProcess?
 
     /// Watches the child for its exit and collects it then, so it does not
@@ -1487,7 +1495,7 @@ extension Tako {
     /// -- a second terminal beside TakoTerminalNSView, which is the one every
     /// recent fix went into. Two implementations meant the app shipped the
     /// copy nobody was maintaining.
-    open class SurfaceView: TakoTerminalNSView, Identifiable, ObservableObject, Codable, TakoTerminalNSViewDelegate {
+    open class SurfaceView: TakoTerminalNSView, Identifiable, ObservableObject, Codable, TakoTerminalNSViewDelegate, SecureInputCheckable {
         /// Identity carried across a layout restore (see the Codable
         /// conformance below); nil for a surface created fresh.
         public var restoredID: String?
@@ -1495,6 +1503,24 @@ extension Tako {
 
         public let id: UUID
         public var uuid: UUID { id }
+
+        private var _explicitSecureInput: Bool = false
+
+        /// Whether this pane is currently in password/secure mode (e.g. no echo on PTY or explicit secure entry) (C8).
+        public var isSecureInput: Bool {
+            if _explicitSecureInput { return true }
+            if let pty = currentProcess, pty.isPasswordMode { return true }
+            return false
+        }
+
+        /// Pane-scoped secure input mode toggle. When set to true, registers the pane in SecureInput.shared.
+        public var isSecureInputMode: Bool {
+            get { isSecureInput }
+            set {
+                _explicitSecureInput = newValue
+                SecureInput.shared.setScoped(self, isSecure: newValue, focused: window?.firstResponder === self)
+            }
+        }
 
         public struct DerivedConfig: Equatable {
             public let backgroundColor: Color
@@ -2226,6 +2252,20 @@ extension Tako {
 
         // MARK: - TakoTerminalNSViewDelegate
 
+        /// Finds an active SurfaceView by its UUID.
+        public static func find(for uuid: UUID) -> SurfaceView? {
+            if let appDelegate = NSApp?.delegate as? TakoAppDelegate,
+               let found = appDelegate.findSurface(forUUID: uuid) {
+                return found
+            }
+            for c in TerminalController.all {
+                for view in c.surfaceTree where view.id == uuid {
+                    return view
+                }
+            }
+            return nil
+        }
+
         /// Whether interactive keyboard input is locked for this pane (C7).
         public var isInputLocked: Bool {
             get { InputOwnershipStore.shared.isLocked(for: id) }
@@ -2243,6 +2283,16 @@ extension Tako {
         public func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
             guard !isInputLocked else { return }
             writeToShell([UInt8](data))
+
+            // Track C8: Broadcast input to other selected panes if active
+            BroadcastInputStore.shared.broadcastInput(
+                from: self,
+                sourceId: id,
+                data: data
+            ) { targetId in
+                guard let target = SurfaceView.find(for: targetId) else { return nil }
+                return (target: target, isLocked: target.isInputLocked, write: { target.writeToShell($0) })
+            }
         }
 
         /// The engine's own replies -- device attributes, cursor position,
@@ -2361,6 +2411,10 @@ extension Tako {
         }
 
         override public func insertInputText(_ text: String) {
+            insertInputText(text, isBroadcastRecipient: false)
+        }
+
+        public func insertInputText(_ text: String, isBroadcastRecipient: Bool) {
             guard !isInputLocked else { return }
             revealLiveScreenForUserInput()
             var cleanText = text
@@ -2383,6 +2437,18 @@ extension Tako {
                 return
             }
             handlePaste(cleanText)
+
+            if !isBroadcastRecipient {
+                // Track C8: Broadcast text to other selected panes if active
+                BroadcastInputStore.shared.broadcastText(
+                    from: self,
+                    sourceId: id,
+                    text: cleanText
+                ) { targetId in
+                    guard let target = SurfaceView.find(for: targetId) else { return nil }
+                    return (target: target, isLocked: target.isInputLocked, insertText: { target.insertInputText($0, isBroadcastRecipient: true) })
+                }
+            }
         }
 
         /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
@@ -2934,6 +3000,9 @@ extension Tako {
 
         public func focusDidChange(_ focused: Bool) {
             self.focused = focused
+            if isSecureInput {
+                SecureInput.shared.setScoped(self, isSecure: true, focused: focused)
+            }
             if focused {
                 crab.focused()
                 NotificationStore.shared.markRead(surfaceId: self.id)
@@ -2946,6 +3015,10 @@ extension Tako {
         override open func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result {
+                BroadcastInputStore.shared.setLeader(paneId: id)
+                if isSecureInput {
+                    SecureInput.shared.setScoped(self, isSecure: true, focused: true)
+                }
                 crab.focused()
                 NotificationStore.shared.markRead(surfaceId: self.id)
             }
@@ -2955,6 +3028,9 @@ extension Tako {
         override open func resignFirstResponder() -> Bool {
             let result = super.resignFirstResponder()
             if result {
+                if isSecureInput {
+                    SecureInput.shared.setScoped(self, isSecure: true, focused: false)
+                }
                 crab.unfocused()
             }
             return result
@@ -3112,7 +3188,9 @@ extension Tako {
         public var mouseCaptured: Bool { core.modes().mouseTracking != .off }
 
         public func close() {
+            BroadcastInputStore.shared.paneClosed(id)
             InputOwnershipStore.shared.remove(paneId: id)
+            SecureInput.shared.removeScoped(ObjectIdentifier(self))
             pty?.terminate()
         }
 
