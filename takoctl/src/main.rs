@@ -115,6 +115,10 @@ commands:
   session export FILE     export window or workspace session to FILE (--window ID)
   session import FILE     import session from FILE (untrusted: dropped escapes, no auto-run)
   session info FILE       inspect session FILE format version and summary
+  overlay open FILE       open an artifact/document overlay in pane (--split right|down|left|up, --type html|markdown|image|pdf|diff)
+  overlay close           close active overlay in target pane
+  overlay status          show overlay state for target pane
+  overlay reload          reload document in active overlay
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -1097,6 +1101,51 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "overlay" => {
+            let sub = if positional.is_empty() {
+                "status".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "open" => {
+                    args.insert("subcommand".into(), Value::String("open".into()));
+                    if positional.is_empty() {
+                        return Err("overlay open needs a file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    args.insert("file".into(), Value::String(expanded));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "close" => {
+                    args.insert("subcommand".into(), Value::String("close".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("subcommand".into(), Value::String("status".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "reload" => {
+                    args.insert("subcommand".into(), Value::String("reload".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown overlay action '{other}'; expected open, close, status, or reload"
+                    ));
+                }
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -1222,8 +1271,53 @@ fn render(cmd: &str, result: &Value) -> String {
         "input" => input_report(result),
         "broadcast" => broadcast_report(result),
         "session" => session_report(result),
+        "overlay" => overlay_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn overlay_report(result: &Value) -> String {
+    if let Some(true) = result.get("closed").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return format!("Closed overlay for pane {id}.\n");
+    }
+    if let Some(false) = result.get("closed").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return format!("No active overlay to close on pane {id}.\n");
+    }
+    if let Some(true) = result.get("reloaded").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return format!("Reloaded overlay for pane {id}.\n");
+    }
+    if let Some(open) = result.get("open").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        if open {
+            let file = result["file"].as_str().unwrap_or("");
+            let file_type = result["type"].as_str().unwrap_or("document");
+            let title = result["title"].as_str().unwrap_or("");
+            let sandboxed = result["sandboxed"].as_str().unwrap_or("");
+            let split = result.get("split").and_then(Value::as_str);
+
+            let mut out = String::new();
+            if let Some(s) = split {
+                out.push_str(&format!("Overlay active on pane {id} (split {s}):\n"));
+            } else {
+                out.push_str(&format!("Overlay active on pane {id}:\n"));
+            }
+            out.push_str(&format!("  File: {file}\n"));
+            out.push_str(&format!("  Type: {file_type}\n"));
+            if !title.is_empty() && title != file {
+                out.push_str(&format!("  Title: {title}\n"));
+            }
+            if !sandboxed.is_empty() {
+                out.push_str(&format!("  Sandboxed: {sandboxed}\n"));
+            }
+            return out;
+        } else {
+            return format!("No overlay active on pane {id}.\n");
+        }
+    }
+    format!("{result}\n")
 }
 
 fn session_report(result: &Value) -> String {
@@ -3729,6 +3823,69 @@ bbbbbbbb  logs -- pane 2 of 2
         .unwrap();
         assert_eq!(opts_scoped.cmd, "mcp");
         assert_eq!(opts_scoped.args["capabilities"], "read,signal");
+    }
+
+    #[test]
+    fn test_overlay_subcommands_and_options_parsed_and_rendered() {
+        // 1. Open
+        let opts_open = parse(&[
+            "overlay".into(),
+            "open".into(),
+            "/tmp/artifact.md".into(),
+            "--split".into(),
+            "right".into(),
+            "--type".into(),
+            "markdown".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_open.cmd, "overlay");
+        assert_eq!(opts_open.args["subcommand"], "open");
+        assert_eq!(opts_open.args["file"], "/tmp/artifact.md");
+        assert_eq!(opts_open.args["split"], "right");
+        assert_eq!(opts_open.args["type"], "markdown");
+
+        let open_val = json!({
+            "id": "pane-1",
+            "target": "pane-0",
+            "open": true,
+            "file": "/tmp/artifact.md",
+            "title": "artifact.md",
+            "type": "markdown",
+            "sandboxed": "/tmp",
+            "split": "right"
+        });
+        let rep_open = render("overlay", &open_val);
+        assert!(rep_open.contains("Overlay active on pane pane-1 (split right):"));
+        assert!(rep_open.contains("File: /tmp/artifact.md"));
+        assert!(rep_open.contains("Type: markdown"));
+        assert!(rep_open.contains("Sandboxed: /tmp"));
+
+        // 2. Close
+        let opts_close = parse(&["overlay".into(), "close".into()]).unwrap();
+        assert_eq!(opts_close.cmd, "overlay");
+        assert_eq!(opts_close.args["subcommand"], "close");
+
+        let rep_closed = render("overlay", &json!({"id": "pane-1", "closed": true}));
+        assert_eq!(rep_closed, "Closed overlay for pane pane-1.\n");
+
+        let rep_not_closed = render("overlay", &json!({"id": "pane-1", "closed": false}));
+        assert_eq!(rep_not_closed, "No active overlay to close on pane pane-1.\n");
+
+        // 3. Status
+        let opts_st = parse(&["overlay".into()]).unwrap();
+        assert_eq!(opts_st.cmd, "overlay");
+        assert_eq!(opts_st.args["subcommand"], "status");
+
+        let rep_st_inactive = render("overlay", &json!({"id": "pane-1", "open": false}));
+        assert_eq!(rep_st_inactive, "No overlay active on pane pane-1.\n");
+
+        // 4. Reload
+        let opts_reload = parse(&["overlay".into(), "reload".into()]).unwrap();
+        assert_eq!(opts_reload.cmd, "overlay");
+        assert_eq!(opts_reload.args["subcommand"], "reload");
+
+        let rep_reload = render("overlay", &json!({"id": "pane-1", "reloaded": true}));
+        assert_eq!(rep_reload, "Reloaded overlay for pane pane-1.\n");
     }
 }
 
