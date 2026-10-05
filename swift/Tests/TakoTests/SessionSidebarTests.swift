@@ -605,4 +605,169 @@ struct SessionSidebarTests {
         let items = store.items(for: win)
         #expect(items[0].gitBranch == "branch-new")
     }
+
+    @Test func tabIdentifierAndDescriptionPersistAcrossWindowRestoration() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.title = "Restored Tab Surface"
+        win.contentView = surf1
+
+        let initialItems = store.items(for: win)
+        let tabId = initialItems[0].id
+        #expect(tabId == win.stableTabIdentifier)
+
+        // Set description using both tabId and surfaceIds
+        store.setDescription("Critical Dev Server", for: tabId, surfaceIds: [surf1.id])
+        #expect(store.items(for: win)[0].userDescription == "Critical Dev Server")
+
+        // Simulate encode restorable state
+        let internalState = TerminalRestorableState.InternalState(
+            focusedSurface: surf1.id.uuidString,
+            surfaceTree: SplitTree(view: surf1),
+            tabIdentifier: win.stableTabIdentifier
+        )
+        #expect(internalState.tabIdentifier == tabId)
+
+        // Simulate window reconstruction on restore
+        let restoredWin = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        restoredWin.contentView = surf1
+        if let restoredTabId = internalState.tabIdentifier {
+            restoredWin.stableTabIdentifier = restoredTabId
+        }
+
+        let restoredItems = store.items(for: restoredWin)
+        #expect(restoredItems[0].id == tabId)
+        #expect(restoredItems[0].userDescription == "Critical Dev Server")
+
+        // Also verify surfaceIds fallback when window restoration did not have tabIdentifier (legacy)
+        let legacyRestoredWin = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        legacyRestoredWin.contentView = surf1
+        let legacyItems = store.items(for: legacyRestoredWin)
+        #expect(legacyItems[0].userDescription == "Critical Dev Server")
+    }
+
+    @Test func latestNotificationSelectsRecordWithLatestTimestamp() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let notifDefaults = createTestDefaults()
+        let notifStore = NotificationStore(defaults: notifDefaults)
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf = Tako.SurfaceView(frame: .zero)
+        win.contentView = surf
+        let sid = surf.id
+
+        // Inject first notification at t=1000
+        notifStore.addNotification(
+            id: "notif-1",
+            surfaceId: sid,
+            paneTitle: "Pane",
+            title: "First Notification",
+            body: "Body 1",
+            time: Date(timeIntervalSince1970: 1000)
+        )
+        // Inject second notification at t=2000
+        notifStore.addNotification(
+            id: "notif-2",
+            surfaceId: sid,
+            paneTitle: "Pane",
+            title: "Second Notification",
+            body: "Body 2",
+            time: Date(timeIntervalSince1970: 2000)
+        )
+
+        // Temporary swap of NotificationStore.shared records for testing
+        _ = NotificationStore.shared.records
+        defer {
+            NotificationStore.shared.loadFromDefaults()
+        }
+        for rec in notifStore.records {
+            NotificationStore.shared.addNotification(
+                id: rec.id,
+                surfaceId: rec.surfaceId,
+                paneTitle: rec.paneTitle,
+                title: rec.title,
+                body: rec.body,
+                time: rec.time
+            )
+        }
+
+        #expect(store.items(for: win)[0].latestNotification == "Second Notification")
+
+        // Update notif-1 in place with newer timestamp t=3000
+        NotificationStore.shared.addNotification(
+            id: "notif-1",
+            surfaceId: sid,
+            paneTitle: "Pane",
+            title: "Updated First Notification",
+            body: "Body 1 Updated",
+            time: Date(timeIntervalSince1970: 3000)
+        )
+
+        #expect(store.items(for: win)[0].latestNotification == "Updated First Notification")
+    }
+
+    @Test func sidebarFiltersAreScopedPerWindowGroup() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.title = "Frontend Window"
+        win1.contentView = surf1
+
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.title = "Backend Window"
+        win2.contentView = surf2
+
+        // By default, both show their respective window
+        #expect(store.items(for: win1).count == 1)
+        #expect(store.items(for: win2).count == 1)
+
+        // Scope filter to win1
+        store.setFilterText("Frontend", for: win1)
+        #expect(store.filterText(for: win1) == "Frontend")
+        #expect(store.filterText(for: win2).isEmpty)
+
+        #expect(store.items(for: win1).count == 1)
+        #expect(store.items(for: win1)[0].title == "Frontend Window")
+        #expect(store.items(for: win2).count == 1)
+        #expect(store.items(for: win2)[0].title == "Backend Window")
+
+        // Filter win1 to something that doesn't match
+        store.setFilterText("Nomatch", for: win1)
+        #expect(store.items(for: win1).isEmpty)
+        #expect(store.items(for: win2).count == 1)
+
+        // Reset win1
+        store.setFilterText("", for: win1)
+
+        // Scope filterNeedsAttention to win1
+        let win1B = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1B = Tako.SurfaceView(frame: .zero)
+        surf1B.title = "Frontend Background Worker"
+        surf1B.crab.setStatus(.error, text: nil)
+        win1B.contentView = surf1B
+        Tako.CustomTabGroup.join(win1B, to: win1, select: false)
+        let group1 = Tako.CustomTabGroup.group(for: win1)
+        group1.select(win1)
+
+        store.setFilterNeedsAttention(true, for: win1)
+        #expect(store.filterNeedsAttention(for: win1) == true)
+        #expect(store.filterNeedsAttention(for: win2) == false)
+
+        // win1's group filtered to items needing attention shows only win1B (error)
+        let win1Filtered = store.items(for: win1)
+        #expect(win1Filtered.count == 1)
+        #expect(win1Filtered[0].title == "Frontend Background Worker")
+
+        // win2 is unfiltered and still shows its 1 normal tab
+        #expect(store.items(for: win2).count == 1)
+        #expect(store.items(for: win2)[0].title == "Backend Window")
+    }
 }

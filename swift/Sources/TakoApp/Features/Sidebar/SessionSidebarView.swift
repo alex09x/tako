@@ -14,6 +14,8 @@ struct SessionSidebarView: View {
     @State private var selectedIndex: Int = 0
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
+    @State private var filterNeedsAttention: Bool = false
+    @State private var filterText: String = ""
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isListFocused: Bool
 
@@ -35,7 +37,11 @@ struct SessionSidebarView: View {
     }
 
     private var items: [SessionSidebarItem] {
-        store.items(for: targetWindow)
+        store.items(
+            for: targetWindow,
+            filterText: filterText,
+            filterNeedsAttention: filterNeedsAttention
+        )
     }
 
     public var body: some View {
@@ -139,14 +145,14 @@ struct SessionSidebarView: View {
                     .font(.system(size: 11))
                     .foregroundColor(Color(nsColor: Palette.dim))
 
-                TextField("Filter tabs...", text: $store.filterText)
+                TextField("Filter tabs...", text: $filterText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(Color(nsColor: Palette.activeText))
                     .focused($isSearchFocused)
 
-                if !store.filterText.isEmpty {
-                    Button(action: { store.filterText = "" }) {
+                if !filterText.isEmpty {
+                    Button(action: { filterText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(Color(nsColor: Palette.dim))
@@ -161,17 +167,17 @@ struct SessionSidebarView: View {
 
             // Filter button & Opt-ins
             HStack(spacing: 6) {
-                Button(action: { store.filterNeedsAttention.toggle() }) {
+                Button(action: { filterNeedsAttention.toggle() }) {
                     HStack(spacing: 4) {
-                        Image(systemName: store.filterNeedsAttention ? "exclamationmark.circle.fill" : "exclamationmark.circle")
+                        Image(systemName: filterNeedsAttention ? "exclamationmark.circle.fill" : "exclamationmark.circle")
                             .font(.system(size: 10))
                         Text("Needs Attention")
                             .font(.system(size: 10, weight: .medium))
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(store.filterNeedsAttention ? Color(nsColor: Tako.Brand.ember).opacity(0.25) : Color(nsColor: Palette.badge))
-                    .foregroundColor(store.filterNeedsAttention ? Color(nsColor: Tako.Brand.ember) : Color(nsColor: Palette.dim))
+                    .background(filterNeedsAttention ? Color(nsColor: Tako.Brand.ember).opacity(0.25) : Color(nsColor: Palette.badge))
+                    .foregroundColor(filterNeedsAttention ? Color(nsColor: Tako.Brand.ember) : Color(nsColor: Palette.dim))
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
@@ -373,7 +379,7 @@ struct SessionSidebarView: View {
             if editingItemId == item.id {
                 HStack(spacing: 4) {
                     TextField("Add description...", text: $editingDescriptionText, onCommit: {
-                        store.setDescription(editingDescriptionText, for: item.id)
+                        store.setDescription(editingDescriptionText, for: item.id, surfaceIds: item.surfaceIds)
                         editingItemId = nil
                     })
                     .textFieldStyle(.plain)
@@ -381,7 +387,7 @@ struct SessionSidebarView: View {
                     .foregroundColor(Color(nsColor: Palette.activeText))
 
                     Button(action: {
-                        store.setDescription(editingDescriptionText, for: item.id)
+                        store.setDescription(editingDescriptionText, for: item.id, surfaceIds: item.surfaceIds)
                         editingItemId = nil
                     }) {
                         Image(systemName: "checkmark")

@@ -167,6 +167,7 @@ enum LayoutRecorder {
                 let controller = TerminalController(app, withSurfaceTree: state.surfaceTree)
                 guard let window = controller.window else { continue }
                 controller.titleOverride = state.titleOverride
+                if let tabId = state.tabIdentifier { window.stableTabIdentifier = tabId }
                 if let color = state.tabColor { (window as? TerminalWindow)?.tabColor = color }
                 if let focused = state.focusedSurface,
                    let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }) {

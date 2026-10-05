@@ -15,6 +15,23 @@ extension TerminalRestorableState {
         let effectiveFullscreenMode: FullscreenMode?
         let tabColor: TerminalTabColor?
         let titleOverride: String?
+        let tabIdentifier: String?
+
+        init(
+            focusedSurface: String?,
+            surfaceTree: SplitTree<ViewType>,
+            effectiveFullscreenMode: FullscreenMode? = nil,
+            tabColor: TerminalTabColor? = nil,
+            titleOverride: String? = nil,
+            tabIdentifier: String? = nil
+        ) {
+            self.focusedSurface = focusedSurface
+            self.surfaceTree = surfaceTree
+            self.effectiveFullscreenMode = effectiveFullscreenMode
+            self.tabColor = tabColor
+            self.titleOverride = titleOverride
+            self.tabIdentifier = tabIdentifier
+        }
     }
 }
 
@@ -27,6 +44,7 @@ extension TerminalRestorableState.InternalState where ViewType == Tako.SurfaceVi
             effectiveFullscreenMode: controller.fullscreenStyle?.fullscreenMode,
             tabColor: (controller.window as? TerminalWindow)?.tabColor,
             titleOverride: controller.titleOverride,
+            tabIdentifier: controller.window?.stableTabIdentifier
         )
     }
 }

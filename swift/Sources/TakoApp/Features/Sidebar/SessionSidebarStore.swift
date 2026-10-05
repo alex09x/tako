@@ -46,11 +46,66 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    /// Whether the sidebar view is filtered to only items needing attention.
-    @Published var filterNeedsAttention: Bool = false
+    private var defaultFilterNeedsAttention: Bool = false
+    private var defaultFilterText: String = ""
+    private var groupFilterTexts: [ObjectIdentifier: String] = [:]
+    private var groupNeedsAttention: [ObjectIdentifier: Bool] = [:]
 
-    /// Filter text for title, working directory, or description search.
-    @Published var filterText: String = ""
+    /// Whether the sidebar view is filtered to only items needing attention for the specified window's tab group.
+    func filterNeedsAttention(for window: NSWindow?) -> Bool {
+        guard let window else { return defaultFilterNeedsAttention }
+        let group = Tako.CustomTabGroup.group(for: window)
+        return groupNeedsAttention[ObjectIdentifier(group)] ?? defaultFilterNeedsAttention
+    }
+
+    /// Sets whether the sidebar view is filtered to only items needing attention for the specified window's tab group.
+    func setFilterNeedsAttention(_ enabled: Bool, for window: NSWindow?) {
+        guard let window else {
+            defaultFilterNeedsAttention = enabled
+            objectWillChange.send()
+            return
+        }
+        let group = Tako.CustomTabGroup.group(for: window)
+        groupNeedsAttention[ObjectIdentifier(group)] = enabled
+        objectWillChange.send()
+    }
+
+    /// Filter text for title, working directory, or description search for the specified window's tab group.
+    func filterText(for window: NSWindow?) -> String {
+        guard let window else { return defaultFilterText }
+        let group = Tako.CustomTabGroup.group(for: window)
+        return groupFilterTexts[ObjectIdentifier(group)] ?? defaultFilterText
+    }
+
+    /// Sets filter text for title, working directory, or description search for the specified window's tab group.
+    func setFilterText(_ text: String, for window: NSWindow?) {
+        guard let window else {
+            defaultFilterText = text
+            objectWillChange.send()
+            return
+        }
+        let group = Tako.CustomTabGroup.group(for: window)
+        groupFilterTexts[ObjectIdentifier(group)] = text
+        objectWillChange.send()
+    }
+
+    /// Global fallback filter needs attention (for tests or global binding).
+    var filterNeedsAttention: Bool {
+        get { defaultFilterNeedsAttention }
+        set {
+            defaultFilterNeedsAttention = newValue
+            objectWillChange.send()
+        }
+    }
+
+    /// Global fallback filter text (for tests or global binding).
+    var filterText: String {
+        get { defaultFilterText }
+        set {
+            defaultFilterText = newValue
+            objectWillChange.send()
+        }
+    }
 
     /// User-editable descriptions keyed by surface ID or window identifier.
     @Published private(set) var descriptions: [String: String] = [:] {
@@ -175,12 +230,18 @@ final class SessionSidebarStore: ObservableObject {
     }
 
     /// Sets or updates a custom user description for a tab or surface.
-    func setDescription(_ text: String, for id: String) {
+    func setDescription(_ text: String, for id: String, surfaceIds: Set<UUID> = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             descriptions.removeValue(forKey: id)
+            for sid in surfaceIds {
+                descriptions.removeValue(forKey: sid.uuidString)
+            }
         } else {
             descriptions[id] = trimmed
+            for sid in surfaceIds {
+                descriptions[sid.uuidString] = trimmed
+            }
         }
     }
 
@@ -195,7 +256,11 @@ final class SessionSidebarStore: ObservableObject {
     }
 
     /// Computes and returns the ordered sidebar items for the given window's tab group.
-    func items(for window: NSWindow?) -> [SessionSidebarItem] {
+    func items(
+        for window: NSWindow?,
+        filterText explicitFilterText: String? = nil,
+        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil
+    ) -> [SessionSidebarItem] {
         bindSurfaces(for: window)
 
         let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
@@ -277,11 +342,25 @@ final class SessionSidebarStore: ObservableObject {
             }
 
             // Latest notification text across all panes in this tab (from Track B4)
-            let latestNotification = NotificationStore.shared.records
-                .first(where: { surfaceIds.contains($0.surfaceId) })?.title
+            // Chooses the matching record with the greatest timestamp (Codex P2)
+            let latestRecord = NotificationStore.shared.records
+                .filter { surfaceIds.contains($0.surfaceId) }
+                .max(by: { $0.time < $1.time })
+            let latestNotification = latestRecord.flatMap { rec in
+                rec.title.isEmpty ? (rec.body.isEmpty ? nil : rec.body) : rec.title
+            }
 
             // User-editable description (for tab window ID or any surface ID in this tab)
-            let userDesc = descriptions[id] ?? surfaceIds.compactMap { descriptions[$0.uuidString] }.first
+            var userDesc = descriptions[id]
+            if userDesc == nil {
+                for sid in surfaceIds {
+                    if let desc = descriptions[sid.uuidString] {
+                        userDesc = desc
+                        descriptions[id] = desc
+                        break
+                    }
+                }
+            }
 
             // Total unread count across all panes in this tab
             let unread = surfaceIds.reduce(0) { $0 + NotificationStore.shared.unreadCount(for: $1) }
@@ -300,6 +379,7 @@ final class SessionSidebarStore: ObservableObject {
             let item = SessionSidebarItem(
                 id: id,
                 surfaceId: surfaceId,
+                surfaceIds: surfaceIds,
                 index: index,
                 totalCount: windows.count,
                 isSelected: isSelected,
@@ -320,12 +400,14 @@ final class SessionSidebarStore: ObservableObject {
             )
 
             // Filtering
-            if filterNeedsAttention && !item.needsAttention {
+            let effectiveNeedsAttention = explicitFilterNeedsAttention ?? filterNeedsAttention(for: win)
+            if effectiveNeedsAttention && !item.needsAttention {
                 continue
             }
 
-            if !filterText.isEmpty {
-                let query = filterText.lowercased()
+            let effectiveFilterText = explicitFilterText ?? filterText(for: win)
+            if !effectiveFilterText.isEmpty {
+                let query = effectiveFilterText.lowercased()
                 let matchesTitle = item.title.lowercased().contains(query)
                 let matchesPwd = item.workingDirectory?.lowercased().contains(query) ?? false
                 let matchesGit = item.gitBranch?.lowercased().contains(query) ?? false

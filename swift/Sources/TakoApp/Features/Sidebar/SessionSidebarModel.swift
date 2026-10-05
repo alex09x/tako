@@ -18,6 +18,7 @@ import TakoKit
 struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let id: String
     let surfaceId: UUID?
+    let surfaceIds: Set<UUID>
     let index: Int
     let isSelected: Bool
     let title: String
@@ -42,6 +43,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     init(
         id: String,
         surfaceId: UUID? = nil,
+        surfaceIds: Set<UUID> = [],
         index: Int,
         totalCount: Int = 1,
         isSelected: Bool,
@@ -62,6 +64,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.surfaceId = surfaceId
+        self.surfaceIds = surfaceIds.isEmpty ? (surfaceId.map { [$0] } ?? []) : surfaceIds
         self.index = index
         self.totalCount = totalCount
         self.isSelected = isSelected
