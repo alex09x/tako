@@ -349,4 +349,51 @@ fn osc99_aggregate_multipart_payload_limit_enforced() {
     );
 }
 
+#[test]
+fn parser_releases_oversized_buffers_when_canceled() {
+    use tako_core::parser::{Parser, Perform};
+    struct Dummy;
+    impl Perform for Dummy {
+        fn print(&mut self, _: char) {}
+        fn execute(&mut self, _: u8) {}
+        fn hook(&mut self, _: &[u16], _: u32, _: &[u8], _: bool, _: char) {}
+        fn put(&mut self, _: u8) {}
+        fn unhook(&mut self) {}
+        fn osc_dispatch(&mut self, _: &[&[u8]], _: bool) {}
+        fn csi_dispatch(&mut self, _: &[u16], _: u32, _: &[u8], _: bool, _: char) {}
+        fn esc_dispatch(&mut self, _: &[u8], _: bool, _: u8) {}
+    }
+
+    let mut parser = Parser::new();
+    let mut dummy = Dummy;
+
+    // 1. Accumulate > 64 KiB into OSC buffer
+    parser.advance_bytes(&mut dummy, b"\x1b]0;");
+    let large_payload = vec![b'X'; 128 * 1024];
+    parser.advance_bytes(&mut dummy, &large_payload);
+    assert!(parser.retained_capacity_bytes() >= 128 * 1024);
+
+    // Cancel sequence with CAN (0x18)
+    parser.advance_bytes(&mut dummy, b"\x18");
+    assert_eq!(
+        parser.retained_capacity_bytes(),
+        0,
+        "canceling oversized OSC with CAN must reclaim memory"
+    );
+
+    // 2. Accumulate > 64 KiB into APC buffer
+    parser.advance_bytes(&mut dummy, b"\x1b_");
+    parser.advance_bytes(&mut dummy, &large_payload);
+    assert!(parser.retained_capacity_bytes() >= 128 * 1024);
+
+    // Cancel sequence with SUB (0x1A)
+    parser.advance_bytes(&mut dummy, b"\x1a");
+    assert_eq!(
+        parser.retained_capacity_bytes(),
+        0,
+        "canceling oversized APC with SUB must reclaim memory"
+    );
+}
+
+
 

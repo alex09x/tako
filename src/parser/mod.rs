@@ -519,34 +519,49 @@ impl Parser {
                 if next_state == State::Escape {
                     // ST is ESC \. We will parse the '\' in Escape state, but Osc might be dispatched
                     self.dispatch_osc(performer, false);
+                } else {
+                    self.reset_osc_buffer();
                 }
-            } else if self.state == State::SosPmApcString
-                && next_state == State::Escape {
+            } else if self.state == State::SosPmApcString {
+                if next_state == State::Escape {
                     self.dispatch_apc(performer);
+                } else {
+                    self.reset_apc_buffer();
                 }
+            }
             
             // Enter actions
             if next_state == State::Escape || next_state == State::CsiEntry || next_state == State::DcsEntry || next_state == State::OscString || next_state == State::SosPmApcString {
                 self.clear();
             }
             if next_state == State::OscString {
-                if self.osc_raw.capacity() > 64 * 1024 {
-                    self.osc_raw = Vec::new();
-                } else {
-                    self.osc_raw.clear();
-                }
+                self.reset_osc_buffer();
                 self.utf8_need = 0;
             }
             if next_state == State::SosPmApcString {
-                if self.apc_raw.capacity() > 64 * 1024 {
-                    self.apc_raw = Vec::new();
-                } else {
-                    self.apc_raw.clear();
-                }
+                self.reset_apc_buffer();
                 self.utf8_need = 0;
             }
 
             self.state = next_state;
+        }
+    }
+
+    #[inline]
+    fn reset_osc_buffer(&mut self) {
+        if self.osc_raw.capacity() > 64 * 1024 {
+            self.osc_raw = Vec::new();
+        } else {
+            self.osc_raw.clear();
+        }
+    }
+
+    #[inline]
+    fn reset_apc_buffer(&mut self) {
+        if self.apc_raw.capacity() > 64 * 1024 {
+            self.apc_raw = Vec::new();
+        } else {
+            self.apc_raw.clear();
         }
     }
 
@@ -601,20 +616,12 @@ impl Parser {
         if !excess {
             performer.osc_dispatch(&params, bell);
         }
-        if self.osc_raw.capacity() > 64 * 1024 {
-            self.osc_raw = Vec::new();
-        } else {
-            self.osc_raw.clear();
-        }
+        self.reset_osc_buffer();
     }
 
     fn dispatch_apc<P: Perform>(&mut self, performer: &mut P) {
         performer.apc_dispatch(&self.apc_raw);
-        if self.apc_raw.capacity() > 64 * 1024 {
-            self.apc_raw = Vec::new();
-        } else {
-            self.apc_raw.clear();
-        }
+        self.reset_apc_buffer();
     }
 }
 
