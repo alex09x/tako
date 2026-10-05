@@ -1791,9 +1791,20 @@ extension Tako {
 
             case .coalesce(let count):
                 let reqId = "tako-notif-coalesced-\(self.id.uuidString)"
+                let coalesceTitle = title.isEmpty ? "Notifications Coalesced" : title
+                let coalesceBody = "\(count) notifications from this pane were coalesced."
+                NotificationStore.shared.addNotification(
+                    id: id,
+                    surfaceId: self.id,
+                    paneTitle: self.title,
+                    title: coalesceTitle,
+                    body: coalesceBody,
+                    urgency: urgency,
+                    unread: !self.isBeingLookedAt
+                )
                 let content = Tako.buildNotificationContent(
-                    title: title.isEmpty ? "Notifications Coalesced" : title,
-                    body: "\(count) notifications from this pane were coalesced.",
+                    title: coalesceTitle,
+                    body: coalesceBody,
                     appName: appName,
                     surfaceId: self.id,
                     paneTitle: self.title,
@@ -1814,6 +1825,16 @@ extension Tako {
                 return
 
             case .postNormal:
+                NotificationStore.shared.addNotification(
+                    id: id,
+                    surfaceId: self.id,
+                    paneTitle: self.title,
+                    title: title,
+                    body: body,
+                    urgency: urgency,
+                    unread: !self.isBeingLookedAt
+                )
+
                 let reqId: String
                 if let id = id, !id.isEmpty {
                     reqId = "tako-notif-\(self.id.uuidString)-\(id)"
@@ -2688,6 +2709,7 @@ extension Tako {
             self.focused = focused
             if focused {
                 crab.focused()
+                NotificationStore.shared.markRead(surfaceId: self.id)
             } else {
                 crab.unfocused()
             }
@@ -2698,6 +2720,7 @@ extension Tako {
             let result = super.becomeFirstResponder()
             if result {
                 crab.focused()
+                NotificationStore.shared.markRead(surfaceId: self.id)
             }
             return result
         }
