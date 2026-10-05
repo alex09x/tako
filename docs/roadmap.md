@@ -502,7 +502,7 @@ notification without switching tabs, and the agent receives the typed answer.
 
 ## Track C -- Agent workspaces: many agents, one calm window (M3)
 
-### [ ] C1. Workspaces
+### [x] C1. Workspaces
 
 A workspace groups tabs that belong to one project: a name, a root directory, a colour or icon,
 its own tab order and its own attention count. Switching workspaces is one shortcut; workspaces
