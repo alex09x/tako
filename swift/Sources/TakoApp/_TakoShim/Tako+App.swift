@@ -2253,6 +2253,7 @@ extension Tako {
                 write(initial)
             }
             setupAttentionObservation()
+            setupPassiveRegexTriggers()
         }
 
         public init(frame frameRect: NSRect) {
@@ -2267,6 +2268,7 @@ extension Tako {
             delegate = self
             setupCoreAndPty(workingDir: nil)
             setupAttentionObservation()
+            setupPassiveRegexTriggers()
         }
 
         private var attentionCancellables: [AnyCancellable] = []
@@ -2598,6 +2600,7 @@ extension Tako {
         }
 
         private var configObserver: NSObjectProtocol?
+        private var triggersObserver: NSObjectProtocol?
         private weak var owningApp: Tako.App?
 
         deinit {
@@ -2606,6 +2609,47 @@ extension Tako {
             if let configObserver {
                 NotificationCenter.default.removeObserver(configObserver)
             }
+            if let triggersObserver {
+                NotificationCenter.default.removeObserver(triggersObserver)
+            }
+        }
+
+        private func setupPassiveRegexTriggers() {
+            onTriggerMatched = { [weak self] trigger, matchedText, row in
+                guard let self else { return }
+                PassiveTriggerStore.shared.handleMatch(
+                    surfaceId: self.id,
+                    paneTitle: self.title,
+                    pwd: self.pwd,
+                    trigger: trigger,
+                    matchedText: matchedText,
+                    isUnfocused: !self.isBeingLookedAt
+                )
+            }
+            triggersObserver = NotificationCenter.default.addObserver(
+                forName: .passiveTriggersDidChange, object: nil, queue: nil
+            ) { [weak self] _ in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { self?.updateActiveRegexTriggers() }
+                } else {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated { self?.updateActiveRegexTriggers() }
+                    }
+                }
+            }
+            updateActiveRegexTriggers()
+        }
+
+        public func updateActiveRegexTriggers(config: Tako.Config? = nil) {
+            let activeConfig = config ?? owningApp?.config
+            guard activeConfig?.passiveRegexTriggers ?? true else {
+                regexTriggers = []
+                return
+            }
+            if let cfg = activeConfig {
+                PassiveTriggerStore.shared.setConfigTriggers(cfg.triggers)
+            }
+            regexTriggers = PassiveTriggerStore.shared.allTriggers
         }
 
 
@@ -2670,6 +2714,7 @@ extension Tako {
             paneProgressBarEnabled = config.progressStyle.showsInHeader
             configuredEditorCommand = config.editor
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
+            updateActiveRegexTriggers(config: config)
         }
 
         /// Whether multi-line pastes at a shell prompt require user confirmation.

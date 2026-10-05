@@ -57,6 +57,7 @@ enum JSON: Equatable, Sendable {
     var string: String? { if case .string(let s) = self { return s } else { return nil } }
     var array: [JSON]? { if case .array(let a) = self { return a } else { return nil } }
     var bool: Bool? { if case .bool(let b) = self { return b } else { return nil } }
+    var object: [String: JSON]? { if case .object(let o) = self { return o } else { return nil } }
 }
 
 struct ControlError: Error, Equatable {
