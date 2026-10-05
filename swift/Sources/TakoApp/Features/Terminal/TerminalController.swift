@@ -273,8 +273,24 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         withBaseConfig baseConfig: Tako.SurfaceConfiguration? = nil,
         withParent explicitParent: NSWindow? = nil
     ) -> TerminalController {
-        let c = TerminalController.init(tako, withBaseConfig: baseConfig)
+        // Resolve working directory from active workspace if baseConfig doesn't specify one
+        var effectiveBaseConfig = baseConfig
+        if effectiveBaseConfig?.workingDirectory == nil,
+           let root = WorkspaceStore.shared.activeWorkspace.rootDirectory,
+           !root.isEmpty {
+            effectiveBaseConfig = effectiveBaseConfig ?? Tako.SurfaceConfiguration()
+            effectiveBaseConfig?.workingDirectory = root
+        }
+
+        let c = TerminalController.init(tako, withBaseConfig: effectiveBaseConfig)
         Self.system.attachWindow(c)
+
+        if let window = c.window {
+            WorkspaceStore.shared.assignTab(
+                tabIdentifier: window.stableTabIdentifier,
+                to: WorkspaceStore.shared.activeWorkspaceId
+            )
+        }
 
         // Get our parent. Our parent is the one explicitly given to us,
         // otherwise the focused terminal, otherwise an arbitrary one.
@@ -452,8 +468,17 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             return nil
         }
 
+        // Resolve working directory from active workspace if baseConfig doesn't specify one
+        var effectiveBaseConfig = baseConfig
+        if effectiveBaseConfig?.workingDirectory == nil,
+           let root = WorkspaceStore.shared.activeWorkspace.rootDirectory,
+           !root.isEmpty {
+            effectiveBaseConfig = effectiveBaseConfig ?? Tako.SurfaceConfiguration()
+            effectiveBaseConfig?.workingDirectory = root
+        }
+
         // Create a new window and add it to the parent
-        let controller = TerminalController.init(tako, withBaseConfig: baseConfig)
+        let controller = TerminalController.init(tako, withBaseConfig: effectiveBaseConfig)
         // A new tab takes the size of the window group it joins, not
         // `window-width`/`window-height` (those apply only to a new window).
         controller.appliesConfiguredWindowSize = false
@@ -464,6 +489,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // If the parent is miniaturized, then macOS exhibits really strange behaviors
         // so we have to bring it back out.
         if parent.isMiniaturized { parent.deminiaturize(self) }
+
+        // Assign the new tab to the active workspace
+        WorkspaceStore.shared.assignTab(
+            tabIdentifier: window.stableTabIdentifier,
+            to: WorkspaceStore.shared.activeWorkspaceId
+        )
 
         // Add the window to our custom tab group and show it. AppKit's
         // native tabbing is disallowed for every terminal window (see

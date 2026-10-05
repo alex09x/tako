@@ -261,10 +261,29 @@ extension Tako {
         override var isFlipped: Bool { false }
 
         private var group: CustomTabGroup? { window.map { Tako.CustomTabGroup.group(for: $0) } }
-        private var windows: [NSWindow] { group?.windows ?? [] }
+        private var windows: [NSWindow] { group?.visibleWindows ?? [] }
         /// A single window shows no strip -- just its title, centred. There
         /// is no such thing as an empty bar.
         private var showsStrip: Bool { windows.count > 1 }
+
+        private var workspaceHovered = false
+        private var showsWorkspacePill: Bool {
+            WorkspaceStore.shared.workspaces.count > 1 || WorkspaceStore.shared.activeWorkspace.name != "Default"
+        }
+
+        private var workspacePillRect: CGRect {
+            guard showsWorkspacePill else { return .zero }
+            let ws = WorkspaceStore.shared.activeWorkspace
+            let title = ws.name
+            let titleWidth = TabText.width(of: title, font: Fonts.badge)
+            let attention = WorkspaceStore.shared.attentionCount(for: ws)
+            let pillWidth = min(140, max(54, 8 + 8 + 6 + titleWidth + (attention > 0 ? 20 : 0) + 8))
+            return CGRect(x: 84, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
+        }
+
+        private var effectiveFirstTabX: CGFloat {
+            showsWorkspacePill ? workspacePillRect.maxX + 8 : Metrics.firstTabX
+        }
 
         func refresh() {
             needsDisplay = true
@@ -298,7 +317,8 @@ extension Tako {
             guard showsStrip else { return }
             let all = windows
             let selected = group?.selectedWindow
-            let available = bounds.width - Metrics.firstTabX - buttonsReservedWidth
+            let startX = effectiveFirstTabX
+            let available = bounds.width - startX - buttonsReservedWidth
             let natural = all.map(naturalWidth(for:))
 
             // Only when the natural widths genuinely don't fit do tabs give
@@ -318,8 +338,8 @@ extension Tako {
                 widths = all.map { _ in shrunk }
             }
 
-            stripRect = CGRect(x: Metrics.firstTabX, y: 0, width: max(0, available), height: Metrics.tabHeight)
-            var x = Metrics.firstTabX - Self.scrollOffset(
+            stripRect = CGRect(x: startX, y: 0, width: max(0, available), height: Metrics.tabHeight)
+            var x = startX - Self.scrollOffset(
                 widths: widths,
                 selected: all.firstIndex { $0 === selected },
                 available: available)
@@ -353,6 +373,8 @@ extension Tako {
             ctx.fill(bounds)
             ctx.setFillColor(Palette.hairline.cgColor)
             ctx.fill(CGRect(x: 0, y: 0, width: bounds.width, height: 1))
+
+            drawWorkspacePill(in: ctx)
 
             guard showsStrip else {
                 // Down to one window: forget the strip, or a click where it
@@ -390,15 +412,16 @@ extension Tako {
             }
             let title = window?.title ?? ""
             guard !title.isEmpty else { return }
+            let startX = effectiveFirstTabX
             let width = TabText.width(of: title, font: Fonts.loneTitle)
-            let maxTitleWidth = max(0, infoRect.minX - Metrics.firstTabX - 16)
-            let drawnX = max(Metrics.firstTabX, (bounds.width - min(width, maxTitleWidth)) / 2)
+            let maxTitleWidth = max(0, infoRect.minX - startX - 16)
+            let drawnX = max(startX, (bounds.width - min(width, maxTitleWidth)) / 2)
             if drawnX + width > infoRect.minX - 8 {
                 ctx.saveGState()
-                ctx.clip(to: CGRect(x: Metrics.firstTabX, y: 0, width: maxTitleWidth, height: Metrics.barHeight))
+                ctx.clip(to: CGRect(x: startX, y: 0, width: maxTitleWidth, height: Metrics.barHeight))
                 TabText.draw(
                     title,
-                    atX: Metrics.firstTabX,
+                    atX: startX,
                     centeredAtY: Metrics.barHeight / 2,
                     font: Fonts.loneTitle,
                     color: Palette.windowTitle,
@@ -621,6 +644,119 @@ extension Tako {
             return path
         }
 
+        // MARK: - Workspace Pill & Menu (C1)
+
+        private func drawWorkspacePill(in ctx: CGContext) {
+            guard showsWorkspacePill else { return }
+            let rect = workspacePillRect
+            let ws = WorkspaceStore.shared.activeWorkspace
+            let attention = WorkspaceStore.shared.attentionCount(for: ws)
+
+            // Background pill
+            ctx.setFillColor(workspaceHovered ? Palette.hoverTab.cgColor : Palette.badge.cgColor)
+            let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+            ctx.addPath(path)
+            ctx.fillPath()
+
+            // Color dot
+            let dotColor: NSColor
+            switch ws.color?.lowercased() {
+            case "red": dotColor = Brand.error
+            case "green": dotColor = Brand.ok
+            case "orange": dotColor = Brand.ember
+            case "purple": dotColor = NSColor.systemPurple
+            case "yellow": dotColor = NSColor.systemYellow
+            default: dotColor = NSColor.systemBlue
+            }
+            ctx.setFillColor(dotColor.cgColor)
+            let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
+            ctx.fillEllipse(in: dotRect)
+
+            // Workspace title
+            let maxTitleWidth = rect.width - 24 - (attention > 0 ? 20 : 0)
+            let title = TabText.truncate(ws.name, to: maxTitleWidth, font: Fonts.badge)
+            let textColor = workspaceHovered ? Palette.activeText : Palette.inactiveText
+            TabText.draw(title, atX: dotRect.maxX + 6, centeredAtY: rect.midY,
+                         font: Fonts.badge, color: textColor, context: ctx)
+
+            // Attention badge if > 0
+            if attention > 0 {
+                let badgeRect = CGRect(x: rect.maxX - 18, y: rect.midY - 6, width: 14, height: 12)
+                ctx.setFillColor(Brand.ember.cgColor)
+                ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
+                ctx.fillPath()
+                let countStr = attention > 9 ? "9+" : "\(attention)"
+                TabText.draw(countStr, atX: badgeRect.minX + 3, centeredAtY: badgeRect.midY,
+                             font: Fonts.timer, color: Palette.bar, context: ctx)
+            }
+        }
+
+        private func showWorkspaceMenu(at point: CGPoint) {
+            let menu = NSMenu()
+            let store = WorkspaceStore.shared
+            for ws in store.workspaces {
+                let attention = store.attentionCount(for: ws)
+                let title = attention > 0 ? "\(ws.name) (\(attention))" : ws.name
+                let item = NSMenuItem(title: title, action: #selector(handleWorkspaceSelected(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = ws.id
+                if ws.id == store.activeWorkspaceId {
+                    item.state = .on
+                }
+                menu.addItem(item)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let nextItem = NSMenuItem(title: "Next Workspace", action: #selector(handleNextWorkspace), keyEquivalent: "]")
+            nextItem.keyEquivalentModifierMask = [.control, .option]
+            nextItem.target = self
+            menu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Workspace", action: #selector(handlePreviousWorkspace), keyEquivalent: "[")
+            prevItem.keyEquivalentModifierMask = [.control, .option]
+            prevItem.target = self
+            menu.addItem(prevItem)
+
+            menu.addItem(NSMenuItem.separator())
+            let newItem = NSMenuItem(title: "New Workspace...", action: #selector(handleNewWorkspace), keyEquivalent: "")
+            newItem.target = self
+            menu.addItem(newItem)
+
+            menu.popUp(positioning: nil, at: point, in: self)
+        }
+
+        @objc private func handleWorkspaceSelected(_ sender: NSMenuItem) {
+            if let id = sender.representedObject as? UUID {
+                WorkspaceStore.shared.switchWorkspace(to: id)
+            }
+        }
+
+        @objc private func handleNextWorkspace() {
+            WorkspaceStore.shared.nextWorkspace()
+        }
+
+        @objc private func handlePreviousWorkspace() {
+            WorkspaceStore.shared.previousWorkspace()
+        }
+
+        @objc private func handleNewWorkspace() {
+            let alert = NSAlert()
+            alert.messageText = "New Project Workspace"
+            alert.informativeText = "Enter a name for the new workspace:"
+            alert.alertStyle = .informational
+            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+            input.placeholderString = "e.g. backend, docs, tako"
+            alert.accessoryView = input
+            alert.addButton(withTitle: "Create")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    let ws = WorkspaceStore.shared.createWorkspace(name: name)
+                    WorkspaceStore.shared.switchWorkspace(to: ws.id)
+                }
+            }
+        }
+
         // MARK: What each tab says
 
         private func surface(in window: NSWindow) -> SurfaceView? {
@@ -740,13 +876,19 @@ extension Tako {
             let previousPlus = plusHovered
             let previousSplit = splitHovered
             let previousInfo = infoHovered
+            let previousWorkspace = workspaceHovered
+            workspaceHovered = showsWorkspacePill && workspacePillRect.contains(point)
             hovered = stripRect.contains(point) ? tabs.first { $0.frame.contains(point) }?.index : nil
             hoveredClose = hovered.map { closeRect(of: tabs[$0]).contains(point) } ?? false
             plusHovered = plusRect.contains(point)
             splitHovered = splitRect.contains(point)
             infoHovered = infoRect.contains(point)
 
-            if infoHovered {
+            if workspaceHovered {
+                let ws = WorkspaceStore.shared.activeWorkspace
+                let count = WorkspaceStore.shared.attentionCount(for: ws)
+                toolTip = "Project Workspace: \(ws.name)\(count > 0 ? " (\(count) needing attention)" : "") — Click to switch"
+            } else if infoHovered {
                 let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
                 toolTip = v.isEmpty ? "About Tako" : "About Tako (v\(v))"
             } else if splitHovered {
@@ -757,7 +899,7 @@ extension Tako {
                 toolTip = nil
             }
 
-            if hovered != previousTab || plusHovered != previousPlus || splitHovered != previousSplit || infoHovered != previousInfo {
+            if hovered != previousTab || plusHovered != previousPlus || splitHovered != previousSplit || infoHovered != previousInfo || workspaceHovered != previousWorkspace {
                 needsDisplay = true
             }
         }
@@ -767,6 +909,7 @@ extension Tako {
             plusHovered = false
             splitHovered = false
             infoHovered = false
+            workspaceHovered = false
             toolTip = nil
             needsDisplay = true
         }
@@ -784,6 +927,10 @@ extension Tako {
         override func mouseDown(with event: NSEvent) {
             let point = convert(event.locationInWindow, from: nil)
             // Same as mouseMoved: use the cached tabs from the last draw() pass.
+            if showsWorkspacePill && workspacePillRect.contains(point) {
+                showWorkspaceMenu(at: point)
+                return
+            }
             if infoRect.contains(point) {
                 NSApp.sendAction(#selector(AppDelegate.showAbout(_:)), to: nil, from: self)
                 return

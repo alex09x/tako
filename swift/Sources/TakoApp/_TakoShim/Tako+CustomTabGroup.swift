@@ -21,10 +21,78 @@ extension Tako {
         private(set) var selectedWindow: NSWindow?
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
+        private static var workspaceObserverInstalled = false
+
+        /// All distinct active groups.
+        static var allGroups: [CustomTabGroup] {
+            var seen = Set<ObjectIdentifier>()
+            var result: [CustomTabGroup] = []
+            for group in groupsByWindow.values {
+                let id = ObjectIdentifier(group)
+                if seen.insert(id).inserted {
+                    result.append(group)
+                }
+            }
+            return result
+        }
+
+        /// The windows belonging to the active workspace in this group, ordered by the workspace's tab order.
+        var visibleWindows: [NSWindow] {
+            let activeWs = WorkspaceStore.shared.activeWorkspace
+            let activeTabIds = activeWs.tabIdentifiers
+
+            // Any window in this group assigned to the active workspace (or default if unassigned)
+            let matching = windows.filter { win in
+                let ws = WorkspaceStore.shared.workspace(forTab: win.stableTabIdentifier)
+                if let ws {
+                    return ws.id == activeWs.id
+                }
+                // Unassigned windows belong to the default workspace
+                return activeWs.id == WorkspaceStore.defaultWorkspaceId
+            }
+
+            if activeTabIds.isEmpty {
+                return matching
+            }
+
+            return matching.sorted { a, b in
+                let idxA = activeTabIds.firstIndex(of: a.stableTabIdentifier) ?? Int.max
+                let idxB = activeTabIds.firstIndex(of: b.stableTabIdentifier) ?? Int.max
+                if idxA != idxB { return idxA < idxB }
+                let origA = windows.firstIndex(of: a) ?? 0
+                let origB = windows.firstIndex(of: b) ?? 0
+                return origA < origB
+            }
+        }
+
+        private static func ensureWorkspaceObserver() {
+            guard !workspaceObserverInstalled else { return }
+            workspaceObserverInstalled = true
+            NotificationCenter.default.addObserver(
+                forName: .takoWorkspaceDidChange,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    for group in allGroups {
+                        group.syncWithActiveWorkspace()
+                    }
+                    let hasVisible = TerminalController.all.contains { ctrl in
+                        guard let win = ctrl.window, win.isVisible else { return false }
+                        return true
+                    }
+                    if !hasVisible, let app = (NSApp.delegate as? AppDelegate)?.tako {
+                        _ = TerminalController.newWindow(app)
+                    }
+                    Tako.TabBarController.refreshAll()
+                }
+            }
+        }
 
         /// The group a window belongs to, creating a fresh single-window
         /// group the first time a window is asked about.
         static func group(for window: NSWindow) -> CustomTabGroup {
+            ensureWorkspaceObserver()
             if let existing = groupsByWindow[ObjectIdentifier(window)] {
                 return existing
             }
@@ -32,6 +100,12 @@ extension Tako {
             group.windows = [window]
             group.selectedWindow = window
             groupsByWindow[ObjectIdentifier(window)] = group
+
+            // Assign window to active workspace if unassigned
+            if WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) == nil {
+                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+            }
+
             return group
         }
 
@@ -39,8 +113,15 @@ extension Tako {
         /// whatever single-window group it was in on its own (every window
         /// starts in one via `group(for:)` the moment anything asks).
         static func join(_ window: NSWindow, to anchor: NSWindow, select: Bool) {
+            ensureWorkspaceObserver()
             let target = group(for: anchor)
             groupsByWindow[ObjectIdentifier(window)] = target
+
+            // Assign window to active workspace if unassigned
+            if WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) == nil {
+                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+            }
+
             guard !target.windows.contains(window) else {
                 if select { target.select(window) }
                 return
@@ -61,8 +142,14 @@ extension Tako {
         /// Insert `window` into `anchor`'s group at a specific index (used
         /// by undo, which restores tabs to their original position).
         static func insert(_ window: NSWindow, into anchor: NSWindow, at index: Int, select: Bool) {
+            ensureWorkspaceObserver()
             let target = group(for: anchor)
             groupsByWindow[ObjectIdentifier(window)] = target
+
+            if WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) == nil {
+                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+            }
+
             guard !target.windows.contains(window) else { return }
             window.setFrame(anchor.frame, display: false)
             let clamped = max(0, min(index, target.windows.count))
@@ -81,10 +168,14 @@ extension Tako {
         static func leave(_ window: NSWindow) {
             guard let group = groupsByWindow[ObjectIdentifier(window)] else { return }
             groupsByWindow.removeValue(forKey: ObjectIdentifier(window))
+            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+
             guard let index = group.windows.firstIndex(of: window) else { return }
             group.windows.remove(at: index)
+
             if group.selectedWindow === window {
-                let next = index < group.windows.count ? group.windows[index] : group.windows.last
+                let visible = group.visibleWindows
+                let next = visible.first
                 group.selectedWindow = next
                 next?.makeKeyAndOrderFront(nil)
             }
@@ -93,11 +184,28 @@ extension Tako {
 
         /// Reorder a window within its own group (Cmd+Shift+[/]).
         static func move(_ window: NSWindow, to index: Int, in group: CustomTabGroup) {
-            guard let current = group.windows.firstIndex(of: window) else { return }
-            let clamped = max(0, min(index, group.windows.count - 1))
-            guard clamped != current else { return }
-            group.windows.remove(at: current)
-            group.windows.insert(window, at: clamped)
+            let visible = group.visibleWindows
+            guard let currentVisibleIndex = visible.firstIndex(of: window) else { return }
+            let clamped = max(0, min(index, visible.count - 1))
+            guard clamped != currentVisibleIndex else { return }
+
+            var newVisible = visible
+            newVisible.remove(at: currentVisibleIndex)
+            newVisible.insert(window, at: clamped)
+
+            WorkspaceStore.shared.reorderTabs(
+                in: WorkspaceStore.shared.activeWorkspaceId,
+                newOrder: newVisible.map(\.stableTabIdentifier)
+            )
+
+            // Also keep windows array consistent
+            if let current = group.windows.firstIndex(of: window) {
+                group.windows.remove(at: current)
+                let targetWindow = newVisible[clamped]
+                let targetIdx = group.windows.firstIndex(of: targetWindow) ?? group.windows.count
+                group.windows.insert(window, at: min(targetIdx, group.windows.count))
+            }
+
             TabBarController.refreshAll()
         }
 
@@ -109,7 +217,46 @@ extension Tako {
             window.setFrame(previous?.frame ?? window.frame, display: false)
             window.makeKeyAndOrderFront(nil)
             previous?.orderOut(nil)
+
+            if let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {
+                WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: ws.id)
+            }
+
             Tako.TabBarController.refreshAll()
+        }
+
+        /// Synchronize selected window and orderOut non-visible windows when active workspace changes.
+        func syncWithActiveWorkspace() {
+            let visible = visibleWindows
+            let activeWs = WorkspaceStore.shared.activeWorkspace
+
+            // Find target window to show for this workspace
+            var targetWindow: NSWindow?
+            if let activeTabId = activeWs.activeTabIdentifier {
+                targetWindow = visible.first { $0.stableTabIdentifier == activeTabId }
+            }
+            if targetWindow == nil {
+                targetWindow = visible.first
+            }
+
+            if let target = targetWindow {
+                if selectedWindow !== target {
+                    let prev = selectedWindow
+                    selectedWindow = target
+                    target.setFrame(prev?.frame ?? target.frame, display: false)
+                    target.makeKeyAndOrderFront(nil)
+                    if prev !== target {
+                        prev?.orderOut(nil)
+                    }
+                } else {
+                    target.makeKeyAndOrderFront(nil)
+                }
+            }
+
+            // Hide any windows not belonging to active workspace
+            for win in windows where !visible.contains(win) {
+                win.orderOut(nil)
+            }
         }
 
         /// Keep every tab's frame in sync so a hidden one is never shown
