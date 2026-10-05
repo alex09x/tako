@@ -119,10 +119,14 @@ import Testing
             Issue.record("Missing relationships list in SPDX document")
             return
         }
-        let describes = relationships.filter { ($0["relationshipType"] as? String) == "DESCRIBES" }
-        #expect(!describes.isEmpty, "SPDX document must have DESCRIBES relationship")
-        let dependsOn = relationships.filter { ($0["relationshipType"] as? String) == "DEPENDS_ON" }
-        #expect(dependsOn.count >= 10, "SPDX document must have DEPENDS_ON relationships for packages")
+        let rootDependsOn = relationships.filter {
+            ($0["relationshipType"] as? String) == "DEPENDS_ON" &&
+            ($0["spdxElementId"] as? String) == "SPDXRef-Package-tako"
+        }
+        #expect(rootDependsOn.count >= 10 && rootDependsOn.count <= 25, "Root package must connect to direct dependencies only, got \(rootDependsOn.count)")
+
+        let allDependsOn = relationships.filter { ($0["relationshipType"] as? String) == "DEPENDS_ON" }
+        #expect(allDependsOn.count > 500, "SPDX document must record complete DAG of crate-to-crate DEPENDS_ON relationships, got \(allDependsOn.count)")
     }
 
     // MARK: - 3. CycloneDX 1.5 SBOM Generation
@@ -203,8 +207,14 @@ import Testing
         }
         let rootDep = dependencies.first { ($0["ref"] as? String) == "pkg:github/alex09x/tako@0.1.7" }
         #expect(rootDep != nil, "CycloneDX document must include root dependency node")
-        let dependsOn = rootDep?["dependsOn"] as? [String] ?? []
-        #expect(dependsOn.count >= 10, "Root dependency node must connect to dependency components")
+        let rootDependsOn = rootDep?["dependsOn"] as? [String] ?? []
+        #expect(rootDependsOn.count >= 10 && rootDependsOn.count <= 25, "Root dependency node must connect to direct dependencies only, got \(rootDependsOn.count)")
+
+        let cratesWithDependencies = dependencies.filter {
+            ($0["ref"] as? String) != "pkg:github/alex09x/tako@0.1.7" &&
+            !($0["dependsOn"] as? [String] ?? []).isEmpty
+        }
+        #expect(cratesWithDependencies.count > 100, "CycloneDX document must record crate-to-crate dependencies, got \(cratesWithDependencies.count)")
     }
 
     // MARK: - 4. Reproducible Build Verification Script

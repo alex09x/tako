@@ -154,3 +154,42 @@ def get_timestamp():
         except ValueError:
             pass
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def build_cargo_maps(cargo_pkgs):
+    """Builds lookup maps for cargo packages by (name, version) and by name."""
+    by_name_ver = {}
+    by_name = {}
+    for pkg in cargo_pkgs:
+        by_name_ver[(pkg["name"], pkg["version"])] = pkg
+        by_name.setdefault(pkg["name"], []).append(pkg)
+    return by_name_ver, by_name
+
+
+def resolve_dependency(dep_spec, by_name_ver, by_name):
+    """Resolves a Cargo.lock dependency entry string to a package dict."""
+    parts = dep_spec.strip().split()
+    if not parts:
+        return None
+    name = parts[0]
+    if len(parts) > 1:
+        ver = parts[1]
+        if (name, ver) in by_name_ver:
+            return by_name_ver[(name, ver)]
+    candidates = by_name.get(name, [])
+    if candidates:
+        return candidates[0]
+    return None
+
+
+def get_direct_cargo_dependencies(cargo_pkgs, by_name_ver, by_name):
+    """Finds direct dependencies of the root tako / tako-core crate."""
+    tako_pkg = next((p for p in cargo_pkgs if p["name"] in ("tako-core", "tako")), None)
+    if not tako_pkg:
+        return []
+    direct = []
+    for dep_str in tako_pkg.get("dependencies", []):
+        resolved = resolve_dependency(dep_str, by_name_ver, by_name)
+        if resolved and resolved not in direct:
+            direct.append(resolved)
+    return direct
