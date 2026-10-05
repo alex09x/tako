@@ -14,15 +14,17 @@ import Testing
 
 @Suite @MainActor struct BroadcastInputTests {
 
-    final class MockSurface: AnyObject {
+    final class MockSurface: AnyObject, SecureInputCheckable {
         let id: UUID
         var isLocked: Bool = false
+        var isSecureInput: Bool = false
         var writtenBytes: [[UInt8]] = []
         var insertedTexts: [String] = []
 
-        init(id: UUID = UUID(), isLocked: Bool = false) {
+        init(id: UUID = UUID(), isLocked: Bool = false, isSecureInput: Bool = false) {
             self.id = id
             self.isLocked = isLocked
+            self.isSecureInput = isSecureInput
         }
 
         func writeToShell(_ bytes: [UInt8]) {
@@ -173,5 +175,97 @@ import Testing
 
         #expect(s2.writtenBytes.isEmpty)
         #expect(s3.writtenBytes.count == 1)
+    }
+
+    @Test func testBroadcastPasteDoesNotRecursivelyReenter() {
+        let store = BroadcastInputStore()
+        @MainActor final class PasteSurface: AnyObject {
+            let id: UUID
+            var isLocked: Bool = false
+            var pasteCallCount: Int = 0
+            var store: BroadcastInputStore?
+            var allSurfaces: [UUID: PasteSurface] = [:]
+
+            init(id: UUID = UUID()) {
+                self.id = id
+            }
+
+            func insertInputText(_ text: String, isBroadcastRecipient: Bool = false) {
+                pasteCallCount += 1
+                if !isBroadcastRecipient {
+                    store?.broadcastText(from: self, sourceId: id, text: text) { [weak self] targetId in
+                        guard let target = self?.allSurfaces[targetId] else { return nil }
+                        return (target: target, isLocked: target.isLocked, insertText: { target.insertInputText($0, isBroadcastRecipient: true) })
+                    }
+                }
+            }
+        }
+
+        let s1 = PasteSurface()
+        let s2 = PasteSurface()
+        s1.store = store
+        s2.store = store
+        s1.allSurfaces = [s1.id: s1, s2.id: s2]
+        s2.allSurfaces = [s1.id: s1, s2.id: s2]
+
+        store.startBroadcast(panes: [s1.id, s2.id], leader: s1.id)
+
+        // Single-line paste on s1
+        s1.insertInputText("echo 'hello'", isBroadcastRecipient: false)
+
+        // s1 called once (initial paste), s2 called once (broadcast recipient without reentering)
+        #expect(s1.pasteCallCount == 1)
+        #expect(s2.pasteCallCount == 1)
+    }
+
+    @Test func testPaneScopedSecureStateBlocksBroadcastViaCheckableAndLifecycle() {
+        let store = BroadcastInputStore()
+        let s1 = MockSurface()
+        let s2 = MockSurface()
+        let surfaces: [UUID: MockSurface] = [s1.id: s1, s2.id: s2]
+
+        store.startBroadcast(panes: [s1.id, s2.id], leader: s1.id)
+
+        // Normal broadcast works
+        store.broadcastInput(from: s1, sourceId: s1.id, data: Data([0x61])) { targetId in
+            guard let surface = surfaces[targetId] else { return nil }
+            return (target: surface, isLocked: surface.isLocked, write: { surface.writeToShell($0) })
+        }
+        #expect(s2.writtenBytes.count == 1)
+
+        // When s2 enters secure password mode, recipient broadcast is blocked
+        s2.isSecureInput = true
+        #expect(SecureInput.shared.isSecure(for: s2) == true)
+
+        store.broadcastInput(from: s1, sourceId: s1.id, data: Data([0x62])) { targetId in
+            guard let surface = surfaces[targetId] else { return nil }
+            return (target: surface, isLocked: surface.isLocked, write: { surface.writeToShell($0) })
+        }
+        #expect(s2.writtenBytes.count == 1) // unchanged
+
+        // When s1 enters secure password mode, outgoing broadcast is blocked
+        s2.isSecureInput = false
+        s1.isSecureInput = true
+        #expect(SecureInput.shared.isSecure(for: s1) == true)
+
+        store.broadcastInput(from: s1, sourceId: s1.id, data: Data([0x63])) { targetId in
+            guard let surface = surfaces[targetId] else { return nil }
+            return (target: surface, isLocked: surface.isLocked, write: { surface.writeToShell($0) })
+        }
+        #expect(s2.writtenBytes.count == 1) // unchanged
+
+        // Also test SecureInput.shared.setScoped(s2, isSecure: true)
+        s1.isSecureInput = false
+        SecureInput.shared.setScoped(s2, isSecure: true)
+        #expect(SecureInput.shared.isSecure(for: s2) == true)
+
+        store.broadcastInput(from: s1, sourceId: s1.id, data: Data([0x64])) { targetId in
+            guard let surface = surfaces[targetId] else { return nil }
+            return (target: surface, isLocked: surface.isLocked, write: { surface.writeToShell($0) })
+        }
+        #expect(s2.writtenBytes.count == 1) // unchanged
+
+        SecureInput.shared.setScoped(s2, isSecure: false)
+        #expect(SecureInput.shared.isSecure(for: s2) == false)
     }
 }
