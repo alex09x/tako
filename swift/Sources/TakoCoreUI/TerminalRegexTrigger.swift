@@ -43,15 +43,18 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
     }
 
     /// Validates whether a regex pattern is safe from catastrophic backtracking (ReDoS).
-    /// Rejects nested quantifiers (e.g. (a+)+, (a*)*), pathological repetitions, and patterns over 512 chars.
+    /// Rejects nested quantifiers (e.g. (a+)+, (a*)*), quantified groups, consecutive quantifiers,
+    /// ambiguous overlapping repetitions (e.g. ^a*a*a*a*a*a*a*b$, a*a*, .*.*, \w+\w+), and patterns over 512 chars.
     public static func isSafePattern(_ pattern: String) -> (isSafe: Bool, reason: String?) {
         guard pattern.count <= 512 else {
             return (false, "pattern exceeds maximum allowed length of 512 characters")
         }
 
-        var depth = 0
         let chars = Array(pattern)
         var i = 0
+
+        // 1. Check for quantified parenthesized groups and consecutive quantifiers
+        var depth = 0
         var escaped = false
 
         while i < chars.count {
@@ -96,6 +99,284 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                 }
             }
             i += 1
+        }
+
+        // 2. Tokenize atoms and quantifiers to analyze ambiguous overlapping repetitions
+        struct Atom {
+            enum Kind {
+                case literal(Character)
+                case dot
+                case shorthand(Character) // d, D, s, S, w, W
+                case charClass(String)
+                case anchor
+                case group
+            }
+            let kind: Kind
+            let raw: String
+            var isRepetition: Bool = false
+            var isNullable: Bool = false
+
+            func canOverlap(with other: Atom) -> Bool {
+                switch (self.kind, other.kind) {
+                case (.anchor, _), (_, .anchor):
+                    return false
+                case (.dot, _), (_, .dot):
+                    return true
+                case (.literal(let c1), .literal(let c2)):
+                    return c1 == c2
+                case (.literal(let c), .shorthand(let s)), (.shorthand(let s), .literal(let c)):
+                    return shorthandMatches(s, char: c)
+                case (.shorthand(let s1), .shorthand(let s2)):
+                    return shorthandsOverlap(s1, s2)
+                case (.literal(let c), .charClass(let raw)), (.charClass(let raw), .literal(let c)):
+                    return charClassContains(raw: raw, char: c)
+                case (.charClass(let r1), .charClass(let r2)):
+                    if r1 == r2 { return true }
+                    return classesOverlap(r1, r2)
+                default:
+                    return true
+                }
+            }
+
+            private func shorthandMatches(_ s: Character, char: Character) -> Bool {
+                switch s {
+                case "d": return char.isNumber
+                case "D": return !char.isNumber
+                case "s": return char.isWhitespace
+                case "S": return !char.isWhitespace
+                case "w": return char.isLetter || char.isNumber || char == "_"
+                case "W": return !(char.isLetter || char.isNumber || char == "_")
+                default: return true
+                }
+            }
+
+            private func shorthandsOverlap(_ s1: Character, _ s2: Character) -> Bool {
+                if s1 == s2 { return true }
+                if (s1 == "d" && s2 == "D") || (s1 == "D" && s2 == "d") { return false }
+                if (s1 == "s" && s2 == "S") || (s1 == "S" && s2 == "s") { return false }
+                if (s1 == "w" && s2 == "W") || (s1 == "W" && s2 == "w") { return false }
+                if (s1 == "d" && s2 == "s") || (s1 == "s" && s2 == "d") { return false }
+                if (s1 == "w" && s2 == "s") || (s1 == "s" && s2 == "w") { return false }
+                return true
+            }
+
+            private func charClassContains(raw: String, char: Character) -> Bool {
+                guard raw.count >= 2 else { return true }
+                let inner = raw.dropFirst().dropLast()
+                let isNegated = inner.hasPrefix("^")
+                let content = isNegated ? inner.dropFirst() : inner
+                var matched = false
+
+                var idx = content.startIndex
+                while idx < content.endIndex {
+                    let c = content[idx]
+                    let next = content.index(after: idx)
+                    if next < content.endIndex && content[next] == "-" {
+                        let afterHyphen = content.index(after: next)
+                        if afterHyphen < content.endIndex {
+                            let endChar = content[afterHyphen]
+                            if c <= char && char <= endChar {
+                                matched = true
+                                break
+                            }
+                            idx = content.index(after: afterHyphen)
+                            continue
+                        }
+                    }
+                    if c == char {
+                        matched = true
+                        break
+                    }
+                    idx = content.index(after: idx)
+                }
+
+                return isNegated ? !matched : matched
+            }
+
+            private func classesOverlap(_ r1: String, _ r2: String) -> Bool {
+                if (r1.contains("0-9") && !r1.contains("^")) && (r2.contains("a-z") && !r2.contains("0-9") && !r2.contains("^")) {
+                    return false
+                }
+                return true
+            }
+        }
+
+        var atoms: [Atom] = []
+        var p = 0
+        var repetitionCount = 0
+
+        while p < chars.count {
+            let c = chars[p]
+
+            let atomKind: Atom.Kind
+            let rawAtom: String
+            let nextP: Int
+
+            if c == "^" || c == "$" {
+                atomKind = .anchor
+                rawAtom = String(c)
+                nextP = p + 1
+            } else if c == "\\" {
+                if p + 1 < chars.count {
+                    let esc = chars[p + 1]
+                    if esc == "b" || esc == "B" {
+                        atomKind = .anchor
+                    } else if "dDsSwW".contains(esc) {
+                        atomKind = .shorthand(esc)
+                    } else {
+                        atomKind = .literal(esc)
+                    }
+                    rawAtom = String(chars[p...p + 1])
+                    nextP = p + 2
+                } else {
+                    atomKind = .literal(c)
+                    rawAtom = String(c)
+                    nextP = p + 1
+                }
+            } else if c == "[" {
+                var closeP = p + 1
+                if closeP < chars.count && chars[closeP] == "^" {
+                    closeP += 1
+                }
+                if closeP < chars.count && chars[closeP] == "]" {
+                    closeP += 1
+                }
+                while closeP < chars.count && chars[closeP] != "]" {
+                    if chars[closeP] == "\\" {
+                        closeP += 1
+                    }
+                    closeP += 1
+                }
+                if closeP < chars.count {
+                    rawAtom = String(chars[p...closeP])
+                    atomKind = .charClass(rawAtom)
+                    nextP = closeP + 1
+                } else {
+                    atomKind = .literal(c)
+                    rawAtom = String(c)
+                    nextP = p + 1
+                }
+            } else if c == "(" {
+                var groupDepth = 1
+                var closeP = p + 1
+                var grpEsc = false
+                while closeP < chars.count && groupDepth > 0 {
+                    let gc = chars[closeP]
+                    if grpEsc {
+                        grpEsc = false
+                    } else if gc == "\\" {
+                        grpEsc = true
+                    } else if gc == "(" {
+                        groupDepth += 1
+                    } else if gc == ")" {
+                        groupDepth -= 1
+                    }
+                    closeP += 1
+                }
+                rawAtom = String(chars[p..<closeP])
+                atomKind = .group
+                nextP = closeP
+            } else if c == "." {
+                atomKind = .dot
+                rawAtom = "."
+                nextP = p + 1
+            } else {
+                atomKind = .literal(c)
+                rawAtom = String(c)
+                nextP = p + 1
+            }
+
+            p = nextP
+
+            var isRepetition = false
+            var isNullable = false
+            var quantifierString = ""
+
+            if p < chars.count {
+                let qc = chars[p]
+                if qc == "*" {
+                    isRepetition = true
+                    isNullable = true
+                    quantifierString = "*"
+                    p += 1
+                } else if qc == "+" {
+                    isRepetition = true
+                    isNullable = false
+                    quantifierString = "+"
+                    p += 1
+                } else if qc == "?" {
+                    isRepetition = false
+                    isNullable = true
+                    quantifierString = "?"
+                    p += 1
+                } else if qc == "{" {
+                    var braceEnd = p + 1
+                    while braceEnd < chars.count && chars[braceEnd] != "}" {
+                        braceEnd += 1
+                    }
+                    if braceEnd < chars.count {
+                        let inner = String(chars[(p + 1)..<braceEnd])
+                        quantifierString = String(chars[p...braceEnd])
+                        p = braceEnd + 1
+                        if inner.contains(",") {
+                            isRepetition = true
+                            let parts = inner.split(separator: ",", omittingEmptySubsequences: false)
+                            if let first = parts.first, let minVal = Int(first.trimmingCharacters(in: .whitespaces)), minVal == 0 {
+                                isNullable = true
+                            }
+                        } else if let exact = Int(inner.trimmingCharacters(in: .whitespaces)), exact > 1 {
+                            isRepetition = true
+                        }
+                    }
+                }
+
+                // Skip trailing lazy '?'
+                if p < chars.count && chars[p] == "?" {
+                    p += 1
+                }
+            }
+
+            if isRepetition {
+                repetitionCount += 1
+            }
+
+            let atom = Atom(
+                kind: atomKind,
+                raw: rawAtom + quantifierString,
+                isRepetition: isRepetition,
+                isNullable: isNullable
+            )
+            atoms.append(atom)
+        }
+
+        // Limit total repetition quantifiers
+        if repetitionCount > 6 {
+            return (false, "pattern exceeds maximum allowed repetition quantifiers (6)")
+        }
+
+        // 3. Reject ambiguous overlapping repetitions (such as a*a*, .*.*, ^a*a*a*a*a*a*a*b$)
+        for i in 0..<atoms.count {
+            let atom1 = atoms[i]
+            guard atom1.isRepetition else { continue }
+
+            for j in (i + 1)..<atoms.count {
+                let atom2 = atoms[j]
+                if atom2.isRepetition {
+                    if atom1.canOverlap(with: atom2) {
+                        return (false, "pathological regex: ambiguous overlapping repetitions '\(atom1.raw)' and '\(atom2.raw)'")
+                    }
+                    if !atom2.isNullable {
+                        // atom2 is a mandatory, non-overlapping repetition barrier
+                        break
+                    }
+                } else {
+                    // atom2 is not repeated. If it's mandatory and cannot overlap with atom1,
+                    // it acts as a barrier separating atom1 from any future repeated atoms!
+                    if !atom2.isNullable && !atom1.canOverlap(with: atom2) {
+                        break
+                    }
+                }
+            }
         }
 
         return (true, nil)

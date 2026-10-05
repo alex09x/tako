@@ -192,7 +192,7 @@ final class PassiveRegexTriggerTests: XCTestCase {
     }
 
     func testPathologicalRegexRejectionAndSafetyBounds() {
-        // 1. Nested quantifiers and quantified groups causing exponential backtracking are rejected
+        // 1. Nested quantifiers, quantified groups, and ambiguous overlapping repetitions causing ReDoS are rejected
         let pathologicalPatterns = [
             "^(a+)+$",
             "(a*)*",
@@ -202,7 +202,12 @@ final class PassiveRegexTriggerTests: XCTestCase {
             "(a|b)+",
             "(test){2,}",
             "a++",
-            "a**"
+            "a**",
+            "^a*a*a*a*a*a*a*b$",
+            "a*a*",
+            ".*.*",
+            #"\w+\w+"#,
+            "a*b*a*"
         ]
         for pat in pathologicalPatterns {
             let safety = TerminalRegexTrigger.isSafePattern(pat)
@@ -212,7 +217,7 @@ final class PassiveRegexTriggerTests: XCTestCase {
         }
 
         // 2. Safe patterns are accepted
-        let safePatterns = ["error: \\[E[0-9]+\\]", "warning: .*", "build (failed|succeeded)", "hello world"]
+        let safePatterns = ["error: \\[E[0-9]+\\]", "warning: .*", "build (failed|succeeded)", "hello world", "task-[0-9]+", "https?://[^\\s]+"]
         for pat in safePatterns {
             let safety = TerminalRegexTrigger.isSafePattern(pat)
             XCTAssertTrue(safety.isSafe, "Expected \(pat) to be safe")
@@ -239,6 +244,20 @@ final class PassiveRegexTriggerTests: XCTestCase {
         // Must complete in under 50ms without blocking UI
         XCTAssertLessThan(elapsed, 0.05)
         XCTAssertGreaterThan(view.triggerHighlightsLayer.sublayers?.count ?? 0, 0)
+
+        // 5. BoundedRegexMatcher strictly bounds individual match execution
+        let unvalidatedRegex = try! NSRegularExpression(pattern: "^a*a*a*a*a*a*a*b$")
+        let attackString = String(repeating: "a", count: 50) + "!"
+        let matchStart = Date()
+        let completed = BoundedRegexMatcher.enumerateMatches(
+            regex: unvalidatedRegex,
+            in: attackString,
+            range: NSRange(location: 0, length: attackString.utf16.count),
+            timeout: .milliseconds(5)
+        ) { _ in }
+        let matchElapsed = Date().timeIntervalSince(matchStart)
+        XCTAssertFalse(completed, "Pathological match should time out and return false")
+        XCTAssertLessThan(matchElapsed, 0.05, "Bounded regex matcher must abort within execution budget")
     }
 }
 
