@@ -2556,6 +2556,7 @@ pub fn import_traced_reserving(
                 format,
                 width,
                 height,
+                generation: 0,
                 data,
             },
         );

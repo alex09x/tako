@@ -43,6 +43,11 @@ pub enum ScreenBuffer {
     Alternate,
 }
 
+/// Maximum rows an inline image or placement can advance the cursor (bounds loop iteration against DoS).
+pub const MAX_INLINE_IMAGE_ROW_SPAN: usize = 1024;
+/// Maximum pixel dimension (width or height) allowed for image layout calculations.
+pub const MAX_INLINE_IMAGE_PIXEL_DIM: u32 = crate::graphics::MAX_IMAGE_SIDE;
+
 /// A cursor position + pending SGR state snapshot, as saved by DECSC (`ESC
 /// 7`) / `CSI s` and restored by DECRC (`ESC 8`) / `CSI u`.
 #[derive(Debug, Clone, Copy)]
@@ -4281,21 +4286,25 @@ impl Perform for Terminal {
                                 10
                             };
 
-                            let mut pixel_w = detected_w;
-                            let mut pixel_h = detected_h;
+                            let mut pixel_w = detected_w.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                            let mut pixel_h = detected_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
                             let mut rows_span = None;
 
                             if let Some(ref h) = height_arg {
                                 if let Some(px) =
                                     h.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
                                 {
+                                    let px = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
                                     pixel_h = px;
                                     rows_span =
-                                        Some(((px + cell_h - 1) / cell_h).max(1) as usize);
+                                        Some(((px.saturating_add(cell_h).saturating_sub(1)) / cell_h)
+                                            .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
+                                            .max(1) as usize);
                                 } else if let Ok(cells) = h.parse::<usize>() {
+                                    let cells = cells.min(MAX_INLINE_IMAGE_ROW_SPAN);
                                     rows_span = Some(cells.max(1));
                                     if pixel_h == 0 {
-                                        pixel_h = (cells as u32) * cell_h;
+                                        pixel_h = (cells as u32).saturating_mul(cell_h).min(MAX_INLINE_IMAGE_PIXEL_DIM);
                                     }
                                 }
                             }
@@ -4303,21 +4312,24 @@ impl Perform for Terminal {
                                 if let Some(px) =
                                     w.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
                                 {
-                                    pixel_w = px;
+                                    pixel_w = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
                                 } else if let Ok(cells) = w.parse::<usize>() {
                                     if pixel_w == 0 {
-                                        pixel_w = (cells as u32) * cell_w;
+                                        pixel_w = (cells as u32).saturating_mul(cell_w).min(MAX_INLINE_IMAGE_PIXEL_DIM);
                                     }
                                 }
                             }
 
                             let rows = rows_span.unwrap_or_else(|| {
                                 if pixel_h > 0 {
-                                    ((pixel_h + cell_h - 1) / cell_h).max(1) as usize
+                                    let h = pixel_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                    ((h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
+                                        .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
+                                        .max(1) as usize
                                 } else {
                                     1
                                 }
-                            });
+                            }).min(MAX_INLINE_IMAGE_ROW_SPAN);
 
                             if let Ok((image_id, placement_id)) = self
                                 .graphics
@@ -4336,7 +4348,7 @@ impl Perform for Terminal {
                                     row: place_row,
                                     col: place_col,
                                 });
-                                for _ in 0..rows {
+                                for _ in 0..rows.min(MAX_INLINE_IMAGE_ROW_SPAN) {
                                     self.line_feed();
                                 }
                                 self.cursor.col = 0;
@@ -5226,7 +5238,7 @@ impl Perform for Terminal {
                 let cmd = crate::graphics::parse_control_data(&control);
                 if cmd.get_u32('C') != Some(1) {
                     let rows_span = if let Some(r) = cmd.get_u32('r') {
-                        (r as usize).max(1)
+                        (r as usize).min(MAX_INLINE_IMAGE_ROW_SPAN).max(1)
                     } else if let Some(img) = self.graphics.image(image_id) {
                         if img.height > 0 {
                             let grid_rows = self.active_grid().rows();
@@ -5235,14 +5247,17 @@ impl Perform for Terminal {
                             } else {
                                 20
                             };
-                            ((img.height + cell_h - 1) / cell_h).max(1) as usize
+                            let h = img.height.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                            ((h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
+                                .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
+                                .max(1) as usize
                         } else {
                             1
                         }
                     } else {
                         1
                     };
-                    for _ in 0..rows_span {
+                    for _ in 0..rows_span.min(MAX_INLINE_IMAGE_ROW_SPAN) {
                         self.line_feed();
                     }
                     self.cursor.col = 0;

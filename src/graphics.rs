@@ -190,6 +190,7 @@ pub(crate) struct PendingTransfer {
     pub format: ImageFormat,
     pub width: u32,
     pub height: u32,
+    pub generation: u64,
     pub data: Vec<u8>,
 }
 
@@ -204,6 +205,7 @@ pub struct GraphicsState {
     pending: HashMap<ChunkKey, PendingTransfer>,
     next_image_id: u32,
     next_image_generation: u64,
+    next_pending_generation: u64,
     max_memory_bytes: u64,
     last_reply: Option<String>,
 }
@@ -245,6 +247,7 @@ impl GraphicsState {
             pending: HashMap::new(),
             next_image_id: 1,
             next_image_generation: 1,
+            next_pending_generation: 1,
             max_memory_bytes: DEFAULT_MAX_IMAGE_MEMORY_BYTES,
             last_reply: None,
         }
@@ -266,24 +269,34 @@ impl GraphicsState {
         self.enforce_memory_cap(0);
     }
 
-    /// Enforces the memory cap by evicting oldest images (by lowest generation).
-    /// Returns false if `incoming_bytes` alone exceeds the configured maximum memory cap.
+    /// Enforces the memory cap by evicting oldest completed images, and then
+    /// oldest pending transfers if completed images alone are not enough.
+    /// Returns false if `incoming_bytes` alone exceeds the configured maximum memory cap,
+    /// or if retained memory cannot be brought under the cap.
     pub fn enforce_memory_cap(&mut self, incoming_bytes: u64) -> bool {
         if incoming_bytes > self.max_memory_bytes {
             return false;
         }
-        while self.retained_capacity_bytes().saturating_add(incoming_bytes) > self.max_memory_bytes
-            && !self.images.is_empty()
-        {
-            if let Some(&oldest_id) = self.images.iter().min_by_key(|(_, img)| img.generation).map(|(id, _)| id) {
-                self.images.remove(&oldest_id);
-                self.placements.retain(|p| p.image_id != oldest_id);
-                self.pending.remove(&ChunkKey::Image(oldest_id));
+        while self.retained_capacity_bytes().saturating_add(incoming_bytes) > self.max_memory_bytes {
+            if !self.images.is_empty() {
+                if let Some(&oldest_id) = self.images.iter().min_by_key(|(_, img)| img.generation).map(|(id, _)| id) {
+                    self.images.remove(&oldest_id);
+                    self.placements.retain(|p| p.image_id != oldest_id);
+                    self.pending.remove(&ChunkKey::Image(oldest_id));
+                } else {
+                    break;
+                }
+            } else if !self.pending.is_empty() {
+                if let Some(&oldest_key) = self.pending.iter().min_by_key(|(_, transfer)| transfer.generation).map(|(k, _)| k) {
+                    self.pending.remove(&oldest_key);
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
-        true
+        self.retained_capacity_bytes().saturating_add(incoming_bytes) <= self.max_memory_bytes
     }
 
     /// Stores a raw image (e.g. from an iTerm2 OSC 1337 File sequence) and records a placement for it.
@@ -357,6 +370,7 @@ impl GraphicsState {
             pending,
             next_image_id: next_image_id.max(1),
             next_image_generation: next_image_generation.max(1),
+            next_pending_generation: 1,
             max_memory_bytes: DEFAULT_MAX_IMAGE_MEMORY_BYTES,
             last_reply: None,
         };
@@ -458,16 +472,37 @@ impl GraphicsState {
 
         let more = cmd.get('m').is_some_and(|m| m != "0");
 
+        let additional_bytes = if let Some(existing) = self.pending.get(&key) {
+            let needed = existing.data.len().saturating_add(chunk.len());
+            if needed as u64 > self.max_memory_bytes {
+                self.pending.remove(&key);
+                return GraphicsResponse::Error("image transfer exceeds per-pane memory cap".to_string());
+            }
+            needed.saturating_sub(existing.data.capacity()) as u64
+        } else {
+            if chunk.len() as u64 > self.max_memory_bytes {
+                return GraphicsResponse::Error("image transfer exceeds per-pane memory cap".to_string());
+            }
+            chunk.len() as u64
+        };
+
+        if !self.enforce_memory_cap(additional_bytes) {
+            self.pending.remove(&key);
+            return GraphicsResponse::Error("image transfer exceeds per-pane memory cap".to_string());
+        }
+
+        let generation = self.allocate_pending_generation();
         // The first chunk carries the metadata; continuations only carry data.
         let entry = self.pending.entry(key).or_insert_with(|| PendingTransfer {
             format,
             width: cmd.get_u32('s').unwrap_or(0),
             height: cmd.get_u32('v').unwrap_or(0),
+            generation,
             data: Vec::new(),
         });
-        if (entry.data.len() + chunk.len()) as u64 > self.max_memory_bytes {
-            self.pending.remove(&key);
-            return GraphicsResponse::Error("image transfer exceeds per-pane memory cap".to_string());
+        entry.generation = generation;
+        if entry.data.capacity() < entry.data.len() + chunk.len() {
+            entry.data.reserve_exact(chunk.len());
         }
         entry.data.extend_from_slice(&chunk);
 
@@ -640,6 +675,12 @@ impl GraphicsState {
     fn allocate_image_generation(&mut self) -> u64 {
         let generation = self.next_image_generation.max(1);
         self.next_image_generation = generation.wrapping_add(1).max(1);
+        generation
+    }
+
+    fn allocate_pending_generation(&mut self) -> u64 {
+        let generation = self.next_pending_generation.max(1);
+        self.next_pending_generation = generation.wrapping_add(1).max(1);
         generation
     }
 }
@@ -1237,6 +1278,35 @@ mod tests {
         // Single image larger than entire cap is rejected
         let huge = vec![0xFF_u8; 20_000];
         assert!(state.store_and_place_raw_image(ImageFormat::Png, 10, 10, huge).is_err());
+    }
+
+    #[test]
+    fn multiple_pending_transfers_respect_aggregate_memory_cap() {
+        let mut state = GraphicsState::new();
+        state.set_max_memory_bytes(10_000);
+
+        let chunk1 = vec![0x11_u8; 3_000];
+        let chunk2 = vec![0x22_u8; 3_000];
+        let chunk3 = vec![0x33_u8; 5_000];
+
+        // Start transfer 1 (m=1)
+        let r1 = state.handle("a=t,t=d,f=32,s=10,v=10,i=1,m=1", b64(&chunk1).as_bytes());
+        assert_eq!(r1, GraphicsResponse::Stored { image_id: 1 });
+        assert!(state.pending().contains_key(&ChunkKey::Image(1)));
+
+        // Start transfer 2 (m=1)
+        let r2 = state.handle("a=t,t=d,f=32,s=10,v=10,i=2,m=1", b64(&chunk2).as_bytes());
+        assert_eq!(r2, GraphicsResponse::Stored { image_id: 2 });
+        assert!(state.pending().contains_key(&ChunkKey::Image(2)));
+
+        // Start transfer 3 (m=1) - causes aggregate pending transfers to exceed 10_000 bytes,
+        // evicting the oldest pending transfer (image 1).
+        let r3 = state.handle("a=t,t=d,f=32,s=10,v=10,i=3,m=1", b64(&chunk3).as_bytes());
+        assert_eq!(r3, GraphicsResponse::Stored { image_id: 3 });
+        assert!(!state.pending().contains_key(&ChunkKey::Image(1)), "oldest pending transfer evicted");
+        assert!(state.pending().contains_key(&ChunkKey::Image(2)));
+        assert!(state.pending().contains_key(&ChunkKey::Image(3)));
+        assert!(state.retained_capacity_bytes() <= 10_000);
     }
 
     #[test]

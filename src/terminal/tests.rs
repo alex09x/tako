@@ -1915,4 +1915,38 @@ fn test_iterm2_inline_image_respects_memory_cap() {
     assert!(term.graphics_placements().is_empty());
 }
 
+#[test]
+fn test_iterm2_huge_height_clamped_and_returns_promptly() {
+    let mut term = Terminal::new(80, 24);
+    let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+    png.extend_from_slice(&10_u32.to_be_bytes());
+    png.extend_from_slice(&10_u32.to_be_bytes());
+    png.extend_from_slice(b"\x08\x06\x00\x00\x00\x00\x00\x00\x00");
+
+    use base64::Engine as _;
+    let b64_png = base64::engine::general_purpose::STANDARD.encode(&png);
+    // Attacker sends huge height (1,000,000,000 cells or pixels)
+    let osc1 = format!("\x1b]1337;File=inline=1;height=1000000000:{b64_png}\x07");
+    term.feed(osc1.as_bytes());
+
+    let osc2 = format!("\x1b]1337;File=inline=1;height=1000000000px:{b64_png}\x07");
+    term.feed(osc2.as_bytes());
+
+    // Both should complete immediately without hanging or wrapping arithmetic
+    assert_eq!(term.graphics_placements().len(), 2);
+}
+
+#[test]
+fn test_kitty_graphics_huge_r_clamped_and_returns_promptly() {
+    let mut term = Terminal::new(80, 24);
+    let pixel = [0x55_u8, 0x66, 0x77, 0x88];
+    use base64::Engine as _;
+    let b64_pixel = base64::engine::general_purpose::STANDARD.encode(&pixel);
+    // Huge row count r=1000000000
+    let apc = format!("\x1b_Ga=T,t=d,f=32,s=1,v=1,r=1000000000;{b64_pixel}\x1b\\");
+    term.feed(apc.as_bytes());
+
+    assert_eq!(term.graphics_placements().len(), 1);
+}
+
 
