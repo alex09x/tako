@@ -600,5 +600,38 @@ import Testing
         #expect(!multiRedacted.contains(secondSecret))
         #expect(multiRedacted == prefix + "[REDACTED]" + middle + "[REDACTED]" + suffix)
     }
+
+    // MARK: - Finding 3: Unbounded Match Span Does Not Leak Tail
+
+    @Test func testRedactionUnboundedMatchSpanDoesNotLeakTail() throws {
+        let redactor = SessionSnapshotRedactor.shared
+        defer { redactor.clearPatterns() }
+        try redactor.addPattern("sk-[A-Za-z0-9\\-_]+")
+
+        // 1. Secret span longer than initial window (6144), e.g. 8000 characters:
+        // Window expands to establish match completion and redacts the full token without leaking the tail.
+        let tokenBody = String(repeating: "x", count: 8000)
+        let longSecret = "sk-" + tokenBody
+        let prefix = String(repeating: ".", count: 2000)
+        let suffix = String(repeating: ".", count: 2000)
+        let line = prefix + longSecret + suffix
+
+        let redacted = redactor.redact(line, timeout: 2.0)
+        #expect(!redacted.contains("sk-"))
+        #expect(!redacted.contains(String(repeating: "x", count: 50)))
+        #expect(redacted.contains("[REDACTED]"))
+        #expect(redacted == prefix + "[REDACTED]" + suffix)
+
+        // 2. Secret span that exceeds maximum expanded window (32768):
+        // Fails closed by replacing with [REDACTED], ensuring the tail is never leaked.
+        let hugeBody = String(repeating: "y", count: 40000)
+        let hugeSecret = "sk-" + hugeBody
+        let hugeLine = prefix + hugeSecret + suffix
+
+        let hugeRedacted = redactor.redact(hugeLine, timeout: 2.0)
+        #expect(!hugeRedacted.contains("sk-"))
+        #expect(!hugeRedacted.contains(String(repeating: "y", count: 50)))
+        #expect(hugeRedacted.contains("[REDACTED]"))
+    }
 }
 

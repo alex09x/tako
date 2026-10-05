@@ -189,9 +189,72 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
                 return (chunkedLine, true)
             }
 
-            let maxWindowEnd = line.index(currentIdx, offsetBy: chunkSize + carryWindow, limitedBy: line.endIndex) ?? line.endIndex
-            let isLastChunk = (maxWindowEnd == line.endIndex)
-            let windowStr = String(line[currentIdx..<maxWindowEnd])
+            var windowEnd = line.index(currentIdx, offsetBy: chunkSize + carryWindow, limitedBy: line.endIndex) ?? line.endIndex
+            var windowStr = String(line[currentIdx..<windowEnd])
+            let maxExpandedWindow = 32768
+
+            // If a match reaches the end of a non-terminal window, expand window to establish match completion.
+            // If match completion cannot be established within the expansion limit, fail closed rather than
+            // advancing past a partial match and leaking its tail.
+            while windowEnd < line.endIndex {
+                if Date() >= deadline {
+                    chunkedLine.append("[REDACTED]")
+                    return (chunkedLine, true)
+                }
+
+                var matchReachesEnd = false
+                for regex in regexes {
+                    let nsRange = NSRange(windowStr.startIndex..<windowStr.endIndex, in: windowStr)
+                    let matches = regex.matches(in: windowStr, options: [], range: nsRange)
+                    for match in matches {
+                        if let range = Range(match.range, in: windowStr), range.upperBound == windowStr.endIndex {
+                            matchReachesEnd = true
+                            break
+                        }
+                    }
+                    if matchReachesEnd { break }
+                }
+
+                if !matchReachesEnd {
+                    // Match completion is established: no match touches the window end boundary
+                    break
+                }
+
+                // If window already reached the max expansion limit, stop expanding
+                let currentLen = windowStr.count
+                if currentLen >= maxExpandedWindow {
+                    break
+                }
+
+                // Expand window to find completion of the match
+                let expandDistance = min(4096, maxExpandedWindow - currentLen)
+                guard expandDistance > 0 else { break }
+                let nextEnd = line.index(windowEnd, offsetBy: expandDistance, limitedBy: line.endIndex) ?? line.endIndex
+                guard nextEnd > windowEnd else { break }
+                windowEnd = nextEnd
+                windowStr = String(line[currentIdx..<windowEnd])
+            }
+
+            // If the window is still truncated (not end of line) and a match still touches windowStr.endIndex,
+            // we cannot establish match completion without exceeding expansion bounds.
+            // Fail closed immediately so we never advance past a truncated match or leak its tail.
+            if windowEnd < line.endIndex {
+                var stillReachesEnd = false
+                for regex in regexes {
+                    let nsRange = NSRange(windowStr.startIndex..<windowStr.endIndex, in: windowStr)
+                    let matches = regex.matches(in: windowStr, options: [], range: nsRange)
+                    if matches.contains(where: { Range($0.range, in: windowStr)?.upperBound == windowStr.endIndex }) {
+                        stillReachesEnd = true
+                        break
+                    }
+                }
+                if stillReachesEnd {
+                    chunkedLine.append("[REDACTED]")
+                    return (chunkedLine, true)
+                }
+            }
+
+            let isLastChunk = (windowEnd == line.endIndex)
 
             if isLastChunk {
                 var modifiedChunk = windowStr
