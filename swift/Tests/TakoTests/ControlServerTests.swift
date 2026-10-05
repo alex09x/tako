@@ -438,6 +438,19 @@ struct ControlServerTests {
             #expect(err.code == .missingScope)
             #expect(err.scope == "approval")
         }
+
+        // 9. Grant request with caller-asserted `from` pane does NOT replace verified process origin
+        var promptOrigin = ""
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
+            promptOrigin = origin
+            reply(true)
+        }
+        let fakePaneId = UUID().uuidString.lowercased()
+        let fromAns = try await ask(path, #"{"cmd":"grant","from":"\#(fakePaneId)","args":{"subcommand":"request","client":"caller-with-from","scopes":"read"}}"#)
+        #expect(fromAns["ok"] as? Bool == true)
+        #expect(promptOrigin.contains("PID") || promptOrigin.contains("Process"))
+        #expect(promptOrigin.contains("Claimed Pane Context (unverified"))
+        #expect(promptOrigin.contains(fakePaneId))
     }
 
     @Test func aSecondCopyLeavesTheSocketToTheFirst() async throws {

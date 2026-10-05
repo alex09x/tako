@@ -198,16 +198,8 @@ enum ControlCommands {
     @_silgen_name("proc_pidpath")
     private static func proc_pidpath(_ pid: Int32, _ buffer: UnsafeMutablePointer<CChar>, _ buffersize: UInt32) -> Int32
 
-    /// Resolves the verified origin of a control socket request (server-derived).
-    static func resolveOrigin(for request: ControlRequest, all: [Pane]) -> String {
-        if let from = request.from {
-            if let pane = all.first(where: { $0.surface.id == from }) {
-                let title = pane.surface.title.isEmpty ? "Terminal" : pane.surface.title
-                let cwd = pane.surface.workingDirectory ?? "unknown"
-                return "Pane: \"\(title)\" (cwd: \(cwd), id: \(from.uuidString.lowercased()))"
-            }
-            return "Pane ID: \(from.uuidString.lowercased()) (no longer active)"
-        }
+    /// Derives the verified process origin strictly from the accepted socket's peer credentials/PID.
+    static func resolvePeerProcess(for request: ControlRequest) -> (description: String, pid: pid_t?) {
         if request.clientFD >= 0 {
             var peerPID: pid_t = 0
             var len = socklen_t(MemoryLayout<pid_t>.size)
@@ -218,12 +210,45 @@ enum ControlCommands {
                 if pathLen > 0 {
                     let procPath = String(cString: pathBuf)
                     let procName = (procPath as NSString).lastPathComponent
-                    return "External process: \(procName) [\(procPath)] (PID \(peerPID))"
+                    return ("Process: \(procName) [\(procPath)] (PID \(peerPID))", peerPID)
                 }
-                return "External process (PID \(peerPID))"
+                return ("Process (PID \(peerPID))", peerPID)
             }
         }
-        return "External process via control socket"
+        return ("External process via control socket", nil)
+    }
+
+    /// Evaluates caller-claimed pane context against the verified peer PID and active panes.
+    /// Caller-supplied pane information is NEVER presented as verified origin.
+    static func resolvePaneContext(for request: ControlRequest, peerPID: pid_t?, all: [Pane]) -> String? {
+        guard let from = request.from else { return nil }
+        guard let pane = all.first(where: { $0.surface.id == from }) else {
+            return "Claimed Pane Context (unverified, inactive): ID \(from.uuidString.lowercased())"
+        }
+        let rawTitle = pane.surface.title.isEmpty ? "Terminal" : pane.surface.title
+        let rawCwd = pane.surface.workingDirectory ?? "unknown"
+        let safeTitle = sanitizeSingleLineText(rawTitle, maxLen: 128) ?? "Terminal"
+        let safeCwd = sanitizeSingleLineText(rawCwd, maxLen: 256) ?? "unknown"
+        let shellPID = pane.surface.pid
+
+        if let pid = peerPID, shellPID > 0 {
+            if Int(pid) == shellPID || LocalPortInspection.descendantPids(rootPid: shellPID).contains(Int(pid)) {
+                return "Associated Terminal Pane (process membership verified): ID \(from.uuidString.lowercased()) (shell PID \(shellPID), shell-reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+            } else {
+                return "Claimed Pane Context (unverified — socket peer PID \(pid) is not a process in this pane): ID \(from.uuidString.lowercased()) (reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+            }
+        }
+
+        return "Claimed Pane Context (unverified, caller-asserted): ID \(from.uuidString.lowercased()) (reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+    }
+
+    /// Resolves origin description for display.
+    static func resolveOrigin(for request: ControlRequest, all: [Pane]) -> String {
+        let (procOrigin, peerPID) = resolvePeerProcess(for: request)
+        if let paneCtx = resolvePaneContext(for: request, peerPID: peerPID, all: all) {
+            return "\(procOrigin)\n\(paneCtx)"
+        }
+        return procOrigin
     }
 
     private static func sanitizeIdentifier(_ s: String, maxLen: Int = 64) -> String? {
@@ -272,10 +297,12 @@ enum ControlCommands {
                 throw ControlError(.invalid, "grant request cannot grant approval scope; requested scopes must contain at least one standard scope")
             }
 
-            let origin = resolveOrigin(for: request, all: all)
+            let (procOrigin, peerPID) = resolvePeerProcess(for: request)
+            let paneContext = resolvePaneContext(for: request, peerPID: peerPID, all: all)
+            let displayOrigin = paneContext != nil ? "\(procOrigin)\n\(paneContext!)" : procOrigin
 
             if let customPrompt = userGrantPrompt {
-                customPrompt(client, effectiveScopes, desc, origin) { approved in
+                customPrompt(client, effectiveScopes, desc, displayOrigin) { approved in
                     if approved {
                         let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
                         reply(.ok([
@@ -301,7 +328,13 @@ enum ControlCommands {
             var info = """
             An unauthenticated client is requesting remote control access to Tako.
 
-            Origin (verified): \(origin)
+            Origin (verified): \(procOrigin)
+            """
+            if let pc = paneContext {
+                info += "\n\(pc)"
+            }
+            info += """
+
             Requested Scopes: [\(scopeList)]
             Claimed Client Name (unverified): "\(client)"
             """
