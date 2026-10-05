@@ -86,9 +86,9 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
 enum LocalGitInspection {
     struct GitInfo: Equatable, Sendable {
         let branch: String
-        let isDirty: Bool
+        let isDirty: Bool?
 
-        init(branch: String, isDirty: Bool) {
+        init(branch: String, isDirty: Bool? = nil) {
             self.branch = branch
             self.isDirty = isDirty
         }
@@ -151,7 +151,7 @@ enum LocalGitInspection {
         return GitInfo(branch: resolved.branch, isDirty: isDirty)
     }
 
-    private static func checkDirtyState(repoRoot: String) -> Bool {
+    private static func checkDirtyState(repoRoot: String) -> Bool? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", repoRoot, "status", "--porcelain", "--ignore-submodules=dirty"]
@@ -163,9 +163,12 @@ enum LocalGitInspection {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                return nil
+            }
             return !data.isEmpty
         } catch {
-            return false
+            return nil
         }
     }
 }

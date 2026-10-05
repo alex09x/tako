@@ -87,7 +87,24 @@ struct SessionSidebarTests {
         try "e8a3b5c4d2e1f0\n".write(to: detachedGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
         let detachedInfo = LocalGitInspection.inspect(directory: detachedDir.path)
         #expect(detachedInfo?.branch == "e8a3b5c")
-        #expect(detachedInfo?.isDirty == false)
+        // Non-existent commit object causes git status to fail; failure propagates nil rather than reporting false (clean)
+        #expect(detachedInfo?.isDirty == nil)
+    }
+
+    @Test func failedGitInspectionDoesNotReportClean() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-git-corrupt-\(UUID().uuidString)")
+        let gitDir = tempDir.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: gitDir.appendingPathComponent("refs"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gitDir.appendingPathComponent("objects"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        // Corrupt HEAD with invalid SHA that fails git status
+        try "invalidsha123\n".write(to: gitDir.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+
+        let info = LocalGitInspection.inspect(directory: tempDir.path)
+        #expect(info != nil)
+        #expect(info?.branch == "invalid")
+        // When git status exits with non-zero status, isDirty must be nil (unavailable), NOT false (clean)
+        #expect(info?.isDirty == nil)
     }
 
     @Test func optInFieldsAreOnlyPopulatedWhenEnabled() async throws {
