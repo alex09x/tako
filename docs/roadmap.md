@@ -473,7 +473,7 @@ Done when, for each supported tool, a session shows `working`, `needs_approval`,
 `waiting_for_input` and `done` at the right moments with a useful notification text, and
 uninstall leaves the tool's configuration byte-identical to before.
 
-### [ ] B9. Terminal event stream (`takoctl events`)
+### [x] B9. Terminal event stream (`takoctl events`)
 
 Streaming subscription for terminal events (command completion, process exit, cwd change), allowing external orchestrators to react without busy-polling.
 
