@@ -21,7 +21,7 @@ final class SessionSidebarStore: ObservableObject {
             defaults.set(isShowing, forKey: Self.isShowingKey)
             if !isShowing {
                 surfaceSubscriptions.removeAll()
-                subscribedSurfaceIds.removeAll()
+                surfaceLastStatus.removeAll()
             }
         }
     }
@@ -61,20 +61,15 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    private struct CacheEntry<T> {
-        let value: T
-        let timestamp: Date
-    }
-
-    // In-memory TTL caches to avoid redundant filesystem/process inspections during rendering.
-    private var gitCache: [String: CacheEntry<LocalGitInspection.GitInfo?>] = [:]
-    private var portsCache: [Int: CacheEntry<[Int]>] = [:]
+    // In-memory caches to avoid redundant filesystem/process inspections during rendering.
+    // Refreshed only on explicit invalidation, directory change, command completion, or opt-in toggle.
+    private var gitCache: [String: LocalGitInspection.GitInfo?] = [:]
+    private var portsCache: [Int: [Int]] = [:]
     private var pendingGitInspections: Set<String> = []
     private var pendingPortsInspections: Set<Int> = []
-    private let cacheTTL: TimeInterval = 2.0
 
-    private var surfaceSubscriptions: Set<AnyCancellable> = []
-    private var subscribedSurfaceIds: Set<UUID> = []
+    private var surfaceSubscriptions: [UUID: [AnyCancellable]] = [:]
+    private var surfaceLastStatus: [UUID: Tako.PaneStatus] = [:]
 
     init(defaults: UserDefaults = .tako) {
         self.defaults = defaults
@@ -82,6 +77,19 @@ final class SessionSidebarStore: ObservableObject {
         self.optInGit = defaults.bool(forKey: Self.optInGitKey)
         self.optInPorts = defaults.bool(forKey: Self.optInPortsKey)
         self.descriptions = defaults.dictionary(forKey: Self.descriptionsKey) as? [String: String] ?? [:]
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notif in
+            guard let self, let win = notif.object as? NSWindow else { return }
+            let closedSurfaces = self.surfaces(in: win)
+            for s in closedSurfaces {
+                self.surfaceSubscriptions.removeValue(forKey: s.id)
+                self.surfaceLastStatus.removeValue(forKey: s.id)
+            }
+        }
     }
 
     /// Invalidates in-memory inspection caches.
@@ -92,26 +100,49 @@ final class SessionSidebarStore: ObservableObject {
         pendingPortsInspections.removeAll()
     }
 
-    /// Dynamically binds to live surfaces in the tab group to observe status, progress, elapsed, title, and pwd changes in real time.
+    /// Dynamically binds to live surfaces across open tab groups to observe status, progress, elapsed, title, and pwd changes in real time.
     func bindSurfaces(for window: NSWindow?) {
-        let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
-        let windows = group?.windows ?? (window.map { [$0] } ?? [])
+        guard let window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        let windows = group.windows
         let currentSurfaces = windows.flatMap { surfaces(in: $0) }
-        let currentIds = Set(currentSurfaces.map(\.id))
-
-        guard currentIds != subscribedSurfaceIds else { return }
-        subscribedSurfaceIds = currentIds
-        surfaceSubscriptions.removeAll()
 
         for s in currentSurfaces {
-            s.objectWillChange
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in self?.objectWillChange.send() }
-                .store(in: &surfaceSubscriptions)
-            s.crab.objectWillChange
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in self?.objectWillChange.send() }
-                .store(in: &surfaceSubscriptions)
+            let sid = s.id
+            guard surfaceSubscriptions[sid] == nil else { continue }
+            surfaceLastStatus[sid] = s.crab.paneStatus
+            var subs: [AnyCancellable] = []
+            subs.append(
+                s.objectWillChange
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.objectWillChange.send() }
+            )
+            subs.append(
+                s.crab.objectWillChange
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.objectWillChange.send() }
+            )
+            subs.append(
+                s.crab.$paneStatus
+                    .dropFirst()
+                    .sink { [weak self, weak s] newStatus in
+                        guard let self, let s else { return }
+                        let oldStatus = self.surfaceLastStatus[sid]
+                        self.surfaceLastStatus[sid] = newStatus
+                        // If command finished, invalidate git/ports caches for this surface
+                        if let oldStatus, oldStatus != newStatus, (oldStatus == .running || oldStatus == .working) {
+                            if let pwd = s.pwd {
+                                self.gitCache.removeValue(forKey: pwd)
+                            }
+                            if let pty = s.pty {
+                                let pid = pty.foregroundPID ?? Int(pty.child)
+                                self.portsCache.removeValue(forKey: pid)
+                            }
+                        }
+                        self.objectWillChange.send()
+                    }
+            )
+            surfaceSubscriptions[sid] = subs
         }
     }
 
@@ -161,50 +192,47 @@ final class SessionSidebarStore: ObservableObject {
             let prog = aggregateProgress(for: win)
             let pwd = surface?.pwd
 
-            // Opt-in Git branch and dirty status (async background inspection to never block MainActor)
+            // Opt-in Git branch and dirty status (no background polling on render cadence)
             var gitBranch: String?
             var gitDirty: Bool?
             if optInGit, let dir = pwd, !dir.isEmpty {
-                let cached = gitCache[dir]
-                if let cached {
-                    gitBranch = cached.value?.branch
-                    gitDirty = cached.value?.isDirty
-                } else if let resolved = LocalGitInspection.resolveBranch(directory: dir) {
-                    gitBranch = resolved.branch
-                }
-                let isExpired = (cached == nil) || (Date().timeIntervalSince(cached!.timestamp) >= cacheTTL)
-                if isExpired && !pendingGitInspections.contains(dir) {
-                    pendingGitInspections.insert(dir)
-                    Task.detached(priority: .utility) {
-                        let inspected = LocalGitInspection.inspect(directory: dir)
-                        await MainActor.run { [weak self] in
-                            guard let self else { return }
-                            self.pendingGitInspections.remove(dir)
-                            self.gitCache[dir] = CacheEntry(value: inspected, timestamp: Date())
-                            self.objectWillChange.send()
+                if let cached = gitCache[dir] {
+                    gitBranch = cached?.branch
+                    gitDirty = cached?.isDirty
+                } else {
+                    if let resolved = LocalGitInspection.resolveBranch(directory: dir) {
+                        gitBranch = resolved.branch
+                    }
+                    if !pendingGitInspections.contains(dir) {
+                        pendingGitInspections.insert(dir)
+                        Task.detached(priority: .utility) {
+                            let inspected = LocalGitInspection.inspect(directory: dir)
+                            await MainActor.run { [weak self] in
+                                guard let self else { return }
+                                self.pendingGitInspections.remove(dir)
+                                self.gitCache[dir] = inspected
+                                self.objectWillChange.send()
+                            }
                         }
                     }
                 }
             }
 
-            // Opt-in listening ports (async background inspection to never block MainActor)
+            // Opt-in listening ports (no background polling on render cadence)
             var ports: [Int]?
             if optInPorts, let pty = surface?.pty {
                 let pid = pty.foregroundPID ?? Int(pty.child)
                 if pid > 0 {
-                    let cached = portsCache[pid]
-                    if let cached {
-                        ports = cached.value
-                    }
-                    let isExpired = (cached == nil) || (Date().timeIntervalSince(cached!.timestamp) >= cacheTTL)
-                    if isExpired && !pendingPortsInspections.contains(pid) {
+                    if let cached = portsCache[pid] {
+                        ports = cached
+                    } else if !pendingPortsInspections.contains(pid) {
                         pendingPortsInspections.insert(pid)
                         Task.detached(priority: .utility) {
                             let inspected = LocalPortInspection.inspectListeningPorts(pid: pid)
                             await MainActor.run { [weak self] in
                                 guard let self else { return }
                                 self.pendingPortsInspections.remove(pid)
-                                self.portsCache[pid] = CacheEntry(value: inspected, timestamp: Date())
+                                self.portsCache[pid] = inspected
                                 self.objectWillChange.send()
                             }
                         }

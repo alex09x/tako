@@ -408,4 +408,70 @@ struct SessionSidebarTests {
         #expect(tabItem?.unreadCount == 1)
         #expect(tabItem?.needsAttention == true)
     }
+
+    @Test func multipleWindowGroupsRetainLiveSubscriptionsAcrossSidebars() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.title = "Workspace A"
+        win1.contentView = surf1
+
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.title = "Workspace B"
+        win2.contentView = surf2
+
+        // Bind both distinct window groups
+        _ = store.items(for: win1)
+        _ = store.items(for: win2)
+
+        // Verify items for both window sidebars are distinct and bound
+        let items1 = store.items(for: win1)
+        let items2 = store.items(for: win2)
+        #expect(items1.count == 1)
+        #expect(items2.count == 1)
+        #expect(items1[0].title == "Workspace A")
+        #expect(items2[0].title == "Workspace B")
+
+        // Mutating surface in first group still notifies store
+        surf1.title = "Workspace A (Renamed)"
+        let items1Updated = store.items(for: win1)
+        #expect(items1Updated[0].title == "Workspace A (Renamed)")
+    }
+
+    @Test func commandCompletionRefreshesGitMetadata() async throws {
+        let repoURL = try createTestGitRepository(branch: "branch-a")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf = Tako.SurfaceView(frame: .zero)
+        surf.pwd = repoURL.path
+        win.contentView = surf
+
+        _ = store.items(for: win)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(store.items(for: win)[0].gitBranch == "branch-a")
+
+        // Switch branch in repository on disk
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/branch-b\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Without command completion, cached branch is preserved (no polling on render cadence)
+        #expect(store.items(for: win)[0].gitBranch == "branch-a")
+
+        // Simulate command running then completing
+        surf.crab.setStatus(.running, text: nil)
+        surf.crab.setStatus(.idle, text: nil)
+
+        // Command completion invalidates the directory cache and triggers refresh
+        _ = store.items(for: win)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(store.items(for: win)[0].gitBranch == "branch-b")
+    }
 }
