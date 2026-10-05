@@ -2259,6 +2259,76 @@ fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+fn random_hex(num_bytes: usize) -> String {
+    let mut buf = vec![0u8; num_bytes];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut buf))
+        .is_ok();
+    if !ok {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        hasher.update(now.as_nanos().to_le_bytes());
+        hasher.update(std::process::id().to_le_bytes());
+        let hash = hasher.finalize();
+        for (i, b) in hash.iter().take(num_bytes).enumerate() {
+            buf[i] = *b;
+        }
+    }
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn write_exclusive_temp_file(id: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {
+    let temp_dir = std::env::temp_dir();
+    let clean_id: String = id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+    let safe_id = if clean_id.is_empty() { "pane" } else { &clean_id };
+    let mut last_err = None;
+
+    for _ in 0..5 {
+        let token = random_hex(16);
+        let path = temp_dir.join(format!("tako-screenshot-{safe_id}-{token}.png"));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+            opts.custom_flags(libc::O_NOFOLLOW);
+        }
+        match opts.open(&path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                if let Err(e) = file.write_all(bytes) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!("failed to write screenshot data to {}: {e}", path.display()));
+                }
+                let _ = file.flush();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                }
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_err = Some(e);
+                continue;
+            }
+            Err(e) => {
+                return Err(format!(
+                    "failed to create private screenshot file at {}: {e}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "failed to create exclusive screenshot file after multiple attempts: {last_err:?}"
+    ))
+}
+
 fn handle_screenshot_output(opts: &Options, result: &Value) -> Result<String, String> {
     let b64 = result["data"]
         .as_str()
@@ -2270,10 +2340,10 @@ fn handle_screenshot_output(opts: &Options, result: &Value) -> Result<String, St
 
     if let Some(out_path) = opts.args.get("out").and_then(Value::as_str) {
         let path = std::path::Path::new(out_path);
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(parent);
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let _ = std::fs::create_dir_all(parent);
         }
         std::fs::write(path, &bytes)
             .map_err(|e| format!("failed to write screenshot to {}: {e}", path.display()))?;
@@ -2293,11 +2363,10 @@ fn handle_screenshot_output(opts: &Options, result: &Value) -> Result<String, St
         let _ = stdout.flush();
         Ok(String::new())
     } else {
-        let default_path = format!("/tmp/tako-screenshot-{id}.png");
-        std::fs::write(&default_path, &bytes)
-            .map_err(|e| format!("failed to write screenshot to {default_path}: {e}"))?;
+        let path = write_exclusive_temp_file(id, &bytes)?;
         Ok(format!(
-            "saved screenshot of pane {id} to {default_path} ({width}x{height} png)\n"
+            "saved screenshot of pane {id} to {} ({width}x{height} png)\n",
+            path.display()
         ))
     }
 }
@@ -4029,5 +4098,55 @@ bbbbbbbb  logs -- pane 2 of 2
         let bytes = decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==").unwrap();
         assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     }
+
+    #[test]
+    fn test_write_exclusive_temp_screenshot() {
+        let fake_png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let path = write_exclusive_temp_file("testpane", &fake_png).unwrap();
+        assert!(path.exists());
+        let file_name = path.file_name().unwrap().to_str().unwrap();
+        assert!(file_name.starts_with("tako-screenshot-testpane-"));
+        assert!(file_name.ends_with(".png"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(&path).unwrap();
+            let mode = metadata.permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        let read_bytes = std::fs::read(&path).unwrap();
+        assert_eq!(read_bytes, fake_png);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_screenshot_temp_refuses_symlink_overwrite() {
+        use std::os::unix::fs::{symlink, OpenOptionsExt};
+        let temp_dir = std::env::temp_dir();
+        let target_file = temp_dir.join(format!("test-target-{}.txt", random_hex(8)));
+        std::fs::write(&target_file, b"secret original data").unwrap();
+
+        let link_path = temp_dir.join(format!("test-link-{}.png", random_hex(8)));
+        symlink(&target_file, &link_path).unwrap();
+
+        // Attempting to exclusively create a file at link_path must fail
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        opts.custom_flags(libc::O_NOFOLLOW);
+        let res = opts.open(&link_path);
+        assert!(res.is_err(), "exclusive open must refuse existing symlink");
+
+        // Target content must remain untouched
+        let content = std::fs::read_to_string(&target_file).unwrap();
+        assert_eq!(content, "secret original data");
+
+        let _ = std::fs::remove_file(&link_path);
+        let _ = std::fs::remove_file(&target_file);
+    }
 }
+
 
