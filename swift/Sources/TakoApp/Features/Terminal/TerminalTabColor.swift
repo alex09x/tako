@@ -103,6 +103,30 @@ enum TerminalTabColor: Int, CaseIterable, Codable {
             return true
         }
     }
+
+    var name: String {
+        switch self {
+        case .none: return "none"
+        case .blue: return "blue"
+        case .purple: return "purple"
+        case .pink: return "pink"
+        case .red: return "red"
+        case .orange: return "orange"
+        case .yellow: return "yellow"
+        case .green: return "green"
+        case .teal: return "teal"
+        case .graphite: return "graphite"
+        }
+    }
+
+    init?(named name: String) {
+        let lower = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let match = Self.allCases.first(where: { $0.name == lower || $0.localizedName.lowercased() == lower }) {
+            self = match
+        } else {
+            return nil
+        }
+    }
 }
 
 // MARK: - Menu View
