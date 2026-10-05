@@ -179,3 +179,93 @@ fn status_text_sanitization_and_length_clamping() {
     assert!(text.chars().count() <= 256, "status text clamped to 256");
     assert!(!text.contains('\x1b'));
 }
+
+#[test]
+fn progress_value_clamping_to_100() {
+    let mut term = Terminal::new(80, 24);
+
+    // Value 150 must be clamped to 100
+    term.feed(b"\x1b]9;4;1;150\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::Progress {
+            state: 1,
+            value: Some(100),
+        }]
+    );
+
+    // Normal value 42 should stay 42
+    term.feed(b"\x1b]9;4;1;42\x07");
+    let events = term.take_events();
+    assert_eq!(
+        events,
+        vec![TerminalEvent::Progress {
+            state: 1,
+            value: Some(42),
+        }]
+    );
+}
+
+#[test]
+fn parser_raw_osc_payload_is_bounded() {
+    use tako_core::parser::{Parser, Perform, MAX_OSC_RAW_BYTES};
+    struct Dummy;
+    impl Perform for Dummy {
+        fn print(&mut self, _: char) {}
+        fn execute(&mut self, _: u8) {}
+        fn hook(&mut self, _: &[u16], _: u32, _: &[u8], _: bool, _: char) {}
+        fn put(&mut self, _: u8) {}
+        fn unhook(&mut self) {}
+        fn osc_dispatch(&mut self, _: &[&[u8]], _: bool) {}
+        fn csi_dispatch(&mut self, _: &[u16], _: u32, _: &[u8], _: bool, _: char) {}
+        fn esc_dispatch(&mut self, _: &[u8], _: bool, _: u8) {}
+    }
+    let mut parser = Parser::new();
+    let mut dummy = Dummy;
+    // Enter OSC
+    parser.advance_bytes(&mut dummy, b"\x1b]0;");
+    // Feed beyond MAX_OSC_RAW_BYTES
+    let chunk = vec![b'A'; 65536];
+    let num_chunks = (MAX_OSC_RAW_BYTES / chunk.len()) + 2;
+    for _ in 0..num_chunks {
+        parser.advance_bytes(&mut dummy, &chunk);
+    }
+    assert_eq!(parser.view().osc_raw.len(), MAX_OSC_RAW_BYTES);
+}
+
+#[test]
+fn osc99_chunk_accumulation_and_limits() {
+    let mut term = Terminal::new(80, 24);
+
+    // Part 1: title chunk 1 (100 chars), not done (d=0)
+    let t1 = "A".repeat(100);
+    let seq1 = format!("\x1b]99;i=test1:d=0:p=title;{t1}\x07");
+    term.feed(seq1.as_bytes());
+
+    // Part 2: title chunk 2 (100 chars), done (d=1) -> total 200 chars, must be clamped to 128
+    let t2 = "B".repeat(100);
+    let seq2 = format!("\x1b]99;i=test1:d=1:p=title;{t2}\x07");
+    term.feed(seq2.as_bytes());
+
+    let events = term.take_events();
+    let notif = events.iter().find_map(|e| match e {
+        TerminalEvent::StructuredNotification { title, .. } => Some(title),
+        _ => None,
+    }).expect("structured notification emitted");
+
+    assert_eq!(notif.chars().count(), 128, "title accumulation clamped to 128 chars");
+}
+
+#[test]
+fn osc99_oversized_raw_chunk_rejected() {
+    let mut term = Terminal::new(80, 24);
+
+    // Chunk > 8192 bytes should be rejected before decoding
+    let huge = "X".repeat(9000);
+    let seq = format!("\x1b]99;i=huge:d=1:p=body;{huge}\x07");
+    term.feed(seq.as_bytes());
+
+    let events = term.take_events();
+    assert!(events.is_empty(), "oversized OSC 99 chunk must be rejected");
+}

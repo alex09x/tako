@@ -440,10 +440,8 @@ pub struct Terminal {
     pub(crate) evicted_elevated: usize,
     /// Policy governing access to host clipboard via escape sequences (Track G4).
     pub(crate) clipboard_policy: ClipboardPolicy,
-    /// Start of the current 1-second rate-limiting window for desktop notifications (Track G4).
-    pub(crate) notification_window_start: Option<std::time::Instant>,
-    /// Number of desktop notifications emitted in the current 1-second window (Track G4).
-    pub(crate) notification_count_in_window: usize,
+    /// Sliding window timestamps of recent desktop notifications for rate-limiting (Track G4).
+    pub(crate) notification_timestamps: std::collections::VecDeque<std::time::Instant>,
 }
 
 impl Terminal {
@@ -655,8 +653,7 @@ impl Terminal {
             context_stack: Vec::new(),
             evicted_elevated: 0,
             clipboard_policy: ClipboardPolicy::WriteOnly,
-            notification_window_start: None,
-            notification_count_in_window: 0,
+            notification_timestamps: std::collections::VecDeque::new(),
         }
     }
 
@@ -3394,25 +3391,18 @@ impl Terminal {
         }
     }
 
-    /// Rate-limits desktop notifications to at most 10 per second per terminal instance (Track G4).
+    /// Rate-limits desktop notifications to at most 10 per second per terminal instance using a sliding window (Track G4).
     pub(crate) fn allow_notification(&mut self) -> bool {
         const MAX_NOTIFICATIONS_PER_SEC: usize = 10;
+        const WINDOW_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
         let now = std::time::Instant::now();
-        if let Some(start) = self.notification_window_start {
-            if now.duration_since(start) >= std::time::Duration::from_secs(1) {
-                self.notification_window_start = Some(now);
-                self.notification_count_in_window = 1;
-                true
-            } else if self.notification_count_in_window < MAX_NOTIFICATIONS_PER_SEC {
-                self.notification_count_in_window += 1;
-                true
-            } else {
-                false
-            }
-        } else {
-            self.notification_window_start = Some(now);
-            self.notification_count_in_window = 1;
+        self.notification_timestamps
+            .retain(|&ts| now.duration_since(ts) < WINDOW_DURATION);
+        if self.notification_timestamps.len() < MAX_NOTIFICATIONS_PER_SEC {
+            self.notification_timestamps.push_back(now);
             true
+        } else {
+            false
         }
     }
 
@@ -3566,7 +3556,11 @@ impl Terminal {
             return;
         }
 
-        // 4. Decode payload text
+        // 4. Decode payload text with strict pre-decode size bounds
+        const MAX_OSC99_CHUNK_RAW_BYTES: usize = 8192;
+        if payload_raw.len() > MAX_OSC99_CHUNK_RAW_BYTES {
+            return;
+        }
         let payload_bytes = if is_base64 {
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD
@@ -3577,18 +3571,25 @@ impl Terminal {
         };
         let payload_text = String::from_utf8_lossy(&payload_bytes).into_owned();
 
-        // 5. Decode application name if provided
+        // 5. Decode application name if provided (bounded)
         let app_name = app_name_b64.and_then(|b64| {
+            if b64.len() > 256 {
+                return None;
+            }
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD
                 .decode(b64.as_bytes())
                 .ok()
-                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .map(|b| {
+                    let s = String::from_utf8_lossy(&b).into_owned();
+                    Self::sanitize_notification_text(&s, 64)
+                })
         });
 
-        // 6. Find or create in-flight record
+        // 6. Find or create in-flight record (capped to at most 16 concurrent in-flight records)
+        const MAX_IN_FLIGHT_OSC99: usize = 16;
         let mut entry = if let Some(ref id_str) = id {
-            if self.in_flight_osc99.len() > 64 && !self.in_flight_osc99.contains_key(id_str) {
+            if self.in_flight_osc99.len() >= MAX_IN_FLIGHT_OSC99 && !self.in_flight_osc99.contains_key(id_str) {
                 if let Some(k) = self.in_flight_osc99.keys().next().cloned() {
                     self.in_flight_osc99.remove(&k);
                 }
@@ -3635,28 +3636,41 @@ impl Terminal {
             }
         }
 
+        const MAX_NOTIFICATION_TITLE_CHARS: usize = 128;
+        const MAX_NOTIFICATION_BODY_CHARS: usize = 1024;
+
         match p_type {
             "body" => {
-                if entry.body.is_empty() {
-                    entry.body = payload_text;
-                } else {
-                    entry.body.push_str(&payload_text);
+                let current_chars = entry.body.chars().count();
+                if current_chars < MAX_NOTIFICATION_BODY_CHARS {
+                    let remaining = MAX_NOTIFICATION_BODY_CHARS - current_chars;
+                    let sanitized = Self::sanitize_notification_text(&payload_text, remaining);
+                    entry.body.push_str(&sanitized);
                 }
             }
             "buttons" => {
-                for btn in payload_text.split('\u{2028}') {
-                    let trimmed = btn.trim();
-                    if !trimmed.is_empty() {
-                        entry.actions.push(trimmed.to_string());
+                if entry.actions.len() < 8 {
+                    for btn in payload_text.split('\u{2028}') {
+                        if entry.actions.len() >= 8 {
+                            break;
+                        }
+                        let trimmed = btn.trim();
+                        if !trimmed.is_empty() {
+                            let sanitized = Self::sanitize_notification_text(trimmed, 64);
+                            if !sanitized.is_empty() {
+                                entry.actions.push(sanitized);
+                            }
+                        }
                     }
                 }
             }
             _ => {
                 // "title" or unspecified
-                if entry.title.is_empty() {
-                    entry.title = payload_text;
-                } else {
-                    entry.title.push_str(&payload_text);
+                let current_chars = entry.title.chars().count();
+                if current_chars < MAX_NOTIFICATION_TITLE_CHARS {
+                    let remaining = MAX_NOTIFICATION_TITLE_CHARS - current_chars;
+                    let sanitized = Self::sanitize_notification_text(&payload_text, remaining);
+                    entry.title.push_str(&sanitized);
                 }
             }
         }
@@ -4090,11 +4104,16 @@ impl Perform for Terminal {
                     }
                 } else {
                     const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024; // 1 MiB
-                    use base64::Engine as _;
-                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
-                        if bytes.len() <= MAX_CLIPBOARD_BYTES {
-                            let text = String::from_utf8_lossy(&bytes).into_owned();
-                            self.events.push(TerminalEvent::ClipboardSet(text));
+                    let non_ws_count = payload.iter().filter(|b| !b.is_ascii_whitespace()).count();
+                    if payload.len() <= 2 * 1024 * 1024
+                        && (non_ws_count.saturating_sub(2) * 3) / 4 <= MAX_CLIPBOARD_BYTES
+                    {
+                        use base64::Engine as _;
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
+                            if bytes.len() <= MAX_CLIPBOARD_BYTES {
+                                let text = String::from_utf8_lossy(&bytes).into_owned();
+                                self.events.push(TerminalEvent::ClipboardSet(text));
+                            }
                         }
                     }
                 }
@@ -4117,7 +4136,8 @@ impl Perform for Terminal {
                 .unwrap_or(0);
             let value = params
                 .get(3)
-                .and_then(|p| String::from_utf8_lossy(p).parse::<u8>().ok());
+                .and_then(|p| String::from_utf8_lossy(p).parse::<u8>().ok())
+                .map(|v| v.min(100));
             self.events.push(TerminalEvent::Progress { state, value });
             return;
         }
@@ -4364,97 +4384,103 @@ impl Perform for Terminal {
                     }
                     if is_inline {
                         use base64::Engine as _;
-                        let cleaned: Vec<u8> = payload_bytes
-                            .iter()
-                            .copied()
-                            .filter(|b| !b.is_ascii_whitespace())
-                            .collect();
-                        if let Ok(image_data) =
-                            base64::engine::general_purpose::STANDARD.decode(&cleaned)
-                        {
-                            let (detected_w, detected_h) =
-                                crate::graphics::detect_image_dimensions(&image_data)
-                                    .unwrap_or((0, 0));
-                            let grid_rows = self.active_grid().rows();
-                            let grid_cols = self.active_grid().cols();
-                            let cell_h = if grid_rows > 0 && self.height_px > 0 {
-                                (self.height_px / grid_rows as u32).max(1)
-                            } else {
-                                20
-                            };
-                            let cell_w = if grid_cols > 0 && self.width_px > 0 {
-                                (self.width_px / grid_cols as u32).max(1)
-                            } else {
-                                10
-                            };
-
-                            let mut pixel_w = detected_w.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                            let mut pixel_h = detected_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                            let mut rows_span = None;
-
-                            if let Some(ref h) = height_arg {
-                                if let Some(px) =
-                                    h.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
+                        const MAX_IMAGE_RAW_BYTES: usize =
+                            crate::graphics::DEFAULT_MAX_IMAGE_MEMORY_BYTES as usize;
+                        if payload_bytes.len() <= MAX_IMAGE_RAW_BYTES * 4 / 3 + 4096 {
+                            let cleaned: Vec<u8> = payload_bytes
+                                .iter()
+                                .copied()
+                                .filter(|b| !b.is_ascii_whitespace())
+                                .collect();
+                            if (cleaned.len().saturating_sub(2) * 3) / 4 <= MAX_IMAGE_RAW_BYTES {
+                                if let Ok(image_data) =
+                                    base64::engine::general_purpose::STANDARD.decode(&cleaned)
                                 {
-                                    let px = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                    pixel_h = px;
-                                    rows_span =
-                                        Some(((px.saturating_add(cell_h).saturating_sub(1)) / cell_h)
-                                            .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
-                                            .max(1) as usize);
-                                } else if let Ok(cells) = h.parse::<usize>() {
-                                    let cells = cells.min(MAX_INLINE_IMAGE_ROW_SPAN);
-                                    rows_span = Some(cells.max(1));
-                                    if pixel_h == 0 {
-                                        pixel_h = (cells as u32).saturating_mul(cell_h).min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                    let (detected_w, detected_h) =
+                                        crate::graphics::detect_image_dimensions(&image_data)
+                                            .unwrap_or((0, 0));
+                                    let grid_rows = self.active_grid().rows();
+                                    let grid_cols = self.active_grid().cols();
+                                    let cell_h = if grid_rows > 0 && self.height_px > 0 {
+                                        (self.height_px / grid_rows as u32).max(1)
+                                    } else {
+                                        20
+                                    };
+                                    let cell_w = if grid_cols > 0 && self.width_px > 0 {
+                                        (self.width_px / grid_cols as u32).max(1)
+                                    } else {
+                                        10
+                                    };
+
+                                    let mut pixel_w = detected_w.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                    let mut pixel_h = detected_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                    let mut rows_span = None;
+
+                                    if let Some(ref h) = height_arg {
+                                        if let Some(px) =
+                                            h.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
+                                        {
+                                            let px = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                            pixel_h = px;
+                                            rows_span =
+                                                Some(((px.saturating_add(cell_h).saturating_sub(1)) / cell_h)
+                                                    .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
+                                                    .max(1) as usize);
+                                        } else if let Ok(cells) = h.parse::<usize>() {
+                                            let cells = cells.min(MAX_INLINE_IMAGE_ROW_SPAN);
+                                            rows_span = Some(cells.max(1));
+                                            if pixel_h == 0 {
+                                                pixel_h = (cells as u32).saturating_mul(cell_h).min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                            }
+                                        }
+                                    }
+                                    if let Some(ref w) = width_arg {
+                                        if let Some(px) =
+                                            w.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
+                                        {
+                                            pixel_w = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                        } else if let Ok(cells) = w.parse::<usize>() {
+                                            if pixel_w == 0 {
+                                                pixel_w = (cells as u32).saturating_mul(cell_w).min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                            }
+                                        }
+                                    }
+
+                                    let rows = rows_span.unwrap_or_else(|| {
+                                        if pixel_h > 0 {
+                                            let h = pixel_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
+                                            ((h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
+                                                .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
+                                                .max(1) as usize
+                                        } else {
+                                            1
+                                        }
+                                    }).min(MAX_INLINE_IMAGE_ROW_SPAN);
+
+                                    if let Ok((image_id, placement_id)) = self
+                                        .graphics
+                                        .store_and_place_raw_image(
+                                            crate::graphics::ImageFormat::Png,
+                                            pixel_w,
+                                            pixel_h,
+                                            image_data,
+                                        )
+                                    {
+                                        let place_row = self.cursor.row;
+                                        let place_col = self.cursor.col;
+                                        self.graphics_placements.push(GraphicsPlacement {
+                                            image_id,
+                                            placement_id,
+                                            row: place_row,
+                                            col: place_col,
+                                        });
+                                        for _ in 0..rows.min(MAX_INLINE_IMAGE_ROW_SPAN) {
+                                            self.line_feed();
+                                        }
+                                        self.cursor.col = 0;
+                                        self.pending_wrap = false;
                                     }
                                 }
-                            }
-                            if let Some(ref w) = width_arg {
-                                if let Some(px) =
-                                    w.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
-                                {
-                                    pixel_w = px.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                } else if let Ok(cells) = w.parse::<usize>() {
-                                    if pixel_w == 0 {
-                                        pixel_w = (cells as u32).saturating_mul(cell_w).min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                    }
-                                }
-                            }
-
-                            let rows = rows_span.unwrap_or_else(|| {
-                                if pixel_h > 0 {
-                                    let h = pixel_h.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                                    ((h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
-                                        .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
-                                        .max(1) as usize
-                                } else {
-                                    1
-                                }
-                            }).min(MAX_INLINE_IMAGE_ROW_SPAN);
-
-                            if let Ok((image_id, placement_id)) = self
-                                .graphics
-                                .store_and_place_raw_image(
-                                    crate::graphics::ImageFormat::Png,
-                                    pixel_w,
-                                    pixel_h,
-                                    image_data,
-                                )
-                            {
-                                let place_row = self.cursor.row;
-                                let place_col = self.cursor.col;
-                                self.graphics_placements.push(GraphicsPlacement {
-                                    image_id,
-                                    placement_id,
-                                    row: place_row,
-                                    col: place_col,
-                                });
-                                for _ in 0..rows.min(MAX_INLINE_IMAGE_ROW_SPAN) {
-                                    self.line_feed();
-                                }
-                                self.cursor.col = 0;
-                                self.pending_wrap = false;
                             }
                         }
                     }
@@ -4466,12 +4492,17 @@ impl Perform for Terminal {
                 if let Some(b64) = rest.strip_prefix("Copy=:") {
                     if self.clipboard_policy != ClipboardPolicy::Disabled {
                         const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024; // 1 MiB
-                        use base64::Engine as _;
-                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                            if bytes.len() <= MAX_CLIPBOARD_BYTES {
-                                self.events.push(TerminalEvent::ClipboardSet(
-                                    String::from_utf8_lossy(&bytes).into_owned(),
-                                ));
+                        let non_ws_count = b64.bytes().filter(|b| !b.is_ascii_whitespace()).count();
+                        if b64.len() <= 2 * 1024 * 1024
+                            && (non_ws_count.saturating_sub(2) * 3) / 4 <= MAX_CLIPBOARD_BYTES
+                        {
+                            use base64::Engine as _;
+                            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                                if bytes.len() <= MAX_CLIPBOARD_BYTES {
+                                    self.events.push(TerminalEvent::ClipboardSet(
+                                        String::from_utf8_lossy(&bytes).into_owned(),
+                                    ));
+                                }
                             }
                         }
                     }

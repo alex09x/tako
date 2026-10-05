@@ -2718,8 +2718,7 @@ pub fn import_traced_reserving(
         context_stack: Vec::new(),
         evicted_elevated: 0,
         clipboard_policy: ClipboardPolicy::WriteOnly,
-        notification_window_start: None,
-        notification_count_in_window: 0,
+        notification_timestamps: std::collections::VecDeque::new(),
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))
