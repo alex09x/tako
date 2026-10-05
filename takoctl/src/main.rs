@@ -66,6 +66,10 @@ commands:
   layout save FILE        save current window's layout to FILE
   layout approve FILE     trust programs in layout FILE
   layout status FILE      show trust status of layout FILE (trusted, untrusted, changed)
+  action [list] [PATH]    list project-local actions for current pane or directory
+  action run ID           run project action ID (--approve: trust and run action)
+  action approve [PATH]   trust project actions file
+  action status [PATH]    show trust status of project actions file
   hooks list              list supported coding-agent hook adapters and their install status
   hooks status [AGENT]    show hook installation status for AGENT or all agents
   hooks install AGENT     install Tako lifecycle hooks into AGENT's configuration
@@ -272,6 +276,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--type" => {
                 args.insert("type".into(), Value::String(value("--type")?));
+            }
+            "--path" => {
+                args.insert("path".into(), Value::String(value("--path")?));
             }
             "--cursor" => {
                 let n: u64 = value("--cursor")?
@@ -631,6 +638,63 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "action" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "list" => {
+                    args.insert("action".into(), Value::String("list".into()));
+                    if !positional.is_empty() {
+                        let p = positional.remove(0);
+                        args.insert("path".into(), Value::String(expand_path(&p)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "run" => {
+                    args.insert("action".into(), Value::String("run".into()));
+                    if positional.is_empty() {
+                        return Err("action run needs an action id".into());
+                    }
+                    let id = positional.remove(0);
+                    args.insert("id".into(), Value::String(id));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "approve" => {
+                    args.insert("action".into(), Value::String("approve".into()));
+                    if !positional.is_empty() {
+                        let p = positional.remove(0);
+                        args.insert("path".into(), Value::String(expand_path(&p)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("action".into(), Value::String("status".into()));
+                    if !positional.is_empty() {
+                        let p = positional.remove(0);
+                        args.insert("path".into(), Value::String(expand_path(&p)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown action subcommand '{}'; expected list, run, approve, or status",
+                        other
+                    ));
+                }
+            }
+            None
+        }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
@@ -726,6 +790,7 @@ fn render(cmd: &str, result: &Value) -> String {
         "ask" => format!("{}\n", serde_json::to_string(result).unwrap_or_default()),
         "workspace" => workspace_report(result),
         "layout" => layout_report(result),
+        "action" => action_report(result),
         _ => format!("{result}\n"),
     }
 }
@@ -807,6 +872,64 @@ fn layout_report(result: &Value) -> String {
         let sha = result["sha256"].as_str().unwrap_or("");
         let short_sha = if sha.len() >= 12 { &sha[..12] } else { sha };
         return format!("Layout {path}: {status} (sha256: {short_sha})\n");
+    }
+    format!("{result}\n")
+}
+
+fn action_report(result: &Value) -> String {
+    if let Some(actions) = result.get("actions").and_then(Value::as_array) {
+        if actions.is_empty() {
+            return "No project actions found\n".into();
+        }
+        let project = result["project"].as_str().unwrap_or("");
+        let status = result["status"].as_str().unwrap_or("untrusted");
+        let mut out = if let Some(name) = result["name"].as_str() {
+            format!("Project actions for {name} ({project}) [{status}]:\n")
+        } else {
+            format!("Project actions for {project} [{status}]:\n")
+        };
+        for act in actions {
+            let id = act["id"].as_str().unwrap_or("");
+            let title = act["title"].as_str().unwrap_or(id);
+            let target = act["target"].as_str().unwrap_or("split");
+            let cmd = act["command"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            out += &format!("  * {id} ({target}): {title}\n");
+            if !cmd.is_empty() {
+                out += &format!("      $ {cmd}\n");
+            }
+        }
+        return out;
+    }
+    if result.get("ran") == Some(&Value::Bool(true)) {
+        let id = result["id"].as_str().unwrap_or("");
+        let title = result["title"].as_str().unwrap_or(id);
+        let target = result["target"].as_str().unwrap_or("");
+        let cwd = result["cwd"].as_str().unwrap_or("");
+        return format!("Ran action '{title}' ({id}) in {target} (cwd: {cwd})\n");
+    }
+    if result.get("approved") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("");
+        let sha = result["sha256"].as_str().unwrap_or("");
+        let short_sha = if sha.len() >= 12 { &sha[..12] } else { sha };
+        return format!("Approved project actions at {path} (sha256: {short_sha})\n");
+    }
+    if let Some(status) = result["status"].as_str() {
+        let path = result["path"].as_str().unwrap_or("");
+        let sha = result["sha256"].as_str().unwrap_or("");
+        let count = result["actions_count"].as_f64().unwrap_or(0.0) as u64;
+        let short_sha = if sha.len() >= 12 { &sha[..12] } else { sha };
+        return format!(
+            "Project actions {path}: {status} (sha256: {short_sha}, {count} action{})\n",
+            if count == 1 { "" } else { "s" }
+        );
     }
     format!("{result}\n")
 }
@@ -2194,5 +2317,110 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(parse(&args(&["layout", "apply", "/nonexistent/file/path.json"])).is_err());
         assert!(parse(&args(&["layout", "approve"])).is_err());
         assert!(parse(&args(&["layout", "status"])).is_err());
+    }
+
+    #[test]
+    fn action_subcommands_and_options_parsed_and_rendered() {
+        // Action list
+        let opts = parse(&args(&["action", "list"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "list");
+
+        // Action list with path
+        let opts = parse(&args(&["action", "list", "/path/to/project"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "list");
+        assert_eq!(opts.args["path"], "/path/to/project");
+
+        // Action run
+        let opts = parse(&args(&["action", "run", "build"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "run");
+        assert_eq!(opts.args["id"], "build");
+        assert_eq!(opts.args.get("approve"), None);
+
+        // Action run with --approve and --path
+        let opts = parse(&args(&["action", "run", "--approve", "--path", "/my/proj", "test"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "run");
+        assert_eq!(opts.args["id"], "test");
+        assert_eq!(opts.args["approve"], true);
+        assert_eq!(opts.args["path"], "/my/proj");
+
+        // Action approve
+        let opts = parse(&args(&["action", "approve", "/path/to/project"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "approve");
+        assert_eq!(opts.args["path"], "/path/to/project");
+
+        // Action status
+        let opts = parse(&args(&["action", "status", "/path/to/project"])).unwrap();
+        assert_eq!(opts.cmd, "action");
+        assert_eq!(opts.args["action"], "status");
+        assert_eq!(opts.args["path"], "/path/to/project");
+
+        // Render list
+        let list_json = json!({
+            "project": "/Users/user/project",
+            "status": "trusted",
+            "actions": [
+                {
+                    "id": "build",
+                    "title": "Build Project",
+                    "target": "split",
+                    "command": ["cargo", "build"]
+                },
+                {
+                    "id": "test",
+                    "title": "Run Tests",
+                    "target": "new-tab",
+                    "command": ["cargo", "test"]
+                }
+            ]
+        });
+        assert_eq!(
+            render("action", &list_json),
+            "Project actions for /Users/user/project [trusted]:\n  * build (split): Build Project\n      $ cargo build\n  * test (new-tab): Run Tests\n      $ cargo test\n"
+        );
+
+        // Render run
+        let run_json = json!({
+            "ran": true,
+            "id": "build",
+            "title": "Build Project",
+            "target": "split",
+            "cwd": "/Users/user/project"
+        });
+        assert_eq!(
+            render("action", &run_json),
+            "Ran action 'Build Project' (build) in split (cwd: /Users/user/project)\n"
+        );
+
+        // Render approve
+        let approve_json = json!({
+            "approved": true,
+            "path": "/path/to/.tako/actions.json",
+            "sha256": "1234567890abcdef"
+        });
+        assert_eq!(
+            render("action", &approve_json),
+            "Approved project actions at /path/to/.tako/actions.json (sha256: 1234567890ab)\n"
+        );
+
+        // Render status
+        let status_json = json!({
+            "path": "/path/to/.tako/actions.json",
+            "status": "trusted",
+            "sha256": "1234567890abcdef",
+            "actions_count": 2.0
+        });
+        assert_eq!(
+            render("action", &status_json),
+            "Project actions /path/to/.tako/actions.json: trusted (sha256: 1234567890ab, 2 actions)\n"
+        );
+
+        // Errors
+        assert!(parse(&args(&["action", "run"])).is_err());
+        assert!(parse(&args(&["action", "unknown_sub"])).is_err());
     }
 }
