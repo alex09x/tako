@@ -94,9 +94,17 @@ commands:
   resume clear [TARGET]   clear recorded resume session
   resume run [TARGET]     manually execute recorded resume command
   resume approve [TARGET] approve command prefix for directory (--prefix P, --cwd DIR)
+  input lock              lock the pane against accidental keyboard typing (--owner NAME)
+  input unlock            unlock the pane for keyboard typing
+  input takeover          take over keyboard input from an agent
+  input handback          hand back input control to the agent (--owner NAME)
+  input status            show input lock state, owner, and last activity attribution
+  input log               show automated input activity log for the pane
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --client NAME           client name for automated input attribution (send, type, key; default: takoctl)
+  --owner NAME            agent name for input lock / handback (default: agent)
   --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
   --label NAME            split: label for child pane (e.g. subagent name)
   --approve               layout apply: trust layout file and allow running its programs
@@ -330,6 +338,12 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--prefix" => {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
+            }
+            "--client" => {
+                args.insert("client".into(), Value::String(value("--client")?));
+            }
+            "--owner" => {
+                args.insert("owner".into(), Value::String(value("--owner")?));
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
@@ -907,6 +921,27 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "input" => {
+            let sub = if positional.is_empty() {
+                "status".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "lock" | "unlock" | "takeover" | "handback" | "status" | "log" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                }
+                other => {
+                    return Err(format!(
+                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, or log"
+                    ));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -1029,8 +1064,45 @@ fn render(cmd: &str, result: &Value) -> String {
         "action" => action_report(result),
         "task" => task_report(result),
         "resume" => resume_report(result),
+        "input" => input_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn input_report(result: &Value) -> String {
+    if let Some(entries) = result["entries"].as_array() {
+        if entries.is_empty() {
+            return "No automated input activity recorded for this pane.\n".to_string();
+        }
+        let mut out = String::new();
+        out += "Automated input activity:\n";
+        for entry in entries {
+            let client = entry["client"].as_str().unwrap_or("unknown");
+            let action = entry["action"].as_str().unwrap_or("");
+            let ts = entry["timestamp"].as_str().unwrap_or("");
+            out += &format!("  [{ts}] {client}: {action}\n");
+        }
+        return out;
+    }
+
+    let mut out = String::new();
+    let locked = result["locked"].as_bool().unwrap_or(false);
+    let owner = result["owner"].as_str().unwrap_or("human");
+    let id = result["id"].as_str().unwrap_or("");
+
+    if locked {
+        out += &format!("Pane {id}: locked (owner: {owner})\n");
+    } else {
+        out += &format!("Pane {id}: unlocked (owner: {owner})\n");
+    }
+
+    if let (Some(client), Some(action)) = (
+        result["last_client"].as_str(),
+        result["last_action"].as_str(),
+    ) {
+        out += &format!("Last activity mark: {client}: {action}\n");
+    }
+    out
 }
 
 fn resume_report(result: &Value) -> String {
@@ -3112,6 +3184,68 @@ bbbbbbbb  logs -- pane 2 of 2
         });
         let rep_cleared = render("resume", &cleared_json);
         assert_eq!(rep_cleared, "Resume session cleared for pane p-123\n");
+    }
+
+    #[test]
+    fn test_input_subcommands_and_options_parsed_and_rendered() {
+        let opts_lock = parse(&[
+            "input".into(),
+            "lock".into(),
+            "--owner".into(),
+            "agent-1".into(),
+            "--target".into(),
+            "pane-a".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_lock.cmd, "input");
+        assert_eq!(opts_lock.args["subcommand"], "lock");
+        assert_eq!(opts_lock.args["owner"], "agent-1");
+        assert_eq!(opts_lock.args["target"], "pane-a");
+
+        let opts_to = parse(&["input".into(), "takeover".into()]).unwrap();
+        assert_eq!(opts_to.args["subcommand"], "takeover");
+
+        let opts_hb = parse(&["input".into(), "handback".into()]).unwrap();
+        assert_eq!(opts_hb.args["subcommand"], "handback");
+
+        let opts_st = parse(&["input".into()]).unwrap();
+        assert_eq!(opts_st.args["subcommand"], "status");
+
+        let opts_send = parse(&[
+            "send".into(),
+            "echo hi".into(),
+            "--client".into(),
+            "claude-worker".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_send.cmd, "send");
+        assert_eq!(opts_send.args["text"], "echo hi");
+        assert_eq!(opts_send.args["client"], "claude-worker");
+
+        let locked_val = json!({
+            "id": "p-1",
+            "locked": true,
+            "owner": "agent-1",
+            "last_client": "takoctl",
+            "last_action": "send"
+        });
+        let rep_locked = render("input", &locked_val);
+        assert!(rep_locked.contains("Pane p-1: locked (owner: agent-1)"));
+        assert!(rep_locked.contains("Last activity mark: takoctl: send"));
+
+        let log_val = json!({
+            "id": "p-1",
+            "entries": [
+                {
+                    "client": "claude",
+                    "action": "type",
+                    "timestamp": "2026-10-05T02:00:00Z"
+                }
+            ]
+        });
+        let rep_log = render("input", &log_val);
+        assert!(rep_log.contains("Automated input activity:"));
+        assert!(rep_log.contains("[2026-10-05T02:00:00Z] claude: type"));
     }
 }
 

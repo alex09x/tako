@@ -2226,9 +2226,22 @@ extension Tako {
 
         // MARK: - TakoTerminalNSViewDelegate
 
+        /// Whether interactive keyboard input is locked for this pane (C7).
+        public var isInputLocked: Bool {
+            get { InputOwnershipStore.shared.isLocked(for: id) }
+            set {
+                if newValue {
+                    InputOwnershipStore.shared.lock(paneId: id)
+                } else {
+                    InputOwnershipStore.shared.unlock(paneId: id)
+                }
+            }
+        }
+
         /// Bytes the surface produced from a keystroke, a paste, or a mouse
         /// report. This is the only path from input to the shell.
         public func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
+            guard !isInputLocked else { return }
             writeToShell([UInt8](data))
         }
 
@@ -2348,6 +2361,7 @@ extension Tako {
         }
 
         override public func insertInputText(_ text: String) {
+            guard !isInputLocked else { return }
             revealLiveScreenForUserInput()
             var cleanText = text
             while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
@@ -3098,6 +3112,7 @@ extension Tako {
         public var mouseCaptured: Bool { core.modes().mouseTracking != .off }
 
         public func close() {
+            InputOwnershipStore.shared.remove(paneId: id)
             pty?.terminate()
         }
 
