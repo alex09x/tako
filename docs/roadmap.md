@@ -486,7 +486,7 @@ Streaming subscription for terminal events (command completion, process exit, cw
 Done when an orchestrator can follow ten agents without polling, survives its own restart without
 losing events inside the window, and a stalled subscriber cannot affect terminal latency.
 
-### [ ] B10. Interactive agent prompt (`takoctl ask`)
+### [x] B10. Interactive agent prompt (`takoctl ask`)
 
 A native modal or inline prompt allowing background agents to ask the user a structured question or choice with immediate typed response returned to stdout.
 
