@@ -301,6 +301,7 @@ fn desktop_notification_effect_callback() {
 #[test]
 fn clipboard_write_effect_callback() {
     let mut term = Terminal::new(80, 24);
+    term.set_clipboard_policy(tako_core::terminal::ClipboardPolicy::ReadWrite);
 
     term.feed(b"\x1b]52;c;aGVsbG8=\x1b\\");
     term.feed(b"AfterClipboard");

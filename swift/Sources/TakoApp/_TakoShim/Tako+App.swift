@@ -2714,6 +2714,7 @@ extension Tako {
             paneProgressBarEnabled = config.progressStyle.showsInHeader
             configuredEditorCommand = config.editor
             core.setScrollbackLimit(lines: config.scrollbackLimitLines)
+            core.setClipboardReadAllowed(allowed: config.clipboardRead)
             updateActiveRegexTriggers(config: config)
         }
 
@@ -3042,6 +3043,7 @@ extension Tako {
                                     ]
                                 )
                             case .clipboardQuery:
+                                guard self.owningApp?.config.clipboardRead ?? false else { break }
                                 let text = NSPasteboard.general.string(forType: .string) ?? ""
                                 let replyOutcome = self.core.feedWithOutcome(bytes: Data("\u{1b}]52;c;\(Data(text.utf8).base64EncodedString())\u{07}".utf8))
                                 if !replyOutcome.output.isEmpty { self.pty?.write(replyOutcome.output) }

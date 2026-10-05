@@ -73,8 +73,8 @@ use super::commands::{
     CommandLog, CommandRecord, CommandStatus, MAX_COMMAND_RECORDS, MAX_CWD_BYTES,
 };
 use super::{
-    Cursor, DcsKind, GraphemeWidthMethod, GraphicsPlacement, ProtectedMode, SavedCursor,
-    ScreenBuffer, SemanticContent, Terminal,
+    ClipboardPolicy, Cursor, DcsKind, GraphemeWidthMethod, GraphicsPlacement, ProtectedMode,
+    SavedCursor, ScreenBuffer, SemanticContent, Terminal,
 };
 use crate::charset::Charset;
 use crate::cursor_style::{CursorShape, CursorStyle};
@@ -2717,6 +2717,8 @@ pub fn import_traced_reserving(
         unidentified_osc99: None,
         context_stack: Vec::new(),
         evicted_elevated: 0,
+        clipboard_policy: ClipboardPolicy::WriteOnly,
+        notification_timestamps: std::collections::VecDeque::new(),
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))

@@ -1,3 +1,20 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
+/// Maximum raw byte length permitted in an in-flight OSC sequence buffer (16 MiB).
+pub const MAX_OSC_RAW_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum raw byte length permitted in an in-flight APC sequence buffer (16 MiB).
+pub const MAX_APC_RAW_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum number of parameters permitted in an OSC sequence (1024).
+pub const MAX_OSC_PARAMS: usize = 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Ground,
@@ -94,6 +111,20 @@ impl Parser {
             apc_raw: Vec::new(),
             utf8_need: 0,
             utf8_cp: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn push_osc(&mut self, byte: u8) {
+        if self.osc_raw.len() < MAX_OSC_RAW_BYTES {
+            self.osc_raw.push(byte);
+        }
+    }
+
+    #[inline(always)]
+    fn push_apc(&mut self, byte: u8) {
+        if self.apc_raw.len() < MAX_APC_RAW_BYTES {
+            self.apc_raw.push(byte);
         }
     }
 
@@ -395,35 +426,35 @@ impl Parser {
                     }
                     0x20..=0x7F => {
                         self.utf8_need = 0;
-                        self.osc_raw.push(byte);
+                        self.push_osc(byte);
                     }
                     0xC2..=0xDF => {
                         self.utf8_need = 1;
-                        self.osc_raw.push(byte);
+                        self.push_osc(byte);
                     }
                     0xE0..=0xEF => {
                         self.utf8_need = 2;
-                        self.osc_raw.push(byte);
+                        self.push_osc(byte);
                     }
                     0xF0..=0xF4 => {
                         self.utf8_need = 3;
-                        self.osc_raw.push(byte);
+                        self.push_osc(byte);
                     }
                     0x80..=0xBF => {
                         if self.utf8_need > 0 {
                             self.utf8_need -= 1;
-                            self.osc_raw.push(byte);
+                            self.push_osc(byte);
                         } else if byte == 0x9C {
                             self.dispatch_osc(performer, false);
                             transition = Some(State::Ground);
                         } else {
-                            self.osc_raw.push(byte);
+                            self.push_osc(byte);
                         }
                     }
                     _ => {
                         self.utf8_need = 0;
                         if byte >= 0x80 {
-                            self.osc_raw.push(byte);
+                            self.push_osc(byte);
                         }
                     }
                 }
@@ -440,35 +471,35 @@ impl Parser {
                     }
                     0x20..=0x7F => {
                         self.utf8_need = 0;
-                        self.apc_raw.push(byte);
+                        self.push_apc(byte);
                     }
                     0xC2..=0xDF => {
                         self.utf8_need = 1;
-                        self.apc_raw.push(byte);
+                        self.push_apc(byte);
                     }
                     0xE0..=0xEF => {
                         self.utf8_need = 2;
-                        self.apc_raw.push(byte);
+                        self.push_apc(byte);
                     }
                     0xF0..=0xF4 => {
                         self.utf8_need = 3;
-                        self.apc_raw.push(byte);
+                        self.push_apc(byte);
                     }
                     0x80..=0xBF => {
                         if self.utf8_need > 0 {
                             self.utf8_need -= 1;
-                            self.apc_raw.push(byte);
+                            self.push_apc(byte);
                         } else if byte == 0x9C {
                             self.dispatch_apc(performer);
                             transition = Some(State::Ground);
                         } else {
-                            self.apc_raw.push(byte);
+                            self.push_apc(byte);
                         }
                     }
                     _ => {
                         self.utf8_need = 0;
                         if byte >= 0x80 {
-                            self.apc_raw.push(byte);
+                            self.push_apc(byte);
                         }
                     }
                 }
@@ -488,26 +519,49 @@ impl Parser {
                 if next_state == State::Escape {
                     // ST is ESC \. We will parse the '\' in Escape state, but Osc might be dispatched
                     self.dispatch_osc(performer, false);
+                } else {
+                    self.reset_osc_buffer();
                 }
-            } else if self.state == State::SosPmApcString
-                && next_state == State::Escape {
+            } else if self.state == State::SosPmApcString {
+                if next_state == State::Escape {
                     self.dispatch_apc(performer);
+                } else {
+                    self.reset_apc_buffer();
                 }
+            }
             
             // Enter actions
             if next_state == State::Escape || next_state == State::CsiEntry || next_state == State::DcsEntry || next_state == State::OscString || next_state == State::SosPmApcString {
                 self.clear();
             }
             if next_state == State::OscString {
-                self.osc_raw.clear();
+                self.reset_osc_buffer();
                 self.utf8_need = 0;
             }
             if next_state == State::SosPmApcString {
-                self.apc_raw.clear();
+                self.reset_apc_buffer();
                 self.utf8_need = 0;
             }
 
             self.state = next_state;
+        }
+    }
+
+    #[inline]
+    fn reset_osc_buffer(&mut self) {
+        if self.osc_raw.capacity() > 64 * 1024 {
+            self.osc_raw = Vec::new();
+        } else {
+            self.osc_raw.clear();
+        }
+    }
+
+    #[inline]
+    fn reset_apc_buffer(&mut self) {
+        if self.apc_raw.capacity() > 64 * 1024 {
+            self.apc_raw = Vec::new();
+        } else {
+            self.apc_raw.clear();
         }
     }
 
@@ -541,20 +595,33 @@ impl Parser {
     fn dispatch_osc<P: Perform>(&mut self, performer: &mut P, bell: bool) {
         let mut params = Vec::new();
         let mut current_start = 0;
+        let mut excess = false;
         for (i, &b) in self.osc_raw.iter().enumerate() {
             if b == b';' {
+                if params.len() >= MAX_OSC_PARAMS {
+                    excess = true;
+                    break;
+                }
                 params.push(&self.osc_raw[current_start..i]);
                 current_start = i + 1;
             }
         }
-        if current_start <= self.osc_raw.len() {
-            params.push(&self.osc_raw[current_start..]);
+        if !excess && current_start <= self.osc_raw.len() {
+            if params.len() >= MAX_OSC_PARAMS {
+                excess = true;
+            } else {
+                params.push(&self.osc_raw[current_start..]);
+            }
         }
-        performer.osc_dispatch(&params, bell);
+        if !excess {
+            performer.osc_dispatch(&params, bell);
+        }
+        self.reset_osc_buffer();
     }
 
     fn dispatch_apc<P: Perform>(&mut self, performer: &mut P) {
         performer.apc_dispatch(&self.apc_raw);
+        self.reset_apc_buffer();
     }
 }
 

@@ -914,8 +914,9 @@ fn test_plain_string_matches_upstream_semantics() {
 
 #[test]
 fn test_events_bell_title_clipboard_notify_pwd() {
-    use crate::terminal::TerminalEvent;
+    use crate::terminal::{ClipboardPolicy, TerminalEvent};
     let mut term = Terminal::new(10, 3);
+    term.set_clipboard_policy(ClipboardPolicy::ReadWrite);
     term.feed(b"\x07");
     term.feed(b"\x1b]0;hi\x07");
     term.feed(b"\x1b]52;c;aGVsbG8=\x07"); // base64 "hello"
@@ -1468,7 +1469,7 @@ fn status_sanitization_and_length_limit() {
     if let TerminalEvent::StatusSet { status, text } = &events[0] {
         assert_eq!(status, "running");
         let t = text.as_ref().unwrap();
-        assert!(t.len() <= 128);
+        assert!(t.len() <= 256);
         assert!(!t.contains('\x01'));
         assert!(!t.contains('\x08'));
         assert!(!t.starts_with(' '));

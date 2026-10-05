@@ -846,11 +846,11 @@ Done when every automated action from G1's scopes appears in the log with its cl
 
 Item A4; shipped in [#8](https://github.com/alex09x/tako/pull/8).
 
-### [ ] G4. Escape-sequence policy
+### [x] G4. Escape-sequence policy
 
 A single written policy of what a program may do through escape sequences -- set the title, write
 the clipboard (with the confirmation setting), read it only through an explicit host policy that refuses by default, notify (rate-limited), report
-progress and status, open links (with E8) -- with a fuzz target for every sequence Tako adds.
+progress and status, open links (with E8) -- with a fuzz target for every sequence Tako adds. Shipped in [#44](https://github.com/alex09x/tako/pull/44) (`docs/escape-sequence-policy.md`).
 
 Done when the policy page exists, each new sequence lands with its fuzz target, and the policy is
 enforced in the engine rather than by convention in the app.
