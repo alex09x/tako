@@ -54,6 +54,14 @@ impl SkillAdapter {
         if !path.exists() {
             return false;
         }
+        #[cfg(unix)]
+        {
+            if let Ok(meta) = fs::symlink_metadata(path) {
+                if meta.file_type().is_symlink() || !meta.is_file() {
+                    return false;
+                }
+            }
+        }
         match fs::read_to_string(path) {
             Ok(content) => content.contains("Tako Terminal Integration") || content.contains("name: tako"),
             Err(_) => false,
@@ -134,21 +142,59 @@ fn file_mode(path: &Path) -> Option<u32> {
     }
 }
 
+fn validate_not_symlink(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!("refusing to operate on symlink at {}", path.display()));
+            }
+            if !meta.is_file() {
+                return Err(format!("expected regular file at {}", path.display()));
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
 fn write_secure(path: &Path, content: &[u8], mode: Option<u32>) -> Result<(), String> {
+    validate_not_symlink(path)?;
     #[cfg(unix)]
     {
         let file_mode = mode.unwrap_or(0o600);
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let tmp_path = parent.join(format!(
+            ".tako-tmp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
         let mut opts = fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true).mode(file_mode);
+        opts.write(true).create_new(true).mode(file_mode);
+        opts.custom_flags(libc::O_NOFOLLOW);
         let mut file = opts
-            .open(path)
-            .map_err(|e| format!("cannot open {} with mode {:o}: {e}", path.display(), file_mode))?;
+            .open(&tmp_path)
+            .map_err(|e| format!("cannot create temporary file {}: {e}", tmp_path.display()))?;
         file.write_all(content)
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+            .map_err(|e| format!("cannot write {}: {e}", tmp_path.display()))?;
         file.flush()
-            .map_err(|e| format!("cannot flush {}: {e}", path.display()))?;
+            .map_err(|e| format!("cannot flush {}: {e}", tmp_path.display()))?;
         let perms = fs::Permissions::from_mode(file_mode);
-        let _ = fs::set_permissions(path, perms);
+        let _ = fs::set_permissions(&tmp_path, perms);
+
+        validate_not_symlink(path)?;
+
+        fs::rename(&tmp_path, path).map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("cannot replace {}: {e}", path.display())
+        })?;
         Ok(())
     }
     #[cfg(not(unix))]
@@ -343,7 +389,12 @@ pub fn install(
     let bak = backup_path(&path);
     let marker = new_marker_path(&path);
 
+    validate_not_symlink(&path)?;
+    validate_not_symlink(&bak)?;
+    validate_not_symlink(&marker)?;
+
     let original_content = if path.exists() {
+        validate_not_symlink(&path)?;
         fs::read_to_string(&path).map_err(|e| format!("cannot read {path_display}: {e}"))?
     } else {
         String::new()
@@ -438,6 +489,10 @@ pub fn uninstall(
     let bak = backup_path(&path);
     let marker = new_marker_path(&path);
 
+    validate_not_symlink(&path)?;
+    validate_not_symlink(&bak)?;
+    validate_not_symlink(&marker)?;
+
     if !path.exists() && !bak.exists() && !marker.exists() {
         if json {
             println!("{}", json!({"status": "not_installed", "skill_path": path_display}));
@@ -448,12 +503,14 @@ pub fn uninstall(
     }
 
     let original_content = if path.exists() {
+        validate_not_symlink(&path)?;
         fs::read_to_string(&path).map_err(|e| format!("cannot read {path_display}: {e}"))?
     } else {
         String::new()
     };
 
     let target_content = if bak.exists() {
+        validate_not_symlink(&bak)?;
         fs::read_to_string(&bak).map_err(|e| format!("cannot read backup {}: {e}", bak.display()))?
     } else {
         String::new()
@@ -489,11 +546,15 @@ pub fn uninstall(
     }
 
     if bak.exists() {
+        validate_not_symlink(&bak)?;
+        validate_not_symlink(&path)?;
         let bak_mode = file_mode(&bak);
         write_secure(&path, target_content.as_bytes(), bak_mode)?;
         harden_owner_only_mode(&path)?;
         let _ = fs::remove_file(&bak);
     } else if marker.exists() || path.exists() {
+        validate_not_symlink(&path)?;
+        validate_not_symlink(&marker)?;
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(&marker);
     }
@@ -574,6 +635,59 @@ mod tests {
         assert!(!backup_path(&skill_file).exists());
 
         // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_uninstall_rejects_symlink_and_preserves_target() {
+        let temp_dir = std::env::temp_dir().join(format!("tako-skills-symlink-test-{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let target_file = temp_dir.join("critical-secret.txt");
+        let initial_secret = "TOP SECRET CONFIG DO NOT OVERWRITE\n";
+        fs::write(&target_file, initial_secret).expect("write target");
+
+        let skill_symlink = temp_dir.join("SKILL.md");
+        std::os::unix::fs::symlink(&target_file, &skill_symlink).expect("create symlink");
+
+        let bak_file = backup_path(&skill_symlink);
+        fs::write(&bak_file, "Tako skill backup data\n").expect("write bak");
+
+        let skill_str = skill_symlink.to_string_lossy().to_string();
+        let res = uninstall("claude", Some(&skill_str), true, false, true);
+
+        assert!(res.is_err(), "uninstall must return Err on symlink");
+        let err_msg = res.unwrap_err();
+        assert!(err_msg.contains("symlink"), "error message must mention symlink: {err_msg}");
+
+        let content = fs::read_to_string(&target_file).expect("read target");
+        assert_eq!(content, initial_secret, "target file must not be modified or truncated");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_install_rejects_symlink_and_preserves_target() {
+        let temp_dir = std::env::temp_dir().join(format!("tako-skills-inst-symlink-test-{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let target_file = temp_dir.join("system-target.txt");
+        let initial_data = "SYSTEM DATA\n";
+        fs::write(&target_file, initial_data).expect("write target");
+
+        let skill_symlink = temp_dir.join("SKILL.md");
+        std::os::unix::fs::symlink(&target_file, &skill_symlink).expect("create symlink");
+
+        let skill_str = skill_symlink.to_string_lossy().to_string();
+        let res = install("gemini", Some(&skill_str), true, false, true);
+
+        assert!(res.is_err(), "install must return Err on symlink");
+        let err_msg = res.unwrap_err();
+        assert!(err_msg.contains("symlink"), "error message must mention symlink: {err_msg}");
+
+        let content = fs::read_to_string(&target_file).expect("read target");
+        assert_eq!(content, initial_data, "target file must not be modified or truncated");
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }
