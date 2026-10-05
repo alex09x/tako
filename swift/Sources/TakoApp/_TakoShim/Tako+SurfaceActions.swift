@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Combine
 import Foundation
@@ -402,6 +412,7 @@ extension Tako.SurfaceView {
         "toggle_split_zoom": "splitZoom:",
         "toggle_fullscreen": "toggleTakoFullScreen:",
         "toggle_command_palette": "toggleCommandPalette:",
+        "search_command_history": "toggleCommandPalette:",
         "find_all": "toggleFindAll:",
         "reset_window_size": "returnToDefaultSize:",
         "prompt_tab_title": "changeTabTitle:",

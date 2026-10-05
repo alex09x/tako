@@ -227,6 +227,30 @@ enum ControlCommands {
                 return .ok(version())
             case "tree":
                 return .ok(tree(all, active: activePane(all)))
+            case "history":
+                let query = request.args["query"]?.string ?? ""
+                let limit = try historyLimit(request.args)
+                let entries = CommandHistoryStore.shared.search(query: query, limit: limit)
+                let jsonEntries = entries.map { entry -> JSON in
+                    var obj: [String: JSON] = [
+                        "id": .string(entry.id.uuidString.lowercased()),
+                        "command": .string(entry.command),
+                        "started_at": .number(entry.startedAt.timeIntervalSince1970),
+                    ]
+                    if let cwd = entry.cwd { obj["cwd"] = .string(cwd) }
+                    if let dur = entry.duration {
+                        obj["duration"] = .number(dur)
+                        obj["duration_ms"] = .number((dur * 1000.0).rounded())
+                    }
+                    if let exitCode = entry.exitCode {
+                        obj["exit_code"] = .number(Double(exitCode))
+                    }
+                    if let paneId = entry.paneId {
+                        obj["pane_id"] = .string(paneId.uuidString.lowercased())
+                    }
+                    return .object(obj)
+                }
+                return .ok(["entries": .array(jsonEntries)])
             case "send", "type":
                 let surface = try target(request, all)
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
@@ -594,6 +618,22 @@ enum ControlCommands {
         case nil, .null?: return 50
         case .number(let n)?:
             guard n.isFinite, let limit = Int(exactly: n), (1...CrossSessionSearch.limit).contains(limit) else {
+                throw refused
+            }
+            return limit
+        default:
+            throw refused
+        }
+    }
+
+    /// `takoctl history`: the cross-session command history search.
+    /// `limit` for history: a whole number from 0 to 5000 (default 100).
+    static func historyLimit(_ args: [String: JSON]) throws -> Int {
+        let refused = ControlError(.invalid, "\"limit\" must be a whole number from 0 to 5000")
+        switch args["limit"] {
+        case nil, .null?: return 100
+        case .number(let n)?:
+            guard n.isFinite, let limit = Int(exactly: n), (0...5000).contains(limit) else {
                 throw refused
             }
             return limit

@@ -240,6 +240,9 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         var exitCode: Int32?
         var hasNoOutput: Bool
         var outputResolved: Bool = false
+        var startedAt: Date?
+        var endedAt: Date?
+        var duration: TimeInterval?
     }
     private var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
     private var trackedCommandsEpoch: UInt64 = 0
@@ -247,6 +250,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
     var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
     private var activeRunningCommandId: UInt64? = nil
+    private var commandDurations: [UInt64: TimeInterval] = [:]
+    private var gutterCommandMarksByRow: [Int: (commandId: UInt64, status: UInt8, exitCode: Int32?, duration: TimeInterval?, startedAt: Date?)] = [:]
 
     private func findRunningCommandId() -> UInt64? {
         guard let newestId = core.newestCommandId(), newestId > 0 else { return nil }
@@ -276,6 +281,26 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             guard commandMarksEnabled != oldValue else { return }
             updateGutterMarks()
             updateScroller()
+        }
+    }
+
+    /// Per-command duration display beside command prompt marks in the gutter (E10).
+    /// Configured via `command-durations = true|false`, default false.
+    public var commandDurationsEnabled: Bool = false {
+        didSet {
+            guard commandDurationsEnabled != oldValue else { return }
+            updateGutterMarks()
+            needsDisplay = true
+        }
+    }
+
+    /// Per-command start time display beside command prompt marks in the gutter (E10).
+    /// Configured via `command-timestamps = true|false`, default false.
+    public var commandTimestampsEnabled: Bool = false {
+        didSet {
+            guard commandTimestampsEnabled != oldValue else { return }
+            updateGutterMarks()
+            needsDisplay = true
         }
     }
 
@@ -1224,20 +1249,15 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                     delegate?.terminalViewDidBell(self)
                 case .commandStart(let id):
                     commandStatusChanged = true
-                    guard stickyCommandHeaderEnabled else {
-                        if let cmdId = id {
-                            activeRunningCommandId = cmdId
-                        }
-                        delegate?.terminalViewCommandDidStart(self)
-                        break
-                    }
                     let currentEpoch = core.stateEpoch()
                     if trackedCommandsEpoch != currentEpoch {
                         trackedCommands.removeAll()
+                        commandDurations.removeAll()
                         trackedCommandsEpoch = currentEpoch
                         activeRunningCommandId = nil
                     }
                     let targetId = id ?? core.newestCommandId()
+                    let now = Date()
                     if let cmdId = targetId {
                         activeRunningCommandId = cmdId
                         let firstLine = core.firstRetainedLine()
@@ -1261,24 +1281,24 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                             status: 0,
                             exitCode: nil,
                             hasNoOutput: false,
-                            outputResolved: false
+                            outputResolved: false,
+                            startedAt: now,
+                            endedAt: nil,
+                            duration: nil
                         )
                     }
                     delegate?.terminalViewCommandDidStart(self)
                 case .commandEnd(let exitCode):
                     commandStatusChanged = true
-                    guard stickyCommandHeaderEnabled else {
-                        activeRunningCommandId = nil
-                        delegate?.terminalView(self, commandDidEnd: exitCode)
-                        break
-                    }
                     let currentEpoch = core.stateEpoch()
                     if trackedCommandsEpoch != currentEpoch {
                         trackedCommands.removeAll()
+                        commandDurations.removeAll()
                         trackedCommandsEpoch = currentEpoch
                         activeRunningCommandId = nil
                     }
                     let targetId = activeRunningCommandId ?? core.newestCommandId()
+                    let now = Date()
                     if let cmdId = targetId {
                         let existing = trackedCommands[cmdId]
                         let promptLine = existing?.promptLine ?? core.commandMarks().first(where: { $0.commandId == cmdId })?.promptLine
@@ -1297,6 +1317,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                                 totalScrollback: Int(core.scrollbackLen())
                             )
                         }
+                        let startedAt = existing?.startedAt ?? core.firstCommandAfter(after: cmdId > 0 ? cmdId - 1 : 0).flatMap { $0.startedAtMs.map { Date(timeIntervalSince1970: Double($0) / 1000.0) } }
+                        let duration = startedAt.map { max(0.0, now.timeIntervalSince($0)) }
+                        if let duration {
+                            commandDurations[cmdId] = duration
+                        }
                         var tracked = existing ?? TrackedCommandOutput(
                             commandId: cmdId,
                             command: cmdText,
@@ -1307,13 +1332,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
                             status: status,
                             exitCode: exitCode,
                             hasNoOutput: false,
-                            outputResolved: false
+                            outputResolved: false,
+                            startedAt: startedAt,
+                            endedAt: now,
+                            duration: duration
                         )
                         tracked.promptLine = promptLine
                         tracked.startOutputAbsLine = startLine
                         tracked.status = status
                         tracked.exitCode = exitCode
                         tracked.outputResolved = false
+                        tracked.startedAt = startedAt
+                        tracked.endedAt = now
+                        tracked.duration = duration
                         if tracked.command.isEmpty, !cmdText.isEmpty {
                             tracked.command = cmdText
                         }
@@ -1559,7 +1590,59 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
 
 
-    /// Renders thin vertical marks beside each command's prompt line in the left gutter.
+    /// Returns the start time of command `id` if recorded.
+    public func commandStartedAt(id: UInt64) -> Date? {
+        if let tracked = trackedCommands[id], let started = tracked.startedAt {
+            return started
+        }
+        if let info = core.firstCommandAfter(after: id > 0 ? id - 1 : 0), info.id == id, let ms = info.startedAtMs {
+            return Date(timeIntervalSince1970: Double(ms) / 1000.0)
+        }
+        return nil
+    }
+
+    /// Returns the elapsed duration of command `id` if finished (OSC 133;D) or completed.
+    public func commandDuration(id: UInt64, epoch: UInt64? = nil) -> TimeInterval? {
+        if let epoch, epoch != core.stateEpoch() {
+            return nil
+        }
+        if let dur = commandDurations[id] {
+            return dur
+        }
+        if let tracked = trackedCommands[id], let dur = tracked.duration {
+            return dur
+        }
+        return nil
+    }
+
+    /// Formats a time interval into a human-readable duration string.
+    public static func formatDuration(_ seconds: TimeInterval) -> String {
+        if seconds < 0.001 {
+            return "<1ms"
+        }
+        if seconds < 1.0 {
+            return "\(Int((seconds * 1000.0).rounded()))ms"
+        }
+        if seconds < 10.0 {
+            return String(format: "%.1fs", seconds)
+        }
+        if seconds < 60.0 {
+            return "\(Int(seconds.rounded()))s"
+        }
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%dm %02ds", mins, secs)
+    }
+
+    /// Formats a Date into a start-time timestamp string (HH:mm:ss).
+    public static func formatStartTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    /// Renders thin vertical marks beside each command's prompt line in the left gutter,
+    /// with optional duration and start time text (E10).
     func updateGutterMarks() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         CATransaction.begin()
@@ -1568,6 +1651,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         guard commandMarksEnabled, !core.modes().alternateScreen else {
             gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            gutterCommandMarksByRow.removeAll()
             return
         }
 
@@ -1575,6 +1659,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let gutterWidth = layout.left
         guard gutterWidth >= 2.0 else {
             gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            gutterCommandMarksByRow.removeAll()
             return
         }
 
@@ -1583,6 +1668,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let marks = core.commandMarks()
         if marks.isEmpty {
             gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            gutterCommandMarksByRow.removeAll()
             return
         }
 
@@ -1595,7 +1681,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         let markX: CGFloat = max(1.0, gutterWidth - markWidth - 2.0)
         let markHeight: CGFloat = max(4.0, cellHeight - 4.0)
 
-        var binnedGutterMarks: [Int: CGColor] = [:]
+        gutterCommandMarksByRow.removeAll()
+        var marksByScreenRow: [Int: (mark: FfiCommandMark, color: CGColor, duration: TimeInterval?, startedAt: Date?)] = [:]
         for mark in marks {
             let screenRow = Int(mark.retainedRow) - topVisible
             guard screenRow >= 0, screenRow < screenRows else { continue }
@@ -1606,10 +1693,14 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             case 2: color = NSColor.systemRed.cgColor
             default: color = NSColor.systemBlue.cgColor
             }
-            binnedGutterMarks[screenRow] = color
+            let cmdId = mark.commandId
+            let started = commandStartedAt(id: cmdId)
+            let dur = commandDuration(id: cmdId)
+            gutterCommandMarksByRow[screenRow] = (cmdId, mark.status, mark.exitCode, dur, started)
+            marksByScreenRow[screenRow] = (mark, color, dur, started)
         }
 
-        if binnedGutterMarks.isEmpty {
+        if marksByScreenRow.isEmpty {
             gutterMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
             return
         }
@@ -1617,7 +1708,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         var sublayers = gutterMarksLayer.sublayers ?? []
         var layerIndex = 0
 
-        for (screenRow, color) in binnedGutterMarks.sorted(by: { $0.key < $1.key }) {
+        for (screenRow, markInfo) in marksByScreenRow.sorted(by: { $0.key < $1.key }) {
             let cellY = bounds.height - layout.top - CGFloat(screenRow + 1) * cellHeight
             let markY = cellY + (cellHeight - markHeight) / 2.0
 
@@ -1633,7 +1724,48 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             layerIndex += 1
 
             markLayer.frame = CGRect(x: markX, y: markY, width: markWidth, height: markHeight)
-            markLayer.backgroundColor = color
+            markLayer.backgroundColor = markInfo.color
+
+            // Optional duration/timestamp text label beside mark in gutter (E10)
+            if (commandDurationsEnabled || commandTimestampsEnabled) && gutterWidth >= 28.0 {
+                let textToDisplay: String? = {
+                    if commandDurationsEnabled {
+                        if let dur = markInfo.duration {
+                            return Self.formatDuration(dur)
+                        } else if markInfo.mark.status == 0, let started = markInfo.startedAt {
+                            return Self.formatDuration(Date().timeIntervalSince(started))
+                        }
+                    }
+                    if commandTimestampsEnabled, let started = markInfo.startedAt {
+                        return Self.formatStartTime(started)
+                    }
+                    return nil
+                }()
+
+                if let textToDisplay {
+                    let textLayer: CATextLayer
+                    if layerIndex < sublayers.count && sublayers[layerIndex] is CATextLayer {
+                        textLayer = sublayers[layerIndex] as! CATextLayer
+                    } else {
+                        textLayer = CATextLayer()
+                        textLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+                        textLayer.alignmentMode = .right
+                        textLayer.truncationMode = .end
+                        textLayer.font = NSFont.monospacedDigitSystemFont(ofSize: min(9.0, cellHeight * 0.7), weight: .regular)
+                        textLayer.fontSize = min(9.0, cellHeight * 0.7)
+                        gutterMarksLayer.addSublayer(textLayer)
+                        sublayers.append(textLayer)
+                    }
+                    layerIndex += 1
+
+                    let availableW = max(0, markX - 4.0)
+                    let textH = min(14.0, cellHeight)
+                    let textY = cellY + (cellHeight - textH) / 2.0
+                    textLayer.frame = CGRect(x: 2.0, y: textY, width: availableW, height: textH)
+                    textLayer.string = textToDisplay
+                    textLayer.foregroundColor = theme.foreground.copy(alpha: 0.65) ?? theme.foreground
+                }
+            }
         }
 
         while sublayers.count > layerIndex {
@@ -2410,10 +2542,17 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     /// padding, centred in the spare space with `window-padding-balance`.
     /// Every path that draws the grid or maps a point to a cell uses this one.
     public var gridLayout: TerminalGridLayout {
-        TerminalGridLayout(
+        var effectiveTheme = theme
+        if commandMarksEnabled && (commandDurationsEnabled || commandTimestampsEnabled) {
+            let minGutter: CGFloat = commandTimestampsEnabled ? 64.0 : 44.0
+            if effectiveTheme.padding.left < minGutter {
+                effectiveTheme.padding.left = minGutter
+            }
+        }
+        return TerminalGridLayout(
             viewSize: bounds.size,
             cellSize: CGSize(width: cellWidth, height: cellHeight),
-            theme: theme,
+            theme: effectiveTheme,
             cols: cols,
             rows: rows
         )
@@ -4556,6 +4695,31 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             NSCursor.arrow.set()
         }
         refreshHoveredLink(commandHeld: event.modifierFlags.contains(.command))
+        if point.x < gridLayout.left, let cell = mouseCell, let markInfo = gutterCommandMarksByRow[cell.row] {
+            var tooltipLines: [String] = []
+            let statusStr: String = {
+                switch markInfo.status {
+                case 0: return "running"
+                case 1: return "exit 0"
+                case 2:
+                    if let code = markInfo.exitCode {
+                        return "exit \(code)"
+                    }
+                    return "failed"
+                default: return "unknown"
+                }
+            }()
+            tooltipLines.append("Command #\(markInfo.commandId): \(statusStr)")
+            if let dur = markInfo.duration {
+                tooltipLines.append("Duration: \(Self.formatDuration(dur))")
+            } else if markInfo.status == 0, let started = markInfo.startedAt {
+                tooltipLines.append("Duration: \(Self.formatDuration(Date().timeIntervalSince(started))) (running)")
+            }
+            if let started = markInfo.startedAt {
+                tooltipLines.append("Started: \(Self.formatStartTime(started))")
+            }
+            self.toolTip = tooltipLines.joined(separator: "\n")
+        }
         if let cell = mouseCell {
             let report = mouseReportBytes(button: .none, action: .motion, cell: cell, event: event)
             if !report.isEmpty {

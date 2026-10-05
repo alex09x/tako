@@ -739,7 +739,7 @@ before opening; a link whose text looks like a different URL than its target is 
 
 Done when no link opens without showing where it goes, and the mismatch case is covered by tests.
 
-### [ ] E9. Command history across sessions
+### [x] E9. Command history across sessions
 
 A local, searchable history of commands from shell-integration records across all panes, with
 directory, time, duration and exit status. Choosing an entry inserts it at the current prompt;
@@ -748,7 +748,7 @@ it never runs it.
 Done when a command run last week in another tab can be found and inserted in a few keystrokes,
 history obeys the same privacy rules as snapshots, and secure-input sessions contribute nothing.
 
-### [ ] E10. Durations and timestamps
+### [x] E10. Durations and timestamps
 
 Optional per-command duration and start time in the gutter, and the duration in `last` and
 `events` output.
