@@ -147,12 +147,29 @@ enum ControlCommands {
         handle(request, all: panes(), reply: reply)
     }
 
+    /// Checks that the client has the required capability scope for this command (Track G1).
+    nonisolated static func checkScope(for request: ControlRequest) throws {
+        guard let clientScopes = request.scopes else {
+            return // unrestricted
+        }
+        guard let required = ControlScope.required(for: request.cmd, args: request.args) else {
+            return // command requires no scope (e.g. version)
+        }
+        guard clientScopes.contains(required) else {
+            let activeList = clientScopes.map(\.rawValue).sorted().joined(separator: ", ")
+            var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(required.rawValue)' scope (client scopes: [\(activeList)])")
+            err.scope = required.rawValue
+            throw err
+        }
+    }
+
     static func handle(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
         do {
             guard mode.allows(from: request.from, panes: all.map(\.surface.id)) else {
                 reply(handle(request, all: all))   // the refusal, from one place
                 return
             }
+            try checkScope(for: request)
             switch request.cmd {
             case "text":
                 let surface = try target(request, all)
@@ -222,6 +239,7 @@ enum ControlCommands {
                 : "remote control is off"))
         }
         do {
+            try checkScope(for: request)
             switch request.cmd {
             case "version":
                 return .ok(version())
@@ -255,24 +273,34 @@ enum ControlCommands {
                 return .ok(try triggersCommand(request, all: all))
             case "send", "type":
                 let surface = try target(request, all)
+                let client = request.client ?? request.args["client"]?.string ?? "takoctl"
+                guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
+                    throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
+                }
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
                 let text = try ControlInput.text(request.args)
                 try ControlInput.send(surface, text: text, enter: enter)
-                let client = request.args["client"]?.string ?? "takoctl"
                 InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: request.cmd)
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "key":
                 let surface = try target(request, all)
+                let client = request.client ?? request.args["client"]?.string ?? "takoctl"
+                guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
+                    throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
+                }
                 let chord = try ControlInput.text(request.args, "key")
                 try ControlInput.key(surface, chord: chord)
-                let client = request.args["client"]?.string ?? "takoctl"
                 InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: "key \(chord)")
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "tab-new":
-                let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args)
+                let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args, client: request.client)
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "split":
-                let pane = try ControlLayout.split(try target(request, all), args: request.args)
+                let pane = try ControlLayout.split(try target(request, all), args: request.args, client: request.client)
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "collapse":
                 let surface = try target(request, all)
@@ -322,13 +350,37 @@ enum ControlCommands {
                         "locked": .bool(state.isLocked),
                         "owner": .string(state.owner.agentName ?? "agent")
                     ])
+                case "allow-automation", "enable-automation":
+                    InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: true)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "automation_may_type": .bool(state.automationMayType)
+                    ])
+                case "disallow-automation", "disable-automation":
+                    InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: false)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "automation_may_type": .bool(state.automationMayType)
+                    ])
+                case "confirm-automation":
+                    InputOwnershipStore.shared.confirmOneTimeTyping(paneId: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "confirmed": .bool(true)
+                    ])
                 case "status":
                     let state = InputOwnershipStore.shared.state(for: surface.id)
                     var dict: [String: JSON] = [
                         "id": .string(surface.id.uuidString.lowercased()),
                         "locked": .bool(state.isLocked),
                         "owner": .string(state.owner.isAgent ? (state.owner.agentName ?? "agent") : "human"),
+                        "automation_may_type": .bool(state.automationMayType),
                     ]
+                    if let creator = state.creatorClient {
+                        dict["creator_client"] = .string(creator)
+                    }
                     if let mark = state.lastActivityMark {
                         dict["last_client"] = .string(mark.client)
                         dict["last_action"] = .string(mark.action)

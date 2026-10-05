@@ -116,6 +116,9 @@ commands:
   input handback          hand back input control to the agent (--owner NAME)
   input status            show input lock state, owner, and last activity attribution
   input log               show automated input activity log for the pane
+  input allow-automation  allow external automation to type into this pane
+  input disallow-automation disallow external automation from typing into this pane
+  input confirm-automation allow automation to type once into this pane
   broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
   broadcast stop          stop broadcasting input
   broadcast status        show current broadcast status and participating panes
@@ -138,7 +141,7 @@ options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
   --window ID             session export: target specific window ID
   --panes P1,P2,...       broadcast: comma-separated list of target panes
-  --client NAME           client name for automated input attribution (send, type, key; default: takoctl)
+  --client NAME           client name for identity and attribution (send, type, key; default: takoctl)
   --owner NAME            agent name for input lock / handback (default: agent)
   --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
   --label NAME            split: label for child pane (e.g. subagent name)
@@ -170,6 +173,7 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
+  --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay)
   --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
@@ -178,12 +182,15 @@ options:
   --bundle-id ID          find the socket of this build of Tako (default com.tako-core.terminal)
 ";
 
+#[derive(Debug)]
 struct Options {
     cmd: String,
     args: Map<String, Value>,
     json: bool,
     socket: Option<String>,
     bundle_id: String,
+    client: Option<String>,
+    scopes: Option<Vec<String>>,
 }
 
 fn parse(argv: &[String]) -> Result<Options, String> {
@@ -193,6 +200,18 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let mut socket = None;
     let mut bundle_id =
         std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
+    let mut client = std::env::var("TAKO_CLIENT_ID")
+        .or_else(|_| std::env::var("TAKO_CLIENT"))
+        .ok();
+    let mut scopes = std::env::var("TAKO_CONTROL_SCOPES")
+        .or_else(|_| std::env::var("TAKO_SCOPES"))
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim().to_lowercase())
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+        });
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
     let mut it = argv.iter();
@@ -406,7 +425,28 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
             "--client" => {
-                args.insert("client".into(), Value::String(value("--client")?));
+                let name = value("--client")?;
+                client = Some(name.clone());
+                args.insert("client".into(), Value::String(name));
+            }
+            "--scope" | "--scopes" => {
+                let val = value(arg.as_str())?;
+                let list: Vec<String> = val
+                    .split(',')
+                    .map(|p| p.trim().to_lowercase())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                if list.is_empty() {
+                    return Err(format!("{arg} cannot be empty"));
+                }
+                for s in &list {
+                    if !["read", "input", "layout", "signal", "overlay"].contains(&s.as_str()) {
+                        return Err(format!(
+                            "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay"
+                        ));
+                    }
+                }
+                scopes = Some(list);
             }
             "--owner" => {
                 args.insert("owner".into(), Value::String(value("--owner")?));
@@ -1139,12 +1179,13 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 positional.remove(0)
             };
             match sub.as_str() {
-                "lock" | "unlock" | "takeover" | "handback" | "status" | "log" => {
+                "lock" | "unlock" | "takeover" | "handback" | "status" | "log"
+                | "allow-automation" | "disallow-automation" | "confirm-automation" => {
                     args.insert("subcommand".into(), Value::String(sub));
                 }
                 other => {
                     return Err(format!(
-                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, or log"
+                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, log, allow-automation, disallow-automation, or confirm-automation"
                     ));
                 }
             }
@@ -1410,12 +1451,19 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         (Some(name), 0) => return Err(format!("{cmd} needs a {name}")),
         (Some(_), _) => return Err(format!("{cmd} takes one argument; quote it")),
     }
+    if client.is_none() {
+        if let Some(c) = args.get("client").and_then(Value::as_str) {
+            client = Some(c.to_string());
+        }
+    }
     Ok(Options {
         cmd,
         args,
         json,
         socket,
         bundle_id,
+        client,
+        scopes,
     })
 }
 
@@ -1425,6 +1473,12 @@ fn request(opts: &Options, from: Option<String>) -> Value {
     let mut req = json!({"cmd": opts.cmd, "args": Value::Object(opts.args.clone())});
     if let Some(from) = from.filter(|f| !f.is_empty()) {
         req["from"] = Value::String(from);
+    }
+    if let Some(client) = &opts.client {
+        req["client"] = Value::String(client.clone());
+    }
+    if let Some(scopes) = &opts.scopes {
+        req["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
     }
     req
 }
@@ -1890,6 +1944,19 @@ fn input_report(result: &Value) -> String {
         return out;
     }
 
+    if let Some(allowed) = result.get("automation_may_type").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("");
+        if result.get("owner").is_none() {
+            let state = if allowed { "allowed" } else { "disallowed" };
+            return format!("Automation typing {state} for pane {id}.\n");
+        }
+    }
+
+    if result.get("confirmed") == Some(&Value::Bool(true)) {
+        let id = result["id"].as_str().unwrap_or("");
+        return format!("One-time automation typing confirmed for pane {id}.\n");
+    }
+
     let mut out = String::new();
     let locked = result["locked"].as_bool().unwrap_or(false);
     let owner = result["owner"].as_str().unwrap_or("human");
@@ -1899,6 +1966,13 @@ fn input_report(result: &Value) -> String {
         out += &format!("Pane {id}: locked (owner: {owner})\n");
     } else {
         out += &format!("Pane {id}: unlocked (owner: {owner})\n");
+    }
+
+    if let Some(allowed) = result["automation_may_type"].as_bool() {
+        out += &format!("Automation may type: {}\n", if allowed { "yes" } else { "no" });
+    }
+    if let Some(creator) = result["creator_client"].as_str() {
+        out += &format!("Creator client: {creator}\n");
     }
 
     if let (Some(client), Some(action)) = (
@@ -5035,4 +5109,91 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(rep.contains("3333-4444"));
         assert!(rep.contains("[config]"));
     }
+
+    #[test]
+    fn control_capabilities_and_scopes_parsing() {
+        // 1. Parsing --scope and --client
+        let opts1 = parse(&[
+            "text".into(),
+            "--scope".into(),
+            "read,input".into(),
+            "--client".into(),
+            "agent-alpha".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts1.client.as_deref(), Some("agent-alpha"));
+        assert_eq!(opts1.scopes, Some(vec!["read".into(), "input".into()]));
+        let req1 = request(&opts1, None);
+        assert_eq!(req1["client"], "agent-alpha");
+        assert_eq!(req1["scopes"], json!(["read", "input"]));
+
+        // 2. Parsing --scopes with spaces and uppercase
+        let opts2 = parse(&[
+            "notify".into(),
+            "hello".into(),
+            "--scopes".into(),
+            "Signal, Layout".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts2.scopes, Some(vec!["signal".into(), "layout".into()]));
+
+        // 3. Unknown scope fails
+        let bad_scope = parse(&[
+            "notify".into(),
+            "hello".into(),
+            "--scope".into(),
+            "invalid_scope".into(),
+        ]);
+        assert!(bad_scope.is_err());
+        assert!(bad_scope
+            .unwrap_err()
+            .contains("unknown capability scope 'invalid_scope'"));
+
+        // 4. Input automation subcommands
+        let allow_opts = parse(&["input".into(), "allow-automation".into()]).unwrap();
+        assert_eq!(allow_opts.args["subcommand"], "allow-automation");
+
+        let disallow_opts = parse(&["input".into(), "disallow-automation".into()]).unwrap();
+        assert_eq!(disallow_opts.args["subcommand"], "disallow-automation");
+
+        let confirm_opts = parse(&["input".into(), "confirm-automation".into()]).unwrap();
+        assert_eq!(confirm_opts.args["subcommand"], "confirm-automation");
+
+        // 5. Input report formatting
+        let allow_report = input_report(&json!({
+            "id": "pane-1",
+            "automation_may_type": true
+        }));
+        assert_eq!(allow_report, "Automation typing allowed for pane pane-1.\n");
+
+        let disallow_report = input_report(&json!({
+            "id": "pane-1",
+            "automation_may_type": false
+        }));
+        assert_eq!(
+            disallow_report,
+            "Automation typing disallowed for pane pane-1.\n"
+        );
+
+        let confirm_report = input_report(&json!({
+            "id": "pane-1",
+            "confirmed": true
+        }));
+        assert_eq!(
+            confirm_report,
+            "One-time automation typing confirmed for pane pane-1.\n"
+        );
+
+        let status_report = input_report(&json!({
+            "id": "pane-1",
+            "locked": false,
+            "owner": "human",
+            "automation_may_type": true,
+            "creator_client": "agent-alpha"
+        }));
+        assert!(status_report.contains("Pane pane-1: unlocked (owner: human)"));
+        assert!(status_report.contains("Automation may type: yes"));
+        assert!(status_report.contains("Creator client: agent-alpha"));
+    }
 }
+

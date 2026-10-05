@@ -119,4 +119,38 @@ import Testing
         #expect(store.owner(for: paneId) == .human)
         #expect(store.activityLog(for: paneId).isEmpty)
     }
+
+    @Test func testPaneLevelAutomationSwitchAndCreatorTyping() {
+        let store = InputOwnershipStore()
+        let paneId = UUID()
+
+        // 1. Initial state: not created by any client, automation may not type
+        #expect(store.creatorClient(for: paneId) == nil)
+        #expect(store.automationMayType(for: paneId) == false)
+        #expect(store.canClientType(paneId: paneId, client: "agent-1") == false)
+        #expect(store.canClientType(paneId: paneId, client: "takoctl") == false)
+
+        // 2. Creator client can type into pane it created
+        store.setCreatorClient(paneId: paneId, client: "agent-1")
+        #expect(store.creatorClient(for: paneId) == "agent-1")
+        #expect(store.canClientType(paneId: paneId, client: "agent-1") == true)
+        #expect(store.canClientType(paneId: paneId, client: "agent-2") == false)
+
+        // 3. Enabling "automation may type here" allows any client to type
+        store.setAutomationMayType(paneId: paneId, allowed: true)
+        #expect(store.automationMayType(for: paneId) == true)
+        #expect(store.canClientType(paneId: paneId, client: "agent-2") == true)
+        #expect(store.canClientType(paneId: paneId, client: "takoctl") == true)
+
+        // 4. Disabling "automation may type here" revokes non-creator permission
+        store.setAutomationMayType(paneId: paneId, allowed: false)
+        #expect(store.automationMayType(for: paneId) == false)
+        #expect(store.canClientType(paneId: paneId, client: "agent-1") == true)
+        #expect(store.canClientType(paneId: paneId, client: "agent-2") == false)
+
+        // 5. One-time confirmation allows typing once and resets
+        store.confirmOneTimeTyping(paneId: paneId)
+        #expect(store.canClientType(paneId: paneId, client: "agent-2") == true)
+        #expect(store.canClientType(paneId: paneId, client: "agent-2") == false)
+    }
 }

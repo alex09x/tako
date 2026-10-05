@@ -27,7 +27,7 @@ public struct InputOwnershipHeaderView: View {
 
     public var body: some View {
         let state = inputState
-        let showBar = state.isLocked || state.previousAgent != nil || state.lastActivityMark != nil || isHovered
+        let showBar = state.isLocked || state.previousAgent != nil || state.lastActivityMark != nil || state.automationMayType || isHovered
 
         ZStack(alignment: .top) {
             // Subtle hover zone at the top edge of the pane
@@ -94,6 +94,38 @@ public struct InputOwnershipHeaderView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .help("Lock keyboard typing for this pane")
+                    }
+
+                    // Pane-level "automation may type here" switch (G1)
+                    if state.automationMayType {
+                        Button {
+                            store.setAutomationMayType(paneId: paneId, allowed: false)
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 9))
+                                Text("Auto-type on")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .controlSize(.mini)
+                        .help("Automation may type into this pane. Click to revoke.")
+                    } else if isHovered {
+                        Button {
+                            store.setAutomationMayType(paneId: paneId, allowed: true)
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "bolt")
+                                    .font(.system(size: 9))
+                                Text("Allow auto-type")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("Allow external automation to type into this pane")
                     }
 
                     // Automated activity attribution mark (G2)

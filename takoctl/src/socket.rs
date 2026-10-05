@@ -43,7 +43,7 @@ fn user_temp_dir() -> Result<String, String> {
 
 #[cfg(not(target_os = "macos"))]
 fn user_temp_dir() -> Result<String, String> {
-    Err("Tako runs on macOS; pass --socket".into())
+    Ok(std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string()))
 }
 
 /// Largest answer read; a larger one is refused rather than held.
@@ -181,9 +181,12 @@ fn connect(path: &str, deadline: Instant) -> Result<UnixStream, String> {
         }
         let stream = UnixStream::from_raw_fd(fd);
         libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK);
-        let one: libc::c_int = 1;
-        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_NOSIGPIPE, (&one as *const libc::c_int).cast(),
-                         std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+        {
+            let one: libc::c_int = 1;
+            libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_NOSIGPIPE, (&one as *const libc::c_int).cast(),
+                             std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+        }
         let rc = libc::connect(fd, (&address as *const libc::sockaddr_un).cast(),
                                std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t);
         if rc != 0 {

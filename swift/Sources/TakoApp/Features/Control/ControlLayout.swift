@@ -56,7 +56,7 @@ enum ControlLayout {
 
     /// A new tab in the window of `beside`, its pane's id returned. `select`
     /// false keeps the tab the user is looking at in front.
-    static func newTab(beside: Tako.SurfaceView, args: [String: JSON]) throws -> Tako.SurfaceView {
+    static func newTab(beside: Tako.SurfaceView, args: [String: JSON], client: String? = nil) throws -> Tako.SurfaceView {
         guard let app = NSApp.delegate as? AppDelegate else {
             throw ControlError(.internalError, "no app delegate")
         }
@@ -70,6 +70,9 @@ enum ControlLayout {
               let pane = created.surfaceTree.first else {
             throw ControlError(.internalError, "the tab was not created")
         }
+        if let creator = client ?? args["client"]?.string {
+            InputOwnershipStore.shared.setCreatorClient(paneId: pane.id, client: creator)
+        }
         if !select, let front {
             // The new tab takes the front once AppKit has shown it; give the
             // front back after that, not before.
@@ -80,7 +83,7 @@ enum ControlLayout {
         return pane
     }
 
-    static func split(_ surface: Tako.SurfaceView, args: [String: JSON]) throws -> Tako.SurfaceView {
+    static func split(_ surface: Tako.SurfaceView, args: [String: JSON], client: String? = nil) throws -> Tako.SurfaceView {
         let direction: SplitTree<Tako.SurfaceView>.NewDirection
         let dirStr = args["direction"]?.string ?? "right"
         switch dirStr.lowercased() {
@@ -93,6 +96,9 @@ enum ControlLayout {
         let config = try config(args)
         guard let pane = try controller(of: surface).newSplit(at: surface, direction: direction, baseConfig: config) else {
             throw ControlError(.internalError, "the split was not created")
+        }
+        if let creator = client ?? args["client"]?.string {
+            InputOwnershipStore.shared.setCreatorClient(paneId: pane.id, client: creator)
         }
 
         // C5: Subagent pane hierarchy

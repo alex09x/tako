@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Darwin
 import Foundation
 import Testing
@@ -132,6 +142,125 @@ struct ControlProtocolTests {
         #expect(!RemoteControlMode.local.allows(from: b, panes: [a]))
         #expect(RemoteControlMode.on.allows(from: nil, panes: []))
         #expect(!RemoteControlMode.off.allows(from: a, panes: [a]))
+    }
+
+    @Test func requestParsesClientAndScopes() throws {
+        // 1. Array of scopes
+        let req1 = try ControlRequest.parse(Data(#"{"cmd":"notify","client":"bot-1","scopes":["signal","read"]}"#.utf8))
+        #expect(req1.client == "bot-1")
+        #expect(req1.scopes == [.signal, .read])
+
+        // 2. Comma-separated string of scopes
+        let req2 = try ControlRequest.parse(Data(#"{"cmd":"notify","scopes":"signal, input"}"#.utf8))
+        #expect(req2.scopes == [.signal, .input])
+
+        // 3. Scopes inside args
+        let req3 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"scopes":"layout"}}"#.utf8))
+        #expect(req3.scopes == [.layout])
+
+        // 4. Client inside args
+        let req4 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"client":"sub-agent"}}"#.utf8))
+        #expect(req4.client == "sub-agent")
+
+        // 5. Unknown scope throws invalid error
+        #expect(throws: ControlError.self) {
+            try ControlRequest.parse(Data(#"{"cmd":"status","scopes":["unknownScope"]}"#.utf8))
+        }
+
+        // 6. Non-string scope item throws invalid error
+        #expect(throws: ControlError.self) {
+            try ControlRequest.parse(Data(#"{"cmd":"status","scopes":[123]}"#.utf8))
+        }
+    }
+
+    @Test func responseIncludesScopeOnMissingScopeError() throws {
+        let err = ControlError(.missingScope, "requires signal scope", scope: "signal")
+        let failure = ControlResponse.failure(err).encoded()
+        let object = try JSONSerialization.jsonObject(with: failure) as! [String: Any]
+        #expect(object["ok"] as? Bool == false)
+        let error = object["error"] as! [String: Any]
+        #expect(error["code"] as? String == "missingScope")
+        #expect(error["scope"] as? String == "signal")
+    }
+
+    @Test func controlScopeRequiredMapping() {
+        #expect(ControlScope.required(for: "version") == nil)
+
+        // read
+        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history"] {
+            #expect(ControlScope.required(for: cmd) == .read)
+        }
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == .read)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("log")]) == .read)
+        #expect(ControlScope.required(for: "review") == .read)
+
+        // input
+        for cmd in ["send", "type", "key", "broadcast"] {
+            #expect(ControlScope.required(for: cmd) == .input)
+        }
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("lock")]) == .input)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("allow-automation")]) == .input)
+        #expect(ControlScope.required(for: "review", args: ["subcommand": .string("send")]) == .input)
+
+        // layout
+        for cmd in ["tab-new", "split", "close", "focus", "collapse", "expand", "workspace", "layout", "action", "task", "session", "wait", "run", "resume"] {
+            #expect(ControlScope.required(for: cmd) == .layout)
+        }
+
+        // signal
+        for cmd in ["notify", "status", "progress", "ask", "title", "triggers"] {
+            #expect(ControlScope.required(for: cmd) == .signal)
+        }
+
+        // overlay
+        for cmd in ["dialog", "overlay"] {
+            #expect(ControlScope.required(for: cmd) == .overlay)
+        }
+    }
+
+    @Test func checkScopePermitsOrRefusesWithMissingScope() throws {
+        // 1. Unrestricted client (scopes == nil) can run any command
+        let unres = ControlRequest(cmd: "text", args: [:], from: nil, scopes: nil)
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: unres) }
+
+        // 2. Client with signal scope can run signal commands
+        let sigReq = ControlRequest(cmd: "notify", args: [:], from: nil, scopes: [.signal])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: sigReq) }
+
+        let statReq = ControlRequest(cmd: "status", args: [:], from: nil, scopes: [.signal])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: statReq) }
+
+        // 3. Client with signal scope fails on read commands with missingScope naming "read"
+        let textReq = ControlRequest(cmd: "text", args: [:], from: nil, scopes: [.signal])
+        do {
+            try ControlCommands.checkScope(for: textReq)
+            #expect(Bool(false), "Should have thrown")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "read")
+            #expect(err.message.contains("requires 'read' scope"))
+            #expect(err.message.contains("signal"))
+        }
+
+        // 4. Client with signal scope fails on input commands naming "input"
+        let typeReq = ControlRequest(cmd: "type", args: [:], from: nil, scopes: [.signal])
+        do {
+            try ControlCommands.checkScope(for: typeReq)
+            #expect(Bool(false), "Should have thrown")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "input")
+        }
+
+        // 5. Client with signal scope fails on layout commands naming "layout"
+        let splitReq = ControlRequest(cmd: "split", args: [:], from: nil, scopes: [.signal])
+        do {
+            try ControlCommands.checkScope(for: splitReq)
+            #expect(Bool(false), "Should have thrown")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "layout")
+        }
     }
 }
 

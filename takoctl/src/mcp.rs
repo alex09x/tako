@@ -1120,6 +1120,18 @@ impl McpServer {
         let mut req = Map::new();
         req.insert("cmd".into(), Value::String(cmd.into()));
         req.insert("args".into(), Value::Object(req_args));
+        req.insert("client".into(), Value::String("mcp".into()));
+        let mut scopes_list: Vec<&'static str> = self
+            .capabilities
+            .scopes
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        scopes_list.sort();
+        req.insert(
+            "scopes".into(),
+            Value::Array(scopes_list.into_iter().map(|s| Value::String(s.into())).collect()),
+        );
         if let Some(s) = &self.surface_id {
             req.insert("from".into(), Value::String(s.clone()));
         }

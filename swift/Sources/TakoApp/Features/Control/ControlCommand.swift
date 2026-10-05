@@ -215,9 +215,9 @@ enum ControlCommand {
         if case .string = request.args["split"] {
             var args = request.args
             args["direction"] = request.args["split"]
-            pane = try ControlLayout.split(surface, args: args)
+            pane = try ControlLayout.split(surface, args: args, client: request.client)
         } else {
-            pane = try ControlLayout.newTab(beside: surface, args: request.args)
+            pane = try ControlLayout.newTab(beside: surface, args: request.args, client: request.client)
         }
         guard request.args["wait"] == .bool(true) else {
             return reply(.ok(["id": .string(pane.id.uuidString.lowercased())]))

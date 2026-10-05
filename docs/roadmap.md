@@ -824,7 +824,7 @@ deciding whether to schedule an implementation or reject it.
 
 ## Track G -- Trust and safety for the agent era (gates M1-M5)
 
-### [ ] G1. Control socket capabilities
+### [x] G1. Control socket capabilities
 
 - Scopes per client: read (tree, text, last, find, events, screenshot), input (send, type, key),
   layout (tab-new, split, close, focus), signal (notify, status, progress, ask), overlay.
