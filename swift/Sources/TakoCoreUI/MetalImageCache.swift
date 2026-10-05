@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import CoreGraphics
 import ImageIO
@@ -51,7 +61,7 @@ public struct MetalImageCacheEntry {
 }
 
 /// Errors surfaced while decoding, hashing, or caching images.
-public enum MetalImageCacheError: Error {
+public enum MetalImageCacheError: Error, Equatable {
     case invalidDimensions(imageId: UInt32, width: UInt32, height: UInt32)
     case pngDimensionMismatch(
         imageId: UInt32,
@@ -64,12 +74,18 @@ public enum MetalImageCacheError: Error {
     case overflow(imageId: UInt32)
     case pngDecodeFailed(imageId: UInt32)
     case textureCreationFailed(imageId: UInt32)
+    case decodedMemoryExceedsBudget(imageId: UInt32, bytes: Int, maxBudget: Int)
 }
 
 /// CPU-side converter and Metal texture cache for Kitty graphics images.
 /// Input accepts `FfiStoredImage` in RGB, RGBA, or PNG form and always
 /// converts to document-order `BGRA8` with premultiplied alpha for upload.
 public final class MetalImageCache {
+    /// Default maximum memory budget allocated for a single decoded image buffer (64 MiB).
+    public static let defaultMaxDecodedImageBytes: Int = 64 * 1024 * 1024
+    /// Configurable ceiling for decoded pixel buffers.
+    public static var maxDecodedImageBytes: Int = defaultMaxDecodedImageBytes
+
     private struct CachedEntry {
         let metadata: MetalImageCacheMetadata
         let texture: MTLTexture?
@@ -209,6 +225,15 @@ public final class MetalImageCache {
                 height: rawHeight
             )
         }
+        let bytesPerRow = try checkedMul(width, 4, imageId: imageId)
+        let totalBytes = try checkedMul(bytesPerRow, height, imageId: imageId)
+        guard totalBytes <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: totalBytes,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
         return (width, height)
     }
 
@@ -229,6 +254,13 @@ public final class MetalImageCache {
             height: height,
             components: 4
         )
+        guard outputCount <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: outputCount,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
         var output = Data(count: outputCount)
         pixels.withUnsafeBytes { sourceBytes in
             output.withUnsafeMutableBytes { destinationBytes in
@@ -257,6 +289,13 @@ public final class MetalImageCache {
         guard pixels.count == expected else {
             throw MetalImageCacheError.invalidPixelByteCount(imageId: imageId, expected: expected, actual: pixels.count)
         }
+        guard expected <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: expected,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
 
         var output = Data(count: expected)
         pixels.withUnsafeBytes { sourceBytes in
@@ -279,8 +318,34 @@ public final class MetalImageCache {
     }
 
     private static func decodePNG(imageId: UInt32, width: Int, height: Int, pixels: Data) throws -> Data {
-        guard let source = CGImageSourceCreateWithData(pixels as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let source = CGImageSourceCreateWithData(pixels as CFData, nil) else {
+            throw MetalImageCacheError.pngDecodeFailed(imageId: imageId)
+        }
+
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+           let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int {
+            guard pixelWidth == width, pixelHeight == height else {
+                throw MetalImageCacheError.pngDimensionMismatch(
+                    imageId: imageId,
+                    expectedWidth: width,
+                    expectedHeight: height,
+                    actualWidth: pixelWidth,
+                    actualHeight: pixelHeight
+                )
+            }
+            let bytesPerRow = try checkedMul(pixelWidth, 4, imageId: imageId)
+            let totalBytes = try checkedMul(bytesPerRow, pixelHeight, imageId: imageId)
+            guard totalBytes <= maxDecodedImageBytes else {
+                throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                    imageId: imageId,
+                    bytes: totalBytes,
+                    maxBudget: maxDecodedImageBytes
+                )
+            }
+        }
+
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw MetalImageCacheError.pngDecodeFailed(imageId: imageId)
         }
         guard cgImage.width == width, cgImage.height == height else {
@@ -293,9 +358,17 @@ public final class MetalImageCache {
             )
         }
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bytesPerRow = try checkedMul(width, 4, imageId: imageId)
         let outputCount = try checkedMul(bytesPerRow, height, imageId: imageId)
+        guard outputCount <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: outputCount,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
         var output = Data(count: outputCount)
         let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
 

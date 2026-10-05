@@ -196,6 +196,8 @@ pub(crate) struct PendingTransfer {
 
 /// Default maximum memory capacity allocated for stored images per terminal pane (64 MiB).
 pub const DEFAULT_MAX_IMAGE_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
+/// Default maximum memory capacity allocated for decoded image pixel/texture buffer per terminal pane (64 MiB).
+pub const DEFAULT_MAX_DECODED_IMAGE_BYTES: u64 = DEFAULT_MAX_IMAGE_MEMORY_BYTES;
 
 /// Image store, placement list, and chunk-assembly state for one terminal.
 #[derive(Debug)]
@@ -307,15 +309,21 @@ impl GraphicsState {
         height: u32,
         pixels: Vec<u8>,
     ) -> Result<(u32, u32), String> {
-        let size = pixels.len() as u64;
-        if !self.enforce_memory_cap(size) {
-            return Err("image exceeds per-pane memory cap".into());
-        }
         let (width, height) = if width == 0 || height == 0 {
             detect_image_dimensions(&pixels).unwrap_or((width, height))
         } else {
             (width, height)
         };
+        let decoded_bytes = (width as u64)
+            .saturating_mul(height as u64)
+            .saturating_mul(4);
+        if width > 0 && height > 0 && decoded_bytes > self.max_memory_bytes {
+            return Err("image decoded size exceeds per-pane memory cap".into());
+        }
+        let size = pixels.len() as u64;
+        if !self.enforce_memory_cap(size) {
+            return Err("image exceeds per-pane memory cap".into());
+        }
         let image_id = self.allocate_image_id();
         let generation = self.allocate_image_generation();
         let placement_id = 1;
@@ -412,6 +420,9 @@ impl GraphicsState {
                 GraphicsResponse::Deleted { .. } => {
                     self.last_reply = Some("\x1b_G;OK\x1b\\".to_string());
                 }
+                GraphicsResponse::Error(msg) => {
+                    self.last_reply = Some(format!("\x1b_G;{msg}\x1b\\"));
+                }
                 _ => {}
             }
         } else if let GraphicsResponse::Error(ref msg) = resp {
@@ -470,6 +481,27 @@ impl GraphicsState {
             }
         };
 
+        let declared_w = cmd.get_u32('s').unwrap_or(0);
+        let declared_h = cmd.get_u32('v').unwrap_or(0);
+        if declared_w > 0 && declared_h > 0 {
+            let decoded = (declared_w as u64)
+                .saturating_mul(declared_h as u64)
+                .saturating_mul(4);
+            if decoded > self.max_memory_bytes {
+                self.pending.remove(&key);
+                return GraphicsResponse::Error("image decoded size exceeds per-pane memory cap".to_string());
+            }
+        }
+        if format == ImageFormat::Png {
+            if let Some((w, h)) = png_dimensions(&chunk) {
+                let decoded = (w as u64).saturating_mul(h as u64).saturating_mul(4);
+                if decoded > self.max_memory_bytes {
+                    self.pending.remove(&key);
+                    return GraphicsResponse::Error("image decoded size exceeds per-pane memory cap".to_string());
+                }
+            }
+        }
+
         let more = cmd.get('m').is_some_and(|m| m != "0");
 
         let additional_bytes = if let Some(existing) = self.pending.get(&key) {
@@ -525,6 +557,13 @@ impl GraphicsState {
         {
             transfer.width = width;
             transfer.height = height;
+        }
+
+        let decoded_bytes = (transfer.width as u64)
+            .saturating_mul(transfer.height as u64)
+            .saturating_mul(4);
+        if transfer.width > 0 && transfer.height > 0 && decoded_bytes > self.max_memory_bytes {
+            return GraphicsResponse::Error("image decoded size exceeds per-pane memory cap".to_string());
         }
 
         let image_id = match explicit_id {
@@ -1363,6 +1402,27 @@ mod tests {
             state.handle("a=TT", b""),
             GraphicsResponse::Error(_)
         ));
+    }
+
+    #[test]
+    fn compressed_png_with_oversized_decoded_dimensions_is_rejected() {
+        let mut state = GraphicsState::new();
+        // A tiny 33-byte PNG header claiming 10,000 x 10,000 pixels (400 MB decoded > 64 MB cap)
+        let png = png_header(10_000, 10_000);
+        assert!(png.len() < 100);
+
+        // store_and_place_raw_image rejects oversized decoded PNG
+        let err = state.store_and_place_raw_image(ImageFormat::Png, 0, 0, png.clone());
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err(), "image decoded size exceeds per-pane memory cap");
+
+        // Kitty transmission with action=t or action=T also rejects it
+        let resp = state.handle("a=t,t=d,f=100,i=10", b64(&png).as_bytes());
+        assert_eq!(
+            resp,
+            GraphicsResponse::Error("image decoded size exceeds per-pane memory cap".to_string())
+        );
+        assert!(state.image(10).is_none());
     }
 
     #[test]
