@@ -122,25 +122,24 @@ public final class NotificationStore: ObservableObject {
             urgency: urgency
         )
 
-        records.insert(record, at: 0)
-
-        if records.count > maxRecords {
-            records.removeLast(records.count - maxRecords)
+        var updated = records
+        updated.insert(record, at: 0)
+        if updated.count > maxRecords {
+            updated.removeLast(updated.count - maxRecords)
         }
+        records = updated
     }
 
     /// Marks all unread notifications for a specific surface as read.
     public func markRead(surfaceId: UUID) {
+        var updated = records
         var changed = false
-        for idx in records.indices where records[idx].surfaceId == surfaceId && records[idx].unread {
-            records[idx].unread = false
+        for idx in updated.indices where updated[idx].surfaceId == surfaceId && updated[idx].unread {
+            updated[idx].unread = false
             changed = true
         }
         if changed {
-            saveToDefaults()
-            updateDockBadge()
-            NotificationCenter.default.post(name: .takoNotificationStoreDidChange, object: self)
-            Tako.TabBarController.refreshAll()
+            records = updated
         }
     }
 
@@ -152,16 +151,14 @@ public final class NotificationStore: ObservableObject {
 
     /// Marks all unread notifications across all panes as read.
     public func markAllRead() {
+        var updated = records
         var changed = false
-        for idx in records.indices where records[idx].unread {
-            records[idx].unread = false
+        for idx in updated.indices where updated[idx].unread {
+            updated[idx].unread = false
             changed = true
         }
         if changed {
-            saveToDefaults()
-            updateDockBadge()
-            NotificationCenter.default.post(name: .takoNotificationStoreDidChange, object: self)
-            Tako.TabBarController.refreshAll()
+            records = updated
         }
     }
 
