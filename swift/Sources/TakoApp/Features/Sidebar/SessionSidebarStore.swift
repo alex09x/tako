@@ -31,8 +31,7 @@ final class SessionSidebarStore: ObservableObject {
     @Published var optInGit: Bool {
         didSet {
             defaults.set(optInGit, forKey: Self.optInGitKey)
-            gitCache.removeAll()
-            pendingGitInspections.removeAll()
+            invalidateCaches()
             objectWillChange.send()
         }
     }
@@ -42,8 +41,7 @@ final class SessionSidebarStore: ObservableObject {
     @Published var optInPorts: Bool {
         didSet {
             defaults.set(optInPorts, forKey: Self.optInPortsKey)
-            portsCache.removeAll()
-            pendingPortsInspections.removeAll()
+            invalidateCaches()
             objectWillChange.send()
         }
     }
@@ -67,6 +65,8 @@ final class SessionSidebarStore: ObservableObject {
     private var portsCache: [Int: [Int]] = [:]
     private var pendingGitInspections: Set<String> = []
     private var pendingPortsInspections: Set<Int> = []
+    private var gitGenerations: [String: Int] = [:]
+    private var portsGenerations: [Int: Int] = [:]
 
     private var surfaceSubscriptions: [UUID: [AnyCancellable]] = [:]
     private var surfaceLastStatus: [UUID: Tako.PaneStatus] = [:]
@@ -92,12 +92,32 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    /// Invalidates in-memory inspection caches.
+    /// Invalidates Git cache for a specific directory, discarding in-flight inspections.
+    func invalidateGitCache(for directory: String) {
+        gitCache.removeValue(forKey: directory)
+        pendingGitInspections.remove(directory)
+        gitGenerations[directory, default: 0] += 1
+    }
+
+    /// Invalidates listening ports cache for a specific PID, discarding in-flight inspections.
+    func invalidatePortsCache(for pid: Int) {
+        portsCache.removeValue(forKey: pid)
+        pendingPortsInspections.remove(pid)
+        portsGenerations[pid, default: 0] += 1
+    }
+
+    /// Invalidates in-memory inspection caches and increments generations to discard in-flight tasks.
     func invalidateCaches() {
         gitCache.removeAll()
         portsCache.removeAll()
         pendingGitInspections.removeAll()
         pendingPortsInspections.removeAll()
+        for key in gitGenerations.keys {
+            gitGenerations[key, default: 0] += 1
+        }
+        for key in portsGenerations.keys {
+            portsGenerations[key, default: 0] += 1
+        }
     }
 
     /// Dynamically binds to live surfaces across open tab groups to observe status, progress, elapsed, title, and pwd changes in real time.
@@ -132,11 +152,11 @@ final class SessionSidebarStore: ObservableObject {
                         // If command finished, invalidate git/ports caches for this surface
                         if let oldStatus, oldStatus != newStatus, (oldStatus == .running || oldStatus == .working) {
                             if let pwd = s.pwd {
-                                self.gitCache.removeValue(forKey: pwd)
+                                self.invalidateGitCache(for: pwd)
                             }
                             if let pty = s.pty {
                                 let pid = pty.foregroundPID ?? Int(pty.child)
-                                self.portsCache.removeValue(forKey: pid)
+                                self.invalidatePortsCache(for: pid)
                             }
                         }
                         self.objectWillChange.send()
@@ -205,13 +225,16 @@ final class SessionSidebarStore: ObservableObject {
                     }
                     if !pendingGitInspections.contains(dir) {
                         pendingGitInspections.insert(dir)
+                        let gen = gitGenerations[dir, default: 0]
                         Task.detached(priority: .utility) {
                             let inspected = LocalGitInspection.inspect(directory: dir)
                             await MainActor.run { [weak self] in
                                 guard let self else { return }
                                 self.pendingGitInspections.remove(dir)
-                                self.gitCache[dir] = inspected
-                                self.objectWillChange.send()
+                                if self.gitGenerations[dir, default: 0] == gen {
+                                    self.gitCache[dir] = inspected
+                                    self.objectWillChange.send()
+                                }
                             }
                         }
                     }
@@ -227,13 +250,16 @@ final class SessionSidebarStore: ObservableObject {
                         ports = cached
                     } else if !pendingPortsInspections.contains(pid) {
                         pendingPortsInspections.insert(pid)
+                        let gen = portsGenerations[pid, default: 0]
                         Task.detached(priority: .utility) {
                             let inspected = LocalPortInspection.inspectListeningPorts(pid: pid)
                             await MainActor.run { [weak self] in
                                 guard let self else { return }
                                 self.pendingPortsInspections.remove(pid)
-                                self.portsCache[pid] = inspected
-                                self.objectWillChange.send()
+                                if self.portsGenerations[pid, default: 0] == gen {
+                                    self.portsCache[pid] = inspected
+                                    self.objectWillChange.send()
+                                }
                             }
                         }
                     }
