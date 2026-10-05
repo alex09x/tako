@@ -1,4 +1,112 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
+
+/// Capability scopes for socket clients (Track G1).
+enum ControlScope: String, CaseIterable, Sendable, Codable {
+    case read
+    case input
+    case layout
+    case signal
+    case overlay
+    case approval
+
+    /// The scopes required to run a given command with specific args.
+    /// Returns an empty set for unscoped discovery commands (e.g. `version`).
+    static func required(for cmd: String, args: [String: JSON] = [:]) -> Set<ControlScope> {
+        switch cmd {
+        case "version":
+            return []
+        case "tree", "text", "last", "find", "events", "screenshot", "history":
+            return [.read]
+        case "send", "type", "key", "broadcast":
+            return [.input]
+        case "input":
+            let sub = args["subcommand"]?.string ?? ""
+            if sub == "log" || sub == "status" {
+                return [.read]
+            }
+            if sub == "allow-automation" || sub == "enable-automation" ||
+               sub == "disallow-automation" || sub == "disable-automation" ||
+               sub == "confirm-automation" {
+                return [.approval]
+            }
+            return [.input]
+        case "grant":
+            let sub = args["subcommand"]?.string ?? ""
+            if sub == "request" {
+                return []
+            }
+            return [.approval]
+        case "run":
+            return [.layout, .input]
+        case "tab-new", "split":
+            if args["argv"] != nil {
+                return [.layout, .input]
+            }
+            return [.layout]
+        case "close", "focus", "collapse", "expand",
+             "workspace", "layout", "action", "task", "session", "wait", "resume":
+            return [.layout]
+        case "notify", "status", "progress", "ask", "title", "triggers":
+            return [.signal]
+        case "dialog", "overlay":
+            return [.overlay]
+        case "review":
+            let sub = args["subcommand"]?.string ?? ""
+            if sub == "send" {
+                return [.input]
+            }
+            return [.read]
+        default:
+            return []
+        }
+    }
+
+    /// Parses scopes from a JSON string, comma-separated string, or array of strings.
+    static func parseScopes(from raw: JSON?) throws -> Set<ControlScope>? {
+        guard let raw else { return nil }
+        switch raw {
+        case .null:
+            return nil
+        case .array(let arr):
+            var parsedScopes: Set<ControlScope> = []
+            for item in arr {
+                guard case .string(let s) = item else {
+                    throw ControlError(.invalid, "item in \"scopes\" must be a string")
+                }
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if trimmed.isEmpty { continue }
+                guard let scope = ControlScope(rawValue: trimmed) else {
+                    throw ControlError(.invalid, "unknown scope '\(s)'; valid scopes are \(ControlScope.allCases.map(\.rawValue).joined(separator: ", "))")
+                }
+                parsedScopes.insert(scope)
+            }
+            return parsedScopes
+        case .string(let s):
+            var parsedScopes: Set<ControlScope> = []
+            for part in s.split(separator: ",") {
+                let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if trimmed.isEmpty { continue }
+                guard let scope = ControlScope(rawValue: trimmed) else {
+                    throw ControlError(.invalid, "unknown scope '\(trimmed)'; valid scopes are \(ControlScope.allCases.map(\.rawValue).joined(separator: ", "))")
+                }
+                parsedScopes.insert(scope)
+            }
+            return parsedScopes
+        default:
+            throw ControlError(.invalid, "\"scopes\" must be an array of strings or comma-separated string")
+        }
+    }
+}
 
 /// The wire format of `takoctl`: one JSON request per connection, one JSON
 /// response, then the connection closes.
@@ -78,6 +186,10 @@ struct ControlError: Error, Equatable {
         /// A wait on the command the request itself is part of: it cannot
         /// end while the request waits.
         case selfWait
+        /// The client is missing a capability scope required for this command (Track G1).
+        case missingScope = "missingScope"
+        /// Automation is not permitted to type into this pane without the switch or confirmation (Track G1).
+        case automationNotPermitted = "automationNotPermitted"
         case internalError = "internal"
     }
 
@@ -85,11 +197,14 @@ struct ControlError: Error, Equatable {
     let message: String
     /// For `ambiguous`: the ids that matched.
     var candidates: [String] = []
+    /// For `missingScope`: the name of the missing scope (Track G1).
+    var scope: String? = nil
 
-    init(_ code: Code, _ message: String, candidates: [String] = []) {
+    init(_ code: Code, _ message: String, candidates: [String] = [], scope: String? = nil) {
         self.code = code
         self.message = message
         self.candidates = candidates
+        self.scope = scope
     }
 }
 
@@ -98,6 +213,14 @@ struct ControlRequest: Equatable {
     let args: [String: JSON]
     /// The pane the client runs in, as it says.
     let from: UUID?
+    /// The client identity (e.g. "takoctl", "agent-123"). Set from server-side grant.
+    var client: String?
+    /// The authorization token provided by the client, if any.
+    let token: String?
+    /// The effective capability scopes granted to this client session by the server (Track G1).
+    var scopes: Set<ControlScope>?
+    /// The scopes requested by the client in its request payload (for attenuation).
+    let requestedScopes: Set<ControlScope>?
     /// Whether the client has gone -- closed its end -- so work that waits
     /// for something (`wait`) can stop. Set by the server.
     var clientGone: @Sendable () -> Bool = { false }
@@ -106,14 +229,26 @@ struct ControlRequest: Equatable {
     /// Streaming connection cleanup callback.
     var onStreamClose: (@Sendable () -> Void)? = nil
 
-    init(cmd: String, args: [String: JSON], from: UUID?) {
+    init(
+        cmd: String,
+        args: [String: JSON] = [:],
+        from: UUID? = nil,
+        client: String? = nil,
+        token: String? = nil,
+        scopes: Set<ControlScope>? = nil,
+        requestedScopes: Set<ControlScope>? = nil
+    ) {
         self.cmd = cmd
         self.args = args
         self.from = from
+        self.client = client
+        self.token = token
+        self.scopes = scopes
+        self.requestedScopes = requestedScopes
     }
 
     static func == (a: Self, b: Self) -> Bool {
-        a.cmd == b.cmd && a.args == b.args && a.from == b.from
+        a.cmd == b.cmd && a.args == b.args && a.from == b.from && a.client == b.client && a.token == b.token && a.scopes == b.scopes && a.requestedScopes == b.requestedScopes
     }
 
     /// Parses one request line. A `from` that is present but not a UUID is
@@ -152,7 +287,37 @@ struct ControlRequest: Equatable {
         case .string?: break
         default: throw ControlError(.invalid, "\"from\" is not a string")
         }
-        return ControlRequest(cmd: cmd, args: args, from: from)
+
+        var token: String?
+        switch object["token"] ?? object["auth"] ?? args["token"] ?? args["auth"] {
+        case nil, .null?: break
+        case .string(let s)?:
+            token = s.isEmpty ? nil : s
+        default:
+            throw ControlError(.invalid, "\"token\" is not a string")
+        }
+
+        var client: String?
+        switch object["client"] {
+        case nil, .null?:
+            client = args["client"]?.string
+        case .string(let s)?:
+            client = s.isEmpty ? nil : s
+        default:
+            throw ControlError(.invalid, "\"client\" is not a string")
+        }
+
+        let requestedScopes = try ControlScope.parseScopes(from: object["scopes"] ?? args["scopes"])
+
+        return ControlRequest(
+            cmd: cmd,
+            args: args,
+            from: from,
+            client: client,
+            token: token,
+            scopes: nil,
+            requestedScopes: requestedScopes
+        )
     }
 }
 
@@ -169,6 +334,7 @@ enum ControlResponse {
         case .failure(let error):
             var body: [String: Any] = ["code": error.code.rawValue, "message": error.message]
             if !error.candidates.isEmpty { body["candidates"] = error.candidates }
+            if let scope = error.scope { body["scope"] = scope }
             object = ["ok": false, "error": body]
         }
         var data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]))

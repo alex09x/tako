@@ -46,26 +46,38 @@ public struct InputActivityRecord: Identifiable, Equatable, Sendable, Codable {
     }
 }
 
-/// State tracking input ownership, lock status, and activity marks per pane (C7).
+/// State tracking input ownership, lock status, activity marks, and automation typing permissions per pane (C7, G1, G2).
 public struct PaneInputState: Equatable, Sendable {
     public var isLocked: Bool
     public var owner: InputOwner
     public var previousAgent: String?
     public var lastActivityMark: InputActivityRecord?
     public var activityLog: [InputActivityRecord]
+    /// The client identity that created this pane, if created by an automated client (Track G1).
+    public var creatorClient: String?
+    /// Whether external automation is permitted to type into this pane ("automation may type here" switch, Track G1).
+    public var automationMayType: Bool
+    /// One-time permission to allow automation to type once into this pane without turning the permanent switch on (Track G1).
+    public var oneTimeConfirmation: Bool
 
     public init(
         isLocked: Bool = false,
         owner: InputOwner = .human,
         previousAgent: String? = nil,
         lastActivityMark: InputActivityRecord? = nil,
-        activityLog: [InputActivityRecord] = []
+        activityLog: [InputActivityRecord] = [],
+        creatorClient: String? = nil,
+        automationMayType: Bool = false,
+        oneTimeConfirmation: Bool = false
     ) {
         self.isLocked = isLocked
         self.owner = owner
         self.previousAgent = previousAgent
         self.lastActivityMark = lastActivityMark
         self.activityLog = activityLog
+        self.creatorClient = creatorClient
+        self.automationMayType = automationMayType
+        self.oneTimeConfirmation = oneTimeConfirmation
     }
 }
 
@@ -104,6 +116,52 @@ public final class InputOwnershipStore: ObservableObject {
 
     public func activityLog(for paneId: UUID) -> [InputActivityRecord] {
         states[paneId]?.activityLog ?? []
+    }
+
+    public func creatorClient(for paneId: UUID) -> String? {
+        states[paneId]?.creatorClient
+    }
+
+    public func setCreatorClient(paneId: UUID, client: String?) {
+        guard let client, !client.isEmpty else { return }
+        var current = state(for: paneId)
+        current.creatorClient = client
+        states[paneId] = current
+    }
+
+    public func automationMayType(for paneId: UUID) -> Bool {
+        states[paneId]?.automationMayType ?? false
+    }
+
+    public func setAutomationMayType(paneId: UUID, allowed: Bool) {
+        var current = state(for: paneId)
+        current.automationMayType = allowed
+        states[paneId] = current
+    }
+
+    public func confirmOneTimeTyping(paneId: UUID) {
+        var current = state(for: paneId)
+        current.oneTimeConfirmation = true
+        states[paneId] = current
+    }
+
+    /// Whether a client may type into this pane (Track G1).
+    /// Panes created by a client are writable by it; typing into a pane it did not create
+    /// needs the "automation may type here" switch or a one-time confirmation.
+    public func canClientType(paneId: UUID, client: String?) -> Bool {
+        var current = state(for: paneId)
+        if current.oneTimeConfirmation {
+            current.oneTimeConfirmation = false
+            states[paneId] = current
+            return true
+        }
+        if current.automationMayType {
+            return true
+        }
+        if let client, !client.isEmpty, let creator = current.creatorClient, creator == client {
+            return true
+        }
+        return false
     }
 
     /// Locks a pane against accidental keyboard typing (for watching agent execution).

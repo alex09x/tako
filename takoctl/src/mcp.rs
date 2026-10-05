@@ -31,6 +31,7 @@ pub enum CapabilityScope {
     Layout,
     Signal,
     Overlay,
+    Approval,
 }
 
 impl CapabilityScope {
@@ -41,6 +42,7 @@ impl CapabilityScope {
             Self::Layout => "layout",
             Self::Signal => "signal",
             Self::Overlay => "overlay",
+            Self::Approval => "approval",
         }
     }
 
@@ -51,8 +53,9 @@ impl CapabilityScope {
             "layout" => Ok(Self::Layout),
             "signal" => Ok(Self::Signal),
             "overlay" => Ok(Self::Overlay),
+            "approval" => Ok(Self::Approval),
             other => Err(format!(
-                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay"
+                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay, approval"
             )),
         }
     }
@@ -602,6 +605,7 @@ pub struct McpServer {
     pub socket_path: String,
     pub capabilities: Capabilities,
     pub surface_id: Option<String>,
+    pub token: Option<String>,
 }
 
 impl McpServer {
@@ -610,7 +614,13 @@ impl McpServer {
             socket_path,
             capabilities,
             surface_id,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
+        self
     }
 
     /// Handles a single incoming JSON-RPC 2.0 message and produces a response if required.
@@ -1120,8 +1130,28 @@ impl McpServer {
         let mut req = Map::new();
         req.insert("cmd".into(), Value::String(cmd.into()));
         req.insert("args".into(), Value::Object(req_args));
+        req.insert("client".into(), Value::String("mcp".into()));
+        let mut scopes_list: Vec<&'static str> = self
+            .capabilities
+            .scopes
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        scopes_list.sort();
+        req.insert(
+            "scopes".into(),
+            Value::Array(scopes_list.into_iter().map(|s| Value::String(s.into())).collect()),
+        );
         if let Some(s) = &self.surface_id {
             req.insert("from".into(), Value::String(s.clone()));
+        }
+        let token = self.token.clone().or_else(|| {
+            std::env::var("TAKO_CONTROL_TOKEN")
+                .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+                .ok()
+        });
+        if let Some(tok) = token {
+            req.insert("token".into(), Value::String(tok));
         }
 
         Ok(Value::Object(req))

@@ -116,6 +116,9 @@ commands:
   input handback          hand back input control to the agent (--owner NAME)
   input status            show input lock state, owner, and last activity attribution
   input log               show automated input activity log for the pane
+  input allow-automation  allow external automation to type into this pane
+  input disallow-automation disallow external automation from typing into this pane
+  input confirm-automation allow automation to type once into this pane
   broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
   broadcast stop          stop broadcasting input
   broadcast status        show current broadcast status and participating panes
@@ -129,16 +132,20 @@ commands:
   review open [PATH]      open diff review pane for worktree (--base BRANCH, --target-pane ID)
   review close            close active diff review pane
   review status           show review session status and pending comments count
-  review files            list changed files in review session
+   review files            list changed files in review session
   review diff [FILE]      show unified diff of all files or specific FILE
   review comment [ACTION] manage review comments (add, list, remove, clear; --file FILE, --line N)
   review send             send collected review comments as feedback to target pane
+  grant request [NAME]    request an authorization grant from user (--client NAME, --scope SCOPES, --desc DESC)
+  grant create            create a scoped authorization grant (--client NAME, --scope SCOPES, --desc DESC)
+  grant revoke TOKEN      revoke an authorization grant
+  grant list              list active authorization grants
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
   --window ID             session export: target specific window ID
   --panes P1,P2,...       broadcast: comma-separated list of target panes
-  --client NAME           client name for automated input attribution (send, type, key; default: takoctl)
+  --client NAME           client name for identity and attribution (send, type, key; default: takoctl)
   --owner NAME            agent name for input lock / handback (default: agent)
   --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
   --label NAME            split: label for child pane (e.g. subagent name)
@@ -170,7 +177,10 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
-  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
+  --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN or $TAKO_AUTH_TOKEN)
+  --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay,approval)
+  --description, --desc DESC description of grant or client purpose
+  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,approval; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer
@@ -178,12 +188,16 @@ options:
   --bundle-id ID          find the socket of this build of Tako (default com.tako-core.terminal)
 ";
 
+#[derive(Debug)]
 struct Options {
     cmd: String,
     args: Map<String, Value>,
     json: bool,
     socket: Option<String>,
     bundle_id: String,
+    client: Option<String>,
+    token: Option<String>,
+    scopes: Option<Vec<String>>,
 }
 
 fn parse(argv: &[String]) -> Result<Options, String> {
@@ -193,6 +207,22 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let mut socket = None;
     let mut bundle_id =
         std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
+    let mut client = std::env::var("TAKO_CLIENT_ID")
+        .or_else(|_| std::env::var("TAKO_CLIENT"))
+        .ok();
+    let mut token = std::env::var("TAKO_CONTROL_TOKEN")
+        .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+        .ok();
+    let mut scopes = std::env::var("TAKO_CONTROL_SCOPES")
+        .or_else(|_| std::env::var("TAKO_SCOPES"))
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim().to_lowercase())
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+        });
+    let mut description: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
     let mut it = argv.iter();
@@ -405,8 +435,39 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--prefix" => {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
+            "--token" | "--auth-token" => {
+                let val = value(arg.as_str())?;
+                token = Some(val.clone());
+                args.insert("token".into(), Value::String(val));
+            }
             "--client" => {
-                args.insert("client".into(), Value::String(value("--client")?));
+                let name = value("--client")?;
+                client = Some(name.clone());
+                args.insert("client".into(), Value::String(name));
+            }
+            "--scope" | "--scopes" => {
+                let val = value(arg.as_str())?;
+                let list: Vec<String> = val
+                    .split(',')
+                    .map(|p| p.trim().to_lowercase())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                if list.is_empty() {
+                    return Err(format!("{arg} cannot be empty"));
+                }
+                for s in &list {
+                    if !["read", "input", "layout", "signal", "overlay", "approval"].contains(&s.as_str()) {
+                        return Err(format!(
+                            "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay, approval"
+                        ));
+                    }
+                }
+                scopes = Some(list);
+            }
+            "--desc" | "--description" => {
+                let d = value(arg.as_str())?;
+                description = Some(d.clone());
+                args.insert("description".into(), Value::String(d));
             }
             "--owner" => {
                 args.insert("owner".into(), Value::String(value("--owner")?));
@@ -1139,12 +1200,80 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 positional.remove(0)
             };
             match sub.as_str() {
-                "lock" | "unlock" | "takeover" | "handback" | "status" | "log" => {
+                "lock" | "unlock" | "takeover" | "handback" | "status" | "log"
+                | "allow-automation" | "disallow-automation" | "confirm-automation" => {
                     args.insert("subcommand".into(), Value::String(sub));
                 }
                 other => {
                     return Err(format!(
-                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, or log"
+                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, log, allow-automation, disallow-automation, or confirm-automation"
+                    ));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
+        "grant" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "request" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if let Some(c) = client.as_ref() {
+                        args.insert("client".into(), Value::String(c.clone()));
+                    } else if !positional.is_empty() {
+                        args.insert("client".into(), Value::String(positional.remove(0)));
+                    } else {
+                        args.insert("client".into(), Value::String("takoctl".into()));
+                    }
+                    if let Some(sc) = scopes.as_ref() {
+                        args.insert(
+                            "scopes".into(),
+                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
+                        );
+                    }
+                    if let Some(d) = description.as_ref() {
+                        args.insert("description".into(), Value::String(d.clone()));
+                    }
+                }
+                "create" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if let Some(c) = client.as_ref() {
+                        args.insert("client".into(), Value::String(c.clone()));
+                    } else if !positional.is_empty() {
+                        args.insert("client".into(), Value::String(positional.remove(0)));
+                    }
+                    if let Some(sc) = scopes.as_ref() {
+                        args.insert(
+                            "scopes".into(),
+                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
+                        );
+                    }
+                    if let Some(d) = description.as_ref() {
+                        args.insert("description".into(), Value::String(d.clone()));
+                    }
+                }
+                "revoke" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if !positional.is_empty() {
+                        args.insert("token".into(), Value::String(positional.remove(0)));
+                    } else if let Some(t) = token.as_ref() {
+                        args.insert("token".into(), Value::String(t.clone()));
+                    } else {
+                        return Err("grant revoke requires a token to revoke".into());
+                    }
+                }
+                "list" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                }
+                other => {
+                    return Err(format!(
+                        "unknown grant action \"{other}\"; use request, create, revoke, or list"
                     ));
                 }
             }
@@ -1410,12 +1539,25 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         (Some(name), 0) => return Err(format!("{cmd} needs a {name}")),
         (Some(_), _) => return Err(format!("{cmd} takes one argument; quote it")),
     }
+    if client.is_none() {
+        if let Some(c) = args.get("client").and_then(Value::as_str) {
+            client = Some(c.to_string());
+        }
+    }
+    if token.is_none() {
+        if let Some(t) = args.get("token").and_then(Value::as_str) {
+            token = Some(t.to_string());
+        }
+    }
     Ok(Options {
         cmd,
         args,
         json,
         socket,
         bundle_id,
+        client,
+        token,
+        scopes,
     })
 }
 
@@ -1425,6 +1567,15 @@ fn request(opts: &Options, from: Option<String>) -> Value {
     let mut req = json!({"cmd": opts.cmd, "args": Value::Object(opts.args.clone())});
     if let Some(from) = from.filter(|f| !f.is_empty()) {
         req["from"] = Value::String(from);
+    }
+    if let Some(token) = &opts.token {
+        req["token"] = Value::String(token.clone());
+    }
+    if let Some(client) = &opts.client {
+        req["client"] = Value::String(client.clone());
+    }
+    if let Some(scopes) = &opts.scopes {
+        req["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
     }
     req
 }
@@ -1530,8 +1681,50 @@ fn render(cmd: &str, result: &Value) -> String {
         "review" => review_report(result),
         "history" => history_report(result),
         "triggers" => triggers_report(result),
+        "grant" => grant_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn grant_report(result: &Value) -> String {
+    if let Some(token) = result["token"].as_str() {
+        let client = result["client"].as_str().unwrap_or("unknown");
+        let scopes = result["scopes"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        return format!("token: {token}\nclient: {client}\nscopes: [{scopes}]\n");
+    }
+    if let Some(revoked) = result["revoked"].as_bool() {
+        return format!("revoked: {revoked}\n");
+    }
+    if let Some(grants) = result["grants"].as_array() {
+        if grants.is_empty() {
+            return "no grants\n".into();
+        }
+        let mut out = String::new();
+        for g in grants {
+            let id = g["id"].as_str().unwrap_or("");
+            let client = g["client"].as_str().unwrap_or("");
+            let scopes = g["scopes"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            out += &format!("{id} {client} [{scopes}]\n");
+        }
+        return out;
+    }
+    format!("{result}\n")
 }
 
 fn triggers_report(result: &Value) -> String {
@@ -1890,6 +2083,19 @@ fn input_report(result: &Value) -> String {
         return out;
     }
 
+    if let Some(allowed) = result.get("automation_may_type").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("");
+        if result.get("owner").is_none() {
+            let state = if allowed { "allowed" } else { "disallowed" };
+            return format!("Automation typing {state} for pane {id}.\n");
+        }
+    }
+
+    if result.get("confirmed") == Some(&Value::Bool(true)) {
+        let id = result["id"].as_str().unwrap_or("");
+        return format!("One-time automation typing confirmed for pane {id}.\n");
+    }
+
     let mut out = String::new();
     let locked = result["locked"].as_bool().unwrap_or(false);
     let owner = result["owner"].as_str().unwrap_or("human");
@@ -1899,6 +2105,13 @@ fn input_report(result: &Value) -> String {
         out += &format!("Pane {id}: locked (owner: {owner})\n");
     } else {
         out += &format!("Pane {id}: unlocked (owner: {owner})\n");
+    }
+
+    if let Some(allowed) = result["automation_may_type"].as_bool() {
+        out += &format!("Automation may type: {}\n", if allowed { "yes" } else { "no" });
+    }
+    if let Some(creator) = result["creator_client"].as_str() {
+        out += &format!("Creator client: {creator}\n");
     }
 
     if let (Some(client), Some(action)) = (
@@ -2718,7 +2931,8 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .map(String::from)
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
-    let server = mcp::McpServer::new(socket_path, capabilities, surface_id);
+    let server = mcp::McpServer::new(socket_path, capabilities, surface_id)
+        .with_token(opts.token.clone());
     server
         .run_stdio()
         .map_err(|e| format!("MCP stdio server error: {e}"))
@@ -2933,6 +3147,15 @@ fn main() -> ExitCode {
             }
         },
     };
+    let mut opts = opts;
+    if opts.token.is_none() {
+        if let Ok(tok) = std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN")) {
+            let t = tok.trim().to_string();
+            if !t.is_empty() {
+                opts.token = Some(t);
+            }
+        }
+    }
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     if opts.cmd == "events" {
         let res = socket::stream_events(&path, &req, |line| {
@@ -5035,4 +5258,169 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(rep.contains("3333-4444"));
         assert!(rep.contains("[config]"));
     }
+
+    #[test]
+    fn control_capabilities_and_scopes_parsing() {
+        // 1. Parsing --scope and --client
+        let opts1 = parse(&[
+            "text".into(),
+            "--scope".into(),
+            "read,input".into(),
+            "--client".into(),
+            "agent-alpha".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts1.client.as_deref(), Some("agent-alpha"));
+        assert_eq!(opts1.scopes, Some(vec!["read".into(), "input".into()]));
+        let req1 = request(&opts1, None);
+        assert_eq!(req1["client"], "agent-alpha");
+        assert_eq!(req1["scopes"], json!(["read", "input"]));
+
+        // 2. Parsing --scopes with spaces and uppercase
+        let opts2 = parse(&[
+            "notify".into(),
+            "hello".into(),
+            "--scopes".into(),
+            "Signal, Layout".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts2.scopes, Some(vec!["signal".into(), "layout".into()]));
+
+        // 3. Unknown scope fails
+        let bad_scope = parse(&[
+            "notify".into(),
+            "hello".into(),
+            "--scope".into(),
+            "invalid_scope".into(),
+        ]);
+        assert!(bad_scope.is_err());
+        assert!(bad_scope
+            .unwrap_err()
+            .contains("unknown capability scope 'invalid_scope'"));
+
+        // 4. Input automation subcommands
+        let allow_opts = parse(&["input".into(), "allow-automation".into()]).unwrap();
+        assert_eq!(allow_opts.args["subcommand"], "allow-automation");
+
+        let disallow_opts = parse(&["input".into(), "disallow-automation".into()]).unwrap();
+        assert_eq!(disallow_opts.args["subcommand"], "disallow-automation");
+
+        let confirm_opts = parse(&["input".into(), "confirm-automation".into()]).unwrap();
+        assert_eq!(confirm_opts.args["subcommand"], "confirm-automation");
+
+        // 5. Input report formatting
+        let allow_report = input_report(&json!({
+            "id": "pane-1",
+            "automation_may_type": true
+        }));
+        assert_eq!(allow_report, "Automation typing allowed for pane pane-1.\n");
+
+        let disallow_report = input_report(&json!({
+            "id": "pane-1",
+            "automation_may_type": false
+        }));
+        assert_eq!(
+            disallow_report,
+            "Automation typing disallowed for pane pane-1.\n"
+        );
+
+        let confirm_report = input_report(&json!({
+            "id": "pane-1",
+            "confirmed": true
+        }));
+        assert_eq!(
+            confirm_report,
+            "One-time automation typing confirmed for pane pane-1.\n"
+        );
+
+        let status_report = input_report(&json!({
+            "id": "pane-1",
+            "locked": false,
+            "owner": "human",
+            "automation_may_type": true,
+            "creator_client": "agent-alpha"
+        }));
+        assert!(status_report.contains("Pane pane-1: unlocked (owner: human)"));
+        assert!(status_report.contains("Automation may type: yes"));
+        assert!(status_report.contains("Creator client: agent-alpha"));
+
+        // 6. Token parsing and grant subcommands
+        let token_opts = parse(&[
+            "text".into(),
+            "--token".into(),
+            "secret_token_123".into(),
+            "--scope".into(),
+            "read,approval".into(),
+        ])
+        .unwrap();
+        assert_eq!(token_opts.token.as_deref(), Some("secret_token_123"));
+        assert_eq!(token_opts.scopes, Some(vec!["read".into(), "approval".into()]));
+        let req_tok = request(&token_opts, None);
+        assert_eq!(req_tok["token"], "secret_token_123");
+        assert_eq!(req_tok["scopes"], json!(["read", "approval"]));
+
+        let grant_create = parse(&[
+            "grant".into(),
+            "create".into(),
+            "--client".into(),
+            "subagent-2".into(),
+            "--scope".into(),
+            "signal".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_create.args["subcommand"], "create");
+        assert_eq!(grant_create.args["client"], "subagent-2");
+        assert_eq!(grant_create.args["scopes"], json!(["signal"]));
+
+        let grant_revoke = parse(&[
+            "grant".into(),
+            "revoke".into(),
+            "token_to_remove".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_revoke.args["subcommand"], "revoke");
+        assert_eq!(grant_revoke.args["token"], "token_to_remove");
+
+        let grant_list = parse(&["grant".into(), "list".into()]).unwrap();
+        assert_eq!(grant_list.args["subcommand"], "list");
+
+        let rep_create = grant_report(&json!({
+            "token": "tok_xyz",
+            "client": "subagent-2",
+            "scopes": ["signal"]
+        }));
+        assert!(rep_create.contains("token: tok_xyz"));
+        assert!(rep_create.contains("client: subagent-2"));
+        assert!(rep_create.contains("scopes: [signal]"));
+
+        let grant_req_default = parse(&["grant".into(), "request".into()]).unwrap();
+        assert_eq!(grant_req_default.args["subcommand"], "request");
+        assert_eq!(grant_req_default.args["client"], "takoctl");
+
+        let grant_req_custom = parse(&[
+            "grant".into(),
+            "request".into(),
+            "--client".into(),
+            "my-agent".into(),
+            "--scope".into(),
+            "read,layout".into(),
+            "--desc".into(),
+            "Test description".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_req_custom.args["subcommand"], "request");
+        assert_eq!(grant_req_custom.args["client"], "my-agent");
+        assert_eq!(grant_req_custom.args["scopes"], json!(["read", "layout"]));
+        assert_eq!(grant_req_custom.args["description"], "Test description");
+
+        let rep_req = grant_report(&json!({
+            "token": "tok_bootstrap",
+            "client": "my-agent",
+            "scopes": ["layout", "read"]
+        }));
+        assert!(rep_req.contains("token: tok_bootstrap"));
+        assert!(rep_req.contains("client: my-agent"));
+        assert!(rep_req.contains("scopes: [layout, read]"));
+    }
 }
+

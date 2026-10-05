@@ -1127,6 +1127,12 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func hasSelection()  -> Bool
 
     /**
+     * Whether clipboard query / reading escape sequences (OSC 52 ; ... ; ?) are allowed (Track G4).
+     * Defaults to false (WriteOnly policy).
+     */
+    func isClipboardReadAllowed()  -> Bool
+
+    /**
      * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
      */
     func isElevated()  -> Bool
@@ -1156,6 +1162,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * Forces a full redraw on the next `takeDamage()`.
      */
     func markAllDamaged()
+
+    /**
+     * Maximum image memory (in bytes) configured for this terminal.
+     */
+    func maxImageMemoryBytes()  -> UInt64
 
     /**
      * Current DEC private-mode state (autowrap, mouse tracking,
@@ -1409,6 +1420,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])
 
     /**
+     * Enable or disable clipboard query / reading escape sequences (Track G4).
+     */
+    func setClipboardReadAllowed(allowed: Bool)
+
+    /**
      * Tells the engine whether the host shows a dark or a light colour
      * scheme: what `CSI ? 996 n` answers, and what a program that set mode
      * 2031 is sent, unasked, when it changes. That report is queued like
@@ -1437,6 +1453,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * program can still change the mode.
      */
     func setGraphemeWidthMethod(method: FfiGraphemeWidthMethod)
+
+    /**
+     * Set maximum image memory (in bytes) for this terminal, evicting LRU images if necessary.
+     */
+    func setMaxImageMemoryBytes(max: UInt64)
 
     /**
      * Restores a fraction from `scroll_position`. Out-of-range values are
@@ -2076,6 +2097,19 @@ open func hasSelection() -> Bool  {
 }
 
     /**
+     * Whether clipboard query / reading escape sequences (OSC 52 ; ... ; ?) are allowed (Track G4).
+     * Defaults to false (WriteOnly policy).
+     */
+open func isClipboardReadAllowed() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_is_clipboard_read_allowed(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
      */
 open func isElevated() -> Bool  {
@@ -2140,6 +2174,18 @@ open func markAllDamaged()  {try! rustCall() {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Maximum image memory (in bytes) configured for this terminal.
+     */
+open func maxImageMemoryBytes() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_max_image_memory_bytes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -2629,6 +2675,18 @@ open func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb
 }
 
     /**
+     * Enable or disable clipboard query / reading escape sequences (Track G4).
+     */
+open func setClipboardReadAllowed(allowed: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_clipboard_read_allowed(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(allowed),uniffiCallStatus
+    )
+}
+}
+
+    /**
      * Tells the engine whether the host shows a dark or a light colour
      * scheme: what `CSI ? 996 n` answers, and what a program that set mode
      * 2031 is sent, unasked, when it changes. That report is queued like
@@ -2686,6 +2744,18 @@ open func setGraphemeWidthMethod(method: FfiGraphemeWidthMethod)  {try! rustCall
     uniffi_tako_core_fn_method_takocore_set_grapheme_width_method(
             self.uniffiCloneHandle(),
         FfiConverterTypeFfiGraphemeWidthMethod_lower(method),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Set maximum image memory (in bytes) for this terminal, evicting LRU images if necessary.
+     */
+open func setMaxImageMemoryBytes(max: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_max_image_memory_bytes(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(max),uniffiCallStatus
     )
 }
 }
@@ -8041,6 +8111,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_has_selection() != 50914) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_is_clipboard_read_allowed() != 19983) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_is_elevated() != 8387) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8054,6 +8127,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_mark_all_damaged() != 59514) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_max_image_memory_bytes() != 12533) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_modes() != 25418) {
@@ -8149,6 +8225,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_set_base_colors() != 24192) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_set_clipboard_read_allowed() != 26441) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_set_color_scheme() != 18592) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8159,6 +8238,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_grapheme_width_method() != 40704) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_set_max_image_memory_bytes() != 53881) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_scroll_position() != 51241) {

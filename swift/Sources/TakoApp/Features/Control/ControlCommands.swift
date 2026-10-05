@@ -147,13 +147,241 @@ enum ControlCommands {
         handle(request, all: panes(), reply: reply)
     }
 
+    /// Binds caller to a server-side capability authorization grant (Track G1).
+    /// Scopes and client identity are derived strictly from the server-side grant;
+    /// caller-supplied scopes in payload can only attenuate, never expand.
+    /// Unauthenticated callers or invalid tokens fail closed with no scopes.
+    nonisolated static func authorize(_ request: ControlRequest) -> ControlRequest {
+        var req = request
+        if let token = request.token {
+            if let grant = ControlGrantStore.shared.grant(for: token) {
+                let client = (grant.scopes.contains(.approval) && request.client != nil) ? request.client! : grant.client
+                let effectiveScopes = grant.scopes.intersection(request.requestedScopes ?? grant.scopes)
+                req.client = client
+                req.scopes = effectiveScopes
+            } else {
+                req.client = nil
+                req.scopes = []
+            }
+        } else if req.scopes != nil && req.requestedScopes == nil {
+            // In-memory test requests with explicit scopes set directly
+        } else {
+            // Socket caller without valid grant token
+            req.client = nil
+            req.scopes = []
+        }
+        return req
+    }
+
+    /// Checks that the client has the required capability scope for this command (Track G1).
+    nonisolated static func checkScope(for request: ControlRequest) throws {
+        let requiredScopes = ControlScope.required(for: request.cmd, args: request.args)
+        if requiredScopes.isEmpty {
+            return // unscoped discovery commands (e.g. version)
+        }
+        guard let clientScopes = request.scopes, !clientScopes.isEmpty else {
+            let missing = requiredScopes.sorted(by: { $0.rawValue < $1.rawValue }).first!
+            var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(missing.rawValue)' scope (no grant provided)")
+            err.scope = missing.rawValue
+            throw err
+        }
+        for required in requiredScopes.sorted(by: { $0.rawValue < $1.rawValue }) {
+            if !clientScopes.contains(required) {
+                let activeList = clientScopes.map(\.rawValue).sorted().joined(separator: ", ")
+                var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(required.rawValue)' scope (client scopes: [\(activeList)])")
+                err.scope = required.rawValue
+                throw err
+            }
+        }
+    }
+
+    @_silgen_name("proc_pidpath")
+    private static func proc_pidpath(_ pid: Int32, _ buffer: UnsafeMutablePointer<CChar>, _ buffersize: UInt32) -> Int32
+
+    /// Derives the verified process origin strictly from the accepted socket's peer credentials/PID.
+    static func resolvePeerProcess(for request: ControlRequest) -> (description: String, pid: pid_t?) {
+        if request.clientFD >= 0 {
+            var peerPID: pid_t = 0
+            var len = socklen_t(MemoryLayout<pid_t>.size)
+            // 0 is SOL_LOCAL, 2 is LOCAL_PEERPID on Darwin
+            if getsockopt(request.clientFD, 0, 2, &peerPID, &len) == 0 && peerPID > 0 {
+                var pathBuf = [CChar](repeating: 0, count: 4096)
+                let pathLen = proc_pidpath(peerPID, &pathBuf, UInt32(pathBuf.count))
+                if pathLen > 0 {
+                    let procPath = String(cString: pathBuf)
+                    let procName = (procPath as NSString).lastPathComponent
+                    return ("Process: \(procName) [\(procPath)] (PID \(peerPID))", peerPID)
+                }
+                return ("Process (PID \(peerPID))", peerPID)
+            }
+        }
+        return ("External process via control socket", nil)
+    }
+
+    /// Evaluates caller-claimed pane context against the verified peer PID and active panes.
+    /// Caller-supplied pane information is NEVER presented as verified origin.
+    static func resolvePaneContext(for request: ControlRequest, peerPID: pid_t?, all: [Pane]) -> String? {
+        guard let from = request.from else { return nil }
+        guard let pane = all.first(where: { $0.surface.id == from }) else {
+            return "Claimed Pane Context (unverified, inactive): ID \(from.uuidString.lowercased())"
+        }
+        let rawTitle = pane.surface.title.isEmpty ? "Terminal" : pane.surface.title
+        let rawCwd = pane.surface.workingDirectory ?? "unknown"
+        let safeTitle = sanitizeSingleLineText(rawTitle, maxLen: 128) ?? "Terminal"
+        let safeCwd = sanitizeSingleLineText(rawCwd, maxLen: 256) ?? "unknown"
+        let shellPID = pane.surface.pid
+
+        if let pid = peerPID, shellPID > 0 {
+            if Int(pid) == shellPID || LocalPortInspection.descendantPids(rootPid: shellPID).contains(Int(pid)) {
+                return "Associated Terminal Pane (process membership verified): ID \(from.uuidString.lowercased()) (shell PID \(shellPID), shell-reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+            } else {
+                return "Claimed Pane Context (unverified — socket peer PID \(pid) is not a process in this pane): ID \(from.uuidString.lowercased()) (reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+            }
+        }
+
+        return "Claimed Pane Context (unverified, caller-asserted): ID \(from.uuidString.lowercased()) (reported title: \"\(safeTitle)\", cwd: \(safeCwd))"
+    }
+
+    /// Resolves origin description for display.
+    static func resolveOrigin(for request: ControlRequest, all: [Pane]) -> String {
+        let (procOrigin, peerPID) = resolvePeerProcess(for: request)
+        if let paneCtx = resolvePaneContext(for: request, peerPID: peerPID, all: all) {
+            return "\(procOrigin)\n\(paneCtx)"
+        }
+        return procOrigin
+    }
+
+    private static func sanitizeIdentifier(_ s: String, maxLen: Int = 64) -> String? {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLen else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.@"))
+        guard trimmed.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func sanitizeSingleLineText(_ s: String, maxLen: Int = 256) -> String? {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count <= maxLen else { return nil }
+        for scalar in trimmed.unicodeScalars {
+            if scalar.value < 32 || scalar.value == 127 {
+                return nil
+            }
+        }
+        return trimmed
+    }
+
+    /// Hook for testability or custom confirmation UI: takes (client, scopes, description, origin, completionHandler).
+    static var userGrantPrompt: (@MainActor (String, Set<ControlScope>, String?, String, @escaping @Sendable (Bool) -> Void) -> Void)? = nil
+
+    private static func handleGrantRequest(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
+        do {
+            guard let rawClient = request.args["client"]?.string,
+                  let client = sanitizeIdentifier(rawClient) else {
+                throw ControlError(.invalid, "missing, empty, or invalid \"client\" for grant request (must be a single-line safe identifier of at most 64 characters: alphanumeric, -, _, ., @)")
+            }
+            let desc: String?
+            if let rawDesc = request.args["description"]?.string {
+                guard let sanitized = sanitizeSingleLineText(rawDesc) else {
+                    throw ControlError(.invalid, "invalid \"description\" for grant request (must be a single-line string of at most 256 characters without control characters)")
+                }
+                desc = sanitized
+            } else {
+                desc = nil
+            }
+            let parsed = try ControlScope.parseScopes(from: request.args["scopes"])
+            let candidateScopes = parsed ?? Set(ControlScope.allCases).subtracting([.approval])
+            let effectiveScopes = candidateScopes.subtracting([.approval])
+            guard !effectiveScopes.isEmpty else {
+                throw ControlError(.invalid, "grant request cannot grant approval scope; requested scopes must contain at least one standard scope")
+            }
+
+            let (procOrigin, peerPID) = resolvePeerProcess(for: request)
+            let paneContext = resolvePaneContext(for: request, peerPID: peerPID, all: all)
+            let displayOrigin = paneContext != nil ? "\(procOrigin)\n\(paneContext!)" : procOrigin
+
+            if let customPrompt = userGrantPrompt {
+                customPrompt(client, effectiveScopes, desc, displayOrigin) { approved in
+                    if approved {
+                        let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
+                        reply(.ok([
+                            "token": .string(grant.token),
+                            "client": .string(grant.client),
+                            "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                        ]))
+                    } else {
+                        reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+                    }
+                }
+                return
+            }
+
+            guard NSApp != nil else {
+                reply(.failure(ControlError(.disabled, "user-mediated grant confirmation is unavailable without application host")))
+                return
+            }
+
+            let alert = NSAlert()
+            alert.messageText = "Remote Control Access Request"
+            let scopeList = effectiveScopes.map(\.rawValue).sorted().joined(separator: ", ")
+            var info = """
+            An unauthenticated client is requesting remote control access to Tako.
+
+            Origin (verified): \(procOrigin)
+            """
+            if let pc = paneContext {
+                info += "\n\(pc)"
+            }
+            info += """
+
+            Requested Scopes: [\(scopeList)]
+            Claimed Client Name (unverified): "\(client)"
+            """
+            if let d = desc, !d.isEmpty {
+                info += "\nClaimed Purpose (unverified): \"\(d)\""
+            }
+            info += "\n\nWarning: Authorizing this request will grant the process the ability to interact with your terminal sessions. Do you want to allow this request?"
+            alert.informativeText = info
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Allow")
+            alert.addButton(withTitle: "Deny")
+
+            let appDelegate = NSApp?.delegate as? AppDelegate
+            let response = appDelegate?.runModalAlert(alert) ?? alert.runModal()
+            if response == .alertFirstButtonReturn {
+                let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
+                reply(.ok([
+                    "token": .string(grant.token),
+                    "client": .string(grant.client),
+                    "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                ]))
+            } else {
+                reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+            }
+        } catch let err as ControlError {
+            reply(.failure(err))
+        } catch {
+            reply(.failure(ControlError(.internalError, "\(error)")))
+        }
+    }
+
     static func handle(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
+        let request = authorize(request)
         do {
             guard mode.allows(from: request.from, panes: all.map(\.surface.id)) else {
                 reply(handle(request, all: all))   // the refusal, from one place
                 return
             }
+            try checkScope(for: request)
             switch request.cmd {
+            case "grant":
+                let sub = request.args["subcommand"]?.string ?? ""
+                if sub == "request" {
+                    handleGrantRequest(request, all: all, reply: reply)
+                    return
+                }
+                reply(handle(request, all: all))
             case "text":
                 let surface = try target(request, all)
                 guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
@@ -215,6 +443,7 @@ enum ControlCommands {
     }
 
     static func handle(_ request: ControlRequest, all: [Pane]) -> ControlResponse {
+        let request = authorize(request)
         let ids = all.map(\.surface.id)
         guard mode.allows(from: request.from, panes: ids) else {
             return .failure(ControlError(.disabled, mode == .local
@@ -222,6 +451,7 @@ enum ControlCommands {
                 : "remote control is off"))
         }
         do {
+            try checkScope(for: request)
             switch request.cmd {
             case "version":
                 return .ok(version())
@@ -255,24 +485,34 @@ enum ControlCommands {
                 return .ok(try triggersCommand(request, all: all))
             case "send", "type":
                 let surface = try target(request, all)
+                let client = request.client ?? request.args["client"]?.string ?? "takoctl"
+                guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
+                    throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
+                }
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
                 let text = try ControlInput.text(request.args)
                 try ControlInput.send(surface, text: text, enter: enter)
-                let client = request.args["client"]?.string ?? "takoctl"
                 InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: request.cmd)
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "key":
                 let surface = try target(request, all)
+                let client = request.client ?? request.args["client"]?.string ?? "takoctl"
+                guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
+                    throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
+                }
                 let chord = try ControlInput.text(request.args, "key")
                 try ControlInput.key(surface, chord: chord)
-                let client = request.args["client"]?.string ?? "takoctl"
                 InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: "key \(chord)")
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "tab-new":
-                let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args)
+                let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args, client: request.client)
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "split":
-                let pane = try ControlLayout.split(try target(request, all), args: request.args)
+                let pane = try ControlLayout.split(try target(request, all), args: request.args, client: request.client)
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "collapse":
                 let surface = try target(request, all)
@@ -322,13 +562,37 @@ enum ControlCommands {
                         "locked": .bool(state.isLocked),
                         "owner": .string(state.owner.agentName ?? "agent")
                     ])
+                case "allow-automation", "enable-automation":
+                    InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: true)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "automation_may_type": .bool(state.automationMayType)
+                    ])
+                case "disallow-automation", "disable-automation":
+                    InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: false)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "automation_may_type": .bool(state.automationMayType)
+                    ])
+                case "confirm-automation":
+                    InputOwnershipStore.shared.confirmOneTimeTyping(paneId: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "confirmed": .bool(true)
+                    ])
                 case "status":
                     let state = InputOwnershipStore.shared.state(for: surface.id)
                     var dict: [String: JSON] = [
                         "id": .string(surface.id.uuidString.lowercased()),
                         "locked": .bool(state.isLocked),
                         "owner": .string(state.owner.isAgent ? (state.owner.agentName ?? "agent") : "human"),
+                        "automation_may_type": .bool(state.automationMayType),
                     ]
+                    if let creator = state.creatorClient {
+                        dict["creator_client"] = .string(creator)
+                    }
                     if let mark = state.lastActivityMark {
                         dict["last_client"] = .string(mark.client)
                         dict["last_action"] = .string(mark.action)
@@ -349,6 +613,43 @@ enum ControlCommands {
                     ])
                 default:
                     throw ControlError(.invalid, "unknown input subcommand: \(sub)")
+                }
+            case "grant":
+                let sub = request.args["subcommand"]?.string ?? ""
+                switch sub {
+                case "request":
+                    throw ControlError(.invalid, "grant request requires user confirmation and must be handled via socket or with completion handler")
+                case "create":
+                    guard let client = request.args["client"]?.string, !client.isEmpty else {
+                        throw ControlError(.invalid, "missing or empty \"client\" for grant create")
+                    }
+                    let scopes = try ControlScope.parseScopes(from: request.args["scopes"]) ?? Set(ControlScope.allCases)
+                    let desc = request.args["description"]?.string
+                    let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: scopes, description: desc)
+                    return .ok([
+                        "token": .string(grant.token),
+                        "client": .string(grant.client),
+                        "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                    ])
+                case "revoke":
+                    guard let tokenToRevoke = request.args["token"]?.string, !tokenToRevoke.isEmpty else {
+                        throw ControlError(.invalid, "missing \"token\" for grant revoke")
+                    }
+                    let revoked = ControlGrantStore.shared.revokeGrant(token: tokenToRevoke)
+                    return .ok(["revoked": .bool(revoked)])
+                case "list":
+                    let grants = ControlGrantStore.shared.listGrants()
+                    let items: [JSON] = grants.map { g in
+                        .object([
+                            "id": .string(g.id.uuidString.lowercased()),
+                            "client": .string(g.client),
+                            "scopes": .array(g.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! })),
+                            "created_at": .number(g.createdAt.timeIntervalSince1970)
+                        ])
+                    }
+                    return .ok(["grants": .array(items)])
+                default:
+                    throw ControlError(.invalid, "unknown grant subcommand '\(sub)'; use request, create, revoke, or list")
                 }
             case "broadcast":
                 let surface = try target(request, all)

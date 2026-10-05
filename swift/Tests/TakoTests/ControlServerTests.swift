@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Darwin
 import Foundation
 import Testing
@@ -133,9 +143,184 @@ struct ControlProtocolTests {
         #expect(RemoteControlMode.on.allows(from: nil, panes: []))
         #expect(!RemoteControlMode.off.allows(from: a, panes: [a]))
     }
+
+    @Test func requestParsesClientAndScopes() throws {
+        // 1. Array of scopes and token
+        let req1 = try ControlRequest.parse(Data(#"{"cmd":"notify","client":"bot-1","token":"my-token","scopes":["signal","read"]}"#.utf8))
+        #expect(req1.client == "bot-1")
+        #expect(req1.token == "my-token")
+        #expect(req1.requestedScopes == [.signal, .read])
+        #expect(req1.scopes == nil)
+
+        // 2. Comma-separated string of scopes
+        let req2 = try ControlRequest.parse(Data(#"{"cmd":"notify","scopes":"signal, input"}"#.utf8))
+        #expect(req2.requestedScopes == [.signal, .input])
+
+        // 3. Scopes inside args
+        let req3 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"scopes":"layout"}}"#.utf8))
+        #expect(req3.requestedScopes == [.layout])
+
+        // 4. Client inside args
+        let req4 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"client":"sub-agent"}}"#.utf8))
+        #expect(req4.client == "sub-agent")
+
+        // 5. Unknown scope throws invalid error
+        #expect(throws: ControlError.self) {
+            try ControlRequest.parse(Data(#"{"cmd":"status","scopes":["unknownScope"]}"#.utf8))
+        }
+
+        // 6. Non-string scope item throws invalid error
+        #expect(throws: ControlError.self) {
+            try ControlRequest.parse(Data(#"{"cmd":"status","scopes":[123]}"#.utf8))
+        }
+    }
+
+    @Test func responseIncludesScopeOnMissingScopeError() throws {
+        let err = ControlError(.missingScope, "requires signal scope", scope: "signal")
+        let failure = ControlResponse.failure(err).encoded()
+        let object = try JSONSerialization.jsonObject(with: failure) as! [String: Any]
+        #expect(object["ok"] as? Bool == false)
+        let error = object["error"] as! [String: Any]
+        #expect(error["code"] as? String == "missingScope")
+        #expect(error["scope"] as? String == "signal")
+    }
+
+    @Test func controlScopeRequiredMapping() {
+        #expect(ControlScope.required(for: "version").isEmpty)
+
+        // read
+        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history"] {
+            #expect(ControlScope.required(for: cmd) == [.read])
+        }
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == [.read])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("log")]) == [.read])
+        #expect(ControlScope.required(for: "review") == [.read])
+
+        // input
+        for cmd in ["send", "type", "key", "broadcast"] {
+            #expect(ControlScope.required(for: cmd) == [.input])
+        }
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("lock")]) == [.input])
+        #expect(ControlScope.required(for: "review", args: ["subcommand": .string("send")]) == [.input])
+
+        // approval (Track G1 P1 findings: cannot self-approve automation or issue grants with ordinary input)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("allow-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("disallow-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("confirm-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "grant") == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("request")]) == [])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("create")]) == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("revoke")]) == [.approval])
+        #expect(ControlScope.required(for: "grant", args: ["subcommand": .string("list")]) == [.approval])
+
+        // run requires both layout and input (execution authority)
+        #expect(ControlScope.required(for: "run") == [.layout, .input])
+        #expect(ControlScope.required(for: "tab-new", args: ["argv": .array([.string("echo")])]) == [.layout, .input])
+        #expect(ControlScope.required(for: "split", args: ["argv": .array([.string("ls")])]) == [.layout, .input])
+
+        // layout
+        for cmd in ["tab-new", "split", "close", "focus", "collapse", "expand", "workspace", "layout", "action", "task", "session", "wait", "resume"] {
+            #expect(ControlScope.required(for: cmd) == [.layout])
+        }
+
+        // signal
+        for cmd in ["notify", "status", "progress", "ask", "title", "triggers"] {
+            #expect(ControlScope.required(for: cmd) == [.signal])
+        }
+
+        // overlay
+        for cmd in ["dialog", "overlay"] {
+            #expect(ControlScope.required(for: cmd) == [.overlay])
+        }
+    }
+
+    @Test func serverSideGrantAndAuthorizationGate() throws {
+        // 1. Unauthenticated client without token fails closed on any scoped command
+        let unauth = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
+        let authUnauth = ControlCommands.authorize(unauth)
+        #expect(authUnauth.scopes == [])
+        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authUnauth) }
+
+        // 2. Client attempting to self-assert scopes in JSON payload without grant fails closed
+        let selfAssert = try ControlRequest.parse(Data(#"{"cmd":"text","scopes":["read","input"]}"#.utf8))
+        let authSelf = ControlCommands.authorize(selfAssert)
+        #expect(authSelf.scopes == [])
+        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authSelf) }
+
+        // 3. Issue a server-side grant with signal scope only
+        let grant = ControlGrantStore.shared.issueGrant(client: "signal-bot", scopes: [.signal])
+        let reqSig = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(grant.token)"}"#.utf8))
+        let authSig = ControlCommands.authorize(reqSig)
+        #expect(authSig.client == "signal-bot")
+        #expect(authSig.scopes == [.signal])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authSig) }
+
+        // Signal client fails on read command
+        let reqRead = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(grant.token)"}"#.utf8))
+        let authRead = ControlCommands.authorize(reqRead)
+        do {
+            try ControlCommands.checkScope(for: authRead)
+            #expect(Bool(false), "Should have failed")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "read")
+        }
+
+        // Signal client fails on input command
+        let reqType = try ControlRequest.parse(Data(#"{"cmd":"type","token":"\#(grant.token)"}"#.utf8))
+        let authType = ControlCommands.authorize(reqType)
+        do {
+            try ControlCommands.checkScope(for: authType)
+            #expect(Bool(false), "Should have failed")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "input")
+        }
+
+        // 4. Client with only layout scope fails on run because run requires execution authority (input)
+        let layoutGrant = ControlGrantStore.shared.issueGrant(client: "layout-bot", scopes: [.layout])
+        let reqRun = try ControlRequest.parse(Data(#"{"cmd":"run","token":"\#(layoutGrant.token)"}"#.utf8))
+        let authRun = ControlCommands.authorize(reqRun)
+        do {
+            try ControlCommands.checkScope(for: authRun)
+            #expect(Bool(false), "Should have failed")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "input")
+        }
+
+        // 5. Client with input scope cannot self-approve pane automation switch
+        let inputGrant = ControlGrantStore.shared.issueGrant(client: "input-bot", scopes: [.input])
+        let reqApprove = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(inputGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
+        let authApprove = ControlCommands.authorize(reqApprove)
+        do {
+            try ControlCommands.checkScope(for: authApprove)
+            #expect(Bool(false), "Should have failed")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "approval")
+        }
+
+        // 6. Client with approval scope can approve automation and issue grants
+        let adminGrant = ControlGrantStore.shared.issueGrant(client: "admin-bot", scopes: [.approval])
+        let reqAdmin = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(adminGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
+        let authAdmin = ControlCommands.authorize(reqAdmin)
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authAdmin) }
+
+        // 7. General pane caller without a token fails closed with missingScope
+        let reqNoToken = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
+        let authNoToken = ControlCommands.authorize(reqNoToken)
+        do {
+            try ControlCommands.checkScope(for: authNoToken)
+            #expect(Bool(false), "Should have failed without grant token")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "read")
+        }
+    }
 }
 
-@Suite
+@Suite(.serialized)
 @MainActor
 struct ControlServerTests {
     @Test func aRequestIsAnsweredOverTheSocket() async throws {
@@ -148,6 +333,7 @@ struct ControlServerTests {
         defer { server.stop() }
         var st = stat()
         #expect(lstat(path, &st) == 0 && st.st_mode & 0o777 == 0o600)
+        #expect(!FileManager.default.fileExists(atPath: path + ".token"), "No token file should ever be written to disk")
         let answer = try await ask(path, #"{"cmd":"hello","from":"\#(a.uuidString)"}"#)
         #expect(answer["ok"] as? Bool == true)
         let result = answer["result"] as? [String: Any]
@@ -155,6 +341,116 @@ struct ControlServerTests {
         #expect(result?["from"] as? String == a.uuidString)
         let bad = try await ask(path, "not json")
         #expect((bad["error"] as? [String: Any])?["code"] as? String == "invalid")
+    }
+
+    @Test func grantRequestBootstrapFlow() async throws {
+        let dir = try privateDir()
+        let path = dir + "/c.sock"
+        ControlCommands.apply(mode: .on)
+        defer {
+            ControlCommands.apply(mode: .off)
+            ControlCommands.userGrantPrompt = nil
+        }
+
+        let server = ControlServer(path: path) { request, reply in
+            ControlCommands.handle(request, all: [], reply: reply)
+        }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+
+        // 1. User denies grant request
+        var capturedOrigin = ""
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
+            #expect(client == "agent-denied")
+            capturedOrigin = origin
+            reply(false)
+        }
+        let deniedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"agent-denied"}}"#)
+        #expect(deniedAns["ok"] as? Bool == false)
+        let deniedErr = deniedAns["error"] as? [String: Any]
+        #expect(deniedErr?["code"] as? String == "disabled")
+        #expect(!capturedOrigin.isEmpty, "Origin must be resolved by server")
+
+        // 2. Reject spoofed client with newlines or spaces
+        let badClientAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"fake client\nspoof"}}"#)
+        #expect(badClientAns["ok"] as? Bool == false)
+        #expect((badClientAns["error"] as? [String: Any])?["code"] as? String == "invalid")
+
+        // 3. Reject spoofed multiline description
+        let badDescAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","description":"line1\nfake prompt buttons"}}"#)
+        #expect(badDescAns["ok"] as? Bool == false)
+        #expect((badDescAns["error"] as? [String: Any])?["code"] as? String == "invalid")
+
+        // 4. Requesting only approval scope is rejected without prompt
+        var promptCalled = false
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
+            promptCalled = true
+            reply(true)
+        }
+        let rogueAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"rogue","scopes":"approval"}}"#)
+        #expect(rogueAns["ok"] as? Bool == false)
+        #expect(!promptCalled, "Should not prompt user when only approval scope is requested")
+
+        // 5. User approves grant request for read,layout (stripping any requested approval)
+        var promptedScopes: Set<ControlScope> = []
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
+            #expect(client == "cli-client")
+            #expect(!scopes.contains(.approval), "Approval scope must be stripped from grant request")
+            #expect(desc == "Test CLI")
+            #expect(origin.contains("External process") || origin.contains("PID"))
+            promptedScopes = scopes
+            reply(true)
+        }
+        let approvedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","scopes":"read,layout,approval","description":"Test CLI"}}"#)
+        #expect(approvedAns["ok"] as? Bool == true)
+        let res = try #require(approvedAns["result"] as? [String: Any])
+        let token = try #require(res["token"] as? String)
+        #expect(res["client"] as? String == "cli-client")
+        let issuedScopes = (res["scopes"] as? [String]) ?? []
+        #expect(issuedScopes == ["layout", "read"])
+        #expect(promptedScopes == [.layout, .read])
+
+        // 6. Token can be used for granted scopes
+        let authedReq = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(token)"}"#.utf8))
+        let authed = ControlCommands.authorize(authedReq)
+        #expect(authed.client == "cli-client")
+        #expect(authed.scopes == [.read, .layout])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authed) }
+
+        // 7. Token cannot be used for ungranted scopes (e.g. signal)
+        let ungrantedReq = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(token)"}"#.utf8))
+        let ungrantedAuth = ControlCommands.authorize(ungrantedReq)
+        do {
+            try ControlCommands.checkScope(for: ungrantedAuth)
+            #expect(Bool(false), "Should have failed with missingScope")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "signal")
+        }
+
+        // 8. Token cannot be used to manage grants (approval scope required)
+        let grantCreateReq = try ControlRequest.parse(Data(#"{"cmd":"grant","token":"\#(token)","args":{"subcommand":"create","client":"sub"}}"#.utf8))
+        let grantCreateAuth = ControlCommands.authorize(grantCreateReq)
+        do {
+            try ControlCommands.checkScope(for: grantCreateAuth)
+            #expect(Bool(false), "Should have failed with missingScope approval")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "approval")
+        }
+
+        // 9. Grant request with caller-asserted `from` pane does NOT replace verified process origin
+        var promptOrigin = ""
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
+            promptOrigin = origin
+            reply(true)
+        }
+        let fakePaneId = UUID().uuidString.lowercased()
+        let fromAns = try await ask(path, #"{"cmd":"grant","from":"\#(fakePaneId)","args":{"subcommand":"request","client":"caller-with-from","scopes":"read"}}"#)
+        #expect(fromAns["ok"] as? Bool == true)
+        #expect(promptOrigin.contains("PID") || promptOrigin.contains("Process"))
+        #expect(promptOrigin.contains("Claimed Pane Context (unverified"))
+        #expect(promptOrigin.contains(fakePaneId))
     }
 
     @Test func aSecondCopyLeavesTheSocketToTheFirst() async throws {
