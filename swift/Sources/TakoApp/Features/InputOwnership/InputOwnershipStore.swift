@@ -53,12 +53,17 @@ public struct PaneInputState: Equatable, Sendable {
     public var previousAgent: String?
     public var lastActivityMark: InputActivityRecord?
     public var activityLog: [InputActivityRecord]
+    /// Auditable record of when the activity log was cleared and by whom (Track G2).
+    /// Preserved outside the cleared activity log.
+    public var lastCleared: InputActivityRecord?
     /// The client identity that created this pane, if created by an automated client (Track G1).
     public var creatorClient: String?
     /// Whether external automation is permitted to type into this pane ("automation may type here" switch, Track G1).
     public var automationMayType: Bool
     /// One-time permission to allow automation to type once into this pane without turning the permanent switch on (Track G1).
     public var oneTimeConfirmation: Bool
+    /// Whether secure input is active for this pane (Track G2/G5).
+    public var isSecureInput: Bool
 
     public init(
         isLocked: Bool = false,
@@ -66,18 +71,22 @@ public struct PaneInputState: Equatable, Sendable {
         previousAgent: String? = nil,
         lastActivityMark: InputActivityRecord? = nil,
         activityLog: [InputActivityRecord] = [],
+        lastCleared: InputActivityRecord? = nil,
         creatorClient: String? = nil,
         automationMayType: Bool = false,
-        oneTimeConfirmation: Bool = false
+        oneTimeConfirmation: Bool = false,
+        isSecureInput: Bool = false
     ) {
         self.isLocked = isLocked
         self.owner = owner
         self.previousAgent = previousAgent
         self.lastActivityMark = lastActivityMark
         self.activityLog = activityLog
+        self.lastCleared = lastCleared
         self.creatorClient = creatorClient
         self.automationMayType = automationMayType
         self.oneTimeConfirmation = oneTimeConfirmation
+        self.isSecureInput = isSecureInput
     }
 }
 
@@ -88,7 +97,7 @@ public final class InputOwnershipStore: ObservableObject {
     public static let shared = InputOwnershipStore()
 
     /// Maximum activity records kept per pane to keep memory bounded (G2).
-    public static let maxLogEntriesPerPane = 100
+    public static let maxLogEntriesPerPane = 500
 
     @Published private var states: [UUID: PaneInputState] = [:]
 
@@ -114,8 +123,23 @@ public final class InputOwnershipStore: ObservableObject {
         states[paneId]?.lastActivityMark
     }
 
+    public func lastCleared(for paneId: UUID) -> InputActivityRecord? {
+        states[paneId]?.lastCleared
+    }
+
+    public func isSecureInput(for paneId: UUID) -> Bool {
+        states[paneId]?.isSecureInput ?? false
+    }
+
+    public func setSecureInput(paneId: UUID, isSecure: Bool) {
+        var current = state(for: paneId)
+        current.isSecureInput = isSecure
+        states[paneId] = current
+    }
+
     public func activityLog(for paneId: UUID) -> [InputActivityRecord] {
-        states[paneId]?.activityLog ?? []
+        guard !isSecureInput(for: paneId) else { return [] }
+        return states[paneId]?.activityLog ?? []
     }
 
     public func creatorClient(for paneId: UUID) -> String? {
@@ -220,6 +244,33 @@ public final class InputOwnershipStore: ObservableObject {
         guard var current = states[paneId] else { return }
         current.lastActivityMark = nil
         states[paneId] = current
+    }
+
+    /// Clears the activity log for a pane, recording an auditable clear event outside the erased log (Track G2).
+    public func clearLog(paneId: UUID, by client: String = "user") {
+        var current = state(for: paneId)
+        let clearEvent = InputActivityRecord(client: client, action: "clear", timestamp: Date())
+        current.lastCleared = clearEvent
+        current.activityLog.removeAll()
+        current.lastActivityMark = nil
+        states[paneId] = current
+    }
+
+    /// Exports the activity log for a pane as formatted JSON (Track G2).
+    /// Adheres strictly to snapshot privacy rules by emitting only action types, client identities, and timestamps.
+    /// Denied and returns empty JSON array if the pane is in secure-input mode.
+    public func exportLog(for paneId: UUID, isSecureInput: Bool? = nil) -> String {
+        let secure = isSecureInput ?? self.isSecureInput(for: paneId)
+        guard !secure else { return "[]" }
+        let records = activityLog(for: paneId)
+        guard !records.isEmpty else { return "[]" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(records), let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "[]"
     }
 
     /// Cleans up tracking when a pane closes.

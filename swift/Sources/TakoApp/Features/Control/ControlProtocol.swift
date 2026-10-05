@@ -27,6 +27,12 @@ enum ControlScope: String, CaseIterable, Sendable, Codable {
             return []
         case "tree", "text", "last", "find", "events", "screenshot", "history":
             return [.read]
+        case "activity":
+            let act = args["action"]?.string ?? args["subcommand"]?.string ?? "get"
+            if act == "clear" {
+                return [.approval]
+            }
+            return [.read]
         case "send", "type", "key", "broadcast":
             return [.input]
         case "input":
