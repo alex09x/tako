@@ -113,6 +113,30 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
     serde_json::from_slice(&answer).map_err(|e| sent(format!("unreadable answer: {e}")))
 }
 
+/// Connects, sends the streaming request, and calls `on_line` for each received line.
+pub fn stream_events<F>(path: &str, request: &Value, mut on_line: F) -> Result<(), Failure>
+where
+    F: FnMut(&str) -> Result<(), String>,
+{
+    let unsent = |message: String| Failure { message, sent: false };
+    let sent = |message: String| Failure { message, sent: true };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stream = connect(path, deadline).map_err(unsent)?;
+    let mut line = serde_json::to_vec(request).map_err(|e| unsent(e.to_string()))?;
+    line.push(b'\n');
+    stream.write_all(&line).map_err(|e| unsent(e.to_string()))?;
+
+    use std::io::BufRead;
+    let reader = std::io::BufReader::new(stream);
+    for line_res in reader.lines() {
+        let text = line_res.map_err(|e| sent(e.to_string()))?;
+        if text.trim().is_empty() { continue; }
+        on_line(&text).map_err(sent)?;
+    }
+    Ok(())
+}
+
+
 fn left(deadline: Instant) -> Result<Duration, String> {
     let now = Instant::now();
     if now >= deadline {
@@ -289,5 +313,58 @@ mod tests {
         let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
                                   Duration::from_secs(2), 1024).unwrap_err();
         assert!(err.contains("larger than"), "{err}");
+    }
+
+    #[test]
+    fn stream_events_yields_lines_until_closed() {
+        let (path, listener) = listen("stream");
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(s.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let req: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(req["cmd"], "events");
+            writeln!(s, "{}", serde_json::json!({"cursor": 1, "type": "command_start"})).unwrap();
+            writeln!(s, "{}", serde_json::json!({"cursor": 2, "type": "command_end"})).unwrap();
+            writeln!(s, "{}", serde_json::json!({"cursor": 3, "type": "status"})).unwrap();
+            s.flush().unwrap();
+            drop(s);
+        });
+
+        let mut lines = Vec::new();
+        let res = stream_events(path.to_str().unwrap(), &serde_json::json!({"cmd": "events"}), |l| {
+            lines.push(l.to_string());
+            Ok(())
+        });
+        server.join().unwrap();
+        assert!(res.is_ok());
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].contains("\"cursor\":1"));
+        assert!(lines[1].contains("\"cursor\":2"));
+        assert!(lines[2].contains("\"cursor\":3"));
+    }
+
+    #[test]
+    fn stream_events_aborts_when_callback_fails() {
+        let (path, listener) = listen("stream-abort");
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            writeln!(s, "{}", serde_json::json!({"cursor": 1})).unwrap();
+            writeln!(s, "{}", serde_json::json!({"cursor": 2})).unwrap();
+            s.flush().unwrap();
+        });
+
+        let mut count = 0;
+        let res = stream_events(path.to_str().unwrap(), &serde_json::json!({"cmd": "events"}), |_| {
+            count += 1;
+            Err("stop requested".to_string())
+        });
+        server.join().unwrap();
+        assert!(res.is_err());
+        assert_eq!(count, 1);
+        let err = res.unwrap_err();
+        assert!(err.sent);
+        assert!(err.contains("stop requested"));
     }
 }
