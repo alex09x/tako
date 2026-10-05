@@ -1581,6 +1581,17 @@ impl Terminal {
         self.graphics.image(id)
     }
 
+    /// Maximum image memory (in bytes) allowed for this terminal.
+    pub fn max_image_memory_bytes(&self) -> u64 {
+        self.graphics.max_memory_bytes()
+    }
+
+    /// Sets the maximum image memory (in bytes) allowed for this terminal,
+    /// evicting oldest images if current memory exceeds the new limit.
+    pub fn set_max_image_memory_bytes(&mut self, max: u64) {
+        self.graphics.set_max_memory_bytes(max);
+    }
+
     /// The active 256-color indexed palette (customizable via OSC 4/104).
     pub fn palette(&self) -> &Palette {
         &self.palette
@@ -4225,6 +4236,117 @@ impl Perform for Terminal {
         }
         if params[0] == b"1337" {
             // iTerm2 extensions
+            if params.len() > 1 && params[1].starts_with(b"File=") {
+                let joined: Vec<u8> = params[1..].join(&b';');
+                if let Some(colon_idx) = joined.iter().position(|&b| b == b':') {
+                    let args_bytes = &joined[5..colon_idx]; // skip "File="
+                    let payload_bytes = &joined[colon_idx + 1..];
+                    let args_str = String::from_utf8_lossy(args_bytes);
+                    let mut is_inline = false;
+                    let mut width_arg: Option<String> = None;
+                    let mut height_arg: Option<String> = None;
+                    for part in args_str.split(';') {
+                        if let Some((k, v)) = part.split_once('=') {
+                            match k.trim() {
+                                "inline" => is_inline = v.trim() == "1",
+                                "width" => width_arg = Some(v.trim().to_string()),
+                                "height" => height_arg = Some(v.trim().to_string()),
+                                _ => {}
+                            }
+                        }
+                    }
+                    if is_inline {
+                        use base64::Engine as _;
+                        let cleaned: Vec<u8> = payload_bytes
+                            .iter()
+                            .copied()
+                            .filter(|b| !b.is_ascii_whitespace())
+                            .collect();
+                        if let Ok(image_data) =
+                            base64::engine::general_purpose::STANDARD.decode(&cleaned)
+                        {
+                            let (detected_w, detected_h) =
+                                crate::graphics::detect_image_dimensions(&image_data)
+                                    .unwrap_or((0, 0));
+                            let grid_rows = self.active_grid().rows();
+                            let grid_cols = self.active_grid().cols();
+                            let cell_h = if grid_rows > 0 && self.height_px > 0 {
+                                (self.height_px / grid_rows as u32).max(1)
+                            } else {
+                                20
+                            };
+                            let cell_w = if grid_cols > 0 && self.width_px > 0 {
+                                (self.width_px / grid_cols as u32).max(1)
+                            } else {
+                                10
+                            };
+
+                            let mut pixel_w = detected_w;
+                            let mut pixel_h = detected_h;
+                            let mut rows_span = None;
+
+                            if let Some(ref h) = height_arg {
+                                if let Some(px) =
+                                    h.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
+                                {
+                                    pixel_h = px;
+                                    rows_span =
+                                        Some(((px + cell_h - 1) / cell_h).max(1) as usize);
+                                } else if let Ok(cells) = h.parse::<usize>() {
+                                    rows_span = Some(cells.max(1));
+                                    if pixel_h == 0 {
+                                        pixel_h = (cells as u32) * cell_h;
+                                    }
+                                }
+                            }
+                            if let Some(ref w) = width_arg {
+                                if let Some(px) =
+                                    w.strip_suffix("px").and_then(|s| s.parse::<u32>().ok())
+                                {
+                                    pixel_w = px;
+                                } else if let Ok(cells) = w.parse::<usize>() {
+                                    if pixel_w == 0 {
+                                        pixel_w = (cells as u32) * cell_w;
+                                    }
+                                }
+                            }
+
+                            let rows = rows_span.unwrap_or_else(|| {
+                                if pixel_h > 0 {
+                                    ((pixel_h + cell_h - 1) / cell_h).max(1) as usize
+                                } else {
+                                    1
+                                }
+                            });
+
+                            if let Ok((image_id, placement_id)) = self
+                                .graphics
+                                .store_and_place_raw_image(
+                                    crate::graphics::ImageFormat::Png,
+                                    pixel_w,
+                                    pixel_h,
+                                    image_data,
+                                )
+                            {
+                                let place_row = self.cursor.row;
+                                let place_col = self.cursor.col;
+                                self.graphics_placements.push(GraphicsPlacement {
+                                    image_id,
+                                    placement_id,
+                                    row: place_row,
+                                    col: place_col,
+                                });
+                                for _ in 0..rows {
+                                    self.line_feed();
+                                }
+                                self.cursor.col = 0;
+                                self.pending_wrap = false;
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             if let Some(rest) = params.get(1) {
                 let rest = String::from_utf8_lossy(rest);
                 if let Some(b64) = rest.strip_prefix("Copy=:") {
@@ -5084,17 +5206,48 @@ impl Perform for Terminal {
             None => (rest, &[][..]),
         };
         let control = String::from_utf8_lossy(control);
-        match self.graphics.handle(&control, payload) {
+        let resp = self.graphics.handle(&control, payload);
+        if let Some(reply) = self.graphics.take_last_reply() {
+            self.response.push_str(&reply);
+        }
+        match resp {
             GraphicsResponse::Displayed {
                 image_id,
                 placement_id,
             } => {
+                let place_row = self.cursor.row;
+                let place_col = self.cursor.col;
                 self.graphics_placements.push(GraphicsPlacement {
                     image_id,
                     placement_id,
-                    row: self.cursor.row,
-                    col: self.cursor.col,
+                    row: place_row,
+                    col: place_col,
                 });
+                let cmd = crate::graphics::parse_control_data(&control);
+                if cmd.get_u32('C') != Some(1) {
+                    let rows_span = if let Some(r) = cmd.get_u32('r') {
+                        (r as usize).max(1)
+                    } else if let Some(img) = self.graphics.image(image_id) {
+                        if img.height > 0 {
+                            let grid_rows = self.active_grid().rows();
+                            let cell_h = if grid_rows > 0 && self.height_px > 0 {
+                                (self.height_px / grid_rows as u32).max(1)
+                            } else {
+                                20
+                            };
+                            ((img.height + cell_h - 1) / cell_h).max(1) as usize
+                        } else {
+                            1
+                        }
+                    } else {
+                        1
+                    };
+                    for _ in 0..rows_span {
+                        self.line_feed();
+                    }
+                    self.cursor.col = 0;
+                    self.pending_wrap = false;
+                }
             }
             GraphicsResponse::Deleted { image_ids } => {
                 self.graphics_placements

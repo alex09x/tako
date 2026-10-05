@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Kitty Graphics Protocol support.
 //!
 //! Upstream speaks the Kitty Graphics Protocol
@@ -144,10 +154,22 @@ pub enum GraphicsResponse {
     Displayed { image_id: u32, placement_id: u32 },
     /// Images removed (`a=d`). Empty when nothing matched.
     Deleted { image_ids: Vec<u32> },
+    /// Query reply to send back to client (`a=q`).
+    Query { reply: String },
     /// A well-formed command this implementation does not support.
     Unsupported,
     /// A malformed or unsatisfiable command.
     Error(String),
+}
+
+impl GraphicsResponse {
+    /// Returns the reply string for responses that require communication back to the host.
+    pub fn reply(&self) -> Option<&str> {
+        match self {
+            Self::Query { reply } => Some(reply.as_str()),
+            _ => None,
+        }
+    }
 }
 
 /// Key for an in-progress chunked transmission.
@@ -171,6 +193,9 @@ pub(crate) struct PendingTransfer {
     pub data: Vec<u8>,
 }
 
+/// Default maximum memory capacity allocated for stored images per terminal pane (64 MiB).
+pub const DEFAULT_MAX_IMAGE_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Image store, placement list, and chunk-assembly state for one terminal.
 #[derive(Debug)]
 pub struct GraphicsState {
@@ -179,6 +204,8 @@ pub struct GraphicsState {
     pending: HashMap<ChunkKey, PendingTransfer>,
     next_image_id: u32,
     next_image_generation: u64,
+    max_memory_bytes: u64,
+    last_reply: Option<String>,
 }
 
 impl GraphicsState {
@@ -218,7 +245,82 @@ impl GraphicsState {
             pending: HashMap::new(),
             next_image_id: 1,
             next_image_generation: 1,
+            max_memory_bytes: DEFAULT_MAX_IMAGE_MEMORY_BYTES,
+            last_reply: None,
         }
+    }
+
+    /// Takes the pending PTY response message for the last handled command, if any.
+    pub fn take_last_reply(&mut self) -> Option<String> {
+        self.last_reply.take()
+    }
+
+    /// Current configured memory cap for this pane.
+    pub fn max_memory_bytes(&self) -> u64 {
+        self.max_memory_bytes
+    }
+
+    /// Sets the maximum memory capacity (in bytes) and prunes any excess stored images.
+    pub fn set_max_memory_bytes(&mut self, max: u64) {
+        self.max_memory_bytes = max;
+        self.enforce_memory_cap(0);
+    }
+
+    /// Enforces the memory cap by evicting oldest images (by lowest generation).
+    /// Returns false if `incoming_bytes` alone exceeds the configured maximum memory cap.
+    pub fn enforce_memory_cap(&mut self, incoming_bytes: u64) -> bool {
+        if incoming_bytes > self.max_memory_bytes {
+            return false;
+        }
+        while self.retained_capacity_bytes().saturating_add(incoming_bytes) > self.max_memory_bytes
+            && !self.images.is_empty()
+        {
+            if let Some(&oldest_id) = self.images.iter().min_by_key(|(_, img)| img.generation).map(|(id, _)| id) {
+                self.images.remove(&oldest_id);
+                self.placements.retain(|p| p.image_id != oldest_id);
+                self.pending.remove(&ChunkKey::Image(oldest_id));
+            } else {
+                break;
+            }
+        }
+        true
+    }
+
+    /// Stores a raw image (e.g. from an iTerm2 OSC 1337 File sequence) and records a placement for it.
+    pub fn store_and_place_raw_image(
+        &mut self,
+        format: ImageFormat,
+        width: u32,
+        height: u32,
+        pixels: Vec<u8>,
+    ) -> Result<(u32, u32), String> {
+        let size = pixels.len() as u64;
+        if !self.enforce_memory_cap(size) {
+            return Err("image exceeds per-pane memory cap".into());
+        }
+        let (width, height) = if width == 0 || height == 0 {
+            detect_image_dimensions(&pixels).unwrap_or((width, height))
+        } else {
+            (width, height)
+        };
+        let image_id = self.allocate_image_id();
+        let generation = self.allocate_image_generation();
+        let placement_id = 1;
+        self.images.insert(
+            image_id,
+            StoredImage {
+                format,
+                width,
+                height,
+                generation,
+                pixels,
+            },
+        );
+        self.placements.push(Placement {
+            image_id,
+            placement_id,
+        });
+        Ok((image_id, placement_id))
     }
 
     /// Access all stored images (for checkpoint export).
@@ -249,13 +351,17 @@ impl GraphicsState {
         next_image_id: u32,
         next_image_generation: u64,
     ) -> Self {
-        Self {
+        let mut state = Self {
             images,
             placements,
             pending,
             next_image_id: next_image_id.max(1),
             next_image_generation: next_image_generation.max(1),
-        }
+            max_memory_bytes: DEFAULT_MAX_IMAGE_MEMORY_BYTES,
+            last_reply: None,
+        };
+        state.enforce_memory_cap(0);
+        state
     }
 
     /// Handle one APC graphics command.
@@ -263,16 +369,44 @@ impl GraphicsState {
     /// `control_data` is the text between `ESC _ G` and `;`, `payload` the
     /// bytes between `;` and `ESC \`.
     pub fn handle(&mut self, control_data: &str, payload: &[u8]) -> GraphicsResponse {
+        self.last_reply = None;
         let cmd = parse_control_data(control_data);
 
-        match cmd.get_char('a') {
-            Some('t') => self.transmit(&cmd, payload, false),
-            Some('T') => self.transmit(&cmd, payload, true),
-            Some('p') => self.display_stored(&cmd),
-            Some('d') => self.delete(&cmd),
-            Some(other) => GraphicsResponse::Error(format!("unsupported action a={other}")),
-            None => GraphicsResponse::Error("missing or invalid action key 'a'".to_string()),
+        let action = match (cmd.get('a'), cmd.get_char('a')) {
+            (Some(_), None) => return GraphicsResponse::Error("invalid action key 'a'".to_string()),
+            (Some(_), Some(ch)) => ch,
+            (None, _) => 't', // Kitty protocol default action is 't' (transmit)
+        };
+
+        let resp = match action {
+            't' => self.transmit(&cmd, payload, false),
+            'T' => self.transmit(&cmd, payload, true),
+            'p' => self.display_stored(&cmd),
+            'd' => self.delete(&cmd),
+            'q' => self.query(&cmd, payload),
+            other => GraphicsResponse::Error(format!("unsupported action a={other}")),
+        };
+
+        if cmd.get_u32('q') == Some(2) {
+            match &resp {
+                GraphicsResponse::Displayed { image_id, placement_id } => {
+                    self.last_reply = Some(format!("\x1b_Gi={image_id},p={placement_id};OK\x1b\\"));
+                }
+                GraphicsResponse::Stored { image_id } => {
+                    self.last_reply = Some(format!("\x1b_Gi={image_id};OK\x1b\\"));
+                }
+                GraphicsResponse::Deleted { .. } => {
+                    self.last_reply = Some("\x1b_G;OK\x1b\\".to_string());
+                }
+                _ => {}
+            }
+        } else if let GraphicsResponse::Error(ref msg) = resp {
+            if cmd.get_u32('q') != Some(1) && action == 'q' {
+                self.last_reply = Some(format!("\x1b_G;{msg}\x1b\\"));
+            }
         }
+
+        resp
     }
 
     /// The stored image with `id`, if any.
@@ -331,6 +465,10 @@ impl GraphicsState {
             height: cmd.get_u32('v').unwrap_or(0),
             data: Vec::new(),
         });
+        if (entry.data.len() + chunk.len()) as u64 > self.max_memory_bytes {
+            self.pending.remove(&key);
+            return GraphicsResponse::Error("image transfer exceeds per-pane memory cap".to_string());
+        }
         entry.data.extend_from_slice(&chunk);
 
         if more {
@@ -358,6 +496,11 @@ impl GraphicsState {
             Some(id) => id,
             None => self.allocate_image_id(),
         };
+
+        if !self.enforce_memory_cap(transfer.data.capacity() as u64) {
+            return GraphicsResponse::Error("image exceeds per-pane memory cap".to_string());
+        }
+
         // Allocate from store-wide state rather than deriving this from the
         // current entry. A renderer may retain a texture after an image is
         // deleted, so delete + retransmit under the same explicit ID must not
@@ -441,6 +584,49 @@ impl GraphicsState {
         }
     }
 
+    /// `a=q`: query graphics protocol support.
+    fn query(&mut self, cmd: &GraphicsCommand, _payload: &[u8]) -> GraphicsResponse {
+        let medium = cmd.get_char('t').unwrap_or('d');
+        if medium != 'd' {
+            let mut keys = Vec::new();
+            if let Some(i) = cmd.get_u32('i') {
+                keys.push(format!("i={i}"));
+            } else if let Some(big_i) = cmd.get_u32('I') {
+                keys.push(format!("I={big_i}"));
+            }
+            let key_str = if keys.is_empty() { String::new() } else { format!("{};", keys.join(",")) };
+            let reply = format!("\x1b_G{}ENOTSUP\x1b\\", key_str);
+            self.last_reply = Some(reply.clone());
+            return GraphicsResponse::Query { reply };
+        }
+
+        let mut keys = Vec::new();
+        if let Some(i) = cmd.get_u32('i') {
+            keys.push(format!("i={i}"));
+        } else if let Some(big_i) = cmd.get_u32('I') {
+            keys.push(format!("I={big_i}"));
+        }
+        if let Some(p) = cmd.get_u32('p') {
+            keys.push(format!("p={p}"));
+        }
+        if let Some(s) = cmd.get_u32('s') {
+            keys.push(format!("s={s}"));
+        }
+        if let Some(v) = cmd.get_u32('v') {
+            keys.push(format!("v={v}"));
+        }
+
+        let key_str = if keys.is_empty() {
+            String::new()
+        } else {
+            format!("{};", keys.join(","))
+        };
+
+        let reply = format!("\x1b_G{}OK\x1b\\", key_str);
+        self.last_reply = Some(reply.clone());
+        GraphicsResponse::Query { reply }
+    }
+
     /// Next id not already taken by a stored image.
     fn allocate_image_id(&mut self) -> u32 {
         while self.images.contains_key(&self.next_image_id) {
@@ -464,22 +650,128 @@ impl Default for GraphicsState {
     }
 }
 
-/// The largest PNG side taken from its own header: Metal's texture limit on
-/// Apple GPUs. A few hundred bytes of PNG can claim any size, and everything
-/// downstream allocates width x height x 4 before it can refuse.
-const MAX_PNG_SIDE: u32 = 16_384;
+/// The largest image side taken from its own header: Metal's texture limit on
+/// Apple GPUs. A few hundred bytes of PNG/JPEG/GIF can claim any size, and
+/// downstream allocation must stay bounded.
+pub const MAX_PNG_SIDE: u32 = 16_384;
+pub const MAX_IMAGE_SIDE: u32 = MAX_PNG_SIDE;
 
 /// Width and height from a PNG's IHDR chunk, which the format puts first:
 /// the 8-byte signature, the chunk length, "IHDR", then width and height as
 /// big-endian u32s. None for anything that is not a PNG of a drawable size.
-fn png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+pub fn png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     if data.len() < 24 || &data[..8] != b"\x89PNG\r\n\x1a\n" || &data[12..16] != b"IHDR" {
         return None;
     }
     let width = u32::from_be_bytes(data[16..20].try_into().ok()?);
     let height = u32::from_be_bytes(data[20..24].try_into().ok()?);
-    let drawable = |side: u32| (1..=MAX_PNG_SIDE).contains(&side);
+    let drawable = |side: u32| (1..=MAX_IMAGE_SIDE).contains(&side);
     (drawable(width) && drawable(height)).then_some((width, height))
+}
+
+/// Width and height from a GIF header (GIF87a / GIF89a).
+/// Bytes 6..8 width (little-endian u16), bytes 8..10 height (little-endian u16).
+pub fn gif_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 10 {
+        return None;
+    }
+    if &data[..6] != b"GIF87a" && &data[..6] != b"GIF89a" {
+        return None;
+    }
+    let width = u16::from_le_bytes(data[6..8].try_into().ok()?) as u32;
+    let height = u16::from_le_bytes(data[8..10].try_into().ok()?) as u32;
+    let drawable = |side: u32| (1..=MAX_IMAGE_SIDE).contains(&side);
+    (drawable(width) && drawable(height)).then_some((width, height))
+}
+
+/// Width and height parsed from a JPEG Start Of Frame (SOF) marker.
+pub fn jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+        return None;
+    }
+    let mut i = 2;
+    while i + 1 < data.len() {
+        if data[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        while i < data.len() && data[i] == 0xFF {
+            i += 1;
+        }
+        if i >= data.len() {
+            break;
+        }
+        let marker = data[i];
+        i += 1;
+        if marker == 0xD8 || marker == 0xD9 || (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
+            continue;
+        }
+        if i + 2 > data.len() {
+            break;
+        }
+        let len = u16::from_be_bytes(data[i..i + 2].try_into().ok()?) as usize;
+        if len < 2 || i + len > data.len() {
+            break;
+        }
+        if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
+            if len >= 7 && i + 7 <= data.len() {
+                let height = u16::from_be_bytes(data[i + 3..i + 5].try_into().ok()?) as u32;
+                let width = u16::from_be_bytes(data[i + 5..i + 7].try_into().ok()?) as u32;
+                let drawable = |side: u32| (1..=MAX_IMAGE_SIDE).contains(&side);
+                if drawable(width) && drawable(height) {
+                    return Some((width, height));
+                }
+            }
+            break;
+        }
+        i += len;
+    }
+    None
+}
+
+/// Width and height parsed from a WebP container.
+pub fn webp_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 16 || &data[..4] != b"RIFF" || &data[8..12] != b"WEBP" {
+        return None;
+    }
+    let chunk_type = &data[12..16];
+    let drawable = |side: u32| (1..=MAX_IMAGE_SIDE).contains(&side);
+    if chunk_type == b"VP8 " && data.len() >= 30 {
+        if &data[23..26] == b"\x9d\x01\x2a" {
+            let width = (u16::from_le_bytes(data[26..28].try_into().ok()?) & 0x3fff) as u32;
+            let height = (u16::from_le_bytes(data[28..30].try_into().ok()?) & 0x3fff) as u32;
+            if drawable(width) && drawable(height) {
+                return Some((width, height));
+            }
+        }
+    } else if chunk_type == b"VP8L" && data.len() >= 25 {
+        if data[20] == 0x2f {
+            let b1 = data[21] as u32;
+            let b2 = data[22] as u32;
+            let b3 = data[23] as u32;
+            let b4 = data[24] as u32;
+            let width = 1 + (b1 | ((b2 & 0x3f) << 8));
+            let height = 1 + (((b2 >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10)));
+            if drawable(width) && drawable(height) {
+                return Some((width, height));
+            }
+        }
+    } else if chunk_type == b"VP8X" && data.len() >= 30 {
+        let width = 1 + (data[24] as u32 | ((data[25] as u32) << 8) | ((data[26] as u32) << 16));
+        let height = 1 + (data[27] as u32 | ((data[28] as u32) << 8) | ((data[29] as u32) << 16));
+        if drawable(width) && drawable(height) {
+            return Some((width, height));
+        }
+    }
+    None
+}
+
+/// Detect image dimensions from supported image formats (PNG, GIF, JPEG, WebP).
+pub fn detect_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    png_dimensions(data)
+        .or_else(|| gif_dimensions(data))
+        .or_else(|| jpeg_dimensions(data))
+        .or_else(|| webp_dimensions(data))
 }
 
 #[cfg(test)]
@@ -872,14 +1164,128 @@ mod tests {
     }
 
     #[test]
+    fn missing_action_defaults_to_transmit() {
+        let mut state = GraphicsState::new();
+        let pixel = [0x55_u8, 0x66, 0x77, 0x88];
+        // Without 'a', action defaults to 't' (transmit).
+        let resp = state.handle("t=d,f=32,s=1,v=1,i=99", b64(&pixel).as_bytes());
+        assert_eq!(resp, GraphicsResponse::Stored { image_id: 99 });
+        assert_eq!(state.image(99).unwrap().pixels, pixel.to_vec());
+    }
+
+    #[test]
+    fn query_graphics_protocol_replies_ok_and_reflects_keys() {
+        let mut state = GraphicsState::new();
+        let resp = state.handle("a=q,t=d,i=1,s=100,v=50", b"");
+        assert_eq!(
+            resp,
+            GraphicsResponse::Query {
+                reply: "\x1b_Gi=1,s=100,v=50;OK\x1b\\".to_string()
+            }
+        );
+        assert_eq!(
+            state.take_last_reply(),
+            Some("\x1b_Gi=1,s=100,v=50;OK\x1b\\".to_string())
+        );
+
+        // Query with unsupported medium returns ENOTSUP
+        let resp = state.handle("a=q,t=f,i=2", b"");
+        assert_eq!(
+            resp,
+            GraphicsResponse::Query {
+                reply: "\x1b_Gi=2;ENOTSUP\x1b\\".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn response_control_q2_generates_replies_for_displayed_and_deleted() {
+        let mut state = GraphicsState::new();
+        let pixel = [1_u8, 2, 3, 4];
+        state.handle("a=T,t=d,f=32,s=1,v=1,i=5,q=2", b64(&pixel).as_bytes());
+        assert_eq!(
+            state.take_last_reply(),
+            Some("\x1b_Gi=5,p=0;OK\x1b\\".to_string())
+        );
+
+        state.handle("a=d,d=i,i=5,q=2", b"");
+        assert_eq!(
+            state.take_last_reply(),
+            Some("\x1b_G;OK\x1b\\".to_string())
+        );
+    }
+
+    #[test]
+    fn memory_cap_enforces_limit_and_evicts_lru() {
+        let mut state = GraphicsState::new();
+        state.set_max_memory_bytes(10_000);
+
+        let img1 = vec![0x11_u8; 3_000];
+        let img2 = vec![0x22_u8; 3_000];
+        let img3 = vec![0x33_u8; 5_000];
+
+        state.store_and_place_raw_image(ImageFormat::Png, 10, 10, img1).unwrap();
+        state.store_and_place_raw_image(ImageFormat::Png, 10, 10, img2).unwrap();
+        assert_eq!(state.placements().len(), 2);
+
+        // img3 causes memory usage to exceed 10_000 bytes, evicting the oldest (img1)
+        state.store_and_place_raw_image(ImageFormat::Png, 10, 10, img3).unwrap();
+        assert!(state.image(1).is_none(), "oldest image evicted");
+        assert!(state.image(2).is_some());
+        assert!(state.image(3).is_some());
+
+        // Single image larger than entire cap is rejected
+        let huge = vec![0xFF_u8; 20_000];
+        assert!(state.store_and_place_raw_image(ImageFormat::Png, 10, 10, huge).is_err());
+    }
+
+    #[test]
+    fn detect_image_dimensions_handles_png_gif_jpeg_webp() {
+        let png = png_header(120, 80);
+        assert_eq!(detect_image_dimensions(&png), Some((120, 80)));
+
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend_from_slice(&200_u16.to_le_bytes());
+        gif.extend_from_slice(&150_u16.to_le_bytes());
+        assert_eq!(detect_image_dimensions(&gif), Some((200, 150)));
+
+        // Minimal valid JPEG SOF0 stream
+        let mut jpeg = vec![0xFF, 0xD8]; // SOI
+        jpeg.extend_from_slice(&[0xFF, 0xC0]); // SOF0
+        let sof_len = 11_u16;
+        jpeg.extend_from_slice(&sof_len.to_be_bytes());
+        jpeg.push(8); // precision
+        jpeg.extend_from_slice(&320_u16.to_be_bytes()); // height
+        jpeg.extend_from_slice(&640_u16.to_be_bytes()); // width
+        jpeg.push(3); // components
+        jpeg.extend_from_slice(&[1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]);
+        assert_eq!(detect_image_dimensions(&jpeg), Some((640, 320)));
+
+        // WebP VP8X extended header
+        let mut webp = b"RIFF".to_vec();
+        webp.extend_from_slice(&30_u32.to_le_bytes());
+        webp.extend_from_slice(b"WEBPVP8X");
+        webp.extend_from_slice(&10_u32.to_le_bytes()); // chunk size
+        webp.extend_from_slice(&[0, 0, 0, 0]); // flags
+        let w_minus_1 = 499_u32;
+        let h_minus_1 = 299_u32;
+        webp.extend_from_slice(&w_minus_1.to_le_bytes()[..3]);
+        webp.extend_from_slice(&h_minus_1.to_le_bytes()[..3]);
+        assert_eq!(detect_image_dimensions(&webp), Some((500, 300)));
+    }
+
+    #[test]
     fn missing_or_unknown_action_errors() {
         let mut state = GraphicsState::new();
-        assert!(matches!(
+        // Since action 'a' defaults to 't' (transmit), omitting 'a' when 't' medium is also omitted
+        // returns Unsupported (transmission without medium is unsupported).
+        assert_eq!(
             state.handle("f=32,s=1,v=1", b""),
-            GraphicsResponse::Error(_)
-        ));
+            GraphicsResponse::Unsupported
+        );
+        // Unknown action returns Error.
         assert!(matches!(
-            state.handle("a=q", b""),
+            state.handle("a=z", b""),
             GraphicsResponse::Error(_)
         ));
         // Multi-character action values are not valid either.

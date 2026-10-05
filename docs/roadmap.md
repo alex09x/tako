@@ -651,21 +651,19 @@ Done when a test can assert on the rendered look of a TUI through `takoctl` alon
 Done when reviewing an agent's change and sending batched feedback to it takes no other tool, and
 nothing is written to the repository by Tako.
 
-### [ ] D4. Inline images completeness
+### [x] D4. Inline images completeness
 
-- Close the kitty graphics gaps (A5) and support the common inline-image escape used by many
-  image-printing tools.
-- *Evaluate* sixel support against its memory and security cost.
-- Images count against a per-pane memory cap and are kept in snapshots only within the size
-  limit.
+- Kitty graphics gaps closed: default action `a=t`, query action `a=q`, and response control `q=2` returning PTY replies; cursor advances on placement unless `C=1`.
+- iTerm2 inline image escape supported (`OSC 1337 ; File=inline=1;... : <base64>`) with auto-detected dimensions across PNG, JPEG, GIF, and WebP.
+- Enforced per-pane memory cap (`max_memory_bytes`, default 64 MiB) with generation-based LRU eviction preventing memory exhaustion.
+- Sixel support evaluated in [`docs/sixel-evaluation.md`](sixel-evaluation.md) and rejected due to memory/security risks and CPU overhead.
 
 Done when the common image-printing tools show images correctly in Tako, and a hostile image
 stream cannot exceed the cap.
 
-### [ ] D5. Text sizing (*evaluate*)
+### [x] D5. Text sizing (*evaluate*)
 
-The text-sizing protocol (OSC 66) lets programs print larger headings in the grid. Decide with a
-written reason whether Tako supports it, based on adoption by tools people use.
+Evaluated in [`docs/text-sizing-evaluation.md`](text-sizing-evaluation.md). Closed as not planned due to lack of CLI/TUI tool adoption and the architectural degradation variable-sized text imposes on fixed-stride terminal grids, with rich formatting already provided via sandboxed overlays (Track D1).
 
 Done when: a written evaluation records current terminal tool adoption and either schedules an engine
 implementation or closes the item as not planned.

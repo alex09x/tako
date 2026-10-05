@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import XCTest
 @testable import TakoCoreUI
@@ -26,13 +36,13 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
 
     func testCheckpointVersionIsNegotiatedExplicitly() throws {
         let core = TakoCore(cols: 40, rows: 10)
-        XCTAssertEqual(core.checkpointVersion(), 3)
-        // v1 and v2 remain readable; v3 is what this build writes.
-        XCTAssertTrue(core.checkpointSupports(version: 1))
-        XCTAssertTrue(core.checkpointSupports(version: 2))
-        XCTAssertTrue(core.checkpointSupports(version: 3))
+        XCTAssertEqual(core.checkpointVersion(), 6)
+        // v1 through v5 remain readable; v6 is what this build writes.
+        for v in 1...6 {
+            XCTAssertTrue(core.checkpointSupports(version: UInt32(v)))
+        }
         XCTAssertFalse(core.checkpointSupports(version: 0))
-        XCTAssertFalse(core.checkpointSupports(version: 4))
+        XCTAssertFalse(core.checkpointSupports(version: 7))
         XCTAssertFalse(core.checkpointSupports(version: UInt32.max))
     }
 
@@ -42,7 +52,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
         let blob = try core.checkpointExport(flags: 0, maxBytes: 1 << 20)
 
         var newer = blob
-        newer.replaceSubrange(4..<8, with: withUnsafeBytes(of: UInt32(4).littleEndian) { Data($0) })
+        newer.replaceSubrange(4..<8, with: withUnsafeBytes(of: UInt32(7).littleEndian) { Data($0) })
         let forged = reseal(newer)
 
         let dest = TakoCore(cols: 20, rows: 6)
@@ -50,7 +60,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
             guard case TakoCheckpointError.UnsupportedVersion(let version) = error else {
                 return XCTFail("expected UnsupportedVersion, got \(error)")
             }
-            XCTAssertEqual(version, 4)
+            XCTAssertEqual(version, 7)
         }
         XCTAssertThrowsError(try dest.checkpointInspect(blob: forged)) { error in
             guard case TakoCheckpointError.UnsupportedVersion = error else {
@@ -77,7 +87,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
         // What inspect reports is what this build wrote, not a literal that
         // drifts the next time the container version moves.
         XCTAssertEqual(info.version, core.checkpointVersion())
-        XCTAssertEqual(info.version, 3)
+        XCTAssertEqual(info.version, 6)
         XCTAssertEqual(info.cols, 37)
         XCTAssertEqual(info.rows, 11)
         XCTAssertEqual(Int(info.payloadLen), blob.count - 20)
