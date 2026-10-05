@@ -261,4 +261,49 @@ struct SessionSidebarTests {
         #expect(items.count == 30)
         #expect(duration < 0.05) // Under 50ms (typically < 1ms)
     }
+
+    @Test func sidebarStoreObservesCrabTrackerAndSurfaceChangesInRealTime() async throws {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf1.title = "Tab 1"
+        surf2.title = "Tab 2"
+        surf1.crab.setStatus(.idle, text: nil)
+        surf2.crab.setStatus(.idle, text: nil)
+        win1.contentView = surf1
+        win2.contentView = surf2
+
+        Tako.CustomTabGroup.join(win2, to: win1, select: false)
+        let group = Tako.CustomTabGroup.group(for: win1)
+        group.select(win1) // win1 is active, win2 is background
+
+        // First read binds surface observers
+        let initialItems = store.items(for: win1)
+        #expect(initialItems.count == 2)
+        #expect(initialItems[1].status == .idle)
+        #expect(!initialItems[1].needsAttention)
+
+        var changeFired = false
+        let cancellable = store.objectWillChange.sink {
+            changeFired = true
+        }
+
+        // Change crab status on the background surface
+        surf2.crab.setStatus(.error, text: nil)
+
+        // Wait a beat for RunLoop delivery
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(changeFired)
+        cancellable.cancel()
+
+        // Recomputed items reflect the updated status and needsAttention on the background tab
+        let updatedItems = store.items(for: win1)
+        #expect(updatedItems[1].status == .error)
+        #expect(updatedItems[1].needsAttention)
+    }
 }

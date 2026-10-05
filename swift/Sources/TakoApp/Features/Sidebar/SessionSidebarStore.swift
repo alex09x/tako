@@ -19,6 +19,10 @@ final class SessionSidebarStore: ObservableObject {
     @Published var isShowing: Bool {
         didSet {
             defaults.set(isShowing, forKey: Self.isShowingKey)
+            if !isShowing {
+                surfaceSubscriptions.removeAll()
+                subscribedSurfaceIds.removeAll()
+            }
         }
     }
 
@@ -59,12 +63,38 @@ final class SessionSidebarStore: ObservableObject {
     private var gitCache: [String: LocalGitInspection.GitInfo] = [:]
     private var portsCache: [Int: [Int]] = [:]
 
+    private var surfaceSubscriptions: Set<AnyCancellable> = []
+    private var subscribedSurfaceIds: Set<UUID> = []
+
     init(defaults: UserDefaults = .tako) {
         self.defaults = defaults
         self.isShowing = defaults.bool(forKey: Self.isShowingKey)
         self.optInGit = defaults.bool(forKey: Self.optInGitKey)
         self.optInPorts = defaults.bool(forKey: Self.optInPortsKey)
         self.descriptions = defaults.dictionary(forKey: Self.descriptionsKey) as? [String: String] ?? [:]
+    }
+
+    /// Dynamically binds to live surfaces in the tab group to observe status, progress, elapsed, title, and pwd changes in real time.
+    func bindSurfaces(for window: NSWindow?) {
+        let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
+        let windows = group?.windows ?? (window.map { [$0] } ?? [])
+        let currentSurfaces = windows.flatMap { surfaces(in: $0) }
+        let currentIds = Set(currentSurfaces.map(\.id))
+
+        guard currentIds != subscribedSurfaceIds else { return }
+        subscribedSurfaceIds = currentIds
+        surfaceSubscriptions.removeAll()
+
+        for s in currentSurfaces {
+            s.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.objectWillChange.send() }
+                .store(in: &surfaceSubscriptions)
+            s.crab.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.objectWillChange.send() }
+                .store(in: &surfaceSubscriptions)
+        }
     }
 
     /// Sets or updates a custom user description for a tab or surface.
@@ -89,6 +119,8 @@ final class SessionSidebarStore: ObservableObject {
 
     /// Computes and returns the ordered sidebar items for the given window's tab group.
     func items(for window: NSWindow?) -> [SessionSidebarItem] {
+        bindSurfaces(for: window)
+
         let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
         let windows = group?.windows ?? (window.map { [$0] } ?? [])
         let selected = group?.selectedWindow ?? window

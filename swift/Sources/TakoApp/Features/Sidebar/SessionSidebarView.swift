@@ -59,6 +59,19 @@ struct SessionSidebarView: View {
             if let win = notif.object as? NSWindow {
                 hostingWindow = win
             }
+            store.objectWillChange.send()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoNewTab)) { _ in
+            store.objectWillChange.send()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .takoCloseTab)) { _ in
+            store.objectWillChange.send()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .takoMoveTab)) { _ in
+            store.objectWillChange.send()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoPresentTerminal)) { _ in
+            store.objectWillChange.send()
         }
     }
 
