@@ -103,6 +103,15 @@ struct SessionSidebarTests {
         }
     }
 
+    private func waitForPortsInspection(store: SessionSidebarStore, pids: [Int]) async throws {
+        for _ in 0..<50 {
+            if pids.allSatisfy({ store.hasPortsCache(for: $0) && !store.isPortsInspectionPending(for: $0) }) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+    }
+
     @Test func localGitInspectionReadsBranchAndDirtyStateLocallyWithoutNetwork() throws {
         let repoURL = try createTestGitRepository(branch: "feature/sidebar-test")
         defer { try? FileManager.default.removeItem(at: repoURL) }
@@ -769,5 +778,147 @@ struct SessionSidebarTests {
         // win2 is unfiltered and still shows its 1 normal tab
         #expect(store.items(for: win2).count == 1)
         #expect(store.items(for: win2)[0].title == "Backend Window")
+    }
+
+    @Test func sidebarFiltersPersistWhenSwitchingTabsInSameGroup() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf1 = Tako.SurfaceView(frame: .zero)
+        let surf2 = Tako.SurfaceView(frame: .zero)
+        surf1.title = "Frontend Client"
+        surf2.title = "Frontend Tests"
+        win1.contentView = surf1
+        win2.contentView = surf2
+
+        Tako.CustomTabGroup.join(win2, to: win1, select: false)
+        let group = Tako.CustomTabGroup.group(for: win1)
+        group.select(win1)
+
+        // Set filter on win1
+        store.setFilterText("Tests", for: win1)
+        store.setFilterNeedsAttention(true, for: win1)
+
+        // Switching to win2 in the same tab group preserves the filter
+        #expect(store.filterText(for: win2) == "Tests")
+        #expect(store.filterNeedsAttention(for: win2) == true)
+
+        let itemsFromWin2 = store.items(for: win2)
+        // With "Tests" and needsAttention (neither has attention), filtered list is empty
+        #expect(itemsFromWin2.isEmpty)
+
+        // Clear needsAttention for group
+        store.setFilterNeedsAttention(false, for: win2)
+        #expect(store.filterNeedsAttention(for: win1) == false)
+        let itemsWithTextOnly = store.items(for: win2)
+        #expect(itemsWithTextOnly.count == 1)
+        #expect(itemsWithTextOnly[0].title == "Frontend Tests")
+    }
+
+    @Test func commandProgressingThroughAttentionStatusInvalidatesInspectionsOnTerminalStatus() async throws {
+        let repoURL = try createTestGitRepository(branch: "branch-start")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf = Tako.SurfaceView(frame: .zero)
+        surf.pwd = repoURL.path
+        win.contentView = surf
+
+        _ = store.items(for: win)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
+        #expect(store.items(for: win)[0].gitBranch == "branch-start")
+
+        // Switch branch on disk
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/branch-interactive\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Command starts running
+        surf.crab.setStatus(.running, text: nil)
+
+        // Command enters attention state (.waitingForInput) - intermediate state, must NOT invalidate
+        surf.crab.setStatus(.waitingForInput, text: nil)
+        #expect(store.items(for: win)[0].gitBranch == "branch-start")
+
+        // Command completes (.done) - terminal state from attention state, MUST invalidate
+        surf.crab.setStatus(.done, text: nil)
+
+        _ = store.items(for: win)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
+        #expect(store.items(for: win)[0].gitBranch == "branch-interactive")
+    }
+
+    @Test func descendantProcessesAreInspectedForListeningPorts() {
+        LocalPortInspection.descendantPidsOverride = { rootPid in
+            if rootPid == 500 {
+                return [500, 501, 502]
+            }
+            return [rootPid]
+        }
+        LocalPortInspection.lsofOutputOverride = { pids in
+            #expect(pids.contains(500))
+            #expect(pids.contains(501))
+            #expect(pids.contains(502))
+            return "p501\nf4\nn*:8080\np502\nf5\nn127.0.0.1:3000\n"
+        }
+        defer {
+            LocalPortInspection.descendantPidsOverride = nil
+            LocalPortInspection.lsofOutputOverride = nil
+        }
+
+        let ports = LocalPortInspection.inspectListeningPorts(pid: 500)
+        #expect(ports == [3000, 8080])
+    }
+
+    @Test func listeningPortsAggregateAcrossSplitPanesInTab() async throws {
+        let pty1 = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory(), program: ["/bin/sleep", "30"]))
+        defer { pty1.terminate() }
+        let pty2 = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory(), program: ["/bin/sleep", "30"]))
+        defer { pty2.terminate() }
+
+        let pid1 = pty1.foregroundPID ?? Int(pty1.child)
+        let pid2 = pty2.foregroundPID ?? Int(pty2.child)
+
+        LocalPortInspection.descendantPidsOverride = { [$0] }
+        LocalPortInspection.lsofOutputOverride = { pids in
+            if pids.contains(pid1) {
+                return "p\(pid1)\nf3\nn*:8000\n"
+            } else if pids.contains(pid2) {
+                return "p\(pid2)\nf3\nn*:9000\n"
+            }
+            return ""
+        }
+        defer {
+            LocalPortInspection.descendantPidsOverride = nil
+            LocalPortInspection.lsofOutputOverride = nil
+        }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInPorts = true
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        let surf1 = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        let surf2 = Tako.SurfaceView(frame: NSRect(x: 200, y: 0, width: 200, height: 400))
+        surf1.title = "Pane 1"
+        surf2.title = "Pane 2"
+        surf1.pty = pty1
+        surf2.pty = pty2
+        container.addSubview(surf1)
+        container.addSubview(surf2)
+        win.contentView = container
+
+        // First read kicks off async inspection for both PIDs
+        _ = store.items(for: win)
+        try await waitForPortsInspection(store: store, pids: [pid1, pid2])
+
+        let finalItems = store.items(for: win)
+        #expect(finalItems.first?.listeningPorts == [8000, 9000])
     }
 }

@@ -14,8 +14,6 @@ struct SessionSidebarView: View {
     @State private var selectedIndex: Int = 0
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
-    @State private var filterNeedsAttention: Bool = false
-    @State private var filterText: String = ""
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isListFocused: Bool
 
@@ -36,12 +34,30 @@ struct SessionSidebarView: View {
         containingWindow ?? hostingWindow ?? NSApp?.keyWindow
     }
 
-    private var items: [SessionSidebarItem] {
-        store.items(
-            for: targetWindow,
-            filterText: filterText,
-            filterNeedsAttention: filterNeedsAttention
+    private var filterNeedsAttention: Bool {
+        store.filterNeedsAttention(for: targetWindow)
+    }
+
+    private var filterText: String {
+        store.filterText(for: targetWindow)
+    }
+
+    private var filterNeedsAttentionBinding: Binding<Bool> {
+        Binding(
+            get: { store.filterNeedsAttention(for: targetWindow) },
+            set: { store.setFilterNeedsAttention($0, for: targetWindow) }
         )
+    }
+
+    private var filterTextBinding: Binding<String> {
+        Binding(
+            get: { store.filterText(for: targetWindow) },
+            set: { store.setFilterText($0, for: targetWindow) }
+        )
+    }
+
+    private var items: [SessionSidebarItem] {
+        store.items(for: targetWindow)
     }
 
     public var body: some View {
@@ -145,14 +161,14 @@ struct SessionSidebarView: View {
                     .font(.system(size: 11))
                     .foregroundColor(Color(nsColor: Palette.dim))
 
-                TextField("Filter tabs...", text: $filterText)
+                TextField("Filter tabs...", text: filterTextBinding)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(Color(nsColor: Palette.activeText))
                     .focused($isSearchFocused)
 
                 if !filterText.isEmpty {
-                    Button(action: { filterText = "" }) {
+                    Button(action: { store.setFilterText("", for: targetWindow) }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(Color(nsColor: Palette.dim))
@@ -167,7 +183,7 @@ struct SessionSidebarView: View {
 
             // Filter button & Opt-ins
             HStack(spacing: 6) {
-                Button(action: { filterNeedsAttention.toggle() }) {
+                Button(action: { store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow) }) {
                     HStack(spacing: 4) {
                         Image(systemName: filterNeedsAttention ? "exclamationmark.circle.fill" : "exclamationmark.circle")
                             .font(.system(size: 10))

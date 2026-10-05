@@ -178,13 +178,73 @@ enum LocalGitInspection {
 
 /// Local process port inspection without network calls.
 enum LocalPortInspection {
-    /// Inspects TCP listening ports for a given process PID using local `lsof`.
+    #if DEBUG
+    static var descendantPidsOverride: ((Int) -> Set<Int>)? = nil
+    static var lsofOutputOverride: ((Set<Int>) -> String?)? = nil
+    #endif
+
+    /// Discovers all descendant process PIDs for a root PID (e.g. background server processes started by shell).
+    static func descendantPids(rootPid: Int) -> Set<Int> {
+        #if DEBUG
+        if let override = descendantPidsOverride {
+            return override(rootPid)
+        }
+        #endif
+        guard rootPid > 0 else { return [] }
+        var allPids: Set<Int> = [rootPid]
+        var currentLevel: Set<Int> = [rootPid]
+
+        // Traverse process tree up to 10 levels deep
+        for _ in 0..<10 {
+            guard !currentLevel.isEmpty else { break }
+            let pidArg = currentLevel.map(String.init).joined(separator: ",")
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            process.arguments = ["-P", pidArg]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                guard process.terminationStatus == 0,
+                      let output = String(data: data, encoding: .utf8) else { break }
+                var nextLevel: Set<Int> = []
+                for line in output.split(separator: "\n") {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let childPid = Int(trimmed), childPid > 0 {
+                        if allPids.insert(childPid).inserted {
+                            nextLevel.insert(childPid)
+                        }
+                    }
+                }
+                currentLevel = nextLevel
+            } catch {
+                break
+            }
+        }
+        return allPids
+    }
+
+    /// Inspects TCP listening ports for a given process PID and its descendants using local `lsof`.
     /// Off by default; called only when explicitly enabled.
     static func inspectListeningPorts(pid: Int) -> [Int] {
         guard pid > 0 else { return [] }
+        let pids = descendantPids(rootPid: pid)
+        guard !pids.isEmpty else { return [] }
+
+        #if DEBUG
+        if let override = lsofOutputOverride {
+            guard let output = override(pids) else { return [] }
+            return parsePorts(from: output)
+        }
+        #endif
+
+        let pidArg = pids.map(String.init).joined(separator: ",")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-a", "-iTCP", "-sTCP:LISTEN", "-p", "\(pid)", "-Fn"]
+        process.arguments = ["-a", "-iTCP", "-sTCP:LISTEN", "-P", "-n", "-p", pidArg, "-Fn"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -193,21 +253,25 @@ enum LocalPortInspection {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             guard let output = String(data: data, encoding: .utf8) else { return [] }
-            var ports: Set<Int> = []
-            for line in output.split(separator: "\n") {
-                if line.hasPrefix("n") {
-                    let address = line.dropFirst()
-                    if let colonIdx = address.lastIndex(of: ":") {
-                        let portStr = address[address.index(after: colonIdx)...]
-                        if let port = Int(portStr) {
-                            ports.insert(port)
-                        }
-                    }
-                }
-            }
-            return ports.sorted()
+            return parsePorts(from: output)
         } catch {
             return []
         }
+    }
+
+    static func parsePorts(from lsofOutput: String) -> [Int] {
+        var ports: Set<Int> = []
+        for line in lsofOutput.split(separator: "\n") {
+            if line.hasPrefix("n") {
+                let address = line.dropFirst()
+                if let colonIdx = address.lastIndex(of: ":") {
+                    let portStr = address[address.index(after: colonIdx)...]
+                    if let port = Int(portStr) {
+                        ports.insert(port)
+                    }
+                }
+            }
+        }
+        return ports.sorted()
     }
 }

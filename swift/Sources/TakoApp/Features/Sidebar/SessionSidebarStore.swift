@@ -145,6 +145,11 @@ final class SessionSidebarStore: ObservableObject {
                 self.surfaceSubscriptions.removeValue(forKey: s.id)
                 self.surfaceLastStatus.removeValue(forKey: s.id)
             }
+            let group = Tako.CustomTabGroup.group(for: win)
+            if group.windows.allSatisfy({ $0 === win }) {
+                self.groupFilterTexts.removeValue(forKey: ObjectIdentifier(group))
+                self.groupNeedsAttention.removeValue(forKey: ObjectIdentifier(group))
+            }
         }
     }
 
@@ -163,6 +168,16 @@ final class SessionSidebarStore: ObservableObject {
     /// Checks whether Git metadata is cached for a directory.
     func hasGitCache(for directory: String) -> Bool {
         gitCache[directory] != nil
+    }
+
+    /// Checks whether an asynchronous ports inspection is currently in flight for a PID.
+    func isPortsInspectionPending(for pid: Int) -> Bool {
+        pendingPortsInspections.contains(pid)
+    }
+
+    /// Checks whether ports are cached for a PID.
+    func hasPortsCache(for pid: Int) -> Bool {
+        portsCache[pid] != nil
     }
 
     /// Invalidates listening ports cache for a specific PID, discarding in-flight inspections.
@@ -212,8 +227,11 @@ final class SessionSidebarStore: ObservableObject {
                         guard let self, let s else { return }
                         let oldStatus = self.surfaceLastStatus[sid]
                         self.surfaceLastStatus[sid] = newStatus
-                        // If command finished, invalidate git/ports caches for this surface
-                        if let oldStatus, oldStatus != newStatus, (oldStatus == .running || oldStatus == .working) {
+                        // If command finished (entered terminal status from an active or attention state),
+                        // invalidate git/ports caches for this surface.
+                        let isTerminal = (newStatus == .done || newStatus == .error || newStatus == .idle || newStatus == .disconnected)
+                        let wasActiveOrAttention = (oldStatus == .running || oldStatus == .working || oldStatus == .waitingForInput || oldStatus == .needsApproval)
+                        if let oldStatus, oldStatus != newStatus, isTerminal, wasActiveOrAttention {
                             if let pwd = s.pwd {
                                 self.invalidateGitCache(for: pwd)
                             }
@@ -316,12 +334,18 @@ final class SessionSidebarStore: ObservableObject {
             }
 
             // Opt-in listening ports (no background polling on render cadence)
+            // Aggregates ports across all panes in this tab (winSurfaces)
             var ports: [Int]?
-            if optInPorts, let pty = surface?.pty {
-                let pid = pty.foregroundPID ?? Int(pty.child)
-                if pid > 0 {
+            if optInPorts {
+                var aggregatedPorts: Set<Int> = []
+                var hasInspectedPane = false
+                for s in winSurfaces {
+                    guard let pty = s.pty else { continue }
+                    let pid = pty.foregroundPID ?? Int(pty.child)
+                    guard pid > 0 else { continue }
                     if let cached = portsCache[pid] {
-                        ports = cached
+                        hasInspectedPane = true
+                        aggregatedPorts.formUnion(cached)
                     } else if !pendingPortsInspections.contains(pid) {
                         pendingPortsInspections.insert(pid)
                         let gen = portsGenerations[pid, default: 0]
@@ -338,6 +362,9 @@ final class SessionSidebarStore: ObservableObject {
                             }
                         }
                     }
+                }
+                if hasInspectedPane || !aggregatedPorts.isEmpty {
+                    ports = aggregatedPorts.sorted()
                 }
             }
 
@@ -400,12 +427,12 @@ final class SessionSidebarStore: ObservableObject {
             )
 
             // Filtering
-            let effectiveNeedsAttention = explicitFilterNeedsAttention ?? filterNeedsAttention(for: win)
+            let effectiveNeedsAttention = explicitFilterNeedsAttention ?? filterNeedsAttention(for: window ?? win)
             if effectiveNeedsAttention && !item.needsAttention {
                 continue
             }
 
-            let effectiveFilterText = explicitFilterText ?? filterText(for: win)
+            let effectiveFilterText = explicitFilterText ?? filterText(for: window ?? win)
             if !effectiveFilterText.isEmpty {
                 let query = effectiveFilterText.lowercased()
                 let matchesTitle = item.title.lowercased().contains(query)
