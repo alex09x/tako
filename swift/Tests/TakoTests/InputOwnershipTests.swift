@@ -125,11 +125,23 @@ import Testing
         #expect(records?[1].client == "takoctl")
         #expect(records?[1].action == "split")
 
-        // Clear log
-        store.clearLog(paneId: paneId)
+        // Clear log preserves lastCleared auditable event outside the erased log
+        store.clearLog(paneId: paneId, by: "user-admin")
         #expect(store.activityLog(for: paneId).isEmpty)
         #expect(store.lastActivityMark(for: paneId) == nil)
         #expect(store.exportLog(for: paneId) == "[]")
+        #expect(store.lastCleared(for: paneId)?.client == "user-admin")
+        #expect(store.lastCleared(for: paneId)?.action == "clear")
+
+        // Secure input denies log access and export
+        store.recordAutomation(paneId: paneId, client: "claude-code", action: "type")
+        #expect(store.activityLog(for: paneId).count == 1)
+        #expect(store.exportLog(for: paneId) != "[]")
+
+        store.setSecureInput(paneId: paneId, isSecure: true)
+        #expect(store.activityLog(for: paneId).isEmpty)
+        #expect(store.exportLog(for: paneId) == "[]")
+        #expect(store.exportLog(for: paneId, isSecureInput: true) == "[]")
     }
 
     @Test func testClearActivityMarkAndRemoval() {

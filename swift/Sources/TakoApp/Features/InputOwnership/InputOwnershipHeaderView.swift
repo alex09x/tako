@@ -14,12 +14,19 @@ import SwiftUI
 /// and displaying automated keystroke attribution marks (C7, G2).
 public struct InputOwnershipHeaderView: View {
     let paneId: UUID
+    var isSecureInput: Bool = false
     @ObservedObject var store: InputOwnershipStore = .shared
+    @ObservedObject var secureInput: SecureInput = .shared
     @State private var isHovered: Bool = false
     @State private var showActivityLog: Bool = false
 
-    public init(paneId: UUID) {
+    public init(paneId: UUID, isSecureInput: Bool = false) {
         self.paneId = paneId
+        self.isSecureInput = isSecureInput
+    }
+
+    private var effectiveSecure: Bool {
+        isSecureInput || secureInput.global || store.isSecureInput(for: paneId)
     }
 
     private var inputState: PaneInputState {
@@ -28,7 +35,7 @@ public struct InputOwnershipHeaderView: View {
 
     public var body: some View {
         let state = inputState
-        let showBar = state.isLocked || state.previousAgent != nil || state.lastActivityMark != nil || state.automationMayType || isHovered
+        let showBar = state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType || isHovered
 
         ZStack(alignment: .top) {
             // Subtle hover zone at the top edge of the pane
@@ -130,44 +137,47 @@ public struct InputOwnershipHeaderView: View {
                     }
 
                     // Automated activity attribution mark & popover (Track G2)
-                    if let mark = state.lastActivityMark {
-                        Button {
-                            showActivityLog.toggle()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.orange)
-                                Text("\(mark.client): \(mark.action)")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    // Hidden and disabled during secure input sessions for snapshot privacy.
+                    if !effectiveSecure {
+                        if let mark = state.lastActivityMark {
+                            Button {
+                                showActivityLog.toggle()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.orange)
+                                    Text("\(mark.client): \(mark.action)")
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.15))
+                                .clipShape(Capsule())
                             }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.15))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Automated input from \(mark.client). Click to view activity log.")
-                        .help("View automated activity log for this pane")
-                        .popover(isPresented: $showActivityLog) {
-                            PaneActivityLogView(paneId: paneId)
-                        }
-                    } else if isHovered {
-                        Button {
-                            showActivityLog.toggle()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .font(.system(size: 9))
-                                Text("Activity")
-                                    .font(.system(size: 10, weight: .medium))
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Automated input from \(mark.client). Click to view activity log.")
+                            .help("View automated activity log for this pane")
+                            .popover(isPresented: $showActivityLog) {
+                                PaneActivityLogView(paneId: paneId, isSecureInput: effectiveSecure)
                             }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .help("View automated activity log for this pane")
-                        .popover(isPresented: $showActivityLog) {
-                            PaneActivityLogView(paneId: paneId)
+                        } else if isHovered {
+                            Button {
+                                showActivityLog.toggle()
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.system(size: 9))
+                                    Text("Activity")
+                                        .font(.system(size: 10, weight: .medium))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .help("View automated activity log for this pane")
+                            .popover(isPresented: $showActivityLog) {
+                                PaneActivityLogView(paneId: paneId, isSecureInput: effectiveSecure)
+                            }
                         }
                     }
                 }
@@ -192,15 +202,23 @@ public struct InputOwnershipHeaderView: View {
 /// Popover view displaying the local bounded activity log for a pane (Track G2).
 public struct PaneActivityLogView: View {
     let paneId: UUID
+    var isSecureInput: Bool = false
     @ObservedObject var store: InputOwnershipStore = .shared
+    @ObservedObject var secureInput: SecureInput = .shared
     @State private var copied: Bool = false
 
-    public init(paneId: UUID) {
+    public init(paneId: UUID, isSecureInput: Bool = false) {
         self.paneId = paneId
+        self.isSecureInput = isSecureInput
+    }
+
+    private var effectiveSecure: Bool {
+        isSecureInput || secureInput.global || store.isSecureInput(for: paneId)
     }
 
     private var records: [InputActivityRecord] {
-        store.activityLog(for: paneId).reversed()
+        guard !effectiveSecure else { return [] }
+        return store.activityLog(for: paneId).reversed()
     }
 
     public var body: some View {
@@ -209,35 +227,56 @@ public struct PaneActivityLogView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Activity Log")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Local & bounded (\(records.count)/\(InputOwnershipStore.maxLogEntriesPerPane)) • Snapshot privacy")
+                    Text(effectiveSecure ? "Disabled during secure input" : "Local & bounded (\(records.count)/\(InputOwnershipStore.maxLogEntriesPerPane)) • Snapshot privacy")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(copied ? "Copied!" : "Copy JSON") {
-                    let json = store.exportLog(for: paneId)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(json, forType: .string)
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        copied = false
+                if !effectiveSecure {
+                    Button(copied ? "Copied!" : "Copy JSON") {
+                        guard !effectiveSecure else { return }
+                        let json = store.exportLog(for: paneId, isSecureInput: effectiveSecure)
+                        guard !json.isEmpty && json != "[]" else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(json, forType: .string)
+                        copied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            copied = false
+                        }
                     }
-                }
-                .controlSize(.small)
-                .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .disabled(effectiveSecure || records.isEmpty)
 
-                Button("Clear") {
-                    store.clearLog(paneId: paneId)
+                    Button("Clear") {
+                        guard !effectiveSecure else { return }
+                        store.clearLog(paneId: paneId, by: "ui")
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .disabled(effectiveSecure)
                 }
-                .controlSize(.small)
-                .buttonStyle(.bordered)
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
 
             Divider()
 
-            if records.isEmpty {
+            if effectiveSecure {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    Text("Activity log viewing and export are disabled during secure input.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(12)
+            } else if records.isEmpty {
                 VStack(spacing: 6) {
                     Spacer()
                     Image(systemName: "clock.arrow.circlepath")
@@ -246,6 +285,11 @@ public struct PaneActivityLogView: View {
                     Text("No automated activity recorded for this pane.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                    if let lastCleared = store.lastCleared(for: paneId) {
+                        Text("Cleared by \(lastCleared.client) at \(ISO8601DateFormatter().string(from: lastCleared.timestamp))")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

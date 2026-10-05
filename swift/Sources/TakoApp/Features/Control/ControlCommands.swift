@@ -923,10 +923,10 @@ enum ControlCommands {
                 guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
                     throw ControlError(.disabled, "secure-input panes cannot be read")
                 }
-                recordActivity(for: request, on: surface.id, action: "activity")
                 let act = request.args["action"]?.string ?? request.args["subcommand"]?.string ?? "get"
                 switch act {
                 case "get", "list":
+                    recordActivity(for: request, on: surface.id, action: "activity")
                     let records = InputOwnershipStore.shared.activityLog(for: surface.id)
                     let entries: [JSON] = records.map { record in
                         .object([
@@ -940,6 +940,13 @@ enum ControlCommands {
                         "count": .number(Double(entries.count)),
                         "entries": .array(entries)
                     ]
+                    if let lastCleared = InputOwnershipStore.shared.lastCleared(for: surface.id) {
+                        dict["last_cleared"] = .object([
+                            "client": .string(lastCleared.client),
+                            "action": .string(lastCleared.action),
+                            "timestamp": .string(ISO8601DateFormatter().string(from: lastCleared.timestamp))
+                        ])
+                    }
                     if let exportPath = request.args["export"]?.string ?? request.args["file"]?.string {
                         let jsonString = InputOwnershipStore.shared.exportLog(for: surface.id)
                         let expanded = (exportPath as NSString).expandingTildeInPath
@@ -948,11 +955,20 @@ enum ControlCommands {
                     }
                     return .ok(dict)
                 case "clear":
-                    InputOwnershipStore.shared.clearLog(paneId: surface.id)
-                    return .ok([
+                    let client = request.client ?? "control"
+                    InputOwnershipStore.shared.clearLog(paneId: surface.id, by: client)
+                    var dict: [String: JSON] = [
                         "id": .string(surface.id.uuidString.lowercased()),
                         "cleared": .bool(true)
-                    ])
+                    ]
+                    if let lastCleared = InputOwnershipStore.shared.lastCleared(for: surface.id) {
+                        dict["last_cleared"] = .object([
+                            "client": .string(lastCleared.client),
+                            "action": .string(lastCleared.action),
+                            "timestamp": .string(ISO8601DateFormatter().string(from: lastCleared.timestamp))
+                        ])
+                    }
+                    return .ok(dict)
                 case "export":
                     let jsonString = InputOwnershipStore.shared.exportLog(for: surface.id)
                     var dict: [String: JSON] = [

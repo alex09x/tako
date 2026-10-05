@@ -189,9 +189,13 @@ struct ControlProtocolTests {
         #expect(ControlScope.required(for: "version").isEmpty)
 
         // read
-        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history", "activity"] {
+        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history"] {
             #expect(ControlScope.required(for: cmd) == [.read])
         }
+        #expect(ControlScope.required(for: "activity") == [.read])
+        #expect(ControlScope.required(for: "activity", args: ["action": .string("get")]) == [.read])
+        #expect(ControlScope.required(for: "activity", args: ["action": .string("export")]) == [.read])
+        #expect(ControlScope.required(for: "activity", args: ["action": .string("clear")]) == [.approval])
         #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == [.read])
         #expect(ControlScope.required(for: "input", args: ["subcommand": .string("log")]) == [.read])
         #expect(ControlScope.required(for: "review") == [.read])
@@ -533,9 +537,13 @@ struct ControlServerTests {
         #expect(FileManager.default.fileExists(atPath: tmpFile))
         try? FileManager.default.removeItem(atPath: tmpFile)
 
-        // 4. Clear log
-        InputOwnershipStore.shared.clearLog(paneId: paneId)
+        // 4. Clear log records auditable clear event outside the erased log
+        InputOwnershipStore.shared.clearLog(paneId: paneId, by: "admin-agent")
         #expect(InputOwnershipStore.shared.activityLog(for: paneId).isEmpty)
+        let lastCleared = InputOwnershipStore.shared.lastCleared(for: paneId)
+        #expect(lastCleared != nil)
+        #expect(lastCleared?.client == "admin-agent")
+        #expect(lastCleared?.action == "clear")
     }
 
     @Test func aDirectoryOthersCanReachIsRefused() throws {

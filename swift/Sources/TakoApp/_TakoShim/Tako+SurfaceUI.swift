@@ -68,7 +68,10 @@ extension Tako {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
                 VStack(spacing: 4) {
                     BroadcastInputBannerView(paneId: surfaceView.id)
-                    InputOwnershipHeaderView(paneId: surfaceView.id)
+                    InputOwnershipHeaderView(
+                        paneId: surfaceView.id,
+                        isSecureInput: SecureInput.shared.isSecure(for: surfaceView) || surfaceView.isSecureInput
+                    )
                 }
                 if let searchState = surfaceView.searchState {
                     HStack {
