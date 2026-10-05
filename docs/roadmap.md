@@ -511,7 +511,7 @@ restore after a relaunch like everything else.
 Done when a developer can keep three projects open with their agents and switch between them
 without the tab bar of one getting in the way of another.
 
-### [ ] C2. Declarative layouts
+### [x] C2. Declarative layouts
 
 - A layout file describes windows, tabs, splits, working directories, titles, environment and
   the program to run in each pane (an argument vector, no shell unless asked).
