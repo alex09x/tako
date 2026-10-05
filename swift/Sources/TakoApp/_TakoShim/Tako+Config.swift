@@ -59,6 +59,9 @@ extension Tako {
             TakoKit.configStorage(config)?.errors ?? []
         }
 
+        /// Active passive regex triggers parsed from `trigger = ...` configuration lines (E7).
+        public private(set) var triggers: [TerminalRegexTrigger] = []
+
         /// Per-action keybind overrides parsed from `keybind = ...` lines,
         /// consulted by `keyboardShortcut(for:)` before the hardcoded
         /// defaults below.
@@ -86,6 +89,7 @@ extension Tako {
             }
             if let storage = TakoKit.configStorage(config) {
                 self.keybindOverrides = Self.parseKeybindOverrides(storage.keybindLines)
+                self.triggers = storage.triggerLines.compactMap { TerminalRegexTrigger.parse(line: $0) }
             }
         }
 
@@ -108,6 +112,7 @@ extension Tako {
                 self.theme = TerminalTheme.loadUserConfig()
             }
             self.keybindOverrides = TakoKit.configStorage(config).map { Self.parseKeybindOverrides($0.keybindLines) } ?? [:]
+            self.triggers = TakoKit.configStorage(config)?.triggerLines.compactMap { TerminalRegexTrigger.parse(line: $0) } ?? []
         }
 
         /// Loads a config from `path` (or the user's default files when `nil`), mirroring
@@ -561,6 +566,12 @@ extension Tako {
         /// Reads `editor`, falls back to $EDITOR, $VISUAL, or "code".
         var editor: String? {
             rawValue("editor")
+        }
+
+        /// Whether passive regex triggers are enabled (E7).
+        /// Reads `passive-regex-triggers`, default true.
+        var passiveRegexTriggers: Bool {
+            rawBool("passive-regex-triggers", default: true)
         }
 
         /// Which bundled shell-integration script, if any, is injected into

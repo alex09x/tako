@@ -73,6 +73,11 @@ commands:
   events                  stream terminal events as ndjson (--pane ID, --tab ID,
                           --workspace NAME, --type TYPES, --cursor N)
   history [QUERY]         search command history across sessions (--query Q, --limit N)
+  triggers [list]         list active passive regex triggers
+  triggers add PATTERN    register a passive trigger (--action highlight|notify|both,
+                          --color C, --style background|underline|box|bold, --title T, --all-focus)
+  triggers remove ID      remove a trigger by ID
+  triggers clear          clear dynamically registered triggers
   workspace [list]        list all workspaces and tab counts
   workspace current       show the active workspace
   workspace switch NAME   switch to workspace NAME (^⌥] / ^⌥[)
@@ -422,6 +427,18 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--query" => {
                 args.insert("query".into(), Value::String(value("--query")?));
             }
+            "--action" => {
+                args.insert("action".into(), Value::String(value("--action")?));
+            }
+            "--style" => {
+                args.insert("style".into(), Value::String(value("--style")?));
+            }
+            "--all-focus" => {
+                args.insert("only_unfocused".into(), Value::Bool(false));
+            }
+            "--only-unfocused" => {
+                args.insert("only_unfocused".into(), Value::Bool(true));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
@@ -438,6 +455,46 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 let q = positional.remove(0);
                 if !args.contains_key("query") {
                     args.insert("query".into(), Value::String(q));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
+        "triggers" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "list" => {
+                    args.insert("subcommand".into(), Value::String("list".into()));
+                }
+                "add" => {
+                    if positional.is_empty() {
+                        return Err("triggers add needs a PATTERN".into());
+                    }
+                    let pattern = positional.remove(0);
+                    args.insert("subcommand".into(), Value::String("add".into()));
+                    args.insert("pattern".into(), Value::String(pattern));
+                }
+                "remove" | "rm" | "delete" => {
+                    if positional.is_empty() {
+                        return Err("triggers remove needs a trigger ID".into());
+                    }
+                    let id = positional.remove(0);
+                    args.insert("subcommand".into(), Value::String("remove".into()));
+                    args.insert("id".into(), Value::String(id));
+                }
+                "clear" | "reset" => {
+                    args.insert("subcommand".into(), Value::String("clear".into()));
+                }
+                other => {
+                    return Err(format!(
+                        "unknown triggers subcommand \"{other}\"; use list, add, remove, or clear"
+                    ));
                 }
             }
             if !positional.is_empty() {
@@ -1472,8 +1529,56 @@ fn render(cmd: &str, result: &Value) -> String {
         "overlay" => overlay_report(result),
         "review" => review_report(result),
         "history" => history_report(result),
+        "triggers" => triggers_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn triggers_report(result: &Value) -> String {
+    if let Some(id) = result.get("id").and_then(Value::as_str) {
+        let pattern = result["pattern"].as_str().unwrap_or("");
+        let action = result["action"].as_str().unwrap_or("highlight");
+        let safe_pattern = sanitize_terminal_control(pattern);
+        let safe_action = sanitize_terminal_control(action);
+        return format!("Added trigger {id}: \"{safe_pattern}\" ({safe_action})\n");
+    }
+    if let Some(removed) = result.get("removed").and_then(Value::as_str) {
+        let safe_id = sanitize_terminal_control(removed);
+        return format!("Removed trigger {safe_id}\n");
+    }
+    if let Some(true) = result.get("cleared").and_then(Value::as_bool) {
+        return "Cleared dynamic triggers\n".to_string();
+    }
+    let mut out = String::new();
+    let triggers = result["triggers"].as_array();
+    let Some(triggers) = triggers else {
+        return "no triggers configured\n".to_string();
+    };
+    if triggers.is_empty() {
+        return "no triggers configured\n".to_string();
+    }
+    for tr in triggers {
+        let id = tr["id"].as_str().unwrap_or("?");
+        let safe_id = sanitize_terminal_control(id);
+        let raw_pat = tr["pattern"].as_str().unwrap_or("");
+        let safe_pat = sanitize_terminal_control(raw_pat);
+        let action = tr["action"].as_str().unwrap_or("highlight");
+        let safe_action = sanitize_terminal_control(action);
+        let color = tr["color"].as_str().unwrap_or("yellow");
+        let safe_color = sanitize_terminal_control(color);
+        let style = tr["style"].as_str().unwrap_or("background");
+        let safe_style = sanitize_terminal_control(style);
+        let dynamic = tr["is_dynamic"].as_bool().unwrap_or(false);
+        let tag = if dynamic { "[dynamic]" } else { "[config]" };
+        let mut line = format!("{safe_id}  \"{safe_pat}\"  action={safe_action}  color={safe_color}  style={safe_style}  {tag}");
+        if let Some(raw_title) = tr["title"].as_str() {
+            let safe_title = sanitize_terminal_control(raw_title);
+            line += &format!("  title=\"{safe_title}\"");
+        }
+        out += &line;
+        out.push('\n');
+    }
+    out
 }
 
 fn history_report(result: &Value) -> String {
@@ -4860,5 +4965,74 @@ bbbbbbbb  logs -- pane 2 of 2
         let rep = command_report(&cmd_val);
         assert!(rep.contains("$ echo hello   (/Users/alex09x)   exit 0   (420ms)   [1@1]"));
         assert!(rep.contains("hello\n"));
+    }
+
+    #[test]
+    fn triggers_cli_and_report_tests() {
+        // 1. Parsing commands
+        let list_opts = parse(&["triggers".into(), "list".into()]).unwrap();
+        assert_eq!(list_opts.args["subcommand"], "list");
+
+        let add_opts = parse(&[
+            "triggers".into(),
+            "add".into(),
+            "error:.*".into(),
+            "--action".into(),
+            "both".into(),
+            "--color".into(),
+            "red".into(),
+            "--style".into(),
+            "box".into(),
+            "--title".into(),
+            "Build Error".into(),
+            "--all-focus".into(),
+        ]).unwrap();
+        assert_eq!(add_opts.args["subcommand"], "add");
+        assert_eq!(add_opts.args["pattern"], "error:.*");
+        assert_eq!(add_opts.args["action"], "both");
+        assert_eq!(add_opts.args["color"], "red");
+        assert_eq!(add_opts.args["style"], "box");
+        assert_eq!(add_opts.args["title"], "Build Error");
+        assert_eq!(add_opts.args["only_unfocused"], false);
+
+        let rm_opts = parse(&["triggers".into(), "remove".into(), "abc-123".into()]).unwrap();
+        assert_eq!(rm_opts.args["subcommand"], "remove");
+        assert_eq!(rm_opts.args["id"], "abc-123");
+
+        let clear_opts = parse(&["triggers".into(), "clear".into()]).unwrap();
+        assert_eq!(clear_opts.args["subcommand"], "clear");
+
+        // 2. Render report with control sanitization
+        let list_val = json!({
+            "triggers": [
+                {
+                    "id": "1111-2222",
+                    "pattern": "error:\x1b[31m.*",
+                    "action": "both",
+                    "color": "red",
+                    "style": "box",
+                    "is_dynamic": true,
+                    "title": "Alert\r\n"
+                },
+                {
+                    "id": "3333-4444",
+                    "pattern": "warning:.*",
+                    "action": "highlight",
+                    "color": "yellow",
+                    "style": "underline",
+                    "is_dynamic": false
+                }
+            ]
+        });
+
+        let rep = render("triggers", &list_val);
+        assert!(rep.contains("1111-2222"));
+        assert!(rep.contains("\"error:^[[31m.*\""));
+        assert!(rep.contains("[dynamic]"));
+        assert!(rep.contains("title=\"Alert^M\n\""));
+        assert!(!rep.contains('\x1b'));
+        assert!(!rep.contains('\r'));
+        assert!(rep.contains("3333-4444"));
+        assert!(rep.contains("[config]"));
     }
 }

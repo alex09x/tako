@@ -259,6 +259,7 @@ public func tako_surface_process_exited(_ surface: tako_surface_t?) -> Bool { fa
 public final class TakoConfigStorage {
     public var values: [String: String] = [:]
     public var keybindLines: [String] = []
+    public var triggerLines: [String] = []
     public var errors: [String] = []
     /// The file `tako_config_load_file` last read, if any -- Config.init
     /// re-reads it to also feed `TakoCoreUI.TerminalTheme.parse`, since
@@ -302,6 +303,7 @@ public func tako_config_clone(_ config: tako_config_t?) -> tako_config_t? {
     let clone = TakoConfigStorage()
     clone.values = storage.values
     clone.keybindLines = storage.keybindLines
+    clone.triggerLines = storage.triggerLines
     clone.errors = storage.errors
     return tako_config_t(raw: Unmanaged.passRetained(clone).toOpaque())
 }
@@ -403,7 +405,7 @@ let knownTakoConfigKeys: Set<String> = [
     "confirm-close-surface", "quick-terminal-position", "quick-terminal-screen",
     "quick-terminal-animation-duration", "quick-terminal-autohide", "quick-terminal-space-behavior",
     "unfocused-split-opacity", "unfocused-split-fill", "custom-shader", "custom-shader-animation",
-    "link-url", "palette", "safe-paste", "command-marks", "progress-style", "sticky-command-header",
+    "link-url", "palette", "safe-paste", "command-marks", "command-durations", "command-timestamps", "progress-style", "sticky-command-header", "editor", "trigger", "passive-regex-triggers",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.
@@ -435,6 +437,10 @@ func parseTakoConfigText(_ text: String, into storage: TakoConfigStorage) {
         guard !key.isEmpty else { continue }
         if key == "keybind" {
             storage.keybindLines.append(value)
+            continue
+        }
+        if key == "trigger" {
+            storage.triggerLines.append(value)
             continue
         }
         guard knownTakoConfigKeys.contains(key) else {

@@ -50,7 +50,15 @@ cat > "$RUN.lock.py" <<'LOCK'
 import fcntl, os, subprocess, sys, time
 fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
 started = time.monotonic()
-fcntl.flock(fd, fcntl.LOCK_EX)
+while True:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except (BlockingIOError, IOError):
+        if time.monotonic() - started > 30:
+            print("[lock] error: checkout lock held by another process for >30s, aborting", file=sys.stderr, flush=True)
+            sys.exit(1)
+        time.sleep(0.5)
 print("[lock] checkout waited %.0fs" % (time.monotonic() - started), file=sys.stderr, flush=True)
 # The command holds the locked descriptor too (flock belongs to the open
 # file), so killing this wrapper cannot let another run replace the copy
@@ -64,7 +72,16 @@ def forward(signum, _frame):
         pass
 for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
     signal.signal(sig, forward)
-code = child.wait()
+timeout_sec = float(sys.argv[4]) if len(sys.argv) > 4 else float(os.environ.get("TAKO_REMOTE_TIMEOUT", "60"))
+try:
+    code = child.wait(timeout=timeout_sec)
+except subprocess.TimeoutExpired:
+    print(f"\n[remote-timeout] Command timed out after {timeout_sec:.0f}s. Terminating process group {child.pid}...", file=sys.stderr, flush=True)
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    code = 124
 code = 128 - code if code < 0 else code
 for suffix in (".cmd", ".sync", ".lock.py"):
     try:
@@ -78,4 +95,4 @@ OUTER
 git ls-files -z --cached --others --exclude-standard \
     | perl -0ne 'chomp; print "$_\0" if -e $_ || -l $_' \
     | tar --null -T - -cf - \
-    | ssh -o BatchMode=yes "$HOST" "mkdir -p $(dirname "$DIR") && python3 $RUN.lock.py $DIR.lock $RUN.sync $RUN"
+    | ssh -o BatchMode=yes "$HOST" "mkdir -p $(dirname "$DIR") && python3 $RUN.lock.py $DIR.lock $RUN.sync $RUN ${TAKO_REMOTE_TIMEOUT:-60}"

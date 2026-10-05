@@ -724,7 +724,9 @@ Parse file paths with line/column numbers (`file:line[:col]`) from terminal text
 
 Done when: clicking a path under `Cmd` resolves the file against the shell-reported working directory and passes the target to the configured editor command; non-existent files or invalid shapes are ignored without side effects.
 
-### [ ] E7. Passive regex triggers
+### [x] E7. Passive regex triggers
+
+Status: completed.
 
 Opt-in rules for text highlighting or system notifications on specific output matches (e.g. build completion, test failures), strictly passive with no automated input dispatch.
 
