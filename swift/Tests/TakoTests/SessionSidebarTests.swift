@@ -505,4 +505,35 @@ struct SessionSidebarTests {
         let items = store.items(for: win)
         #expect(items[0].gitBranch == "branch-new")
     }
+
+    @Test func globalInvalidationDiscardsFirstEverPendingInspection() async throws {
+        let repoURL = try createTestGitRepository(branch: "branch-orig")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf = Tako.SurfaceView(frame: .zero)
+        surf.pwd = repoURL.path
+        win.contentView = surf
+
+        // Kick off first-ever inspection (epoch 0, gen 0)
+        _ = store.items(for: win)
+
+        // Perform global invalidation (e.g. optIn toggle or invalidateCaches) while first task is in-flight
+        store.invalidateCaches()
+
+        // Switch branch on disk
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/branch-new\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Query items again, launching inspection for epoch 1
+        _ = store.items(for: win)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let items = store.items(for: win)
+        #expect(items[0].gitBranch == "branch-new")
+    }
 }
