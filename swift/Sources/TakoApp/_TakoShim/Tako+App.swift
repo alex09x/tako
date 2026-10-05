@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Combine
 import CoreGraphics
@@ -2799,6 +2809,9 @@ extension Tako {
                                 let text = NSPasteboard.general.string(forType: .string) ?? ""
                                 let replyOutcome = self.core.feedWithOutcome(bytes: Data("\u{1b}]52;c;\(Data(text.utf8).base64EncodedString())\u{07}".utf8))
                                 if !replyOutcome.output.isEmpty { self.pty?.write(replyOutcome.output) }
+                            case .contextPush, .contextPop, .contextClear:
+                                self.updateContextState()
+                                self.publishEvent(type: "context", payload: self.currentContextPayload())
                             }
                         }
                     }
@@ -2833,6 +2846,22 @@ extension Tako {
                     self.childDidExit(started)
                 }
             })
+        }
+
+        private func currentContextPayload() -> [String: JSON] {
+            let frames: [JSON] = core.contextStack().map { frame in
+                .object([
+                    "kind": .string(frame.kind),
+                    "name": .string(frame.name),
+                    "is_elevated": .bool(frame.isElevated),
+                    "tint": frame.tint.map(JSON.string) ?? .null,
+                ])
+            }
+            return [
+                "stack": .array(frames),
+                "is_elevated": .bool(core.isElevated()),
+                "active_tint": core.activeTint().map(JSON.string) ?? .null,
+            ]
         }
 
         /// Paints a saved screen, then the line that says where it ends.

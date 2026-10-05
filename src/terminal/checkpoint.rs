@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Native versioned binary checkpoint and restore for Terminal.
 //!
 //! Provides atomic, lossless serialization and deserialization of the full
@@ -994,13 +1004,20 @@ fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
             bytes
         }
         E::NotificationClose { id, .. } => id.capacity() as u64,
+        E::ContextPush(f) => {
+            (f.kind.capacity() as u64)
+                .saturating_add(f.name.capacity() as u64)
+                .saturating_add(f.tint.as_ref().map_or(0, |t| t.capacity() as u64))
+        }
         E::Bell
         | E::ClipboardQuery
         | E::Progress { .. }
         | E::CommandStart { .. }
         | E::CommandEnd { .. }
         | E::PromptMark
-        | E::StatusClear => 0,
+        | E::StatusClear
+        | E::ContextPop
+        | E::ContextClear => 0,
     }
 }
 
@@ -2697,6 +2714,7 @@ pub fn import_traced_reserving(
         last_prompt_line: commands.last_prompt_line,
         in_flight_osc99: std::collections::HashMap::new(),
         unidentified_osc99: None,
+        context_stack: Vec::new(),
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))

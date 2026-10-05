@@ -918,6 +918,11 @@ public func FfiConverterTypeSshSession_lower(_ value: SshSession) -> UInt64 {
 public protocol TakoCoreProtocol: AnyObject, Sendable {
 
     /**
+     * Returns the active tint color hex/string, if any, for the topmost frame or elevated state (C5).
+     */
+    func activeTint()  -> String?
+
+    /**
      * Everything the terminal holds as plain text: retained scrollback
      * first, then the live screen, with soft wraps rejoined.
      *
@@ -1004,6 +1009,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * generation is gone (an import or reset since) or the record is.
      */
     func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
+
+    /**
+     * Returns the current context frames in stack order (root first, active top last) (C5).
+     */
+    func contextStack()  -> [FfiContextFrame]
 
     func cursorCol()  -> UInt32
 
@@ -1115,6 +1125,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      * Whether a selection is currently active.
      */
     func hasSelection()  -> Bool
+
+    /**
+     * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
+     */
+    func isElevated()  -> Bool
 
     /**
      * Whether a Synchronized Output frame (mode 2026) is currently open --
@@ -1592,6 +1607,18 @@ public convenience init(cols: UInt32, rows: UInt32) {
 
 
     /**
+     * Returns the active tint color hex/string, if any, for the topmost frame or elevated state (C5).
+     */
+open func activeTint() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_active_tint(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Everything the terminal holds as plain text: retained scrollback
      * first, then the live screen, with soft wraps rejoined.
      *
@@ -1768,6 +1795,18 @@ open func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: U
         FfiConverterUInt64.lower(epoch),
         FfiConverterUInt32.lower(maxLines),
         FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Returns the current context frames in stack order (root first, active top last) (C5).
+     */
+open func contextStack() -> [FfiContextFrame]  {
+    return try!  FfiConverterSequenceTypeFfiContextFrame.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_context_stack(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -2031,6 +2070,18 @@ open func hasSelection() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_has_selection(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
+     */
+open func isElevated() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_is_elevated(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -3433,6 +3484,71 @@ public func FfiConverterTypeFfiCommandOutput_lift(_ buf: RustBuffer) throws -> F
 #endif
 public func FfiConverterTypeFfiCommandOutput_lower(_ value: FfiCommandOutput) -> RustBuffer {
     return FfiConverterTypeFfiCommandOutput.lower(value)
+}
+
+
+/**
+ * A frame in the hierarchical context stack (OSC 3008, C5).
+ */
+public struct FfiContextFrame: Equatable, Hashable {
+    public var kind: String
+    public var name: String
+    public var tint: String?
+    public var isElevated: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, name: String, tint: String?, isElevated: Bool) {
+        self.kind = kind
+        self.name = name
+        self.tint = tint
+        self.isElevated = isElevated
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiContextFrame: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiContextFrame: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiContextFrame {
+        return
+            try FfiContextFrame(
+                kind: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                tint: FfiConverterOptionString.read(from: &buf),
+                isElevated: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiContextFrame, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.tint, into: &buf)
+        FfiConverterBool.write(value.isElevated, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiContextFrame_lift(_ buf: RustBuffer) throws -> FfiContextFrame {
+    return try FfiConverterTypeFfiContextFrame.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiContextFrame_lower(_ value: FfiContextFrame) -> RustBuffer {
+    return FfiConverterTypeFfiContextFrame.lower(value)
 }
 
 
@@ -5462,23 +5578,24 @@ public enum FfiEvent: Equatable, Hashable {
     case statusSet(status: String, text: String?
     )
     case statusClear
-    case structuredNotification(
-        id: String?,
-        title: String,
-        body: String,
-        appName: String?,
-        urgency: UInt8,
-        actions: [String],
-        reportActivation: Bool,
-        focus: Bool,
-        reportClose: Bool,
-        timeoutMs: UInt64?,
-        onlyWhenUnfocused: Bool
+    case structuredNotification(id: String?, title: String, body: String, appName: String?, urgency: UInt8, actions: [String], reportActivation: Bool, focus: Bool, reportClose: Bool, timeoutMs: UInt64?, onlyWhenUnfocused: Bool
     )
-    case notificationClose(
-        id: String,
-        reportClose: Bool
+    case notificationClose(id: String, reportClose: Bool
     )
+    /**
+     * OSC 3008 context frame pushed onto the stack (C5).
+     */
+    case contextPush(frame: FfiContextFrame
+    )
+    /**
+     * OSC 3008 top context frame popped from the stack (C5).
+     */
+    case contextPop
+    /**
+     * OSC 3008 context stack cleared (C5).
+     */
+    case contextClear
+
 
 
 
@@ -5531,24 +5648,18 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
 
         case 12: return .statusClear
 
-        case 13: return .structuredNotification(
-            id: try FfiConverterOptionString.read(from: &buf),
-            title: try FfiConverterString.read(from: &buf),
-            body: try FfiConverterString.read(from: &buf),
-            appName: try FfiConverterOptionString.read(from: &buf),
-            urgency: try FfiConverterUInt8.read(from: &buf),
-            actions: try FfiConverterSequenceString.read(from: &buf),
-            reportActivation: try FfiConverterBool.read(from: &buf),
-            focus: try FfiConverterBool.read(from: &buf),
-            reportClose: try FfiConverterBool.read(from: &buf),
-            timeoutMs: try FfiConverterOptionUInt64.read(from: &buf),
-            onlyWhenUnfocused: try FfiConverterBool.read(from: &buf)
+        case 13: return .structuredNotification(id: try FfiConverterOptionString.read(from: &buf), title: try FfiConverterString.read(from: &buf), body: try FfiConverterString.read(from: &buf), appName: try FfiConverterOptionString.read(from: &buf), urgency: try FfiConverterUInt8.read(from: &buf), actions: try FfiConverterSequenceString.read(from: &buf), reportActivation: try FfiConverterBool.read(from: &buf), focus: try FfiConverterBool.read(from: &buf), reportClose: try FfiConverterBool.read(from: &buf), timeoutMs: try FfiConverterOptionUInt64.read(from: &buf), onlyWhenUnfocused: try FfiConverterBool.read(from: &buf)
         )
 
-        case 14: return .notificationClose(
-            id: try FfiConverterString.read(from: &buf),
-            reportClose: try FfiConverterBool.read(from: &buf)
+        case 14: return .notificationClose(id: try FfiConverterString.read(from: &buf), reportClose: try FfiConverterBool.read(from: &buf)
         )
+
+        case 15: return .contextPush(frame: try FfiConverterTypeFfiContextFrame.read(from: &buf)
+        )
+
+        case 16: return .contextPop
+
+        case 17: return .contextClear
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5607,7 +5718,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(10))
 
 
-        case let .statusSet(status, text):
+        case let .statusSet(status,text):
             writeInt(&buf, Int32(11))
             FfiConverterString.write(status, into: &buf)
             FfiConverterOptionString.write(text, into: &buf)
@@ -5617,7 +5728,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(12))
 
 
-        case let .structuredNotification(id, title, body, appName, urgency, actions, reportActivation, focus, reportClose, timeoutMs, onlyWhenUnfocused):
+        case let .structuredNotification(id,title,body,appName,urgency,actions,reportActivation,focus,reportClose,timeoutMs,onlyWhenUnfocused):
             writeInt(&buf, Int32(13))
             FfiConverterOptionString.write(id, into: &buf)
             FfiConverterString.write(title, into: &buf)
@@ -5632,10 +5743,23 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterBool.write(onlyWhenUnfocused, into: &buf)
 
 
-        case let .notificationClose(id, reportClose):
+        case let .notificationClose(id,reportClose):
             writeInt(&buf, Int32(14))
             FfiConverterString.write(id, into: &buf)
             FfiConverterBool.write(reportClose, into: &buf)
+
+
+        case let .contextPush(frame):
+            writeInt(&buf, Int32(15))
+            FfiConverterTypeFfiContextFrame.write(frame, into: &buf)
+
+
+        case .contextPop:
+            writeInt(&buf, Int32(16))
+
+
+        case .contextClear:
+            writeInt(&buf, Int32(17))
 
         }
     }
@@ -7603,6 +7727,31 @@ fileprivate struct FfiConverterSequenceTypeFfiCommandMark: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFfiContextFrame: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiContextFrame]
+
+    public static func write(_ value: [FfiContextFrame], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiContextFrame.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiContextFrame] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiContextFrame]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiContextFrame.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeFfiGrapheme: FfiConverterRustBuffer {
     typealias SwiftType = [FfiGrapheme]
 
@@ -7790,6 +7939,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_tako_core_checksum_method_takocore_active_tint() != 5204) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tako_core_checksum_method_takocore_buffer_text() != 40313) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7824,6 +7976,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_command_output() != 54790) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_context_stack() != 8093) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_cursor_col() != 48435) {
@@ -7884,6 +8039,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_has_selection() != 50914) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_is_elevated() != 8387) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_is_synchronized_output_active() != 2949) {

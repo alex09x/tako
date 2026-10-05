@@ -1,4 +1,15 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // The terminal state machine: modes, cursor, selection, the alternate screen.
+
 
 use std::collections::HashMap;
 
@@ -192,6 +203,22 @@ pub enum TerminalEvent {
     },
     /// In-band escape sequence clearing explicit status (OSC 1337;ClearStatus or OSC 9;5;clear).
     StatusClear,
+    /// OSC 3008 context frame pushed onto the stack (C5).
+    ContextPush(ContextFrame),
+    /// OSC 3008 top context frame popped from the stack (C5).
+    ContextPop,
+    /// OSC 3008 context stack cleared (C5).
+    ContextClear,
+}
+
+/// A frame in the hierarchical context stack (OSC 3008, C5).
+/// Represents where pane output comes from (host, container, SSH, elevated shell).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextFrame {
+    pub kind: String,
+    pub name: String,
+    pub tint: Option<String>,
+    pub is_elevated: bool,
 }
 
 /// Which flavor of character protection the pen is currently applying
@@ -390,11 +417,28 @@ pub struct Terminal {
     pub(crate) in_flight_osc99: HashMap<String, InFlightOsc99>,
     /// In-flight chunked OSC 99 notification without an explicit identifier.
     pub(crate) unidentified_osc99: Option<InFlightOsc99>,
+    /// Hierarchical context stack (OSC 3008, C5): breadcrumbs and elevation.
+    pub(crate) context_stack: Vec<ContextFrame>,
 }
 
 impl Terminal {
     pub fn new(cols: usize, rows: usize) -> Self {
         Self::with_scrollback(cols, rows, crate::grid::DEFAULT_SCROLLBACK_CAPACITY)
+    }
+
+    /// The current context frames in stack order (root first, active top last) (C5).
+    pub fn context_stack(&self) -> &[ContextFrame] {
+        &self.context_stack
+    }
+
+    /// Whether any frame in the context stack represents an elevated context (C5).
+    pub fn is_elevated(&self) -> bool {
+        self.context_stack.iter().any(|f| f.is_elevated)
+    }
+
+    /// The active tint color, if any, for the topmost frame or elevated state (C5).
+    pub fn active_tint(&self) -> Option<&str> {
+        self.context_stack.iter().rev().find_map(|f| f.tint.as_deref())
     }
 
     /// Export the complete terminal state as a native versioned binary checkpoint.
@@ -563,6 +607,7 @@ impl Terminal {
             last_prompt_line: None,
             in_flight_osc99: HashMap::new(),
             unidentified_osc99: None,
+            context_stack: Vec::new(),
         }
     }
 
@@ -4207,6 +4252,107 @@ impl Perform for Terminal {
                     }
                 }
             }
+            return;
+        }
+        if params[0] == b"3008" {
+            // Hierarchical context signalling (OSC 3008, C5):
+            // \e]3008;push;<kind>;<name>[;<tint>]\a
+            // \e]3008;pop\a
+            // \e]3008;clear\a
+            // \e]3008;set;<kind>;<name>[;<tint>]\a
+            if let Some(op_bytes) = params.get(1) {
+                let op = String::from_utf8_lossy(op_bytes);
+                let op_lower = op.trim().to_lowercase();
+                match op_lower.as_str() {
+                    "push" | "enter" => {
+                        let kind = params
+                            .get(2)
+                            .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                            .unwrap_or_default();
+                        let name = params
+                            .get(3)
+                            .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                            .unwrap_or_default();
+                        let explicit_tint = params
+                            .get(4)
+                            .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        let is_elevated = kind.eq_ignore_ascii_case("sudo")
+                            || kind.eq_ignore_ascii_case("elevated")
+                            || kind.eq_ignore_ascii_case("root")
+                            || kind.eq_ignore_ascii_case("su")
+                            || name.eq_ignore_ascii_case("root");
+                        let tint = explicit_tint.or_else(|| {
+                            if is_elevated {
+                                Some("#ea580c".to_string())
+                            } else {
+                                None
+                            }
+                        });
+                        let frame = ContextFrame {
+                            kind,
+                            name,
+                            tint,
+                            is_elevated,
+                        };
+                        self.context_stack.push(frame.clone());
+                        self.events.push(TerminalEvent::ContextPush(frame));
+                    }
+                    "pop" | "exit" => {
+                        if self.context_stack.pop().is_some() {
+                            self.events.push(TerminalEvent::ContextPop);
+                        }
+                    }
+                    "clear" | "reset" => {
+                        if !self.context_stack.is_empty() {
+                            self.context_stack.clear();
+                            self.events.push(TerminalEvent::ContextClear);
+                        }
+                    }
+                    "set" => {
+                        if !self.context_stack.is_empty() {
+                            self.context_stack.clear();
+                            self.events.push(TerminalEvent::ContextClear);
+                        }
+                        if params.len() > 2 {
+                            let kind = params
+                                .get(2)
+                                .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                                .unwrap_or_default();
+                            let name = params
+                                .get(3)
+                                .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                                .unwrap_or_default();
+                            let explicit_tint = params
+                                .get(4)
+                                .map(|p| String::from_utf8_lossy(p).trim().to_string())
+                                .filter(|s| !s.is_empty());
+                            let is_elevated = kind.eq_ignore_ascii_case("sudo")
+                                || kind.eq_ignore_ascii_case("elevated")
+                                || kind.eq_ignore_ascii_case("root")
+                                || kind.eq_ignore_ascii_case("su")
+                                || name.eq_ignore_ascii_case("root");
+                            let tint = explicit_tint.or_else(|| {
+                                if is_elevated {
+                                    Some("#ea580c".to_string())
+                                } else {
+                                    None
+                                }
+                            });
+                            let frame = ContextFrame {
+                                kind,
+                                name,
+                                tint,
+                                is_elevated,
+                            };
+                            self.context_stack.push(frame.clone());
+                            self.events.push(TerminalEvent::ContextPush(frame));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return;
         }
     }
 
@@ -5145,6 +5291,7 @@ impl Terminal {
         self.input_start = None;
         self.last_cwd = None;
         self.last_prompt_line = None;
+        self.context_stack.clear();
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll

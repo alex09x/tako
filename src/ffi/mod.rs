@@ -1,4 +1,15 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // UniFFI bindings for Swift.
+
 //
 // Exposes a thread-safe wrapper (`TakoCore`) around `crate::terminal::Terminal`
 // as a UniFFI `Object`, plus a per-cell `FfiCell` record so Swift can actually
@@ -426,6 +437,34 @@ pub enum FfiEvent {
         id: String,
         report_close: bool,
     },
+    /// OSC 3008 context frame pushed onto the stack (C5).
+    ContextPush {
+        frame: FfiContextFrame,
+    },
+    /// OSC 3008 top context frame popped from the stack (C5).
+    ContextPop,
+    /// OSC 3008 context stack cleared (C5).
+    ContextClear,
+}
+
+/// A frame in the hierarchical context stack (OSC 3008, C5).
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiContextFrame {
+    pub kind: String,
+    pub name: String,
+    pub tint: Option<String>,
+    pub is_elevated: bool,
+}
+
+impl From<crate::terminal::ContextFrame> for FfiContextFrame {
+    fn from(f: crate::terminal::ContextFrame) -> Self {
+        Self {
+            kind: f.kind,
+            name: f.name,
+            tint: f.tint,
+            is_elevated: f.is_elevated,
+        }
+    }
 }
 
 impl From<TerminalEvent> for FfiEvent {
@@ -471,6 +510,11 @@ impl From<TerminalEvent> for FfiEvent {
             TerminalEvent::NotificationClose { id, report_close } => {
                 FfiEvent::NotificationClose { id, report_close }
             }
+            TerminalEvent::ContextPush(frame) => FfiEvent::ContextPush {
+                frame: frame.into(),
+            },
+            TerminalEvent::ContextPop => FfiEvent::ContextPop,
+            TerminalEvent::ContextClear => FfiEvent::ContextClear,
         }
     }
 }
@@ -1182,6 +1226,26 @@ impl TakoCore {
     /// PTY's input.
     pub fn take_output(&self) -> Vec<u8> {
         lock_recover(&self.inner).take_output()
+    }
+
+    /// Returns the current context frames in stack order (root first, active top last) (C5).
+    pub fn context_stack(&self) -> Vec<FfiContextFrame> {
+        lock_recover(&self.inner)
+            .context_stack()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
+    pub fn is_elevated(&self) -> bool {
+        lock_recover(&self.inner).is_elevated()
+    }
+
+    /// Returns the active tint color hex/string, if any, for the topmost frame or elevated state (C5).
+    pub fn active_tint(&self) -> Option<String> {
+        lock_recover(&self.inner).active_tint().map(String::from)
     }
 
     /// Current DEC private-mode state (autowrap, mouse tracking,

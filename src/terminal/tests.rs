@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 use crate::grid::{CellAttrs, Color};
 use crate::modes::MouseTracking;
 use crate::terminal::*;
@@ -1627,3 +1637,94 @@ fn test_osc99_occasion_and_timeout() {
         }]
     );
 }
+
+#[test]
+fn test_osc3008_push_pop_clear() {
+    let mut term = Terminal::new(80, 24);
+    assert!(term.context_stack().is_empty());
+    assert!(!term.is_elevated());
+    assert_eq!(term.active_tint(), None);
+
+    // Push host
+    term.feed(b"\x1b]3008;push;host;macbook\x07");
+    assert_eq!(term.context_stack().len(), 1);
+    assert_eq!(term.context_stack()[0].kind, "host");
+    assert_eq!(term.context_stack()[0].name, "macbook");
+    assert!(!term.is_elevated());
+    assert_eq!(term.active_tint(), None);
+
+    // Push container with custom tint
+    term.feed(b"\x1b]3008;push;container;docker-alpine;#3b82f6\x1b\\");
+    assert_eq!(term.context_stack().len(), 2);
+    assert_eq!(term.context_stack()[1].kind, "container");
+    assert_eq!(term.context_stack()[1].name, "docker-alpine");
+    assert_eq!(term.context_stack()[1].tint.as_deref(), Some("#3b82f6"));
+    assert_eq!(term.active_tint(), Some("#3b82f6"));
+    assert!(!term.is_elevated());
+
+    let events = term.take_events();
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        events[0],
+        TerminalEvent::ContextPush(ContextFrame {
+            kind: "host".into(),
+            name: "macbook".into(),
+            tint: None,
+            is_elevated: false,
+        })
+    );
+    assert_eq!(
+        events[1],
+        TerminalEvent::ContextPush(ContextFrame {
+            kind: "container".into(),
+            name: "docker-alpine".into(),
+            tint: Some("#3b82f6".into()),
+            is_elevated: false,
+        })
+    );
+
+    // Pop container
+    term.feed(b"\x1b]3008;pop\x07");
+    assert_eq!(term.context_stack().len(), 1);
+    assert_eq!(term.active_tint(), None);
+    let events = term.take_events();
+    assert_eq!(events, vec![TerminalEvent::ContextPop]);
+
+    // Clear
+    term.feed(b"\x1b]3008;clear\x1b\\");
+    assert!(term.context_stack().is_empty());
+    let events = term.take_events();
+    assert_eq!(events, vec![TerminalEvent::ContextClear]);
+}
+
+#[test]
+fn test_osc3008_elevation_and_tint() {
+    let mut term = Terminal::new(80, 24);
+    // Push elevated shell: sudo -> automatic tint #ea580c and is_elevated = true
+    term.feed(b"\x1b]3008;push;sudo;root\x07");
+    assert!(term.is_elevated());
+    assert_eq!(term.active_tint(), Some("#ea580c"));
+
+    // Hard reset clears context stack
+    term.feed(b"\x1bc"); // RIS
+    assert!(term.context_stack().is_empty());
+    assert!(!term.is_elevated());
+}
+
+#[test]
+fn test_osc3008_set_and_container_roundtrip() {
+    let mut term = Terminal::new(80, 24);
+    term.feed(b"\x1b]3008;set;ssh;prod-server;#10b981\x07");
+    assert_eq!(term.context_stack().len(), 1);
+    assert_eq!(term.context_stack()[0].kind, "ssh");
+    assert_eq!(term.context_stack()[0].name, "prod-server");
+    assert_eq!(term.active_tint(), Some("#10b981"));
+
+    // Replace with set
+    term.feed(b"\x1b]3008;set;container;app-runner\x1b\\");
+    assert_eq!(term.context_stack().len(), 1);
+    assert_eq!(term.context_stack()[0].kind, "container");
+    assert_eq!(term.context_stack()[0].name, "app-runner");
+    assert_eq!(term.active_tint(), None);
+}
+

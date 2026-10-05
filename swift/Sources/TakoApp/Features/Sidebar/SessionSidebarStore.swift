@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Combine
 import Foundation
@@ -456,6 +466,12 @@ final class SessionSidebarStore: ObservableObject {
                 hasCrabUnread
             )
 
+            let parentSurface = winSurfaces.first(where: { SubagentHierarchyStore.shared.hasChildren($0.id) }) ?? surface
+            let pId = parentSurface?.id
+            let hasKids = pId != nil && SubagentHierarchyStore.shared.hasChildren(pId!)
+            let isCollapsed = pId != nil && SubagentHierarchyStore.shared.isCollapsed(pId!)
+            let kidsSummary = pId != nil ? SubagentHierarchyStore.shared.statusSummary(for: pId!) : nil
+
             let item = SessionSidebarItem(
                 id: id,
                 surfaceId: surfaceId,
@@ -476,7 +492,10 @@ final class SessionSidebarStore: ObservableObject {
                 userDescription: userDesc,
                 listeningPorts: ports,
                 unreadCount: unread,
-                needsAttention: needsAttention
+                needsAttention: needsAttention,
+                hasChildren: hasKids,
+                isCollapsed: isCollapsed,
+                childrenSummary: kidsSummary
             )
 
             // Filtering
@@ -498,6 +517,56 @@ final class SessionSidebarStore: ObservableObject {
             }
 
             result.append(item)
+
+            // Subagent child items when not collapsed (C5)
+            if hasKids && !isCollapsed, let pId {
+                for cid in SubagentHierarchyStore.shared.children(of: pId) {
+                    let cSurface = winSurfaces.first(where: { $0.id == cid })
+                    let cLabel = SubagentHierarchyStore.shared.label(for: cid)
+                    let cTitle = cSurface?.title ?? cLabel ?? "subagent"
+                    let cStatus = cSurface?.crab.paneStatus ?? .idle
+                    let cCrabState = cSurface?.crab.state ?? .idle
+                    let cElapsed = cSurface?.crab.elapsedLabel
+                    let cPwd = cSurface?.pwd
+                    let cIsSelected = isSelected && (focused?.id == cid)
+                    let cNeedsAttention = cSurface != nil && (
+                        cSurface!.crab.unread ||
+                        cSurface!.crab.paneStatus == .needsApproval ||
+                        cSurface!.crab.paneStatus == .waitingForInput
+                    )
+                    let cItem = SessionSidebarItem(
+                        id: "\(id)-child-\(cid.uuidString.lowercased())",
+                        surfaceId: cid,
+                        surfaceIds: [cid],
+                        index: index,
+                        totalCount: windows.count,
+                        isSelected: cIsSelected,
+                        title: cTitle,
+                        status: cStatus,
+                        crabState: cCrabState,
+                        elapsed: cElapsed,
+                        workingDirectory: cPwd,
+                        needsAttention: cNeedsAttention,
+                        isChild: true,
+                        parentId: pId,
+                        label: cLabel,
+                        indentationLevel: 1
+                    )
+                    if effectiveNeedsAttention && !cItem.needsAttention {
+                        continue
+                    }
+                    if !effectiveFilterText.isEmpty {
+                        let query = effectiveFilterText.lowercased()
+                        let matchesTitle = cItem.title.lowercased().contains(query)
+                        let matchesPwd = cItem.workingDirectory?.lowercased().contains(query) ?? false
+                        let matchesLabel = cLabel?.lowercased().contains(query) ?? false
+                        if !matchesTitle && !matchesPwd && !matchesLabel {
+                            continue
+                        }
+                    }
+                    result.append(cItem)
+                }
+            }
         }
 
         return result
@@ -509,6 +578,11 @@ final class SessionSidebarStore: ObservableObject {
         if item.index >= 0 && item.index < group.windows.count {
             let target = group.windows[item.index]
             group.select(target)
+            if let sid = item.surfaceId,
+               let targetController = target.windowController as? BaseTerminalController,
+               let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) {
+                ControlLayout.focus(targetSurface)
+            }
         }
     }
 

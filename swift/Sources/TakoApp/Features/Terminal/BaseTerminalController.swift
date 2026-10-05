@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Cocoa
 import SwiftUI
 import Combine
@@ -489,6 +499,29 @@ class BaseTerminalController: NSWindowController,
         // This node must be part of our tree
         guard surfaceTree.contains(node) else { return }
 
+        // Check if closing a parent pane that has subagent children (C5)
+        let parentSurfaces = node.filter { SubagentHierarchyStore.shared.hasChildren($0.id) }
+        if !parentSurfaces.isEmpty {
+            let totalChildren = parentSurfaces.reduce(0) { $0 + SubagentHierarchyStore.shared.children(of: $1.id).count }
+            confirmClose(
+                messageText: "Close Parent Pane and Subagents?",
+                informativeText: "This pane has \(totalChildren) child subagent\(totalChildren == 1 ? "" : "s"). Closing it will also close its child panes."
+            ) { [weak self] in
+                guard let self else { return }
+                for parent in parentSurfaces {
+                    let childIds = SubagentHierarchyStore.shared.children(of: parent.id)
+                    for cid in childIds {
+                        if let childSurface = self.surfaceTree.first(where: { $0.id == cid }),
+                           let childNode = self.surfaceTree.root?.node(view: childSurface) {
+                            self.removeSurfaceNode(childNode)
+                        }
+                    }
+                }
+                self.removeSurfaceNode(node)
+            }
+            return
+        }
+
         // If the child process is not alive, then we exit immediately
         guard withConfirmation else {
             removeSurfaceNode(node)
@@ -534,6 +567,7 @@ class BaseTerminalController: NSWindowController,
     private func removeSurfaceNode(_ node: SplitTree<Tako.SurfaceView>.Node) {
         for surface in node {
             PromptManager.shared.paneClosed(surfaceId: surface.id)
+            SubagentHierarchyStore.shared.unregister(paneId: surface.id)
         }
 
         // Move focus if the closed surface was focused and we have a next target
