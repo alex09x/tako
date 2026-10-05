@@ -219,11 +219,17 @@ enum ControlCommands {
             case "send", "type":
                 let surface = try target(request, all)
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
-                try ControlInput.send(surface, text: try ControlInput.text(request.args), enter: enter)
+                let text = try ControlInput.text(request.args)
+                try ControlInput.send(surface, text: text, enter: enter)
+                let client = request.args["client"]?.string ?? "takoctl"
+                InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: request.cmd)
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "key":
                 let surface = try target(request, all)
-                try ControlInput.key(surface, chord: try ControlInput.text(request.args, "key"))
+                let chord = try ControlInput.text(request.args, "key")
+                try ControlInput.key(surface, chord: chord)
+                let client = request.args["client"]?.string ?? "takoctl"
+                InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: "key \(chord)")
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "tab-new":
                 let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args)
@@ -241,6 +247,72 @@ enum ControlCommands {
                 return .ok(["id": .string(surface.id.uuidString.lowercased()), "collapsed": .bool(false)])
             case "resume":
                 return try handleResume(request, all: all)
+            case "input":
+                let surface = try target(request, all)
+                let sub = try ControlInput.text(request.args, "subcommand")
+                switch sub {
+                case "lock":
+                    let ownerName = request.args["owner"]?.string ?? "agent"
+                    InputOwnershipStore.shared.lock(paneId: surface.id, by: ownerName)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "locked": .bool(state.isLocked),
+                        "owner": .string(state.owner.agentName ?? "agent")
+                    ])
+                case "unlock":
+                    InputOwnershipStore.shared.unlock(paneId: surface.id)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "locked": .bool(state.isLocked),
+                        "owner": .string("human")
+                    ])
+                case "takeover":
+                    InputOwnershipStore.shared.takeOver(paneId: surface.id)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "locked": .bool(state.isLocked),
+                        "owner": .string("human")
+                    ])
+                case "handback":
+                    let toName = request.args["owner"]?.string
+                    InputOwnershipStore.shared.handBack(paneId: surface.id, to: toName)
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "locked": .bool(state.isLocked),
+                        "owner": .string(state.owner.agentName ?? "agent")
+                    ])
+                case "status":
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    var dict: [String: JSON] = [
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "locked": .bool(state.isLocked),
+                        "owner": .string(state.owner.isAgent ? (state.owner.agentName ?? "agent") : "human"),
+                    ]
+                    if let mark = state.lastActivityMark {
+                        dict["last_client"] = .string(mark.client)
+                        dict["last_action"] = .string(mark.action)
+                    }
+                    return .ok(dict)
+                case "log":
+                    let state = InputOwnershipStore.shared.state(for: surface.id)
+                    let entries: [JSON] = state.activityLog.map { record in
+                        .object([
+                            "client": .string(record.client),
+                            "action": .string(record.action),
+                            "timestamp": .string(ISO8601DateFormatter().string(from: record.timestamp))
+                        ])
+                    }
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "entries": .array(entries)
+                    ])
+                default:
+                    throw ControlError(.invalid, "unknown input subcommand: \(sub)")
+                }
             case "focus":
                 let surface = try target(request, all)
                 ControlLayout.focus(surface)

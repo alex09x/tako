@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -52,11 +62,15 @@ extension Tako {
         }
 
         var body: some View {
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .top) {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
+                InputOwnershipHeaderView(paneId: surfaceView.id)
                 if let searchState = surfaceView.searchState {
-                    SurfaceSearchBar(surfaceView: surfaceView, searchState: searchState)
-                        .padding(8)
+                    HStack {
+                        Spacer()
+                        SurfaceSearchBar(surfaceView: surfaceView, searchState: searchState)
+                            .padding(8)
+                    }
                 }
             }
             .overlay {

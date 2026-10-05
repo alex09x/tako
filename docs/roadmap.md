@@ -572,7 +572,7 @@ offer to resume the agent session that was running.
 Done when a relaunch restores agent panes with a working *Resume* that brings back the same agent
 conversation, and nothing runs without approval.
 
-### [ ] C7. Input ownership
+### [x] C7. Input ownership
 
 - Lock a pane against accidental typing (for an agent pane the user is only watching).
 - *Take over* and *hand back*: explicit transitions shown in the pane header.
