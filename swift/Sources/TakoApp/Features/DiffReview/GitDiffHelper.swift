@@ -139,6 +139,36 @@ public enum GitDiffHelper {
         return Array(entriesByPath.values).sorted { $0.path < $1.path }
     }
 
+    /// Sanitizes untrusted strings (such as symlink targets, untracked file lines, or diffs)
+    /// by replacing ANSI escape sequences and terminal control characters (< 0x20 except \t, \n,
+    /// 0x7F, and 0x80...0x9F) with safe visible representations (e.g. ^[ for ESC), preventing terminal injection.
+    public static func sanitizeControlCharacters(_ text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+
+        for scalar in text.unicodeScalars {
+            let val = scalar.value
+            if val == 0x0A { // LF
+                result.append("\n")
+            } else if val == 0x09 { // Tab
+                result.append("\t")
+            } else if val == 0x1B { // ESC
+                result.append("^[")
+            } else if val < 0x20 { // Other C0 control codes (CR -> ^M, BEL -> ^G, NUL -> ^@, etc.)
+                if let caretScalar = UnicodeScalar(val + 0x40) {
+                    result.append("^\(Character(caretScalar))")
+                }
+            } else if val == 0x7F { // DEL
+                result.append("^?")
+            } else if val >= 0x80 && val <= 0x9F { // C1 control codes
+                result.append(String(format: "\\u{%04X}", val))
+            } else {
+                result.append(Character(scalar))
+            }
+        }
+        return result
+    }
+
     /// Safely inspects an untracked filesystem entry without following symlinks.
     ///
     /// - Symlinks: returns (1, patch) representing the link target alone, never following
@@ -168,7 +198,9 @@ public enum GitDiffHelper {
             } else {
                 dest = (try? FileManager.default.destinationOfSymbolicLink(atPath: fullPath)) ?? ""
             }
-            let patch = "--- /dev/null\n+++ b/\(relativePath)\n@@ -0,0 +1 @@\n+\(dest)\n"
+            let safeDest = sanitizeControlCharacters(dest)
+            let safeRelPath = sanitizeControlCharacters(relativePath)
+            let patch = "--- /dev/null\n+++ b/\(safeRelPath)\n@@ -0,0 +1 @@\n+\(safeDest)\n"
             return (1, patch)
         }
 
@@ -190,9 +222,11 @@ public enum GitDiffHelper {
         }
 
         let lines = content.components(separatedBy: "\n")
-        var buf = "--- /dev/null\n+++ b/\(relativePath)\n@@ -0,0 +1,\(lines.count) @@\n"
+        let safeRelPath = sanitizeControlCharacters(relativePath)
+        var buf = "--- /dev/null\n+++ b/\(safeRelPath)\n@@ -0,0 +1,\(lines.count) @@\n"
         for l in lines {
-            buf += "+\(l)\n"
+            let safeLine = sanitizeControlCharacters(l)
+            buf += "+\(safeLine)\n"
         }
         return (lines.count, buf)
     }
@@ -211,7 +245,7 @@ public enum GitDiffHelper {
             patch = untrackedPatch
         } else {
             let res = runReadOnlyGitSafe(["diff", "--end-of-options", baseBranch, "--", file], in: worktreePath)
-            patch = res.stdout
+            patch = sanitizeControlCharacters(res.stdout)
         }
 
         let hunks = parseHunks(from: patch)
@@ -222,7 +256,7 @@ public enum GitDiffHelper {
     public static func getFullDiff(worktreePath: String, baseBranch: String) -> String {
         guard (try? validateBaseBranch(baseBranch)) != nil else { return "" }
         let res = runReadOnlyGitSafe(["diff", "--end-of-options", baseBranch], in: worktreePath)
-        return res.stdout
+        return sanitizeControlCharacters(res.stdout)
     }
 
     /// Parses a unified diff patch string into structured hunks with line numbers.

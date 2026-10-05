@@ -1442,6 +1442,37 @@ fn render(cmd: &str, result: &Value) -> String {
     }
 }
 
+/// Sanitizes untrusted text for safe terminal display by replacing ANSI escape sequences
+/// and terminal control codes (C0 controls except \t and \n, DEL, and C1 controls)
+/// with safe visible caret/escape representations.
+pub fn sanitize_terminal_control(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let u = c as u32;
+        if c == '\n' {
+            out.push('\n');
+        } else if c == '\t' {
+            out.push('\t');
+        } else if c == '\x1b' {
+            out.push_str("^[");
+        } else if u < 0x20 {
+            // C0 controls (< 0x20 except \t, \n): Caret notation ^@, ^A, ... ^G (BEL), ^H (BS), ^M (CR), etc.
+            if let Some(ch) = char::from_u32(u + 0x40) {
+                out.push('^');
+                out.push(ch);
+            }
+        } else if u == 0x7f {
+            out.push_str("^?");
+        } else if (0x80..=0x9f).contains(&u) {
+            // C1 controls: safely encode as unicode hex escape
+            out.push_str(&format!("\\u{{{:04X}}}", u));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn review_report(result: &Value) -> String {
     if let Some(closed) = result.get("closed").and_then(Value::as_bool) {
         let id = result["id"].as_str().unwrap_or("pane");
@@ -1460,14 +1491,15 @@ fn review_report(result: &Value) -> String {
         if !msg.is_empty() {
             out.push_str("Feedback summary:\n");
             for line in msg.lines() {
-                out.push_str(&format!("  {line}\n"));
+                let safe_line = sanitize_terminal_control(line);
+                out.push_str(&format!("  {safe_line}\n"));
             }
         }
         return out;
     }
 
     if let Some(comment_id) = result.get("comment_id").and_then(Value::as_str) {
-        let file = result["file"].as_str().unwrap_or("");
+        let file = sanitize_terminal_control(result["file"].as_str().unwrap_or(""));
         let line = result["line"].as_f64().unwrap_or(0.0) as u64;
         return format!("Added comment {comment_id} on {file}:{line}.\n");
     }
@@ -1491,16 +1523,16 @@ fn review_report(result: &Value) -> String {
         let mut out = format!("Review comments ({}):\n", comments.len());
         for c in comments {
             let id = c["id"].as_str().unwrap_or("");
-            let file = c["file"].as_str().unwrap_or("");
+            let file = sanitize_terminal_control(c["file"].as_str().unwrap_or(""));
             let line = c["line"].as_f64().unwrap_or(0.0) as u64;
-            let text = c["text"].as_str().unwrap_or("");
+            let text = sanitize_terminal_control(c["text"].as_str().unwrap_or(""));
             out.push_str(&format!("  [{id}] {file}:{line}: {text}\n"));
         }
         return out;
     }
 
     if let Some(patch) = result.get("patch").and_then(Value::as_str) {
-        let mut out = patch.to_string();
+        let mut out = sanitize_terminal_control(patch);
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
@@ -1508,11 +1540,11 @@ fn review_report(result: &Value) -> String {
     }
 
     if let Some(files) = result.get("files").and_then(Value::as_array) {
-        let task = result["task"].as_str().unwrap_or("");
-        let base = result["base"].as_str().unwrap_or("main");
+        let task = sanitize_terminal_control(result["task"].as_str().unwrap_or(""));
+        let base = sanitize_terminal_control(result["base"].as_str().unwrap_or("main"));
         let mut out = format!("Changed files in review '{task}' against '{base}' ({}):\n", files.len());
         for f in files {
-            let path = f["path"].as_str().unwrap_or("");
+            let path = sanitize_terminal_control(f["path"].as_str().unwrap_or(""));
             let status = f["status"].as_str().unwrap_or("modified");
             let status_char = match status {
                 "added" => "A",
@@ -1531,8 +1563,8 @@ fn review_report(result: &Value) -> String {
     if let Some(open) = result.get("open").and_then(Value::as_bool) {
         let id = result["id"].as_str().unwrap_or("pane");
         if open {
-            let task = result["task"].as_str().unwrap_or("");
-            let base = result["base"].as_str().unwrap_or("main");
+            let task = sanitize_terminal_control(result["task"].as_str().unwrap_or(""));
+            let base = sanitize_terminal_control(result["base"].as_str().unwrap_or("main"));
             let files_count = result["files_count"].as_f64().unwrap_or(0.0) as u64;
             let comments_count = result["comments_count"].as_f64().unwrap_or(0.0) as u64;
             let target = result.get("target").and_then(Value::as_str);
@@ -1542,7 +1574,8 @@ fn review_report(result: &Value) -> String {
             out.push_str(&format!("  Changed files: {files_count}\n"));
             out.push_str(&format!("  Comments:      {comments_count}\n"));
             if let Some(t) = target {
-                out.push_str(&format!("  Target pane:   {t}\n"));
+                let safe_target = sanitize_terminal_control(t);
+                out.push_str(&format!("  Target pane:   {safe_target}\n"));
             }
             return out;
         } else {
@@ -4554,6 +4587,29 @@ bbbbbbbb  logs -- pane 2 of 2
 
         let rep_close = render("review", &json!({"id": "pane-1", "closed": true}));
         assert_eq!(rep_close, "Closed diff review on pane pane-1.\n");
+
+        // sanitize_terminal_control and diff terminal-injection tests
+        let raw_control = "hello\x1b]52;c;evil_copy\x07\x1b[2Jcleared\r\n\tworld\x7f\u{009b}c1";
+        let sanitized = sanitize_terminal_control(raw_control);
+        assert!(!sanitized.contains('\x1b'));
+        assert!(!sanitized.contains('\x07'));
+        assert!(!sanitized.contains('\r'));
+        assert!(!sanitized.contains('\x7f'));
+        assert!(!sanitized.contains('\u{009b}'));
+        assert!(sanitized.contains("^[]52;c;evil_copy^G"));
+        assert!(sanitized.contains("^[[2Jcleared^M\n\tworld^?\\u{009B}c1"));
+
+        let evil_diff = json!({
+            "id": "pane-1",
+            "task": "evil-task\x1b[1m",
+            "patch": "--- a/evil.txt\n+++ b/evil.txt\n@@ -0,0 +1,2 @@\n+\x1b]52;c;clipboard\x07\n+\x1b[2J\r\n"
+        });
+        let rep_evil = render("review", &evil_diff);
+        assert!(!rep_evil.contains('\x1b'));
+        assert!(!rep_evil.contains('\x07'));
+        assert!(!rep_evil.contains('\r'));
+        assert!(rep_evil.contains("^[]52;c;clipboard^G"));
+        assert!(rep_evil.contains("^[[2J^M"));
     }
 }
 

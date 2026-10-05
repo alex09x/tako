@@ -223,4 +223,60 @@ struct DiffReviewTests {
             }
         }
     }
+
+    @Test func testUntrackedEntriesSanitizeControlSequences() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-diff-control-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        // 1. Untracked file containing ESC/OSC sequences and control codes
+        let evilFile = tempDir.appendingPathComponent("evil.txt")
+        let evilContent = "clean line 1\n\u{1b}]52;c;evil_clipboard_payload\u{07}\n\u{1b}[2Jscreen cleared\r\nclean line 2\n"
+        try evilContent.write(to: evilFile, atomically: true, encoding: .utf8)
+
+        // 2. Untracked symlink whose target contains control sequences
+        let symlinkFile = tempDir.appendingPathComponent("evil_symlink.txt")
+        let evilTarget = "target_\u{1b}]52;c;payload\u{07}.txt"
+        try FileManager.default.createSymbolicLink(atPath: symlinkFile.path, withDestinationPath: evilTarget)
+
+        // Verify inspectUntrackedEntry for regular file
+        let (fileLines, filePatch) = GitDiffHelper.inspectUntrackedEntry(worktreePath: tempDir.path, relativePath: "evil.txt")
+        #expect(fileLines > 0)
+        #expect(!filePatch.contains("\u{1b}"))
+        #expect(!filePatch.contains("\u{07}"))
+        #expect(!filePatch.contains("\r"))
+        #expect(filePatch.contains("^[]52;c;evil_clipboard_payload^G"))
+        #expect(filePatch.contains("^[[2Jscreen cleared^M"))
+
+        // Verify getFileDiff hunks
+        let fileDetail = GitDiffHelper.getFileDiff(worktreePath: tempDir.path, baseBranch: "main", file: "evil.txt")
+        #expect(!fileDetail.patch.contains("\u{1b}"))
+        #expect(!fileDetail.patch.contains("\u{07}"))
+        for hunk in fileDetail.hunks {
+            for line in hunk.lines {
+                #expect(!line.content.contains("\u{1b}"))
+                #expect(!line.content.contains("\u{07}"))
+                #expect(!line.content.contains("\r"))
+            }
+        }
+
+        // Verify inspectUntrackedEntry for symlink
+        let (linkLines, linkPatch) = GitDiffHelper.inspectUntrackedEntry(worktreePath: tempDir.path, relativePath: "evil_symlink.txt")
+        #expect(linkLines == 1)
+        #expect(!linkPatch.contains("\u{1b}"))
+        #expect(!linkPatch.contains("\u{07}"))
+        #expect(linkPatch.contains("target_^[]52;c;payload^G.txt"))
+
+        let linkDetail = GitDiffHelper.getFileDiff(worktreePath: tempDir.path, baseBranch: "main", file: "evil_symlink.txt")
+        #expect(!linkDetail.patch.contains("\u{1b}"))
+        #expect(!linkDetail.patch.contains("\u{07}"))
+        for hunk in linkDetail.hunks {
+            for line in hunk.lines {
+                #expect(!line.content.contains("\u{1b}"))
+                #expect(!line.content.contains("\u{07}"))
+            }
+        }
+    }
 }
