@@ -1750,4 +1750,61 @@ fn test_osc3008_bounded_stack_depth_and_field_length() {
     assert_eq!(last.name.len(), 128);
 }
 
+#[test]
+fn test_osc3008_overflow_preserves_elevation() {
+    let mut term = Terminal::new(80, 24);
+
+    // 1. Push elevated outer frame (e.g. sudo session)
+    term.feed(b"\x1b]3008;push;sudo;root\x07");
+    assert_eq!(term.context_stack().len(), 1);
+    assert!(term.is_elevated());
+    assert_eq!(term.active_tint(), Some("#ea580c"));
+
+    // 2. Push 40 non-elevated ordinary frames. Stack must cap at 32, but outer elevated frame must NOT be dropped.
+    for i in 1..=40 {
+        let cmd = format!("\x1b]3008;push;step;task_{i}\x07");
+        term.feed(cmd.as_bytes());
+    }
+    assert_eq!(term.context_stack().len(), 32);
+    // Frame 0 must still be the elevated root frame
+    assert_eq!(term.context_stack()[0].name, "root");
+    assert!(term.context_stack()[0].is_elevated);
+    assert_eq!(term.context_stack()[31].name, "task_40");
+    assert!(term.is_elevated());
+    assert_eq!(term.active_tint(), Some("#ea580c"));
+
+    // 3. Pop 31 times (exiting all non-elevated sub-contexts)
+    for _ in 0..31 {
+        term.feed(b"\x1b]3008;pop\x07");
+    }
+    assert_eq!(term.context_stack().len(), 1);
+    assert_eq!(term.context_stack()[0].name, "root");
+    assert!(term.is_elevated());
+    assert_eq!(term.active_tint(), Some("#ea580c"));
+
+    // 4. Pop 1 more time (exiting the root context)
+    term.feed(b"\x1b]3008;pop\x07");
+    assert!(term.context_stack().is_empty());
+    assert!(!term.is_elevated());
+    assert_eq!(term.active_tint(), None);
+
+    // 5. Test overflow when all 32 frames are elevated
+    for i in 1..=40 {
+        let cmd = format!("\x1b]3008;push;sudo;elevated_{i}\x07");
+        term.feed(cmd.as_bytes());
+    }
+    assert_eq!(term.context_stack().len(), 32);
+    assert!(term.is_elevated());
+    assert_eq!(term.active_tint(), Some("#ea580c"));
+
+    // Popping 40 times keeps elevation until all 40 are popped
+    for _ in 0..39 {
+        term.feed(b"\x1b]3008;pop\x07");
+        assert!(term.is_elevated());
+    }
+    term.feed(b"\x1b]3008;pop\x07");
+    assert!(term.context_stack().is_empty());
+    assert!(!term.is_elevated());
+}
+
 

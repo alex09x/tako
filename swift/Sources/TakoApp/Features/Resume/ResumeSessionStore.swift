@@ -64,14 +64,22 @@ public final class ResumeTrustStore {
             return false
         }
 
-        let fullCommand = argv.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        let binary = argv[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        let cmdQuoted = argv.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
+        let cmdPlain = argv.joined(separator: " ")
 
         for prefix in prefixes {
             let p = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
             if p.isEmpty { continue }
-            if fullCommand == p || fullCommand.hasPrefix(p + " ") || binary == p {
+
+            if cmdQuoted == p || cmdPlain == p {
                 return true
+            }
+
+            let pWords = p.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if !pWords.isEmpty && argv.count >= pWords.count {
+                if Array(argv.prefix(pWords.count)) == pWords {
+                    return true
+                }
             }
         }
         return false
@@ -158,6 +166,19 @@ public final class ResumeSessionStore {
     /// Strips any environment variables whose names indicate secrets.
     public nonisolated static func sanitizeEnvironment(_ env: [String: String]) -> [String: String] {
         env.filter { !isSecretKey($0.key) }
+    }
+
+    /// Safely quotes an argv token for POSIX shell execution so that metacharacters
+    /// (e.g. `;`, `&`, `|`, `$`, `` ` ``, `<`, `>`, quotes, whitespace) are treated literally.
+    public nonisolated static func shellQuote(_ arg: String) -> String {
+        if arg.isEmpty {
+            return "''"
+        }
+        let safePattern = "^[a-zA-Z0-9_./@:+=-]+$"
+        if arg.range(of: safePattern, options: .regularExpression) != nil {
+            return arg
+        }
+        return "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: - Persistence

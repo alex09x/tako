@@ -1388,8 +1388,8 @@ enum ControlCommands {
                 if let p = request.args["prefix"], case .string(let s) = p, !s.isEmpty {
                     return s
                 }
-                if let record = ResumeSessionStore.shared.record(for: surface.id), let first = record.argv.first {
-                    return first
+                if let record = ResumeSessionStore.shared.record(for: surface.id), !record.argv.isEmpty {
+                    return record.argv.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
                 }
                 throw ControlError(.invalid, "missing prefix to approve and no recorded session found")
             }()

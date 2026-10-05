@@ -3150,7 +3150,8 @@ extension Tako {
                 onResume: { [weak self] alwaysAllow in
                     guard let self else { return }
                     if alwaysAllow {
-                        ResumeTrustStore.shared.approve(prefix: record.argv.first ?? "", cwd: dir)
+                        let cmdString = record.argv.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
+                        ResumeTrustStore.shared.approve(prefix: cmdString, cwd: dir)
                     }
                     self.dismissResumeBanner()
                     self.executeResume(record: record)
@@ -3177,12 +3178,7 @@ extension Tako {
 
         public func executeResume(record: ResumeSessionRecord) {
             guard !record.argv.isEmpty else { return }
-            let cmdString = record.argv.map { arg -> String in
-                if arg.contains(" ") || arg.contains("\"") || arg.contains("'") {
-                    return "\"" + arg.replacingOccurrences(of: "\"", with: "\\\"") + "\""
-                }
-                return arg
-            }.joined(separator: " ")
+            let cmdString = record.argv.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
             sendText(cmdString + "\n")
         }
     }

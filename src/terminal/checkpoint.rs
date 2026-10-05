@@ -2715,6 +2715,7 @@ pub fn import_traced_reserving(
         in_flight_osc99: std::collections::HashMap::new(),
         unidentified_osc99: None,
         context_stack: Vec::new(),
+        evicted_elevated: 0,
     };
     offsets.allocated = r.alloc - reserved;
     Ok((terminal, offsets))

@@ -155,4 +155,46 @@ import Testing
         let canNativeAutoRun = trustStore.isApproved(argv: nativeRecord.argv, cwd: cwd) && !nativeRecord.isImported
         #expect(canNativeAutoRun)
     }
+
+    @Test func testShellQuoteAndMetacharacters() {
+        // 1. Safe tokens remain unquoted
+        #expect(ResumeSessionStore.shellQuote("echo") == "echo")
+        #expect(ResumeSessionStore.shellQuote("/bin/ls") == "/bin/ls")
+        #expect(ResumeSessionStore.shellQuote("--port=8080") == "--port=8080")
+        #expect(ResumeSessionStore.shellQuote("foo_bar.txt") == "foo_bar.txt")
+
+        // 2. Empty token is quoted
+        #expect(ResumeSessionStore.shellQuote("") == "''")
+
+        // 3. Tokens with whitespace or shell metacharacters are safely single-quoted
+        #expect(ResumeSessionStore.shellQuote("hello world") == "'hello world'")
+        #expect(ResumeSessionStore.shellQuote(";") == "';'")
+        #expect(ResumeSessionStore.shellQuote("&&") == "'&&'")
+        #expect(ResumeSessionStore.shellQuote("|") == "'|'")
+        #expect(ResumeSessionStore.shellQuote("$HOME") == "'$HOME'")
+        #expect(ResumeSessionStore.shellQuote("$(whoami)") == "'$(whoami)'")
+        #expect(ResumeSessionStore.shellQuote("`id`") == "'`id`'")
+        #expect(ResumeSessionStore.shellQuote(">out") == "'>out'")
+        #expect(ResumeSessionStore.shellQuote("<in") == "'<in'")
+        #expect(ResumeSessionStore.shellQuote("it's") == "'it'\\''s'")
+
+        // 4. Injected argv serialization escapes shell separators
+        let injectedArgv = ["echo", ";", "touch", "/tmp/resume-pwned"]
+        let serialized = injectedArgv.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
+        #expect(serialized == "echo ';' touch /tmp/resume-pwned")
+
+        // 5. TrustStore prefix matching requires word prefix or exact match, not binary alone
+        let userDefaultsSuite = "test.tako.resume.security.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: userDefaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: userDefaultsSuite) }
+
+        let trustStore = ResumeTrustStore(defaults: defaults)
+        let cwd = "/test/repo"
+
+        // Approving "echo hello" must NOT approve "echo ; touch /tmp/resume-pwned"
+        trustStore.approve(prefix: "echo hello", cwd: cwd)
+        #expect(trustStore.isApproved(argv: ["echo", "hello", "world"], cwd: cwd))
+        #expect(!trustStore.isApproved(argv: ["echo", ";", "touch", "/tmp/resume-pwned"], cwd: cwd))
+        #expect(!trustStore.isApproved(argv: ["echo"], cwd: cwd))
+    }
 }

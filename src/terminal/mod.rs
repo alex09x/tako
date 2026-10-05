@@ -419,6 +419,8 @@ pub struct Terminal {
     pub(crate) unidentified_osc99: Option<InFlightOsc99>,
     /// Hierarchical context stack (OSC 3008, C5): breadcrumbs and elevation.
     pub(crate) context_stack: Vec<ContextFrame>,
+    /// Count of elevated context frames evicted due to MAX_CONTEXT_STACK_DEPTH.
+    pub(crate) evicted_elevated: usize,
 }
 
 impl Terminal {
@@ -433,12 +435,22 @@ impl Terminal {
 
     /// Whether any frame in the context stack represents an elevated context (C5).
     pub fn is_elevated(&self) -> bool {
-        self.context_stack.iter().any(|f| f.is_elevated)
+        self.evicted_elevated > 0 || self.context_stack.iter().any(|f| f.is_elevated)
     }
 
     /// The active tint color, if any, for the topmost frame or elevated state (C5).
     pub fn active_tint(&self) -> Option<&str> {
-        self.context_stack.iter().rev().find_map(|f| f.tint.as_deref())
+        self.context_stack
+            .iter()
+            .rev()
+            .find_map(|f| f.tint.as_deref())
+            .or_else(|| {
+                if self.is_elevated() {
+                    Some("#ea580c")
+                } else {
+                    None
+                }
+            })
     }
 
     /// Export the complete terminal state as a native versioned binary checkpoint.
@@ -608,6 +620,7 @@ impl Terminal {
             in_flight_osc99: HashMap::new(),
             unidentified_osc99: None,
             context_stack: Vec::new(),
+            evicted_elevated: 0,
         }
     }
 
@@ -4309,7 +4322,12 @@ impl Perform for Terminal {
                             is_elevated,
                         };
                         if self.context_stack.len() >= MAX_CONTEXT_STACK_DEPTH {
-                            self.context_stack.remove(0);
+                            if let Some(idx) = self.context_stack.iter().position(|f| !f.is_elevated) {
+                                self.context_stack.remove(idx);
+                            } else {
+                                self.evicted_elevated += 1;
+                                self.context_stack.remove(0);
+                            }
                         }
                         self.context_stack.push(frame.clone());
                         self.events.push(TerminalEvent::ContextPush(frame));
@@ -4317,17 +4335,22 @@ impl Perform for Terminal {
                     "pop" | "exit" => {
                         if self.context_stack.pop().is_some() {
                             self.events.push(TerminalEvent::ContextPop);
+                        } else if self.evicted_elevated > 0 {
+                            self.evicted_elevated -= 1;
+                            self.events.push(TerminalEvent::ContextPop);
                         }
                     }
                     "clear" | "reset" => {
-                        if !self.context_stack.is_empty() {
+                        if !self.context_stack.is_empty() || self.evicted_elevated > 0 {
                             self.context_stack.clear();
+                            self.evicted_elevated = 0;
                             self.events.push(TerminalEvent::ContextClear);
                         }
                     }
                     "set" => {
-                        if !self.context_stack.is_empty() {
+                        if !self.context_stack.is_empty() || self.evicted_elevated > 0 {
                             self.context_stack.clear();
+                            self.evicted_elevated = 0;
                             self.events.push(TerminalEvent::ContextClear);
                         }
                         if params.len() > 2 {
@@ -5319,6 +5342,7 @@ impl Terminal {
         self.last_cwd = None;
         self.last_prompt_line = None;
         self.context_stack.clear();
+        self.evicted_elevated = 0;
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll
