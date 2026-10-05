@@ -3409,12 +3409,14 @@ impl Terminal {
     /// Sanitizes title strings (max 512 chars, strips C0/C1 control codes except tab) (Track G4).
     pub fn sanitize_title(raw: &str) -> String {
         let mut out = String::new();
-        for ch in raw.chars() {
-            if out.chars().count() >= 512 {
+        let mut count = 0usize;
+        for ch in raw.chars().take(4096) {
+            if count >= 512 {
                 break;
             }
             if ch == '\t' || (!ch.is_control() && !('\u{0080}'..='\u{009F}').contains(&ch)) {
                 out.push(ch);
+                count += 1;
             }
         }
         out
@@ -3423,28 +3425,42 @@ impl Terminal {
     /// Sanitizes notification text, stripping C0/C1 controls except whitespace, bounded by max_chars (Track G4).
     pub fn sanitize_notification_text(raw: &str, max_chars: usize) -> String {
         let mut out = String::new();
-        for ch in raw.chars() {
-            if out.chars().count() >= max_chars {
+        let mut count = 0usize;
+        let scan_limit = max_chars.saturating_mul(8).max(4096);
+        for ch in raw.chars().take(scan_limit) {
+            if count >= max_chars {
                 break;
             }
             if ch == '\t' || ch == '\n' || (!ch.is_control() && !('\u{0080}'..='\u{009F}').contains(&ch)) {
                 out.push(ch);
+                count += 1;
             }
         }
         out
     }
 
     pub fn sanitize_status_text(raw: &str) -> Option<String> {
-        let filtered: String = raw
-            .chars()
-            .filter(|&c| !c.is_control() && !('\u{0080}'..='\u{009F}').contains(&c))
-            .collect();
-        let trimmed = filtered.trim();
+        let trimmed = raw.trim();
         if trimmed.is_empty() {
             return None;
         }
-        let limited: String = trimmed.chars().take(256).collect();
-        Some(limited)
+        let mut out = String::new();
+        let mut count = 0usize;
+        for ch in trimmed.chars().take(2048) {
+            if count >= 256 {
+                break;
+            }
+            if !ch.is_control() && !('\u{0080}'..='\u{009F}').contains(&ch) {
+                out.push(ch);
+                count += 1;
+            }
+        }
+        let final_trimmed = out.trim();
+        if final_trimmed.is_empty() {
+            None
+        } else {
+            Some(final_trimmed.to_string())
+        }
     }
 
     pub(crate) fn handle_osc_99(&mut self, params: &[&[u8]], bell_terminated: bool) {
@@ -3475,6 +3491,11 @@ impl Terminal {
                 (b"".as_ref(), params[1].to_vec())
             }
         };
+
+        const MAX_OSC99_METADATA_BYTES: usize = 2048;
+        if metadata_raw.len() > MAX_OSC99_METADATA_BYTES {
+            return;
+        }
 
         let metadata_str = String::from_utf8_lossy(metadata_raw);
         let mut id: Option<String> = None;
@@ -4053,7 +4074,8 @@ impl Perform for Terminal {
             return;
         }
         if params.len() >= 2 && (params[0] == b"0" || params[0] == b"2") {
-            let raw = String::from_utf8_lossy(params[1]);
+            let slice = &params[1][..params[1].len().min(4096)];
+            let raw = String::from_utf8_lossy(slice);
             self.title = Self::sanitize_title(&raw);
             self.events
                 .push(TerminalEvent::TitleChanged(self.title.clone()));
@@ -4122,9 +4144,11 @@ impl Perform for Terminal {
         }
         if params[0] == b"7" {
             if let Some(url) = params.get(1) {
-                let url = String::from_utf8_lossy(url).into_owned();
-                self.last_cwd = (url.len() <= commands::MAX_CWD_BYTES).then(|| url.clone());
-                self.events.push(TerminalEvent::PwdChanged(url));
+                if url.len() <= commands::MAX_CWD_BYTES {
+                    let url_str = String::from_utf8_lossy(url).into_owned();
+                    self.last_cwd = Some(url_str.clone());
+                    self.events.push(TerminalEvent::PwdChanged(url_str));
+                }
             }
             return;
         }
@@ -4143,7 +4167,13 @@ impl Perform for Terminal {
         }
         if params[0] == b"9" && params.get(1).map(|p| p.as_ref()) == Some(b"5".as_ref()) {
             // Pane status: OSC 9;5;status[;text] or OSC 9;5;clear
-            let raw_status = params.get(2).map(|p| String::from_utf8_lossy(p)).unwrap_or_default();
+            let raw_status = params
+                .get(2)
+                .map(|p| {
+                    let slice = &p[..p.len().min(128)];
+                    String::from_utf8_lossy(slice)
+                })
+                .unwrap_or_default();
             if raw_status.is_empty() || raw_status.eq_ignore_ascii_case("clear") {
                 self.events.push(TerminalEvent::StatusClear);
             } else if let Some(status) = Self::normalize_status_string(&raw_status) {
@@ -4151,7 +4181,15 @@ impl Perform for Terminal {
                     self.events.push(TerminalEvent::StatusClear);
                 } else {
                     let text = if params.len() > 3 {
-                        let joined = params[3..].iter().map(|p| String::from_utf8_lossy(p)).collect::<Vec<_>>().join(";");
+                        let joined = params[3..]
+                            .iter()
+                            .take(16)
+                            .map(|p| {
+                                let slice = &p[..p.len().min(1024)];
+                                String::from_utf8_lossy(slice)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(";");
                         Self::sanitize_status_text(&joined)
                     } else {
                         None
@@ -4164,7 +4202,8 @@ impl Perform for Terminal {
         if params[0] == b"9" {
             if let Some(body) = params.get(1) {
                 if self.allow_notification() {
-                    let raw_body = String::from_utf8_lossy(body);
+                    let slice = &body[..body.len().min(8192)];
+                    let raw_body = String::from_utf8_lossy(slice);
                     let clean_body = Self::sanitize_notification_text(&raw_body, 1024);
                     self.events.push(TerminalEvent::Notification {
                         title: String::new(),
@@ -4179,11 +4218,17 @@ impl Perform for Terminal {
                 if self.allow_notification() {
                     let raw_title = params
                         .get(2)
-                        .map(|p| String::from_utf8_lossy(p))
+                        .map(|p| {
+                            let slice = &p[..p.len().min(1024)];
+                            String::from_utf8_lossy(slice)
+                        })
                         .unwrap_or_default();
                     let raw_body = params
                         .get(3)
-                        .map(|p| String::from_utf8_lossy(p))
+                        .map(|p| {
+                            let slice = &p[..p.len().min(8192)];
+                            String::from_utf8_lossy(slice)
+                        })
                         .unwrap_or_default();
                     let title = Self::sanitize_notification_text(&raw_title, 128);
                     let body = Self::sanitize_notification_text(&raw_body, 1024);

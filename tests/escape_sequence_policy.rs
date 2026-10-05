@@ -269,3 +269,35 @@ fn osc99_oversized_raw_chunk_rejected() {
     let events = term.take_events();
     assert!(events.is_empty(), "oversized OSC 99 chunk must be rejected");
 }
+
+#[test]
+fn sanitizer_rescan_dos_resistance_with_stripped_controls() {
+    let mut term = Terminal::new(80, 24);
+
+    // 511 valid characters followed by 100,000 DEL (\x7f) control characters
+    let mut hostile_input = "A".repeat(511);
+    hostile_input.push_str(&"\x7f".repeat(100_000));
+
+    let start = std::time::Instant::now();
+    let sanitized = Terminal::sanitize_title(&hostile_input);
+    let elapsed = start.elapsed();
+
+    assert_eq!(sanitized.len(), 511);
+    assert!(
+        elapsed < std::time::Duration::from_millis(50),
+        "sanitizer should finish quickly without O(N*M) rescan overhead, took {:?}",
+        elapsed
+    );
+
+    // Also test through osc_dispatch
+    let seq = format!("\x1b]0;{hostile_input}\x07");
+    let start_feed = std::time::Instant::now();
+    term.feed(seq.as_bytes());
+    let elapsed_feed = start_feed.elapsed();
+    assert!(
+        elapsed_feed < std::time::Duration::from_millis(50),
+        "terminal feed with hostile title took {:?}",
+        elapsed_feed
+    );
+}
+
