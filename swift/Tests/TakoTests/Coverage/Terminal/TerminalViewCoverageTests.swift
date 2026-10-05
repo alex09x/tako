@@ -14,6 +14,7 @@ private final class RecordingDelegate: TerminalViewModel, TerminalViewDelegate {
     @Published var findAllIsShowing = false
     @Published var notificationCenterIsShowing = false
     @Published var sessionSidebarIsShowing = false
+    @Published var paneOverviewIsShowing = false
 
     var focusedSurfaceDidChangeCalls: [Tako.SurfaceView?] = []
     var pwdDidChangeCalls: [URL?] = []
@@ -56,6 +57,14 @@ struct TerminalViewCoverageTests {
     @Test func bodyBuildsWhenReady() {
         let controller = makeController()
         controller.tako.readiness = .ready
+        let view = TerminalView(tako: controller.tako, viewModel: controller, delegate: controller)
+        _ = view.body
+    }
+
+    @Test func bodyBuildsWithPaneOverviewShowing() {
+        let controller = makeController()
+        controller.tako.readiness = .ready
+        controller.paneOverviewIsShowing = true
         let view = TerminalView(tako: controller.tako, viewModel: controller, delegate: controller)
         _ = view.body
     }
