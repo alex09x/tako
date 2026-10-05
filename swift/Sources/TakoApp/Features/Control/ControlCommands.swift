@@ -165,6 +165,9 @@ enum ControlCommands {
                     args: request.args,
                     onClose: onClose
                 )
+            case "ask":
+                let surface = try target(request, all)
+                try PromptManager.shared.ask(request: request, surface: surface, reply: reply)
             default:
                 reply(handle(request))
             }

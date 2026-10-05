@@ -63,10 +63,17 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// for text; return presses the chosen button.
     private var field: NSTextField?
     private var fieldRow = 0
+    /// Associated prompt ID, when presented on behalf of PromptManager (B10).
+    var promptId: String?
 
     /// The question drawn in `window`, if one is waiting for an answer.
     static func pending(in window: NSWindow?) -> TerminalDialogView? {
         window?.contentView?.subviews.lazy.compactMap { $0 as? TerminalDialogView }.first
+    }
+
+    /// The question with matching prompt ID drawn in `window`.
+    static func pending(in window: NSWindow?, for promptId: String) -> TerminalDialogView? {
+        window?.contentView?.subviews.lazy.compactMap { $0 as? TerminalDialogView }.first { $0.promptId == promptId }
     }
 
     /// Takes the question back unanswered: the same as cancelling it.
@@ -125,12 +132,13 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// (destructive) or `cancel`. Nil when the window has no content view.
     static func ask(in window: NSWindow, title: String, message: String,
                     confirm: String, cancel: String = "Cancel",
+                    promptId: String? = nil,
                     theme: TerminalTheme?) async -> Bool? {
         // The safe choice is on the left, the confirm on the right and chosen.
         let answer = await choose(in: window, title: title, lines: TUIText.plain(message, width: 52),
                                   choices: [Choice(title: cancel, kind: .normal),
                                             Choice(title: confirm, kind: .destructive)],
-                                  selected: 1, cancelIndex: 0, theme: theme)
+                                  selected: 1, cancelIndex: 0, promptId: promptId, theme: theme)
         return answer.map { $0 == 1 }
     }
 
@@ -138,13 +146,16 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// `hint` below it, `value` in it to start with -- and answers what was
     /// typed when `confirm` is pressed or return typed, nil when cancelled.
     static func askText(in window: NSWindow, title: String, label: String, value: String, hint: String?,
-                        confirm: String, cancel: String = "Cancel", theme: TerminalTheme?) async -> String? {
+                        confirm: String, cancel: String = "Cancel",
+                        promptId: String? = nil,
+                        theme: TerminalTheme?) async -> String? {
         guard let content = window.contentView else { return nil }
         var lines = [TUIText.Line(runs: [TUIText.Run(text: label, kind: .muted)]), TUIText.Line(runs: [])]
         if let hint { lines.append(TUIText.Line(runs: [TUIText.Run(text: hint, kind: .muted)])) }
         let view = TerminalDialogView(title: title, lines: lines,
                                       choices: [Choice(title: cancel, kind: .normal), Choice(title: confirm, kind: .primary)],
                                       cancelIndex: 0, style: .from(theme))
+        view.promptId = promptId
         view.selected = 1
         view.updateSelection()
         let field = NSTextField(string: value)
@@ -196,10 +207,13 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// `cancelIndex` for escape or a withdrawn question. Nil when the window
     /// has no content view to draw in.
     static func choose(in window: NSWindow, title: String, lines: [TUIText.Line], choices: [Choice],
-                       selected: Int = 0, cancelIndex: Int, theme: TerminalTheme?) async -> Int? {
+                       selected: Int = 0, cancelIndex: Int,
+                       promptId: String? = nil,
+                       theme: TerminalTheme?) async -> Int? {
         guard let content = window.contentView, !choices.isEmpty else { return nil }
         let view = TerminalDialogView(title: title, lines: lines, choices: choices,
                                       cancelIndex: cancelIndex, style: .from(theme))
+        view.promptId = promptId
         view.selected = min(max(selected, 0), choices.count - 1)
         view.updateSelection()
         view.frame = content.bounds

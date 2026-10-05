@@ -152,6 +152,20 @@ extension Tako {
         /// write the escape sequence back to the PTY.
         public func handleUserNotification(response: UNNotificationResponse) {
             let userInfo = response.notification.request.content.userInfo
+            if let promptId = userInfo["tako_prompt_id"] as? String {
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        PromptManager.shared.handleNotificationResponse(promptId: promptId, response: response)
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            PromptManager.shared.handleNotificationResponse(promptId: promptId, response: response)
+                        }
+                    }
+                }
+                return
+            }
             guard let raw = userInfo[Tako.notificationSurfaceKey] as? String,
                   let id = UUID(uuidString: raw) else { return }
             if Thread.isMainThread {
