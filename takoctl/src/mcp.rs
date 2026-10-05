@@ -370,6 +370,63 @@ pub fn all_tools() -> Vec<McpTool> {
                 "required": ["message"]
             }),
         },
+        McpTool {
+            name: "tako_overlay_open",
+            description: "Display an interactive HTML, Markdown, unified diff, image, or PDF document in an overlay above or split beside a pane.",
+            required_scopes: &[CapabilityScope::Overlay],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Path to artifact or document file (e.g. .html, .md, .diff, image, .pdf)"
+                    },
+                    "split": {
+                        "type": "string",
+                        "enum": ["right", "left", "down", "up"],
+                        "description": "Optional split direction to open overlay in a split pane beside target"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["html", "markdown", "image", "pdf", "diff"],
+                        "description": "Optional explicit file type override"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                },
+                "required": ["file"]
+            }),
+        },
+        McpTool {
+            name: "tako_overlay_close",
+            description: "Close an active artifact/document overlay on the current or specified pane.",
+            required_scopes: &[CapabilityScope::Overlay],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_overlay_status",
+            description: "Inspect active artifact/document overlay state on the current or specified pane.",
+            required_scopes: &[CapabilityScope::Overlay],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                }
+            }),
+        },
     ]
 }
 
@@ -768,6 +825,29 @@ impl McpServer {
                 }
                 "ask"
             }
+            "tako_overlay_open" => {
+                let file = args
+                    .get("file")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "missing required field 'file'".to_string())?;
+                req_args.insert("subcommand".into(), Value::String("open".into()));
+                req_args.insert("file".into(), Value::String(file.into()));
+                if let Some(split) = args.get("split").and_then(Value::as_str) {
+                    req_args.insert("split".into(), Value::String(split.into()));
+                }
+                if let Some(type_str) = args.get("type").and_then(Value::as_str) {
+                    req_args.insert("type".into(), Value::String(type_str.into()));
+                }
+                "overlay"
+            }
+            "tako_overlay_close" => {
+                req_args.insert("subcommand".into(), Value::String("close".into()));
+                "overlay"
+            }
+            "tako_overlay_status" => {
+                req_args.insert("subcommand".into(), Value::String("status".into()));
+                "overlay"
+            }
             other => return Err(format!("unrecognized tool '{other}'")),
         };
 
@@ -1018,5 +1098,66 @@ mod tests {
         assert_eq!(req2["args"]["status"], "working");
         assert_eq!(req2["args"]["text"], "Compiling");
         assert_eq!(req2["args"]["ttl"], 30.0);
+    }
+
+    #[test]
+    fn test_mcp_overlay_tools_and_scoping() {
+        // 1. Verify tools/list contains overlay tools
+        let caps = Capabilities::all();
+        let server = McpServer::new("/tmp/test.sock".into(), caps, Some("surface-abc".into()));
+        let list_msg = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+        }).to_string();
+        let list_resp = server.handle_message(&list_msg).expect("response");
+        let tools = list_resp["result"]["tools"].as_array().expect("tools array");
+        assert!(tools.iter().any(|t| t["name"] == "tako_overlay_open"));
+        assert!(tools.iter().any(|t| t["name"] == "tako_overlay_close"));
+        assert!(tools.iter().any(|t| t["name"] == "tako_overlay_status"));
+
+        // 2. Overlay tool requires 'overlay' scope
+        let call_overlay = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_overlay_open",
+                "arguments": {
+                    "file": "/tmp/test.md"
+                }
+            }
+        }).to_string();
+
+        let read_layout = Capabilities::parse("read,layout").unwrap();
+        let server_no_overlay = McpServer::new("/tmp/test.sock".into(), read_layout, Some("surface-abc".into()));
+        let resp = server_no_overlay.handle_message(&call_overlay).expect("response");
+        assert_eq!(resp["result"]["isError"], true);
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("refusal: tool 'tako_overlay_open' requires 'overlay' capability scope"));
+        assert!(text.contains("active scopes: [layout, read]"));
+
+        // 3. build_socket_request for overlay tools
+        let open_args = json!({
+            "file": "/tmp/doc.html",
+            "split": "right",
+            "type": "html"
+        });
+        let req_open = server.build_socket_request("tako_overlay_open", &open_args).unwrap();
+        assert_eq!(req_open["cmd"], "overlay");
+        assert_eq!(req_open["args"]["subcommand"], "open");
+        assert_eq!(req_open["args"]["file"], "/tmp/doc.html");
+        assert_eq!(req_open["args"]["split"], "right");
+        assert_eq!(req_open["args"]["type"], "html");
+
+        let close_args = json!({});
+        let req_close = server.build_socket_request("tako_overlay_close", &close_args).unwrap();
+        assert_eq!(req_close["cmd"], "overlay");
+        assert_eq!(req_close["args"]["subcommand"], "close");
+
+        let status_args = json!({});
+        let req_status = server.build_socket_request("tako_overlay_status", &status_args).unwrap();
+        assert_eq!(req_status["cmd"], "overlay");
+        assert_eq!(req_status["args"]["subcommand"], "status");
     }
 }

@@ -30,6 +30,9 @@ Tako exposes its capabilities through both a stdio **MCP server** (`takoctl mcp`
 | **Set status badge** | `tako_status` | `takoctl status set <status> [--text <text>]` | `signal` |
 | **Update progress** | `tako_progress` | `takoctl progress <0-100\|indeterminate\|error\|pause\|clear>` | `signal` |
 | **Ask question** | `tako_ask` | `takoctl ask <question> [--choices C1,C2] [--confirm]` | `signal` |
+| **Open artifact overlay** | `tako_overlay_open` | `takoctl overlay open <file> [--split dir] [--type type]` | `overlay` |
+| **Close overlay** | `tako_overlay_close` | `takoctl overlay close [--target ID]` | `overlay` |
+| **Overlay status** | `tako_overlay_status` | `takoctl overlay status [--target ID]` | `overlay` |
 
 ---
 
@@ -142,3 +145,31 @@ CHILD_ID=$(takoctl split right --child-of self --label "Researcher")
 takoctl focus --target "$CHILD_ID"
 ```
 The child pane is linked in the session tree and sidebar. The parent pane's status indicator automatically summarizes the health of its child panes.
+
+---
+
+### 5. In-Terminal Artifact & Document Overlays (D1)
+
+Display interactive HTML, Markdown, unified diffs, diagrams/images, or PDFs directly inside Tako without opening external browser windows:
+
+```bash
+# Open a generated report or test output beside your working terminal
+takoctl overlay open target/criterion/report/index.html --split right
+
+# Preview an artifact markdown document over the current pane
+takoctl overlay open docs/architecture.md
+
+# Inspect unified git diffs with theme syntax highlighting
+takoctl overlay open changes.diff --type diff
+
+# Check overlay status or close when done
+takoctl overlay status
+takoctl overlay close
+```
+
+Or via MCP:
+- `tako_overlay_open(file="target/report.html", split="right")`
+- `tako_overlay_status()`
+- `tako_overlay_close()`
+
+Overlays run in a strict, sandboxed WebKit environment restricted to the pane's working directory, inherit Tako's theme colors via CSS variables, and automatically reload when the underlying file is rewritten.

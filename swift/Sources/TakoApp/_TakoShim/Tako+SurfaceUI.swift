@@ -42,6 +42,7 @@ extension Tako {
         @ObservedObject var notificationStore: NotificationStore = .shared
         @ObservedObject var attentionManager: AttentionManager = .shared
         @ObservedObject private var crab: CrabTracker
+        @ObservedObject var overlayStore: OverlayStore = .shared
         var isSplit: Bool = false
 
         init(surfaceView: SurfaceView, isSplit: Bool = false) {
@@ -74,6 +75,10 @@ extension Tako {
                         SurfaceSearchBar(surfaceView: surfaceView, searchState: searchState)
                             .padding(8)
                     }
+                }
+                if let overlay = overlayStore.overlay(for: surfaceView.id), overlay.splitDirection == nil {
+                    ArtifactOverlayView(overlay: overlay, surfaceView: surfaceView)
+                        .transition(.opacity)
                 }
             }
             .overlay {

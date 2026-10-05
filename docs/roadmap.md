@@ -619,9 +619,9 @@ text to decide what happened.
 
 ## Track D -- Artifacts, preview and review (M4)
 
-### [ ] D1. In-terminal artifact and document overlays
+### [x] D1. In-terminal artifact and document overlays
 
-`takoctl overlay open --html <file>` (also Markdown, images, PDF and plain diffs).
+`takoctl overlay open <file>` (also Markdown, images, PDF and plain diffs).
 
 Embedded sandboxed webview overlay over a pane for static previews of agent-generated HTML test summaries, coverage reports, documentation, or diffs styled with terminal theme variables (`--tako-bg`, `--tako-fg`, ANSI palette).
 

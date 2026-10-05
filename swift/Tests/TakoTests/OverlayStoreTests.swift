@@ -1,0 +1,147 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
+import Foundation
+import Testing
+@testable import Tako
+
+@Suite @MainActor struct OverlayStoreTests {
+
+    @Test func testInitialState() {
+        let store = OverlayStore()
+        let paneId = UUID()
+
+        #expect(store.overlays.isEmpty)
+        #expect(store.reloadTokens.isEmpty)
+        #expect(store.overlay(for: paneId) == nil)
+        #expect(store.hasOverlay(paneId: paneId) == false)
+    }
+
+    @Test func testOpenAndCloseOverlay() throws {
+        let store = OverlayStore()
+        let paneId = UUID()
+
+        // Create a temporary file
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("test-artifact-\(UUID().uuidString).md")
+        try "# Test Artifact\n\nHello world".write(to: tempFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let state = try store.openOverlay(
+            paneId: paneId,
+            path: tempFile.path,
+            surfacePwd: tempDir.path
+        )
+
+        #expect(state.paneId == paneId)
+        #expect(state.fileURL.standardizedFileURL == tempFile.standardizedFileURL)
+        #expect(state.fileType == .markdown)
+        #expect(state.title == tempFile.lastPathComponent)
+        #expect(state.sandboxedDirectory.path == tempDir.standardizedFileURL.path)
+        #expect(store.hasOverlay(paneId: paneId) == true)
+        #expect(store.overlay(for: paneId)?.fileURL == tempFile.standardizedFileURL)
+        #expect(store.reloadTokens[paneId] != nil)
+
+        // Close overlay
+        let closed = store.closeOverlay(paneId: paneId)
+        #expect(closed == true)
+        #expect(store.hasOverlay(paneId: paneId) == false)
+        #expect(store.overlay(for: paneId) == nil)
+        #expect(store.reloadTokens[paneId] == nil)
+
+        // Closing non-existent overlay returns false
+        let closedAgain = store.closeOverlay(paneId: paneId)
+        #expect(closedAgain == false)
+    }
+
+    @Test func testFileTypeInferenceAndExplicitOverride() throws {
+        let store = OverlayStore()
+        let tempDir = FileManager.default.temporaryDirectory
+
+        // 1. Markdown
+        let mdFile = tempDir.appendingPathComponent("doc-\(UUID().uuidString).markdown")
+        try "Content".write(to: mdFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: mdFile) }
+
+        let s1 = try store.openOverlay(paneId: UUID(), path: mdFile.path)
+        #expect(s1.fileType == .markdown)
+
+        // 2. HTML
+        let htmlFile = tempDir.appendingPathComponent("page-\(UUID().uuidString).html")
+        try "<h1>Title</h1>".write(to: htmlFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: htmlFile) }
+
+        let s2 = try store.openOverlay(paneId: UUID(), path: htmlFile.path)
+        #expect(s2.fileType == .html)
+
+        // 3. Diff
+        let diffFile = tempDir.appendingPathComponent("changes-\(UUID().uuidString).patch")
+        try "--- a/file\n+++ b/file".write(to: diffFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: diffFile) }
+
+        let s3 = try store.openOverlay(paneId: UUID(), path: diffFile.path)
+        #expect(s3.fileType == .diff)
+
+        // 4. Override
+        let txtFile = tempDir.appendingPathComponent("log-\(UUID().uuidString).txt")
+        try "--- a\n+++ b".write(to: txtFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: txtFile) }
+
+        let s4 = try store.openOverlay(paneId: UUID(), path: txtFile.path, typeString: "diff")
+        #expect(s4.fileType == .diff)
+    }
+
+    @Test func testSandboxingDerivation() throws {
+        let store = OverlayStore()
+        let tempDir = FileManager.default.temporaryDirectory
+        let subDir = tempDir.appendingPathComponent("project-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: subDir) }
+
+        let fileInSub = subDir.appendingPathComponent("report.html")
+        try "<p>Done</p>".write(to: fileInSub, atomically: true, encoding: .utf8)
+
+        // When surfacePwd contains the file, sandboxedDirectory is surfacePwd
+        let s1 = try store.openOverlay(paneId: UUID(), path: fileInSub.path, surfacePwd: subDir.path)
+        #expect(s1.sandboxedDirectory.path == subDir.standardizedFileURL.path)
+
+        // When surfacePwd does NOT contain the file, sandboxedDirectory is the file's parent directory
+        let otherDir = tempDir.appendingPathComponent("other-\(UUID().uuidString)")
+        let s2 = try store.openOverlay(paneId: UUID(), path: fileInSub.path, surfacePwd: otherDir.path)
+        #expect(s2.sandboxedDirectory.path == subDir.standardizedFileURL.path)
+    }
+
+    @Test func testReloadOverlay() throws {
+        let store = OverlayStore()
+        let paneId = UUID()
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("reload-\(UUID().uuidString).md")
+        try "# Initial".write(to: tempFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        try store.openOverlay(paneId: paneId, path: tempFile.path)
+        let initialToken = store.reloadTokens[paneId]
+        #expect(initialToken != nil)
+
+        store.reloadOverlay(paneId: paneId)
+        let reloadedToken = store.reloadTokens[paneId]
+        #expect(reloadedToken != nil)
+        #expect(reloadedToken != initialToken)
+    }
+
+    @Test func testNonExistentFileThrows() {
+        let store = OverlayStore()
+        let fakePath = "/path/to/nonexistent/file-\(UUID().uuidString).html"
+
+        #expect(throws: Error.self) {
+            try store.openOverlay(paneId: UUID(), path: fakePath)
+        }
+    }
+}
