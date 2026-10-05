@@ -427,6 +427,42 @@ pub fn all_tools() -> Vec<McpTool> {
                 }
             }),
         },
+        McpTool {
+            name: "tako_text",
+            description: "Read text from the terminal pane, optionally styled with ANSI SGR color/attribute escape codes.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "Maximum number of trailing lines to read"
+                    },
+                    "styled": {
+                        "type": "boolean",
+                        "description": "If true, preserve terminal colors and styling attributes as ANSI SGR escape sequences"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_screenshot",
+            description: "Capture the rendered pane as a PNG image.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                }
+            }),
+        },
     ]
 }
 
@@ -636,7 +672,7 @@ impl McpServer {
 
         // Execute against socket
         match socket::exchange_within(&self.socket_path, &socket_req, timeout, socket::MAX_ANSWER_BYTES) {
-            Ok(answer) => self.format_answer(&answer),
+            Ok(answer) => self.format_answer(name, &answer),
             Err(Failure { message, sent }) => {
                 let note = if sent {
                     " (request sent, may have completed)"
@@ -863,6 +899,16 @@ impl McpServer {
                 req_args.insert("subcommand".into(), Value::String("status".into()));
                 "overlay"
             }
+            "tako_text" => {
+                if let Some(lines) = args.get("lines").and_then(Value::as_i64) {
+                    req_args.insert("lines".into(), Value::from(lines));
+                }
+                if let Some(styled) = args.get("styled").and_then(Value::as_bool) {
+                    req_args.insert("styled".into(), Value::Bool(styled));
+                }
+                "text"
+            }
+            "tako_screenshot" => "screenshot",
             other => return Err(format!("unrecognized tool '{other}'")),
         };
 
@@ -876,9 +922,42 @@ impl McpServer {
         Ok(Value::Object(req))
     }
 
-    fn format_answer(&self, answer: &Value) -> Value {
+    fn format_answer(&self, name: &str, answer: &Value) -> Value {
         let is_ok = answer.get("ok").and_then(Value::as_bool).unwrap_or(true);
         if is_ok {
+            if name == "tako_text" {
+                let text = answer["result"]["text"].as_str().unwrap_or("").to_string();
+                return json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": text
+                        }
+                    ],
+                    "isError": false
+                });
+            }
+            if name == "tako_screenshot" {
+                if let Some(data) = answer["result"]["data"].as_str() {
+                    let id = answer["result"]["id"].as_str().unwrap_or("");
+                    let width = answer["result"]["width"].as_f64().unwrap_or(0.0) as u64;
+                    let height = answer["result"]["height"].as_f64().unwrap_or(0.0) as u64;
+                    return json!({
+                        "content": [
+                            {
+                                "type": "image",
+                                "data": data,
+                                "mimeType": "image/png"
+                            },
+                            {
+                                "type": "text",
+                                "text": format!("Screenshot of pane {id} ({width}x{height} png)")
+                            }
+                        ],
+                        "isError": false
+                    });
+                }
+            }
             let text = if let Some(res) = answer.get("result") {
                 serde_json::to_string_pretty(res).unwrap_or_else(|_| res.to_string())
             } else {
@@ -1230,6 +1309,92 @@ mod tests {
         let text3 = resp3["result"]["content"][0]["text"].as_str().unwrap();
         assert!(!text3.contains("refusal:"));
         assert!(text3.contains("Tako socket error:"));
+    }
+
+    #[test]
+    fn test_mcp_text_and_screenshot() {
+        let tools = all_tools();
+        let tool_text = tools.iter().find(|t| t.name == "tako_text").expect("tako_text tool");
+        let tool_ss = tools.iter().find(|t| t.name == "tako_screenshot").expect("tako_screenshot tool");
+        assert_eq!(tool_text.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(tool_ss.required_scopes, &[CapabilityScope::Read]);
+
+        // 1. Refusal with non-read scope
+        let signal_only = Capabilities::parse("signal").unwrap();
+        let server_signal = McpServer::new("/tmp/test.sock".into(), signal_only, Some("pane-1".into()));
+
+        let text_call = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_text",
+                "arguments": {
+                    "lines": 10,
+                    "styled": true
+                }
+            }
+        }).to_string();
+        let resp_text = server_signal.handle_message(&text_call).expect("response");
+        assert_eq!(resp_text["result"]["isError"], true);
+        let err_text = resp_text["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(err_text.contains("refusal: tool 'tako_text' requires 'read' capability scope"));
+
+        let ss_call = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_screenshot",
+                "arguments": {}
+            }
+        }).to_string();
+        let resp_ss = server_signal.handle_message(&ss_call).expect("response");
+        assert_eq!(resp_ss["result"]["isError"], true);
+        let err_ss = resp_ss["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(err_ss.contains("refusal: tool 'tako_screenshot' requires 'read' capability scope"));
+
+        // 2. build_socket_request
+        let read_caps = Capabilities::parse("read").unwrap();
+        let server_read = McpServer::new("/tmp/test.sock".into(), read_caps, Some("pane-1".into()));
+
+        let req_text = server_read.build_socket_request("tako_text", &json!({"lines": 25, "styled": true})).unwrap();
+        assert_eq!(req_text["cmd"], "text");
+        assert_eq!(req_text["args"]["lines"], 25);
+        assert_eq!(req_text["args"]["styled"], true);
+        assert_eq!(req_text["args"]["target"], "pane-1");
+
+        let req_ss = server_read.build_socket_request("tako_screenshot", &json!({"target": "custom-pane"})).unwrap();
+        assert_eq!(req_ss["cmd"], "screenshot");
+        assert_eq!(req_ss["args"]["target"], "custom-pane");
+
+        // 3. format_answer
+        let answer_text = json!({
+            "ok": true,
+            "result": {
+                "text": "\u{1b}[38;2;255;0;0mHello\u{1b}[0m"
+            }
+        });
+        let fmt_text = server_read.format_answer("tako_text", &answer_text);
+        assert_eq!(fmt_text["isError"], false);
+        assert_eq!(fmt_text["content"][0]["text"], "\u{1b}[38;2;255;0;0mHello\u{1b}[0m");
+
+        let answer_ss = json!({
+            "ok": true,
+            "result": {
+                "id": "pane-1",
+                "width": 640,
+                "height": 480,
+                "format": "png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg=="
+            }
+        });
+        let fmt_ss = server_read.format_answer("tako_screenshot", &answer_ss);
+        assert_eq!(fmt_ss["isError"], false);
+        assert_eq!(fmt_ss["content"][0]["type"], "image");
+        assert_eq!(fmt_ss["content"][0]["data"], "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==");
+        assert_eq!(fmt_ss["content"][0]["mimeType"], "image/png");
+        assert!(fmt_ss["content"][1]["text"].as_str().unwrap().contains("640x480 png"));
     }
 }
 

@@ -129,10 +129,12 @@ enum ControlCommands {
     /// a window of its own, so the frontmost by order is not necessarily the
     /// one being typed into.
     static func activePane(_ panes: [Pane]) -> UUID? {
+        let paneIDs = Set(panes.map(\.surface.id))
         let candidates = [NSApp.keyWindow, NSApp.mainWindow] + NSApp.orderedWindows.map { Optional($0) }
         for window in candidates {
             if let controller = window?.windowController as? BaseTerminalController,
-               let id = controller.focusedSurface?.id {
+               let id = controller.focusedSurface?.id,
+               paneIDs.contains(id) {
                 return id
             }
         }
@@ -142,23 +144,32 @@ enum ControlCommands {
     /// Answers `request`, now or -- for work done off the main thread or
     /// that waits on the user -- later, exactly once.
     static func handle(_ request: ControlRequest, reply: @escaping @Sendable (ControlResponse) -> Void) {
-        let all = panes()
+        handle(request, all: panes(), reply: reply)
+    }
+
+    static func handle(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
         do {
             guard mode.allows(from: request.from, panes: all.map(\.surface.id)) else {
-                reply(handle(request))   // the refusal, from one place
+                reply(handle(request, all: all))   // the refusal, from one place
                 return
             }
             switch request.cmd {
             case "text":
                 let surface = try target(request, all)
+                guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+                    throw ControlError(.disabled, "secure-input panes cannot be read")
+                }
                 let lines = try ControlInput.lines(request.args)
+                let styled = request.args["styled"] == .bool(true)
                 let core = surface.core
                 let id = surface.id.uuidString.lowercased()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    var result = ControlInput.read(core, lines: lines)
+                    var result = ControlInput.read(core, lines: lines, styled: styled)
                     result["id"] = .string(id)
                     reply(.ok(result))
                 }
+            case "screenshot":
+                reply(handle(request, all: all))
             case "close":
                 let surface = try target(request, all)
                 ControlLayout.close(surface, reply: reply)
@@ -557,6 +568,8 @@ enum ControlCommands {
                 return .ok(try sessionCommand(request, all: all))
             case "overlay":
                 return .ok(try overlayCommand(request, all: all))
+            case "screenshot":
+                return .ok(try screenshotCommand(request, all: all))
             case "text", "close", "last", "wait", "run", "find", "notify", "events":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
@@ -1750,6 +1763,90 @@ enum ControlCommands {
         default:
             throw ControlError(.invalid, "unknown overlay subcommand: \(sub)")
         }
+    }
+
+    static func screenshotCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
+        let surface = try target(request, all)
+        guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+            throw ControlError(.disabled, "secure-input panes cannot be read")
+        }
+        let (pngData, width, height) = try captureScreenshot(surface)
+        let id = surface.id.uuidString.lowercased()
+        return [
+            "id": .string(id),
+            "width": .number(Double(width)),
+            "height": .number(Double(height)),
+            "format": .string("png"),
+            "data": .string(pngData.base64EncodedString()),
+        ]
+    }
+
+    static func captureScreenshot(_ surface: Tako.SurfaceView) throws -> (data: Data, width: Int, height: Int) {
+        let cols = max(1, Int(surface.core.cols()))
+        let rows = max(1, Int(surface.core.rows()))
+        let renderer = surface.renderer
+        let size = renderer.pixelSize(cols: cols, rows: rows)
+        let imgWidth = max(1, Int(size.width))
+        let imgHeight = max(1, Int(size.height))
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: imgWidth,
+                  height: imgHeight,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            throw ControlError(.internalError, "failed to create bitmap context for screenshot")
+        }
+
+        let snapshot = surface.core.snapshot()
+        let cursorRow = Int(snapshot.cursorRow)
+        let cursorCol = Int(snapshot.cursorCol)
+        let cursorVisible = snapshot.cursorVisible
+        let cursorStyle = snapshot.cursorStyle
+
+        var cachedRows: [[TerminalCell]] = []
+        var graphemes: [FfiGrapheme] = []
+        for r in 0..<rows {
+            let ffiCells = surface.core.viewportRow(row: UInt32(r))
+            var termCells: [TerminalCell] = []
+            for (c, cell) in ffiCells.enumerated() {
+                termCells.append(TerminalCell(cell))
+                if let g = cell.grapheme, !g.isEmpty {
+                    graphemes.append(FfiGrapheme(row: UInt32(r), col: UInt32(c), text: g))
+                }
+            }
+            cachedRows.append(termCells)
+        }
+
+        renderer.draw(
+            in: context,
+            cols: cols,
+            rows: rows,
+            rowProvider: { row in
+                guard row >= 0 && row < cachedRows.count else { return [] }
+                return cachedRows[row]
+            },
+            graphemes: graphemes,
+            cursorRow: cursorRow,
+            cursorCol: cursorCol,
+            cursorVisible: cursorVisible,
+            cursorStyle: cursorStyle,
+            selection: nil,
+            skipBackgrounds: false
+        )
+
+        guard let cgImage = context.makeImage() else {
+            throw ControlError(.internalError, "failed to create cgImage from bitmap context")
+        }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else {
+            throw ControlError(.internalError, "failed to encode screenshot as PNG")
+        }
+        return (pngData, imgWidth, imgHeight)
     }
 
     static func layout(_ node: SplitTree<Tako.SurfaceView>.Node) -> JSON {
