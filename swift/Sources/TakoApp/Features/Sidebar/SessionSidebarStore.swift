@@ -32,6 +32,7 @@ final class SessionSidebarStore: ObservableObject {
         didSet {
             defaults.set(optInGit, forKey: Self.optInGitKey)
             gitCache.removeAll()
+            pendingGitInspections.removeAll()
             objectWillChange.send()
         }
     }
@@ -42,6 +43,7 @@ final class SessionSidebarStore: ObservableObject {
         didSet {
             defaults.set(optInPorts, forKey: Self.optInPortsKey)
             portsCache.removeAll()
+            pendingPortsInspections.removeAll()
             objectWillChange.send()
         }
     }
@@ -67,6 +69,8 @@ final class SessionSidebarStore: ObservableObject {
     // In-memory TTL caches to avoid redundant filesystem/process inspections during rendering.
     private var gitCache: [String: CacheEntry<LocalGitInspection.GitInfo?>] = [:]
     private var portsCache: [Int: CacheEntry<[Int]>] = [:]
+    private var pendingGitInspections: Set<String> = []
+    private var pendingPortsInspections: Set<Int> = []
     private let cacheTTL: TimeInterval = 2.0
 
     private var surfaceSubscriptions: Set<AnyCancellable> = []
@@ -84,6 +88,8 @@ final class SessionSidebarStore: ObservableObject {
     func invalidateCaches() {
         gitCache.removeAll()
         portsCache.removeAll()
+        pendingGitInspections.removeAll()
+        pendingPortsInspections.removeAll()
     }
 
     /// Dynamically binds to live surfaces in the tab group to observe status, progress, elapsed, title, and pwd changes in real time.
@@ -141,7 +147,9 @@ final class SessionSidebarStore: ObservableObject {
         result.reserveCapacity(windows.count)
 
         for (index, win) in windows.enumerated() {
-            let surface = surface(in: win)
+            let winSurfaces = surfaces(in: win)
+            let surface = winSurfaces.first
+            let surfaceIds = Set(winSurfaces.map(\.id))
             let surfaceId = surface?.id
             let id = surfaceId?.uuidString ?? "\(win.windowNumber)"
 
@@ -153,54 +161,76 @@ final class SessionSidebarStore: ObservableObject {
             let prog = aggregateProgress(for: win)
             let pwd = surface?.pwd
 
-            // Opt-in Git branch and dirty status
+            // Opt-in Git branch and dirty status (async background inspection to never block MainActor)
             var gitBranch: String?
             var gitDirty: Bool?
             if optInGit, let dir = pwd, !dir.isEmpty {
-                if let cached = gitCache[dir], Date().timeIntervalSince(cached.timestamp) < cacheTTL {
+                let cached = gitCache[dir]
+                if let cached {
                     gitBranch = cached.value?.branch
                     gitDirty = cached.value?.isDirty
-                } else {
-                    let inspected = LocalGitInspection.inspect(directory: dir)
-                    gitCache[dir] = CacheEntry(value: inspected, timestamp: Date())
-                    gitBranch = inspected?.branch
-                    gitDirty = inspected?.isDirty
+                } else if let resolved = LocalGitInspection.resolveBranch(directory: dir) {
+                    gitBranch = resolved.branch
                 }
-            }
-
-            // Opt-in listening ports
-            var ports: [Int]?
-            if optInPorts, let pty = surface?.pty {
-                let pid = pty.foregroundPID ?? Int(pty.child)
-                if pid > 0 {
-                    if let cached = portsCache[pid], Date().timeIntervalSince(cached.timestamp) < cacheTTL {
-                        ports = cached.value
-                    } else {
-                        let inspected = LocalPortInspection.inspectListeningPorts(pid: pid)
-                        portsCache[pid] = CacheEntry(value: inspected, timestamp: Date())
-                        ports = inspected
+                let isExpired = (cached == nil) || (Date().timeIntervalSince(cached!.timestamp) >= cacheTTL)
+                if isExpired && !pendingGitInspections.contains(dir) {
+                    pendingGitInspections.insert(dir)
+                    Task.detached(priority: .utility) {
+                        let inspected = LocalGitInspection.inspect(directory: dir)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.pendingGitInspections.remove(dir)
+                            self.gitCache[dir] = CacheEntry(value: inspected, timestamp: Date())
+                            self.objectWillChange.send()
+                        }
                     }
                 }
             }
 
-            // Latest notification text from Track B4
-            let latestNotification = surfaceId.flatMap { sid in
-                NotificationStore.shared.records.first(where: { $0.surfaceId == sid })?.title
+            // Opt-in listening ports (async background inspection to never block MainActor)
+            var ports: [Int]?
+            if optInPorts, let pty = surface?.pty {
+                let pid = pty.foregroundPID ?? Int(pty.child)
+                if pid > 0 {
+                    let cached = portsCache[pid]
+                    if let cached {
+                        ports = cached.value
+                    }
+                    let isExpired = (cached == nil) || (Date().timeIntervalSince(cached!.timestamp) >= cacheTTL)
+                    if isExpired && !pendingPortsInspections.contains(pid) {
+                        pendingPortsInspections.insert(pid)
+                        Task.detached(priority: .utility) {
+                            let inspected = LocalPortInspection.inspectListeningPorts(pid: pid)
+                            await MainActor.run { [weak self] in
+                                guard let self else { return }
+                                self.pendingPortsInspections.remove(pid)
+                                self.portsCache[pid] = CacheEntry(value: inspected, timestamp: Date())
+                                self.objectWillChange.send()
+                            }
+                        }
+                    }
+                }
             }
 
-            // User-editable description
-            let userDesc = descriptions[id] ?? surfaceId.flatMap { descriptions[$0.uuidString] }
+            // Latest notification text across all panes in this tab (from Track B4)
+            let latestNotification = NotificationStore.shared.records
+                .first(where: { surfaceIds.contains($0.surfaceId) })?.title
 
-            let unread = surfaceId.map { NotificationStore.shared.unreadCount(for: $0) } ?? 0
+            // User-editable description (for tab window ID or any surface ID in this tab)
+            let userDesc = descriptions[id] ?? surfaceIds.compactMap { descriptions[$0.uuidString] }.first
+
+            // Total unread count across all panes in this tab
+            let unread = surfaceIds.reduce(0) { $0 + NotificationStore.shared.unreadCount(for: $1) }
             let isSelected = win === selected
 
-            // Needs attention condition
+            // Needs attention condition across all panes in this tab
+            let hasCrabUnread = winSurfaces.contains(where: { $0.crab.unread })
             let needsAttention = !isSelected && (
                 status == .error ||
                 status == .needsApproval ||
                 status == .waitingForInput ||
                 unread > 0 ||
-                (crab?.unread ?? false)
+                hasCrabUnread
             )
 
             let item = SessionSidebarItem(

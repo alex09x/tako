@@ -83,6 +83,9 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// The window hosting this terminal view controller (TerminalViewModel).
+    var containingWindow: NSWindow? { self.window }
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 

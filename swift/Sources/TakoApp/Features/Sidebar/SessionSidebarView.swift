@@ -5,6 +5,7 @@ import TakoKit
 /// SwiftUI view for the vertical Session Sidebar (B5).
 struct SessionSidebarView: View {
     @Binding var isPresented: Bool
+    let containingWindow: NSWindow?
     let backgroundColor: Color
 
     @ObservedObject private var store = SessionSidebarStore.shared
@@ -16,16 +17,25 @@ struct SessionSidebarView: View {
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isListFocused: Bool
 
-    // Tracks key window for tab group resolution
+    // Tracks window for tab group resolution
     @State private var hostingWindow: NSWindow?
 
-    init(isPresented: Binding<Bool>, backgroundColor: Color = Color(nsColor: .windowBackgroundColor)) {
+    init(
+        isPresented: Binding<Bool>,
+        containingWindow: NSWindow? = nil,
+        backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
+    ) {
         self._isPresented = isPresented
+        self.containingWindow = containingWindow
         self.backgroundColor = backgroundColor
     }
 
+    private var targetWindow: NSWindow? {
+        containingWindow ?? hostingWindow ?? NSApp?.keyWindow
+    }
+
     private var items: [SessionSidebarItem] {
-        store.items(for: hostingWindow ?? NSApp?.keyWindow)
+        store.items(for: targetWindow)
     }
 
     public var body: some View {
@@ -46,7 +56,9 @@ struct SessionSidebarView: View {
             alignment: .trailing
         )
         .onAppear {
-            hostingWindow = NSApp?.keyWindow
+            if hostingWindow == nil {
+                hostingWindow = containingWindow ?? NSApp?.keyWindow
+            }
             if let activeIndex = items.firstIndex(where: { $0.isSelected }) {
                 selectedIndex = activeIndex
             }
@@ -56,7 +68,15 @@ struct SessionSidebarView: View {
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
-            if let win = notif.object as? NSWindow {
+            guard let win = notif.object as? NSWindow else { return }
+            // Only update hostingWindow if we were not explicitly bound to a window,
+            // or if the window that became key belongs to our own window's tab group.
+            if let bound = containingWindow {
+                let group = Tako.CustomTabGroup.group(for: bound)
+                let groupWindows = group.windows
+                guard groupWindows.contains(where: { $0 === win }) else { return }
+                hostingWindow = win
+            } else if hostingWindow == nil {
                 hostingWindow = win
             }
             store.objectWillChange.send()
@@ -195,7 +215,7 @@ struct SessionSidebarView: View {
                                 .id(index)
                                 .onTapGesture {
                                     selectedIndex = index
-                                    store.selectTab(item: item, in: hostingWindow)
+                                    store.selectTab(item: item, in: targetWindow)
                                 }
                         }
                     }
@@ -221,7 +241,7 @@ struct SessionSidebarView: View {
             }
             .onKeyPress(.return) {
                 if selectedIndex >= 0 && selectedIndex < items.count {
-                    store.selectTab(item: items[selectedIndex], in: hostingWindow)
+                    store.selectTab(item: items[selectedIndex], in: targetWindow)
                 }
                 return .handled
             }
@@ -281,7 +301,7 @@ struct SessionSidebarView: View {
 
                 // Reorder controls
                 HStack(spacing: 2) {
-                    Button(action: { store.moveTab(item: item, delta: -1, in: hostingWindow) }) {
+                    Button(action: { store.moveTab(item: item, delta: -1, in: targetWindow) }) {
                         Image(systemName: "chevron.up")
                             .font(.system(size: 8))
                             .foregroundColor(Color(nsColor: Palette.dim))
@@ -289,7 +309,7 @@ struct SessionSidebarView: View {
                     .buttonStyle(.plain)
                     .disabled(!item.canMoveUp)
 
-                    Button(action: { store.moveTab(item: item, delta: 1, in: hostingWindow) }) {
+                    Button(action: { store.moveTab(item: item, delta: 1, in: targetWindow) }) {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 8))
                             .foregroundColor(Color(nsColor: Palette.dim))
@@ -450,7 +470,7 @@ struct SessionSidebarView: View {
     private var footerView: some View {
         HStack(spacing: 8) {
             Button(action: {
-                if let win = hostingWindow,
+                if let win = targetWindow,
                    let surface = store.surfaces(in: win).first {
                     NotificationCenter.default.post(
                         name: Tako.Notification.takoNewTab,

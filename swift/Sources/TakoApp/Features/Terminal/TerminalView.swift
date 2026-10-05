@@ -41,6 +41,13 @@ protocol TerminalViewModel: ObservableObject {
 
     /// Whether the Session Sidebar panel shows (B5).
     var sessionSidebarIsShowing: Bool { get set }
+
+    /// The window hosting this terminal view, if any.
+    var containingWindow: NSWindow? { get }
+}
+
+extension TerminalViewModel {
+    var containingWindow: NSWindow? { nil }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -82,6 +89,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     if viewModel.sessionSidebarIsShowing {
                         SessionSidebarView(
                             isPresented: $viewModel.sessionSidebarIsShowing,
+                            containingWindow: viewModel.containingWindow,
                             backgroundColor: tako.config.backgroundColor)
                     }
 

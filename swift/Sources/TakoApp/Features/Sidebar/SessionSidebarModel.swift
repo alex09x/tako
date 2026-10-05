@@ -94,9 +94,8 @@ enum LocalGitInspection {
         }
     }
 
-    /// Reads local git branch and dirty status from a directory.
-    /// Strictly operates on the local filesystem: no network, no polling.
-    static func inspect(directory: String) -> GitInfo? {
+    /// Synchronously resolves the repository root and branch name from `.git/HEAD` without launching any subprocess.
+    static func resolveBranch(directory: String) -> (repoRoot: String, branch: String)? {
         guard !directory.isEmpty else { return nil }
         var current = URL(fileURLWithPath: directory)
         var gitDir: URL?
@@ -141,8 +140,15 @@ enum LocalGitInspection {
             branch = String(headTrimmed.prefix(7))
         }
 
-        let isDirty = checkDirtyState(repoRoot: current.path)
-        return GitInfo(branch: branch, isDirty: isDirty)
+        return (repoRoot: current.path, branch: branch)
+    }
+
+    /// Reads local git branch and dirty status from a directory.
+    /// Strictly operates on the local filesystem: no network, no polling.
+    static func inspect(directory: String) -> GitInfo? {
+        guard let resolved = resolveBranch(directory: directory) else { return nil }
+        let isDirty = checkDirtyState(repoRoot: resolved.repoRoot)
+        return GitInfo(branch: resolved.branch, isDirty: isDirty)
     }
 
     private static func checkDirtyState(repoRoot: String) -> Bool {

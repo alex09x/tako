@@ -53,7 +53,8 @@ struct SessionSidebarTests {
     private func createTestGitRepository(branch: String = "feature/sidebar-test") throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-git-\(UUID().uuidString)")
         let gitDir = tempDir.appendingPathComponent(".git")
-        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gitDir.appendingPathComponent("refs"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gitDir.appendingPathComponent("objects"), withIntermediateDirectories: true)
         let headFile = gitDir.appendingPathComponent("HEAD")
         try "ref: refs/heads/\(branch)\n".write(to: headFile, atomically: true, encoding: .utf8)
         return tempDir
@@ -71,14 +72,16 @@ struct SessionSidebarTests {
         // Detached HEAD inspection
         let detachedDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-git-\(UUID().uuidString)")
         let detachedGit = detachedDir.appendingPathComponent(".git")
-        try FileManager.default.createDirectory(at: detachedGit, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: detachedGit.appendingPathComponent("refs"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: detachedGit.appendingPathComponent("objects"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: detachedDir) }
         try "e8a3b5c4d2e1f0\n".write(to: detachedGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
         let detachedInfo = LocalGitInspection.inspect(directory: detachedDir.path)
         #expect(detachedInfo?.branch == "e8a3b5c")
+        #expect(detachedInfo?.isDirty == false)
     }
 
-    @Test func optInFieldsAreOnlyPopulatedWhenEnabled() throws {
+    @Test func optInFieldsAreOnlyPopulatedWhenEnabled() async throws {
         let defaults = createTestDefaults()
         let store = SessionSidebarStore(defaults: defaults)
 
@@ -111,6 +114,9 @@ struct SessionSidebarTests {
 
         // When opt-ins are true, git is populated from local repo
         store.optInGit = true
+        _ = store.items(for: window)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
         let itemsEnabled = store.items(for: window)
         #expect(itemsEnabled.count == 1)
         let itemEnabled = itemsEnabled[0]
@@ -322,7 +328,7 @@ struct SessionSidebarTests {
         #expect(!itemLast.canMoveDown)
     }
 
-    @Test func gitMetadataRefreshesAfterCacheInvalidation() throws {
+    @Test func gitMetadataRefreshesAfterCacheInvalidation() async throws {
         let repoURL = try createTestGitRepository(branch: "feature/first-branch")
         defer { try? FileManager.default.removeItem(at: repoURL) }
 
@@ -334,6 +340,9 @@ struct SessionSidebarTests {
         let surf = Tako.SurfaceView(frame: .zero)
         surf.pwd = repoURL.path
         win.contentView = surf
+
+        _ = store.items(for: win)
+        try await Task.sleep(nanoseconds: 100_000_000)
 
         let items1 = store.items(for: win)
         #expect(items1[0].gitBranch == "feature/first-branch")
@@ -349,8 +358,54 @@ struct SessionSidebarTests {
         // Invalidate cache
         store.invalidateCaches()
 
-        // Inspects new branch
+        // Triggers async inspection for new branch
+        _ = store.items(for: win)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
         let itemsUpdated = store.items(for: win)
         #expect(itemsUpdated[0].gitBranch == "feature/second-branch")
+    }
+
+    @Test func notificationsAndUnreadAggregateAcrossAllPanesInTab() throws {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        let surf1 = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        let surf2 = Tako.SurfaceView(frame: NSRect(x: 200, y: 0, width: 200, height: 400))
+        surf1.title = "Pane 1"
+        surf2.title = "Pane 2"
+        container.addSubview(surf1)
+        container.addSubview(surf2)
+        win.contentView = container
+
+        // Post notification specifically to secondary split pane (surf2)
+        NotificationStore.shared.addNotification(
+            id: UUID().uuidString,
+            surfaceId: surf2.id,
+            paneTitle: "Pane 2",
+            title: "Task completed",
+            body: "Build finished in 4s",
+            urgency: 1
+        )
+        defer {
+            NotificationStore.shared.clear()
+        }
+
+        // Window is background tab in group
+        let winOther = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surfOther = Tako.SurfaceView(frame: .zero)
+        winOther.contentView = surfOther
+        Tako.CustomTabGroup.join(win, to: winOther, select: false)
+        let group = Tako.CustomTabGroup.group(for: winOther)
+        group.select(winOther)
+
+        let items = store.items(for: winOther)
+        let tabItem = items.first(where: { $0.id == surf1.id.uuidString })
+        #expect(tabItem != nil)
+        #expect(tabItem?.latestNotification == "Task completed")
+        #expect(tabItem?.unreadCount == 1)
+        #expect(tabItem?.needsAttention == true)
     }
 }
