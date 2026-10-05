@@ -25,11 +25,11 @@ struct PassiveTriggerStoreTests {
         let store = PassiveTriggerStore.shared
         store.resetForTesting()
 
-        let configTrigger = TerminalRegexTrigger(pattern: "config_pattern", action: .highlight)
+        let configTrigger = TerminalRegexTrigger(pattern: "config_pattern", action: .highlight)!
         store.setConfigTriggers([configTrigger])
         #expect(store.allTriggers.count == 1)
 
-        let dynamicTrigger = TerminalRegexTrigger(pattern: "dynamic_pattern", action: .notify, isDynamic: true)
+        let dynamicTrigger = TerminalRegexTrigger(pattern: "dynamic_pattern", action: .notify, isDynamic: true)!
         store.addDynamicTrigger(dynamicTrigger)
         #expect(store.allTriggers.count == 2)
 
@@ -54,7 +54,7 @@ struct PassiveTriggerStoreTests {
             colorName: "red",
             notificationTitle: "Build Failure",
             onlyUnfocused: true
-        )
+        )!
 
         var postedNotifications: [UNNotificationRequest] = []
         Tako.onNotificationPosted = { request in
@@ -103,7 +103,7 @@ struct PassiveTriggerStoreTests {
             pattern: "warning:.*",
             action: .notify,
             onlyUnfocused: false
-        )
+        )!
 
         var postedCount = 0
         Tako.onNotificationPosted = { _ in

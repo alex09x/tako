@@ -88,7 +88,7 @@ final class PassiveRegexTriggerTests: XCTestCase {
             action: .highlight,
             colorName: "red",
             style: .box
-        )
+        )!
         view.regexTriggers = [trigger]
         view.updateRegexTriggerHighlights()
 
@@ -106,10 +106,10 @@ final class PassiveRegexTriggerTests: XCTestCase {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         view.feed(data: Data("line 1: background style\r\nline 2: underline style\r\nline 3: box style\r\nline 4: bold style\r\n".utf8))
 
-        let bgTrigger = TerminalRegexTrigger(pattern: "background style", action: .highlight, colorName: "yellow", style: .background)
-        let ulTrigger = TerminalRegexTrigger(pattern: "underline style", action: .highlight, colorName: "blue", style: .underline)
-        let boxTrigger = TerminalRegexTrigger(pattern: "box style", action: .highlight, colorName: "green", style: .box)
-        let boldTrigger = TerminalRegexTrigger(pattern: "bold style", action: .highlight, colorName: "orange", style: .bold)
+        let bgTrigger = TerminalRegexTrigger(pattern: "background style", action: .highlight, colorName: "yellow", style: .background)!
+        let ulTrigger = TerminalRegexTrigger(pattern: "underline style", action: .highlight, colorName: "blue", style: .underline)!
+        let boxTrigger = TerminalRegexTrigger(pattern: "box style", action: .highlight, colorName: "green", style: .box)!
+        let boldTrigger = TerminalRegexTrigger(pattern: "bold style", action: .highlight, colorName: "orange", style: .bold)!
 
         view.regexTriggers = [bgTrigger, ulTrigger, boxTrigger, boldTrigger]
         view.updateRegexTriggerHighlights()
@@ -134,7 +134,7 @@ final class PassiveRegexTriggerTests: XCTestCase {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         view.feed(data: Data("warning 1\nwarning 2\nwarning 3\n".utf8))
 
-        let trigger = TerminalRegexTrigger(pattern: "warning", action: .highlight, colorName: "yellow", style: .background)
+        let trigger = TerminalRegexTrigger(pattern: "warning", action: .highlight, colorName: "yellow", style: .background)!
         view.regexTriggers = [trigger]
         view.updateRegexTriggerHighlights()
 
@@ -155,7 +155,7 @@ final class PassiveRegexTriggerTests: XCTestCase {
             colorName: "red",
             style: .underline,
             notificationTitle: "Compiler Alert"
-        )
+        )!
 
         var matchedCount = 0
         var lastMatchedText = ""
@@ -182,13 +182,53 @@ final class PassiveRegexTriggerTests: XCTestCase {
         view.delegate = mockDelegate
 
         view.feed(data: Data("npm ERR! code ELIFECYCLE\n".utf8))
-        let trigger = TerminalRegexTrigger(pattern: "npm ERR!", action: .both, colorName: "red")
+        let trigger = TerminalRegexTrigger(pattern: "npm ERR!", action: .both, colorName: "red")!
         view.regexTriggers = [trigger]
         view.updateRegexTriggerHighlights()
 
         // Strictly passive: no input data was dispatched to terminal PTY
         XCTAssertTrue(mockDelegate.sentInputData.isEmpty)
         XCTAssertTrue(mockDelegate.sentDeviceReplyData.isEmpty)
+    }
+
+    func testPathologicalRegexRejectionAndSafetyBounds() {
+        // 1. Nested quantifiers causing exponential backtracking are rejected
+        let pathologicalPatterns = ["^(a+)+$", "(a*)*", "([0-9]+)+", #"(\w+)+"#]
+        for pat in pathologicalPatterns {
+            let safety = TerminalRegexTrigger.isSafePattern(pat)
+            XCTAssertFalse(safety.isSafe, "Expected \(pat) to be flagged unsafe")
+            XCTAssertNil(TerminalRegexTrigger(pattern: pat), "Expected TerminalRegexTrigger to reject \(pat)")
+            XCTAssertNil(TerminalRegexTrigger.parse(line: "\(pat)=highlight:red"), "Expected parse to reject \(pat)")
+        }
+
+        // 2. Safe patterns are accepted
+        let safePatterns = ["error: \\[E[0-9]+\\]", "warning: .*", "build (failed|succeeded)", "hello world"]
+        for pat in safePatterns {
+            let safety = TerminalRegexTrigger.isSafePattern(pat)
+            XCTAssertTrue(safety.isSafe, "Expected \(pat) to be safe")
+            XCTAssertNotNil(TerminalRegexTrigger(pattern: pat))
+        }
+
+        // 3. Excessively long pattern (>512 chars) rejected
+        let longPat = String(repeating: "a", count: 600)
+        XCTAssertFalse(TerminalRegexTrigger.isSafePattern(longPat).isSafe)
+        XCTAssertNil(TerminalRegexTrigger(pattern: longPat))
+
+        // 4. Abnormal output row text is capped and executes safely without UI starvation
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let massiveLine = String(repeating: "xyz ", count: 500) + "\r\n"
+        view.feed(data: Data(massiveLine.utf8))
+
+        let trigger = TerminalRegexTrigger(pattern: "xyz", action: .highlight, colorName: "yellow")!
+        view.regexTriggers = [trigger]
+
+        let start = Date()
+        view.updateRegexTriggerHighlights()
+        let elapsed = Date().timeIntervalSince(start)
+
+        // Must complete in under 50ms without blocking UI
+        XCTAssertLessThan(elapsed, 0.05)
+        XCTAssertGreaterThan(view.triggerHighlightsLayer.sublayers?.count ?? 0, 0)
     }
 }
 

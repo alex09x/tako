@@ -42,7 +42,61 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         case bold
     }
 
-    public init(
+    /// Validates whether a regex pattern is safe from catastrophic backtracking (ReDoS).
+    /// Rejects nested quantifiers (e.g. (a+)+, (a*)*), pathological repetitions, and patterns over 512 chars.
+    public static func isSafePattern(_ pattern: String) -> (isSafe: Bool, reason: String?) {
+        guard pattern.count <= 512 else {
+            return (false, "pattern exceeds maximum allowed length of 512 characters")
+        }
+
+        var depth = 0
+        var groupHasQuantifier: [Bool] = []
+        let chars = Array(pattern)
+        var i = 0
+        var escaped = false
+
+        while i < chars.count {
+            let c = chars[i]
+            if escaped {
+                escaped = false
+                i += 1
+                continue
+            }
+            if c == "\\" {
+                escaped = true
+                i += 1
+                continue
+            }
+
+            if c == "(" {
+                depth += 1
+                groupHasQuantifier.append(false)
+            } else if c == ")" {
+                if depth > 0 {
+                    let hadQuantifierInside = groupHasQuantifier.removeLast()
+                    depth -= 1
+                    let nextIndex = i + 1
+                    if nextIndex < chars.count {
+                        let nextChar = chars[nextIndex]
+                        if nextChar == "+" || nextChar == "*" || nextChar == "{" {
+                            if hadQuantifierInside {
+                                return (false, "pathological regex: nested quantifier on group causes exponential backtracking")
+                            }
+                        }
+                    }
+                }
+            } else if c == "+" || c == "*" || c == "{" {
+                if depth > 0 && !groupHasQuantifier.isEmpty {
+                    groupHasQuantifier[groupHasQuantifier.count - 1] = true
+                }
+            }
+            i += 1
+        }
+
+        return (true, nil)
+    }
+
+    public init?(
         id: UUID = UUID(),
         pattern: String,
         action: Action = .highlight,
@@ -53,9 +107,13 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         onlyUnfocused: Bool = true,
         isDynamic: Bool = false
     ) {
+        guard Self.isSafePattern(pattern).isSafe,
+              let compiled = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return nil
+        }
         self.id = id
         self.pattern = pattern
-        self.regex = try? NSRegularExpression(pattern: pattern, options: [])
+        self.regex = compiled
         self.action = action
         self.colorName = colorName
         let resolved = color ?? colorName.flatMap(Self.resolveColor(named:))

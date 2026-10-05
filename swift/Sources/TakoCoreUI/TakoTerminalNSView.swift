@@ -1821,21 +1821,40 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
         var highlightItems: [(rect: CGRect, color: CGColor, style: TerminalRegexTrigger.HighlightStyle)] = []
 
+        let deadline = DispatchTime.now() + .milliseconds(8)
+
         for screenRow in 0..<screenRows {
+            if DispatchTime.now() > deadline {
+                break
+            }
             let retainedRow = UInt64(max(0, topVisible + screenRow))
             let (lineText, columns) = Self.rowText(core.viewportRow(row: UInt32(screenRow)))
             guard !lineText.isEmpty, !columns.isEmpty else { continue }
+            
+            // Cap inspected line text to bound work on pathological outputs
+            let maxInspected = min(columns.count, max(Int(core.cols()), 512))
             let nsText = lineText as NSString
-            let fullRange = NSRange(location: 0, length: nsText.length)
+            let inspectedLength = min(nsText.length, maxInspected)
+            guard inspectedLength > 0 else { continue }
+            let scanRange = NSRange(location: 0, length: inspectedLength)
 
             for trigger in regexTriggers {
+                if DispatchTime.now() > deadline {
+                    break
+                }
                 guard let regex = trigger.regex else { continue }
-                let matches = regex.matches(in: lineText, options: [], range: fullRange)
-                for match in matches {
-                    guard match.range.length > 0 else { continue }
+                
+                var matchCount = 0
+                regex.enumerateMatches(in: lineText, options: [], range: scanRange) { matchResult, _, stop in
+                    guard let match = matchResult, match.range.length > 0 else { return }
+                    matchCount += 1
+                    if matchCount >= 16 {
+                        stop.pointee = true
+                    }
+
                     let startLoc = match.range.location
                     let endLoc = match.range.location + match.range.length - 1
-                    guard startLoc < columns.count, endLoc < columns.count else { continue }
+                    guard startLoc < columns.count, endLoc < columns.count else { return }
 
                     let startCol = columns[startLoc]
                     let endCol = columns[endLoc]

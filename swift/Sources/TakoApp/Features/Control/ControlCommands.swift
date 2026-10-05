@@ -2154,7 +2154,11 @@ enum ControlCommands {
             let title = request.args["title"]?.string
             let onlyUnfocused = request.args["only_unfocused"]?.bool ?? (request.args["all_focus"]?.bool == true ? false : true)
 
-            let trigger = TerminalRegexTrigger(
+            let safety = TerminalRegexTrigger.isSafePattern(pattern)
+            guard safety.isSafe else {
+                throw ControlError(.invalid, "unsafe regex pattern: \(safety.reason ?? "catastrophic backtracking risk")")
+            }
+            guard let trigger = TerminalRegexTrigger(
                 pattern: pattern,
                 action: action,
                 colorName: colorName,
@@ -2162,7 +2166,9 @@ enum ControlCommands {
                 notificationTitle: title,
                 onlyUnfocused: onlyUnfocused,
                 isDynamic: true
-            )
+            ) else {
+                throw ControlError(.invalid, "invalid regex pattern: \(pattern)")
+            }
             PassiveTriggerStore.shared.addDynamicTrigger(trigger)
             all.forEach { $0.surface.updateActiveRegexTriggers() }
 

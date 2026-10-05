@@ -64,7 +64,17 @@ def forward(signum, _frame):
         pass
 for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
     signal.signal(sig, forward)
-code = child.wait()
+timeout_env = os.environ.get("TAKO_REMOTE_TIMEOUT", "180")
+timeout_sec = float(timeout_env) if timeout_env else 180.0
+try:
+    code = child.wait(timeout=timeout_sec)
+except subprocess.TimeoutExpired:
+    print(f"\n[remote-timeout] Command timed out after {timeout_sec:.0f}s. Terminating process group {child.pid}...", file=sys.stderr, flush=True)
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    code = 124
 code = 128 - code if code < 0 else code
 for suffix in (".cmd", ".sync", ".lock.py"):
     try:
