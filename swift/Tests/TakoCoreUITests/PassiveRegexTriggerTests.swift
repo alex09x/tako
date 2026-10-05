@@ -213,7 +213,10 @@ final class PassiveRegexTriggerTests: XCTestCase {
             String(repeating: "a?", count: 50) + "b$",
             ".*.*",
             #"\w+\w+"#,
-            "a*b*a*"
+            "a*b*a*",
+            "(a|aa)(a|aa)",
+            "(a|b)(a|c)",
+            String(repeating: "(a|aa)", count: 75) + "b$"
         ]
         for pat in pathologicalPatterns {
             let safety = TerminalRegexTrigger.isSafePattern(pat)

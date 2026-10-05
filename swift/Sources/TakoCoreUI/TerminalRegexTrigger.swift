@@ -112,6 +112,7 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
             case shorthand(Character) // d, D, s, S, w, W
             case charClass(String)
             case anchor
+            case alternation(String)
             case barrier
         }
         let kind: Kind
@@ -138,9 +139,106 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
             case (.charClass(let r1), .charClass(let r2)):
                 if r1 == r2 { return true }
                 return classesOverlap(r1, r2)
+            case (.alternation(let r1), .alternation(let r2)):
+                return alternationsOverlap(r1, r2)
+            case (.alternation(let r), .literal(let c)), (.literal(let c), .alternation(let r)):
+                return alternationContains(r, char: c)
+            case (.alternation, .dot), (.dot, .alternation):
+                return true
+            case (.alternation(let r), .shorthand(let s)), (.shorthand(let s), .alternation(let r)):
+                return alternationMatchesShorthand(r, shorthand: s)
+            case (.alternation, _), (_, .alternation):
+                return true
             default:
                 return true
             }
+        }
+
+        private func alternationsOverlap(_ r1: String, _ r2: String) -> Bool {
+            let b1 = extractBranches(r1)
+            let b2 = extractBranches(r2)
+            for x in b1 {
+                for y in b2 {
+                    if let c1 = x.first, let c2 = y.first, c1 == c2 {
+                        return true
+                    }
+                    if x.contains(where: { y.contains($0) }) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        private func alternationContains(_ r: String, char: Character) -> Bool {
+            let branches = extractBranches(r)
+            for b in branches {
+                if b.contains(char) { return true }
+            }
+            return false
+        }
+
+        private func alternationMatchesShorthand(_ r: String, shorthand: Character) -> Bool {
+            let branches = extractBranches(r)
+            for b in branches {
+                for c in b {
+                    if shorthandMatches(shorthand, char: c) { return true }
+                }
+            }
+            return false
+        }
+
+        private func extractBranches(_ r: String) -> [String] {
+            var s = r
+            if s.hasPrefix("(?:") {
+                s.removeFirst(3)
+            } else if s.hasPrefix("(") {
+                s.removeFirst(1)
+            }
+            if s.hasSuffix(")") {
+                s.removeLast(1)
+            }
+            var branches: [String] = []
+            var current = ""
+            var depth = 0
+            var inClass = false
+            var escaped = false
+            for ch in s {
+                if escaped {
+                    current.append(ch)
+                    escaped = false
+                    continue
+                }
+                if ch == "\\" {
+                    current.append(ch)
+                    escaped = true
+                    continue
+                }
+                if ch == "[" && !inClass {
+                    inClass = true
+                    current.append(ch)
+                    continue
+                }
+                if ch == "]" && inClass {
+                    inClass = false
+                    current.append(ch)
+                    continue
+                }
+                if !inClass {
+                    if ch == "(" {
+                        depth += 1
+                    } else if ch == ")" {
+                        if depth > 0 { depth -= 1 }
+                    } else if ch == "|" && depth == 0 {
+                        branches.append(current)
+                        current = ""
+                        continue
+                    }
+                }
+                current.append(ch)
+            }
+            branches.append(current)
+            return branches
         }
 
         private func shorthandMatches(_ s: Character, char: Character) -> Bool {
@@ -281,6 +379,51 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         return false
     }
 
+    private static func getTopLevelBranches(chars: [Character], range: Range<Int>) -> [Range<Int>] {
+        var branches: [Range<Int>] = []
+        var branchStart = range.lowerBound
+        var depth = 0
+        var p = range.lowerBound
+        while p < range.upperBound {
+            let c = chars[p]
+            if c == "\\" {
+                p += 2
+                continue
+            }
+            if c == "(" {
+                depth += 1
+            } else if c == ")" {
+                if depth > 0 { depth -= 1 }
+            } else if c == "[" {
+                p += 1
+                while p < range.upperBound && chars[p] != "]" {
+                    if chars[p] == "\\" { p += 1 }
+                    p += 1
+                }
+            } else if c == "|" && depth == 0 {
+                branches.append(branchStart..<p)
+                branchStart = p + 1
+            }
+            p += 1
+        }
+        branches.append(branchStart..<range.upperBound)
+        return branches
+    }
+
+    private static func isAlternationNullable(chars: [Character], range: Range<Int>) -> Bool {
+        let branchRanges = getTopLevelBranches(chars: chars, range: range)
+        for br in branchRanges {
+            if br.isEmpty {
+                return true
+            }
+            let sub = tokenizeSequence(chars: chars, range: br)
+            if sub.error == nil && sub.atoms.allSatisfy({ $0.isNullable }) {
+                return true
+            }
+        }
+        return false
+    }
+
     private static func tokenizeSequence(chars: [Character], range: Range<Int>) -> (atoms: [Atom], error: String?) {
         var atoms: [Atom] = []
         var p = range.lowerBound
@@ -376,7 +519,9 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                         }
                         atoms.append(contentsOf: innerSub.atoms)
                     } else {
-                        atoms.append(Atom(kind: .barrier, raw: String(chars[p..<closeP]), isBranching: false, isNullable: false))
+                        let rawGroup = String(chars[p..<closeP])
+                        let isNull = isAlternationNullable(chars: chars, range: actualInnerStart..<innerEnd)
+                        atoms.append(Atom(kind: .alternation(rawGroup), raw: rawGroup, isBranching: true, isNullable: isNull))
                     }
                 }
 
@@ -461,7 +606,7 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
             branchingCount += 1
         }
         if branchingCount > 6 {
-            return (false, "pattern exceeds maximum allowed branching quantifiers (6)")
+            return (false, "pattern exceeds maximum allowed branching constructs (6)")
         }
 
         for i in 0..<atoms.count {
