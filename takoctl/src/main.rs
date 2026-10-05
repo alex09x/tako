@@ -103,9 +103,13 @@ commands:
   broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
   broadcast stop          stop broadcasting input
   broadcast status        show current broadcast status and participating panes
+  session export FILE     export window or workspace session to FILE (--window ID)
+  session import FILE     import session from FILE (untrusted: dropped escapes, no auto-run)
+  session info FILE       inspect session FILE format version and summary
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --window ID             session export: target specific window ID
   --panes P1,P2,...       broadcast: comma-separated list of target panes
   --client NAME           client name for automated input attribution (send, type, key; default: takoctl)
   --owner NAME            agent name for input lock / handback (default: agent)
@@ -351,6 +355,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--panes" => {
                 args.insert("panes".into(), Value::String(value("--panes")?));
+            }
+            "--window" => {
+                args.insert("window".into(), Value::String(value("--window")?));
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
@@ -970,6 +977,58 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "session" => {
+            let sub = if positional.is_empty() {
+                return Err("session needs an action: export, import, or info".into());
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "export" => {
+                    args.insert("action".into(), Value::String("export".into()));
+                    if positional.is_empty() {
+                        return Err("session export needs a destination file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    args.insert("path".into(), Value::String(expanded));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "import" => {
+                    args.insert("action".into(), Value::String("import".into()));
+                    if positional.is_empty() {
+                        return Err("session import needs a session file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    args.insert("path".into(), Value::String(expanded));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "info" => {
+                    args.insert("action".into(), Value::String("info".into()));
+                    if positional.is_empty() {
+                        return Err("session info needs a session file path".into());
+                    }
+                    let file = positional.remove(0);
+                    let expanded = expand_path(&file);
+                    args.insert("path".into(), Value::String(expanded));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown session action '{}'; expected export, import, or info",
+                        other
+                    ));
+                }
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -1094,8 +1153,61 @@ fn render(cmd: &str, result: &Value) -> String {
         "resume" => resume_report(result),
         "input" => input_report(result),
         "broadcast" => broadcast_report(result),
+        "session" => session_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn session_report(result: &Value) -> String {
+    if result.get("exported") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("");
+        let windows = result["windows"].as_f64().unwrap_or(0.0) as u64;
+        let panes = result["panes"].as_f64().unwrap_or(0.0) as u64;
+        let resumes = result["resumes"].as_f64().unwrap_or(0.0) as u64;
+        let mut msg = format!(
+            "Exported session to {path} ({windows} window{}, {panes} pane{})",
+            if windows == 1 { "" } else { "s" },
+            if panes == 1 { "" } else { "s" }
+        );
+        if resumes > 0 {
+            msg.push_str(&format!(
+                ", {resumes} resume binding{}",
+                if resumes == 1 { "" } else { "s" }
+            ));
+        }
+        msg.push('\n');
+        return msg;
+    }
+    if result.get("imported") == Some(&Value::Bool(true)) {
+        let path = result["path"].as_str().unwrap_or("");
+        let windows = result["windows"].as_f64().unwrap_or(0.0) as u64;
+        return format!(
+            "Imported session from {path} ({windows} window{} created)\n  (Untrusted session: control sequences dropped, nothing runs automatically)\n",
+            if windows == 1 { "" } else { "s" }
+        );
+    }
+    if let Some(ver) = result.get("format_version").and_then(Value::as_f64) {
+        let format_ver = ver as u64;
+        let tako_ver = result["tako_version"].as_str().unwrap_or("unknown");
+        let exported_at = result["exported_at"].as_str().unwrap_or("");
+        let windows = result["windows"].as_f64().unwrap_or(0.0) as u64;
+        let panes = result["panes"].as_f64().unwrap_or(0.0) as u64;
+        let resumes = result["resumes"].as_f64().unwrap_or(0.0) as u64;
+        let mut out = format!(
+            "Session file (format v{format_ver}, exported by Tako {tako_ver} at {exported_at}):\n  {windows} window{}, {panes} pane{}",
+            if windows == 1 { "" } else { "s" },
+            if panes == 1 { "" } else { "s" }
+        );
+        if resumes > 0 {
+            out.push_str(&format!(
+                ", {resumes} resume record{}",
+                if resumes == 1 { "" } else { "s" }
+            ));
+        }
+        out.push('\n');
+        return out;
+    }
+    format!("{result}\n")
 }
 
 fn broadcast_report(result: &Value) -> String {
@@ -3336,6 +3448,77 @@ bbbbbbbb  logs -- pane 2 of 2
         });
         let rep_inactive = render("broadcast", &inactive_val);
         assert_eq!(rep_inactive, "Broadcast input is inactive.\n");
+    }
+
+    #[test]
+    fn test_session_subcommands_and_options_parsed_and_rendered() {
+        // 1. Export
+        let opts_exp = parse(&[
+            "session".into(),
+            "export".into(),
+            "/tmp/test_session.json".into(),
+            "--window".into(),
+            "win-1".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_exp.cmd, "session");
+        assert_eq!(opts_exp.args["action"], "export");
+        assert_eq!(opts_exp.args["path"], "/tmp/test_session.json");
+        assert_eq!(opts_exp.args["window"], "win-1");
+
+        let exp_val = json!({
+            "exported": true,
+            "path": "/tmp/test_session.json",
+            "windows": 2,
+            "panes": 4,
+            "resumes": 1,
+            "format_version": 1
+        });
+        let rep_exp = render("session", &exp_val);
+        assert!(rep_exp.contains("Exported session to /tmp/test_session.json (2 windows, 4 panes), 1 resume binding"));
+
+        // 2. Import
+        let opts_imp = parse(&[
+            "session".into(),
+            "import".into(),
+            "/tmp/test_session.json".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_imp.cmd, "session");
+        assert_eq!(opts_imp.args["action"], "import");
+        assert_eq!(opts_imp.args["path"], "/tmp/test_session.json");
+
+        let imp_val = json!({
+            "imported": true,
+            "path": "/tmp/test_session.json",
+            "windows": 2
+        });
+        let rep_imp = render("session", &imp_val);
+        assert!(rep_imp.contains("Imported session from /tmp/test_session.json (2 windows created)"));
+        assert!(rep_imp.contains("Untrusted session: control sequences dropped, nothing runs automatically"));
+
+        // 3. Info
+        let opts_info = parse(&[
+            "session".into(),
+            "info".into(),
+            "/tmp/test_session.json".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_info.cmd, "session");
+        assert_eq!(opts_info.args["action"], "info");
+        assert_eq!(opts_info.args["path"], "/tmp/test_session.json");
+
+        let info_val = json!({
+            "format_version": 1,
+            "tako_version": "0.1.7",
+            "exported_at": "2026-10-05T03:00:00Z",
+            "windows": 2,
+            "panes": 3,
+            "resumes": 1
+        });
+        let rep_info = render("session", &info_val);
+        assert!(rep_info.contains("Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):"));
+        assert!(rep_info.contains("2 windows, 3 panes, 1 resume record"));
     }
 }
 
