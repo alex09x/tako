@@ -521,7 +521,7 @@ extension Tako {
                 return
             }
             let unread = surfaces(in: tab.window).contains(where: {
-                $0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0
+                !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
             })
             CrabPainter.draw(in: rect, color: crabColor(for: tab.window), unread: unread, context: ctx)
         }

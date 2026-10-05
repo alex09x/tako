@@ -438,16 +438,20 @@ final class SessionSidebarStore: ObservableObject {
                 }
             }
 
-            // Total unread count across all panes in this tab
-            let unread = surfaceIds.reduce(0) { $0 + NotificationStore.shared.unreadCount(for: $1) }
+            // Total unread count across all panes in this tab (excluding muted panes)
+            let unread = surfaceIds.reduce(0) { sum, sid in
+                AttentionManager.shared.isMuted(surfaceId: sid) ? sum : sum + NotificationStore.shared.unreadCount(for: sid)
+            }
             let isSelected = win === selected
 
             // Needs attention condition across all panes in this tab
-            let hasCrabUnread = winSurfaces.contains(where: { $0.crab.unread })
+            let hasCrabUnread = winSurfaces.contains(where: { !AttentionManager.shared.isMuted(surfaceId: $0.id) && $0.crab.unread })
+            let hasStatusAttention = winSurfaces.contains(where: {
+                !AttentionManager.shared.isMuted(surfaceId: $0.id) &&
+                ($0.crab.paneStatus == .error || $0.crab.paneStatus == .needsApproval || $0.crab.paneStatus == .waitingForInput)
+            })
             let needsAttention = !isSelected && (
-                status == .error ||
-                status == .needsApproval ||
-                status == .waitingForInput ||
+                hasStatusAttention ||
                 unread > 0 ||
                 hasCrabUnread
             )

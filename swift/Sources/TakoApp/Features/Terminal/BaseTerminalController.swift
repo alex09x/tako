@@ -821,8 +821,9 @@ class BaseTerminalController: NSWindowController,
         Tako.moveFocus(to: target)
         Tako.moveFocus(to: target, delay: 0.1)
 
-        // Focusing a pane marks it read (B4)
+        // Focusing a pane marks it read (B4) and seen (B7)
         NotificationStore.shared.markRead(surfaceId: target.id)
+        AttentionManager.shared.markSeen(surfaceId: target.id)
 
         // Show a brief highlight to help the user locate the presented terminal.
         target.highlight()
@@ -905,6 +906,7 @@ class BaseTerminalController: NSWindowController,
 
         if let focused = to {
             NotificationStore.shared.markRead(surfaceId: focused.id)
+            AttentionManager.shared.markSeen(surfaceId: focused.id)
         }
         SessionSidebarStore.shared.objectWillChange.send()
 
@@ -1573,6 +1575,47 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    // MARK: - Attention Navigation (B7)
+
+    @IBAction func jumpToNextAttention(_ sender: Any?) {
+        guard let target = AttentionManager.shared.nextAttentionSurface(from: focusedSurface) else {
+            NSSound.beep()
+            return
+        }
+        if let focused = focusedSurface {
+            AttentionManager.shared.recordJump(from: focused.id)
+        }
+        NotificationCenter.default.post(name: Tako.Notification.takoPresentTerminal, object: target)
+        AttentionManager.shared.markSeen(surfaceId: target.id)
+        NotificationStore.shared.markRead(surfaceId: target.id)
+    }
+
+    @IBAction func jumpToPreviousAttention(_ sender: Any?) {
+        guard let target = AttentionManager.shared.previousAttentionSurface(from: focusedSurface) else {
+            NSSound.beep()
+            return
+        }
+        if let focused = focusedSurface {
+            AttentionManager.shared.recordJump(from: focused.id)
+        }
+        NotificationCenter.default.post(name: Tako.Notification.takoPresentTerminal, object: target)
+        AttentionManager.shared.markSeen(surfaceId: target.id)
+        NotificationStore.shared.markRead(surfaceId: target.id)
+    }
+
+    @IBAction func goBackToPreviousPane(_ sender: Any?) {
+        guard let target = AttentionManager.shared.resolveGoBackTarget(currentSurfaceId: focusedSurface?.id) else {
+            NSSound.beep()
+            return
+        }
+        NotificationCenter.default.post(name: Tako.Notification.takoPresentTerminal, object: target)
+    }
+
+    @IBAction func toggleAttentionMute(_ sender: Any?) {
+        guard let surface = focusedSurface else { return }
+        surface.toggleAttentionMute()
+    }
+
     private static func surface(withID id: UUID) -> Tako.SurfaceView? {
         for controller in TerminalController.all {
             if let surface = controller.surfaceTree.first(where: { $0.id == id }) {
@@ -1710,6 +1753,19 @@ extension BaseTerminalController: NSMenuItemValidation {
 
         case #selector(markAllRead(_:)):
             return NotificationStore.shared.totalUnreadCount() > 0
+
+        case #selector(jumpToNextAttention(_:)),
+             #selector(jumpToPreviousAttention(_:)):
+            return AttentionManager.shared.hasAnyUnseenAttention()
+
+        case #selector(goBackToPreviousPane(_:)):
+            return AttentionManager.shared.canGoBack
+
+        case #selector(toggleAttentionMute(_:)):
+            guard let surface = focusedSurface else { return false }
+            item.title = surface.isAttentionMuted ? "Unmute Attention" : "Mute Attention"
+            item.state = surface.isAttentionMuted ? .on : .off
+            return true
 
         default:
             return true
