@@ -139,16 +139,18 @@ final class SessionSidebarStore: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notif in
-            guard let self, let win = notif.object as? NSWindow else { return }
-            let closedSurfaces = self.surfaces(in: win)
-            for s in closedSurfaces {
-                self.surfaceSubscriptions.removeValue(forKey: s.id)
-                self.surfaceLastStatus.removeValue(forKey: s.id)
-            }
-            let group = Tako.CustomTabGroup.group(for: win)
-            if group.windows.allSatisfy({ $0 === win }) {
-                self.groupFilterTexts.removeValue(forKey: ObjectIdentifier(group))
-                self.groupNeedsAttention.removeValue(forKey: ObjectIdentifier(group))
+            MainActor.assumeIsolated {
+                guard let self, let win = notif.object as? NSWindow else { return }
+                let closedSurfaces = self.surfaces(in: win)
+                for s in closedSurfaces {
+                    self.surfaceSubscriptions.removeValue(forKey: s.id)
+                    self.surfaceLastStatus.removeValue(forKey: s.id)
+                }
+                let group = Tako.CustomTabGroup.group(for: win)
+                if group.windows.allSatisfy({ $0 === win }) {
+                    self.groupFilterTexts.removeValue(forKey: ObjectIdentifier(group))
+                    self.groupNeedsAttention.removeValue(forKey: ObjectIdentifier(group))
+                }
             }
         }
     }
@@ -310,23 +312,18 @@ final class SessionSidebarStore: ObservableObject {
                 if let cached = gitCache[dir] {
                     gitBranch = cached?.branch
                     gitDirty = cached?.isDirty
-                } else {
-                    if let resolved = LocalGitInspection.resolveBranch(directory: dir) {
-                        gitBranch = resolved.branch
-                    }
-                    if !pendingGitInspections.contains(dir) {
-                        pendingGitInspections.insert(dir)
-                        let gen = gitGenerations[dir, default: 0]
-                        let epoch = globalCacheEpoch
-                        Task.detached(priority: .utility) {
-                            let inspected = LocalGitInspection.inspect(directory: dir)
-                            await MainActor.run { [weak self] in
-                                guard let self else { return }
-                                self.pendingGitInspections.remove(dir)
-                                if self.globalCacheEpoch == epoch && self.gitGenerations[dir, default: 0] == gen {
-                                    self.gitCache[dir] = inspected
-                                    self.objectWillChange.send()
-                                }
+                } else if !pendingGitInspections.contains(dir) {
+                    pendingGitInspections.insert(dir)
+                    let gen = gitGenerations[dir, default: 0]
+                    let epoch = globalCacheEpoch
+                    Task.detached(priority: .utility) {
+                        let inspected = LocalGitInspection.inspect(directory: dir)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.pendingGitInspections.remove(dir)
+                            if self.globalCacheEpoch == epoch && self.gitGenerations[dir, default: 0] == gen {
+                                self.gitCache[dir] = inspected
+                                self.objectWillChange.send()
                             }
                         }
                     }
