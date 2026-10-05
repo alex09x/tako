@@ -1511,6 +1511,21 @@ extension Tako {
 
         @Published public private(set) var derivedConfig: DerivedConfig
 
+        /// Whether attention notifications and rings are muted for this pane (B7).
+        /// When muted, the pane stops raising attention without losing its status or progress.
+        public var isAttentionMuted: Bool {
+            get { AttentionManager.shared.isMuted(surfaceId: id) }
+            set {
+                AttentionManager.shared.setMuted(newValue, for: id)
+                objectWillChange.send()
+            }
+        }
+
+        public func toggleAttentionMute() {
+            AttentionManager.shared.toggleMute(for: id)
+            objectWillChange.send()
+        }
+
         public internal(set) var pty: PTY?
         /// The persistent session this terminal's shell lives in, when
         /// session-persistence is on.
@@ -2121,6 +2136,7 @@ extension Tako {
             if let initial = baseConfig?.initialInput, !initial.isEmpty {
                 write(initial)
             }
+            setupAttentionObservation()
         }
 
         public init(frame frameRect: NSRect) {
@@ -2134,6 +2150,32 @@ extension Tako {
             super.init(frame: frameRect, theme: TerminalTheme.loadUserConfig())
             delegate = self
             setupCoreAndPty(workingDir: nil)
+            setupAttentionObservation()
+        }
+
+        private var attentionCancellables: [AnyCancellable] = []
+
+        private func setupAttentionObservation() {
+            crab.$paneStatus.dropFirst().sink { [weak self] status in
+                guard let self else { return }
+                if status == .error || status == .needsApproval || status == .waitingForInput {
+                    AttentionManager.shared.recordAttentionEvent(for: self.id)
+                }
+            }.store(in: &attentionCancellables)
+
+            crab.$unread.dropFirst().sink { [weak self] isUnread in
+                guard let self else { return }
+                if isUnread {
+                    AttentionManager.shared.recordAttentionEvent(for: self.id)
+                }
+            }.store(in: &attentionCancellables)
+
+            crab.$state.dropFirst().sink { [weak self] state in
+                guard let self else { return }
+                if state == .attention {
+                    AttentionManager.shared.recordAttentionEvent(for: self.id)
+                }
+            }.store(in: &attentionCancellables)
         }
 
         required public init?(coder: NSCoder) {

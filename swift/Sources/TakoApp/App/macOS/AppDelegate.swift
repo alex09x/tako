@@ -389,6 +389,7 @@ class AppDelegate: NSObject,
         setupNotificationMenuItems()
         setupSidebarMenuItem()
         setupPaneOverviewMenuItem()
+        setupAttentionMenuItems()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
@@ -1245,6 +1246,78 @@ class AppDelegate: NSObject,
         }
     }
 
+    private func setupAttentionMenuItems() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
+            windowMenu.addItem(NSMenuItem.separator())
+
+            let nextAttentionItem = NSMenuItem(
+                title: "Next Attention",
+                action: #selector(BaseTerminalController.jumpToNextAttention(_:)),
+                keyEquivalent: "]"
+            )
+            nextAttentionItem.keyEquivalentModifierMask = [.command, .option]
+            nextAttentionItem.target = nil
+            nextAttentionItem.setImageIfDesired(systemSymbolName: "arrow.down.right.circle")
+            windowMenu.addItem(nextAttentionItem)
+
+            let prevAttentionItem = NSMenuItem(
+                title: "Previous Attention",
+                action: #selector(BaseTerminalController.jumpToPreviousAttention(_:)),
+                keyEquivalent: "["
+            )
+            prevAttentionItem.keyEquivalentModifierMask = [.command, .option]
+            prevAttentionItem.target = nil
+            prevAttentionItem.setImageIfDesired(systemSymbolName: "arrow.up.left.circle")
+            windowMenu.addItem(prevAttentionItem)
+
+            let goBackItem = NSMenuItem(
+                title: "Go Back to Previous Pane",
+                action: #selector(BaseTerminalController.goBackToPreviousPane(_:)),
+                keyEquivalent: "b"
+            )
+            goBackItem.keyEquivalentModifierMask = [.command, .option]
+            goBackItem.target = nil
+            goBackItem.setImageIfDesired(systemSymbolName: "arrow.uturn.backward.circle")
+            windowMenu.addItem(goBackItem)
+
+            let muteItem = NSMenuItem(
+                title: "Mute Attention",
+                action: #selector(BaseTerminalController.toggleAttentionMute(_:)),
+                keyEquivalent: "m"
+            )
+            muteItem.keyEquivalentModifierMask = [.command, .option]
+            muteItem.target = nil
+            muteItem.setImageIfDesired(systemSymbolName: "bell.slash")
+            windowMenu.addItem(muteItem)
+        }
+    }
+
+    @IBAction func jumpToNextAttention(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.jumpToNextAttention(sender)
+    }
+
+    @IBAction func jumpToPreviousAttention(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.jumpToPreviousAttention(sender)
+    }
+
+    @IBAction func goBackToPreviousPane(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.goBackToPreviousPane(sender)
+    }
+
+    @IBAction func toggleAttentionMute(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.toggleAttentionMute(sender)
+    }
+
     @IBAction func togglePaneOverview(_ sender: Any?) {
         guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
                 TerminalController.all.first else { return }
@@ -1622,6 +1695,20 @@ extension AppDelegate: NSMenuItemValidation {
 
         case #selector(markAllRead(_:)):
             return NotificationStore.shared.totalUnreadCount() > 0
+
+        case #selector(BaseTerminalController.jumpToNextAttention(_:)),
+             #selector(BaseTerminalController.jumpToPreviousAttention(_:)):
+            return AttentionManager.shared.hasAnyUnseenAttention()
+
+        case #selector(BaseTerminalController.goBackToPreviousPane(_:)):
+            return AttentionManager.shared.canGoBack
+
+        case #selector(BaseTerminalController.toggleAttentionMute(_:)):
+            let focused = (NSApp.keyWindow?.windowController as? BaseTerminalController)?.focusedSurface
+            guard let surface = focused else { return false }
+            item.title = surface.isAttentionMuted ? "Unmute Attention" : "Mute Attention"
+            item.state = surface.isAttentionMuted ? .on : .off
+            return true
 
         default:
             return true

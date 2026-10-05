@@ -30,6 +30,7 @@ extension Tako {
     struct InspectableSurface: View {
         @ObservedObject var surfaceView: SurfaceView
         @ObservedObject var notificationStore: NotificationStore = .shared
+        @ObservedObject var attentionManager: AttentionManager = .shared
         @ObservedObject private var crab: CrabTracker
         var isSplit: Bool = false
 
@@ -40,6 +41,7 @@ extension Tako {
         }
 
         public var needsAttention: Bool {
+            !surfaceView.isAttentionMuted &&
             !surfaceView.isBeingLookedAt && (
                 notificationStore.unreadCount(for: surfaceView.id) > 0 ||
                 crab.unread ||

@@ -71,6 +71,15 @@ public final class NotificationStore: ObservableObject {
             let decoder = JSONDecoder()
             let loaded = try decoder.decode([NotificationRecord].self, from: data)
             self.records = loaded
+            
+            // Seed attention for any restored unread notifications so they are eligible for attention navigation
+            var unreadSurfaces = Set<UUID>()
+            for record in loaded where record.unread {
+                unreadSurfaces.insert(record.surfaceId)
+            }
+            for surfaceId in unreadSurfaces {
+                AttentionManager.shared.seedAttentionEvent(for: surfaceId)
+            }
         } catch {
             Tako.logger.error("Failed to load notifications from defaults: \(error.localizedDescription, privacy: .public)")
         }
@@ -128,6 +137,9 @@ public final class NotificationStore: ObservableObject {
             updated.removeLast(updated.count - maxRecords)
         }
         records = updated
+        if unread {
+            AttentionManager.shared.recordAttentionEvent(for: surfaceId)
+        }
     }
 
     /// Marks all unread notifications for a specific surface as read.
@@ -141,12 +153,14 @@ public final class NotificationStore: ObservableObject {
         if changed {
             records = updated
         }
+        AttentionManager.shared.markSeen(surfaceId: surfaceId)
     }
 
     /// Marks a specific notification record as read.
     public func markNotificationRead(id: String) {
         guard let idx = records.firstIndex(where: { $0.id == id && $0.unread }) else { return }
         records[idx].unread = false
+        AttentionManager.shared.markSeen(surfaceId: records[idx].surfaceId)
     }
 
     /// Marks all unread notifications across all panes as read.
@@ -156,6 +170,7 @@ public final class NotificationStore: ObservableObject {
         for idx in updated.indices where updated[idx].unread {
             updated[idx].unread = false
             changed = true
+            AttentionManager.shared.markSeen(surfaceId: updated[idx].surfaceId)
         }
         if changed {
             records = updated
