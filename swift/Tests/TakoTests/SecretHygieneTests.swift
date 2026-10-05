@@ -534,4 +534,71 @@ import Testing
         // Store must not have any snapshot for the surface
         #expect(store.read(id: surface.id) == nil)
     }
+
+    // MARK: - Finding 1: Redaction Fails Closed on Timeout
+
+    @Test func testRedactionFailsClosedOnTimeout() throws {
+        let redactor = SessionSnapshotRedactor.shared
+        defer { redactor.clearPatterns() }
+        try redactor.addPattern("sk-[A-Za-z0-9\\-_]+")
+
+        let secret = "sk-ant-api03-abcdef123456"
+        let normalText = "This is a normal line\nHere is a secret: \(secret)\nAnd another line."
+
+        // 1. With timeout = 0.0 or negative, it must immediately fail closed without leaking the secret
+        let immediateTimeout = redactor.redact(normalText, timeout: 0.0)
+        #expect(!immediateTimeout.contains(secret))
+        #expect(immediateTimeout.contains("[REDACTED]"))
+
+        // 2. Negative timeout must also fail closed
+        let negativeTimeout = redactor.redact(normalText, timeout: -1.0)
+        #expect(!negativeTimeout.contains(secret))
+        #expect(negativeTimeout.contains("[REDACTED]"))
+
+        // 3. Normal redaction with sufficient timeout succeeds
+        let normalRedacted = redactor.redact(normalText, timeout: 1.0)
+        #expect(!normalRedacted.contains(secret))
+        #expect(normalRedacted.contains("Here is a secret: [REDACTED]"))
+        #expect(normalRedacted.contains("This is a normal line"))
+    }
+
+    // MARK: - Finding 2: Chunk Boundary Carry Window Redaction
+
+    @Test func testRedactionOverlappingChunkBoundary() throws {
+        let redactor = SessionSnapshotRedactor.shared
+        defer { redactor.clearPatterns() }
+        try redactor.addPattern("sk-[A-Za-z0-9\\-_]+")
+
+        let secret = "sk-ant-api03-boundarysecret123"
+        // Place the secret so that it straddles character offset 4096
+        // Offset 4090 to 4120 in a 10,000-character line
+        let prefix = String(repeating: ".", count: 4090)
+        let suffix = String(repeating: ".", count: 6000)
+        let longLine = prefix + secret + suffix
+
+        #expect(longLine.count > 4096)
+        let secretStart = 4090
+        let secretEnd = 4090 + secret.count
+        #expect(secretStart < 4096 && secretEnd > 4096) // Straddles 4096 boundary
+
+        let redacted = redactor.redact(longLine, timeout: 2.0)
+        #expect(!redacted.contains(secret))
+        #expect(redacted.contains("[REDACTED]"))
+
+        // Verify non-secret characters around the boundary are intact
+        #expect(redacted.hasPrefix(prefix))
+        #expect(redacted.hasSuffix(suffix))
+        #expect(redacted == prefix + "[REDACTED]" + suffix)
+
+        // Also test multiple secrets straddling consecutive chunk boundaries
+        let secondSecret = "sk-ant-api03-secondsecret456"
+        // Place second secret at offset 8180 (straddling next boundary)
+        let middle = String(repeating: ".", count: 8180 - secretEnd)
+        let multiChunkLine = prefix + secret + middle + secondSecret + suffix
+        let multiRedacted = redactor.redact(multiChunkLine, timeout: 2.0)
+        #expect(!multiRedacted.contains(secret))
+        #expect(!multiRedacted.contains(secondSecret))
+        #expect(multiRedacted == prefix + "[REDACTED]" + middle + "[REDACTED]" + suffix)
+    }
 }
+

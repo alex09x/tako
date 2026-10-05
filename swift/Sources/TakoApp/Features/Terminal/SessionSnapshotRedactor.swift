@@ -111,12 +111,17 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
 
     /// Redacts all matches in a text string, replacing them with `[REDACTED]`.
     /// Bounded by a deadline and line chunking to prevent terminal output from hanging session export.
+    /// Fails closed on timeout by replacing the unprocessed remainder with `[REDACTED]`.
     public func redact(_ text: String, timeout: TimeInterval = 0.5) -> String {
         lock.lock()
         let regexes = compiledRegexes
         lock.unlock()
 
         guard !regexes.isEmpty, !text.isEmpty else { return text }
+
+        if timeout <= 0 {
+            return "[REDACTED]"
+        }
 
         let deadline = Date().addingTimeInterval(timeout)
 
@@ -125,46 +130,154 @@ public final class SessionSnapshotRedactor: @unchecked Sendable {
         var redactedLines: [String] = []
         redactedLines.reserveCapacity(lines.count)
 
+        var timedOut = false
         for line in lines {
-            if Date() > deadline {
-                redactedLines.append(line)
-                continue
+            if timedOut || Date() >= deadline {
+                redactedLines.append("[REDACTED]")
+                timedOut = true
+                break
             }
-            if line.count > 16384 {
-                var chunkedLine = ""
-                var idx = line.startIndex
-                while idx < line.endIndex {
-                    let nextIdx = line.index(idx, offsetBy: 4096, limitedBy: line.endIndex) ?? line.endIndex
-                    let chunk = String(line[idx..<nextIdx])
-                    var modifiedChunk = chunk
-                    for regex in regexes {
-                        let range = NSRange(modifiedChunk.startIndex..<modifiedChunk.endIndex, in: modifiedChunk)
-                        modifiedChunk = regex.stringByReplacingMatches(
-                            in: modifiedChunk,
-                            options: [],
-                            range: range,
-                            withTemplate: "[REDACTED]"
-                        )
-                    }
-                    chunkedLine.append(modifiedChunk)
-                    idx = nextIdx
+
+            let (redactedLine, lineTimedOut) = redactLine(line, regexes: regexes, deadline: deadline)
+            redactedLines.append(redactedLine)
+            if lineTimedOut {
+                timedOut = true
+                break
+            }
+        }
+        return redactedLines.joined(separator: "\n")
+    }
+
+    /// Redacts a single line of text with overlapping chunk carry windows and fail-closed deadline checking.
+    private func redactLine(
+        _ line: String,
+        regexes: [NSRegularExpression],
+        deadline: Date
+    ) -> (result: String, timedOut: Bool) {
+        if Date() >= deadline {
+            return ("[REDACTED]", true)
+        }
+
+        let chunkSize = 4096
+        let carryWindow = 2048
+
+        // If line is within a single chunk, redact directly
+        if line.count <= chunkSize {
+            var modified = line
+            for regex in regexes {
+                if Date() >= deadline {
+                    return ("[REDACTED]", true)
                 }
-                redactedLines.append(chunkedLine)
-            } else {
-                var modified = line
+                let range = NSRange(modified.startIndex..<modified.endIndex, in: modified)
+                modified = regex.stringByReplacingMatches(
+                    in: modified,
+                    options: [],
+                    range: range,
+                    withTemplate: "[REDACTED]"
+                )
+            }
+            return (modified, false)
+        }
+
+        // Long line: process in overlapping chunks with a carry window
+        var chunkedLine = ""
+        var currentIdx = line.startIndex
+
+        while currentIdx < line.endIndex {
+            if Date() >= deadline {
+                chunkedLine.append("[REDACTED]")
+                return (chunkedLine, true)
+            }
+
+            let maxWindowEnd = line.index(currentIdx, offsetBy: chunkSize + carryWindow, limitedBy: line.endIndex) ?? line.endIndex
+            let isLastChunk = (maxWindowEnd == line.endIndex)
+            let windowStr = String(line[currentIdx..<maxWindowEnd])
+
+            if isLastChunk {
+                var modifiedChunk = windowStr
                 for regex in regexes {
-                    let range = NSRange(modified.startIndex..<modified.endIndex, in: modified)
-                    modified = regex.stringByReplacingMatches(
-                        in: modified,
+                    if Date() >= deadline {
+                        chunkedLine.append("[REDACTED]")
+                        return (chunkedLine, true)
+                    }
+                    let range = NSRange(modifiedChunk.startIndex..<modifiedChunk.endIndex, in: modifiedChunk)
+                    modifiedChunk = regex.stringByReplacingMatches(
+                        in: modifiedChunk,
                         options: [],
                         range: range,
                         withTemplate: "[REDACTED]"
                     )
                 }
-                redactedLines.append(modified)
+                chunkedLine.append(modifiedChunk)
+                break
             }
+
+            let boundaryOffset = min(chunkSize, windowStr.count)
+            let boundaryIndex = windowStr.index(windowStr.startIndex, offsetBy: boundaryOffset)
+
+            // Find all matches in current window across all regexes
+            var matchRanges: [Range<String.Index>] = []
+            for regex in regexes {
+                if Date() >= deadline {
+                    chunkedLine.append("[REDACTED]")
+                    return (chunkedLine, true)
+                }
+                let nsRange = NSRange(windowStr.startIndex..<windowStr.endIndex, in: windowStr)
+                let matches = regex.matches(in: windowStr, options: [], range: nsRange)
+                for match in matches {
+                    if let range = Range(match.range, in: windowStr) {
+                        matchRanges.append(range)
+                    }
+                }
+            }
+
+            // Adjust cut point backwards if any match straddles the boundary
+            var cutIndex = boundaryIndex
+            var changed = true
+            while changed {
+                changed = false
+                for range in matchRanges {
+                    if range.lowerBound < cutIndex && range.upperBound > cutIndex {
+                        cutIndex = range.lowerBound
+                        changed = true
+                    }
+                }
+            }
+
+            var advanceIndex = cutIndex
+            if cutIndex == windowStr.startIndex {
+                // If a match or chain starts at window start and crosses boundary, expand cutIndex to include it
+                let maxEnd = matchRanges.filter { $0.lowerBound < boundaryIndex }.map(\.upperBound).max() ?? boundaryIndex
+                cutIndex = maxEnd
+                advanceIndex = maxEnd
+            }
+
+            let chunkToEmit = String(windowStr[..<cutIndex])
+            var modifiedChunk = chunkToEmit
+            for regex in regexes {
+                if Date() >= deadline {
+                    chunkedLine.append("[REDACTED]")
+                    return (chunkedLine, true)
+                }
+                let range = NSRange(modifiedChunk.startIndex..<modifiedChunk.endIndex, in: modifiedChunk)
+                modifiedChunk = regex.stringByReplacingMatches(
+                    in: modifiedChunk,
+                    options: [],
+                    range: range,
+                    withTemplate: "[REDACTED]"
+                )
+            }
+            chunkedLine.append(modifiedChunk)
+
+            let distance = windowStr.distance(from: windowStr.startIndex, to: advanceIndex)
+            guard distance > 0 else {
+                chunkedLine.append("[REDACTED]")
+                return (chunkedLine, true)
+            }
+            currentIdx = line.index(currentIdx, offsetBy: distance, limitedBy: line.endIndex) ?? line.endIndex
         }
-        return redactedLines.joined(separator: "\n")
+
+        return (chunkedLine, false)
     }
 
     /// Redacts matching sensitive patterns in binary checkpoint data.
