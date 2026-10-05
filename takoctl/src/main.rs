@@ -173,8 +173,9 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
-  --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay)
-  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
+  --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN, or <socket>.token)
+  --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay,approval)
+  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,approval; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer
@@ -190,6 +191,7 @@ struct Options {
     socket: Option<String>,
     bundle_id: String,
     client: Option<String>,
+    token: Option<String>,
     scopes: Option<Vec<String>>,
 }
 
@@ -202,6 +204,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
     let mut client = std::env::var("TAKO_CLIENT_ID")
         .or_else(|_| std::env::var("TAKO_CLIENT"))
+        .ok();
+    let mut token = std::env::var("TAKO_CONTROL_TOKEN")
+        .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
         .ok();
     let mut scopes = std::env::var("TAKO_CONTROL_SCOPES")
         .or_else(|_| std::env::var("TAKO_SCOPES"))
@@ -424,6 +429,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--prefix" => {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
+            "--token" | "--auth-token" => {
+                let val = value(arg.as_str())?;
+                token = Some(val.clone());
+                args.insert("token".into(), Value::String(val));
+            }
             "--client" => {
                 let name = value("--client")?;
                 client = Some(name.clone());
@@ -440,9 +450,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     return Err(format!("{arg} cannot be empty"));
                 }
                 for s in &list {
-                    if !["read", "input", "layout", "signal", "overlay"].contains(&s.as_str()) {
+                    if !["read", "input", "layout", "signal", "overlay", "approval"].contains(&s.as_str()) {
                         return Err(format!(
-                            "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay"
+                            "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay, approval"
                         ));
                     }
                 }
@@ -1194,6 +1204,49 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "grant" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "create" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if let Some(c) = client.as_ref() {
+                        args.insert("client".into(), Value::String(c.clone()));
+                    }
+                    if let Some(sc) = scopes.as_ref() {
+                        args.insert(
+                            "scopes".into(),
+                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
+                        );
+                    }
+                }
+                "revoke" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                    if !positional.is_empty() {
+                        args.insert("token".into(), Value::String(positional.remove(0)));
+                    } else if let Some(t) = token.as_ref() {
+                        args.insert("token".into(), Value::String(t.clone()));
+                    } else {
+                        return Err("grant revoke requires a token to revoke".into());
+                    }
+                }
+                "list" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                }
+                other => {
+                    return Err(format!(
+                        "unknown grant action \"{other}\"; use create, revoke, or list"
+                    ));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "broadcast" => {
             let sub = if positional.is_empty() {
                 "status".to_string()
@@ -1456,6 +1509,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             client = Some(c.to_string());
         }
     }
+    if token.is_none() {
+        if let Some(t) = args.get("token").and_then(Value::as_str) {
+            token = Some(t.to_string());
+        }
+    }
     Ok(Options {
         cmd,
         args,
@@ -1463,6 +1521,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         socket,
         bundle_id,
         client,
+        token,
         scopes,
     })
 }
@@ -1473,6 +1532,9 @@ fn request(opts: &Options, from: Option<String>) -> Value {
     let mut req = json!({"cmd": opts.cmd, "args": Value::Object(opts.args.clone())});
     if let Some(from) = from.filter(|f| !f.is_empty()) {
         req["from"] = Value::String(from);
+    }
+    if let Some(token) = &opts.token {
+        req["token"] = Value::String(token.clone());
     }
     if let Some(client) = &opts.client {
         req["client"] = Value::String(client.clone());
@@ -1584,8 +1646,50 @@ fn render(cmd: &str, result: &Value) -> String {
         "review" => review_report(result),
         "history" => history_report(result),
         "triggers" => triggers_report(result),
+        "grant" => grant_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn grant_report(result: &Value) -> String {
+    if let Some(token) = result["token"].as_str() {
+        let client = result["client"].as_str().unwrap_or("unknown");
+        let scopes = result["scopes"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        return format!("token: {token}\nclient: {client}\nscopes: [{scopes}]\n");
+    }
+    if let Some(revoked) = result["revoked"].as_bool() {
+        return format!("revoked: {revoked}\n");
+    }
+    if let Some(grants) = result["grants"].as_array() {
+        if grants.is_empty() {
+            return "no grants\n".into();
+        }
+        let mut out = String::new();
+        for g in grants {
+            let id = g["id"].as_str().unwrap_or("");
+            let client = g["client"].as_str().unwrap_or("");
+            let scopes = g["scopes"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            out += &format!("{id} {client} [{scopes}]\n");
+        }
+        return out;
+    }
+    format!("{result}\n")
 }
 
 fn triggers_report(result: &Value) -> String {
@@ -3007,6 +3111,16 @@ fn main() -> ExitCode {
             }
         },
     };
+    let mut opts = opts;
+    if opts.token.is_none() {
+        let token_path = format!("{path}.token");
+        if let Ok(content) = std::fs::read_to_string(&token_path) {
+            let t = content.trim().to_string();
+            if !t.is_empty() {
+                opts.token = Some(t);
+            }
+        }
+    }
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     if opts.cmd == "events" {
         let res = socket::stream_events(&path, &req, |line| {
@@ -5194,6 +5308,55 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(status_report.contains("Pane pane-1: unlocked (owner: human)"));
         assert!(status_report.contains("Automation may type: yes"));
         assert!(status_report.contains("Creator client: agent-alpha"));
+
+        // 6. Token parsing and grant subcommands
+        let token_opts = parse(&[
+            "text".into(),
+            "--token".into(),
+            "secret_token_123".into(),
+            "--scope".into(),
+            "read,approval".into(),
+        ])
+        .unwrap();
+        assert_eq!(token_opts.token.as_deref(), Some("secret_token_123"));
+        assert_eq!(token_opts.scopes, Some(vec!["read".into(), "approval".into()]));
+        let req_tok = request(&token_opts, None);
+        assert_eq!(req_tok["token"], "secret_token_123");
+        assert_eq!(req_tok["scopes"], json!(["read", "approval"]));
+
+        let grant_create = parse(&[
+            "grant".into(),
+            "create".into(),
+            "--client".into(),
+            "subagent-2".into(),
+            "--scope".into(),
+            "signal".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_create.args["subcommand"], "create");
+        assert_eq!(grant_create.args["client"], "subagent-2");
+        assert_eq!(grant_create.args["scopes"], json!(["signal"]));
+
+        let grant_revoke = parse(&[
+            "grant".into(),
+            "revoke".into(),
+            "token_to_remove".into(),
+        ])
+        .unwrap();
+        assert_eq!(grant_revoke.args["subcommand"], "revoke");
+        assert_eq!(grant_revoke.args["token"], "token_to_remove");
+
+        let grant_list = parse(&["grant".into(), "list".into()]).unwrap();
+        assert_eq!(grant_list.args["subcommand"], "list");
+
+        let rep_create = grant_report(&json!({
+            "token": "tok_xyz",
+            "client": "subagent-2",
+            "scopes": ["signal"]
+        }));
+        assert!(rep_create.contains("token: tok_xyz"));
+        assert!(rep_create.contains("client: subagent-2"));
+        assert!(rep_create.contains("scopes: [signal]"));
     }
 }
 

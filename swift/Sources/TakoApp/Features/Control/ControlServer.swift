@@ -158,6 +158,8 @@ final class ControlServer: @unchecked Sendable {
         source.resume()
         acceptSource = source
         ownerLock = lockFD
+        let tokenPath = path + ".token"
+        try ControlGrantStore.shared.writePrimaryToken(to: tokenPath)
         started = true
         return .listening
     }
@@ -180,6 +182,8 @@ final class ControlServer: @unchecked Sendable {
             unlink(path)
         }
         boundInode = 0
+        let tokenPath = path + ".token"
+        ControlGrantStore.shared.removePrimaryToken(at: tokenPath)
         // Released last: the next owner finds no socket of ours to clear.
         if ownerLock >= 0 {
             close(ownerLock)

@@ -147,23 +147,56 @@ enum ControlCommands {
         handle(request, all: panes(), reply: reply)
     }
 
+    /// Binds caller to a server-side capability authorization grant (Track G1).
+    /// Scopes and client identity are derived strictly from the server-side grant;
+    /// caller-supplied scopes in payload can only attenuate, never expand.
+    /// Unauthenticated callers or invalid tokens fail closed with no scopes.
+    nonisolated static func authorize(_ request: ControlRequest) -> ControlRequest {
+        var req = request
+        if let token = request.token {
+            if let grant = ControlGrantStore.shared.grant(for: token) {
+                let client = (grant.scopes.contains(.approval) && request.client != nil) ? request.client! : grant.client
+                let effectiveScopes = grant.scopes.intersection(request.requestedScopes ?? grant.scopes)
+                req.client = client
+                req.scopes = effectiveScopes
+            } else {
+                req.client = nil
+                req.scopes = []
+            }
+        } else if req.scopes != nil && req.requestedScopes == nil {
+            // In-memory test requests with explicit scopes set directly
+        } else {
+            // Socket caller without valid grant token
+            req.client = nil
+            req.scopes = []
+        }
+        return req
+    }
+
     /// Checks that the client has the required capability scope for this command (Track G1).
     nonisolated static func checkScope(for request: ControlRequest) throws {
-        guard let clientScopes = request.scopes else {
-            return // unrestricted
+        let requiredScopes = ControlScope.required(for: request.cmd, args: request.args)
+        if requiredScopes.isEmpty {
+            return // unscoped discovery commands (e.g. version)
         }
-        guard let required = ControlScope.required(for: request.cmd, args: request.args) else {
-            return // command requires no scope (e.g. version)
-        }
-        guard clientScopes.contains(required) else {
-            let activeList = clientScopes.map(\.rawValue).sorted().joined(separator: ", ")
-            var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(required.rawValue)' scope (client scopes: [\(activeList)])")
-            err.scope = required.rawValue
+        guard let clientScopes = request.scopes, !clientScopes.isEmpty else {
+            let missing = requiredScopes.sorted(by: { $0.rawValue < $1.rawValue }).first!
+            var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(missing.rawValue)' scope (no grant provided)")
+            err.scope = missing.rawValue
             throw err
+        }
+        for required in requiredScopes.sorted(by: { $0.rawValue < $1.rawValue }) {
+            if !clientScopes.contains(required) {
+                let activeList = clientScopes.map(\.rawValue).sorted().joined(separator: ", ")
+                var err = ControlError(.missingScope, "command '\(request.cmd)' requires '\(required.rawValue)' scope (client scopes: [\(activeList)])")
+                err.scope = required.rawValue
+                throw err
+            }
         }
     }
 
     static func handle(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
+        let request = authorize(request)
         do {
             guard mode.allows(from: request.from, panes: all.map(\.surface.id)) else {
                 reply(handle(request, all: all))   // the refusal, from one place
@@ -232,6 +265,7 @@ enum ControlCommands {
     }
 
     static func handle(_ request: ControlRequest, all: [Pane]) -> ControlResponse {
+        let request = authorize(request)
         let ids = all.map(\.surface.id)
         guard mode.allows(from: request.from, panes: ids) else {
             return .failure(ControlError(.disabled, mode == .local
@@ -401,6 +435,41 @@ enum ControlCommands {
                     ])
                 default:
                     throw ControlError(.invalid, "unknown input subcommand: \(sub)")
+                }
+            case "grant":
+                let sub = request.args["subcommand"]?.string ?? ""
+                switch sub {
+                case "create":
+                    guard let client = request.args["client"]?.string, !client.isEmpty else {
+                        throw ControlError(.invalid, "missing or empty \"client\" for grant create")
+                    }
+                    let scopes = try ControlScope.parseScopes(from: request.args["scopes"]) ?? Set(ControlScope.allCases)
+                    let desc = request.args["description"]?.string
+                    let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: scopes, description: desc)
+                    return .ok([
+                        "token": .string(grant.token),
+                        "client": .string(grant.client),
+                        "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                    ])
+                case "revoke":
+                    guard let tokenToRevoke = request.args["token"]?.string, !tokenToRevoke.isEmpty else {
+                        throw ControlError(.invalid, "missing \"token\" for grant revoke")
+                    }
+                    let revoked = ControlGrantStore.shared.revokeGrant(token: tokenToRevoke)
+                    return .ok(["revoked": .bool(revoked)])
+                case "list":
+                    let grants = ControlGrantStore.shared.listGrants()
+                    let items: [JSON] = grants.map { g in
+                        .object([
+                            "id": .string(g.id.uuidString.lowercased()),
+                            "client": .string(g.client),
+                            "scopes": .array(g.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! })),
+                            "created_at": .number(g.createdAt.timeIntervalSince1970)
+                        ])
+                    }
+                    return .ok(["grants": .array(items)])
+                default:
+                    throw ControlError(.invalid, "unknown grant subcommand '\(sub)'; use create, revoke, or list")
                 }
             case "broadcast":
                 let surface = try target(request, all)

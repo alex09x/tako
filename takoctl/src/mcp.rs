@@ -31,6 +31,7 @@ pub enum CapabilityScope {
     Layout,
     Signal,
     Overlay,
+    Approval,
 }
 
 impl CapabilityScope {
@@ -41,6 +42,7 @@ impl CapabilityScope {
             Self::Layout => "layout",
             Self::Signal => "signal",
             Self::Overlay => "overlay",
+            Self::Approval => "approval",
         }
     }
 
@@ -51,8 +53,9 @@ impl CapabilityScope {
             "layout" => Ok(Self::Layout),
             "signal" => Ok(Self::Signal),
             "overlay" => Ok(Self::Overlay),
+            "approval" => Ok(Self::Approval),
             other => Err(format!(
-                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay"
+                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay, approval"
             )),
         }
     }
@@ -1134,6 +1137,16 @@ impl McpServer {
         );
         if let Some(s) = &self.surface_id {
             req.insert("from".into(), Value::String(s.clone()));
+        }
+        let token = std::env::var("TAKO_CONTROL_TOKEN")
+            .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+            .ok()
+            .or_else(|| {
+                let token_path = format!("{}.token", self.socket_path);
+                std::fs::read_to_string(token_path).ok().map(|s| s.trim().to_string())
+            });
+        if let Some(tok) = token {
+            req.insert("token".into(), Value::String(tok));
         }
 
         Ok(Value::Object(req))

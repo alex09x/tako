@@ -145,18 +145,20 @@ struct ControlProtocolTests {
     }
 
     @Test func requestParsesClientAndScopes() throws {
-        // 1. Array of scopes
-        let req1 = try ControlRequest.parse(Data(#"{"cmd":"notify","client":"bot-1","scopes":["signal","read"]}"#.utf8))
+        // 1. Array of scopes and token
+        let req1 = try ControlRequest.parse(Data(#"{"cmd":"notify","client":"bot-1","token":"my-token","scopes":["signal","read"]}"#.utf8))
         #expect(req1.client == "bot-1")
-        #expect(req1.scopes == [.signal, .read])
+        #expect(req1.token == "my-token")
+        #expect(req1.requestedScopes == [.signal, .read])
+        #expect(req1.scopes == nil)
 
         // 2. Comma-separated string of scopes
         let req2 = try ControlRequest.parse(Data(#"{"cmd":"notify","scopes":"signal, input"}"#.utf8))
-        #expect(req2.scopes == [.signal, .input])
+        #expect(req2.requestedScopes == [.signal, .input])
 
         // 3. Scopes inside args
         let req3 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"scopes":"layout"}}"#.utf8))
-        #expect(req3.scopes == [.layout])
+        #expect(req3.requestedScopes == [.layout])
 
         // 4. Client inside args
         let req4 = try ControlRequest.parse(Data(#"{"cmd":"status","args":{"client":"sub-agent"}}"#.utf8))
@@ -184,87 +186,126 @@ struct ControlProtocolTests {
     }
 
     @Test func controlScopeRequiredMapping() {
-        #expect(ControlScope.required(for: "version") == nil)
+        #expect(ControlScope.required(for: "version").isEmpty)
 
         // read
         for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history"] {
-            #expect(ControlScope.required(for: cmd) == .read)
+            #expect(ControlScope.required(for: cmd) == [.read])
         }
-        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == .read)
-        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("log")]) == .read)
-        #expect(ControlScope.required(for: "review") == .read)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == [.read])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("log")]) == [.read])
+        #expect(ControlScope.required(for: "review") == [.read])
 
         // input
         for cmd in ["send", "type", "key", "broadcast"] {
-            #expect(ControlScope.required(for: cmd) == .input)
+            #expect(ControlScope.required(for: cmd) == [.input])
         }
-        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("lock")]) == .input)
-        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("allow-automation")]) == .input)
-        #expect(ControlScope.required(for: "review", args: ["subcommand": .string("send")]) == .input)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("lock")]) == [.input])
+        #expect(ControlScope.required(for: "review", args: ["subcommand": .string("send")]) == [.input])
+
+        // approval (Track G1 P1 findings: cannot self-approve automation or issue grants with ordinary input)
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("allow-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("disallow-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "input", args: ["subcommand": .string("confirm-automation")]) == [.approval])
+        #expect(ControlScope.required(for: "grant") == [.approval])
+
+        // run requires both layout and input (execution authority)
+        #expect(ControlScope.required(for: "run") == [.layout, .input])
+        #expect(ControlScope.required(for: "tab-new", args: ["argv": .array([.string("echo")])]) == [.layout, .input])
+        #expect(ControlScope.required(for: "split", args: ["argv": .array([.string("ls")])]) == [.layout, .input])
 
         // layout
-        for cmd in ["tab-new", "split", "close", "focus", "collapse", "expand", "workspace", "layout", "action", "task", "session", "wait", "run", "resume"] {
-            #expect(ControlScope.required(for: cmd) == .layout)
+        for cmd in ["tab-new", "split", "close", "focus", "collapse", "expand", "workspace", "layout", "action", "task", "session", "wait", "resume"] {
+            #expect(ControlScope.required(for: cmd) == [.layout])
         }
 
         // signal
         for cmd in ["notify", "status", "progress", "ask", "title", "triggers"] {
-            #expect(ControlScope.required(for: cmd) == .signal)
+            #expect(ControlScope.required(for: cmd) == [.signal])
         }
 
         // overlay
         for cmd in ["dialog", "overlay"] {
-            #expect(ControlScope.required(for: cmd) == .overlay)
+            #expect(ControlScope.required(for: cmd) == [.overlay])
         }
     }
 
-    @Test func checkScopePermitsOrRefusesWithMissingScope() throws {
-        // 1. Unrestricted client (scopes == nil) can run any command
-        let unres = ControlRequest(cmd: "text", args: [:], from: nil, scopes: nil)
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: unres) }
+    @Test func serverSideGrantAndAuthorizationGate() throws {
+        // 1. Unauthenticated client without token fails closed on any scoped command
+        let unauth = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
+        let authUnauth = ControlCommands.authorize(unauth)
+        #expect(authUnauth.scopes == [])
+        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authUnauth) }
 
-        // 2. Client with signal scope can run signal commands
-        let sigReq = ControlRequest(cmd: "notify", args: [:], from: nil, scopes: [.signal])
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: sigReq) }
+        // 2. Client attempting to self-assert scopes in JSON payload without grant fails closed
+        let selfAssert = try ControlRequest.parse(Data(#"{"cmd":"text","scopes":["read","input"]}"#.utf8))
+        let authSelf = ControlCommands.authorize(selfAssert)
+        #expect(authSelf.scopes == [])
+        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authSelf) }
 
-        let statReq = ControlRequest(cmd: "status", args: [:], from: nil, scopes: [.signal])
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: statReq) }
+        // 3. Issue a server-side grant with signal scope only
+        let grant = ControlGrantStore.shared.issueGrant(client: "signal-bot", scopes: [.signal])
+        let reqSig = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(grant.token)"}"#.utf8))
+        let authSig = ControlCommands.authorize(reqSig)
+        #expect(authSig.client == "signal-bot")
+        #expect(authSig.scopes == [.signal])
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authSig) }
 
-        // 3. Client with signal scope fails on read commands with missingScope naming "read"
-        let textReq = ControlRequest(cmd: "text", args: [:], from: nil, scopes: [.signal])
+        // Signal client fails on read command
+        let reqRead = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(grant.token)"}"#.utf8))
+        let authRead = ControlCommands.authorize(reqRead)
         do {
-            try ControlCommands.checkScope(for: textReq)
-            #expect(Bool(false), "Should have thrown")
+            try ControlCommands.checkScope(for: authRead)
+            #expect(Bool(false), "Should have failed")
         } catch let err as ControlError {
             #expect(err.code == .missingScope)
             #expect(err.scope == "read")
-            #expect(err.message.contains("requires 'read' scope"))
-            #expect(err.message.contains("signal"))
         }
 
-        // 4. Client with signal scope fails on input commands naming "input"
-        let typeReq = ControlRequest(cmd: "type", args: [:], from: nil, scopes: [.signal])
+        // Signal client fails on input command
+        let reqType = try ControlRequest.parse(Data(#"{"cmd":"type","token":"\#(grant.token)"}"#.utf8))
+        let authType = ControlCommands.authorize(reqType)
         do {
-            try ControlCommands.checkScope(for: typeReq)
-            #expect(Bool(false), "Should have thrown")
+            try ControlCommands.checkScope(for: authType)
+            #expect(Bool(false), "Should have failed")
         } catch let err as ControlError {
             #expect(err.code == .missingScope)
             #expect(err.scope == "input")
         }
 
-        // 5. Client with signal scope fails on layout commands naming "layout"
-        let splitReq = ControlRequest(cmd: "split", args: [:], from: nil, scopes: [.signal])
+        // 4. Client with only layout scope fails on run because run requires execution authority (input)
+        let layoutGrant = ControlGrantStore.shared.issueGrant(client: "layout-bot", scopes: [.layout])
+        let reqRun = try ControlRequest.parse(Data(#"{"cmd":"run","token":"\#(layoutGrant.token)"}"#.utf8))
+        let authRun = ControlCommands.authorize(reqRun)
         do {
-            try ControlCommands.checkScope(for: splitReq)
-            #expect(Bool(false), "Should have thrown")
+            try ControlCommands.checkScope(for: authRun)
+            #expect(Bool(false), "Should have failed")
         } catch let err as ControlError {
             #expect(err.code == .missingScope)
-            #expect(err.scope == "layout")
+            #expect(err.scope == "input")
         }
+
+        // 5. Client with input scope cannot self-approve pane automation switch
+        let inputGrant = ControlGrantStore.shared.issueGrant(client: "input-bot", scopes: [.input])
+        let reqApprove = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(inputGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
+        let authApprove = ControlCommands.authorize(reqApprove)
+        do {
+            try ControlCommands.checkScope(for: authApprove)
+            #expect(Bool(false), "Should have failed")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "approval")
+        }
+
+        // 6. Client with approval scope can approve automation and issue grants
+        let adminGrant = ControlGrantStore.shared.issueGrant(client: "admin-bot", scopes: [.approval])
+        let reqAdmin = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(adminGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
+        let authAdmin = ControlCommands.authorize(reqAdmin)
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authAdmin) }
     }
 }
 
-@Suite
+@Suite(.serialized)
 @MainActor
 struct ControlServerTests {
     @Test func aRequestIsAnsweredOverTheSocket() async throws {
@@ -277,6 +318,7 @@ struct ControlServerTests {
         defer { server.stop() }
         var st = stat()
         #expect(lstat(path, &st) == 0 && st.st_mode & 0o777 == 0o600)
+        #expect(FileManager.default.fileExists(atPath: path + ".token"))
         let answer = try await ask(path, #"{"cmd":"hello","from":"\#(a.uuidString)"}"#)
         #expect(answer["ok"] as? Bool == true)
         let result = answer["result"] as? [String: Any]
