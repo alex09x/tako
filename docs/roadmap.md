@@ -835,7 +835,7 @@ deciding whether to schedule an implementation or reject it.
 Done when an agent restricted to signal scope can set status and notify but cannot read, stream
 events, take screenshots or type, and every refusal names the missing scope.
 
-### [ ] G2. Activity log
+### [x] G2. Activity log
 
 Per pane: which client did what and when (action type, not content by default), viewable from the
 pane header and exportable. The log is local, bounded and follows the snapshot privacy rules.

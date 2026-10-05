@@ -189,7 +189,7 @@ struct ControlProtocolTests {
         #expect(ControlScope.required(for: "version").isEmpty)
 
         // read
-        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history"] {
+        for cmd in ["tree", "text", "last", "find", "events", "screenshot", "history", "activity"] {
             #expect(ControlScope.required(for: cmd) == [.read])
         }
         #expect(ControlScope.required(for: "input", args: ["subcommand": .string("status")]) == [.read])
@@ -497,6 +497,45 @@ struct ControlServerTests {
         let server = ControlServer(path: path) { _, reply in reply(.ok([:])) }
         #expect(throws: ControlError.self) { try server.start() }
         #expect(FileManager.default.contents(atPath: path) == Data("keep".utf8))
+    }
+
+    @Test func activityLogRecordsActionsAndSupportsExport() throws {
+        let paneId = UUID()
+        let grant = ControlGrantStore.shared.issueGrant(client: "test-agent", scopes: [.read, .input, .layout, .signal])
+
+        // 1. Direct record via ControlCommands.recordActivity
+        let reqSend = try ControlRequest.parse(Data(#"{"cmd":"send","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        ControlCommands.recordActivity(for: reqSend, on: paneId, action: "send")
+
+        let reqSplit = try ControlRequest.parse(Data(#"{"cmd":"split","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        ControlCommands.recordActivity(for: reqSplit, on: paneId, action: "split")
+
+        let reqNotify = try ControlRequest.parse(Data(#"{"cmd":"notify","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        ControlCommands.recordActivity(for: reqNotify, on: paneId, action: "notify")
+
+        // 2. Query activity log via InputOwnershipStore
+        let log = InputOwnershipStore.shared.activityLog(for: paneId)
+        #expect(log.count == 3)
+        #expect(log[0].action == "send")
+        #expect(log[0].client == "test-agent")
+        #expect(log[1].action == "split")
+        #expect(log[2].action == "notify")
+
+        // 3. Export to JSON string and file
+        let exported = InputOwnershipStore.shared.exportLog(for: paneId)
+        #expect(exported.contains("test-agent"))
+        #expect(exported.contains("send"))
+        #expect(exported.contains("split"))
+        #expect(exported.contains("notify"))
+
+        let tmpFile = NSTemporaryDirectory() + "test_activity_\(UUID().uuidString).json"
+        try exported.write(toFile: tmpFile, atomically: true, encoding: .utf8)
+        #expect(FileManager.default.fileExists(atPath: tmpFile))
+        try? FileManager.default.removeItem(atPath: tmpFile)
+
+        // 4. Clear log
+        InputOwnershipStore.shared.clearLog(paneId: paneId)
+        #expect(InputOwnershipStore.shared.activityLog(for: paneId).isEmpty)
     }
 
     @Test func aDirectoryOthersCanReachIsRefused() throws {

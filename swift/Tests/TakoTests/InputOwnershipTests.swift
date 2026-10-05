@@ -92,14 +92,44 @@ import Testing
         #expect(mark?.action == "send")
         #expect(store.activityLog(for: paneId).count == 2)
 
-        // Verify bounding to maxLogEntriesPerPane (100)
-        for i in 1...110 {
+        // Verify bounding to maxLogEntriesPerPane (500)
+        for i in 1...520 {
             store.recordAutomation(paneId: paneId, client: "client-\(i)", action: "key enter")
         }
         let log = store.activityLog(for: paneId)
         #expect(log.count == InputOwnershipStore.maxLogEntriesPerPane)
-        #expect(log.last?.client == "client-110")
-        #expect(log.first?.client == "client-11")
+        #expect(log.last?.client == "client-520")
+        #expect(log.first?.client == "client-21")
+    }
+
+    @Test func testExportLogAndClearLog() {
+        let store = InputOwnershipStore()
+        let paneId = UUID()
+
+        store.recordAutomation(paneId: paneId, client: "claude-code", action: "type")
+        store.recordAutomation(paneId: paneId, client: "takoctl", action: "split")
+
+        let jsonStr = store.exportLog(for: paneId)
+        #expect(jsonStr.contains("claude-code"))
+        #expect(jsonStr.contains("type"))
+        #expect(jsonStr.contains("split"))
+
+        // Decode and verify structure
+        let data = Data(jsonStr.utf8)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let records = try? decoder.decode([InputActivityRecord].self, from: data)
+        #expect(records?.count == 2)
+        #expect(records?[0].client == "claude-code")
+        #expect(records?[0].action == "type")
+        #expect(records?[1].client == "takoctl")
+        #expect(records?[1].action == "split")
+
+        // Clear log
+        store.clearLog(paneId: paneId)
+        #expect(store.activityLog(for: paneId).isEmpty)
+        #expect(store.lastActivityMark(for: paneId) == nil)
+        #expect(store.exportLog(for: paneId) == "[]")
     }
 
     @Test func testClearActivityMarkAndRemoval() {

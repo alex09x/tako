@@ -16,6 +16,7 @@ public struct InputOwnershipHeaderView: View {
     let paneId: UUID
     @ObservedObject var store: InputOwnershipStore = .shared
     @State private var isHovered: Bool = false
+    @State private var showActivityLog: Bool = false
 
     public init(paneId: UUID) {
         self.paneId = paneId
@@ -128,20 +129,46 @@ public struct InputOwnershipHeaderView: View {
                         .help("Allow external automation to type into this pane")
                     }
 
-                    // Automated activity attribution mark (G2)
+                    // Automated activity attribution mark & popover (Track G2)
                     if let mark = state.lastActivityMark {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 9))
-                                .foregroundColor(.orange)
-                            Text("\(mark.client): \(mark.action)")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        Button {
+                            showActivityLog.toggle()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.orange)
+                                Text("\(mark.client): \(mark.action)")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
                         }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.15))
-                        .clipShape(Capsule())
-                        .accessibilityLabel("Automated input from \(mark.client)")
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Automated input from \(mark.client). Click to view activity log.")
+                        .help("View automated activity log for this pane")
+                        .popover(isPresented: $showActivityLog) {
+                            PaneActivityLogView(paneId: paneId)
+                        }
+                    } else if isHovered {
+                        Button {
+                            showActivityLog.toggle()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 9))
+                                Text("Activity")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help("View automated activity log for this pane")
+                        .popover(isPresented: $showActivityLog) {
+                            PaneActivityLogView(paneId: paneId)
+                        }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -159,5 +186,99 @@ public struct InputOwnershipHeaderView: View {
                 .animation(.easeInOut(duration: 0.15), value: state.isLocked)
             }
         }
+    }
+}
+
+/// Popover view displaying the local bounded activity log for a pane (Track G2).
+public struct PaneActivityLogView: View {
+    let paneId: UUID
+    @ObservedObject var store: InputOwnershipStore = .shared
+    @State private var copied: Bool = false
+
+    public init(paneId: UUID) {
+        self.paneId = paneId
+    }
+
+    private var records: [InputActivityRecord] {
+        store.activityLog(for: paneId).reversed()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Activity Log")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Local & bounded (\(records.count)/\(InputOwnershipStore.maxLogEntriesPerPane)) • Snapshot privacy")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(copied ? "Copied!" : "Copy JSON") {
+                    let json = store.exportLog(for: paneId)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(json, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copied = false
+                    }
+                }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+
+                Button("Clear") {
+                    store.clearLog(paneId: paneId)
+                }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+
+            Divider()
+
+            if records.isEmpty {
+                VStack(spacing: 6) {
+                    Spacer()
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    Text("No automated activity recorded for this pane.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(records) { record in
+                            HStack(spacing: 8) {
+                                Text(record.timestamp, style: .time)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 65, alignment: .leading)
+
+                                Text(record.client)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.secondary.opacity(0.15))
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                                Text(record.action)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.primary)
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 380, height: 260)
     }
 }

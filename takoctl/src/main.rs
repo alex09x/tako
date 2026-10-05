@@ -119,6 +119,7 @@ commands:
   input allow-automation  allow external automation to type into this pane
   input disallow-automation disallow external automation from typing into this pane
   input confirm-automation allow automation to type once into this pane
+  activity [TARGET]       show automated activity log for the pane (--export FILE, --clear)
   broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
   broadcast stop          stop broadcasting input
   broadcast status        show current broadcast status and participating panes
@@ -169,6 +170,8 @@ options:
   --lines N               text, last, wait, run --wait: at most the last N lines of output
   --styled                text: include ANSI SGR color/styling escape codes
   --out PATH              screenshot: output PNG file path
+  --export FILE           activity: export activity log to FILE
+  --clear                 activity: clear activity log for target pane
   --file FILE             review: target file for diff or comment
   --line N                review: line number for inline comment
   --target-pane ID        review: destination pane for batched feedback
@@ -425,6 +428,13 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--force" => {
                 args.insert("force".into(), Value::Bool(true));
+            }
+            "--export" => {
+                let path = value("--export")?;
+                args.insert("export".into(), Value::String(expand_path(&path)));
+            }
+            "--clear" => {
+                args.insert("clear".into(), Value::Bool(true));
             }
             "--cursor" => {
                 let n: u64 = value("--cursor")?
@@ -1215,6 +1225,60 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "activity" => {
+            if let Some(true) = args.get("clear").and_then(Value::as_bool) {
+                args.insert("action".into(), Value::String("clear".into()));
+                if !positional.is_empty() {
+                    let target_candidate = positional.remove(0);
+                    args.insert("target".into(), Value::String(target_candidate));
+                }
+            } else if args.get("export").is_some() {
+                args.insert("action".into(), Value::String("export".into()));
+                if !positional.is_empty() {
+                    let target_candidate = positional.remove(0);
+                    args.insert("target".into(), Value::String(target_candidate));
+                }
+            } else if positional.is_empty() {
+                args.insert("action".into(), Value::String("get".into()));
+            } else {
+                let first = positional.remove(0);
+                match first.as_str() {
+                    "get" | "list" => {
+                        args.insert("action".into(), Value::String("get".into()));
+                        if !positional.is_empty() {
+                            let target_candidate = positional.remove(0);
+                            args.insert("target".into(), Value::String(target_candidate));
+                        }
+                    }
+                    "clear" => {
+                        args.insert("action".into(), Value::String("clear".into()));
+                        if !positional.is_empty() {
+                            let target_candidate = positional.remove(0);
+                            args.insert("target".into(), Value::String(target_candidate));
+                        }
+                    }
+                    "export" => {
+                        args.insert("action".into(), Value::String("export".into()));
+                        if !positional.is_empty() {
+                            let file = positional.remove(0);
+                            args.insert("export".into(), Value::String(expand_path(&file)));
+                        }
+                        if !positional.is_empty() {
+                            let target_candidate = positional.remove(0);
+                            args.insert("target".into(), Value::String(target_candidate));
+                        }
+                    }
+                    target_candidate => {
+                        args.insert("action".into(), Value::String("get".into()));
+                        args.insert("target".into(), Value::String(target_candidate.to_string()));
+                    }
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "grant" => {
             let sub = if positional.is_empty() {
                 "list".to_string()
@@ -1682,8 +1746,41 @@ fn render(cmd: &str, result: &Value) -> String {
         "history" => history_report(result),
         "triggers" => triggers_report(result),
         "grant" => grant_report(result),
+        "activity" => activity_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn activity_report(result: &Value) -> String {
+    if let Some(true) = result.get("cleared").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return format!("Activity log cleared for pane {id}.\n");
+    }
+    if let Some(exported) = result.get("exported").and_then(Value::as_str) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return format!("Exported activity log for pane {id} to {exported}\n");
+    }
+    if let Some(json_str) = result.get("json").and_then(Value::as_str) {
+        return format!("{json_str}\n");
+    }
+    let id = result["id"].as_str().unwrap_or("pane");
+    if let Some(entries) = result["entries"].as_array() {
+        if entries.is_empty() {
+            return format!("No automated activity recorded for pane {id}.\n");
+        }
+        let mut out = format!(
+            "Automated activity log for pane {id} ({} entries):\n",
+            entries.len()
+        );
+        for entry in entries {
+            let client = sanitize_terminal_control(entry["client"].as_str().unwrap_or("unknown"));
+            let action = sanitize_terminal_control(entry["action"].as_str().unwrap_or(""));
+            let ts = sanitize_terminal_control(entry["timestamp"].as_str().unwrap_or(""));
+            out += &format!("  [{ts}] {client}: {action}\n");
+        }
+        return out;
+    }
+    format!("{result}\n")
 }
 
 fn grant_report(result: &Value) -> String {
@@ -4598,6 +4695,53 @@ bbbbbbbb  logs -- pane 2 of 2
         let rep_log = render("input", &log_val);
         assert!(rep_log.contains("Automated input activity:"));
         assert!(rep_log.contains("[2026-10-05T02:00:00Z] claude: type"));
+    }
+
+    #[test]
+    fn test_activity_subcommands_and_options_parsed_and_rendered() {
+        let opts = parse(&["activity".into()]).unwrap();
+        assert_eq!(opts.cmd, "activity");
+        assert_eq!(opts.args["action"], "get");
+
+        let opts_clear = parse(&["activity".into(), "clear".into(), "pane-x".into()]).unwrap();
+        assert_eq!(opts_clear.cmd, "activity");
+        assert_eq!(opts_clear.args["action"], "clear");
+        assert_eq!(opts_clear.args["target"], "pane-x");
+
+        let opts_clear_flag = parse(&["activity".into(), "--clear".into()]).unwrap();
+        assert_eq!(opts_clear_flag.cmd, "activity");
+        assert_eq!(opts_clear_flag.args["action"], "clear");
+
+        let opts_exp = parse(&["activity".into(), "--export".into(), "/tmp/act.json".into()]).unwrap();
+        assert_eq!(opts_exp.cmd, "activity");
+        assert_eq!(opts_exp.args["action"], "export");
+        assert_eq!(opts_exp.args["export"], "/tmp/act.json");
+
+        let log_val = json!({
+            "id": "p-1",
+            "entries": [
+                {
+                    "client": "claude",
+                    "action": "type",
+                    "timestamp": "2026-10-05T02:00:00Z"
+                },
+                {
+                    "client": "takoctl",
+                    "action": "split",
+                    "timestamp": "2026-10-05T02:01:00Z"
+                }
+            ]
+        });
+        let rep_log = render("activity", &log_val);
+        assert!(rep_log.contains("Automated activity log for pane p-1 (2 entries):"));
+        assert!(rep_log.contains("[2026-10-05T02:00:00Z] claude: type"));
+        assert!(rep_log.contains("[2026-10-05T02:01:00Z] takoctl: split"));
+
+        let cleared_val = json!({"id": "p-1", "cleared": true});
+        assert_eq!(render("activity", &cleared_val), "Activity log cleared for pane p-1.\n");
+
+        let exp_val = json!({"id": "p-1", "exported": "/tmp/act.json"});
+        assert_eq!(render("activity", &exp_val), "Exported activity log for pane p-1 to /tmp/act.json\n");
     }
 
     #[test]

@@ -251,6 +251,12 @@ enum ControlCommands {
         return procOrigin
     }
 
+    /// Records automated activity on a target pane for Track G2.
+    static func recordActivity(for request: ControlRequest, on paneId: UUID, action: String) {
+        let client = request.client ?? request.args["client"]?.string ?? "anonymous"
+        InputOwnershipStore.shared.recordAutomation(paneId: paneId, client: client, action: action)
+    }
+
     private static func sanitizeIdentifier(_ s: String, maxLen: Int = 64) -> String? {
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= maxLen else { return nil }
@@ -384,6 +390,7 @@ enum ControlCommands {
                 reply(handle(request, all: all))
             case "text":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "text")
                 guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
                     throw ControlError(.disabled, "secure-input panes cannot be read")
                 }
@@ -400,17 +407,28 @@ enum ControlCommands {
                 reply(handle(request, all: all))
             case "close":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "close")
                 ControlLayout.close(surface, reply: reply)
             case "last":
-                try ControlCommand.last(try target(request, all), args: request.args, reply: reply)
+                let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "last")
+                try ControlCommand.last(surface, args: request.args, reply: reply)
             case "wait":
-                try ControlCommand.wait(request, try target(request, all), reply: reply)
+                let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "wait")
+                try ControlCommand.wait(request, surface, reply: reply)
             case "run":
-                try ControlCommand.run(request, beside: try target(request, all), reply: reply)
+                let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "run")
+                try ControlCommand.run(request, beside: surface, reply: reply)
             case "find":
+                if let surface = try? target(request, all) {
+                    recordActivity(for: request, on: surface.id, action: "find")
+                }
                 find(try ControlInput.text(request.args), limit: try findLimit(request.args), reply: reply)
             case "notify":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "notify")
                 try notify(request, surface, text: try ControlInput.text(request.args),
                            title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } },
                            reply: reply)
@@ -421,6 +439,9 @@ enum ControlCommands {
                 guard let onClose = request.onStreamClose else {
                     throw ControlError(.internalError, "missing stream close handler")
                 }
+                if let surface = try? target(request, all) {
+                    recordActivity(for: request, on: surface.id, action: "events")
+                }
                 try TerminalEventHub.shared.subscribe(
                     clientFD: request.clientFD,
                     args: request.args,
@@ -428,6 +449,7 @@ enum ControlCommands {
                 )
             case "ask":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "ask")
                 try PromptManager.shared.ask(request: request, surface: surface, reply: reply)
             default:
                 reply(handle(request))
@@ -494,7 +516,7 @@ enum ControlCommands {
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
                 let text = try ControlInput.text(request.args)
                 try ControlInput.send(surface, text: text, enter: enter)
-                InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: request.cmd)
+                recordActivity(for: request, on: surface.id, action: request.cmd)
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "key":
                 let surface = try target(request, all)
@@ -506,26 +528,31 @@ enum ControlCommands {
                 }
                 let chord = try ControlInput.text(request.args, "key")
                 try ControlInput.key(surface, chord: chord)
-                InputOwnershipStore.shared.recordAutomation(paneId: surface.id, client: client, action: "key \(chord)")
+                recordActivity(for: request, on: surface.id, action: "key")
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "tab-new":
                 let pane = try ControlLayout.newTab(beside: try target(request, all), args: request.args, client: request.client)
+                recordActivity(for: request, on: pane.id, action: "tab-new")
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "split":
                 let pane = try ControlLayout.split(try target(request, all), args: request.args, client: request.client)
+                recordActivity(for: request, on: pane.id, action: "split")
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
             case "collapse":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "collapse")
                 SubagentHierarchyStore.shared.setCollapsed(surface.id, collapsed: true)
                 return .ok(["id": .string(surface.id.uuidString.lowercased()), "collapsed": .bool(true)])
             case "expand":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "expand")
                 SubagentHierarchyStore.shared.setCollapsed(surface.id, collapsed: false)
                 return .ok(["id": .string(surface.id.uuidString.lowercased()), "collapsed": .bool(false)])
             case "resume":
                 return try handleResume(request, all: all)
             case "input":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "input")
                 let sub = try ControlInput.text(request.args, "subcommand")
                 switch sub {
                 case "lock":
@@ -653,6 +680,7 @@ enum ControlCommands {
                 }
             case "broadcast":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "broadcast")
                 let sub = try? ControlInput.text(request.args, "subcommand")
                 switch sub ?? "status" {
                 case "start":
@@ -710,14 +738,17 @@ enum ControlCommands {
                 }
             case "focus":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "focus")
                 ControlLayout.focus(surface)
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "title":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "title")
                 try ControlLayout.title(surface, try ControlInput.text(request.args, "title"))
                 return .ok(["id": .string(surface.id.uuidString.lowercased())])
             case "status":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "status")
                 let action: String = try {
                     if let a = request.args["action"] {
                         if case .string(let s) = a { return s }
@@ -780,6 +811,7 @@ enum ControlCommands {
                 }
             case "progress":
                 let surface = try target(request, all)
+                recordActivity(for: request, on: surface.id, action: "progress")
                 let action: String = try {
                     if let a = request.args["action"] {
                         if case .string(let s) = a { return s.lowercased() }
@@ -882,7 +914,60 @@ enum ControlCommands {
                     throw ControlError(.invalid, "unknown progress action \"\(action)\"")
                 }
             case "dialog":
+                if let surface = try? target(request, all) {
+                    recordActivity(for: request, on: surface.id, action: "dialog")
+                }
                 return .ok(try dialog(request.args))
+            case "activity":
+                let surface = try target(request, all)
+                guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+                    throw ControlError(.disabled, "secure-input panes cannot be read")
+                }
+                recordActivity(for: request, on: surface.id, action: "activity")
+                let act = request.args["action"]?.string ?? request.args["subcommand"]?.string ?? "get"
+                switch act {
+                case "get", "list":
+                    let records = InputOwnershipStore.shared.activityLog(for: surface.id)
+                    let entries: [JSON] = records.map { record in
+                        .object([
+                            "client": .string(record.client),
+                            "action": .string(record.action),
+                            "timestamp": .string(ISO8601DateFormatter().string(from: record.timestamp))
+                        ])
+                    }
+                    var dict: [String: JSON] = [
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "count": .number(Double(entries.count)),
+                        "entries": .array(entries)
+                    ]
+                    if let exportPath = request.args["export"]?.string ?? request.args["file"]?.string {
+                        let jsonString = InputOwnershipStore.shared.exportLog(for: surface.id)
+                        let expanded = (exportPath as NSString).expandingTildeInPath
+                        try jsonString.write(toFile: expanded, atomically: true, encoding: .utf8)
+                        dict["exported"] = .string(expanded)
+                    }
+                    return .ok(dict)
+                case "clear":
+                    InputOwnershipStore.shared.clearLog(paneId: surface.id)
+                    return .ok([
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "cleared": .bool(true)
+                    ])
+                case "export":
+                    let jsonString = InputOwnershipStore.shared.exportLog(for: surface.id)
+                    var dict: [String: JSON] = [
+                        "id": .string(surface.id.uuidString.lowercased()),
+                        "json": .string(jsonString)
+                    ]
+                    if let exportPath = request.args["export"]?.string ?? request.args["file"]?.string ?? request.args["path"]?.string {
+                        let expanded = (exportPath as NSString).expandingTildeInPath
+                        try jsonString.write(toFile: expanded, atomically: true, encoding: .utf8)
+                        dict["exported"] = .string(expanded)
+                    }
+                    return .ok(dict)
+                default:
+                    throw ControlError(.invalid, "unknown activity action \"\(act)\"; use get, export, or clear")
+                }
             case "workspace":
                 return .ok(try workspaceCommand(request, all: all))
             case "layout":
@@ -2022,6 +2107,7 @@ enum ControlCommands {
     /// Handles `takoctl overlay open|close|status|reload` (D1).
     static func overlayCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
+        recordActivity(for: request, on: surface.id, action: "overlay")
         let sub = (try? ControlInput.text(request.args, "subcommand")) ?? "status"
 
         switch sub {
@@ -2112,6 +2198,7 @@ enum ControlCommands {
 
     static func screenshotCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
+        recordActivity(for: request, on: surface.id, action: "screenshot")
         guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
             throw ControlError(.disabled, "secure-input panes cannot be read")
         }
@@ -2197,6 +2284,7 @@ enum ControlCommands {
     /// Handles `takoctl review open|status|files|diff|comment|send|close` (D3).
     static func reviewCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
+        recordActivity(for: request, on: surface.id, action: "review")
         let sub = (try? ControlInput.text(request.args, "subcommand")) ?? "status"
 
         switch sub {

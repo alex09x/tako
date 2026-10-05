@@ -25,7 +25,7 @@ enum ControlScope: String, CaseIterable, Sendable, Codable {
         switch cmd {
         case "version":
             return []
-        case "tree", "text", "last", "find", "events", "screenshot", "history":
+        case "tree", "text", "last", "find", "events", "screenshot", "history", "activity":
             return [.read]
         case "send", "type", "key", "broadcast":
             return [.input]

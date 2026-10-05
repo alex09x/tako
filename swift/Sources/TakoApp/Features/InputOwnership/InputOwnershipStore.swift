@@ -88,7 +88,7 @@ public final class InputOwnershipStore: ObservableObject {
     public static let shared = InputOwnershipStore()
 
     /// Maximum activity records kept per pane to keep memory bounded (G2).
-    public static let maxLogEntriesPerPane = 100
+    public static let maxLogEntriesPerPane = 500
 
     @Published private var states: [UUID: PaneInputState] = [:]
 
@@ -220,6 +220,28 @@ public final class InputOwnershipStore: ObservableObject {
         guard var current = states[paneId] else { return }
         current.lastActivityMark = nil
         states[paneId] = current
+    }
+
+    /// Clears the activity log for a pane.
+    public func clearLog(paneId: UUID) {
+        guard var current = states[paneId] else { return }
+        current.activityLog.removeAll()
+        current.lastActivityMark = nil
+        states[paneId] = current
+    }
+
+    /// Exports the activity log for a pane as formatted JSON (Track G2).
+    /// Adheres strictly to snapshot privacy rules by emitting only action types, client identities, and timestamps.
+    public func exportLog(for paneId: UUID) -> String {
+        let records = activityLog(for: paneId)
+        guard !records.isEmpty else { return "[]" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(records), let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "[]"
     }
 
     /// Cleans up tracking when a pane closes.
