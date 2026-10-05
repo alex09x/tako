@@ -104,4 +104,19 @@ final class CommandHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.allEntries().first?.command, "echo 0")
         XCTAssertEqual(store.allEntries().last?.command, "echo 49")
     }
+
+    func testSearchLimitsNegativeAndOversized() {
+        let store = CommandHistoryStore(storageURL: tempFile)
+        for i in 1...10 {
+            store.record(command: "cmd \(i)", cwd: "/tmp", startedAt: Date(), duration: nil, exitCode: 0, paneId: nil)
+        }
+        // Negative and zero limits safely return empty without crashing or trapping
+        XCTAssertEqual(store.search(query: "", limit: -1).count, 0)
+        XCTAssertEqual(store.search(query: "cmd", limit: -100).count, 0)
+        XCTAssertEqual(store.search(query: "", limit: 0).count, 0)
+
+        // Positive limit clamped to available or max
+        XCTAssertEqual(store.search(query: "", limit: 5).count, 5)
+        XCTAssertEqual(store.search(query: "", limit: 100_000).count, 10)
+    }
 }

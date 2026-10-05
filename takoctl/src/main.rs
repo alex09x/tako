@@ -238,7 +238,10 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--limit" => {
                 let n: u64 = value("--limit")?
                     .parse()
-                    .map_err(|_| "--limit needs a number".to_string())?;
+                    .map_err(|_| "--limit needs a non-negative number".to_string())?;
+                if n > 5000 {
+                    return Err("--limit cannot exceed 5000".into());
+                }
                 args.insert("limit".into(), Value::from(n));
             }
             "--press" => {
@@ -4830,6 +4833,15 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(rep.contains("$ cargo test^[[2J   (/tmp^M)   exit 1   (50ms)"));
         assert!(!rep.contains('\x1b'));
         assert!(!rep.contains('\r'));
+
+        // Test limit validation bounds
+        assert!(parse(&["history".into(), "--limit".into(), "-1".into()]).is_err());
+        assert!(parse(&["history".into(), "--limit".into(), "10000".into()]).is_err());
+        assert!(parse(&["history".into(), "--limit".into(), "abc".into()]).is_err());
+        let valid_zero = parse(&["history".into(), "--limit".into(), "0".into()]).unwrap();
+        assert_eq!(valid_zero.args["limit"], 0);
+        let valid_max = parse(&["history".into(), "--limit".into(), "5000".into()]).unwrap();
+        assert_eq!(valid_max.args["limit"], 5000);
     }
 
     #[test]

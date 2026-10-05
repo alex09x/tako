@@ -229,7 +229,7 @@ enum ControlCommands {
                 return .ok(tree(all, active: activePane(all)))
             case "history":
                 let query = request.args["query"]?.string ?? ""
-                let limit = request.args["limit"]?.number.flatMap { Int($0) } ?? 100
+                let limit = try historyLimit(request.args)
                 let entries = CommandHistoryStore.shared.search(query: query, limit: limit)
                 let jsonEntries = entries.map { entry -> JSON in
                     var obj: [String: JSON] = [
@@ -618,6 +618,22 @@ enum ControlCommands {
         case nil, .null?: return 50
         case .number(let n)?:
             guard n.isFinite, let limit = Int(exactly: n), (1...CrossSessionSearch.limit).contains(limit) else {
+                throw refused
+            }
+            return limit
+        default:
+            throw refused
+        }
+    }
+
+    /// `takoctl history`: the cross-session command history search.
+    /// `limit` for history: a whole number from 0 to 5000 (default 100).
+    static func historyLimit(_ args: [String: JSON]) throws -> Int {
+        let refused = ControlError(.invalid, "\"limit\" must be a whole number from 0 to 5000")
+        switch args["limit"] {
+        case nil, .null?: return 100
+        case .number(let n)?:
+            guard n.isFinite, let limit = Int(exactly: n), (0...5000).contains(limit) else {
                 throw refused
             }
             return limit

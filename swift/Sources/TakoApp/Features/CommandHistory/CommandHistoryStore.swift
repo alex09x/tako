@@ -106,15 +106,17 @@ public final class CommandHistoryStore: @unchecked Sendable {
     public func search(query: String, limit: Int = 100) -> [CommandHistoryEntry] {
         lock.lock()
         defer { lock.unlock() }
+        let clampedLimit = max(0, min(limit, 5000))
+        guard clampedLimit > 0 else { return [] }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if trimmed.isEmpty {
-            return Array(entries.suffix(limit).reversed())
+            return Array(entries.suffix(clampedLimit).reversed())
         }
         let matched = entries.filter { entry in
             entry.command.localizedCaseInsensitiveContains(trimmed) ||
             (entry.cwd?.localizedCaseInsensitiveContains(trimmed) ?? false)
         }
-        return Array(matched.suffix(limit).reversed())
+        return Array(matched.suffix(clampedLimit).reversed())
     }
 
     /// Clears all history entries and removes storage file.

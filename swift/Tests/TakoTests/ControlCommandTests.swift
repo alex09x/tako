@@ -59,6 +59,17 @@ struct ControlCommandTests {
         #expect((try? ControlCommands.findLimit(["limit": .number(7)])) == 7)
     }
 
+    @Test func aHistoryLimitOutsideItsRangeIsRefused() {
+        for bad: JSON in [.number(1.8446744073709552e19), .number(-1), .number(-100), .number(1.5), .number(5001), .number(1e300), .string("20")] {
+            #expect(throws: ControlError.self) { try ControlCommands.historyLimit(["limit": bad]) }
+        }
+        #expect((try? ControlCommands.historyLimit([:])) == 100)
+        #expect((try? ControlCommands.historyLimit(["limit": .null])) == 100)
+        #expect((try? ControlCommands.historyLimit(["limit": .number(0)])) == 0)
+        #expect((try? ControlCommands.historyLimit(["limit": .number(50)])) == 50)
+        #expect((try? ControlCommands.historyLimit(["limit": .number(5000)])) == 5000)
+    }
+
     @Test func aReplyGoesOutOnceWhoeverIsFirst() {
         final class Count: @unchecked Sendable { var n = 0 }
         let count = Count()
