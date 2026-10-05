@@ -421,7 +421,9 @@ Status: shipped in [PR #20](https://github.com/alex09x/tako/pull/20).
 Done when a developer with ten panes can go from "something needs me" to the right pane with
 one shortcut, and nothing is marked read that the user did not see.
 
-### [ ] B5. Session sidebar (vertical tabs)
+### [x] B5. Session sidebar (vertical tabs)
+
+Status: shipped in [PR #21](https://github.com/alex09x/tako/pull/21).
 
 An optional sidebar with one row per tab or workspace:
 
