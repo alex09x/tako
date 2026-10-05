@@ -545,7 +545,7 @@ Parallel agents need separate working copies.
 Done when three tasks can run side by side without touching each other's files, and archiving
 never deletes unsaved work.
 
-### [ ] C5. Subagent panes and context hierarchy
+### [x] C5. Subagent panes and context hierarchy
 
 - `takoctl split --child-of self --label <name>`: a child pane linked to its parent. The tree and
   sidebar show the hierarchy; a parent's status summarizes its children; a group can collapse;

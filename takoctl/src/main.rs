@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! `takoctl`: drive a running Tako from a script.
 //!
 //! One request per run: a JSON line to the app's control socket, one JSON
@@ -28,7 +38,10 @@ commands:
   key CHORD               press a key: enter, esc, up, f5, ctrl+c, alt+left, ...
   text                    print the pane's text (--lines N: the last N lines)
   tab-new                 a new tab in the pane's window (--cwd DIR, --no-select); prints its pane id
-  split DIRECTION         split the pane: right, left, down or up (--cwd DIR); prints the new pane id
+  split [DIRECTION]       split the pane: right, left, down or up (--cwd DIR, --child-of PANE,
+                          --label NAME); defaults to right; prints the new pane id
+  collapse [TARGET]       collapse a parent pane's subagents in tree and sidebar
+  expand [TARGET]         expand a parent pane's subagents in tree and sidebar
   focus                   bring the pane forward and give it the keyboard
   title TEXT              the tab's title (empty restores the program's own)
   close                   close the pane, asking first when closing by hand would
@@ -79,6 +92,8 @@ commands:
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
+  --label NAME            split: label for child pane (e.g. subagent name)
   --approve               layout apply: trust layout file and allow running its programs
   --choice CHOICE         ask: add a choice (can be repeated)
   --choices C1,C2,...     ask: comma-separated list of choices
@@ -180,6 +195,12 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--split" => {
                 args.insert("split".into(), Value::String(value("--split")?));
+            }
+            "--child-of" => {
+                args.insert("child_of".into(), Value::String(value("--child-of")?));
+            }
+            "--label" => {
+                args.insert("label".into(), Value::String(value("--label")?));
             }
             "--choice" => {
                 let val = value("--choice")?;
@@ -769,7 +790,35 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
-        "split" => Some("direction"),
+        "split" => {
+            if positional.is_empty() {
+                args.insert("direction".into(), Value::String("right".into()));
+            } else if positional.len() == 1 {
+                let dir = positional.remove(0);
+                match dir.to_lowercase().as_str() {
+                    "right" | "left" | "down" | "up" => {
+                        args.insert("direction".into(), Value::String(dir));
+                    }
+                    other => {
+                        return Err(format!(
+                            "split direction must be right, left, down, or up (got \"{other}\")"
+                        ));
+                    }
+                }
+            } else {
+                return Err("split takes at most one direction argument (right, left, down, up)".into());
+            }
+            None
+        }
+        "collapse" | "expand" => {
+            if !positional.is_empty() {
+                args.insert("target".into(), Value::String(positional.remove(0)));
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -833,11 +882,34 @@ fn render(cmd: &str, result: &Value) -> String {
                     out.push('\n');
                     let panes: Vec<&Value> =
                         tab["panes"].as_array().into_iter().flatten().collect();
-                    match tab.get("layout").filter(|l| !l.is_null()) {
-                        Some(layout) => outline(&mut out, layout, &panes, 2),
-                        None => {
-                            for pane in &panes {
-                                out += &pane_line(pane, 2);
+                    let has_hierarchy = panes
+                        .iter()
+                        .any(|p| p.get("parent").is_some() || p.get("children").is_some());
+                    if has_hierarchy {
+                        for pane in panes
+                            .iter()
+                            .filter(|p| p.get("parent").is_none() || p["parent"].is_null())
+                        {
+                            out += &pane_line(pane, 2);
+                            if pane["collapsed"].as_bool() != Some(true) {
+                                if let Some(children_ids) = pane["children"].as_array() {
+                                    for cid in children_ids.iter().filter_map(Value::as_str) {
+                                        if let Some(child_pane) =
+                                            panes.iter().find(|p| p["id"].as_str() == Some(cid))
+                                        {
+                                            out += &pane_line(child_pane, 3);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        match tab.get("layout").filter(|l| !l.is_null()) {
+                            Some(layout) => outline(&mut out, layout, &panes, 2),
+                            None => {
+                                for pane in &panes {
+                                    out += &pane_line(pane, 2);
+                                }
                             }
                         }
                     }
@@ -851,7 +923,9 @@ fn render(cmd: &str, result: &Value) -> String {
             out
         }
         "send" | "type" | "key" | "focus" | "title" | "notify" => String::new(),
-        "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
+        "tab-new" | "split" | "collapse" | "expand" => {
+            format!("{}\n", result["id"].as_str().unwrap_or(""))
+        }
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
         "run" if result.get("state").is_none() => {
             format!("{}\n", result["id"].as_str().unwrap_or(""))
@@ -1356,6 +1430,9 @@ fn pane_line(pane: &Value, depth: usize) -> String {
         pane["cwd"].as_str().unwrap_or("-"),
         pane["title"].as_str().unwrap_or("")
     );
+    if let Some(label) = pane["label"].as_str() {
+        line += &format!("  [{label}]");
+    }
     if let Some(status) = pane["status"].as_str() {
         if status != "unknown" {
             line += &format!("  [{status}");
@@ -1364,6 +1441,12 @@ fn pane_line(pane: &Value, depth: usize) -> String {
             }
             line.push(']');
         }
+    }
+    if let Some(summary) = pane["childrenStatus"].as_str() {
+        line += &format!("  ({summary})");
+    }
+    if pane["collapsed"].as_bool() == Some(true) {
+        line += "  [collapsed]";
     }
     line.push('\n');
     line
@@ -2690,4 +2773,122 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(parse(&args(&["task", "finish"])).is_err());
         assert!(parse(&args(&["task", "unknown_sub"])).is_err());
     }
+
+    #[test]
+    fn subagent_panes_and_hierarchy_options_and_rendering() {
+        // Split with defaults and subagent flags
+        let opts = parse(&args(&["split", "--child-of", "self", "--label", "worker"])).unwrap();
+        assert_eq!(opts.cmd, "split");
+        assert_eq!(opts.args["direction"], "right");
+        assert_eq!(opts.args["child_of"], "self");
+        assert_eq!(opts.args["label"], "worker");
+
+        // Split with explicit direction and parent pane
+        let opts = parse(&args(&["split", "down", "--child-of", "pane-abc"])).unwrap();
+        assert_eq!(opts.cmd, "split");
+        assert_eq!(opts.args["direction"], "down");
+        assert_eq!(opts.args["child_of"], "pane-abc");
+
+        // Collapse and expand parsing
+        let opts = parse(&args(&["collapse"])).unwrap();
+        assert_eq!(opts.cmd, "collapse");
+        assert!(opts.args.get("target").is_none());
+
+        let opts = parse(&args(&["collapse", "parent-pane"])).unwrap();
+        assert_eq!(opts.cmd, "collapse");
+        assert_eq!(opts.args["target"], "parent-pane");
+
+        let opts = parse(&args(&["expand"])).unwrap();
+        assert_eq!(opts.cmd, "expand");
+        assert!(opts.args.get("target").is_none());
+
+        let opts = parse(&args(&["expand", "parent-pane"])).unwrap();
+        assert_eq!(opts.cmd, "expand");
+        assert_eq!(opts.args["target"], "parent-pane");
+
+        // Hierarchy tree rendering
+        let tree_json = json!({
+            "windows": [
+                {
+                    "id": "w1",
+                    "tabs": [
+                        {
+                            "index": 1.0,
+                            "title": "Agent Workspace",
+                            "selected": true,
+                            "panes": [
+                                {
+                                    "id": "p-parent",
+                                    "cwd": "/src",
+                                    "title": "main",
+                                    "focused": true,
+                                    "children": ["p-child1", "p-child2"],
+                                    "childrenStatus": "2 subagents running"
+                                },
+                                {
+                                    "id": "p-child1",
+                                    "cwd": "/src",
+                                    "title": "bash",
+                                    "parent": "p-parent",
+                                    "label": "worker"
+                                },
+                                {
+                                    "id": "p-child2",
+                                    "cwd": "/src",
+                                    "title": "bash",
+                                    "parent": "p-parent",
+                                    "label": "researcher"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let rendered = render("tree", &tree_json);
+        assert_eq!(
+            rendered,
+            "window w1\n  tab 1  \"Agent Workspace\"  (shown)\n    *p-parent  /src  main  (2 subagents running)\n       p-child1  /src  bash  [worker]\n       p-child2  /src  bash  [researcher]\n"
+        );
+
+        // Collapsed parent hides children in tree
+        let collapsed_tree_json = json!({
+            "windows": [
+                {
+                    "id": "w1",
+                    "tabs": [
+                        {
+                            "index": 1.0,
+                            "title": "Agent Workspace",
+                            "panes": [
+                                {
+                                    "id": "p-parent",
+                                    "cwd": "/src",
+                                    "title": "main",
+                                    "children": ["p-child1"],
+                                    "childrenStatus": "1 subagent running",
+                                    "collapsed": true
+                                },
+                                {
+                                    "id": "p-child1",
+                                    "cwd": "/src",
+                                    "title": "bash",
+                                    "parent": "p-parent",
+                                    "label": "worker"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let rendered_collapsed = render("tree", &collapsed_tree_json);
+        assert_eq!(
+            rendered_collapsed,
+            "window w1\n  tab 1  \"Agent Workspace\"\n     p-parent  /src  main  (1 subagent running)  [collapsed]\n"
+        );
+    }
 }
+

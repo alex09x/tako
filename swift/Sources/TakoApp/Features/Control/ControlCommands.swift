@@ -231,6 +231,14 @@ enum ControlCommands {
             case "split":
                 let pane = try ControlLayout.split(try target(request, all), args: request.args)
                 return .ok(["id": .string(pane.id.uuidString.lowercased())])
+            case "collapse":
+                let surface = try target(request, all)
+                SubagentHierarchyStore.shared.setCollapsed(surface.id, collapsed: true)
+                return .ok(["id": .string(surface.id.uuidString.lowercased()), "collapsed": .bool(true)])
+            case "expand":
+                let surface = try target(request, all)
+                SubagentHierarchyStore.shared.setCollapsed(surface.id, collapsed: false)
+                return .ok(["id": .string(surface.id.uuidString.lowercased()), "collapsed": .bool(false)])
             case "focus":
                 let surface = try target(request, all)
                 ControlLayout.focus(surface)
@@ -669,6 +677,20 @@ enum ControlCommands {
             }
             if let ttl = surface.crab.remainingTTL {
                 node["statusTTL"] = .number(ttl)
+            }
+            if let parent = SubagentHierarchyStore.shared.parent(of: surface.id) {
+                node["parent"] = .string(parent.uuidString.lowercased())
+            }
+            if let label = SubagentHierarchyStore.shared.label(for: surface.id) {
+                node["label"] = .string(label)
+            }
+            if SubagentHierarchyStore.shared.hasChildren(surface.id) {
+                let children = SubagentHierarchyStore.shared.children(of: surface.id)
+                node["children"] = .array(children.map { .string($0.uuidString.lowercased()) })
+                if let summary = SubagentHierarchyStore.shared.statusSummary(for: surface.id) {
+                    node["childrenStatus"] = .string(summary)
+                }
+                node["collapsed"] = .bool(SubagentHierarchyStore.shared.isCollapsed(surface.id))
             }
             if persistent {
                 node["pid"] = .null

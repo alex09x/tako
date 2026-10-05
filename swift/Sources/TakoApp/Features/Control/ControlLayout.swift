@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 
 /// Tabs and splits for `takoctl tab-new|split|focus|close|title`.
@@ -72,17 +82,37 @@ enum ControlLayout {
 
     static func split(_ surface: Tako.SurfaceView, args: [String: JSON]) throws -> Tako.SurfaceView {
         let direction: SplitTree<Tako.SurfaceView>.NewDirection
-        switch args["direction"]?.string {
-        case "right"?: direction = .right
-        case "left"?: direction = .left
-        case "down"?: direction = .down
-        case "up"?: direction = .up
+        let dirStr = args["direction"]?.string ?? "right"
+        switch dirStr.lowercased() {
+        case "right": direction = .right
+        case "left": direction = .left
+        case "down": direction = .down
+        case "up": direction = .up
         default: throw ControlError(.invalid, "\"direction\" must be right, left, down or up")
         }
         let config = try config(args)
         guard let pane = try controller(of: surface).newSplit(at: surface, direction: direction, baseConfig: config) else {
             throw ControlError(.internalError, "the split was not created")
         }
+
+        // C5: Subagent pane hierarchy
+        if let childOf = args["child_of"]?.string {
+            let parentSurface: Tako.SurfaceView
+            if childOf == "self" || childOf == "active" {
+                parentSurface = surface
+            } else {
+                guard let parentId = UUID(uuidString: childOf),
+                      let found = ControlCommands.panes().first(where: { $0.surface.id == parentId })?.surface else {
+                    throw ControlError(.notFound, "parent pane \"\(childOf)\" not found")
+                }
+                parentSurface = found
+            }
+            let label = args["label"]?.string
+            SubagentHierarchyStore.shared.registerChild(childId: pane.id, parentId: parentSurface.id, label: label)
+        } else if let label = args["label"]?.string {
+            SubagentHierarchyStore.shared.setLabel(for: pane.id, label: label)
+        }
+
         return pane
     }
 
@@ -123,7 +153,7 @@ enum ControlLayout {
             return
         }
         let window = controller.window
-        controller.closeSurface(surface, withConfirmation: surface.needsConfirmClose)
+        controller.closeSurface(surface, withConfirmation: surface.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(surface.id))
         let deadline = Date().addingTimeInterval(closeWait)
         func answer(_ state: String, _ note: String? = nil) {
             var result: [String: JSON] = ["id": .string(idString), "state": .string(state)]

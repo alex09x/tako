@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import SwiftUI
 import TakoKit
@@ -290,6 +300,20 @@ struct SessionSidebarView: View {
 
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
+                // Collapse toggle for parent panes
+                if item.hasChildren, let pid = item.surfaceId {
+                    Button(action: {
+                        SubagentHierarchyStore.shared.toggleCollapsed(pid)
+                    }) {
+                        Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(nsColor: Palette.dim))
+                            .frame(width: 10, height: 10)
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.isCollapsed ? "Expand subagent group" : "Collapse subagent group")
+                }
+
                 // Crab / Status indicator
                 Circle()
                     .fill(Color(nsColor: item.status.crabState.color))
@@ -301,6 +325,25 @@ struct SessionSidebarView: View {
                     .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
                     .foregroundColor(isTabActive ? Color(nsColor: Palette.activeText) : Color(nsColor: Palette.inactiveText))
                     .lineLimit(1)
+
+                // Subagent [label]
+                if let label = item.label {
+                    Text("[\(label)]")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
+                        .foregroundColor(Color(nsColor: Tako.Brand.ember))
+                        .cornerRadius(3)
+                }
+
+                // Parent status summarizing children
+                if let summary = item.childrenSummary {
+                    Text("(\(summary))")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(Color(nsColor: Palette.dim))
+                        .lineLimit(1)
+                }
 
                 if let elapsed = item.elapsed {
                     Text(elapsed)
@@ -462,7 +505,8 @@ struct SessionSidebarView: View {
                 progressBarView(fraction: progress, state: item.progressState)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, CGFloat(8 + item.indentationLevel * 16))
+        .padding(.trailing, 8)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)

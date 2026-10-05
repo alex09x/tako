@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 import SwiftUI
@@ -37,6 +47,15 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let needsAttention: Bool
     let totalCount: Int
 
+    // Subagent hierarchy fields (C5)
+    let isChild: Bool
+    let parentId: UUID?
+    let label: String?
+    let hasChildren: Bool
+    let isCollapsed: Bool
+    let childrenSummary: String?
+    let indentationLevel: Int
+
     var canMoveUp: Bool { index > 0 }
     var canMoveDown: Bool { index < totalCount - 1 }
 
@@ -60,7 +79,14 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         userDescription: String? = nil,
         listeningPorts: [Int]? = nil,
         unreadCount: Int = 0,
-        needsAttention: Bool = false
+        needsAttention: Bool = false,
+        isChild: Bool = false,
+        parentId: UUID? = nil,
+        label: String? = nil,
+        hasChildren: Bool = false,
+        isCollapsed: Bool = false,
+        childrenSummary: String? = nil,
+        indentationLevel: Int = 0
     ) {
         self.id = id
         self.surfaceId = surfaceId
@@ -82,6 +108,13 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.listeningPorts = listeningPorts
         self.unreadCount = unreadCount
         self.needsAttention = needsAttention
+        self.isChild = isChild
+        self.parentId = parentId
+        self.label = label
+        self.hasChildren = hasChildren
+        self.isCollapsed = isCollapsed
+        self.childrenSummary = childrenSummary
+        self.indentationLevel = indentationLevel
     }
 }
 
