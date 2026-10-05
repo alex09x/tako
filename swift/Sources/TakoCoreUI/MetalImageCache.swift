@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import CoreGraphics
 import ImageIO
@@ -51,7 +61,7 @@ public struct MetalImageCacheEntry {
 }
 
 /// Errors surfaced while decoding, hashing, or caching images.
-public enum MetalImageCacheError: Error {
+public enum MetalImageCacheError: Error, Equatable {
     case invalidDimensions(imageId: UInt32, width: UInt32, height: UInt32)
     case pngDimensionMismatch(
         imageId: UInt32,
@@ -64,20 +74,33 @@ public enum MetalImageCacheError: Error {
     case overflow(imageId: UInt32)
     case pngDecodeFailed(imageId: UInt32)
     case textureCreationFailed(imageId: UInt32)
+    case decodedMemoryExceedsBudget(imageId: UInt32, bytes: Int, maxBudget: Int)
 }
 
 /// CPU-side converter and Metal texture cache for Kitty graphics images.
 /// Input accepts `FfiStoredImage` in RGB, RGBA, or PNG form and always
 /// converts to document-order `BGRA8` with premultiplied alpha for upload.
 public final class MetalImageCache {
+    /// Default maximum memory budget allocated for a single decoded image buffer (64 MiB).
+    public static let defaultMaxDecodedImageBytes: Int = 64 * 1024 * 1024
+    /// Configurable ceiling for decoded pixel buffers.
+    public static var maxDecodedImageBytes: Int = defaultMaxDecodedImageBytes
+
     private struct CachedEntry {
         let metadata: MetalImageCacheMetadata
         let texture: MTLTexture?
+        let byteSize: Int
+        var lastAccessedGeneration: UInt64
     }
 
     private let device: MTLDevice?
     /// Latest entry per image id.
     private var entriesByImageId: [UInt32: CachedEntry] = [:]
+    private var totalCachedBytes: Int = 0
+    private var accessCounter: UInt64 = 0
+
+    /// Total bytes currently resident in the decoded texture cache.
+    public var currentDecodedBytes: Int { totalCachedBytes }
     /// Number of images currently cached.
     public var cachedCount: Int { entriesByImageId.count }
 
@@ -121,7 +144,8 @@ public final class MetalImageCache {
     }
 
     /// Cache an image by image id and content identity; reuses the same texture when
-    /// the converted payload is unchanged.
+    /// the converted payload is unchanged. Evicts older textures in LRU order if
+    /// aggregate decoded memory exceeds the configured budget.
     public func cache(imageId: UInt32, storedImage: FfiStoredImage) throws -> MetalImageCacheEntry {
         let upload = try Self.decode(imageId: imageId, from: storedImage)
         let metadata = MetalImageCacheMetadata(
@@ -132,13 +156,47 @@ public final class MetalImageCache {
             format: upload.format
         )
 
-        if let existing = entriesByImageId[imageId], existing.metadata == metadata {
+        accessCounter &+= 1
+
+        if var existing = entriesByImageId[imageId], existing.metadata == metadata {
+            existing.lastAccessedGeneration = accessCounter
+            entriesByImageId[imageId] = existing
             return MetalImageCacheEntry(metadata: existing.metadata, texture: existing.texture)
         }
 
+        let requiredBytes = upload.byteCount
+
+        // If replacing an existing entry for this imageId, release its bytes first.
+        if let existing = entriesByImageId.removeValue(forKey: imageId) {
+            totalCachedBytes -= existing.byteSize
+        }
+
+        // Evict LRU entries until the new image fits within the aggregate budget.
+        while totalCachedBytes + requiredBytes > Self.maxDecodedImageBytes, !entriesByImageId.isEmpty {
+            guard let oldest = entriesByImageId.min(by: { $0.value.lastAccessedGeneration < $1.value.lastAccessedGeneration }) else {
+                break
+            }
+            entriesByImageId.removeValue(forKey: oldest.key)
+            totalCachedBytes -= oldest.value.byteSize
+        }
+
+        guard totalCachedBytes + requiredBytes <= Self.maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: totalCachedBytes + requiredBytes,
+                maxBudget: Self.maxDecodedImageBytes
+            )
+        }
+
         let texture = try makeTexture(from: upload)
-        let entry = CachedEntry(metadata: metadata, texture: texture)
+        let entry = CachedEntry(
+            metadata: metadata,
+            texture: texture,
+            byteSize: requiredBytes,
+            lastAccessedGeneration: accessCounter
+        )
         entriesByImageId[imageId] = entry
+        totalCachedBytes += requiredBytes
         return MetalImageCacheEntry(metadata: metadata, texture: texture)
     }
 
@@ -155,8 +213,9 @@ public final class MetalImageCache {
     @discardableResult
     public func purge(unusedByImageIds imageIds: Set<UInt32>) -> [UInt32] {
         var removed = [UInt32]()
-        for (imageId, _) in entriesByImageId where !imageIds.contains(imageId) {
+        for (imageId, entry) in entriesByImageId where !imageIds.contains(imageId) {
             removed.append(imageId)
+            totalCachedBytes -= entry.byteSize
         }
         for imageId in removed {
             entriesByImageId.removeValue(forKey: imageId)
@@ -166,7 +225,13 @@ public final class MetalImageCache {
 
     /// Read current metadata for an image id, if cached.
     public func metadata(for imageId: UInt32) -> MetalImageCacheMetadata? {
-        return entriesByImageId[imageId]?.metadata
+        if var entry = entriesByImageId[imageId] {
+            accessCounter &+= 1
+            entry.lastAccessedGeneration = accessCounter
+            entriesByImageId[imageId] = entry
+            return entry.metadata
+        }
+        return nil
     }
 
     /// Snapshot metadata for all cached entries.
@@ -209,6 +274,15 @@ public final class MetalImageCache {
                 height: rawHeight
             )
         }
+        let bytesPerRow = try checkedMul(width, 4, imageId: imageId)
+        let totalBytes = try checkedMul(bytesPerRow, height, imageId: imageId)
+        guard totalBytes <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: totalBytes,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
         return (width, height)
     }
 
@@ -229,6 +303,13 @@ public final class MetalImageCache {
             height: height,
             components: 4
         )
+        guard outputCount <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: outputCount,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
         var output = Data(count: outputCount)
         pixels.withUnsafeBytes { sourceBytes in
             output.withUnsafeMutableBytes { destinationBytes in
@@ -257,6 +338,13 @@ public final class MetalImageCache {
         guard pixels.count == expected else {
             throw MetalImageCacheError.invalidPixelByteCount(imageId: imageId, expected: expected, actual: pixels.count)
         }
+        guard expected <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: expected,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
 
         var output = Data(count: expected)
         pixels.withUnsafeBytes { sourceBytes in
@@ -279,8 +367,34 @@ public final class MetalImageCache {
     }
 
     private static func decodePNG(imageId: UInt32, width: Int, height: Int, pixels: Data) throws -> Data {
-        guard let source = CGImageSourceCreateWithData(pixels as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let source = CGImageSourceCreateWithData(pixels as CFData, nil) else {
+            throw MetalImageCacheError.pngDecodeFailed(imageId: imageId)
+        }
+
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+           let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int {
+            guard pixelWidth == width, pixelHeight == height else {
+                throw MetalImageCacheError.pngDimensionMismatch(
+                    imageId: imageId,
+                    expectedWidth: width,
+                    expectedHeight: height,
+                    actualWidth: pixelWidth,
+                    actualHeight: pixelHeight
+                )
+            }
+            let bytesPerRow = try checkedMul(pixelWidth, 4, imageId: imageId)
+            let totalBytes = try checkedMul(bytesPerRow, pixelHeight, imageId: imageId)
+            guard totalBytes <= maxDecodedImageBytes else {
+                throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                    imageId: imageId,
+                    bytes: totalBytes,
+                    maxBudget: maxDecodedImageBytes
+                )
+            }
+        }
+
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw MetalImageCacheError.pngDecodeFailed(imageId: imageId)
         }
         guard cgImage.width == width, cgImage.height == height else {
@@ -293,9 +407,17 @@ public final class MetalImageCache {
             )
         }
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bytesPerRow = try checkedMul(width, 4, imageId: imageId)
         let outputCount = try checkedMul(bytesPerRow, height, imageId: imageId)
+        guard outputCount <= maxDecodedImageBytes else {
+            throw MetalImageCacheError.decodedMemoryExceedsBudget(
+                imageId: imageId,
+                bytes: outputCount,
+                maxBudget: maxDecodedImageBytes
+            )
+        }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
         var output = Data(count: outputCount)
         let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
 

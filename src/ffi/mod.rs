@@ -1316,6 +1316,16 @@ impl TakoCore {
         })
     }
 
+    /// Maximum image memory (in bytes) configured for this terminal.
+    pub fn max_image_memory_bytes(&self) -> u64 {
+        lock_recover(&self.inner).max_image_memory_bytes()
+    }
+
+    /// Set maximum image memory (in bytes) for this terminal, evicting LRU images if necessary.
+    pub fn set_max_image_memory_bytes(&self, max: u64) {
+        lock_recover(&self.inner).set_max_image_memory_bytes(max);
+    }
+
     /// Drains queued host-visible events (bell, clipboard, notifications).
     pub fn take_events(&self) -> Vec<FfiEvent> {
         lock_recover(&self.inner)

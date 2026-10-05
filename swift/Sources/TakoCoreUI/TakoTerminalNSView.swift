@@ -3848,6 +3848,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     override public func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         lastMousePoint = point
+        mouseCell = cellAt(point)
         if scrollbarLayer.frame.contains(point) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)

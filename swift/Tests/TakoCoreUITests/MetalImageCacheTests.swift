@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import CoreGraphics
 import ImageIO
@@ -123,5 +133,116 @@ final class MetalImageCacheTests: XCTestCase {
             0, 0, 255, 255, // top: red, BGRA
             255, 0, 0, 255, // bottom: blue, BGRA
         ]))
+    }
+
+    func testDecodedMemoryExceedingBudgetIsRejected() throws {
+        // A tiny image structure claiming 16,384 x 16,384 (1 GiB decoded)
+        let image = FfiStoredImage(
+            format: .png,
+            width: 16384,
+            height: 16384,
+            pixels: Data([0x89, 0x50, 0x4e, 0x47])
+        )
+        XCTAssertThrowsError(try MetalImageCache.decode(imageId: 999, from: image)) { error in
+            guard case .decodedMemoryExceedsBudget(let id, let bytes, let budget) = error as? MetalImageCacheError else {
+                XCTFail("Expected decodedMemoryExceedsBudget, got \(error)")
+                return
+            }
+            XCTAssertEqual(id, 999)
+            XCTAssertEqual(bytes, 16384 * 16384 * 4)
+            XCTAssertEqual(budget, MetalImageCache.maxDecodedImageBytes)
+        }
+    }
+
+    func testCompressedPNGExceedingDecodedBudgetIsRejected() throws {
+        let oldBudget = MetalImageCache.maxDecodedImageBytes
+        defer { MetalImageCache.maxDecodedImageBytes = oldBudget }
+        MetalImageCache.maxDecodedImageBytes = 200
+
+        let rgba = Data(repeating: 0xFF, count: 10 * 10 * 4)
+        let provider = try XCTUnwrap(CGDataProvider(data: rgba as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: 10,
+            height: 10,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: 40,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder32Big),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ))
+        let encoded = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(
+            encoded,
+            "public.png" as CFString,
+            1,
+            nil
+        ))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+
+        // Encoded PNG bytes are small (~100-200 bytes), but decoded buffer is 400 bytes > 200 budget
+        let stored = FfiStoredImage(format: .png, width: 10, height: 10, pixels: encoded as Data)
+        XCTAssertThrowsError(try MetalImageCache.decode(imageId: 400, from: stored)) { error in
+            guard case .decodedMemoryExceedsBudget(let id, let bytes, let budget) = error as? MetalImageCacheError else {
+                XCTFail("Expected decodedMemoryExceedsBudget, got \(error)")
+                return
+            }
+            XCTAssertEqual(id, 400)
+            XCTAssertEqual(bytes, 400)
+            XCTAssertEqual(budget, 200)
+        }
+    }
+
+    func testMultipleCompressedPNGsExceedingAggregateDecodedBudgetEvictLRU() throws {
+        let oldBudget = MetalImageCache.maxDecodedImageBytes
+        defer { MetalImageCache.maxDecodedImageBytes = oldBudget }
+        // Each 10x10 PNG decodes to 400 bytes.
+        // Set budget to 700 bytes: individually each fits (400 <= 700), but two (800) exceed 700.
+        MetalImageCache.maxDecodedImageBytes = 700
+
+        let rgba = Data(repeating: 0x88, count: 10 * 10 * 4)
+        let provider = try XCTUnwrap(CGDataProvider(data: rgba as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: 10,
+            height: 10,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: 40,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder32Big),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ))
+        let encoded = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(
+            encoded,
+            "public.png" as CFString,
+            1,
+            nil
+        ))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+
+        let cache = MetalImageCache(device: nil)
+        let first = FfiStoredImage(format: .png, width: 10, height: 10, pixels: encoded as Data)
+        _ = try cache.cache(imageId: 1, storedImage: first)
+        XCTAssertEqual(cache.cachedCount, 1)
+        XCTAssertEqual(cache.currentDecodedBytes, 400)
+        XCTAssertNotNil(cache.metadata(for: 1))
+
+        // Cache second PNG: combined decoded size is 800 > 700.
+        // Cache must evict image 1 (LRU) to stay within aggregate budget.
+        let second = FfiStoredImage(format: .png, width: 10, height: 10, pixels: encoded as Data)
+        _ = try cache.cache(imageId: 2, storedImage: second)
+        XCTAssertEqual(cache.cachedCount, 1)
+        XCTAssertEqual(cache.currentDecodedBytes, 400)
+        XCTAssertNil(cache.metadata(for: 1), "image 1 should be evicted by LRU")
+        XCTAssertNotNil(cache.metadata(for: 2), "image 2 should be retained")
     }
 }
