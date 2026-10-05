@@ -77,6 +77,10 @@ struct SessionSidebarView: View {
                 .foregroundColor(Color(nsColor: Palette.hairline)),
             alignment: .trailing
         )
+        .onKeyPress(.escape) {
+            isPresented = false
+            return .handled
+        }
         .onAppear {
             if hostingWindow == nil {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
@@ -166,6 +170,10 @@ struct SessionSidebarView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(Color(nsColor: Palette.activeText))
                     .focused($isSearchFocused)
+                    .onKeyPress(.escape) {
+                        isPresented = false
+                        return .handled
+                    }
 
                 if !filterText.isEmpty {
                     Button(action: { store.setFilterText("", for: targetWindow) }) {
@@ -401,6 +409,11 @@ struct SessionSidebarView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(Color(nsColor: Palette.activeText))
+                    .onKeyPress(.escape) {
+                        editingItemId = nil
+                        isPresented = false
+                        return .handled
+                    }
 
                     Button(action: {
                         store.setDescription(editingDescriptionText, for: item.id)
