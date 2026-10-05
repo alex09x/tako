@@ -56,6 +56,12 @@ commands:
   progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
   events                  stream terminal events as ndjson (--pane ID, --tab ID,
                           --workspace NAME, --type TYPES, --cursor N)
+  workspace [list]        list all workspaces and tab counts
+  workspace current       show the active workspace
+  workspace switch NAME   switch to workspace NAME (^⌥] / ^⌥[)
+  workspace create NAME   create a new workspace (--root DIR, --color C, --icon I)
+  workspace delete NAME   delete workspace NAME (tabs move to Default)
+  workspace assign [TAB]  assign a tab to a workspace (--workspace NAME)
   hooks list              list supported coding-agent hook adapters and their install status
   hooks status [AGENT]    show hook installation status for AGENT or all agents
   hooks install AGENT     install Tako lifecycle hooks into AGENT's configuration
@@ -74,7 +80,10 @@ options:
   --default VALUE         ask: default value on timeout
   --pane ID               events: filter by pane ID
   --tab ID                events: filter by tab ID
-  --workspace NAME        events: filter by workspace name
+  --workspace NAME        events, workspace assign: filter or target workspace name
+  --root DIR              workspace create: root directory for new tabs
+  --color COLOR           workspace create: workspace color tag
+  --icon ICON             workspace create: workspace icon name
   --type TYPES            events: filter by comma-separated event types
   --cursor N              events: resume streaming from cursor N
   --lines N               last, wait, run --wait: at most the last N lines of output
@@ -243,6 +252,15 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--workspace" => {
                 args.insert("workspace".into(), Value::String(value("--workspace")?));
+            }
+            "--root" => {
+                args.insert("root".into(), Value::String(value("--root")?));
+            }
+            "--color" => {
+                args.insert("color".into(), Value::String(value("--color")?));
+            }
+            "--icon" => {
+                args.insert("icon".into(), Value::String(value("--icon")?));
             }
             "--type" => {
                 args.insert("type".into(), Value::String(value("--type")?));
@@ -450,6 +468,88 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "workspace" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "list" => {
+                    args.insert("action".into(), Value::String("list".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "current" => {
+                    args.insert("action".into(), Value::String("current".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "switch" => {
+                    args.insert("action".into(), Value::String("switch".into()));
+                    if positional.is_empty() {
+                        return Err("workspace switch needs a workspace name or ID".into());
+                    }
+                    args.insert("name".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "create" => {
+                    args.insert("action".into(), Value::String("create".into()));
+                    if positional.is_empty() {
+                        return Err("workspace create needs a name".into());
+                    }
+                    args.insert("name".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "delete" => {
+                    args.insert("action".into(), Value::String("delete".into()));
+                    if positional.is_empty() {
+                        return Err("workspace delete needs a workspace name or ID".into());
+                    }
+                    args.insert("name".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "assign" => {
+                    args.insert("action".into(), Value::String("assign".into()));
+                    if !positional.is_empty() {
+                        let first = positional.remove(0);
+                        if !positional.is_empty() {
+                            let second = positional.remove(0);
+                            args.insert("tab".into(), Value::String(first));
+                            args.insert("workspace".into(), Value::String(second));
+                        } else if args.contains_key("workspace") {
+                            args.insert("tab".into(), Value::String(first));
+                        } else {
+                            args.insert("workspace".into(), Value::String(first));
+                        }
+                    }
+                    if !args.contains_key("workspace") {
+                        return Err(
+                            "workspace assign needs a target workspace (--workspace <name>)".into(),
+                        );
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    args.insert("action".into(), Value::String("switch".into()));
+                    args.insert("name".into(), Value::String(other.to_string()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+            }
+            None
+        }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
@@ -543,8 +643,59 @@ fn render(cmd: &str, result: &Value) -> String {
         "find" => find_report(result),
         "dialog" => dialog_report(result),
         "ask" => format!("{}\n", serde_json::to_string(result).unwrap_or_default()),
+        "workspace" => workspace_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn workspace_report(result: &Value) -> String {
+    if let Some(workspaces) = result.get("workspaces").and_then(Value::as_array) {
+        let mut out = String::new();
+        for ws in workspaces {
+            let active = if ws["is_active"].as_bool() == Some(true) {
+                "* "
+            } else {
+                "  "
+            };
+            let name = ws["name"].as_str().unwrap_or("");
+            let tabs_count = ws["tabs"].as_array().map_or(0, |a| a.len());
+            let attention = ws["attention_count"].as_f64().unwrap_or(0.0) as u64;
+            let mut line = format!("{active}{name} ({tabs_count} tabs)");
+            if attention > 0 {
+                line += &format!(" [{attention} unread]");
+            }
+            if let Some(root) = ws["root_directory"].as_str() {
+                line += &format!("  {root}");
+            }
+            line.push('\n');
+            out += &line;
+        }
+        return out;
+    }
+    if let Some(name) = result.get("name").and_then(Value::as_str) {
+        if result.get("tabs").is_some() {
+            let tabs_count = result["tabs"].as_array().map_or(0, |a| a.len());
+            let attention = result["attention_count"].as_f64().unwrap_or(0.0) as u64;
+            let mut line = format!("{name} ({tabs_count} tabs)");
+            if attention > 0 {
+                line += &format!(" [{attention} unread]");
+            }
+            if let Some(root) = result["root_directory"].as_str() {
+                line += &format!("  {root}");
+            }
+            line.push('\n');
+            return line;
+        }
+        return format!("{name}\n");
+    }
+    if let Some(deleted) = result.get("deleted").and_then(Value::as_str) {
+        return format!("deleted {deleted}\n");
+    }
+    if let Some(tab) = result.get("tab").and_then(Value::as_str) {
+        let ws = result["workspace"].as_str().unwrap_or("");
+        return format!("assigned {tab} to {ws}\n");
+    }
+    format!("{result}\n")
 }
 
 fn progress_report(result: &Value) -> String {
@@ -1643,5 +1794,121 @@ bbbbbbbb  logs -- pane 2 of 2
         // Errors
         assert!(parse(&args(&["ask"])).is_err());
         assert!(parse(&args(&["ask", "one", "two"])).is_err());
+    }
+
+    #[test]
+    fn workspace_subcommands_and_options_parsed_and_rendered() {
+        // Defaults to list
+        let opts = parse(&args(&["workspace"])).unwrap();
+        assert_eq!(opts.cmd, "workspace");
+        assert_eq!(opts.args["action"], "list");
+
+        let opts = parse(&args(&["workspace", "list"])).unwrap();
+        assert_eq!(opts.args["action"], "list");
+
+        // Current
+        let opts = parse(&args(&["workspace", "current"])).unwrap();
+        assert_eq!(opts.args["action"], "current");
+
+        // Switch
+        let opts = parse(&args(&["workspace", "switch", "tako"])).unwrap();
+        assert_eq!(opts.args["action"], "switch");
+        assert_eq!(opts.args["name"], "tako");
+
+        // Direct switch shorthand
+        let opts = parse(&args(&["workspace", "tako"])).unwrap();
+        assert_eq!(opts.args["action"], "switch");
+        assert_eq!(opts.args["name"], "tako");
+
+        // Create
+        let opts = parse(&args(&[
+            "workspace",
+            "create",
+            "frontend",
+            "--root",
+            "/src/frontend",
+            "--color",
+            "orange",
+            "--icon",
+            "globe",
+        ]))
+        .unwrap();
+        assert_eq!(opts.args["action"], "create");
+        assert_eq!(opts.args["name"], "frontend");
+        assert_eq!(opts.args["root"], "/src/frontend");
+        assert_eq!(opts.args["color"], "orange");
+        assert_eq!(opts.args["icon"], "globe");
+
+        // Delete
+        let opts = parse(&args(&["workspace", "delete", "old-ws"])).unwrap();
+        assert_eq!(opts.args["action"], "delete");
+        assert_eq!(opts.args["name"], "old-ws");
+
+        // Assign
+        let opts = parse(&args(&[
+            "workspace",
+            "assign",
+            "tab-xyz",
+            "--workspace",
+            "backend",
+        ]))
+        .unwrap();
+        assert_eq!(opts.args["action"], "assign");
+        assert_eq!(opts.args["tab"], "tab-xyz");
+        assert_eq!(opts.args["workspace"], "backend");
+
+        let opts = parse(&args(&["workspace", "assign", "--workspace", "backend"])).unwrap();
+        assert_eq!(opts.args["action"], "assign");
+        assert_eq!(opts.args["workspace"], "backend");
+        assert!(opts.args.get("tab").is_none());
+
+        // Render list
+        let list_json = json!({
+            "workspaces": [
+                {
+                    "name": "Default",
+                    "is_active": true,
+                    "tabs": ["t1", "t2"],
+                    "attention_count": 0
+                },
+                {
+                    "name": "Backend",
+                    "is_active": false,
+                    "tabs": ["t3"],
+                    "attention_count": 2,
+                    "root_directory": "/Users/test/backend"
+                }
+            ]
+        });
+        let rendered = render("workspace", &list_json);
+        assert!(rendered.contains("* Default (2 tabs)"));
+        assert!(rendered.contains("Backend (1 tabs) [2 unread]  /Users/test/backend"));
+
+        // Render current
+        let cur_json = json!({
+            "name": "Tako",
+            "tabs": ["t1"],
+            "attention_count": 0,
+            "root_directory": "/Users/test/tako"
+        });
+        let rendered_cur = render("workspace", &cur_json);
+        assert!(rendered_cur.contains("Tako (1 tabs)"));
+        assert!(rendered_cur.contains("/Users/test/tako"));
+
+        // Render deleted
+        let del_json = json!({"deleted": "OldWs"});
+        assert_eq!(render("workspace", &del_json), "deleted OldWs\n");
+
+        // Render assign
+        let assign_json = json!({"tab": "tab-1", "workspace": "Backend"});
+        assert_eq!(
+            render("workspace", &assign_json),
+            "assigned tab-1 to Backend\n"
+        );
+
+        // Errors
+        assert!(parse(&args(&["workspace", "create"])).is_err());
+        assert!(parse(&args(&["workspace", "delete"])).is_err());
+        assert!(parse(&args(&["workspace", "assign"])).is_err());
     }
 }

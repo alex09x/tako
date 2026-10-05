@@ -390,6 +390,7 @@ class AppDelegate: NSObject,
         setupSidebarMenuItem()
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
+        setupWorkspaceMenuItems()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
@@ -1294,6 +1295,44 @@ class AppDelegate: NSObject,
         }
     }
 
+    private func setupWorkspaceMenuItems() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
+            windowMenu.addItem(NSMenuItem.separator())
+
+            let nextWorkspaceItem = NSMenuItem(
+                title: "Next Workspace",
+                action: #selector(nextWorkspace(_:)),
+                keyEquivalent: "]"
+            )
+            nextWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
+            nextWorkspaceItem.target = nil
+            nextWorkspaceItem.setImageIfDesired(systemSymbolName: "chevron.right.2")
+            windowMenu.addItem(nextWorkspaceItem)
+
+            let prevWorkspaceItem = NSMenuItem(
+                title: "Previous Workspace",
+                action: #selector(previousWorkspace(_:)),
+                keyEquivalent: "["
+            )
+            prevWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
+            prevWorkspaceItem.target = nil
+            prevWorkspaceItem.setImageIfDesired(systemSymbolName: "chevron.left.2")
+            windowMenu.addItem(prevWorkspaceItem)
+
+            let newWorkspaceItem = NSMenuItem(
+                title: "New Workspace…",
+                action: #selector(newWorkspace(_:)),
+                keyEquivalent: "n"
+            )
+            newWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
+            newWorkspaceItem.target = nil
+            newWorkspaceItem.setImageIfDesired(systemSymbolName: "plus.rectangle.on.folder")
+            windowMenu.addItem(newWorkspaceItem)
+        }
+    }
+
     @IBAction func jumpToNextAttention(_ sender: Any?) {
         guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
                 TerminalController.all.first else { return }
@@ -1350,6 +1389,21 @@ class AppDelegate: NSObject,
 
     @IBAction func markAllRead(_ sender: Any?) {
         NotificationStore.shared.markAllRead()
+    }
+
+    // MARK: - Workspace Actions
+
+    @IBAction func nextWorkspace(_ sender: Any?) {
+        WorkspaceStore.shared.nextWorkspace()
+    }
+
+    @IBAction func previousWorkspace(_ sender: Any?) {
+        WorkspaceStore.shared.previousWorkspace()
+    }
+
+    @IBAction func newWorkspace(_ sender: Any?) {
+        let ws = WorkspaceStore.shared.createWorkspace(name: "")
+        WorkspaceStore.shared.switchWorkspace(to: ws.id)
     }
 
     @IBAction func showHelp(_ sender: Any) {
@@ -1708,6 +1762,13 @@ extension AppDelegate: NSMenuItemValidation {
             guard let surface = focused else { return false }
             item.title = surface.isAttentionMuted ? "Unmute Attention" : "Mute Attention"
             item.state = surface.isAttentionMuted ? .on : .off
+            return true
+
+        case #selector(nextWorkspace(_:)),
+             #selector(previousWorkspace(_:)):
+            return WorkspaceStore.shared.workspaces.count > 1
+
+        case #selector(newWorkspace(_:)):
             return true
 
         default:
