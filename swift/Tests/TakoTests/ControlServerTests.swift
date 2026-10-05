@@ -359,18 +359,31 @@ struct ControlServerTests {
         defer { server.stop() }
 
         // 1. User denies grant request
-        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+        var capturedOrigin = ""
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
             #expect(client == "agent-denied")
+            capturedOrigin = origin
             reply(false)
         }
         let deniedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"agent-denied"}}"#)
         #expect(deniedAns["ok"] as? Bool == false)
         let deniedErr = deniedAns["error"] as? [String: Any]
         #expect(deniedErr?["code"] as? String == "disabled")
+        #expect(!capturedOrigin.isEmpty, "Origin must be resolved by server")
 
-        // 2. Requesting only approval scope is rejected without prompt
+        // 2. Reject spoofed client with newlines or spaces
+        let badClientAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"fake client\nspoof"}}"#)
+        #expect(badClientAns["ok"] as? Bool == false)
+        #expect((badClientAns["error"] as? [String: Any])?["code"] as? String == "invalid")
+
+        // 3. Reject spoofed multiline description
+        let badDescAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","description":"line1\nfake prompt buttons"}}"#)
+        #expect(badDescAns["ok"] as? Bool == false)
+        #expect((badDescAns["error"] as? [String: Any])?["code"] as? String == "invalid")
+
+        // 4. Requesting only approval scope is rejected without prompt
         var promptCalled = false
-        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
             promptCalled = true
             reply(true)
         }
@@ -378,11 +391,13 @@ struct ControlServerTests {
         #expect(rogueAns["ok"] as? Bool == false)
         #expect(!promptCalled, "Should not prompt user when only approval scope is requested")
 
-        // 3. User approves grant request for read,layout (stripping any requested approval)
+        // 5. User approves grant request for read,layout (stripping any requested approval)
         var promptedScopes: Set<ControlScope> = []
-        ControlCommands.userGrantPrompt = { client, scopes, desc, reply in
+        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
             #expect(client == "cli-client")
             #expect(!scopes.contains(.approval), "Approval scope must be stripped from grant request")
+            #expect(desc == "Test CLI")
+            #expect(origin.contains("External process") || origin.contains("PID"))
             promptedScopes = scopes
             reply(true)
         }
@@ -395,14 +410,14 @@ struct ControlServerTests {
         #expect(issuedScopes == ["layout", "read"])
         #expect(promptedScopes == [.layout, .read])
 
-        // 4. Token can be used for granted scopes
+        // 6. Token can be used for granted scopes
         let authedReq = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(token)"}"#.utf8))
         let authed = ControlCommands.authorize(authedReq)
         #expect(authed.client == "cli-client")
         #expect(authed.scopes == [.read, .layout])
         #expect(throws: Never.self) { try ControlCommands.checkScope(for: authed) }
 
-        // 5. Token cannot be used for ungranted scopes (e.g. signal)
+        // 7. Token cannot be used for ungranted scopes (e.g. signal)
         let ungrantedReq = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(token)"}"#.utf8))
         let ungrantedAuth = ControlCommands.authorize(ungrantedReq)
         do {
@@ -413,7 +428,7 @@ struct ControlServerTests {
             #expect(err.scope == "signal")
         }
 
-        // 6. Token cannot be used to manage grants (approval scope required)
+        // 8. Token cannot be used to manage grants (approval scope required)
         let grantCreateReq = try ControlRequest.parse(Data(#"{"cmd":"grant","token":"\#(token)","args":{"subcommand":"create","client":"sub"}}"#.utf8))
         let grantCreateAuth = ControlCommands.authorize(grantCreateReq)
         do {

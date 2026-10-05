@@ -195,14 +195,75 @@ enum ControlCommands {
         }
     }
 
-    /// Hook for testability or custom confirmation UI: takes (client, scopes, description, completionHandler).
-    static var userGrantPrompt: (@MainActor (String, Set<ControlScope>, String?, @escaping @Sendable (Bool) -> Void) -> Void)? = nil
+    @_silgen_name("proc_pidpath")
+    private static func proc_pidpath(_ pid: Int32, _ buffer: UnsafeMutablePointer<CChar>, _ buffersize: UInt32) -> Int32
 
-    private static func handleGrantRequest(_ request: ControlRequest, reply: @escaping @Sendable (ControlResponse) -> Void) {
+    /// Resolves the verified origin of a control socket request (server-derived).
+    static func resolveOrigin(for request: ControlRequest, all: [Pane]) -> String {
+        if let from = request.from {
+            if let pane = all.first(where: { $0.surface.id == from }) {
+                let title = pane.surface.title.isEmpty ? "Terminal" : pane.surface.title
+                let cwd = pane.surface.workingDirectory ?? "unknown"
+                return "Pane: \"\(title)\" (cwd: \(cwd), id: \(from.uuidString.lowercased()))"
+            }
+            return "Pane ID: \(from.uuidString.lowercased()) (no longer active)"
+        }
+        if request.clientFD >= 0 {
+            var peerPID: pid_t = 0
+            var len = socklen_t(MemoryLayout<pid_t>.size)
+            // 0 is SOL_LOCAL, 2 is LOCAL_PEERPID on Darwin
+            if getsockopt(request.clientFD, 0, 2, &peerPID, &len) == 0 && peerPID > 0 {
+                var pathBuf = [CChar](repeating: 0, count: 4096)
+                let pathLen = proc_pidpath(peerPID, &pathBuf, UInt32(pathBuf.count))
+                if pathLen > 0 {
+                    let procPath = String(cString: pathBuf)
+                    let procName = (procPath as NSString).lastPathComponent
+                    return "External process: \(procName) [\(procPath)] (PID \(peerPID))"
+                }
+                return "External process (PID \(peerPID))"
+            }
+        }
+        return "External process via control socket"
+    }
+
+    private static func sanitizeIdentifier(_ s: String, maxLen: Int = 64) -> String? {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLen else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.@"))
+        guard trimmed.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func sanitizeSingleLineText(_ s: String, maxLen: Int = 256) -> String? {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count <= maxLen else { return nil }
+        for scalar in trimmed.unicodeScalars {
+            if scalar.value < 32 || scalar.value == 127 {
+                return nil
+            }
+        }
+        return trimmed
+    }
+
+    /// Hook for testability or custom confirmation UI: takes (client, scopes, description, origin, completionHandler).
+    static var userGrantPrompt: (@MainActor (String, Set<ControlScope>, String?, String, @escaping @Sendable (Bool) -> Void) -> Void)? = nil
+
+    private static func handleGrantRequest(_ request: ControlRequest, all: [Pane], reply: @escaping @Sendable (ControlResponse) -> Void) {
         do {
-            let client = (request.args["client"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !client.isEmpty else {
-                throw ControlError(.invalid, "missing or empty \"client\" for grant request")
+            guard let rawClient = request.args["client"]?.string,
+                  let client = sanitizeIdentifier(rawClient) else {
+                throw ControlError(.invalid, "missing, empty, or invalid \"client\" for grant request (must be a single-line safe identifier of at most 64 characters: alphanumeric, -, _, ., @)")
+            }
+            let desc: String?
+            if let rawDesc = request.args["description"]?.string {
+                guard let sanitized = sanitizeSingleLineText(rawDesc) else {
+                    throw ControlError(.invalid, "invalid \"description\" for grant request (must be a single-line string of at most 256 characters without control characters)")
+                }
+                desc = sanitized
+            } else {
+                desc = nil
             }
             let parsed = try ControlScope.parseScopes(from: request.args["scopes"])
             let candidateScopes = parsed ?? Set(ControlScope.allCases).subtracting([.approval])
@@ -210,10 +271,11 @@ enum ControlCommands {
             guard !effectiveScopes.isEmpty else {
                 throw ControlError(.invalid, "grant request cannot grant approval scope; requested scopes must contain at least one standard scope")
             }
-            let desc = request.args["description"]?.string
+
+            let origin = resolveOrigin(for: request, all: all)
 
             if let customPrompt = userGrantPrompt {
-                customPrompt(client, effectiveScopes, desc) { approved in
+                customPrompt(client, effectiveScopes, desc, origin) { approved in
                     if approved {
                         let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
                         reply(.ok([
@@ -234,13 +296,19 @@ enum ControlCommands {
             }
 
             let alert = NSAlert()
-            alert.messageText = "Authorize Remote Control Access"
+            alert.messageText = "Remote Control Access Request"
             let scopeList = effectiveScopes.map(\.rawValue).sorted().joined(separator: ", ")
-            var info = "The client \"\(client)\" is requesting remote control access with scopes:\n[\(scopeList)]."
+            var info = """
+            An unauthenticated client is requesting remote control access to Tako.
+
+            Origin (verified): \(origin)
+            Requested Scopes: [\(scopeList)]
+            Claimed Client Name (unverified): "\(client)"
+            """
             if let d = desc, !d.isEmpty {
-                info += "\n\nDescription: \(d)"
+                info += "\nClaimed Purpose (unverified): \"\(d)\""
             }
-            info += "\n\nDo you want to allow this client to control Tako?"
+            info += "\n\nWarning: Authorizing this request will grant the process the ability to interact with your terminal sessions. Do you want to allow this request?"
             alert.informativeText = info
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Allow")
@@ -277,7 +345,7 @@ enum ControlCommands {
             case "grant":
                 let sub = request.args["subcommand"]?.string ?? ""
                 if sub == "request" {
-                    handleGrantRequest(request, reply: reply)
+                    handleGrantRequest(request, all: all, reply: reply)
                     return
                 }
                 reply(handle(request, all: all))
