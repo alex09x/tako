@@ -1,0 +1,15 @@
+{
+  "name": "codex",
+  "title": "Codex CLI",
+  "aliases": ["opencode"],
+  "config_path": "~/.codex/config.json",
+  "format": "json",
+  "hook_field": "hooks",
+  "hooks": {
+    "prompt_submit": "takoctl status set working --text \"Thinking...\" && takoctl progress indeterminate",
+    "approval_requested": "takoctl status set needs_approval --text \"Approval requested\" && takoctl notify \"Codex requested approval\" --title \"Approval Needed\" && takoctl progress pause",
+    "waiting_input": "takoctl status set waiting_for_input --text \"Waiting for input\" && takoctl notify \"Codex waiting for input\" --title \"Input Needed\" && takoctl progress clear",
+    "turn_done": "takoctl status set done --text \"Done\" && takoctl notify \"Codex completed turn\" --title \"Codex\" && takoctl progress clear",
+    "session_end": "takoctl status clear && takoctl progress clear"
+  }
+}

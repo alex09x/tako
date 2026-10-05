@@ -10,6 +10,7 @@
 //! the request was delivered but no answer came: it may have been carried
 //! out, and is never retried.
 
+mod hooks;
 mod socket;
 
 use std::process::ExitCode;
@@ -50,12 +51,21 @@ commands:
   status set STATUS       set the pane's explicit status (--text T, --ttl D)
   status clear            clear the pane's explicit status
   progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
+  hooks list              list supported coding-agent hook adapters and their install status
+  hooks status [AGENT]    show hook installation status for AGENT or all agents
+  hooks install AGENT     install Tako lifecycle hooks into AGENT's configuration
+                          (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
+  hooks uninstall AGENT   remove Tako lifecycle hooks from AGENT's configuration
+                          (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
   --lines N               last, wait, run --wait: at most the last N lines of output
   --text TEXT             status text (truncated to 128 characters)
   --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
+  --yes, -y               skip confirmation prompt for hooks install/uninstall
+  --diff-only             print proposed diff without writing files
+  --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer
   --socket PATH           the control socket (default: $TAKO_SOCKET, or the app's)
   --bundle-id ID          find the socket of this build of Tako (default com.tako-core.terminal)
@@ -142,6 +152,15 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     return Err("--timeout needs seconds, at most a week".into());
                 }
                 args.insert("timeout".into(), Value::from(s));
+            }
+            "--yes" | "-y" => {
+                args.insert("yes".into(), Value::Bool(true));
+            }
+            "--diff-only" => {
+                args.insert("diff_only".into(), Value::Bool(true));
+            }
+            "--config" => {
+                args.insert("config".into(), Value::String(value("--config")?));
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
@@ -273,6 +292,52 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             argv[0] = resolve(&argv[0], &path).ok_or_else(|| format!("{}: not found on PATH", argv[0]))?;
             args.insert("argv".into(), Value::from(argv));
             args.insert("path".into(), Value::String(path));
+            None
+        }
+        "hooks" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "list" => {
+                    args.insert("action".into(), Value::String("list".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("action".into(), Value::String("status".into()));
+                    if !positional.is_empty() {
+                        args.insert("agent".into(), Value::String(positional.remove(0)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "install" => {
+                    args.insert("action".into(), Value::String("install".into()));
+                    if positional.is_empty() {
+                        return Err("hooks install needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                    }
+                    args.insert("agent".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "uninstall" => {
+                    args.insert("action".into(), Value::String("uninstall".into()));
+                    if positional.is_empty() {
+                        return Err("hooks uninstall needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                    }
+                    args.insert("agent".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => return Err(format!("unknown hooks action \"{other}\"; use list, status, install, or uninstall")),
+            }
             None
         }
         "split" => Some("direction"),
@@ -617,6 +682,30 @@ fn resolve(program: &str, path: &str) -> Option<String> {
     })
 }
 
+fn run_hooks(opts: &Options) -> Result<(), String> {
+    let action = opts.args.get("action").and_then(Value::as_str).unwrap_or("list");
+    let yes = opts.args.get("yes").and_then(Value::as_bool).unwrap_or(false);
+    let diff_only = opts.args.get("diff_only").and_then(Value::as_bool).unwrap_or(false);
+    let config_override = opts.args.get("config").and_then(Value::as_str);
+
+    match action {
+        "list" => hooks::list(opts.json),
+        "status" => {
+            let agent = opts.args.get("agent").and_then(Value::as_str);
+            hooks::status(agent, opts.json)
+        }
+        "install" => {
+            let agent = opts.args.get("agent").and_then(Value::as_str).ok_or("hooks install needs an agent name")?;
+            hooks::install(agent, config_override, yes, diff_only, opts.json)
+        }
+        "uninstall" => {
+            let agent = opts.args.get("agent").and_then(Value::as_str).ok_or("hooks uninstall needs an agent name")?;
+            hooks::uninstall(agent, config_override, yes, diff_only, opts.json)
+        }
+        other => Err(format!("unknown hooks action '{other}'")),
+    }
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let opts = match parse(&argv) {
@@ -632,6 +721,15 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if opts.cmd == "hooks" {
+        return match run_hooks(&opts) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("takoctl: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
     // Inside a Tako pane, TAKO_SOCKET is that copy's answer: its socket, or
     // empty when it serves none. Empty means stop -- never go looking for
     // another copy's socket instead.
@@ -965,4 +1063,47 @@ bbbbbbbb  logs -- pane 2 of 2
         });
         assert_eq!(progress_report(&clear), "none\n");
     }
+
+    #[test]
+    fn hooks_command_parses_list_status_install_uninstall_and_flags() {
+        // list (default)
+        let opts = parse(&args(&["hooks"])).unwrap();
+        assert_eq!(opts.cmd, "hooks");
+        assert_eq!(opts.args["action"], "list");
+
+        // list (explicit)
+        let opts = parse(&args(&["hooks", "list"])).unwrap();
+        assert_eq!(opts.cmd, "hooks");
+        assert_eq!(opts.args["action"], "list");
+
+        // status all
+        let opts = parse(&args(&["hooks", "status"])).unwrap();
+        assert_eq!(opts.args["action"], "status");
+        assert!(opts.args.get("agent").is_none());
+
+        // status specific agent
+        let opts = parse(&args(&["hooks", "status", "claude"])).unwrap();
+        assert_eq!(opts.args["action"], "status");
+        assert_eq!(opts.args["agent"], "claude");
+
+        // install with flags
+        let opts = parse(&args(&["hooks", "install", "gemini", "--yes", "--diff-only", "--config", "/tmp/test.json"])).unwrap();
+        assert_eq!(opts.args["action"], "install");
+        assert_eq!(opts.args["agent"], "gemini");
+        assert_eq!(opts.args["yes"], true);
+        assert_eq!(opts.args["diff_only"], true);
+        assert_eq!(opts.args["config"], "/tmp/test.json");
+
+        // uninstall with -y
+        let opts = parse(&args(&["hooks", "uninstall", "codex", "-y"])).unwrap();
+        assert_eq!(opts.args["action"], "uninstall");
+        assert_eq!(opts.args["agent"], "codex");
+        assert_eq!(opts.args["yes"], true);
+
+        // errors
+        assert!(parse(&args(&["hooks", "install"])).is_err());
+        assert!(parse(&args(&["hooks", "uninstall"])).is_err());
+        assert!(parse(&args(&["hooks", "invalid_action"])).is_err());
+    }
 }
+

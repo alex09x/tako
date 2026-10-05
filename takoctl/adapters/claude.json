@@ -1,0 +1,34 @@
+{
+  "name": "claude",
+  "title": "Claude Code",
+  "config_path": "~/.claude/settings.json",
+  "format": "json",
+  "hook_field": "hooks",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "command": "takoctl status set working --text \"Thinking...\" && takoctl progress indeterminate"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "command": "takoctl status set needs_approval --text \"Approval requested\" && takoctl notify \"Claude requested tool approval\" --title \"Claude Approval\" && takoctl progress pause"
+      }
+    ],
+    "Notification": [
+      {
+        "command": "takoctl notify \"$CLAUDE_NOTIFICATION\" --title \"Claude Code\""
+      }
+    ],
+    "Stop": [
+      {
+        "command": "takoctl status set done --text \"Turn complete\" && takoctl notify \"Claude finished turn\" --title \"Claude Code\" && takoctl progress clear"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "command": "takoctl status clear && takoctl progress clear"
+      }
+    ]
+  }
+}
