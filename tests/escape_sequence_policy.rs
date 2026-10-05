@@ -301,3 +301,52 @@ fn sanitizer_rescan_dos_resistance_with_stripped_controls() {
     );
 }
 
+#[test]
+fn osc_excessive_parameter_count_rejected() {
+    let mut term = Terminal::new(80, 24);
+
+    // 10,000 semicolons within OSC sequence
+    let mut seq = Vec::from(b"\x1b]0");
+    seq.extend(std::iter::repeat(b';').take(10_000));
+    seq.push(b'\x07');
+
+    let start = std::time::Instant::now();
+    term.feed(&seq);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(50),
+        "excessive parameter OSC took {:?}",
+        elapsed
+    );
+    let events = term.take_events();
+    assert!(events.is_empty(), "OSC with excessive parameters must be rejected without dispatching");
+}
+
+#[test]
+fn osc99_aggregate_multipart_payload_limit_enforced() {
+    let mut term = Terminal::new(80, 24);
+
+    // Multiple payload parts separated by semicolons exceeding 8192 bytes total
+    let part = "A".repeat(1000);
+    // 10 parts of 1000 bytes = 10,000 bytes > 8192 bytes
+    let parts = vec![part; 10].join(";");
+    let seq = format!("\x1b]99;i=agg:d=1:p=body;{parts}\x07");
+
+    let start = std::time::Instant::now();
+    term.feed(seq.as_bytes());
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(50),
+        "aggregate OSC 99 parsing took {:?}",
+        elapsed
+    );
+    let events = term.take_events();
+    assert!(
+        events.is_empty(),
+        "OSC 99 exceeding aggregate payload size must be rejected"
+    );
+}
+
+

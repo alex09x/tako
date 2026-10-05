@@ -12,6 +12,8 @@
 pub const MAX_OSC_RAW_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum raw byte length permitted in an in-flight APC sequence buffer (16 MiB).
 pub const MAX_APC_RAW_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum number of parameters permitted in an OSC sequence (1024).
+pub const MAX_OSC_PARAMS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -578,16 +580,27 @@ impl Parser {
     fn dispatch_osc<P: Perform>(&mut self, performer: &mut P, bell: bool) {
         let mut params = Vec::new();
         let mut current_start = 0;
+        let mut excess = false;
         for (i, &b) in self.osc_raw.iter().enumerate() {
             if b == b';' {
+                if params.len() >= MAX_OSC_PARAMS {
+                    excess = true;
+                    break;
+                }
                 params.push(&self.osc_raw[current_start..i]);
                 current_start = i + 1;
             }
         }
-        if current_start <= self.osc_raw.len() {
-            params.push(&self.osc_raw[current_start..]);
+        if !excess && current_start <= self.osc_raw.len() {
+            if params.len() >= MAX_OSC_PARAMS {
+                excess = true;
+            } else {
+                params.push(&self.osc_raw[current_start..]);
+            }
         }
-        performer.osc_dispatch(&params, bell);
+        if !excess {
+            performer.osc_dispatch(&params, bell);
+        }
         if self.osc_raw.capacity() > 64 * 1024 {
             self.osc_raw = Vec::new();
         } else {

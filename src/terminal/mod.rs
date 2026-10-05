@@ -3468,12 +3468,26 @@ impl Terminal {
             return;
         }
 
+        const MAX_OSC99_METADATA_BYTES: usize = 2048;
+        const MAX_OSC99_CHUNK_RAW_BYTES: usize = 8192;
+
         let (metadata_raw, payload_raw) = if params.len() >= 3 {
             let meta = params[1];
+            if meta.len() > MAX_OSC99_METADATA_BYTES {
+                return;
+            }
+            let total_payload_len: usize = params[2..]
+                .iter()
+                .map(|p| p.len())
+                .sum::<usize>()
+                .saturating_add(params.len().saturating_sub(3));
+            if total_payload_len > MAX_OSC99_CHUNK_RAW_BYTES {
+                return;
+            }
             let payload = if params.len() == 3 {
                 params[2].to_vec()
             } else {
-                let mut joined = Vec::new();
+                let mut joined = Vec::with_capacity(total_payload_len);
                 for (idx, part) in params[2..].iter().enumerate() {
                     if idx > 0 {
                         joined.push(b';');
@@ -3486,16 +3500,17 @@ impl Terminal {
         } else {
             // params.len() == 2
             if params[1].contains(&b'=') {
+                if params[1].len() > MAX_OSC99_METADATA_BYTES {
+                    return;
+                }
                 (params[1], Vec::new())
             } else {
+                if params[1].len() > MAX_OSC99_CHUNK_RAW_BYTES {
+                    return;
+                }
                 (b"".as_ref(), params[1].to_vec())
             }
         };
-
-        const MAX_OSC99_METADATA_BYTES: usize = 2048;
-        if metadata_raw.len() > MAX_OSC99_METADATA_BYTES {
-            return;
-        }
 
         let metadata_str = String::from_utf8_lossy(metadata_raw);
         let mut id: Option<String> = None;
@@ -3578,10 +3593,6 @@ impl Terminal {
         }
 
         // 4. Decode payload text with strict pre-decode size bounds
-        const MAX_OSC99_CHUNK_RAW_BYTES: usize = 8192;
-        if payload_raw.len() > MAX_OSC99_CHUNK_RAW_BYTES {
-            return;
-        }
         let payload_bytes = if is_base64 {
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD
