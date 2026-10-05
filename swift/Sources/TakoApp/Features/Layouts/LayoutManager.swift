@@ -192,21 +192,23 @@ enum LayoutManager {
             if let cwd = pane.cwd, !cwd.isEmpty {
                 config.workingDirectory = (cwd as NSString).expandingTildeInPath
             }
-            if let env = pane.env {
-                config.environmentVariables = env
-            }
-
-            if let cmd = pane.effectiveCommand, !cmd.isEmpty {
+            let hasExecutableWork = (pane.effectiveCommand?.isEmpty == false) || (pane.env?.isEmpty == false)
+            if hasExecutableWork {
                 if isTrusted {
                     programsStarted += 1
-                    if pane.shell == true {
-                        config.program = ["/bin/sh", "-c", cmd.joined(separator: " ")]
-                    } else {
-                        config.program = cmd
+                    if let env = pane.env {
+                        config.environmentVariables = env
+                    }
+                    if let cmd = pane.effectiveCommand, !cmd.isEmpty {
+                        if pane.shell == true {
+                            config.program = ["/bin/sh", "-c", cmd.joined(separator: " ")]
+                        } else {
+                            config.program = cmd
+                        }
                     }
                 } else {
                     programsSuppressed += 1
-                    // Program suppressed because layout is untrusted
+                    // Program and environment suppressed because layout is untrusted
                 }
             }
 

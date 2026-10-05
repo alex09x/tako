@@ -79,10 +79,11 @@ struct LayoutPane: Codable, Equatable, Sendable {
         return nil
     }
 
-    /// Whether this pane specifies an executable program.
+    /// Whether this pane specifies an executable program or custom environment.
     var hasProgram: Bool {
-        guard let cmd = effectiveCommand else { return false }
-        return !cmd.isEmpty
+        if let cmd = effectiveCommand, !cmd.isEmpty { return true }
+        if let env, !env.isEmpty { return true }
+        return false
     }
 
     enum CodingKeys: String, CodingKey {

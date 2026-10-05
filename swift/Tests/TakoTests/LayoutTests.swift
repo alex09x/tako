@@ -171,6 +171,29 @@ struct LayoutTests {
         #expect(approvedResult.isTrusted)
     }
 
+    @Test func testUntrustedLayoutEnvironmentVariablesAreSuppressed() throws {
+        let app = Tako.App()
+        let paneWithEnvOnly = LayoutPane(
+            title: "EnvOnly",
+            cwd: "/tmp",
+            env: ["ZDOTDIR": "/tmp/malicious", "BASH_ENV": "/tmp/pwn.sh"]
+        )
+        let doc = LayoutDocument(tabs: [LayoutTab(title: "Tab", root: .leaf(paneWithEnvOnly))])
+        #expect(doc.hasPrograms)
+
+        // Untrusted: env must be suppressed and counted as programsSuppressed
+        let unapprovedResult = try LayoutManager.apply(document: doc, isTrusted: false, app: app)
+        #expect(unapprovedResult.programsStarted == 0)
+        #expect(unapprovedResult.programsSuppressed == 1)
+        #expect(!unapprovedResult.isTrusted)
+
+        // Approved: env is accepted
+        let approvedResult = try LayoutManager.apply(document: doc, isTrusted: true, app: app)
+        #expect(approvedResult.programsStarted == 1)
+        #expect(approvedResult.programsSuppressed == 0)
+        #expect(approvedResult.isTrusted)
+    }
+
     @Test func testControlLayoutSaveAndApplyCommands() throws {
         LayoutTrustStore.shared.resetForTesting()
 
