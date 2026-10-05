@@ -73,13 +73,13 @@ enum ControlCommands {
         let windowID: String
         let tabID: String
         let stableTabID: String
-        let controller: BaseTerminalController
+        let controller: BaseTerminalController?
 
-        init(surface: Tako.SurfaceView, windowID: String, tabID: String, stableTabID: String? = nil, controller: BaseTerminalController) {
+        init(surface: Tako.SurfaceView, windowID: String, tabID: String, stableTabID: String? = nil, controller: BaseTerminalController? = nil) {
             self.surface = surface
             self.windowID = windowID
             self.tabID = tabID
-            self.stableTabID = stableTabID ?? controller.window?.stableTabIdentifier ?? tabID
+            self.stableTabID = stableTabID ?? controller?.window?.stableTabIdentifier ?? tabID
             self.controller = controller
         }
     }
@@ -380,6 +380,11 @@ enum ControlCommands {
                 return
             }
             try checkScope(for: request)
+            if let surface = try? target(request, all) {
+                if request.client?.lowercased().contains("companion") == true || request.args["companion"]?.bool == true {
+                    try CompanionAccessGate.checkAccess(for: surface)
+                }
+            }
             switch request.cmd {
             case "grant":
                 let sub = request.args["subcommand"]?.string ?? ""
@@ -412,6 +417,9 @@ enum ControlCommands {
             case "last":
                 let surface = try target(request, all)
                 recordActivity(for: request, on: surface.id, action: "last")
+                guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+                    throw ControlError(.disabled, "secure-input panes cannot be read")
+                }
                 try ControlCommand.last(surface, args: request.args, reply: reply)
             case "wait":
                 let surface = try target(request, all)
@@ -474,6 +482,11 @@ enum ControlCommands {
         }
         do {
             try checkScope(for: request)
+            if let surface = try? target(request, all) {
+                if request.client?.lowercased().contains("companion") == true || request.args["companion"]?.bool == true {
+                    try CompanionAccessGate.checkAccess(for: surface)
+                }
+            }
             switch request.cmd {
             case "version":
                 return .ok(version())
@@ -482,7 +495,13 @@ enum ControlCommands {
             case "history":
                 let query = request.args["query"]?.string ?? ""
                 let limit = try historyLimit(request.args)
-                let entries = CommandHistoryStore.shared.search(query: query, limit: limit)
+                let entries = CommandHistoryStore.shared.search(query: query, limit: limit).filter { entry in
+                    guard let paneId = entry.paneId else { return true }
+                    if let found = all.first(where: { $0.surface.id == paneId }) {
+                        return !SecureInput.shared.isSecure(for: found.surface) && !found.surface.isSecureInput
+                    }
+                    return true
+                }
                 let jsonEntries = entries.map { entry -> JSON in
                     var obj: [String: JSON] = [
                         "id": .string(entry.id.uuidString.lowercased()),
@@ -1301,7 +1320,9 @@ enum ControlCommands {
             }()
             let t = windows[w].tabs.firstIndex { $0.id == pane.tabID } ?? {
                 windows[w].tabs.append((pane.tabID, []))
-                tabInfo[pane.tabID] = tabFacts(pane.controller)
+                if let controller = pane.controller {
+                    tabInfo[pane.tabID] = tabFacts(controller)
+                }
                 return windows[w].tabs.count - 1
             }()
             windows[w].tabs[t].panes.append(.object(node))
@@ -1471,12 +1492,12 @@ enum ControlCommands {
             let window: NSWindow? = {
                 if let surface = try? target(request, all) {
                     if let win = surface.window { return win }
-                    if let matched = all.first(where: { $0.surface === surface }), let win = matched.controller.window {
+                    if let matched = all.first(where: { $0.surface === surface }), let win = matched.controller?.window {
                         return win
                     }
                 }
                 if let key = NSApp.keyWindow ?? NSApp.mainWindow { return key }
-                if let first = all.first(where: { $0.controller.window != nil })?.controller.window {
+                if let first = all.first(where: { $0.controller?.window != nil })?.controller?.window {
                     return first
                 }
                 return TerminalController.all.first?.window
@@ -1546,7 +1567,7 @@ enum ControlCommands {
                 }
             }
 
-            let takoApp = all.first?.controller.tako ?? (NSApp.delegate as? AppDelegate)?.tako
+            let takoApp = all.first?.controller?.tako ?? (NSApp.delegate as? AppDelegate)?.tako
             let result = try LayoutManager.apply(document: doc, isTrusted: isTrusted, app: takoApp)
             return [
                 "applied": .bool(true),
@@ -1672,7 +1693,7 @@ enum ControlCommands {
                 throw ControlError(.notFound, "no active surface to run project action")
             }
 
-            let takoApp = all.first?.controller.tako ?? (NSApp.delegate as? AppDelegate)?.tako
+            let takoApp = all.first?.controller?.tako ?? (NSApp.delegate as? AppDelegate)?.tako
             let result = try ProjectActionManager.shared.execute(
                 action: act,
                 projectRoot: project.projectRoot,
@@ -1756,8 +1777,8 @@ enum ControlCommands {
                 return nil
             }()
 
-            let takoApp = all.first?.controller.tako ?? (NSApplication.shared.delegate as? AppDelegate)?.tako
-            let fromWindow = surface?.window ?? all.first?.controller.window
+            let takoApp = all.first?.controller?.tako ?? (NSApplication.shared.delegate as? AppDelegate)?.tako
+            let fromWindow = surface?.window ?? all.first?.controller?.window
 
             do {
                 let info = try WorktreeTaskManager.shared.createTask(
@@ -2020,11 +2041,11 @@ enum ControlCommands {
                         $0.windowID.lowercased().hasPrefix(winId.lowercased()) ||
                         $0.stableTabID.lowercased().hasPrefix(winId.lowercased())
                     }) {
-                        return found.controller.window
+                        return found.controller?.window
                     }
                 }
                 if let targetSurface = try? target(request, all) {
-                    return targetSurface.window ?? all.first(where: { $0.surface === targetSurface })?.controller.window
+                    return targetSurface.window ?? all.first(where: { $0.surface === targetSurface })?.controller?.window
                 }
                 return nil
             }()
@@ -2062,7 +2083,7 @@ enum ControlCommands {
             }
             let expanded = (path as NSString).expandingTildeInPath
             let url = URL(fileURLWithPath: expanded)
-            let effectiveApp = all.first?.controller.tako ?? (NSApp.delegate as? AppDelegate)?.tako
+            let effectiveApp = all.first?.controller?.tako ?? (NSApp.delegate as? AppDelegate)?.tako
 
             do {
                 let controllers = try SessionExportManager.shared.importSession(from: url, in: effectiveApp)

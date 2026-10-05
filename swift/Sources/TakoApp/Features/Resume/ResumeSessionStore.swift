@@ -157,10 +157,18 @@ public final class ResumeSessionStore {
     public nonisolated static func isSecretKey(_ key: String) -> Bool {
         let upper = key.uppercased()
         let forbidden = [
-            "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "AUTH",
-            "CREDENTIAL", "PRIVATE", "SIGNING", "ACCESS", "API",
+            "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE",
+            "AUTH", "CREDENTIAL", "PRIVATE", "SIGNING", "ACCESS", "API",
+            "CERT", "BEARER", "SALT",
         ]
-        return forbidden.contains { upper.contains($0) }
+        if forbidden.contains(where: { upper.contains($0) }) {
+            return true
+        }
+        let parts = upper.components(separatedBy: CharacterSet.alphanumerics.inverted)
+        if parts.contains("PASS") || parts.contains("PWD") {
+            return true
+        }
+        return false
     }
 
     /// Strips any environment variables whose names indicate secrets.
@@ -188,7 +196,11 @@ public final class ResumeSessionStore {
     }
 
     /// Records how to resume what runs in a pane.
-    public func set(record: ResumeSessionRecord, for id: UUID) {
+    public func set(record: ResumeSessionRecord, for id: UUID, isSecure: Bool = false) {
+        guard !isSecure else {
+            clear(for: id)
+            return
+        }
         inMemoryRecords[id] = record
 
         // Persist to disk

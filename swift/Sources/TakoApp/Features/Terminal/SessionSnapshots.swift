@@ -176,6 +176,12 @@ final class SessionSnapshotSaver {
         let share = surfaces.isEmpty ? 0 : settings.limit / UInt64(surfaces.count)
         var live = Set<UUID>()
         for surface in surfaces {
+            // Secure-input sessions are strictly excluded from persisted snapshots (G5)
+            if SecureInput.shared.isSecure(for: surface) || surface.isSecureInput {
+                store.remove(id: surface.id)
+                written[surface.id] = nil
+                continue
+            }
             live.insert(surface.id)
             // Zero means "no limit" to the engine, never what no room means here.
             // The checkpoint gets what is left after the file's header.
@@ -202,7 +208,8 @@ final class SessionSnapshotSaver {
                 written[surface.id] = nil
             case .exported(let checkpoint, let generation):
                 do {
-                    try store.write(SessionSnapshot(savedAt: now, checkpoint: checkpoint), id: surface.id)
+                    let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                    try store.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surface.id)
                     written[surface.id] = generation
                 } catch {
                     written[surface.id] = nil

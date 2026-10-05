@@ -855,7 +855,7 @@ progress and status, open links (with E8) -- with a fuzz target for every sequen
 Done when the policy page exists, each new sequence lands with its fuzz target, and the policy is
 enforced in the engine rather than by convention in the app.
 
-### [ ] G5. Secret hygiene
+### [x] G5. Secret hygiene
 
 - Secure-input sessions are excluded from snapshots, search, history, `takoctl text`, `last`,
   screenshots and the companion app (verified by tests, not only by design).

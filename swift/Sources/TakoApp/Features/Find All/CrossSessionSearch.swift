@@ -81,6 +81,10 @@ final class CrossSessionSearch: ObservableObject {
             let place = tabs.count > 1 && tabIndex != nil
                 ? "\(title) -- tab \(tabIndex! + 1) of \(tabs.count)" : title
             for (i, surface) in surfaces.enumerated() {
+                // Secure-input sessions are strictly excluded from search (G5)
+                guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+                    continue
+                }
                 targets.append(CrossSearchTarget(
                     surfaceID: surface.id,
                     core: surface.core,

@@ -57,6 +57,9 @@ enum ControlCommand {
 
     static func last(_ surface: Tako.SurfaceView, args: [String: JSON],
                      reply: @escaping @Sendable (ControlResponse) -> Void) throws {
+        guard !SecureInput.shared.isSecure(for: surface) && !surface.isSecureInput else {
+            throw ControlError(.disabled, "secure-input panes cannot be read")
+        }
         let lines = try lines(args)
         let core = surface.core
         let id = surface.id.uuidString.lowercased()

@@ -75,11 +75,11 @@ final class SessionExportManager {
         to url: URL,
         takoVersion: String = "0.1.7"
     ) throws -> SessionExportFile {
-        let controllers: [TerminalController]
+        let controllers: [BaseTerminalController]
         if let window {
             if let tc = TerminalController.all.first(where: { $0.window === window }) {
                 controllers = [tc]
-            } else if let tc = window.windowController as? TerminalController {
+            } else if let tc = window.windowController as? BaseTerminalController {
                 controllers = [tc]
             } else {
                 controllers = []
@@ -109,22 +109,7 @@ final class SessionExportManager {
 
             var exportedPanes: [ExportedPane] = []
             for surface in tree {
-                let tail = surface.core.textTail(maxLines: 10000, maxBytes: 4 * 1024 * 1024)
-                let cleanScrollback = ControlSequenceSanitizer.dropControlSequences(from: tail.text)
-
-                var resumeExport: ExportedResume? = nil
-                if let record = ResumeSessionStore.shared.record(for: surface.id) {
-                    resumeExport = ExportedResume(argv: record.argv, cwd: record.cwd)
-                }
-
-                let pane = ExportedPane(
-                    id: surface.id,
-                    pwd: surface.pwd,
-                    title: surface.title,
-                    scrollback: cleanScrollback,
-                    resume: resumeExport
-                )
-                exportedPanes.append(pane)
+                exportedPanes.append(exportPane(surface))
             }
 
             let tabColorStr = (c.window as? TerminalWindow)?.tabColor.name
@@ -156,6 +141,78 @@ final class SessionExportManager {
         let data = try encoder.encode(exportFile)
         try data.write(to: url, options: .atomic)
 
+        return exportFile
+    }
+
+    /// Exports a single surface into an ExportedPane, applying secret hygiene and snapshot redactions (G5).
+    func exportPane(_ surface: Tako.SurfaceView) -> ExportedPane {
+        let isSecure = SecureInput.shared.isSecure(for: surface) || surface.isSecureInput
+
+        let cleanScrollback: String
+        let resumeExport: ExportedResume?
+        if isSecure {
+            cleanScrollback = ""
+            resumeExport = nil
+        } else {
+            let tail = surface.core.textTail(maxLines: 10000, maxBytes: 4 * 1024 * 1024)
+            let rawScrollback = ControlSequenceSanitizer.dropControlSequences(from: tail.text)
+            cleanScrollback = SessionSnapshotRedactor.shared.redact(rawScrollback)
+
+            if let record = ResumeSessionStore.shared.record(for: surface.id) {
+                let cleanEnv = ResumeSessionStore.sanitizeEnvironment(record.env)
+                resumeExport = ExportedResume(argv: record.argv, cwd: record.cwd, env: cleanEnv.isEmpty ? nil : cleanEnv)
+            } else {
+                resumeExport = nil
+            }
+        }
+
+        let safeTitle = isSecure ? surface.title : SessionSnapshotRedactor.shared.redact(surface.title)
+
+        return ExportedPane(
+            id: surface.id,
+            pwd: surface.pwd,
+            title: safeTitle,
+            scrollback: cleanScrollback,
+            resume: resumeExport
+        )
+    }
+
+    /// Exports active surfaces directly into a session file without requiring NSWindow references (G5).
+    @discardableResult
+    func exportPanes(
+        _ surfaces: [Tako.SurfaceView],
+        to url: URL,
+        titleOverride: String? = nil,
+        tabColor: String? = nil,
+        takoVersion: String = "0.1.7"
+    ) throws -> SessionExportFile {
+        let exportedPanes = surfaces.map { exportPane($0) }
+        guard !exportedPanes.isEmpty else {
+            throw SessionExportError.emptySession
+        }
+
+        let rootNode: ExportedLayoutNode = .leaf(paneId: exportedPanes[0].id)
+        let expWin = ExportedWindow(
+            id: UUID(),
+            titleOverride: titleOverride,
+            tabColor: tabColor,
+            layout: rootNode,
+            panes: exportedPanes
+        )
+
+        let exportFile = SessionExportFile(
+            formatVersion: SessionExportFile.currentFormatVersion,
+            exportedAt: Date(),
+            takoVersion: takoVersion,
+            windows: [expWin]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        let data = try encoder.encode(exportFile)
+        try data.write(to: url, options: .atomic)
         return exportFile
     }
 
@@ -217,9 +274,11 @@ final class SessionExportManager {
 
                 // Register resume record with isImported = true (NEVER runs automatically)
                 if let resume = paneData.resume {
+                    let cleanEnv = resume.env.map { ResumeSessionStore.sanitizeEnvironment($0) } ?? [:]
                     let record = ResumeSessionRecord(
                         argv: resume.argv,
                         cwd: resume.cwd,
+                        env: cleanEnv,
                         isImported: true
                     )
                     ResumeSessionStore.shared.set(record: record, for: surface.id)

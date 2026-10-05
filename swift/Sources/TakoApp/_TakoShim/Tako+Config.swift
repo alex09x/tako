@@ -62,6 +62,9 @@ extension Tako {
         /// Active passive regex triggers parsed from `trigger = ...` configuration lines (E7).
         public private(set) var triggers: [TerminalRegexTrigger] = []
 
+        /// Optional user-defined redaction patterns for persisted snapshots (G5).
+        public private(set) var snapshotRedactionPatterns: [NSRegularExpression] = []
+
         /// Per-action keybind overrides parsed from `keybind = ...` lines,
         /// consulted by `keyboardShortcut(for:)` before the hardcoded
         /// defaults below.
@@ -90,6 +93,10 @@ extension Tako {
             if let storage = TakoKit.configStorage(config) {
                 self.keybindOverrides = Self.parseKeybindOverrides(storage.keybindLines)
                 self.triggers = storage.triggerLines.compactMap { TerminalRegexTrigger.parse(line: $0) }
+                self.snapshotRedactionPatterns = storage.snapshotRedactionPatternLines.compactMap {
+                    try? NSRegularExpression(pattern: $0, options: [])
+                }
+                SessionSnapshotRedactor.shared.setPatterns(storage.snapshotRedactionPatternLines)
             }
         }
 
@@ -111,8 +118,18 @@ extension Tako {
             } else {
                 self.theme = TerminalTheme.loadUserConfig()
             }
-            self.keybindOverrides = TakoKit.configStorage(config).map { Self.parseKeybindOverrides($0.keybindLines) } ?? [:]
-            self.triggers = TakoKit.configStorage(config)?.triggerLines.compactMap { TerminalRegexTrigger.parse(line: $0) } ?? []
+            if let storage = TakoKit.configStorage(config) {
+                self.keybindOverrides = Self.parseKeybindOverrides(storage.keybindLines)
+                self.triggers = storage.triggerLines.compactMap { TerminalRegexTrigger.parse(line: $0) }
+                self.snapshotRedactionPatterns = storage.snapshotRedactionPatternLines.compactMap {
+                    try? NSRegularExpression(pattern: $0, options: [])
+                }
+                SessionSnapshotRedactor.shared.setPatterns(storage.snapshotRedactionPatternLines)
+            } else {
+                self.keybindOverrides = [:]
+                self.triggers = []
+                self.snapshotRedactionPatterns = []
+            }
         }
 
         /// Loads a config from `path` (or the user's default files when `nil`), mirroring
