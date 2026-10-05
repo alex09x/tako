@@ -557,7 +557,7 @@ never deletes unsaved work.
 Done when an agent that starts three subagents gets three visible, labelled child panes, and the
 breadcrumbs follow a session into a container and back.
 
-### [ ] C6. Resume agent sessions after a relaunch
+### [x] C6. Resume agent sessions after a relaunch
 
 When a pane cannot keep its process (session persistence off, or the Mac restarted), it can still
 offer to resume the agent session that was running.

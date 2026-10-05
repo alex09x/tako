@@ -1728,3 +1728,26 @@ fn test_osc3008_set_and_container_roundtrip() {
     assert_eq!(term.active_tint(), None);
 }
 
+#[test]
+fn test_osc3008_bounded_stack_depth_and_field_length() {
+    let mut term = Terminal::new(80, 24);
+
+    // Push 50 frames; stack must cap at 32 and retain only the newest 32
+    for i in 0..50 {
+        let cmd = format!("\x1b]3008;push;host;node-{i}\x07");
+        term.feed(cmd.as_bytes());
+    }
+    assert_eq!(term.context_stack().len(), 32);
+    assert_eq!(term.context_stack()[0].name, "node-18");
+    assert_eq!(term.context_stack()[31].name, "node-49");
+
+    // Overly long fields are truncated to 128 characters
+    let long_name = "x".repeat(300);
+    let cmd = format!("\x1b]3008;push;container;{long_name}\x07");
+    term.feed(cmd.as_bytes());
+    assert_eq!(term.context_stack().len(), 32);
+    let last = term.context_stack().last().unwrap();
+    assert_eq!(last.name.len(), 128);
+}
+
+

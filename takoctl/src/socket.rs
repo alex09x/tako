@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Finding the app's control socket and talking to it.
 
 use std::io::{Read, Write};
@@ -350,9 +360,9 @@ mod tests {
         let (path, listener) = listen("stream-abort");
         let server = std::thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();
-            writeln!(s, "{}", serde_json::json!({"cursor": 1})).unwrap();
-            writeln!(s, "{}", serde_json::json!({"cursor": 2})).unwrap();
-            s.flush().unwrap();
+            let _ = writeln!(s, "{}", serde_json::json!({"cursor": 1}));
+            let _ = writeln!(s, "{}", serde_json::json!({"cursor": 2}));
+            let _ = s.flush();
         });
 
         let mut count = 0;

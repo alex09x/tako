@@ -2604,6 +2604,12 @@ extension Tako {
                 startProcess(workingDir: workingDir)
             }
 
+            if restored || snapshot != nil {
+                DispatchQueue.main.async { [weak self] in
+                    self?.checkAndApplyResumeOnRestore(restoredDir: workingDir)
+                }
+            }
+
             // Cursor blinking is the inherited surface's, driven by its own
             // display link and suppressed inside a Synchronized Output frame.
         }
@@ -3119,6 +3125,65 @@ extension Tako {
                 return false
             }
             return scalar.value < 0x20
+        }
+
+        // MARK: - Resume Agent Sessions (Track C6)
+        private var resumeBannerHostingView: NSView?
+
+        public func checkAndApplyResumeOnRestore(restoredDir: String?) {
+            guard let record = ResumeSessionStore.shared.record(for: id) else { return }
+            let dir = record.cwd.isEmpty ? (restoredDir ?? "") : record.cwd
+            if !record.isImported && ResumeTrustStore.shared.isApproved(argv: record.argv, cwd: dir) {
+                executeResume(record: record)
+            } else {
+                showResumeBanner(record: record, dir: dir)
+            }
+        }
+
+        public func showResumeBanner(record: ResumeSessionRecord, dir: String) {
+            guard resumeBannerHostingView == nil else { return }
+            let cmdLine = record.argv.joined(separator: " ")
+            let banner = ResumeBannerView(
+                command: cmdLine,
+                cwd: dir,
+                isImported: record.isImported,
+                onResume: { [weak self] alwaysAllow in
+                    guard let self else { return }
+                    if alwaysAllow {
+                        ResumeTrustStore.shared.approve(prefix: record.argv.first ?? "", cwd: dir)
+                    }
+                    self.dismissResumeBanner()
+                    self.executeResume(record: record)
+                },
+                onDismiss: { [weak self] in
+                    self?.dismissResumeBanner()
+                }
+            )
+            let hosting = NSHostingView(rootView: banner)
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(hosting)
+            NSLayoutConstraint.activate([
+                hosting.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+                hosting.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+                hosting.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            ])
+            self.resumeBannerHostingView = hosting
+        }
+
+        public func dismissResumeBanner() {
+            resumeBannerHostingView?.removeFromSuperview()
+            resumeBannerHostingView = nil
+        }
+
+        public func executeResume(record: ResumeSessionRecord) {
+            guard !record.argv.isEmpty else { return }
+            let cmdString = record.argv.map { arg -> String in
+                if arg.contains(" ") || arg.contains("\"") || arg.contains("'") {
+                    return "\"" + arg.replacingOccurrences(of: "\"", with: "\\\"") + "\""
+                }
+                return arg
+            }.joined(separator: " ")
+            sendText(cmdString + "\n")
         }
     }
 }

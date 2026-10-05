@@ -4260,23 +4260,36 @@ impl Perform for Terminal {
             // \e]3008;pop\a
             // \e]3008;clear\a
             // \e]3008;set;<kind>;<name>[;<tint>]\a
+            const MAX_CONTEXT_STACK_DEPTH: usize = 32;
+            const MAX_CONTEXT_FIELD_LEN: usize = 128;
             if let Some(op_bytes) = params.get(1) {
                 let op = String::from_utf8_lossy(op_bytes);
                 let op_lower = op.trim().to_lowercase();
                 match op_lower.as_str() {
                     "push" | "enter" => {
-                        let kind = params
+                        let mut kind = params
                             .get(2)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .unwrap_or_default();
-                        let name = params
+                        let mut name = params
                             .get(3)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .unwrap_or_default();
-                        let explicit_tint = params
+                        let mut explicit_tint = params
                             .get(4)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .filter(|s| !s.is_empty());
+                        if kind.len() > MAX_CONTEXT_FIELD_LEN {
+                            kind = kind.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                        }
+                        if name.len() > MAX_CONTEXT_FIELD_LEN {
+                            name = name.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                        }
+                        if let Some(t) = explicit_tint.as_mut() {
+                            if t.len() > MAX_CONTEXT_FIELD_LEN {
+                                *t = t.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                        }
                         let is_elevated = kind.eq_ignore_ascii_case("sudo")
                             || kind.eq_ignore_ascii_case("elevated")
                             || kind.eq_ignore_ascii_case("root")
@@ -4295,6 +4308,9 @@ impl Perform for Terminal {
                             tint,
                             is_elevated,
                         };
+                        if self.context_stack.len() >= MAX_CONTEXT_STACK_DEPTH {
+                            self.context_stack.remove(0);
+                        }
                         self.context_stack.push(frame.clone());
                         self.events.push(TerminalEvent::ContextPush(frame));
                     }
@@ -4315,18 +4331,29 @@ impl Perform for Terminal {
                             self.events.push(TerminalEvent::ContextClear);
                         }
                         if params.len() > 2 {
-                            let kind = params
+                            let mut kind = params
                                 .get(2)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .unwrap_or_default();
-                            let name = params
+                            let mut name = params
                                 .get(3)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .unwrap_or_default();
-                            let explicit_tint = params
+                            let mut explicit_tint = params
                                 .get(4)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .filter(|s| !s.is_empty());
+                            if kind.len() > MAX_CONTEXT_FIELD_LEN {
+                                kind = kind.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                            if name.len() > MAX_CONTEXT_FIELD_LEN {
+                                name = name.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                            if let Some(t) = explicit_tint.as_mut() {
+                                if t.len() > MAX_CONTEXT_FIELD_LEN {
+                                    *t = t.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                                }
+                            }
                             let is_elevated = kind.eq_ignore_ascii_case("sudo")
                                 || kind.eq_ignore_ascii_case("elevated")
                                 || kind.eq_ignore_ascii_case("root")
