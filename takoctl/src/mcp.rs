@@ -463,6 +463,136 @@ pub fn all_tools() -> Vec<McpTool> {
                 }
             }),
         },
+        McpTool {
+            name: "tako_review_open",
+            description: "Open a read-only diff review pane for a worktree or task against its base branch.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Task name or worktree path to review (C4)"
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "Base branch to diff against (default: main)"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID where review pane is displayed (default: current pane)"
+                    },
+                    "target_pane": {
+                        "type": "string",
+                        "description": "Destination pane ID to receive feedback comments when sent"
+                    }
+                },
+                "required": ["task"]
+            }),
+        },
+        McpTool {
+            name: "tako_review_close",
+            description: "Close active diff review pane on target pane.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_review_status",
+            description: "Inspect active diff review session status, changed files count, and pending comments count.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_review_diff",
+            description: "Inspect unified diff or changed files list in a diff review session.",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Optional specific file path to view its unified diff"
+                    },
+                    "files_only": {
+                        "type": "boolean",
+                        "description": "If true, list changed files with addition/deletion counts instead of full diff patch"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_review_comment",
+            description: "Manage local comments on lines in a diff review session (add, list, remove, clear).",
+            required_scopes: &[CapabilityScope::Read],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Target pane ID (default: current pane)"
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "list", "remove", "clear"],
+                        "description": "Comment action: 'add', 'list', 'remove', or 'clear' (default: 'list')"
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "File path for the comment (required for add)"
+                    },
+                    "line": {
+                        "type": "integer",
+                        "description": "Line number for the comment (for add, default: 1)"
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Comment body text (required for add)"
+                    },
+                    "comment_id": {
+                        "type": "string",
+                        "description": "Comment ID to remove (required for remove)"
+                    }
+                }
+            }),
+        },
+        McpTool {
+            name: "tako_review_send",
+            description: "Send all collected diff review comments as batched plain-text feedback to the target terminal pane (requires 'input' capability scope).",
+            required_scopes: &[CapabilityScope::Input],
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Review pane ID containing the comments (default: current pane)"
+                    },
+                    "target_pane": {
+                        "type": "string",
+                        "description": "Destination terminal pane ID to receive the feedback (default: recorded target pane)"
+                    }
+                }
+            }),
+        },
     ]
 }
 
@@ -909,6 +1039,81 @@ impl McpServer {
                 "text"
             }
             "tako_screenshot" => "screenshot",
+            "tako_review_open" => {
+                let task = args
+                    .get("task")
+                    .or_else(|| args.get("worktree"))
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "missing required field 'task'".to_string())?;
+                req_args.insert("subcommand".into(), Value::String("open".into()));
+                req_args.insert("task".into(), Value::String(task.into()));
+                if let Some(base) = args.get("base").and_then(Value::as_str) {
+                    req_args.insert("base".into(), Value::String(base.into()));
+                }
+                if let Some(target_pane) = args.get("target_pane").and_then(Value::as_str) {
+                    req_args.insert("target_pane".into(), Value::String(target_pane.into()));
+                }
+                "review"
+            }
+            "tako_review_close" => {
+                req_args.insert("subcommand".into(), Value::String("close".into()));
+                "review"
+            }
+            "tako_review_status" => {
+                req_args.insert("subcommand".into(), Value::String("status".into()));
+                "review"
+            }
+            "tako_review_diff" => {
+                if let Some(true) = args.get("files_only").and_then(Value::as_bool) {
+                    req_args.insert("subcommand".into(), Value::String("files".into()));
+                } else {
+                    req_args.insert("subcommand".into(), Value::String("diff".into()));
+                    if let Some(file) = args.get("file").and_then(Value::as_str) {
+                        req_args.insert("file".into(), Value::String(file.into()));
+                    }
+                }
+                "review"
+            }
+            "tako_review_comment" => {
+                req_args.insert("subcommand".into(), Value::String("comment".into()));
+                let action = args.get("action").and_then(Value::as_str).unwrap_or("list");
+                req_args.insert("action".into(), Value::String(action.into()));
+                match action {
+                    "add" => {
+                        let file = args
+                            .get("file")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| "missing required field 'file'".to_string())?;
+                        let text = args
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| "missing required field 'text'".to_string())?;
+                        req_args.insert("file".into(), Value::String(file.into()));
+                        req_args.insert("text".into(), Value::String(text.into()));
+                        if let Some(line) = args.get("line").and_then(Value::as_i64) {
+                            req_args.insert("line".into(), Value::from(line));
+                        }
+                    }
+                    "remove" => {
+                        let comment_id = args
+                            .get("comment_id")
+                            .or_else(|| args.get("id"))
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| "missing required field 'comment_id'".to_string())?;
+                        req_args.insert("comment_id".into(), Value::String(comment_id.into()));
+                    }
+                    "list" | "clear" => {}
+                    other => return Err(format!("unknown review comment action '{other}'")),
+                }
+                "review"
+            }
+            "tako_review_send" => {
+                req_args.insert("subcommand".into(), Value::String("send".into()));
+                if let Some(target_pane) = args.get("target_pane").and_then(Value::as_str) {
+                    req_args.insert("target_pane".into(), Value::String(target_pane.into()));
+                }
+                "review"
+            }
             other => return Err(format!("unrecognized tool '{other}'")),
         };
 
@@ -1395,6 +1600,130 @@ mod tests {
         assert_eq!(fmt_ss["content"][0]["data"], "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==");
         assert_eq!(fmt_ss["content"][0]["mimeType"], "image/png");
         assert!(fmt_ss["content"][1]["text"].as_str().unwrap().contains("640x480 png"));
+    }
+
+    #[test]
+    fn test_mcp_review_tools_scopes_and_requests() {
+        let tools = all_tools();
+        let open_tool = tools.iter().find(|t| t.name == "tako_review_open").expect("open tool");
+        let close_tool = tools.iter().find(|t| t.name == "tako_review_close").expect("close tool");
+        let status_tool = tools.iter().find(|t| t.name == "tako_review_status").expect("status tool");
+        let diff_tool = tools.iter().find(|t| t.name == "tako_review_diff").expect("diff tool");
+        let comment_tool = tools.iter().find(|t| t.name == "tako_review_comment").expect("comment tool");
+        let send_tool = tools.iter().find(|t| t.name == "tako_review_send").expect("send tool");
+
+        assert_eq!(open_tool.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(close_tool.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(status_tool.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(diff_tool.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(comment_tool.required_scopes, &[CapabilityScope::Read]);
+        assert_eq!(send_tool.required_scopes, &[CapabilityScope::Input]);
+
+        // 1. Capability checks: Read-only server vs Input-only server
+        let read_server = McpServer::new(
+            "/tmp/test.sock".into(),
+            Capabilities::parse("read").unwrap(),
+            Some("pane-rev".into()),
+        );
+
+        // Read server can call tako_review_diff (fails at socket, not refused)
+        let diff_call = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_review_diff",
+                "arguments": { "file": "src/main.rs" }
+            }
+        }).to_string();
+        let resp_diff = read_server.handle_message(&diff_call).expect("response");
+        assert_eq!(resp_diff["result"]["isError"], true);
+        let err_diff = resp_diff["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(!err_diff.contains("refusal:"));
+        assert!(err_diff.contains("Tako socket error:"));
+
+        // Read server is refused on tako_review_send because it requires Input scope
+        let send_call = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_review_send",
+                "arguments": { "target_pane": "pane-agent-1" }
+            }
+        }).to_string();
+        let resp_send = read_server.handle_message(&send_call).expect("response");
+        assert_eq!(resp_send["result"]["isError"], true);
+        let err_send = resp_send["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(err_send.contains("refusal: tool 'tako_review_send' requires 'input' capability scope"));
+        assert!(err_send.contains("active scopes: [read]"));
+
+        // 2. build_socket_request tests
+        let req_open = read_server
+            .build_socket_request(
+                "tako_review_open",
+                &json!({
+                    "task": "task-feature-x",
+                    "base": "origin/main",
+                    "target_pane": "pane-dest-99"
+                }),
+            )
+            .unwrap();
+        assert_eq!(req_open["cmd"], "review");
+        assert_eq!(req_open["args"]["subcommand"], "open");
+        assert_eq!(req_open["args"]["task"], "task-feature-x");
+        assert_eq!(req_open["args"]["base"], "origin/main");
+        assert_eq!(req_open["args"]["target_pane"], "pane-dest-99");
+        assert_eq!(req_open["args"]["target"], "pane-rev");
+
+        let req_files = read_server
+            .build_socket_request(
+                "tako_review_diff",
+                &json!({ "files_only": true }),
+            )
+            .unwrap();
+        assert_eq!(req_files["cmd"], "review");
+        assert_eq!(req_files["args"]["subcommand"], "files");
+
+        let req_comment_add = read_server
+            .build_socket_request(
+                "tako_review_comment",
+                &json!({
+                    "action": "add",
+                    "file": "src/main.rs",
+                    "line": 42,
+                    "text": "Check bounds here"
+                }),
+            )
+            .unwrap();
+        assert_eq!(req_comment_add["cmd"], "review");
+        assert_eq!(req_comment_add["args"]["subcommand"], "comment");
+        assert_eq!(req_comment_add["args"]["action"], "add");
+        assert_eq!(req_comment_add["args"]["file"], "src/main.rs");
+        assert_eq!(req_comment_add["args"]["line"], 42);
+        assert_eq!(req_comment_add["args"]["text"], "Check bounds here");
+
+        let req_comment_rm = read_server
+            .build_socket_request(
+                "tako_review_comment",
+                &json!({
+                    "action": "remove",
+                    "comment_id": "c-uuid-123"
+                }),
+            )
+            .unwrap();
+        assert_eq!(req_comment_rm["args"]["action"], "remove");
+        assert_eq!(req_comment_rm["args"]["comment_id"], "c-uuid-123");
+
+        let req_send = read_server
+            .build_socket_request(
+                "tako_review_send",
+                &json!({ "target_pane": "pane-agent-1" }),
+            )
+            .unwrap();
+        assert_eq!(req_send["cmd"], "review");
+        assert_eq!(req_send["args"]["subcommand"], "send");
+        assert_eq!(req_send["args"]["target_pane"], "pane-agent-1");
     }
 }
 

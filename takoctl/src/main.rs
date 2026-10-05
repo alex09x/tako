@@ -120,6 +120,13 @@ commands:
   overlay close           close active overlay in target pane
   overlay status          show overlay state for target pane
   overlay reload          reload document in active overlay
+  review open [PATH]      open diff review pane for worktree (--base BRANCH, --target-pane ID)
+  review close            close active diff review pane
+  review status           show review session status and pending comments count
+  review files            list changed files in review session
+  review diff [FILE]      show unified diff of all files or specific FILE
+  review comment [ACTION] manage review comments (add, list, remove, clear; --file FILE, --line N)
+  review send             send collected review comments as feedback to target pane
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
@@ -149,6 +156,9 @@ options:
   --lines N               text, last, wait, run --wait: at most the last N lines of output
   --styled                text: include ANSI SGR color/styling escape codes
   --out PATH              screenshot: output PNG file path
+  --file FILE             review: target file for diff or comment
+  --line N                review: line number for inline comment
+  --target-pane ID        review: destination pane for batched feedback
   --text TEXT             status text (truncated to 128 characters)
   --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
@@ -352,6 +362,18 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--base" => {
                 args.insert("base".into(), Value::String(value("--base")?));
+            }
+            "--file" => {
+                args.insert("file".into(), Value::String(value("--file")?));
+            }
+            "--line" => {
+                let n: u64 = value("--line")?
+                    .parse()
+                    .map_err(|_| "--line needs a number".to_string())?;
+                args.insert("line".into(), Value::from(n));
+            }
+            "--target-pane" => {
+                args.insert("target_pane".into(), Value::String(value("--target-pane")?));
             }
             "--archive" => {
                 args.insert("archive".into(), Value::Bool(true));
@@ -1166,6 +1188,123 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "review" => {
+            let sub = if positional.is_empty() {
+                "status".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "open" => {
+                    args.insert("subcommand".into(), Value::String("open".into()));
+                    if !positional.is_empty() {
+                        let path = positional.remove(0);
+                        args.insert("worktree".into(), Value::String(expand_path(&path)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "close" => {
+                    args.insert("subcommand".into(), Value::String("close".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("subcommand".into(), Value::String("status".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "files" => {
+                    args.insert("subcommand".into(), Value::String("files".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "diff" => {
+                    args.insert("subcommand".into(), Value::String("diff".into()));
+                    if !positional.is_empty() {
+                        let f = positional.remove(0);
+                        args.insert("file".into(), Value::String(f));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "comment" => {
+                    args.insert("subcommand".into(), Value::String("comment".into()));
+                    let action = if positional.is_empty() {
+                        "list".to_string()
+                    } else {
+                        positional.remove(0)
+                    };
+                    args.insert("action".into(), Value::String(action.clone()));
+                    match action.as_str() {
+                        "add" => {
+                            if !positional.is_empty() && !args.contains_key("file") {
+                                args.insert("file".into(), Value::String(positional.remove(0)));
+                            }
+                            if !positional.is_empty() && !args.contains_key("line") {
+                                if let Ok(line_num) = positional[0].parse::<u64>() {
+                                    positional.remove(0);
+                                    args.insert("line".into(), Value::from(line_num));
+                                }
+                            }
+                            if !positional.is_empty() {
+                                let comment_text = positional.drain(..).collect::<Vec<_>>().join(" ");
+                                args.insert("text".into(), Value::String(comment_text));
+                            }
+                            if !args.contains_key("file") {
+                                return Err("review comment add requires a file (--file or positional)".into());
+                            }
+                            if !args.contains_key("text") {
+                                return Err("review comment add requires comment text".into());
+                            }
+                        }
+                        "list" => {
+                            if !positional.is_empty() {
+                                return Err(format!("unexpected argument {}", positional[0]));
+                            }
+                        }
+                        "remove" => {
+                            if !positional.is_empty() {
+                                args.insert("comment_id".into(), Value::String(positional.remove(0)));
+                            }
+                            if !args.contains_key("comment_id") {
+                                return Err("review comment remove requires a comment ID".into());
+                            }
+                            if !positional.is_empty() {
+                                return Err(format!("unexpected argument {}", positional[0]));
+                            }
+                        }
+                        "clear" => {
+                            if !positional.is_empty() {
+                                return Err(format!("unexpected argument {}", positional[0]));
+                            }
+                        }
+                        other => {
+                            return Err(format!(
+                                "unknown review comment action '{other}'; expected add, list, remove, or clear"
+                            ));
+                        }
+                    }
+                }
+                "send" => {
+                    args.insert("subcommand".into(), Value::String("send".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown review action '{other}'; expected open, close, status, files, diff, comment, or send"
+                    ));
+                }
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -1298,8 +1437,120 @@ fn render(cmd: &str, result: &Value) -> String {
         "broadcast" => broadcast_report(result),
         "session" => session_report(result),
         "overlay" => overlay_report(result),
+        "review" => review_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn review_report(result: &Value) -> String {
+    if let Some(closed) = result.get("closed").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        return if closed {
+            format!("Closed diff review on pane {id}.\n")
+        } else {
+            format!("No active diff review on pane {id}.\n")
+        };
+    }
+
+    if let Some(true) = result.get("sent").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        let target = result["target"].as_str().unwrap_or("unknown");
+        let msg = result["message"].as_str().unwrap_or("");
+        let mut out = format!("Sent diff review feedback from pane {id} to pane {target}.\n");
+        if !msg.is_empty() {
+            out.push_str("Feedback summary:\n");
+            for line in msg.lines() {
+                out.push_str(&format!("  {line}\n"));
+            }
+        }
+        return out;
+    }
+
+    if let Some(comment_id) = result.get("comment_id").and_then(Value::as_str) {
+        let file = result["file"].as_str().unwrap_or("");
+        let line = result["line"].as_f64().unwrap_or(0.0) as u64;
+        return format!("Added comment {comment_id} on {file}:{line}.\n");
+    }
+
+    if let Some(removed) = result.get("removed").and_then(Value::as_bool) {
+        return if removed {
+            "Removed review comment.\n".to_string()
+        } else {
+            "Review comment not found.\n".to_string()
+        };
+    }
+
+    if let Some(true) = result.get("cleared").and_then(Value::as_bool) {
+        return "Cleared all review comments.\n".to_string();
+    }
+
+    if let Some(comments) = result.get("comments").and_then(Value::as_array) {
+        if comments.is_empty() {
+            return "No review comments recorded.\n".to_string();
+        }
+        let mut out = format!("Review comments ({}):\n", comments.len());
+        for c in comments {
+            let id = c["id"].as_str().unwrap_or("");
+            let file = c["file"].as_str().unwrap_or("");
+            let line = c["line"].as_f64().unwrap_or(0.0) as u64;
+            let text = c["text"].as_str().unwrap_or("");
+            out.push_str(&format!("  [{id}] {file}:{line}: {text}\n"));
+        }
+        return out;
+    }
+
+    if let Some(patch) = result.get("patch").and_then(Value::as_str) {
+        let mut out = patch.to_string();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        return out;
+    }
+
+    if let Some(files) = result.get("files").and_then(Value::as_array) {
+        let task = result["task"].as_str().unwrap_or("");
+        let base = result["base"].as_str().unwrap_or("main");
+        let mut out = format!("Changed files in review '{task}' against '{base}' ({}):\n", files.len());
+        for f in files {
+            let path = f["path"].as_str().unwrap_or("");
+            let status = f["status"].as_str().unwrap_or("modified");
+            let status_char = match status {
+                "added" => "A",
+                "deleted" => "D",
+                "renamed" => "R",
+                "untracked" => "?",
+                _ => "M",
+            };
+            let adds = f["insertions"].as_f64().unwrap_or(0.0) as u64;
+            let dels = f["deletions"].as_f64().unwrap_or(0.0) as u64;
+            out.push_str(&format!("  {status_char}  {path} (+{adds}, -{dels})\n"));
+        }
+        return out;
+    }
+
+    if let Some(open) = result.get("open").and_then(Value::as_bool) {
+        let id = result["id"].as_str().unwrap_or("pane");
+        if open {
+            let task = result["task"].as_str().unwrap_or("");
+            let base = result["base"].as_str().unwrap_or("main");
+            let files_count = result["files_count"].as_f64().unwrap_or(0.0) as u64;
+            let comments_count = result["comments_count"].as_f64().unwrap_or(0.0) as u64;
+            let target = result.get("target").and_then(Value::as_str);
+            let mut out = format!("Diff review active on pane {id}:\n");
+            out.push_str(&format!("  Worktree/Task: {task}\n"));
+            out.push_str(&format!("  Base branch:   {base}\n"));
+            out.push_str(&format!("  Changed files: {files_count}\n"));
+            out.push_str(&format!("  Comments:      {comments_count}\n"));
+            if let Some(t) = target {
+                out.push_str(&format!("  Target pane:   {t}\n"));
+            }
+            return out;
+        } else {
+            return format!("No active diff review on pane {id}.\n");
+        }
+    }
+
+    format!("{result}\n")
 }
 
 fn overlay_report(result: &Value) -> String {
@@ -4146,6 +4397,163 @@ bbbbbbbb  logs -- pane 2 of 2
 
         let _ = std::fs::remove_file(&link_path);
         let _ = std::fs::remove_file(&target_file);
+    }
+
+    #[test]
+    fn test_review_subcommands_and_options_parsed_and_rendered() {
+        // review open
+        let opts_open = parse(&[
+            "review".into(),
+            "open".into(),
+            "/tmp/my-worktree".into(),
+            "--base".into(),
+            "origin/main".into(),
+            "--target-pane".into(),
+            "pane-dest-123".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_open.cmd, "review");
+        assert_eq!(opts_open.args["subcommand"], "open");
+        assert_eq!(opts_open.args["worktree"], "/tmp/my-worktree");
+        assert_eq!(opts_open.args["base"], "origin/main");
+        assert_eq!(opts_open.args["target_pane"], "pane-dest-123");
+
+        // review status open
+        let status_val = json!({
+            "id": "pane-1",
+            "open": true,
+            "task": "feature-abc",
+            "base": "main",
+            "files_count": 3,
+            "comments_count": 2,
+            "target": "pane-agent-456"
+        });
+        let rep_status = render("review", &status_val);
+        assert!(rep_status.contains("Diff review active on pane pane-1:"));
+        assert!(rep_status.contains("Worktree/Task: feature-abc"));
+        assert!(rep_status.contains("Changed files: 3"));
+        assert!(rep_status.contains("Comments:      2"));
+        assert!(rep_status.contains("Target pane:   pane-agent-456"));
+
+        // review status closed
+        let rep_status_closed = render("review", &json!({"id": "pane-1", "open": false}));
+        assert_eq!(rep_status_closed, "No active diff review on pane pane-1.\n");
+
+        // review files
+        let opts_files = parse(&["review".into(), "files".into()]).unwrap();
+        assert_eq!(opts_files.cmd, "review");
+        assert_eq!(opts_files.args["subcommand"], "files");
+
+        let files_val = json!({
+            "id": "pane-1",
+            "task": "feature-abc",
+            "base": "main",
+            "files": [
+                { "path": "src/main.rs", "status": "modified", "insertions": 10, "deletions": 2 },
+                { "path": "src/lib.rs", "status": "added", "insertions": 45, "deletions": 0 }
+            ]
+        });
+        let rep_files = render("review", &files_val);
+        assert!(rep_files.contains("Changed files in review 'feature-abc' against 'main' (2):"));
+        assert!(rep_files.contains("M  src/main.rs (+10, -2)"));
+        assert!(rep_files.contains("A  src/lib.rs (+45, -0)"));
+
+        // review diff
+        let opts_diff = parse(&["review".into(), "diff".into(), "src/main.rs".into()]).unwrap();
+        assert_eq!(opts_diff.cmd, "review");
+        assert_eq!(opts_diff.args["subcommand"], "diff");
+        assert_eq!(opts_diff.args["file"], "src/main.rs");
+
+        let patch_val = json!({
+            "id": "pane-1",
+            "task": "feature-abc",
+            "patch": "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"
+        });
+        let rep_diff = render("review", &patch_val);
+        assert!(rep_diff.contains("--- a/src/main.rs"));
+        assert!(rep_diff.contains("+new"));
+
+        // review comment add
+        let opts_add = parse(&[
+            "review".into(),
+            "comment".into(),
+            "add".into(),
+            "--file".into(),
+            "src/main.rs".into(),
+            "--line".into(),
+            "42".into(),
+            "Fix this typo please".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_add.cmd, "review");
+        assert_eq!(opts_add.args["subcommand"], "comment");
+        assert_eq!(opts_add.args["action"], "add");
+        assert_eq!(opts_add.args["file"], "src/main.rs");
+        assert_eq!(opts_add.args["line"], 42);
+        assert_eq!(opts_add.args["text"], "Fix this typo please");
+
+        let rep_add = render(
+            "review",
+            &json!({
+                "id": "pane-1",
+                "comment_id": "c-123",
+                "file": "src/main.rs",
+                "line": 42
+            }),
+        );
+        assert_eq!(rep_add, "Added comment c-123 on src/main.rs:42.\n");
+
+        // review comment list
+        let comments_val = json!({
+            "id": "pane-1",
+            "comments": [
+                { "id": "c-1", "file": "src/main.rs", "line": 10, "text": "First comment" },
+                { "id": "c-2", "file": "src/lib.rs", "line": 20, "text": "Second comment" }
+            ]
+        });
+        let rep_comments = render("review", &comments_val);
+        assert!(rep_comments.contains("Review comments (2):"));
+        assert!(rep_comments.contains("[c-1] src/main.rs:10: First comment"));
+        assert!(rep_comments.contains("[c-2] src/lib.rs:20: Second comment"));
+
+        // review comment remove & clear
+        let rep_remove = render("review", &json!({"id": "pane-1", "removed": true}));
+        assert_eq!(rep_remove, "Removed review comment.\n");
+
+        let rep_clear = render("review", &json!({"id": "pane-1", "cleared": true}));
+        assert_eq!(rep_clear, "Cleared all review comments.\n");
+
+        // review send
+        let opts_send = parse(&[
+            "review".into(),
+            "send".into(),
+            "--target-pane".into(),
+            "pane-agent-1".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_send.cmd, "review");
+        assert_eq!(opts_send.args["subcommand"], "send");
+        assert_eq!(opts_send.args["target_pane"], "pane-agent-1");
+
+        let rep_send = render(
+            "review",
+            &json!({
+                "id": "pane-rev",
+                "target": "pane-agent-1",
+                "sent": true,
+                "message": "# Diff Review Feedback\n- src/main.rs:10: First comment"
+            }),
+        );
+        assert!(rep_send.contains("Sent diff review feedback from pane pane-rev to pane pane-agent-1."));
+        assert!(rep_send.contains("# Diff Review Feedback"));
+
+        // review close
+        let opts_close = parse(&["review".into(), "close".into()]).unwrap();
+        assert_eq!(opts_close.cmd, "review");
+        assert_eq!(opts_close.args["subcommand"], "close");
+
+        let rep_close = render("review", &json!({"id": "pane-1", "closed": true}));
+        assert_eq!(rep_close, "Closed diff review on pane pane-1.\n");
     }
 }
 
