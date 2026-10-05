@@ -316,6 +316,65 @@ public enum DocumentRenderer {
         }
     }
 
+    /// Renders a sandboxed error HTML document with strict CSP and theme styling.
+    public static func renderSafeErrorHTML(title: String, message: String, theme: TerminalTheme?) -> String {
+        let escTitle = escapeHTML(title)
+        let escMessage = escapeHTML(message)
+        let css = cssVariables(for: theme)
+
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+          <style>
+            \(css)
+            body {
+              font-family: var(--tako-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+              background-color: var(--tako-bg, #1a1a1a);
+              color: var(--tako-fg, #e0e0e0);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 24px;
+              box-sizing: border-box;
+              text-align: center;
+            }
+            .error-card {
+              max-width: 480px;
+              padding: 24px;
+              border: 1px solid rgba(229, 83, 75, 0.4);
+              border-radius: 8px;
+              background: rgba(229, 83, 75, 0.08);
+            }
+            h2 {
+              color: var(--tako-color-9, #ff7b72);
+              margin-top: 0;
+              margin-bottom: 12px;
+              font-size: 18px;
+            }
+            p {
+              color: var(--tako-fg, #cccccc);
+              margin: 0;
+              font-size: 14px;
+              line-height: 1.5;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="error-card">
+            <h2>\(escTitle)</h2>
+            <p>\(escMessage)</p>
+          </div>
+        </body>
+        </html>
+        """
+    }
+
     // MARK: - Helpers
 
     public static func escapeHTML(_ s: String) -> String {

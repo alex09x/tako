@@ -30,7 +30,9 @@ public final class OverlayStore: ObservableObject {
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
     private var fileDescriptors: [UUID: Int32] = [:]
 
-    public init() {}
+    public init() {
+        NetworkSandbox.shared.warmUp()
+    }
 
     /// Resets all overlays and cleans up file watchers (for tests/teardown).
     public func reset() {

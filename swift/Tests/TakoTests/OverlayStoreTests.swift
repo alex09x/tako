@@ -187,4 +187,41 @@ import Testing
             try store.openOverlay(paneId: UUID(), path: fakePath)
         }
     }
+
+    @Test func testHTMLLoadPathAlwaysReceivesCSPAndRejectsUnsafeFallback() {
+        // 1. Untrusted HTML document containing remote subresources
+        let untrustedHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head><title>Untrusted</title></head>
+        <body>
+          <img src="https://attacker.com/leak.png">
+          <script src="https://attacker.com/exploit.js"></script>
+        </body>
+        </html>
+        """
+        let styled = DocumentRenderer.injectThemeAndCSP(into: untrustedHTML, theme: nil)
+        #expect(styled.contains("<meta http-equiv=\"Content-Security-Policy\""))
+        #expect(styled.contains("default-src 'none'"))
+        #expect(styled.contains("script-src 'none'"))
+        #expect(styled.contains("connect-src 'none'"))
+
+        // 2. Fallback safe error HTML generation on decoding failure
+        let errorHTML = DocumentRenderer.renderSafeErrorHTML(
+            title: "Decoding Error",
+            message: "Unable to read HTML file with supported text encodings.",
+            theme: nil
+        )
+        #expect(errorHTML.contains("<meta http-equiv=\"Content-Security-Policy\""))
+        #expect(errorHTML.contains("default-src 'none'"))
+        #expect(errorHTML.contains("Decoding Error"))
+        #expect(errorHTML.contains("Unable to read HTML file"))
+
+        // 3. Network block rules verify regex pattern
+        #expect(NetworkSandbox.blockRulesJSON.contains("^https://"))
+        #expect(NetworkSandbox.blockRulesJSON.contains("^http://"))
+        #expect(NetworkSandbox.blockRulesJSON.contains("^wss://"))
+        #expect(NetworkSandbox.blockRulesJSON.contains("^ws://"))
+        #expect(NetworkSandbox.blockRulesJSON.contains("^ftp://"))
+    }
 }
