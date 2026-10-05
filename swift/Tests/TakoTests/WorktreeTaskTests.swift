@@ -287,4 +287,44 @@ import TakoKit
         #expect(finishResp["finished"]?.bool == true)
         #expect(finishResp["archived"]?.bool == true)
     }
+
+    @Test func testLargeGitOutputDoesNotDeadlockPipeBuffer() throws {
+        let fm = FileManager.default
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tako_deadlock_test_\(UUID().uuidString)")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        _ = GitWorktreeHelper.runGit(["init", "-b", "main"], in: tempDir.path)
+        _ = GitWorktreeHelper.runGit(["config", "user.name", "Tako Test"], in: tempDir.path)
+        _ = GitWorktreeHelper.runGit(["config", "user.email", "test@tako.local"], in: tempDir.path)
+
+        let initialFile = tempDir.appendingPathComponent("README.md")
+        try "Initial".write(to: initialFile, atomically: true, encoding: .utf8)
+        _ = GitWorktreeHelper.runGit(["add", "README.md"], in: tempDir.path)
+        _ = GitWorktreeHelper.runGit(["commit", "-m", "Initial commit"], in: tempDir.path)
+
+        let store = WorktreeTaskStore(isTesting: true)
+        let manager = WorktreeTaskManager(store: store)
+
+        let taskInfo = try manager.createTask(name: "large-changeset", projectPath: tempDir.path, target: .tab)
+
+        // Generate > 1,500 modified/untracked files to exceed macOS 64KB kernel pipe buffer
+        let worktreeURL = URL(fileURLWithPath: taskInfo.worktreePath)
+        for i in 1...1500 {
+            let fileURL = worktreeURL.appendingPathComponent("file_with_a_moderately_long_path_name_\(i).txt")
+            try "sample content".write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+
+        // inspectStatus invokes `git status --porcelain`, which produces > 75KB of output.
+        // Before the fix, this would permanently deadlock waiting for process exit before reading pipe handles.
+        let status = GitWorktreeHelper.inspectStatus(worktreePath: taskInfo.worktreePath, baseBranch: "main")
+        #expect(status.hasUncommitted == true)
+        #expect(status.changedFiles >= 1500)
+
+        let liveStatus = try manager.status(name: "large-changeset", projectPath: tempDir.path)
+        #expect(liveStatus.hasUncommitted == true)
+        #expect(liveStatus.changedFiles >= 1500)
+    }
 }
+

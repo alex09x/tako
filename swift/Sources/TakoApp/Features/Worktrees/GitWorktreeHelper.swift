@@ -33,11 +33,35 @@ enum GitWorktreeHelper {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["GIT_ASKPASS"] = "/bin/echo"
+        process.environment = env
+
         do {
             try process.run()
+
+            // Drain stdout and stderr concurrently on background queues to avoid
+            // deadlocking when git output exceeds the 64KB kernel pipe buffer capacity.
+            var outData = Data()
+            var errData = Data()
+            let group = DispatchGroup()
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
             process.waitUntilExit()
-            let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            group.wait()
+
             let stdout = String(data: outData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let stderr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return GitResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
