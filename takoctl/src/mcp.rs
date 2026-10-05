@@ -372,7 +372,7 @@ pub fn all_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "tako_overlay_open",
-            description: "Display an interactive HTML, Markdown, unified diff, image, or PDF document in an overlay above or split beside a pane.",
+            description: "Display an interactive HTML, Markdown, unified diff, image, or PDF document in an overlay above or split beside a pane (using 'split' also requires 'layout' capability scope).",
             required_scopes: &[CapabilityScope::Overlay],
             input_schema: json!({
                 "type": "object",
@@ -384,7 +384,7 @@ pub fn all_tools() -> Vec<McpTool> {
                     "split": {
                         "type": "string",
                         "enum": ["right", "left", "down", "up"],
-                        "description": "Optional split direction to open overlay in a split pane beside target"
+                        "description": "Optional split direction to open overlay in a split pane beside target (requires 'layout' capability scope)"
                     },
                     "type": {
                         "type": "string",
@@ -581,8 +581,23 @@ impl McpServer {
             }
         };
 
+        // Determine required scopes for this invocation
+        let mut required_scopes: Vec<CapabilityScope> = tool.required_scopes.to_vec();
+
+        // tako_overlay_open with split creates a new pane, requiring 'layout' scope
+        if name == "tako_overlay_open" {
+            let requested_split = match args.get("split") {
+                Some(Value::String(s)) => !s.trim().is_empty(),
+                Some(Value::Null) | None => false,
+                Some(_) => true,
+            };
+            if requested_split && !required_scopes.contains(&CapabilityScope::Layout) {
+                required_scopes.push(CapabilityScope::Layout);
+            }
+        }
+
         // G1 Capability check
-        for &req_scope in tool.required_scopes {
+        for req_scope in required_scopes {
             if !self.capabilities.contains(req_scope) {
                 return json!({
                     "content": [
@@ -1160,4 +1175,61 @@ mod tests {
         assert_eq!(req_status["cmd"], "overlay");
         assert_eq!(req_status["args"]["subcommand"], "status");
     }
+
+    #[test]
+    fn test_mcp_overlay_split_requires_layout() {
+        let overlay_only = Capabilities::parse("overlay").unwrap();
+        let server_overlay = McpServer::new("/tmp/test.sock".into(), overlay_only, Some("pane-1".into()));
+
+        // 1. Overlay-only can open overlay without split (passes capability check, fails on test socket)
+        let open_no_split = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_overlay_open",
+                "arguments": {
+                    "file": "/tmp/test.md"
+                }
+            }
+        })
+        .to_string();
+
+        let resp1 = server_overlay.handle_message(&open_no_split).expect("response");
+        assert_eq!(resp1["result"]["isError"], true);
+        let text1 = resp1["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(!text1.contains("refusal:"));
+        assert!(text1.contains("Tako socket error:"));
+
+        // 2. Overlay-only is refused when requesting split because layout capability is required
+        let open_with_split = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_overlay_open",
+                "arguments": {
+                    "file": "/tmp/test.md",
+                    "split": "right"
+                }
+            }
+        })
+        .to_string();
+
+        let resp2 = server_overlay.handle_message(&open_with_split).expect("response");
+        assert_eq!(resp2["result"]["isError"], true);
+        let text2 = resp2["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text2.contains("refusal: tool 'tako_overlay_open' requires 'layout' capability scope"));
+        assert!(text2.contains("active scopes: [overlay]"));
+
+        // 3. Server with both overlay and layout accepts open with split (passes capability check, fails on test socket)
+        let both_caps = Capabilities::parse("overlay,layout").unwrap();
+        let server_both = McpServer::new("/tmp/test.sock".into(), both_caps, Some("pane-1".into()));
+        let resp3 = server_both.handle_message(&open_with_split).expect("response");
+        assert_eq!(resp3["result"]["isError"], true);
+        let text3 = resp3["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(!text3.contains("refusal:"));
+        assert!(text3.contains("Tako socket error:"));
+    }
 }
+
