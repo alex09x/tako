@@ -287,7 +287,7 @@ struct SessionSidebarView: View {
                             .foregroundColor(Color(nsColor: Palette.dim))
                     }
                     .buttonStyle(.plain)
-                    .disabled(item.index <= 0)
+                    .disabled(!item.canMoveUp)
 
                     Button(action: { store.moveTab(item: item, delta: 1, in: hostingWindow) }) {
                         Image(systemName: "chevron.down")
@@ -295,7 +295,7 @@ struct SessionSidebarView: View {
                             .foregroundColor(Color(nsColor: Palette.dim))
                     }
                     .buttonStyle(.plain)
-                    .disabled(item.index >= items.count - 1)
+                    .disabled(!item.canMoveDown)
                 }
             }
 
@@ -450,10 +450,11 @@ struct SessionSidebarView: View {
     private var footerView: some View {
         HStack(spacing: 8) {
             Button(action: {
-                if let win = hostingWindow {
+                if let win = hostingWindow,
+                   let surface = store.surfaces(in: win).first {
                     NotificationCenter.default.post(
                         name: Tako.Notification.takoNewTab,
-                        object: win
+                        object: surface
                     )
                 }
             }) {

@@ -34,11 +34,16 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let listeningPorts: [Int]?
     let unreadCount: Int
     let needsAttention: Bool
+    let totalCount: Int
+
+    var canMoveUp: Bool { index > 0 }
+    var canMoveDown: Bool { index < totalCount - 1 }
 
     init(
         id: String,
         surfaceId: UUID? = nil,
         index: Int,
+        totalCount: Int = 1,
         isSelected: Bool,
         title: String,
         status: Tako.PaneStatus = .idle,
@@ -58,6 +63,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.id = id
         self.surfaceId = surfaceId
         self.index = index
+        self.totalCount = totalCount
         self.isSelected = isSelected
         self.title = title
         self.status = status
@@ -146,11 +152,11 @@ enum LocalGitInspection {
         process.environment = ["GIT_OPTIONAL_LOCKS": "0"]
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             return !data.isEmpty
         } catch {
             return false
@@ -169,11 +175,11 @@ enum LocalPortInspection {
         process.arguments = ["-a", "-iTCP", "-sTCP:LISTEN", "-p", "\(pid)", "-Fn"]
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             guard let output = String(data: data, encoding: .utf8) else { return [] }
             var ports: Set<Int> = []
             for line in output.split(separator: "\n") {

@@ -59,9 +59,15 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    // In-memory caches to avoid redundant filesystem/process inspections during rendering.
-    private var gitCache: [String: LocalGitInspection.GitInfo] = [:]
-    private var portsCache: [Int: [Int]] = [:]
+    private struct CacheEntry<T> {
+        let value: T
+        let timestamp: Date
+    }
+
+    // In-memory TTL caches to avoid redundant filesystem/process inspections during rendering.
+    private var gitCache: [String: CacheEntry<LocalGitInspection.GitInfo?>] = [:]
+    private var portsCache: [Int: CacheEntry<[Int]>] = [:]
+    private let cacheTTL: TimeInterval = 2.0
 
     private var surfaceSubscriptions: Set<AnyCancellable> = []
     private var subscribedSurfaceIds: Set<UUID> = []
@@ -72,6 +78,12 @@ final class SessionSidebarStore: ObservableObject {
         self.optInGit = defaults.bool(forKey: Self.optInGitKey)
         self.optInPorts = defaults.bool(forKey: Self.optInPortsKey)
         self.descriptions = defaults.dictionary(forKey: Self.descriptionsKey) as? [String: String] ?? [:]
+    }
+
+    /// Invalidates in-memory inspection caches.
+    func invalidateCaches() {
+        gitCache.removeAll()
+        portsCache.removeAll()
     }
 
     /// Dynamically binds to live surfaces in the tab group to observe status, progress, elapsed, title, and pwd changes in real time.
@@ -145,13 +157,14 @@ final class SessionSidebarStore: ObservableObject {
             var gitBranch: String?
             var gitDirty: Bool?
             if optInGit, let dir = pwd, !dir.isEmpty {
-                if let cached = gitCache[dir] {
-                    gitBranch = cached.branch
-                    gitDirty = cached.isDirty
-                } else if let inspected = LocalGitInspection.inspect(directory: dir) {
-                    gitCache[dir] = inspected
-                    gitBranch = inspected.branch
-                    gitDirty = inspected.isDirty
+                if let cached = gitCache[dir], Date().timeIntervalSince(cached.timestamp) < cacheTTL {
+                    gitBranch = cached.value?.branch
+                    gitDirty = cached.value?.isDirty
+                } else {
+                    let inspected = LocalGitInspection.inspect(directory: dir)
+                    gitCache[dir] = CacheEntry(value: inspected, timestamp: Date())
+                    gitBranch = inspected?.branch
+                    gitDirty = inspected?.isDirty
                 }
             }
 
@@ -160,11 +173,11 @@ final class SessionSidebarStore: ObservableObject {
             if optInPorts, let pty = surface?.pty {
                 let pid = pty.foregroundPID ?? Int(pty.child)
                 if pid > 0 {
-                    if let cached = portsCache[pid] {
-                        ports = cached
+                    if let cached = portsCache[pid], Date().timeIntervalSince(cached.timestamp) < cacheTTL {
+                        ports = cached.value
                     } else {
                         let inspected = LocalPortInspection.inspectListeningPorts(pid: pid)
-                        portsCache[pid] = inspected
+                        portsCache[pid] = CacheEntry(value: inspected, timestamp: Date())
                         ports = inspected
                     }
                 }
@@ -194,6 +207,7 @@ final class SessionSidebarStore: ObservableObject {
                 id: id,
                 surfaceId: surfaceId,
                 index: index,
+                totalCount: windows.count,
                 isSelected: isSelected,
                 title: title,
                 status: status,
@@ -285,7 +299,7 @@ final class SessionSidebarStore: ObservableObject {
         return raw
     }
 
-    private func surfaces(in window: NSWindow) -> [Tako.SurfaceView] {
+    func surfaces(in window: NSWindow) -> [Tako.SurfaceView] {
         func collect(_ view: NSView, into list: inout [Tako.SurfaceView]) {
             if let surface = view as? Tako.SurfaceView {
                 list.append(surface)

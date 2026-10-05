@@ -306,4 +306,51 @@ struct SessionSidebarTests {
         #expect(updatedItems[1].status == .error)
         #expect(updatedItems[1].needsAttention)
     }
+
+    @Test func filteredReorderControlsUseFullGroupBounds() {
+        // When there are 5 tabs total, but a filter only matches 2 tabs (e.g. index 0 and index 3)
+        let itemFirst = SessionSidebarItem(id: "1", index: 0, totalCount: 5, isSelected: false, title: "Tab 1")
+        #expect(!itemFirst.canMoveUp)
+        #expect(itemFirst.canMoveDown)
+
+        let itemMiddle = SessionSidebarItem(id: "4", index: 3, totalCount: 5, isSelected: false, title: "Tab 4")
+        #expect(itemMiddle.canMoveUp)
+        #expect(itemMiddle.canMoveDown) // In a 2-item filtered list, index 3 must still be allowed to move down
+
+        let itemLast = SessionSidebarItem(id: "5", index: 4, totalCount: 5, isSelected: false, title: "Tab 5")
+        #expect(itemLast.canMoveUp)
+        #expect(!itemLast.canMoveDown)
+    }
+
+    @Test func gitMetadataRefreshesAfterCacheInvalidation() throws {
+        let repoURL = try createTestGitRepository(branch: "feature/first-branch")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        store.optInGit = true
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let surf = Tako.SurfaceView(frame: .zero)
+        surf.pwd = repoURL.path
+        win.contentView = surf
+
+        let items1 = store.items(for: win)
+        #expect(items1[0].gitBranch == "feature/first-branch")
+
+        // Switch branch in repository
+        let headFile = repoURL.appendingPathComponent(".git/HEAD")
+        try "ref: refs/heads/feature/second-branch\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        // Cache hit within TTL
+        let itemsCached = store.items(for: win)
+        #expect(itemsCached[0].gitBranch == "feature/first-branch")
+
+        // Invalidate cache
+        store.invalidateCaches()
+
+        // Inspects new branch
+        let itemsUpdated = store.items(for: win)
+        #expect(itemsUpdated[0].gitBranch == "feature/second-branch")
+    }
 }
