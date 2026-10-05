@@ -522,7 +522,7 @@ without the tab bar of one getting in the way of another.
 Done when saving and re-applying a layout reproduces it exactly, and an unapproved project layout
 never starts a program.
 
-### [ ] C3. Project actions
+### [x] C3. Project actions
 
 Project-local actions (build, test, start dev server, start an agent) defined in a project file
 and shown in the command palette, trusted on first use and re-confirmed when they change. Each
