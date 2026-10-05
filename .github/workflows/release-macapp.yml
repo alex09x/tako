@@ -52,10 +52,10 @@ jobs:
           done
           [ -z "$missing" ] || { echo "missing secrets:$missing"; exit 1; }
 
-      - name: Setup Rust stable
+      - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           targets: aarch64-apple-darwin
 
       - name: Install the Developer ID certificate and notarization credentials
@@ -125,6 +125,8 @@ jobs:
           gh release upload "$RELEASE_TAG" \
             "target/macapp/Tako-${version}.dmg" \
             "target/macapp/Tako-${version}.zip" \
+            "target/macapp/Tako-${version}-sbom.spdx.json" \
+            "target/macapp/Tako-${version}-sbom.cdx.json" \
             --clobber
 
       - name: Update Homebrew Tap (if TAP_TOKEN available)
