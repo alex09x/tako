@@ -71,8 +71,10 @@ public final class CommandHistoryStore: @unchecked Sendable {
         startedAt: Date,
         duration: TimeInterval?,
         exitCode: Int32?,
-        paneId: UUID?
+        paneId: UUID?,
+        isSecure: Bool = false
     ) {
+        guard !isSecure else { return }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 

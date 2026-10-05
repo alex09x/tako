@@ -135,6 +135,10 @@ extension Tako.SurfaceView {
     /// Opens the find bar with `needle`, or with the shared find pasteboard's
     /// needle when there is none.
     func startSearch(needle: String?) {
+        // Secure-input sessions are strictly excluded from search (G5)
+        guard !self.isSecureInput && !SecureInput.shared.isSecure(for: self) else {
+            return
+        }
         if let searchState {
             if let needle { searchState.needle = needle }
             NotificationCenter.default.post(name: .takoSearchFocus, object: self)

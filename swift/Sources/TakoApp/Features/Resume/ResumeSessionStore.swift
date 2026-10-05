@@ -32,6 +32,29 @@ public struct ResumeSessionRecord: Codable, Equatable, Sendable {
         self.recordedAt = recordedAt
         self.isImported = isImported
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case argv, cwd, env, recordedAt, isImported
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.argv = try container.decode([String].self, forKey: .argv)
+        self.cwd = try container.decode(String.self, forKey: .cwd)
+        let rawEnv = try container.decodeIfPresent([String: String].self, forKey: .env) ?? [:]
+        self.env = ResumeSessionStore.sanitizeEnvironment(rawEnv)
+        self.recordedAt = try container.decodeIfPresent(Date.self, forKey: .recordedAt) ?? Date()
+        self.isImported = try container.decodeIfPresent(Bool.self, forKey: .isImported) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(argv, forKey: .argv)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encode(ResumeSessionStore.sanitizeEnvironment(env), forKey: .env)
+        try container.encode(recordedAt, forKey: .recordedAt)
+        try container.encode(isImported, forKey: .isImported)
+    }
 }
 
 /// Stores user-approved command prefixes for directories (C6).
@@ -157,15 +180,51 @@ public final class ResumeSessionStore {
     public nonisolated static func isSecretKey(_ key: String) -> Bool {
         let upper = key.uppercased()
         let forbidden = [
-            "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "AUTH",
-            "CREDENTIAL", "PRIVATE", "SIGNING", "ACCESS", "API",
+            "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE",
+            "AUTH", "CREDENTIAL", "PRIVATE", "SIGNING", "ACCESS", "API",
+            "CERT", "BEARER", "SALT", "DSN", "CONN_STRING", "CONNECTION_STRING",
+            "CONNSTRING",
         ]
-        return forbidden.contains { upper.contains($0) }
+        if forbidden.contains(where: { upper.contains($0) }) {
+            return true
+        }
+        let parts = upper.components(separatedBy: CharacterSet.alphanumerics.inverted)
+        if parts.contains("PASS") || parts.contains("PWD") || parts.contains("DSN") {
+            return true
+        }
+        // Known credential-bearing connection strings: DATABASE_URL, REDIS_URL, MONGO_URI, AMQP_URL, etc.
+        let connPrefixes = [
+            "DATABASE", "REDIS", "MONGO", "MONGODB", "POSTGRES", "POSTGRESQL",
+            "MYSQL", "AMQP", "RABBITMQ", "SQL", "DB", "STORAGE", "SENTRY",
+            "CLICKHOUSE", "CASSANDRA", "MEMCACHED", "ELASTIC", "NEO4J",
+        ]
+        if connPrefixes.contains(where: { upper.contains($0) }) && (upper.contains("URL") || upper.contains("URI")) {
+            return true
+        }
+        if upper.hasSuffix("_URL") || upper.hasSuffix("_URI") || upper.hasSuffix("_DSN") {
+            if connPrefixes.contains(where: { upper.contains($0) }) {
+                return true
+            }
+        }
+        return false
     }
 
-    /// Strips any environment variables whose names indicate secrets.
+    /// Checks if an environment variable value contains embedded credentials (e.g. URI userinfo or private key header).
+    public nonisolated static func isSecretValue(_ value: String) -> Bool {
+        if value.contains("://") && value.contains("@") {
+            return true
+        }
+        if value.hasPrefix("-----BEGIN ") {
+            return true
+        }
+        return false
+    }
+
+    /// Strips any environment variables whose names or values indicate secrets.
     public nonisolated static func sanitizeEnvironment(_ env: [String: String]) -> [String: String] {
-        env.filter { !isSecretKey($0.key) }
+        env.filter { key, value in
+            !isSecretKey(key) && !isSecretValue(value)
+        }
     }
 
     /// Safely quotes an argv token for POSIX shell execution so that metacharacters
@@ -188,8 +247,14 @@ public final class ResumeSessionStore {
     }
 
     /// Records how to resume what runs in a pane.
-    public func set(record: ResumeSessionRecord, for id: UUID) {
-        inMemoryRecords[id] = record
+    public func set(record: ResumeSessionRecord, for id: UUID, isSecure: Bool = false) {
+        guard !isSecure else {
+            clear(for: id)
+            return
+        }
+        var sanitizedRecord = record
+        sanitizedRecord.env = Self.sanitizeEnvironment(record.env)
+        inMemoryRecords[id] = sanitizedRecord
 
         // Persist to disk
         try? FileManager.default.createDirectory(
@@ -197,7 +262,7 @@ public final class ResumeSessionStore {
             attributes: [.posixPermissions: 0o700]
         )
         let fileUrl = url(for: id)
-        if let data = try? JSONEncoder().encode(record) {
+        if let data = try? JSONEncoder().encode(sanitizedRecord) {
             try? data.write(to: fileUrl, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileUrl.path)
         }
@@ -205,15 +270,43 @@ public final class ResumeSessionStore {
 
     /// Reads the recorded resume configuration for a pane.
     public func record(for id: UUID) -> ResumeSessionRecord? {
-        if let cached = inMemoryRecords[id] {
+        if var cached = inMemoryRecords[id] {
+            let sanitized = Self.sanitizeEnvironment(cached.env)
+            if sanitized != cached.env {
+                cached.env = sanitized
+                inMemoryRecords[id] = cached
+            }
             return cached
         }
         let fileUrl = url(for: id)
         guard let data = try? Data(contentsOf: fileUrl),
-              let decoded = try? JSONDecoder().decode(ResumeSessionRecord.self, from: data)
+              var decoded = try? JSONDecoder().decode(ResumeSessionRecord.self, from: data)
         else {
             return nil
         }
+
+        // Detect if persisted file on disk had secret keys or values that were stripped
+        var needsDiskRewrite = false
+        if let rawObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let rawEnv = rawObj["env"] as? [String: String] {
+            let sanitized = Self.sanitizeEnvironment(rawEnv)
+            if sanitized != rawEnv {
+                needsDiskRewrite = true
+            }
+        }
+        let sanitized = Self.sanitizeEnvironment(decoded.env)
+        if sanitized != decoded.env {
+            decoded.env = sanitized
+            needsDiskRewrite = true
+        }
+
+        if needsDiskRewrite {
+            if let updatedData = try? JSONEncoder().encode(decoded) {
+                try? updatedData.write(to: fileUrl, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileUrl.path)
+            }
+        }
+
         inMemoryRecords[id] = decoded
         return decoded
     }

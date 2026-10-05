@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
@@ -144,6 +154,9 @@ final class SessionSnapshotSaver {
     let store: SessionSnapshotStore
     /// The parse count each tab had when it was last written.
     private var written: [UUID: UInt64] = [:]
+    /// Monotonic token per pane to ensure out-of-order or stale async saves never commit.
+    private var activeTokens: [UUID: UInt64] = [:]
+    private let writeQueue = DispatchQueue(label: "codes.prod.tako.snapshots.writer", qos: .utility)
     private var timer: Timer?
 
     nonisolated init(store: SessionSnapshotStore = .shared) {
@@ -154,7 +167,7 @@ final class SessionSnapshotSaver {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.save(surfaces(), settings: settings())
+                self?.save(surfaces(), settings: settings(), asynchronous: true)
             }
         }
     }
@@ -167,15 +180,23 @@ final class SessionSnapshotSaver {
     /// Writes the tabs that changed since their last save and removes the
     /// files of tabs that are gone. With saving off, or while Secure
     /// Keyboard Entry is on, nothing is written and saved tabs are removed.
-    func save(_ surfaces: [Tako.SurfaceView], settings: Settings, now: Date = Date()) {
+    func save(_ surfaces: [Tako.SurfaceView], settings: Settings, now: Date = Date(), asynchronous: Bool = false) {
         guard settings.enabled, !settings.secureInput else {
             store.removeAll()
             written = [:]
+            activeTokens = [:]
             return
         }
         let share = surfaces.isEmpty ? 0 : settings.limit / UInt64(surfaces.count)
         var live = Set<UUID>()
         for surface in surfaces {
+            // Secure-input sessions are strictly excluded from persisted snapshots (G5)
+            if SecureInput.shared.isSecure(for: surface) || surface.isSecureInput {
+                store.remove(id: surface.id)
+                written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
+                continue
+            }
             live.insert(surface.id)
             // Zero means "no limit" to the engine, never what no room means here.
             // The checkpoint gets what is left after the file's header.
@@ -183,6 +204,7 @@ final class SessionSnapshotSaver {
             guard budget > 0 else {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
                 continue
             }
             // A file written under a bigger share (fewer tabs, a higher limit)
@@ -191,6 +213,7 @@ final class SessionSnapshotSaver {
             if let size = store.size(id: surface.id), size > share {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
             }
             switch surface.exportSnapshotState(maxBytes: budget, unlessGeneration: written[surface.id]) {
             case .unchanged:
@@ -200,16 +223,47 @@ final class SessionSnapshotSaver {
                 // older screen than the one it had.
                 store.remove(id: surface.id)
                 written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
             case .exported(let checkpoint, let generation):
-                do {
-                    try store.write(SessionSnapshot(savedAt: now, checkpoint: checkpoint), id: surface.id)
-                    written[surface.id] = generation
-                } catch {
-                    written[surface.id] = nil
+                let surfaceId = surface.id
+                let token = (activeTokens[surfaceId] ?? 0) + 1
+                activeTokens[surfaceId] = token
+                if asynchronous {
+                    let currentStore = self.store
+                    writeQueue.async { [weak self] in
+                        let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                        Task { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            // Only commit if the captured token is still current (not superseded or invalidated)
+                            guard self.activeTokens[surfaceId] == token else { return }
+                            if let s = surfaces.first(where: { $0.id == surfaceId }) {
+                                if SecureInput.shared.isSecure(for: s) || s.isSecureInput {
+                                    self.store.remove(id: surfaceId)
+                                    self.written[surfaceId] = nil
+                                    return
+                                }
+                            }
+                            do {
+                                try currentStore.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                                self.written[surfaceId] = generation
+                            } catch {
+                                self.written[surfaceId] = nil
+                            }
+                        }
+                    }
+                } else {
+                    do {
+                        let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                        try store.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                        written[surfaceId] = generation
+                    } catch {
+                        written[surfaceId] = nil
+                    }
                 }
             }
         }
         store.removeAll(except: live)
         written = written.filter { live.contains($0.key) }
+        activeTokens = activeTokens.filter { live.contains($0.key) }
     }
 }

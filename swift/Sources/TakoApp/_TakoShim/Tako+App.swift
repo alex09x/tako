@@ -1989,6 +1989,9 @@ extension Tako {
         /// program asks for a synchronous reply. The engine locks itself; a
         /// read that lands mid-parse is caught by the next save.
         func exportSnapshotState(maxBytes: UInt64, unlessGeneration generation: UInt64?) -> SnapshotExport {
+            guard !self.isSecureInput && !SecureInput.shared.isSecure(for: self) else {
+                return .tooLarge
+            }
             let current = generationLock.withLock { contentGeneration }
             guard current != generation else { return .unchanged }
             guard let blob = try? core.checkpointExport(flags: 0, maxBytes: maxBytes) else { return .tooLarge }
@@ -2406,22 +2409,25 @@ extension Tako {
             if let started {
                 payload["started_at"] = .number(started.timeIntervalSince1970)
             }
-            let cmdText = lastCmd?.input ?? ""
+            let isSecure = self.isSecureInput || SecureInput.shared.isSecure(for: self)
+            let rawCmdText = lastCmd?.input ?? ""
+            let cmdText = isSecure ? "" : rawCmdText
             payload["command"] = .string(cmdText)
             if let cwd = lastCmd?.cwd ?? workingDirectory {
                 payload["cwd"] = .string(cwd)
             }
             publishEvent(type: "command_end", payload: payload)
 
-            // E9: Record finished command into history across sessions, obeying secure-input privacy
-            if !self.isSecureInput && !SecureInput.shared.enabled {
+            // E9: Record finished command into history across sessions, obeying secure-input privacy (G5)
+            if !isSecure {
                 CommandHistoryStore.shared.record(
-                    command: cmdText,
+                    command: rawCmdText,
                     cwd: lastCmd?.cwd ?? workingDirectory,
                     startedAt: started ?? Date(),
                     duration: dur,
                     exitCode: exitCode,
-                    paneId: self.id
+                    paneId: self.id,
+                    isSecure: false
                 )
             }
         }

@@ -145,10 +145,12 @@ public struct ExportedPane: Codable, Equatable {
 public struct ExportedResume: Codable, Equatable {
     public var argv: [String]
     public var cwd: String
+    public var env: [String: String]?
 
-    public init(argv: [String], cwd: String) {
+    public init(argv: [String], cwd: String, env: [String: String]? = nil) {
         self.argv = argv
         self.cwd = cwd
+        self.env = env.map { ResumeSessionStore.sanitizeEnvironment($0) }
     }
 }
 

@@ -260,6 +260,7 @@ public final class TakoConfigStorage {
     public var values: [String: String] = [:]
     public var keybindLines: [String] = []
     public var triggerLines: [String] = []
+    public var snapshotRedactionPatternLines: [String] = []
     public var errors: [String] = []
     /// The file `tako_config_load_file` last read, if any -- Config.init
     /// re-reads it to also feed `TakoCoreUI.TerminalTheme.parse`, since
@@ -304,6 +305,7 @@ public func tako_config_clone(_ config: tako_config_t?) -> tako_config_t? {
     clone.values = storage.values
     clone.keybindLines = storage.keybindLines
     clone.triggerLines = storage.triggerLines
+    clone.snapshotRedactionPatternLines = storage.snapshotRedactionPatternLines
     clone.errors = storage.errors
     return tako_config_t(raw: Unmanaged.passRetained(clone).toOpaque())
 }
@@ -406,6 +408,7 @@ let knownTakoConfigKeys: Set<String> = [
     "quick-terminal-animation-duration", "quick-terminal-autohide", "quick-terminal-space-behavior",
     "unfocused-split-opacity", "unfocused-split-fill", "custom-shader", "custom-shader-animation",
     "link-url", "palette", "safe-paste", "command-marks", "command-durations", "command-timestamps", "progress-style", "sticky-command-header", "editor", "trigger", "passive-regex-triggers", "clipboard-read",
+    "snapshot-redact-pattern", "snapshot-redaction-pattern",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.
@@ -441,6 +444,10 @@ func parseTakoConfigText(_ text: String, into storage: TakoConfigStorage) {
         }
         if key == "trigger" {
             storage.triggerLines.append(value)
+            continue
+        }
+        if key == "snapshot-redact-pattern" || key == "snapshot-redaction-pattern" {
+            storage.snapshotRedactionPatternLines.append(value)
             continue
         }
         guard knownTakoConfigKeys.contains(key) else {

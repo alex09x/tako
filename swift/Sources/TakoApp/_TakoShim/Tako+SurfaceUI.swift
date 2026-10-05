@@ -73,7 +73,8 @@ extension Tako {
                         isSecureInput: SecureInput.shared.isSecure(for: surfaceView) || surfaceView.isSecureInput
                     )
                 }
-                if let searchState = surfaceView.searchState {
+                if let searchState = surfaceView.searchState,
+                   !(SecureInput.shared.isSecure(for: surfaceView) || surfaceView.isSecureInput) {
                     HStack {
                         Spacer()
                         SurfaceSearchBar(surfaceView: surfaceView, searchState: searchState)
