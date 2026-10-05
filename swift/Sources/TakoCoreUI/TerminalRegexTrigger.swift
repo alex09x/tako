@@ -101,260 +101,371 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
             i += 1
         }
 
-        // 2. Tokenize atoms and quantifiers to analyze ambiguous overlapping repetitions
-        struct Atom {
-            enum Kind {
-                case literal(Character)
-                case dot
-                case shorthand(Character) // d, D, s, S, w, W
-                case charClass(String)
-                case anchor
-                case group
-            }
-            let kind: Kind
-            let raw: String
-            var isRepetition: Bool = false
-            var isNullable: Bool = false
+        // 2. Tokenize and analyze full grammar, recursively unpacking non-quantified groups
+        return analyzeGrammar(chars: chars, range: 0..<chars.count)
+    }
 
-            func canOverlap(with other: Atom) -> Bool {
-                switch (self.kind, other.kind) {
-                case (.anchor, _), (_, .anchor):
-                    return false
-                case (.dot, _), (_, .dot):
-                    return true
-                case (.literal(let c1), .literal(let c2)):
-                    return c1 == c2
-                case (.literal(let c), .shorthand(let s)), (.shorthand(let s), .literal(let c)):
-                    return shorthandMatches(s, char: c)
-                case (.shorthand(let s1), .shorthand(let s2)):
-                    return shorthandsOverlap(s1, s2)
-                case (.literal(let c), .charClass(let raw)), (.charClass(let raw), .literal(let c)):
-                    return charClassContains(raw: raw, char: c)
-                case (.charClass(let r1), .charClass(let r2)):
-                    if r1 == r2 { return true }
-                    return classesOverlap(r1, r2)
-                default:
-                    return true
-                }
-            }
+    private struct Atom {
+        enum Kind {
+            case literal(Character)
+            case dot
+            case shorthand(Character) // d, D, s, S, w, W
+            case charClass(String)
+            case anchor
+            case barrier
+        }
+        let kind: Kind
+        let raw: String
+        var isRepetition: Bool = false
+        var isNullable: Bool = false
 
-            private func shorthandMatches(_ s: Character, char: Character) -> Bool {
-                switch s {
-                case "d": return char.isNumber
-                case "D": return !char.isNumber
-                case "s": return char.isWhitespace
-                case "S": return !char.isWhitespace
-                case "w": return char.isLetter || char.isNumber || char == "_"
-                case "W": return !(char.isLetter || char.isNumber || char == "_")
-                default: return true
-                }
-            }
-
-            private func shorthandsOverlap(_ s1: Character, _ s2: Character) -> Bool {
-                if s1 == s2 { return true }
-                if (s1 == "d" && s2 == "D") || (s1 == "D" && s2 == "d") { return false }
-                if (s1 == "s" && s2 == "S") || (s1 == "S" && s2 == "s") { return false }
-                if (s1 == "w" && s2 == "W") || (s1 == "W" && s2 == "w") { return false }
-                if (s1 == "d" && s2 == "s") || (s1 == "s" && s2 == "d") { return false }
-                if (s1 == "w" && s2 == "s") || (s1 == "s" && s2 == "w") { return false }
+        func canOverlap(with other: Atom) -> Bool {
+            switch (self.kind, other.kind) {
+            case (.anchor, _), (_, .anchor):
+                return false
+            case (.barrier, _), (_, .barrier):
+                return false
+            case (.dot, _), (_, .dot):
                 return true
-            }
-
-            private func charClassContains(raw: String, char: Character) -> Bool {
-                guard raw.count >= 2 else { return true }
-                let inner = raw.dropFirst().dropLast()
-                let isNegated = inner.hasPrefix("^")
-                let content = isNegated ? inner.dropFirst() : inner
-                var matched = false
-
-                var idx = content.startIndex
-                while idx < content.endIndex {
-                    let c = content[idx]
-                    let next = content.index(after: idx)
-                    if next < content.endIndex && content[next] == "-" {
-                        let afterHyphen = content.index(after: next)
-                        if afterHyphen < content.endIndex {
-                            let endChar = content[afterHyphen]
-                            if c <= char && char <= endChar {
-                                matched = true
-                                break
-                            }
-                            idx = content.index(after: afterHyphen)
-                            continue
-                        }
-                    }
-                    if c == char {
-                        matched = true
-                        break
-                    }
-                    idx = content.index(after: idx)
-                }
-
-                return isNegated ? !matched : matched
-            }
-
-            private func classesOverlap(_ r1: String, _ r2: String) -> Bool {
-                if (r1.contains("0-9") && !r1.contains("^")) && (r2.contains("a-z") && !r2.contains("0-9") && !r2.contains("^")) {
-                    return false
-                }
+            case (.literal(let c1), .literal(let c2)):
+                return c1 == c2
+            case (.literal(let c), .shorthand(let s)), (.shorthand(let s), .literal(let c)):
+                return shorthandMatches(s, char: c)
+            case (.shorthand(let s1), .shorthand(let s2)):
+                return shorthandsOverlap(s1, s2)
+            case (.literal(let c), .charClass(let raw)), (.charClass(let raw), .literal(let c)):
+                return charClassContains(raw: raw, char: c)
+            case (.charClass(let r1), .charClass(let r2)):
+                if r1 == r2 { return true }
+                return classesOverlap(r1, r2)
+            default:
                 return true
             }
         }
 
-        var atoms: [Atom] = []
-        var p = 0
-        var repetitionCount = 0
+        private func shorthandMatches(_ s: Character, char: Character) -> Bool {
+            switch s {
+            case "d": return char.isNumber
+            case "D": return !char.isNumber
+            case "s": return char.isWhitespace
+            case "S": return !char.isWhitespace
+            case "w": return char.isLetter || char.isNumber || char == "_"
+            case "W": return !(char.isLetter || char.isNumber || char == "_")
+            default: return true
+            }
+        }
 
-        while p < chars.count {
+        private func shorthandsOverlap(_ s1: Character, _ s2: Character) -> Bool {
+            if s1 == s2 { return true }
+            if (s1 == "d" && s2 == "D") || (s1 == "D" && s2 == "d") { return false }
+            if (s1 == "s" && s2 == "S") || (s1 == "S" && s2 == "s") { return false }
+            if (s1 == "w" && s2 == "W") || (s1 == "W" && s2 == "w") { return false }
+            if (s1 == "d" && s2 == "s") || (s1 == "s" && s2 == "d") { return false }
+            if (s1 == "w" && s2 == "s") || (s1 == "s" && s2 == "w") { return false }
+            return true
+        }
+
+        private func charClassContains(raw: String, char: Character) -> Bool {
+            guard raw.count >= 2 else { return true }
+            let inner = raw.dropFirst().dropLast()
+            let isNegated = inner.hasPrefix("^")
+            let content = isNegated ? inner.dropFirst() : inner
+            var matched = false
+
+            var idx = content.startIndex
+            while idx < content.endIndex {
+                let c = content[idx]
+                let next = content.index(after: idx)
+                if next < content.endIndex && content[next] == "-" {
+                    let afterHyphen = content.index(after: next)
+                    if afterHyphen < content.endIndex {
+                        let endChar = content[afterHyphen]
+                        if c <= char && char <= endChar {
+                            matched = true
+                            break
+                        }
+                        idx = content.index(after: afterHyphen)
+                        continue
+                    }
+                }
+                if c == char {
+                    matched = true
+                    break
+                }
+                idx = content.index(after: idx)
+            }
+
+            return isNegated ? !matched : matched
+        }
+
+        private func classesOverlap(_ r1: String, _ r2: String) -> Bool {
+            if (r1.contains("0-9") && !r1.contains("^")) && (r2.contains("a-z") && !r2.contains("0-9") && !r2.contains("^")) {
+                return false
+            }
+            return true
+        }
+    }
+
+    private static func analyzeGrammar(chars: [Character], range: Range<Int>) -> (isSafe: Bool, reason: String?) {
+        // Check for top-level '|' alternations within this range
+        var branches: [Range<Int>] = []
+        var branchStart = range.lowerBound
+        var depth = 0
+        var esc = false
+        var p = range.lowerBound
+
+        while p < range.upperBound {
+            let c = chars[p]
+            if esc {
+                esc = false
+            } else if c == "\\" {
+                esc = true
+            } else if c == "(" {
+                depth += 1
+            } else if c == ")" {
+                if depth > 0 { depth -= 1 }
+            } else if c == "[" {
+                p += 1
+                while p < range.upperBound && chars[p] != "]" {
+                    if chars[p] == "\\" { p += 1 }
+                    p += 1
+                }
+            } else if c == "|" && depth == 0 {
+                branches.append(branchStart..<p)
+                branchStart = p + 1
+            }
+            p += 1
+        }
+
+        if !branches.isEmpty {
+            branches.append(branchStart..<range.upperBound)
+            for branch in branches {
+                let res = analyzeGrammar(chars: chars, range: branch)
+                if !res.isSafe { return res }
+            }
+            return (true, nil)
+        }
+
+        let tokenResult = tokenizeSequence(chars: chars, range: range)
+        if let err = tokenResult.error {
+            return (false, err)
+        }
+        return checkAtomSequence(tokenResult.atoms)
+    }
+
+    private static func hasTopLevelAlternation(chars: [Character], range: Range<Int>) -> Bool {
+        var depth = 0
+        var esc = false
+        var p = range.lowerBound
+        while p < range.upperBound {
+            let c = chars[p]
+            if esc {
+                esc = false
+            } else if c == "\\" {
+                esc = true
+            } else if c == "(" {
+                depth += 1
+            } else if c == ")" {
+                if depth > 0 { depth -= 1 }
+            } else if c == "[" {
+                p += 1
+                while p < range.upperBound && chars[p] != "]" {
+                    if chars[p] == "\\" { p += 1 }
+                    p += 1
+                }
+            } else if c == "|" && depth == 0 {
+                return true
+            }
+            p += 1
+        }
+        return false
+    }
+
+    private static func tokenizeSequence(chars: [Character], range: Range<Int>) -> (atoms: [Atom], error: String?) {
+        var atoms: [Atom] = []
+        var p = range.lowerBound
+
+        while p < range.upperBound {
             let c = chars[p]
 
-            let atomKind: Atom.Kind
-            let rawAtom: String
-            let nextP: Int
-
             if c == "^" || c == "$" {
-                atomKind = .anchor
-                rawAtom = String(c)
-                nextP = p + 1
-            } else if c == "\\" {
-                if p + 1 < chars.count {
-                    let esc = chars[p + 1]
-                    if esc == "b" || esc == "B" {
-                        atomKind = .anchor
-                    } else if "dDsSwW".contains(esc) {
-                        atomKind = .shorthand(esc)
+                atoms.append(Atom(kind: .anchor, raw: String(c)))
+                p += 1
+                continue
+            }
+
+            if c == "\\" {
+                if p + 1 < range.upperBound {
+                    let escChar = chars[p + 1]
+                    if escChar == "b" || escChar == "B" {
+                        atoms.append(Atom(kind: .anchor, raw: String(chars[p...p + 1])))
+                    } else if "dDsSwW".contains(escChar) {
+                        let (atom, nextP) = parseQuantifiedAtom(chars: chars, nextP: p + 2, range: range, kind: .shorthand(escChar), raw: String(chars[p...p + 1]))
+                        atoms.append(atom)
+                        p = nextP
+                        continue
                     } else {
-                        atomKind = .literal(esc)
+                        let (atom, nextP) = parseQuantifiedAtom(chars: chars, nextP: p + 2, range: range, kind: .literal(escChar), raw: String(chars[p...p + 1]))
+                        atoms.append(atom)
+                        p = nextP
+                        continue
                     }
-                    rawAtom = String(chars[p...p + 1])
-                    nextP = p + 2
+                    p += 2
+                    continue
                 } else {
-                    atomKind = .literal(c)
-                    rawAtom = String(c)
-                    nextP = p + 1
+                    atoms.append(Atom(kind: .literal(c), raw: String(c)))
+                    p += 1
+                    continue
                 }
-            } else if c == "[" {
+            }
+
+            if c == "[" {
                 var closeP = p + 1
-                if closeP < chars.count && chars[closeP] == "^" {
+                if closeP < range.upperBound && chars[closeP] == "^" { closeP += 1 }
+                if closeP < range.upperBound && chars[closeP] == "]" { closeP += 1 }
+                while closeP < range.upperBound && chars[closeP] != "]" {
+                    if chars[closeP] == "\\" { closeP += 1 }
                     closeP += 1
                 }
-                if closeP < chars.count && chars[closeP] == "]" {
-                    closeP += 1
-                }
-                while closeP < chars.count && chars[closeP] != "]" {
-                    if chars[closeP] == "\\" {
-                        closeP += 1
-                    }
-                    closeP += 1
-                }
-                if closeP < chars.count {
-                    rawAtom = String(chars[p...closeP])
-                    atomKind = .charClass(rawAtom)
-                    nextP = closeP + 1
-                } else {
-                    atomKind = .literal(c)
-                    rawAtom = String(c)
-                    nextP = p + 1
-                }
-            } else if c == "(" {
-                var groupDepth = 1
+                let end = min(closeP + 1, range.upperBound)
+                let rawClass = String(chars[p..<end])
+                let (atom, nextP) = parseQuantifiedAtom(chars: chars, nextP: end, range: range, kind: .charClass(rawClass), raw: rawClass)
+                atoms.append(atom)
+                p = nextP
+                continue
+            }
+
+            if c == "(" {
+                var grpDepth = 1
                 var closeP = p + 1
                 var grpEsc = false
-                while closeP < chars.count && groupDepth > 0 {
+                while closeP < range.upperBound && grpDepth > 0 {
                     let gc = chars[closeP]
                     if grpEsc {
                         grpEsc = false
                     } else if gc == "\\" {
                         grpEsc = true
                     } else if gc == "(" {
-                        groupDepth += 1
+                        grpDepth += 1
                     } else if gc == ")" {
-                        groupDepth -= 1
+                        grpDepth -= 1
                     }
                     closeP += 1
                 }
-                rawAtom = String(chars[p..<closeP])
-                atomKind = .group
-                nextP = closeP
-            } else if c == "." {
-                atomKind = .dot
-                rawAtom = "."
-                nextP = p + 1
-            } else {
-                atomKind = .literal(c)
-                rawAtom = String(c)
-                nextP = p + 1
-            }
 
-            p = nextP
-
-            var isRepetition = false
-            var isNullable = false
-            var quantifierString = ""
-
-            if p < chars.count {
-                let qc = chars[p]
-                if qc == "*" {
-                    isRepetition = true
-                    isNullable = true
-                    quantifierString = "*"
-                    p += 1
-                } else if qc == "+" {
-                    isRepetition = true
-                    isNullable = false
-                    quantifierString = "+"
-                    p += 1
-                } else if qc == "?" {
-                    isRepetition = false
-                    isNullable = true
-                    quantifierString = "?"
-                    p += 1
-                } else if qc == "{" {
-                    var braceEnd = p + 1
-                    while braceEnd < chars.count && chars[braceEnd] != "}" {
-                        braceEnd += 1
+                let innerStart = p + 1
+                let innerEnd = closeP - 1
+                if innerStart <= innerEnd {
+                    var actualInnerStart = innerStart
+                    if actualInnerStart + 1 <= innerEnd && chars[actualInnerStart] == "?" && chars[actualInnerStart + 1] == ":" {
+                        actualInnerStart += 2
                     }
-                    if braceEnd < chars.count {
-                        let inner = String(chars[(p + 1)..<braceEnd])
-                        quantifierString = String(chars[p...braceEnd])
-                        p = braceEnd + 1
-                        if inner.contains(",") {
-                            isRepetition = true
-                            let parts = inner.split(separator: ",", omittingEmptySubsequences: false)
-                            if let first = parts.first, let minVal = Int(first.trimmingCharacters(in: .whitespaces)), minVal == 0 {
-                                isNullable = true
-                            }
-                        } else if let exact = Int(inner.trimmingCharacters(in: .whitespaces)), exact > 1 {
-                            isRepetition = true
+
+                    // Recursively validate inner group grammar
+                    let innerRes = analyzeGrammar(chars: chars, range: actualInnerStart..<innerEnd)
+                    if !innerRes.isSafe {
+                        return ([], innerRes.reason)
+                    }
+
+                    // If inner group has no top-level '|', flatten its atoms directly into outer sequence
+                    let hasPipe = hasTopLevelAlternation(chars: chars, range: actualInnerStart..<innerEnd)
+                    if !hasPipe {
+                        let innerSub = tokenizeSequence(chars: chars, range: actualInnerStart..<innerEnd)
+                        if let err = innerSub.error {
+                            return ([], err)
                         }
+                        atoms.append(contentsOf: innerSub.atoms)
+                    } else {
+                        atoms.append(Atom(kind: .barrier, raw: String(chars[p..<closeP]), isRepetition: false, isNullable: false))
                     }
                 }
 
-                // Skip trailing lazy '?'
-                if p < chars.count && chars[p] == "?" {
-                    p += 1
-                }
+                p = closeP
+                continue
             }
 
-            if isRepetition {
-                repetitionCount += 1
+            if c == "." {
+                let (atom, nextP) = parseQuantifiedAtom(chars: chars, nextP: p + 1, range: range, kind: .dot, raw: ".")
+                atoms.append(atom)
+                p = nextP
+                continue
             }
 
-            let atom = Atom(
-                kind: atomKind,
-                raw: rawAtom + quantifierString,
-                isRepetition: isRepetition,
-                isNullable: isNullable
-            )
+            let (atom, nextP) = parseQuantifiedAtom(chars: chars, nextP: p + 1, range: range, kind: .literal(c), raw: String(c))
             atoms.append(atom)
+            p = nextP
         }
 
-        // Limit total repetition quantifiers
+        return (atoms, nil)
+    }
+
+    private static func parseQuantifiedAtom(
+        chars: [Character],
+        nextP: Int,
+        range: Range<Int>,
+        kind: Atom.Kind,
+        raw: String
+    ) -> (atom: Atom, nextP: Int) {
+        var p = nextP
+        var isRepetition = false
+        var isNullable = false
+        var qStr = ""
+
+        if p < range.upperBound {
+            let qc = chars[p]
+            if qc == "*" {
+                isRepetition = true
+                isNullable = true
+                qStr = "*"
+                p += 1
+            } else if qc == "+" {
+                isRepetition = true
+                isNullable = false
+                qStr = "+"
+                p += 1
+            } else if qc == "?" {
+                isRepetition = false
+                isNullable = true
+                qStr = "?"
+                p += 1
+            } else if qc == "{" {
+                var braceEnd = p + 1
+                while braceEnd < range.upperBound && chars[braceEnd] != "}" {
+                    braceEnd += 1
+                }
+                if braceEnd < range.upperBound {
+                    let inner = String(chars[(p + 1)..<braceEnd])
+                    qStr = String(chars[p...braceEnd])
+                    p = braceEnd + 1
+                    if inner.contains(",") {
+                        isRepetition = true
+                        let parts = inner.split(separator: ",", omittingEmptySubsequences: false)
+                        if let first = parts.first, let minVal = Int(first.trimmingCharacters(in: .whitespaces)), minVal == 0 {
+                            isNullable = true
+                        }
+                    } else if let exact = Int(inner.trimmingCharacters(in: .whitespaces)), exact > 1 {
+                        isRepetition = true
+                    }
+                }
+            }
+
+            if p < range.upperBound && chars[p] == "?" {
+                p += 1
+            }
+        }
+
+        return (Atom(kind: kind, raw: raw + qStr, isRepetition: isRepetition, isNullable: isNullable), p)
+    }
+
+    private static func checkAtomSequence(_ atoms: [Atom]) -> (isSafe: Bool, reason: String?) {
+        var repetitionCount = 0
+        for atom in atoms where atom.isRepetition {
+            repetitionCount += 1
+        }
         if repetitionCount > 6 {
             return (false, "pattern exceeds maximum allowed repetition quantifiers (6)")
         }
 
-        // 3. Reject ambiguous overlapping repetitions (such as a*a*, .*.*, ^a*a*a*a*a*a*a*b$)
         for i in 0..<atoms.count {
             let atom1 = atoms[i]
             guard atom1.isRepetition else { continue }
@@ -366,12 +477,9 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                         return (false, "pathological regex: ambiguous overlapping repetitions '\(atom1.raw)' and '\(atom2.raw)'")
                     }
                     if !atom2.isNullable {
-                        // atom2 is a mandatory, non-overlapping repetition barrier
                         break
                     }
                 } else {
-                    // atom2 is not repeated. If it's mandatory and cannot overlap with atom1,
-                    // it acts as a barrier separating atom1 from any future repeated atoms!
                     if !atom2.isNullable && !atom1.canOverlap(with: atom2) {
                         break
                     }
