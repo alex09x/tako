@@ -225,11 +225,7 @@ mod tests {
 
     #[test]
     fn one_request_gets_one_answer() {
-        let dir = std::env::temp_dir().join(format!("takoctl-test-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("s.sock");
-        let _ = std::fs::remove_file(&path);
-        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let (path, listener) = listen("echo");
         let server = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
@@ -244,7 +240,6 @@ mod tests {
         let answer = exchange(path.to_str().unwrap(), &serde_json::json!({"cmd": "tree"})).unwrap();
         server.join().unwrap();
         assert_eq!(answer["result"]["echo"], "tree");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn listen(name: &str) -> (std::path::PathBuf, std::os::unix::net::UnixListener) {

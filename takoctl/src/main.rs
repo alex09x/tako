@@ -21,6 +21,8 @@
 //! out, and is never retried.
 
 mod hooks;
+mod mcp;
+mod skills;
 mod socket;
 
 use std::process::ExitCode;
@@ -89,6 +91,13 @@ commands:
                           (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
   hooks uninstall AGENT   remove Tako lifecycle hooks from AGENT's configuration
                           (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
+  skills [list]           list supported coding agents and skill installation status
+  skills status [AGENT]   show skill installation status for AGENT or all agents
+  skills install AGENT    install Tako skill instructions into AGENT's directory
+                          (--yes: skip confirmation; --diff-only: only print diff; --skill-path PATH)
+  skills uninstall AGENT  remove Tako skill instructions from AGENT's directory
+                          (--yes: skip confirmation; --diff-only: only print diff; --skill-path PATH)
+  mcp                     run stdio MCP server for agent integration (--capabilities SCOPES)
   resume set -- ARGS...   record how to resume what runs in a pane (--cwd DIR)
   resume show [TARGET]    show recorded resume session and auto-run approval status
   resume clear [TARGET]   clear recorded resume session
@@ -138,6 +147,8 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
+  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
+  --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer
   --socket PATH           the control socket (default: $TAKO_SOCKET, or the app's)
@@ -296,6 +307,12 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--diff-only" => {
                 args.insert("diff_only".into(), Value::Bool(true));
             }
+            "--capabilities" => {
+                args.insert("capabilities".into(), Value::String(value("--capabilities")?));
+            }
+            "--skill-path" => {
+                args.insert("skill_path".into(), Value::String(value("--skill-path")?));
+            }
             "--config" => {
                 args.insert("config".into(), Value::String(value("--config")?));
             }
@@ -369,7 +386,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
         "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
-        | "dialog" | "events" => None,
+        | "dialog" | "events" | "mcp" => None,
         "status" => {
             let sub = if positional.is_empty() {
                 "get".to_string()
@@ -551,6 +568,57 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 other => {
                     return Err(format!(
                         "unknown hooks action \"{other}\"; use list, status, install, or uninstall"
+                    ))
+                }
+            }
+            None
+        }
+        "skills" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "list" => {
+                    args.insert("action".into(), Value::String("list".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("action".into(), Value::String("status".into()));
+                    if !positional.is_empty() {
+                        let agent = positional.remove(0);
+                        args.insert("agent".into(), Value::String(agent));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "install" => {
+                    args.insert("action".into(), Value::String("install".into()));
+                    if positional.is_empty() {
+                        return Err("skills install needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                    }
+                    args.insert("agent".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "uninstall" => {
+                    args.insert("action".into(), Value::String("uninstall".into()));
+                    if positional.is_empty() {
+                        return Err("skills uninstall needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                    }
+                    args.insert("agent".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown skills action \"{other}\"; use list, status, install, or uninstall"
                     ))
                 }
             }
@@ -1976,6 +2044,76 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
     }
 }
 
+fn run_skills(opts: &Options) -> Result<(), String> {
+    let action = opts
+        .args
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or("list");
+    let yes = opts
+        .args
+        .get("yes")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let diff_only = opts
+        .args
+        .get("diff_only")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let skill_override = opts.args.get("skill_path").and_then(Value::as_str);
+
+    match action {
+        "list" => skills::list(opts.json),
+        "status" => {
+            let agent = opts.args.get("agent").and_then(Value::as_str);
+            skills::status(agent, opts.json)
+        }
+        "install" => {
+            let agent = opts
+                .args
+                .get("agent")
+                .and_then(Value::as_str)
+                .ok_or("skills install needs an agent name")?;
+            skills::install(agent, skill_override, yes, diff_only, opts.json)
+        }
+        "uninstall" => {
+            let agent = opts
+                .args
+                .get("agent")
+                .and_then(Value::as_str)
+                .ok_or("skills uninstall needs an agent name")?;
+            skills::uninstall(agent, skill_override, yes, diff_only, opts.json)
+        }
+        other => Err(format!("unknown skills action '{other}'")),
+    }
+}
+
+fn run_mcp(opts: &Options) -> Result<(), String> {
+    let capabilities = match opts.args.get("capabilities").and_then(Value::as_str) {
+        Some(s) => mcp::Capabilities::parse(s)?,
+        None => mcp::Capabilities::all(),
+    };
+
+    let inherited = std::env::var("TAKO_SOCKET").ok();
+    if opts.socket.is_none() && inherited.as_deref() == Some("") {
+        return Err("remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)".into());
+    }
+    let socket_path = match opts.socket.clone().or(inherited) {
+        Some(p) => p,
+        None => socket::default_path(&opts.bundle_id)?,
+    };
+
+    let surface_id = opts
+        .args
+        .get("target")
+        .and_then(Value::as_str)
+        .map(String::from)
+        .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
+
+    let server = mcp::McpServer::new(socket_path, capabilities, surface_id);
+    server.run_stdio().map_err(|e| format!("MCP stdio server error: {e}"))
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let opts = match parse(&argv) {
@@ -1993,6 +2131,24 @@ fn main() -> ExitCode {
     };
     if opts.cmd == "hooks" {
         return match run_hooks(&opts) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("takoctl: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+    if opts.cmd == "skills" {
+        return match run_skills(&opts) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("takoctl: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+    if opts.cmd == "mcp" {
+        return match run_mcp(&opts) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("takoctl: {e}");
@@ -3519,6 +3675,60 @@ bbbbbbbb  logs -- pane 2 of 2
         let rep_info = render("session", &info_val);
         assert!(rep_info.contains("Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):"));
         assert!(rep_info.contains("2 windows, 3 panes, 1 resume record"));
+    }
+
+    #[test]
+    fn test_skills_subcommands_and_options() {
+        let opts_default = parse(&["skills".into()]).unwrap();
+        assert_eq!(opts_default.cmd, "skills");
+        assert_eq!(opts_default.args["action"], "list");
+
+        let opts_list = parse(&["skills".into(), "list".into()]).unwrap();
+        assert_eq!(opts_list.cmd, "skills");
+        assert_eq!(opts_list.args["action"], "list");
+
+        let opts_status = parse(&["skills".into(), "status".into(), "claude".into()]).unwrap();
+        assert_eq!(opts_status.cmd, "skills");
+        assert_eq!(opts_status.args["action"], "status");
+        assert_eq!(opts_status.args["agent"], "claude");
+
+        let opts_install = parse(&[
+            "skills".into(),
+            "install".into(),
+            "gemini".into(),
+            "--yes".into(),
+            "--diff-only".into(),
+            "--skill-path".into(),
+            "/tmp/custom/SKILL.md".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_install.cmd, "skills");
+        assert_eq!(opts_install.args["action"], "install");
+        assert_eq!(opts_install.args["agent"], "gemini");
+        assert_eq!(opts_install.args["yes"], true);
+        assert_eq!(opts_install.args["diff_only"], true);
+        assert_eq!(opts_install.args["skill_path"], "/tmp/custom/SKILL.md");
+
+        let opts_uninstall = parse(&["skills".into(), "uninstall".into(), "aider".into()]).unwrap();
+        assert_eq!(opts_uninstall.cmd, "skills");
+        assert_eq!(opts_uninstall.args["action"], "uninstall");
+        assert_eq!(opts_uninstall.args["agent"], "aider");
+    }
+
+    #[test]
+    fn test_mcp_command_and_capabilities_option() {
+        let opts_mcp = parse(&["mcp".into()]).unwrap();
+        assert_eq!(opts_mcp.cmd, "mcp");
+        assert!(!opts_mcp.args.contains_key("capabilities"));
+
+        let opts_scoped = parse(&[
+            "mcp".into(),
+            "--capabilities".into(),
+            "read,signal".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_scoped.cmd, "mcp");
+        assert_eq!(opts_scoped.args["capabilities"], "read,signal");
     }
 }
 
