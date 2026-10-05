@@ -216,7 +216,9 @@ final class PassiveRegexTriggerTests: XCTestCase {
             "a*b*a*",
             "(a|aa)(a|aa)",
             "(a|b)(a|c)",
-            String(repeating: "(a|aa)", count: 75) + "b$"
+            String(repeating: "(a|aa)", count: 75) + "b$",
+            "(?:a)?(?:a)?",
+            String(repeating: "(?:a)?", count: 80) + "b$"
         ]
         for pat in pathologicalPatterns {
             let safety = TerminalRegexTrigger.isSafePattern(pat)

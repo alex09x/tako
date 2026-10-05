@@ -190,6 +190,9 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
 
         private func extractBranches(_ r: String) -> [String] {
             var s = r
+            while s.hasSuffix("?") {
+                s.removeLast()
+            }
             if s.hasPrefix("(?:") {
                 s.removeFirst(3)
             } else if s.hasPrefix("(") {
@@ -496,6 +499,19 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                     closeP += 1
                 }
 
+                var isQuantifiedWithQuestion = false
+                var endP = closeP
+                if endP < range.upperBound && chars[endP] == "?" {
+                    isQuantifiedWithQuestion = true
+                    endP += 1
+                    if endP < range.upperBound && chars[endP] == "?" {
+                        endP += 1
+                    }
+                }
+                if endP < range.upperBound && (chars[endP] == "+" || chars[endP] == "*" || chars[endP] == "{") {
+                    return ([], "pathological regex: quantified group ')\(chars[endP])' causes exponential backtracking")
+                }
+
                 let innerStart = p + 1
                 let innerEnd = closeP - 1
                 if innerStart <= innerEnd {
@@ -510,9 +526,18 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                         return ([], innerRes.reason)
                     }
 
-                    // If inner group has no top-level '|', flatten its atoms directly into outer sequence
                     let hasPipe = hasTopLevelAlternation(chars: chars, range: actualInnerStart..<innerEnd)
-                    if !hasPipe {
+                    if isQuantifiedWithQuestion {
+                        let innerSub = tokenizeSequence(chars: chars, range: actualInnerStart..<innerEnd)
+                        if let err = innerSub.error {
+                            return ([], err)
+                        }
+                        if innerSub.atoms.contains(where: { $0.isBranching }) {
+                            return ([], "pathological regex: nested branching in optional group")
+                        }
+                        let rawGroup = String(chars[p..<endP])
+                        atoms.append(Atom(kind: .alternation(rawGroup), raw: rawGroup, isBranching: true, isNullable: true))
+                    } else if !hasPipe {
                         let innerSub = tokenizeSequence(chars: chars, range: actualInnerStart..<innerEnd)
                         if let err = innerSub.error {
                             return ([], err)
@@ -525,7 +550,7 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
                     }
                 }
 
-                p = closeP
+                p = endP
                 continue
             }
 
