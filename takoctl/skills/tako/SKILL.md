@@ -22,7 +22,7 @@ Tako exposes its capabilities through both a stdio **MCP server** (`takoctl mcp`
 | :--- | :--- | :--- | :--- |
 | **Inspect layout** | `tako_tree` | `takoctl tree` | `read` |
 | **Split pane** | `tako_split` | `takoctl split [dir] --child-of self --label <name>` | `layout` |
-| **Run command** | `tako_run` | `takoctl run [--split dir] [--wait] -- PROGRAM ARGS...` | `layout` |
+| **Run command** | `tako_run` | `takoctl run [--split dir] [--wait] -- PROGRAM ARGS...` | `layout`, `input` |
 | **Wait for command** | `tako_wait` | `takoctl wait [--target ID] [--timeout S]` | `read` |
 | **Last command info** | `tako_last` | `takoctl last [--target ID]` | `read` |
 | **Search open tabs** | `tako_find` | `takoctl find <query>` | `read` |

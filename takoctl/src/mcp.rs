@@ -109,7 +109,7 @@ impl Capabilities {
 pub struct McpTool {
     pub name: &'static str,
     pub description: &'static str,
-    pub scope: CapabilityScope,
+    pub required_scopes: &'static [CapabilityScope],
     pub input_schema: Value,
 }
 
@@ -118,7 +118,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_tree",
             description: "Inspect windows, tabs, and panes in Tako with their current working directory, titles, and status.",
-            scope: CapabilityScope::Read,
+            required_scopes: &[CapabilityScope::Read],
             input_schema: json!({
                 "type": "object",
                 "properties": {}
@@ -127,7 +127,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_split",
             description: "Split the current or specified pane horizontally or vertically, optionally linking as a child subagent pane.",
-            scope: CapabilityScope::Layout,
+            required_scopes: &[CapabilityScope::Layout],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -158,7 +158,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_run",
             description: "Run a program directly (as an argument vector, no shell injection) in a new split or tab, optionally waiting for completion.",
-            scope: CapabilityScope::Layout,
+            required_scopes: &[CapabilityScope::Layout, CapabilityScope::Input],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -195,7 +195,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_wait",
             description: "Wait for a pane's running command or background program to finish through Tako's OSC 133 integration without scraping screen text.",
-            scope: CapabilityScope::Read,
+            required_scopes: &[CapabilityScope::Read],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -225,7 +225,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_last",
             description: "Retrieve structured details of the last command run in a pane, including exit code, directory, duration, and output.",
-            scope: CapabilityScope::Read,
+            required_scopes: &[CapabilityScope::Read],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -243,7 +243,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_find",
             description: "Search text across all open tabs and panes in Tako.",
-            scope: CapabilityScope::Read,
+            required_scopes: &[CapabilityScope::Read],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -262,7 +262,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_notify",
             description: "Post a desktop notification linked to the pane; clicking it brings the pane forward.",
-            scope: CapabilityScope::Signal,
+            required_scopes: &[CapabilityScope::Signal],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -285,7 +285,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_status",
             description: "Set or clear the pane's status indicator and badge text (working, needs_approval, waiting_for_input, done, error).",
-            scope: CapabilityScope::Signal,
+            required_scopes: &[CapabilityScope::Signal],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -311,7 +311,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_progress",
             description: "Set or clear the pane's progress bar (0-100 percentage, indeterminate, pause, error, or clear).",
-            scope: CapabilityScope::Signal,
+            required_scopes: &[CapabilityScope::Signal],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -329,7 +329,7 @@ pub fn all_tools() -> Vec<McpTool> {
         McpTool {
             name: "tako_ask",
             description: "Prompt the user with an interactive question, choice selection, or confirmation modal in Tako UI, returning their answer.",
-            scope: CapabilityScope::Signal,
+            required_scopes: &[CapabilityScope::Signal],
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -451,9 +451,20 @@ impl McpServer {
                 let tools_json: Vec<Value> = all_tools()
                     .into_iter()
                     .map(|t| {
+                        let scopes_desc = if t.required_scopes.len() == 1 {
+                            format!("'{}' capability scope", t.required_scopes[0].as_str())
+                        } else {
+                            let scopes_list = t
+                                .required_scopes
+                                .iter()
+                                .map(|s| format!("'{}'", s.as_str()))
+                                .collect::<Vec<_>>()
+                                .join(" and ");
+                            format!("{scopes_list} capability scopes")
+                        };
                         json!({
                             "name": t.name,
-                            "description": format!("{} [requires '{}' capability scope]", t.description, t.scope.as_str()),
+                            "description": format!("{} [requires {}]", t.description, scopes_desc),
                             "inputSchema": t.input_schema
                         })
                     })
@@ -514,20 +525,22 @@ impl McpServer {
         };
 
         // G1 Capability check
-        if !self.capabilities.contains(tool.scope) {
-            return json!({
-                "content": [
-                    {
-                        "type": "text",
-                        "text": format!(
-                            "refusal: tool '{name}' requires '{}' capability scope (active scopes: [{}])",
-                            tool.scope.as_str(),
-                            self.capabilities.formatted_scopes()
-                        )
-                    }
-                ],
-                "isError": true
-            });
+        for &req_scope in tool.required_scopes {
+            if !self.capabilities.contains(req_scope) {
+                return json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "refusal: tool '{name}' requires '{}' capability scope (active scopes: [{}])",
+                                req_scope.as_str(),
+                                self.capabilities.formatted_scopes()
+                            )
+                        }
+                    ],
+                    "isError": true
+                });
+            }
         }
 
         // Build socket request
@@ -930,6 +943,50 @@ mod tests {
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("refusal: tool 'tako_split' requires 'layout' capability scope"));
         assert!(text.contains("active scopes: [signal]"));
+    }
+
+    #[test]
+    fn test_mcp_run_requires_input_and_layout() {
+        let run_msg = json!({
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "tako_run",
+                "arguments": {
+                    "program": "ls",
+                    "args": ["-la"]
+                }
+            }
+        })
+        .to_string();
+
+        // 1. Layout-only server refuses tako_run because input is missing
+        let layout_only = Capabilities::parse("layout").unwrap();
+        let server_layout = McpServer::new("/tmp/test.sock".into(), layout_only, Some("pane-1".into()));
+        let resp = server_layout.handle_message(&run_msg).expect("response");
+        assert_eq!(resp["result"]["isError"], true);
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("refusal: tool 'tako_run' requires 'input' capability scope"));
+        assert!(text.contains("active scopes: [layout]"));
+
+        // 2. Input-only server refuses tako_run because layout is missing
+        let input_only = Capabilities::parse("input").unwrap();
+        let server_input = McpServer::new("/tmp/test.sock".into(), input_only, Some("pane-1".into()));
+        let resp2 = server_input.handle_message(&run_msg).expect("response");
+        assert_eq!(resp2["result"]["isError"], true);
+        let text2 = resp2["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text2.contains("refusal: tool 'tako_run' requires 'layout' capability scope"));
+        assert!(text2.contains("active scopes: [input]"));
+
+        // 3. Layout + Input server accepts capability check (and proceeds to socket connection)
+        let layout_input = Capabilities::parse("layout,input").unwrap();
+        let server_both = McpServer::new("/tmp/test.sock".into(), layout_input, Some("pane-1".into()));
+        let resp3 = server_both.handle_message(&run_msg).expect("response");
+        assert_eq!(resp3["result"]["isError"], true);
+        let text3 = resp3["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(!text3.contains("refusal:"));
+        assert!(text3.contains("Tako socket error:"));
     }
 
     #[test]
