@@ -43,6 +43,7 @@ extension Tako {
         @ObservedObject var attentionManager: AttentionManager = .shared
         @ObservedObject private var crab: CrabTracker
         @ObservedObject var overlayStore: OverlayStore = .shared
+        @ObservedObject var diffReviewStore: DiffReviewStore = .shared
         var isSplit: Bool = false
 
         init(surfaceView: SurfaceView, isSplit: Bool = false) {
@@ -78,6 +79,10 @@ extension Tako {
                 }
                 if let overlay = overlayStore.overlay(for: surfaceView.id), overlay.splitDirection == nil {
                     ArtifactOverlayView(overlay: overlay, surfaceView: surfaceView)
+                        .transition(.opacity)
+                }
+                if let reviewSession = diffReviewStore.session(for: surfaceView.id) {
+                    DiffReviewView(session: reviewSession, surfaceView: surfaceView)
                         .transition(.opacity)
                 }
             }

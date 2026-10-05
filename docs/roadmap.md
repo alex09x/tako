@@ -633,7 +633,7 @@ Done when an agent opens its coverage report next to the terminal that produced 
 cannot reach the network, the terminal or files outside the pane's directory, and closing it
 returns focus to the pane.
 
-### [ ] D2. Visual read-back
+### [x] D2. Visual read-back
 
 - `takoctl screenshot` returns the pane as rendered (PNG), and `takoctl text --styled` returns
   text with colours and attributes, so an agent can check a TUI it is building.
@@ -641,7 +641,7 @@ returns focus to the pane.
 
 Done when a test can assert on the rendered look of a TUI through `takoctl` alone.
 
-### [ ] D3. Diff review pane
+### [x] D3. Diff review pane
 
 - A read-only diff of a worktree (C4) against its base, with a file list.
 - Comments on lines are collected locally and sent as plain text to a chosen pane only when the
