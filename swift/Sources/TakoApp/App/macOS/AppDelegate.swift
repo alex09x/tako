@@ -388,6 +388,7 @@ class AppDelegate: NSObject,
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
         setupSidebarMenuItem()
+        setupPaneOverviewMenuItem()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
@@ -1228,6 +1229,28 @@ class AppDelegate: NSObject,
         }
     }
 
+    private func setupPaneOverviewMenuItem() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
+            let overviewItem = NSMenuItem(
+                title: "Pane Overview",
+                action: #selector(BaseTerminalController.togglePaneOverview(_:)),
+                keyEquivalent: "O"
+            )
+            overviewItem.keyEquivalentModifierMask = [.command, .shift]
+            overviewItem.target = nil
+            overviewItem.setImageIfDesired(systemSymbolName: "square.grid.2x2")
+            viewMenu.addItem(overviewItem)
+        }
+    }
+
+    @IBAction func togglePaneOverview(_ sender: Any?) {
+        guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
+                TerminalController.all.first else { return }
+        controller.togglePaneOverview(sender)
+    }
+
     @IBAction func toggleSessionSidebar(_ sender: Any?) {
         guard let controller = NSApp.keyWindow?.windowController as? BaseTerminalController ??
                 TerminalController.all.first else { return }
@@ -1592,6 +1615,9 @@ extension AppDelegate: NSMenuItemValidation {
             return NotificationStore.shared.latestUnread() != nil
 
         case #selector(toggleSessionSidebar(_:)):
+            return true
+
+        case #selector(BaseTerminalController.togglePaneOverview(_:)):
             return true
 
         case #selector(markAllRead(_:)):

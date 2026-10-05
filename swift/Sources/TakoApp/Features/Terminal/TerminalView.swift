@@ -42,6 +42,9 @@ protocol TerminalViewModel: ObservableObject {
     /// Whether the Session Sidebar panel shows (B5).
     var sessionSidebarIsShowing: Bool { get set }
 
+    /// Whether the Pane Overview overlay shows (B6).
+    var paneOverviewIsShowing: Bool { get set }
+
     /// The window hosting this terminal view, if any.
     var containingWindow: NSWindow? { get }
 }
@@ -137,6 +140,13 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     NotificationCenterView(
                         isPresented: $viewModel.notificationCenterIsShowing,
                         backgroundColor: tako.config.backgroundColor)
+                }
+
+                if viewModel.paneOverviewIsShowing {
+                    PaneOverviewView(
+                        isPresented: $viewModel.paneOverviewIsShowing,
+                        backgroundColor: tako.config.backgroundColor)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)

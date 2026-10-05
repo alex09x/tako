@@ -83,6 +83,16 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Whether the Pane Overview overlay is showing for this window (B6).
+    @Published var paneOverviewIsShowing: Bool = false {
+        didSet {
+            guard oldValue, !paneOverviewIsShowing else { return }
+            DispatchQueue.main.async { [weak self] in
+                Tako.moveFocus(to: self?.focusedSurface)
+            }
+        }
+    }
+
     /// The window hosting this terminal view controller (TerminalViewModel).
     var containingWindow: NSWindow? { self.window }
 
@@ -1556,6 +1566,13 @@ class BaseTerminalController: NSWindowController,
         sessionSidebarIsShowing.toggle()
     }
 
+    @IBAction func togglePaneOverview(_ sender: Any?) {
+        paneOverviewIsShowing.toggle()
+        if paneOverviewIsShowing {
+            _ = focusedSurface?.resignFirstResponder()
+        }
+    }
+
     private static func surface(withID id: UUID) -> Tako.SurfaceView? {
         for controller in TerminalController.all {
             if let surface = controller.surfaceTree.first(where: { $0.id == id }) {
@@ -1675,6 +1692,12 @@ extension BaseTerminalController: NSMenuItemValidation {
         case #selector(toggleSessionSidebar(_:)):
             if let menu = item as? NSMenuItem {
                 menu.state = sessionSidebarIsShowing ? .on : .off
+            }
+            return true
+
+        case #selector(togglePaneOverview(_:)):
+            if let menu = item as? NSMenuItem {
+                menu.state = paneOverviewIsShowing ? .on : .off
             }
             return true
 
