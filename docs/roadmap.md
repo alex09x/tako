@@ -600,7 +600,7 @@ a clear error.
 Done when an export from one Mac opens on another with the same layout and text, and nothing in a
 hostile file can run a command.
 
-### [ ] C10. Bundled agent skills and MCP server
+### [x] C10. Bundled agent skills and MCP server
 
 Out-of-the-box skill packages and MCP integration for popular coding agents so they automatically discover and leverage Tako's pane splitting, background execution, and overlay features.
 
