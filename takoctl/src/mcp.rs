@@ -1142,8 +1142,12 @@ impl McpServer {
             .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
             .ok()
             .or_else(|| {
-                let token_path = format!("{}.token", self.socket_path);
-                std::fs::read_to_string(token_path).ok().map(|s| s.trim().to_string())
+                if self.surface_id.is_none() {
+                    let token_path = format!("{}.token", self.socket_path);
+                    std::fs::read_to_string(token_path).ok().map(|s| s.trim().to_string())
+                } else {
+                    None
+                }
             });
         if let Some(tok) = token {
             req.insert("token".into(), Value::String(tok));

@@ -2864,7 +2864,6 @@ extension Tako {
             // Empty when this copy serves no socket: never one inherited
             // from, or owned by, another copy of Tako.
             environment["TAKO_SOCKET"] = ControlCommands.socketPath
-            environment["TAKO_CONTROL_TOKEN"] = ControlGrantStore.shared.primaryToken
             pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config,
                       program: program, environment: environment, removing: removing)
             let started = pty

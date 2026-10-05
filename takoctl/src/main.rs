@@ -3113,6 +3113,14 @@ fn main() -> ExitCode {
     };
     let mut opts = opts;
     if opts.token.is_none() {
+        if let Ok(tok) = std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN")) {
+            let t = tok.trim().to_string();
+            if !t.is_empty() {
+                opts.token = Some(t);
+            }
+        }
+    }
+    if opts.token.is_none() && std::env::var("TAKO_SURFACE_ID").is_err() {
         let token_path = format!("{path}.token");
         if let Ok(content) = std::fs::read_to_string(&token_path) {
             let t = content.trim().to_string();

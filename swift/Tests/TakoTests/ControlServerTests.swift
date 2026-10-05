@@ -302,6 +302,17 @@ struct ControlProtocolTests {
         let reqAdmin = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(adminGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
         let authAdmin = ControlCommands.authorize(reqAdmin)
         #expect(throws: Never.self) { try ControlCommands.checkScope(for: authAdmin) }
+
+        // 7. General pane caller without a token fails closed with missingScope
+        let reqNoToken = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
+        let authNoToken = ControlCommands.authorize(reqNoToken)
+        do {
+            try ControlCommands.checkScope(for: authNoToken)
+            #expect(Bool(false), "Should have failed without grant token")
+        } catch let err as ControlError {
+            #expect(err.code == .missingScope)
+            #expect(err.scope == "read")
+        }
     }
 }
 
