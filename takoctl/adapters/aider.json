@@ -1,0 +1,10 @@
+{
+  "name": "aider",
+  "title": "Aider",
+  "config_path": "~/.aider.conf.yml",
+  "format": "yaml",
+  "hook_field": "notifications-command",
+  "hooks": {
+    "notifications-command": "takoctl status set done --text \"Aider finished\" && takoctl notify \"Aider completed task\" --title \"Aider\" && takoctl progress clear"
+  }
+}

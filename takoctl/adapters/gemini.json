@@ -1,0 +1,15 @@
+{
+  "name": "gemini",
+  "title": "Gemini CLI / Antigravity",
+  "aliases": ["antigravity", "agy"],
+  "config_path": "~/.gemini/settings.json",
+  "format": "json",
+  "hook_field": "hooks",
+  "hooks": {
+    "on_prompt": "takoctl status set working --text \"Thinking...\" && takoctl progress indeterminate",
+    "on_approval": "takoctl status set needs_approval --text \"Approval requested\" && takoctl notify \"Antigravity requested tool approval\" --title \"Approval Required\" && takoctl progress pause",
+    "on_wait_input": "takoctl status set waiting_for_input --text \"Waiting for input\" && takoctl notify \"Antigravity waiting for input\" --title \"Input Needed\" && takoctl progress clear",
+    "on_done": "takoctl status set done --text \"Done\" && takoctl notify \"Antigravity completed task\" --title \"Task Complete\" && takoctl progress clear",
+    "on_session_end": "takoctl status clear && takoctl progress clear"
+  }
+}
