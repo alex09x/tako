@@ -1335,6 +1335,22 @@ impl TakoCore {
             .collect()
     }
 
+    /// Whether clipboard query / reading escape sequences (OSC 52 ; ... ; ?) are allowed (Track G4).
+    /// Defaults to false (WriteOnly policy).
+    pub fn is_clipboard_read_allowed(&self) -> bool {
+        lock_recover(&self.inner).clipboard_policy() == crate::terminal::ClipboardPolicy::ReadWrite
+    }
+
+    /// Enable or disable clipboard query / reading escape sequences (Track G4).
+    pub fn set_clipboard_read_allowed(&self, allowed: bool) {
+        let policy = if allowed {
+            crate::terminal::ClipboardPolicy::ReadWrite
+        } else {
+            crate::terminal::ClipboardPolicy::WriteOnly
+        };
+        lock_recover(&self.inner).set_clipboard_policy(policy);
+    }
+
     /// Encodes a key event into the bytes to write to the PTY, honoring
     /// the terminal's live DECCKM and Kitty-keyboard state. Empty when the
     /// event produces no input (e.g. a release in legacy mode).

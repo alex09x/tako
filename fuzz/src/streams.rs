@@ -73,6 +73,25 @@ pub enum EscapeToken {
         body: String,
     },
     OscClipboard(String),
+    OscClipboardQuery,
+    OscStatus {
+        status: String,
+        text: Option<String>,
+    },
+    OscStructuredNotification {
+        id: String,
+        title: String,
+        body: String,
+    },
+    OscContextHierarchy {
+        op: u8,
+        kind: String,
+        name: String,
+    },
+    OscItermInlineImage {
+        width_cells: u8,
+        height_cells: u8,
+    },
     OscPromptMarker(u8),
     OscProgress {
         state: u8,
@@ -265,6 +284,43 @@ pub fn build_escape_stream(input: &EscapeStreamInput) -> (usize, usize, Vec<u8>)
             EscapeToken::OscClipboard(data) => {
                 let d = truncate_utf8(data, 64);
                 out.extend_from_slice(format!("\x1b]52;c;{d}\x07").as_bytes());
+            }
+            EscapeToken::OscClipboardQuery => {
+                out.extend_from_slice(b"\x1b]52;c;?\x07");
+            }
+            EscapeToken::OscStatus { status, text } => {
+                let s = truncate_utf8(status, 16);
+                if let Some(t) = text {
+                    let txt = truncate_utf8(t, 64);
+                    out.extend_from_slice(format!("\x1b]9;5;{s};{txt}\x07").as_bytes());
+                } else {
+                    out.extend_from_slice(format!("\x1b]9;5;{s}\x07").as_bytes());
+                }
+            }
+            EscapeToken::OscStructuredNotification { id, title, body } => {
+                let clean_id = truncate_utf8(id, 16);
+                let t = truncate_utf8(title, 32);
+                let b = truncate_utf8(body, 64);
+                out.extend_from_slice(format!("\x1b]99;i={clean_id}:p=title;{t}\x1b\\").as_bytes());
+                out.extend_from_slice(format!("\x1b]99;i={clean_id}:p=body:d=1;{b}\x1b\\").as_bytes());
+            }
+            EscapeToken::OscContextHierarchy { op, kind, name } => {
+                let k = truncate_utf8(kind, 16);
+                let n = truncate_utf8(name, 16);
+                match op % 3 {
+                    0 => out.extend_from_slice(format!("\x1b]3008;push;{k};{n}\x07").as_bytes()),
+                    1 => out.extend_from_slice(b"\x1b]3008;pop\x07"),
+                    _ => out.extend_from_slice(b"\x1b]3008;clear\x07"),
+                }
+            }
+            EscapeToken::OscItermInlineImage {
+                width_cells,
+                height_cells,
+            } => {
+                let w = (*width_cells as usize % 20) + 1;
+                let h = (*height_cells as usize % 10) + 1;
+                let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+                out.extend_from_slice(format!("\x1b]1337;File=inline=1;width={w};height={h}:{png_b64}\x07").as_bytes());
             }
             EscapeToken::OscPromptMarker(marker) => match marker % 4 {
                 0 => out.extend_from_slice(b"\x1b]133;A\x07"),

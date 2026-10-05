@@ -237,6 +237,18 @@ pub enum ProtectedMode {
     Dec,
 }
 
+/// Policy governing access to host clipboard via escape sequences (OSC 52, OSC 1337 Copy) (Track G4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClipboardPolicy {
+    /// Completely disable clipboard escape sequences (both read and write).
+    Disabled,
+    /// Allow writing to the clipboard; refuse reading/querying by default (G4 policy).
+    #[default]
+    WriteOnly,
+    /// Explicitly allow both clipboard write and read queries.
+    ReadWrite,
+}
+
 /// How many columns a grapheme cluster takes (upstream's
 /// `grapheme-width-method`): the default for mode 2027, which a program can
 /// still set or reset.
@@ -426,6 +438,12 @@ pub struct Terminal {
     pub(crate) context_stack: Vec<ContextFrame>,
     /// Count of elevated context frames evicted due to MAX_CONTEXT_STACK_DEPTH.
     pub(crate) evicted_elevated: usize,
+    /// Policy governing access to host clipboard via escape sequences (Track G4).
+    pub(crate) clipboard_policy: ClipboardPolicy,
+    /// Start of the current 1-second rate-limiting window for desktop notifications (Track G4).
+    pub(crate) notification_window_start: Option<std::time::Instant>,
+    /// Number of desktop notifications emitted in the current 1-second window (Track G4).
+    pub(crate) notification_count_in_window: usize,
 }
 
 impl Terminal {
@@ -456,6 +474,16 @@ impl Terminal {
                     None
                 }
             })
+    }
+
+    /// Current policy governing escape sequence clipboard access (Track G4).
+    pub fn clipboard_policy(&self) -> ClipboardPolicy {
+        self.clipboard_policy
+    }
+
+    /// Update the policy governing escape sequence clipboard access (Track G4).
+    pub fn set_clipboard_policy(&mut self, policy: ClipboardPolicy) {
+        self.clipboard_policy = policy;
     }
 
     /// Export the complete terminal state as a native versioned binary checkpoint.
@@ -626,6 +654,9 @@ impl Terminal {
             unidentified_osc99: None,
             context_stack: Vec::new(),
             evicted_elevated: 0,
+            clipboard_policy: ClipboardPolicy::WriteOnly,
+            notification_window_start: None,
+            notification_count_in_window: 0,
         }
     }
 
@@ -3363,13 +3394,66 @@ impl Terminal {
         }
     }
 
-    pub(crate) fn sanitize_status_text(raw: &str) -> Option<String> {
-        let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    /// Rate-limits desktop notifications to at most 10 per second per terminal instance (Track G4).
+    pub(crate) fn allow_notification(&mut self) -> bool {
+        const MAX_NOTIFICATIONS_PER_SEC: usize = 10;
+        let now = std::time::Instant::now();
+        if let Some(start) = self.notification_window_start {
+            if now.duration_since(start) >= std::time::Duration::from_secs(1) {
+                self.notification_window_start = Some(now);
+                self.notification_count_in_window = 1;
+                true
+            } else if self.notification_count_in_window < MAX_NOTIFICATIONS_PER_SEC {
+                self.notification_count_in_window += 1;
+                true
+            } else {
+                false
+            }
+        } else {
+            self.notification_window_start = Some(now);
+            self.notification_count_in_window = 1;
+            true
+        }
+    }
+
+    /// Sanitizes title strings (max 512 chars, strips C0/C1 control codes except tab) (Track G4).
+    pub fn sanitize_title(raw: &str) -> String {
+        let mut out = String::new();
+        for ch in raw.chars() {
+            if out.chars().count() >= 512 {
+                break;
+            }
+            if ch == '\t' || (!ch.is_control() && !('\u{0080}'..='\u{009F}').contains(&ch)) {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    /// Sanitizes notification text, stripping C0/C1 controls except whitespace, bounded by max_chars (Track G4).
+    pub fn sanitize_notification_text(raw: &str, max_chars: usize) -> String {
+        let mut out = String::new();
+        for ch in raw.chars() {
+            if out.chars().count() >= max_chars {
+                break;
+            }
+            if ch == '\t' || ch == '\n' || (!ch.is_control() && !('\u{0080}'..='\u{009F}').contains(&ch)) {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    pub fn sanitize_status_text(raw: &str) -> Option<String> {
+        let filtered: String = raw
+            .chars()
+            .filter(|&c| !c.is_control() && !('\u{0080}'..='\u{009F}').contains(&c))
+            .collect();
         let trimmed = filtered.trim();
         if trimmed.is_empty() {
             return None;
         }
-        let limited: String = trimmed.chars().take(128).collect();
+        let limited: String = trimmed.chars().take(256).collect();
         Some(limited)
     }
 
@@ -3585,7 +3669,9 @@ impl Terminal {
                 title = body;
                 body = String::new();
             }
-            if !title.is_empty() || !body.is_empty() {
+            if (!title.is_empty() || !body.is_empty()) && self.allow_notification() {
+                let title = Self::sanitize_notification_text(&title, 128);
+                let body = Self::sanitize_notification_text(&body, 1024);
                 self.events.push(TerminalEvent::StructuredNotification {
                     id: entry.id,
                     title,
@@ -3953,7 +4039,8 @@ impl Perform for Terminal {
             return;
         }
         if params.len() >= 2 && (params[0] == b"0" || params[0] == b"2") {
-            self.title = String::from_utf8_lossy(params[1]).into_owned();
+            let raw = String::from_utf8_lossy(params[1]);
+            self.title = Self::sanitize_title(&raw);
             self.events
                 .push(TerminalEvent::TitleChanged(self.title.clone()));
             return;
@@ -3992,15 +4079,23 @@ impl Perform for Terminal {
             return;
         }
         if params[0] == b"52" {
+            if self.clipboard_policy == ClipboardPolicy::Disabled {
+                return;
+            }
             // OSC 52 ; <targets> ; <base64 | ?>
             if let Some(payload) = params.get(2) {
                 if payload == b"?" {
-                    self.events.push(TerminalEvent::ClipboardQuery);
+                    if self.clipboard_policy == ClipboardPolicy::ReadWrite {
+                        self.events.push(TerminalEvent::ClipboardQuery);
+                    }
                 } else {
+                    const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024; // 1 MiB
                     use base64::Engine as _;
                     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
-                        let text = String::from_utf8_lossy(&bytes).into_owned();
-                        self.events.push(TerminalEvent::ClipboardSet(text));
+                        if bytes.len() <= MAX_CLIPBOARD_BYTES {
+                            let text = String::from_utf8_lossy(&bytes).into_owned();
+                            self.events.push(TerminalEvent::ClipboardSet(text));
+                        }
                     }
                 }
             }
@@ -4048,25 +4143,32 @@ impl Perform for Terminal {
         }
         if params[0] == b"9" {
             if let Some(body) = params.get(1) {
-                self.events.push(TerminalEvent::Notification {
-                    title: String::new(),
-                    body: String::from_utf8_lossy(body).into_owned(),
-                });
+                if self.allow_notification() {
+                    let raw_body = String::from_utf8_lossy(body);
+                    let clean_body = Self::sanitize_notification_text(&raw_body, 1024);
+                    self.events.push(TerminalEvent::Notification {
+                        title: String::new(),
+                        body: clean_body,
+                    });
+                }
             }
             return;
         }
         if params[0] == b"777" {
             if params.get(1).map(|p| p.as_ref()) == Some(b"notify".as_ref()) {
-                self.events.push(TerminalEvent::Notification {
-                    title: params
+                if self.allow_notification() {
+                    let raw_title = params
                         .get(2)
-                        .map(|p| String::from_utf8_lossy(p).into_owned())
-                        .unwrap_or_default(),
-                    body: params
+                        .map(|p| String::from_utf8_lossy(p))
+                        .unwrap_or_default();
+                    let raw_body = params
                         .get(3)
-                        .map(|p| String::from_utf8_lossy(p).into_owned())
-                        .unwrap_or_default(),
-                });
+                        .map(|p| String::from_utf8_lossy(p))
+                        .unwrap_or_default();
+                    let title = Self::sanitize_notification_text(&raw_title, 128);
+                    let body = Self::sanitize_notification_text(&raw_body, 1024);
+                    self.events.push(TerminalEvent::Notification { title, body });
+                }
             }
             return;
         }
@@ -4362,11 +4464,16 @@ impl Perform for Terminal {
             if let Some(rest) = params.get(1) {
                 let rest = String::from_utf8_lossy(rest);
                 if let Some(b64) = rest.strip_prefix("Copy=:") {
-                    use base64::Engine as _;
-                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                        self.events.push(TerminalEvent::ClipboardSet(
-                            String::from_utf8_lossy(&bytes).into_owned(),
-                        ));
+                    if self.clipboard_policy != ClipboardPolicy::Disabled {
+                        const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024; // 1 MiB
+                        use base64::Engine as _;
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                            if bytes.len() <= MAX_CLIPBOARD_BYTES {
+                                self.events.push(TerminalEvent::ClipboardSet(
+                                    String::from_utf8_lossy(&bytes).into_owned(),
+                                ));
+                            }
+                        }
                     }
                 } else if rest == "ClearStatus" {
                     self.events.push(TerminalEvent::StatusClear);

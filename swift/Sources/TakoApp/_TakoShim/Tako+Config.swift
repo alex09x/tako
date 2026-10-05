@@ -574,6 +574,12 @@ extension Tako {
             rawBool("passive-regex-triggers", default: true)
         }
 
+        /// Whether escape sequences may query/read the host clipboard (OSC 52 ; ... ; ?) (Track G4).
+        /// Reads `clipboard-read`, default false (policy: WriteOnly).
+        var clipboardRead: Bool {
+            rawBool("clipboard-read", default: false)
+        }
+
         /// Which bundled shell-integration script, if any, is injected into
         /// a new shell.
         enum ShellIntegration: String {

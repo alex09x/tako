@@ -214,6 +214,9 @@ fn cursor_style_reports_every_shape() {
 #[test]
 fn take_events_reports_every_variant() {
     let core = TakoCore::new(40, 10);
+    assert!(!core.is_clipboard_read_allowed());
+    core.set_clipboard_read_allowed(true);
+    assert!(core.is_clipboard_read_allowed());
 
     core.feed(b"\x07".to_vec()); // BEL
     core.feed(b"\x1b]0;hello\x07".to_vec()); // title
