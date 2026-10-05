@@ -226,7 +226,10 @@ impl GraphicsState {
                 .saturating_mul(std::mem::size_of::<(u32, StoredImage)>() as u64),
         );
         for img in self.images.values() {
-            total = total.saturating_add(img.pixels.capacity() as u64);
+            let decoded = (img.width as u64)
+                .saturating_mul(img.height as u64)
+                .saturating_mul(4);
+            total = total.saturating_add((img.pixels.capacity() as u64).max(decoded));
         }
         total = total.saturating_add(
             (self.placements.capacity() as u64)
@@ -237,7 +240,10 @@ impl GraphicsState {
                 .saturating_mul(std::mem::size_of::<(ChunkKey, PendingTransfer)>() as u64),
         );
         for transfer in self.pending.values() {
-            total = total.saturating_add(transfer.data.capacity() as u64);
+            let decoded = (transfer.width as u64)
+                .saturating_mul(transfer.height as u64)
+                .saturating_mul(4);
+            total = total.saturating_add((transfer.data.capacity() as u64).max(decoded));
         }
         total
     }
@@ -320,7 +326,7 @@ impl GraphicsState {
         if width > 0 && height > 0 && decoded_bytes > self.max_memory_bytes {
             return Err("image decoded size exceeds per-pane memory cap".into());
         }
-        let size = pixels.len() as u64;
+        let size = (pixels.len() as u64).max(decoded_bytes);
         if !self.enforce_memory_cap(size) {
             return Err("image exceeds per-pane memory cap".into());
         }
@@ -571,7 +577,8 @@ impl GraphicsState {
             None => self.allocate_image_id(),
         };
 
-        if !self.enforce_memory_cap(transfer.data.capacity() as u64) {
+        let needed_bytes = (transfer.data.capacity() as u64).max(decoded_bytes);
+        if !self.enforce_memory_cap(needed_bytes) {
             return GraphicsResponse::Error("image exceeds per-pane memory cap".to_string());
         }
 
@@ -1423,6 +1430,28 @@ mod tests {
             GraphicsResponse::Error("image decoded size exceeds per-pane memory cap".to_string())
         );
         assert!(state.image(10).is_none());
+    }
+
+    #[test]
+    fn multiple_compressed_pngs_exceeding_aggregate_decoded_budget_evict_lru() {
+        let mut state = GraphicsState::new();
+        // Cap set to 10,000 bytes.
+        state.set_max_memory_bytes(10_000);
+
+        // Each PNG header is 33 bytes on disk, but claims 40x40 pixels = 6,400 bytes decoded RGBA.
+        // Individually, 6,400 bytes <= 10,000 bytes.
+        let png1 = png_header(40, 40);
+        let png2 = png_header(40, 40);
+
+        state.store_and_place_raw_image(ImageFormat::Png, 0, 0, png1).expect("png1 fits");
+        assert!(state.image(1).is_some());
+
+        // png2 also decodes to 6,400 bytes. Combined decoded size = 12,800 > 10,000 cap.
+        // It must evict png1 (LRU) rather than allowing aggregate decoded memory to exceed the cap.
+        state.store_and_place_raw_image(ImageFormat::Png, 0, 0, png2).expect("png2 fits after evicting png1");
+        assert!(state.image(1).is_none(), "png1 evicted due to aggregate decoded memory cap");
+        assert!(state.image(2).is_some(), "png2 retained");
+        assert!(state.retained_capacity_bytes() <= 10_000);
     }
 
     #[test]
