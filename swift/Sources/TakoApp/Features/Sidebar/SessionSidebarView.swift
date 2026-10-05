@@ -332,10 +332,17 @@ struct SessionSidebarView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 9))
-                    Text(branch + (item.gitDirty == true ? "*" : ""))
+                    Text(branch + (item.gitDirty == true ? "*" : (item.gitDirty == nil ? " (?)" : "")))
                         .font(.system(size: 9, design: .monospaced))
                 }
-                .foregroundColor(item.gitDirty == true ? Color(nsColor: Tako.Brand.ember) : Color(nsColor: Palette.dim))
+                .foregroundColor(
+                    item.gitDirty == true ? Color(nsColor: Tako.Brand.ember) :
+                    (item.gitDirty == nil ? Color(nsColor: Palette.inactiveText) : Color(nsColor: Palette.dim))
+                )
+                .help(
+                    item.gitDirty == true ? "Modified repository" :
+                    (item.gitDirty == nil ? "Git status unavailable" : "Clean repository")
+                )
             }
 
             // Opt-in listening ports
