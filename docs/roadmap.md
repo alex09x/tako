@@ -590,7 +590,7 @@ banner on every pane that receives the input.
 Done when broadcast can never be left on by accident (it ends with the selection) and secure-input
 panes never receive broadcast text.
 
-### [ ] C9. Session export and import
+### [x] C9. Session export and import
 
 Export a window or workspace -- layout, snapshots, resume bindings -- to a file, and import it on
 another Mac or another build of Tako. Imported content is untrusted: control sequences in saved
