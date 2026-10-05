@@ -283,6 +283,54 @@ fn write_secure(path: &Path, content: &[u8], mode: Option<u32>) -> Result<(), St
     }
 }
 
+/// Enforces owner-only permissions (0600 on Unix, no group/other access) on a file.
+/// Fails closed if the file is a symlink, not a regular file, or if permissions cannot be tightened.
+fn harden_owner_only_mode(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let meta = fs::symlink_metadata(path).map_err(|e| {
+            format!("cannot inspect metadata on {}: {e}", path.display())
+        })?;
+        if meta.file_type().is_symlink() {
+            return Err(format!("refusing to use symlink at {}", path.display()));
+        }
+        if !meta.is_file() {
+            return Err(format!("expected regular file at {}", path.display()));
+        }
+
+        let current_mode = meta.permissions().mode() & 0o777;
+        // Verify owner-only permissions: no group or other access (current_mode & 0o077 == 0)
+        // and owner has at least read/write (0o600).
+        if current_mode & 0o077 != 0 || current_mode & 0o600 != 0o600 {
+            let hardened_mode = (current_mode & 0o700) | 0o600;
+            let perms = fs::Permissions::from_mode(hardened_mode);
+            fs::set_permissions(path, perms).map_err(|e| {
+                format!("failed to harden permissions on {}: {e}", path.display())
+            })?;
+
+            // Fail-closed verification: confirm mode was actually tightened
+            let verified_mode = path
+                .metadata()
+                .map_err(|e| format!("cannot verify permissions on {}: {e}", path.display()))?
+                .permissions()
+                .mode() & 0o777;
+            if verified_mode & 0o077 != 0 {
+                return Err(format!(
+                    "cannot enforce owner-only permissions on {}: mode is still {:o}",
+                    path.display(),
+                    verified_mode
+                ));
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
+
 // MARK: - Unified Diff Helper
 
 /// Generates a unified diff comparing old and new strings.
@@ -436,6 +484,8 @@ pub fn install(
 
     let path = adapter.resolve_path(config_override);
     let path_display = path.display().to_string();
+    let bak = backup_path(&path);
+    let marker = new_marker_path(&path);
 
     let original_content = if path.exists() {
         fs::read_to_string(&path).map_err(|e| format!("cannot read {path_display}: {e}"))?
@@ -446,6 +496,13 @@ pub fn install(
     let new_content = adapter.apply_hooks(&original_content)?;
 
     if original_content == new_content {
+        // Enforce restrictive owner-only permissions on any existing backup or marker
+        if bak.exists() {
+            harden_owner_only_mode(&bak)?;
+        }
+        if marker.exists() {
+            harden_owner_only_mode(&marker)?;
+        }
         if json {
             println!("{}", json!({"status": "already_installed", "config": path_display, "diff": ""}));
         } else {
@@ -492,18 +549,24 @@ pub fn install(
     let orig_mode = file_mode(&path);
 
     // Save byte-identical restoration backup with restrictive permissions (0600):
-    let bak = backup_path(&path);
-    let marker = new_marker_path(&path);
     if path.exists() {
         // If a backup doesn't already exist, preserve the original pre-Tako bytes
         if !bak.exists() {
             // Backup should strictly have owner-only permissions (0600 or orig_mode & 0600)
             let bak_mode = orig_mode.map(|m| m & 0o600).unwrap_or(0o600);
             write_secure(&bak, original_content.as_bytes(), Some(bak_mode))?;
+        } else {
+            // Pre-existing backup might have over-permissive mode from an earlier install or outside tool.
+            // Enforce restrictive owner-only permissions before proceeding, failing closed if permissions cannot be tightened.
+            harden_owner_only_mode(&bak)?;
         }
     } else {
         // Record that this file was created anew by Tako
-        write_secure(&marker, b"new", Some(0o600))?;
+        if !marker.exists() {
+            write_secure(&marker, b"new", Some(0o600))?;
+        } else {
+            harden_owner_only_mode(&marker)?;
+        }
     }
 
     // Write new content preserving source mode or defaulting to 0600
@@ -549,9 +612,25 @@ pub fn uninstall(
     }
 
     let action = if marker.exists() {
+        let meta = fs::symlink_metadata(&marker)
+            .map_err(|e| format!("cannot inspect marker {}: {e}", marker.display()))?;
+        if meta.file_type().is_symlink() {
+            return Err(format!("refusing to use symlink at {}", marker.display()));
+        }
         // The file was created anew by Tako
         RestoreAction::DeleteFile
     } else if bak.exists() {
+        let meta = fs::symlink_metadata(&bak)
+            .map_err(|e| format!("cannot inspect backup {}: {e}", bak.display()))?;
+        if meta.file_type().is_symlink() {
+            return Err(format!("refusing to restore from symlink at {}", bak.display()));
+        }
+        if !meta.is_file() {
+            return Err(format!("expected regular file backup at {}", bak.display()));
+        }
+        // Enforce owner-only permissions on backup before reading
+        harden_owner_only_mode(&bak)?;
+
         // We have the exact original bytes saved
         let orig = fs::read_to_string(&bak).map_err(|e| format!("cannot read backup: {e}"))?;
         RestoreAction::WriteBytes(orig)
@@ -890,6 +969,74 @@ mod tests {
         // Uninstall
         uninstall("claude", Some(path_str), true, false, false).unwrap();
         assert_eq!(fs::read(&config_file).unwrap(), secret_bytes);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
+        let temp_dir = std::env::temp_dir().join(format!("takoctl-test-preexist-{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let config_file = temp_dir.join("legacy-config.json");
+        let path_str = config_file.to_str().unwrap();
+
+        let orig_bytes = b"{\n  \"theme\": \"light\"\n}\n";
+        fs::write(&config_file, orig_bytes).unwrap();
+
+        // Simulate a pre-existing backup created by an older version with 0644 mode
+        let bak = backup_path(&config_file);
+        fs::write(&bak, orig_bytes).unwrap();
+        fs::set_permissions(&bak, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_ne!(fs::metadata(&bak).unwrap().permissions().mode() & 0o077, 0);
+
+        // Install hooks
+        install("claude", Some(path_str), true, false, false).unwrap();
+
+        // Verify the pre-existing backup was tightened to owner-only (0600)
+        let mode = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode & 0o077, 0, "existing backup must be hardened to no group/other access");
+        assert_eq!(mode, 0o600);
+
+        // Now test when hooks are ALREADY installed:
+        // Set bak back to 0644 to test early-return hardening
+        fs::set_permissions(&bak, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_ne!(fs::metadata(&bak).unwrap().permissions().mode() & 0o077, 0);
+
+        // Running install again (which detects already_installed) must also harden existing backup
+        install("claude", Some(path_str), true, false, false).unwrap();
+        let mode_again = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_again & 0o077, 0, "backup must be hardened even when already installed");
+        assert_eq!(mode_again, 0o600);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_backup_is_rejected_and_fails_closed() {
+        let temp_dir = std::env::temp_dir().join(format!("takoctl-test-symlink-{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let config_file = temp_dir.join("config.json");
+        let path_str = config_file.to_str().unwrap();
+        fs::write(&config_file, b"{\n  \"safe\": true\n}\n").unwrap();
+
+        let sensitive_target = temp_dir.join("sensitive.txt");
+        fs::write(&sensitive_target, b"sensitive data").unwrap();
+
+        // Create a symlink at .tako-bak pointing to sensitive target
+        let bak = backup_path(&config_file);
+        std::os::unix::fs::symlink(&sensitive_target, &bak).unwrap();
+
+        // Install must fail closed and reject the symlink
+        let res = install("claude", Some(path_str), true, false, false);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("refusing to use symlink"));
+
+        // Uninstall must also fail closed and reject the symlink
+        let uninst_res = uninstall("claude", Some(path_str), true, false, false);
+        assert!(uninst_res.is_err());
+        assert!(uninst_res.unwrap_err().contains("refusing to restore from symlink"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
