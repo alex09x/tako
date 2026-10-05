@@ -227,6 +227,30 @@ enum ControlCommands {
                 return .ok(version())
             case "tree":
                 return .ok(tree(all, active: activePane(all)))
+            case "history":
+                let query = request.args["query"]?.string ?? ""
+                let limit = request.args["limit"]?.number.flatMap { Int($0) } ?? 100
+                let entries = CommandHistoryStore.shared.search(query: query, limit: limit)
+                let jsonEntries = entries.map { entry -> JSON in
+                    var obj: [String: JSON] = [
+                        "id": .string(entry.id.uuidString.lowercased()),
+                        "command": .string(entry.command),
+                        "started_at": .number(entry.startedAt.timeIntervalSince1970),
+                    ]
+                    if let cwd = entry.cwd { obj["cwd"] = .string(cwd) }
+                    if let dur = entry.duration {
+                        obj["duration"] = .number(dur)
+                        obj["duration_ms"] = .number((dur * 1000.0).rounded())
+                    }
+                    if let exitCode = entry.exitCode {
+                        obj["exit_code"] = .number(Double(exitCode))
+                    }
+                    if let paneId = entry.paneId {
+                        obj["pane_id"] = .string(paneId.uuidString.lowercased())
+                    }
+                    return .object(obj)
+                }
+                return .ok(["entries": .array(jsonEntries)])
             case "send", "type":
                 let surface = try target(request, all)
                 let enter = request.cmd == "send" && request.args["enter"] != .bool(false)

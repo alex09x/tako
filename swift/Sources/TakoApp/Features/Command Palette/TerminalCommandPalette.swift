@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import SwiftUI
 import TakoKit
 
@@ -59,7 +69,7 @@ struct TerminalCommandPaletteView: View {
         // Sort them. We replace ":" with a character that sorts before space
         // so that "Foo:" sorts before "Foo Bar:". Use sortKey as a tie-breaker
         // for stable ordering when titles are equal.
-        options.append(contentsOf: (jumpOptions + terminalOptions + commandActionOptions + projectActionOptions).sorted { a, b in
+        options.append(contentsOf: (jumpOptions + terminalOptions + commandActionOptions + commandHistoryOptions + projectActionOptions).sorted { a, b in
             let aNormalized = a.title.replacingOccurrences(of: ":", with: "\t")
             let bNormalized = b.title.replacingOccurrences(of: ":", with: "\t")
             let comparison = aNormalized.localizedCaseInsensitiveCompare(bNormalized)
@@ -201,6 +211,41 @@ struct TerminalCommandPaletteView: View {
         }
 
         return options
+    }
+
+    /// Searchable history of commands across all panes and sessions (E9).
+    /// Choosing an entry inserts it at the current prompt; it never runs it.
+    private var commandHistoryOptions: [CommandOption] {
+        let entries = CommandHistoryStore.shared.search(query: "")
+        guard !entries.isEmpty else { return [] }
+
+        return entries.prefix(100).map { entry in
+            let dateStr = TakoTerminalNSView.formatStartTime(entry.startedAt)
+            var subtitleParts: [String] = []
+            if let cwd = entry.cwd, !cwd.isEmpty {
+                subtitleParts.append(cwd)
+            }
+            subtitleParts.append(dateStr)
+            if let dur = entry.duration {
+                subtitleParts.append(TakoTerminalNSView.formatDuration(dur))
+            }
+            if let code = entry.exitCode {
+                subtitleParts.append("exit \(code)")
+            }
+
+            let badge = entry.exitCode == 0 ? "History" : (entry.exitCode == nil ? "History" : "History (exit \(entry.exitCode!))")
+
+            return CommandOption(
+                title: "History: \(entry.command)",
+                subtitle: subtitleParts.joined(separator: " • "),
+                leadingIcon: "clock.arrow.circlepath",
+                badge: badge,
+                sortKey: AnySortKey(UInt64.max - 1000)
+            ) {
+                let clean = entry.command.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+                surfaceView.insertText(clean, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        }
     }
 
     /// Custom commands from the command-palette-entry configuration.

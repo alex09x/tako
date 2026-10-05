@@ -27,7 +27,7 @@ mod socket;
 
 use std::process::ExitCode;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 const USAGE: &str = "\
 usage: takoctl [--json] <command> [options]
@@ -72,6 +72,7 @@ commands:
   progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
   events                  stream terminal events as ndjson (--pane ID, --tab ID,
                           --workspace NAME, --type TYPES, --cursor N)
+  history [QUERY]         search command history across sessions (--query Q, --limit N)
   workspace [list]        list all workspaces and tab counts
   workspace current       show the active workspace
   workspace switch NAME   switch to workspace NAME (^⌥] / ^⌥[)
@@ -325,7 +326,10 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("diff_only".into(), Value::Bool(true));
             }
             "--capabilities" => {
-                args.insert("capabilities".into(), Value::String(value("--capabilities")?));
+                args.insert(
+                    "capabilities".into(),
+                    Value::String(value("--capabilities")?),
+                );
             }
             "--skill-path" => {
                 args.insert("skill_path".into(), Value::String(value("--skill-path")?));
@@ -412,6 +416,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 let out_val = value("--out")?;
                 args.insert("out".into(), Value::String(expand_path(&out_val)));
             }
+            "--query" => {
+                args.insert("query".into(), Value::String(value("--query")?));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
@@ -423,6 +430,18 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let wants = match cmd.as_str() {
         "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
         | "dialog" | "events" | "mcp" => None,
+        "history" => {
+            if !positional.is_empty() {
+                let q = positional.remove(0);
+                if !args.contains_key("query") {
+                    args.insert("query".into(), Value::String(q));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "screenshot" => {
             if !positional.is_empty() {
                 let p = positional.remove(0);
@@ -465,7 +484,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 other => {
                     return Err(format!(
                         "unknown status action \"{other}\"; use get, set, or clear"
-                    ))
+                    ));
                 }
             }
             None
@@ -542,7 +561,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                             }
                         }
                         other => {
-                            return Err(format!("unknown progress state \"{other}\"; use 0-100, indeterminate, error, pause, or clear"));
+                            return Err(format!(
+                                "unknown progress state \"{other}\"; use 0-100, indeterminate, error, pause, or clear"
+                            ));
                         }
                     }
                 }
@@ -614,7 +635,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 other => {
                     return Err(format!(
                         "unknown hooks action \"{other}\"; use list, status, install, or uninstall"
-                    ))
+                    ));
                 }
             }
             None
@@ -665,7 +686,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 other => {
                     return Err(format!(
                         "unknown skills action \"{other}\"; use list, status, install, or uninstall"
-                    ))
+                    ));
                 }
             }
             None
@@ -957,7 +978,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     }
                 }
             } else {
-                return Err("split takes at most one direction argument (right, left, down, up)".into());
+                return Err(
+                    "split takes at most one direction argument (right, left, down, up)".into(),
+                );
             }
             None
         }
@@ -981,11 +1004,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     args.insert("action".into(), Value::String("set".into()));
                     if positional.is_empty() {
                         return Err(
-                            "resume set needs a command line: takoctl resume set -- <argv...>".into(),
+                            "resume set needs a command line: takoctl resume set -- <argv...>"
+                                .into(),
                         );
                     }
-                    let argv_vals: Vec<Value> =
-                        positional.drain(..).map(Value::String).collect();
+                    let argv_vals: Vec<Value> = positional.drain(..).map(Value::String).collect();
                     args.insert("argv".into(), Value::Array(argv_vals));
                     if !args.contains_key("cwd") {
                         if let Ok(dir) = std::env::current_dir() {
@@ -1044,7 +1067,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 other => {
                     return Err(format!(
                         "unknown resume action \"{other}\"; use set, show, clear, run, or approve"
-                    ))
+                    ));
                 }
             }
             None
@@ -1253,11 +1276,15 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                                 }
                             }
                             if !positional.is_empty() {
-                                let comment_text = positional.drain(..).collect::<Vec<_>>().join(" ");
+                                let comment_text =
+                                    positional.drain(..).collect::<Vec<_>>().join(" ");
                                 args.insert("text".into(), Value::String(comment_text));
                             }
                             if !args.contains_key("file") {
-                                return Err("review comment add requires a file (--file or positional)".into());
+                                return Err(
+                                    "review comment add requires a file (--file or positional)"
+                                        .into(),
+                                );
                             }
                             if !args.contains_key("text") {
                                 return Err("review comment add requires comment text".into());
@@ -1270,7 +1297,10 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                         }
                         "remove" => {
                             if !positional.is_empty() {
-                                args.insert("comment_id".into(), Value::String(positional.remove(0)));
+                                args.insert(
+                                    "comment_id".into(),
+                                    Value::String(positional.remove(0)),
+                                );
                             }
                             if !args.contains_key("comment_id") {
                                 return Err("review comment remove requires a comment ID".into());
@@ -1438,8 +1468,38 @@ fn render(cmd: &str, result: &Value) -> String {
         "session" => session_report(result),
         "overlay" => overlay_report(result),
         "review" => review_report(result),
+        "history" => history_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn history_report(result: &Value) -> String {
+    let mut out = String::new();
+    let entries = result["entries"].as_array();
+    let Some(entries) = entries else {
+        return "no history recorded\n".to_string();
+    };
+    if entries.is_empty() {
+        return "no history recorded\n".to_string();
+    }
+    for entry in entries {
+        let raw_cmd = entry["command"].as_str().unwrap_or("");
+        let cmd = sanitize_terminal_control(raw_cmd);
+        let mut line = format!("$ {cmd}");
+        if let Some(raw_cwd) = entry["cwd"].as_str() {
+            let cwd = sanitize_terminal_control(raw_cwd);
+            line += &format!("   ({cwd})");
+        }
+        if let Some(code) = entry["exit_code"].as_f64() {
+            line += &format!("   exit {}", code as i64);
+        }
+        if let Some(dur) = entry["duration"].as_f64() {
+            line += &format!("   ({})", format_duration(dur));
+        }
+        out += &line;
+        out.push('\n');
+    }
+    out
 }
 
 /// Sanitizes untrusted text for safe terminal display by replacing ANSI escape sequences
@@ -1542,7 +1602,10 @@ fn review_report(result: &Value) -> String {
     if let Some(files) = result.get("files").and_then(Value::as_array) {
         let task = sanitize_terminal_control(result["task"].as_str().unwrap_or(""));
         let base = sanitize_terminal_control(result["base"].as_str().unwrap_or("main"));
-        let mut out = format!("Changed files in review '{task}' against '{base}' ({}):\n", files.len());
+        let mut out = format!(
+            "Changed files in review '{task}' against '{base}' ({}):\n",
+            files.len()
+        );
         for f in files {
             let path = sanitize_terminal_control(f["path"].as_str().unwrap_or(""));
             let status = f["status"].as_str().unwrap_or("modified");
@@ -1786,7 +1849,10 @@ fn resume_report(result: &Value) -> String {
         }
     }
     if let Some(approved) = result["approved"].as_bool() {
-        out += &format!("Auto-run approved: {}\n", if approved { "yes" } else { "no" });
+        out += &format!(
+            "Auto-run approved: {}\n",
+            if approved { "yes" } else { "no" }
+        );
     }
     if let Some(recorded_at) = result["recorded_at"].as_str() {
         out += &format!("Recorded at: {}\n", recorded_at);
@@ -1950,7 +2016,10 @@ fn task_report(result: &Value) -> String {
             let changes_str = if changed == 0 {
                 "clean".to_string()
             } else {
-                format!("{changed} changed file{}", if changed == 1 { "" } else { "s" })
+                format!(
+                    "{changed} changed file{}",
+                    if changed == 1 { "" } else { "s" }
+                )
             };
             out += &format!("  * {name} ({branch}): [{status}] (worktree: {worktree})\n");
             out += &format!("      ahead: {ahead}, behind: {behind}, {changes_str}\n");
@@ -1963,7 +2032,9 @@ fn task_report(result: &Value) -> String {
         let base = result["base"].as_str().unwrap_or("");
         let target = result["target"].as_str().unwrap_or("tab");
         let worktree = result["worktree"].as_str().unwrap_or("");
-        return format!("Created worktree task '{name}' on branch {branch} (base: {base}, target: {target})\n  Worktree: {worktree}\n");
+        return format!(
+            "Created worktree task '{name}' on branch {branch} (base: {base}, target: {target})\n  Worktree: {worktree}\n"
+        );
     }
     if result.get("finished") == Some(&Value::Bool(true)) {
         let name = result["name"].as_str().unwrap_or("");
@@ -1988,7 +2059,10 @@ fn task_report(result: &Value) -> String {
         let changes_str = if changed == 0 {
             "clean".to_string()
         } else {
-            format!("{changed} changed file{}", if changed == 1 { "" } else { "s" })
+            format!(
+                "{changed} changed file{}",
+                if changed == 1 { "" } else { "s" }
+            )
         };
         return format!(
             "Worktree task '{name}' ({branch}): [{status}]\n  Worktree: {worktree}\n  ahead: {ahead}, behind: {behind}, {changes_str}\n"
@@ -2077,7 +2151,23 @@ fn status_report(result: &Value) -> String {
     out
 }
 
-/// A command as `last` reports it: `$ line   (cwd)   exit N`, then its output.
+fn format_duration(seconds: f64) -> String {
+    if seconds < 0.001 {
+        "<1ms".to_string()
+    } else if seconds < 1.0 {
+        format!("{}ms", (seconds * 1000.0).round() as u64)
+    } else if seconds < 10.0 {
+        format!("{:.1}s", seconds)
+    } else if seconds < 60.0 {
+        format!("{}s", seconds.round() as u64)
+    } else {
+        let mins = (seconds as u64) / 60;
+        let secs = (seconds as u64) % 60;
+        format!("{}m {:02}s", mins, secs)
+    }
+}
+
+/// A command as `last` reports it: `$ line   (cwd)   exit N   (dur)`, then its output.
 fn command_report(result: &Value) -> String {
     if let Some(process) = result.get("process") {
         return process_report(process, result);
@@ -2115,6 +2205,12 @@ fn command_report(result: &Value) -> String {
         out += &format!("   ({cwd})");
     }
     out += &format!("   {status}");
+    if let Some(dur) = command["duration"]
+        .as_f64()
+        .or_else(|| result["duration"].as_f64())
+    {
+        out += &format!("   ({})", format_duration(dur));
+    }
     if let Some(r) = command["ref"].as_str() {
         out += &format!("   [{r}]");
     }
@@ -2515,7 +2611,9 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
     let server = mcp::McpServer::new(socket_path, capabilities, surface_id);
-    server.run_stdio().map_err(|e| format!("MCP stdio server error: {e}"))
+    server
+        .run_stdio()
+        .map_err(|e| format!("MCP stdio server error: {e}"))
 }
 
 fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
@@ -2566,8 +2664,15 @@ fn random_hex(num_bytes: usize) -> String {
 
 fn write_exclusive_temp_file(id: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {
     let temp_dir = std::env::temp_dir();
-    let clean_id: String = id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
-    let safe_id = if clean_id.is_empty() { "pane" } else { &clean_id };
+    let clean_id: String = id
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    let safe_id = if clean_id.is_empty() {
+        "pane"
+    } else {
+        &clean_id
+    };
     let mut last_err = None;
 
     for _ in 0..5 {
@@ -2586,7 +2691,10 @@ fn write_exclusive_temp_file(id: &str, bytes: &[u8]) -> Result<std::path::PathBu
                 use std::io::Write;
                 if let Err(e) = file.write_all(bytes) {
                     let _ = std::fs::remove_file(&path);
-                    return Err(format!("failed to write screenshot data to {}: {e}", path.display()));
+                    return Err(format!(
+                        "failed to write screenshot data to {}: {e}",
+                        path.display()
+                    ));
                 }
                 let _ = file.flush();
                 #[cfg(unix)]
@@ -2702,7 +2810,9 @@ fn main() -> ExitCode {
     // another copy's socket instead.
     let inherited = std::env::var("TAKO_SOCKET").ok();
     if opts.socket.is_none() && inherited.as_deref() == Some("") {
-        eprintln!("takoctl: remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)");
+        eprintln!(
+            "takoctl: remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)"
+        );
         return ExitCode::from(3);
     }
     let path = match opts.socket.clone().or(inherited) {
@@ -2768,7 +2878,10 @@ fn main() -> ExitCode {
         Err(e) => {
             // The request went out: it may or may not have been carried out.
             // Never sent again from here -- a second tab-new is a second tab.
-            eprintln!("takoctl: unknown outcome: {} (the request was delivered and may have been carried out; not retried)", e.message);
+            eprintln!(
+                "takoctl: unknown outcome: {} (the request was delivered and may have been carried out; not retried)",
+                e.message
+            );
             return ExitCode::from(4);
         }
     };
@@ -3522,12 +3635,18 @@ bbbbbbbb  logs -- pane 2 of 2
         let opts = parse(&args(&["layout", "save", "my-layout.json"])).unwrap();
         assert_eq!(opts.cmd, "layout");
         assert_eq!(opts.args["action"], "save");
-        assert!(opts.args["path"].as_str().unwrap().ends_with("my-layout.json"));
+        assert!(
+            opts.args["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("my-layout.json")
+        );
 
         // Create temporary layout file for apply/approve/status tests
         let temp_dir = std::env::temp_dir();
         let temp_file = temp_dir.join(format!("tako_test_layout_{}.json", std::process::id()));
-        let dummy_json = r#"{"version":1,"windows":[{"tabs":[{"root":{"cwd":"/tmp","command":["ls"]}}]}]}"#;
+        let dummy_json =
+            r#"{"version":1,"windows":[{"tabs":[{"root":{"cwd":"/tmp","command":["ls"]}}]}]}"#;
         std::fs::write(&temp_file, dummy_json).unwrap();
         let temp_path = temp_file.to_str().unwrap();
 
@@ -3651,7 +3770,15 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(opts.args.get("approve"), None);
 
         // Action run with --approve and --path
-        let opts = parse(&args(&["action", "run", "--approve", "--path", "/my/proj", "test"])).unwrap();
+        let opts = parse(&args(&[
+            "action",
+            "run",
+            "--approve",
+            "--path",
+            "/my/proj",
+            "test",
+        ]))
+        .unwrap();
         assert_eq!(opts.cmd, "action");
         assert_eq!(opts.args["action"], "run");
         assert_eq!(opts.args["id"], "test");
@@ -3750,12 +3877,19 @@ bbbbbbbb  logs -- pane 2 of 2
 
         // Task create
         let opts = parse(&args(&[
-            "task", "create", "agent-feature",
-            "--branch", "feat/agent-ui",
-            "--base", "main",
-            "--target", "workspace",
-            "--command", "cargo test",
-            "--path", "/my/repo",
+            "task",
+            "create",
+            "agent-feature",
+            "--branch",
+            "feat/agent-ui",
+            "--base",
+            "main",
+            "--target",
+            "workspace",
+            "--command",
+            "cargo test",
+            "--path",
+            "/my/repo",
         ]))
         .unwrap();
         assert_eq!(opts.cmd, "task");
@@ -3768,14 +3902,28 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(opts.args["path"], "/my/repo");
 
         // Task status
-        let opts = parse(&args(&["task", "status", "agent-feature", "--path", "/my/repo"])).unwrap();
+        let opts = parse(&args(&[
+            "task",
+            "status",
+            "agent-feature",
+            "--path",
+            "/my/repo",
+        ]))
+        .unwrap();
         assert_eq!(opts.cmd, "task");
         assert_eq!(opts.args["action"], "status");
         assert_eq!(opts.args["name"], "agent-feature");
         assert_eq!(opts.args["path"], "/my/repo");
 
         // Task finish with --archive and --editor
-        let opts = parse(&args(&["task", "finish", "agent-feature", "--archive", "--editor"])).unwrap();
+        let opts = parse(&args(&[
+            "task",
+            "finish",
+            "agent-feature",
+            "--archive",
+            "--editor",
+        ]))
+        .unwrap();
         assert_eq!(opts.cmd, "task");
         assert_eq!(opts.args["action"], "finish");
         assert_eq!(opts.args["name"], "agent-feature");
@@ -4186,7 +4334,9 @@ bbbbbbbb  logs -- pane 2 of 2
             "format_version": 1
         });
         let rep_exp = render("session", &exp_val);
-        assert!(rep_exp.contains("Exported session to /tmp/test_session.json (2 windows, 4 panes), 1 resume binding"));
+        assert!(rep_exp.contains(
+            "Exported session to /tmp/test_session.json (2 windows, 4 panes), 1 resume binding"
+        ));
 
         // 2. Import
         let opts_imp = parse(&[
@@ -4205,8 +4355,14 @@ bbbbbbbb  logs -- pane 2 of 2
             "windows": 2
         });
         let rep_imp = render("session", &imp_val);
-        assert!(rep_imp.contains("Imported session from /tmp/test_session.json (2 windows created)"));
-        assert!(rep_imp.contains("Untrusted session: control sequences dropped, nothing runs automatically"));
+        assert!(
+            rep_imp.contains("Imported session from /tmp/test_session.json (2 windows created)")
+        );
+        assert!(
+            rep_imp.contains(
+                "Untrusted session: control sequences dropped, nothing runs automatically"
+            )
+        );
 
         // 3. Info
         let opts_info = parse(&[
@@ -4228,7 +4384,11 @@ bbbbbbbb  logs -- pane 2 of 2
             "resumes": 1
         });
         let rep_info = render("session", &info_val);
-        assert!(rep_info.contains("Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):"));
+        assert!(
+            rep_info.contains(
+                "Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):"
+            )
+        );
         assert!(rep_info.contains("2 windows, 3 panes, 1 resume record"));
     }
 
@@ -4276,12 +4436,8 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(opts_mcp.cmd, "mcp");
         assert!(!opts_mcp.args.contains_key("capabilities"));
 
-        let opts_scoped = parse(&[
-            "mcp".into(),
-            "--capabilities".into(),
-            "read,signal".into(),
-        ])
-        .unwrap();
+        let opts_scoped =
+            parse(&["mcp".into(), "--capabilities".into(), "read,signal".into()]).unwrap();
         assert_eq!(opts_scoped.cmd, "mcp");
         assert_eq!(opts_scoped.args["capabilities"], "read,signal");
     }
@@ -4330,7 +4486,10 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(rep_closed, "Closed overlay for pane pane-1.\n");
 
         let rep_not_closed = render("overlay", &json!({"id": "pane-1", "closed": false}));
-        assert_eq!(rep_not_closed, "No active overlay to close on pane pane-1.\n");
+        assert_eq!(
+            rep_not_closed,
+            "No active overlay to close on pane pane-1.\n"
+        );
 
         // 3. Status
         let opts_st = parse(&["overlay".into()]).unwrap();
@@ -4352,7 +4511,13 @@ bbbbbbbb  logs -- pane 2 of 2
     #[test]
     fn test_text_styled_and_screenshot_options() {
         // 1. Text with --styled and --lines
-        let opts_text = parse(&["text".into(), "--lines".into(), "50".into(), "--styled".into()]).unwrap();
+        let opts_text = parse(&[
+            "text".into(),
+            "--lines".into(),
+            "50".into(),
+            "--styled".into(),
+        ])
+        .unwrap();
         assert_eq!(opts_text.cmd, "text");
         assert_eq!(opts_text.args["lines"], 50);
         assert_eq!(opts_text.args["styled"], true);
@@ -4363,7 +4528,8 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(opts_ss1.args["out"], "/tmp/screen.png");
 
         // 3. Screenshot with --out flag
-        let opts_ss2 = parse(&["screenshot".into(), "--out".into(), "/tmp/out.png".into()]).unwrap();
+        let opts_ss2 =
+            parse(&["screenshot".into(), "--out".into(), "/tmp/out.png".into()]).unwrap();
         assert_eq!(opts_ss2.cmd, "screenshot");
         assert_eq!(opts_ss2.args["out"], "/tmp/out.png");
 
@@ -4380,7 +4546,10 @@ bbbbbbbb  logs -- pane 2 of 2
 
         // 5. Base64 decode verification
         let bytes = decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==").unwrap();
-        assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(
+            &bytes[0..8],
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        );
     }
 
     #[test]
@@ -4409,7 +4578,7 @@ bbbbbbbb  logs -- pane 2 of 2
     #[test]
     #[cfg(unix)]
     fn test_screenshot_temp_refuses_symlink_overwrite() {
-        use std::os::unix::fs::{symlink, OpenOptionsExt};
+        use std::os::unix::fs::{OpenOptionsExt, symlink};
         let temp_dir = std::env::temp_dir();
         let target_file = temp_dir.join(format!("test-target-{}.txt", random_hex(8)));
         std::fs::write(&target_file, b"secret original data").unwrap();
@@ -4577,7 +4746,9 @@ bbbbbbbb  logs -- pane 2 of 2
                 "message": "# Diff Review Feedback\n- src/main.rs:10: First comment"
             }),
         );
-        assert!(rep_send.contains("Sent diff review feedback from pane pane-rev to pane pane-agent-1."));
+        assert!(
+            rep_send.contains("Sent diff review feedback from pane pane-rev to pane pane-agent-1.")
+        );
         assert!(rep_send.contains("# Diff Review Feedback"));
 
         // review close
@@ -4611,6 +4782,71 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(rep_evil.contains("^[]52;c;clipboard^G"));
         assert!(rep_evil.contains("^[[2J^M"));
     }
+
+    #[test]
+    fn format_duration_handles_all_ranges() {
+        assert_eq!(format_duration(0.0005), "<1ms");
+        assert_eq!(format_duration(0.05), "50ms");
+        assert_eq!(format_duration(0.999), "999ms");
+        assert_eq!(format_duration(1.23), "1.2s");
+        assert_eq!(format_duration(9.94), "9.9s");
+        assert_eq!(format_duration(15.2), "15s");
+        assert_eq!(format_duration(65.0), "1m 05s");
+        assert_eq!(format_duration(125.0), "2m 05s");
+    }
+
+    #[test]
+    fn history_command_parsing_and_report() {
+        let opts = parse(&[
+            "history".into(),
+            "git".into(),
+            "--limit".into(),
+            "20".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts.cmd, "history");
+        assert_eq!(opts.args["query"], "git");
+        assert_eq!(opts.args["limit"], 20);
+
+        let history_val = json!({
+            "entries": [
+                {
+                    "command": "git commit -m \"feat\"",
+                    "cwd": "/Users/alex09x/tako",
+                    "exit_code": 0,
+                    "duration": 1.25
+                },
+                {
+                    "command": "cargo test\x1b[2J",
+                    "cwd": "/tmp\r",
+                    "exit_code": 1,
+                    "duration": 0.05
+                }
+            ]
+        });
+
+        let rep = render("history", &history_val);
+        assert!(rep.contains("$ git commit -m \"feat\"   (/Users/alex09x/tako)   exit 0   (1.2s)"));
+        assert!(rep.contains("$ cargo test^[[2J   (/tmp^M)   exit 1   (50ms)"));
+        assert!(!rep.contains('\x1b'));
+        assert!(!rep.contains('\r'));
+    }
+
+    #[test]
+    fn command_report_includes_duration() {
+        let cmd_val = json!({
+            "command": {
+                "input": "echo hello",
+                "cwd": "/Users/alex09x",
+                "running": false,
+                "exitCode": 0,
+                "ref": "1@1",
+                "duration": 0.42
+            },
+            "output": "hello\n"
+        });
+        let rep = command_report(&cmd_val);
+        assert!(rep.contains("$ echo hello   (/Users/alex09x)   exit 0   (420ms)   [1@1]"));
+        assert!(rep.contains("hello\n"));
+    }
 }
-
-

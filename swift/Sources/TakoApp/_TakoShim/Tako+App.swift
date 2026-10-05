@@ -2370,6 +2370,60 @@ extension Tako {
             crab.promptMark()
         }
 
+        public func terminalViewCommandDidStart(_ view: TakoTerminalNSView) {
+            let lastCmd = core.lastCommand(maxLines: 0, maxBytes: 0)?.command
+            var payload: [String: JSON] = [:]
+            if let cmdText = lastCmd?.input {
+                payload["command"] = .string(cmdText)
+            }
+            if let cwd = lastCmd?.cwd ?? workingDirectory {
+                payload["cwd"] = .string(cwd)
+            }
+            if let started = lastCmd?.startedAtMs {
+                payload["started_at"] = .number(Double(started) / 1000.0)
+            }
+            publishEvent(type: "command_start", payload: payload)
+        }
+
+        public func terminalView(_ view: TakoTerminalNSView, commandDidEnd exitCode: Int32?) {
+            let lastCmd = core.lastCommand(maxLines: 0, maxBytes: 0)?.command
+            let cmdId = lastCmd?.id ?? 0
+            let dur = view.commandDuration(id: cmdId, epoch: lastCmd?.epoch)
+            let started = view.commandStartedAt(id: cmdId)
+
+            var payload: [String: JSON] = [:]
+            if let exitCode {
+                payload["exit_code"] = .number(Double(exitCode))
+            } else {
+                payload["exit_code"] = .null
+            }
+            if let dur {
+                payload["duration"] = .number(dur)
+                payload["duration_ms"] = .number((dur * 1000.0).rounded())
+            }
+            if let started {
+                payload["started_at"] = .number(started.timeIntervalSince1970)
+            }
+            let cmdText = lastCmd?.input ?? ""
+            payload["command"] = .string(cmdText)
+            if let cwd = lastCmd?.cwd ?? workingDirectory {
+                payload["cwd"] = .string(cwd)
+            }
+            publishEvent(type: "command_end", payload: payload)
+
+            // E9: Record finished command into history across sessions, obeying secure-input privacy
+            if !self.isSecureInput && !SecureInput.shared.enabled {
+                CommandHistoryStore.shared.record(
+                    command: cmdText,
+                    cwd: lastCmd?.cwd ?? workingDirectory,
+                    startedAt: started ?? Date(),
+                    duration: dur,
+                    exitCode: exitCode,
+                    paneId: self.id
+                )
+            }
+        }
+
         public func publishEvent(type: String, payload: [String: JSON] = [:]) {
             let (windowID, tabID, workspaceID) = ControlCommands.surfaceContext(self)
             TerminalEventHub.shared.publish(
@@ -2610,6 +2664,8 @@ extension Tako {
             linkURLDetectionEnabled = config.linkURL
             safePaste = config.safePaste
             commandMarksEnabled = config.commandMarks
+            commandDurationsEnabled = config.commandDurations
+            commandTimestampsEnabled = config.commandTimestamps
             stickyCommandHeaderEnabled = config.stickyCommandHeader
             paneProgressBarEnabled = config.progressStyle.showsInHeader
             configuredEditorCommand = config.editor

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 import TakoKit
@@ -526,6 +536,18 @@ extension Tako {
         /// Reads `command-marks`, default true.
         var commandMarks: Bool {
             rawBool("command-marks", default: true)
+        }
+
+        /// Whether elapsed durations appear beside command marks in the gutter (E10).
+        /// Reads `command-durations`, default false.
+        var commandDurations: Bool {
+            rawBool("command-durations", default: false)
+        }
+
+        /// Whether start timestamps appear beside command marks in the gutter (E10).
+        /// Reads `command-timestamps`, default false.
+        var commandTimestamps: Bool {
+            rawBool("command-timestamps", default: false)
         }
 
         /// Whether the sticky command header stays pinned at the top while scrolling through long output.

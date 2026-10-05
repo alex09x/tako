@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 
 /// `takoctl last`, `wait` and `run`.
@@ -56,7 +66,13 @@ enum ControlCommand {
             return reply(.ok(result))
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            var result = describe(core.lastCommand(maxLines: UInt32(lines), maxBytes: UInt32(maxBytes)))
+            let found = core.lastCommand(maxLines: UInt32(lines), maxBytes: UInt32(maxBytes))
+            let dur = found.flatMap { cmd in
+                DispatchQueue.main.sync {
+                    surface.commandDuration(id: cmd.command.id, epoch: cmd.command.epoch)
+                }
+            }
+            var result = describe(found, duration: dur)
             result["id"] = .string(id)
             reply(.ok(result))
         }
@@ -117,7 +133,9 @@ enum ControlCommand {
         var target: (id: UInt64, epoch: UInt64)? = named
         if target == nil, !next {
             guard let running = newest, running.running else {
-                var result = describe(core.lastCommand(maxLines: UInt32(lines), maxBytes: UInt32(maxBytes)))
+                let found = core.lastCommand(maxLines: UInt32(lines), maxBytes: UInt32(maxBytes))
+                let dur = found.flatMap { surface.commandDuration(id: $0.command.id, epoch: $0.command.epoch) }
+                var result = describe(found, duration: dur)
                 result["id"] = .string(idString)
                 result["state"] = .string("idle")
                 return reply(.ok(result))
@@ -138,7 +156,8 @@ enum ControlCommand {
                         "command": .object(["ref": .string("\(id)@\(epoch)")])]
             }
             guard !found.command.running else { return nil }
-            var result = describe(found)
+            let dur = surface.commandDuration(id: id, epoch: epoch)
+            var result = describe(found, duration: dur)
             result["id"] = .string(idString)
             result["state"] = .string(found.command.abandoned ? "abandoned" : "finished")
             return result
@@ -146,7 +165,8 @@ enum ControlCommand {
             var result: [String: JSON] = ["id": .string(idString), "state": .string("timeout")]
             if let (id, epoch) = target,
                let found = core.commandOutput(id: id, epoch: epoch, maxLines: UInt32(lines), maxBytes: UInt32(maxBytes)) {
-                result.merge(describe(found)) { _, new in new }
+                let dur = surface.commandDuration(id: id, epoch: epoch)
+                result.merge(describe(found, duration: dur)) { _, new in new }
             }
             return result
         }
@@ -237,8 +257,8 @@ enum ControlCommand {
     }
 
     /// A shell command as JSON: `command` (null when the shell marked none),
-    /// with `ref` to wait on it, and its `output`.
-    nonisolated static func describe(_ found: FfiCommandOutput?) -> [String: JSON] {
+    /// with `ref` to wait on it, its `output`, and optional elapsed duration (E10).
+    nonisolated static func describe(_ found: FfiCommandOutput?, duration: TimeInterval? = nil) -> [String: JSON] {
         guard let found else {
             return ["command": .null, "output": .string(""), "lines": .number(0),
                     "truncated": .bool(false), "more": .bool(false), "incomplete": .bool(false)]
@@ -254,7 +274,11 @@ enum ControlCommand {
             "exitCode": info.exitCode.map { .number(Double($0)) } ?? .null,
         ]
         if let started = info.startedAtMs { command["startedAt"] = .number(Double(started)) }
-        return [
+        if let duration {
+            command["duration"] = .number(duration)
+            command["durationMs"] = .number((duration * 1000.0).rounded())
+        }
+        var result: [String: JSON] = [
             "command": .object(command),
             "output": .string(found.output),
             "lines": .number(Double(found.lines)),
@@ -262,6 +286,11 @@ enum ControlCommand {
             "more": .bool(found.more),
             "incomplete": .bool(found.incomplete),
         ]
+        if let duration {
+            result["duration"] = .number(duration)
+            result["durationMs"] = .number((duration * 1000.0).rounded())
+        }
+        return result
     }
 
     /// A directory as the shell reported it (OSC 7: a `file://` URL) as a
