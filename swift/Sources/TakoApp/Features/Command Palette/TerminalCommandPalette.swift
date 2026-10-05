@@ -59,7 +59,7 @@ struct TerminalCommandPaletteView: View {
         // Sort them. We replace ":" with a character that sorts before space
         // so that "Foo:" sorts before "Foo Bar:". Use sortKey as a tie-breaker
         // for stable ordering when titles are equal.
-        options.append(contentsOf: (jumpOptions + terminalOptions + commandActionOptions).sorted { a, b in
+        options.append(contentsOf: (jumpOptions + terminalOptions + commandActionOptions + projectActionOptions).sorted { a, b in
             let aNormalized = a.title.replacingOccurrences(of: ":", with: "\t")
             let bNormalized = b.title.replacingOccurrences(of: ":", with: "\t")
             let comparison = aNormalized.localizedCaseInsensitiveCompare(bNormalized)
@@ -261,6 +261,29 @@ struct TerminalCommandPaletteView: View {
         }
     }
 
+    /// Project-local actions defined in the project's action file (C3).
+    /// Only appears when the current pane is inside a project containing an action file.
+    private var projectActionOptions: [CommandOption] {
+        guard let discovered = ProjectActionDiscovery.find(for: surfaceView) else {
+            return []
+        }
+        let projectName = discovered.file.name ?? (discovered.projectRoot as NSString).lastPathComponent
+        return discovered.file.actions.map { action in
+            let cmdStr = action.effectiveCommand.joined(separator: " ")
+            let subtitle = cmdStr.isEmpty ? action.description : cmdStr
+            return CommandOption(
+                title: "\(projectName): \(action.title)",
+                subtitle: subtitle,
+                description: action.description,
+                leadingIcon: "play.circle.fill",
+                leadingColor: .orange,
+                badge: "Project Action",
+                action: {
+                    ProjectActionManager.shared.trigger(action, project: discovered, from: surfaceView)
+                }
+            )
+        }
+    }
 }
 
 /// This is done to ensure that the given view is in the responder chain.
