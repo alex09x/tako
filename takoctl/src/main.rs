@@ -15,7 +15,7 @@ mod socket;
 
 use std::process::ExitCode;
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 const USAGE: &str = "\
 usage: takoctl [--json] <command> [options]
@@ -38,6 +38,9 @@ commands:
                           each match with its pane and the command that printed it
   dialog                  the questions Tako has up (title, text, buttons); --press LABEL
                           presses a button (needs remote-control = on)
+  ask MESSAGE             prompt user for a question, choice, confirmation or text
+                          (--choice C, --choices C1,C2, --confirm, --timeout D,
+                          --default V, --placeholder P, --title T)
   last                    the pane's last command: its line, directory, exit status, output
                           and ref (ID@EPOCH); in a pane run started, its program
   wait                    wait for the pane's running command (--command REF: that one;
@@ -62,6 +65,13 @@ commands:
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --choice CHOICE         ask: add a choice (can be repeated)
+  --choices C1,C2,...     ask: comma-separated list of choices
+  --confirm               ask: prompt for confirmation (Yes/No)
+  --confirm-text TEXT     ask: custom confirmation button text
+  --cancel-text TEXT      ask: custom cancel button text
+  --placeholder TEXT      ask: placeholder text for text prompt
+  --default VALUE         ask: default value on timeout
   --pane ID               events: filter by pane ID
   --tab ID                events: filter by tab ID
   --workspace NAME        events: filter by workspace name
@@ -70,6 +80,7 @@ options:
   --lines N               last, wait, run --wait: at most the last N lines of output
   --text TEXT             status text (truncated to 128 characters)
   --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
+  --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
   --config PATH           override agent configuration file path
@@ -91,13 +102,16 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let mut args = Map::new();
     let mut json = false;
     let mut socket = None;
-    let mut bundle_id = std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
+    let mut bundle_id =
+        std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
     let mut it = argv.iter();
     while let Some(arg) = it.next() {
         let mut value = |name: &str| {
-            it.next().cloned().ok_or_else(|| format!("{name} needs a value"))
+            it.next()
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value"))
         };
         match arg.as_str() {
             "--json" => json = true,
@@ -110,7 +124,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("enter".into(), Value::Bool(false));
             }
             "--lines" => {
-                let n: u64 = value("--lines")?.parse().map_err(|_| "--lines needs a number".to_string())?;
+                let n: u64 = value("--lines")?
+                    .parse()
+                    .map_err(|_| "--lines needs a number".to_string())?;
                 args.insert("lines".into(), Value::from(n));
             }
             "--" => {
@@ -136,7 +152,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("title".into(), Value::String(value("--title")?));
             }
             "--limit" => {
-                let n: u64 = value("--limit")?.parse().map_err(|_| "--limit needs a number".to_string())?;
+                let n: u64 = value("--limit")?
+                    .parse()
+                    .map_err(|_| "--limit needs a number".to_string())?;
                 args.insert("limit".into(), Value::from(n));
             }
             "--press" => {
@@ -145,8 +163,55 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--split" => {
                 args.insert("split".into(), Value::String(value("--split")?));
             }
+            "--choice" => {
+                let val = value("--choice")?;
+                let entry = args
+                    .entry("choices")
+                    .or_insert_with(|| Value::Array(Vec::new()));
+                if let Some(arr) = entry.as_array_mut() {
+                    arr.push(Value::String(val));
+                }
+            }
+            "--choices" => {
+                let val = value("--choices")?;
+                let entry = args
+                    .entry("choices")
+                    .or_insert_with(|| Value::Array(Vec::new()));
+                if let Some(arr) = entry.as_array_mut() {
+                    for c in val.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                        arr.push(Value::String(c.to_string()));
+                    }
+                }
+            }
+            "--confirm" => {
+                args.insert("confirm".into(), Value::Bool(true));
+            }
+            "--confirm-text" => {
+                args.insert(
+                    "confirm_text".into(),
+                    Value::String(value("--confirm-text")?),
+                );
+            }
+            "--cancel-text" => {
+                args.insert("cancel_text".into(), Value::String(value("--cancel-text")?));
+            }
+            "--placeholder" => {
+                args.insert("placeholder".into(), Value::String(value("--placeholder")?));
+            }
+            "--default" => {
+                args.insert("default".into(), Value::String(value("--default")?));
+            }
             "--text" => {
-                args.insert("text".into(), Value::String(value("--text")?));
+                if let Some(next_tok) = it.clone().next() {
+                    if !next_tok.starts_with('-') {
+                        let val = it.next().unwrap().clone();
+                        args.insert("text".into(), Value::String(val));
+                    } else {
+                        args.insert("text_mode".into(), Value::Bool(true));
+                    }
+                } else {
+                    args.insert("text_mode".into(), Value::Bool(true));
+                }
             }
             "--ttl" => {
                 let s = value("--ttl")?;
@@ -154,11 +219,12 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("ttl".into(), Value::from(seconds));
             }
             "--timeout" => {
-                let s: f64 = value("--timeout")?.parse().map_err(|_| "--timeout needs seconds".to_string())?;
-                if !(s.is_finite() && (0.0..=7.0 * 24.0 * 3600.0).contains(&s)) {
+                let s = value("--timeout")?;
+                let seconds = parse_duration(&s).map_err(|e| format!("--timeout {e}"))?;
+                if !(seconds.is_finite() && (0.0..=7.0 * 24.0 * 3600.0).contains(&seconds)) {
                     return Err("--timeout needs seconds, at most a week".into());
                 }
-                args.insert("timeout".into(), Value::from(s));
+                args.insert("timeout".into(), Value::from(seconds));
             }
             "--yes" | "-y" => {
                 args.insert("yes".into(), Value::Bool(true));
@@ -182,7 +248,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("type".into(), Value::String(value("--type")?));
             }
             "--cursor" => {
-                let n: u64 = value("--cursor")?.parse().map_err(|_| "--cursor needs a number".to_string())?;
+                let n: u64 = value("--cursor")?
+                    .parse()
+                    .map_err(|_| "--cursor needs a number".to_string())?;
                 args.insert("cursor".into(), Value::from(n));
             }
             "-h" | "--help" => return Err(String::new()),
@@ -194,7 +262,8 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let cmd = cmd.ok_or_else(String::new)?;
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
-        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" | "events" => None,
+        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
+        | "dialog" | "events" => None,
         "status" => {
             let sub = if positional.is_empty() {
                 "get".to_string()
@@ -224,7 +293,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                         return Err(format!("unexpected argument {}", positional[0]));
                     }
                 }
-                other => return Err(format!("unknown status action \"{other}\"; use get, set, or clear")),
+                other => {
+                    return Err(format!(
+                        "unknown status action \"{other}\"; use get, set, or clear"
+                    ))
+                }
             }
             None
         }
@@ -257,7 +330,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                                 let val_str = positional.remove(0);
                                 if let Ok(num) = val_str.parse::<u64>() {
                                     if num > 100 {
-                                        return Err("progress value must be between 0 and 100".into());
+                                        return Err(
+                                            "progress value must be between 0 and 100".into()
+                                        );
                                     }
                                     args.insert("value".into(), Value::from(num));
                                 } else {
@@ -271,7 +346,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                                 let val_str = positional.remove(0);
                                 if let Ok(num) = val_str.parse::<u64>() {
                                     if num > 100 {
-                                        return Err("progress value must be between 0 and 100".into());
+                                        return Err(
+                                            "progress value must be between 0 and 100".into()
+                                        );
                                     }
                                     args.insert("value".into(), Value::from(num));
                                 } else {
@@ -285,7 +362,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                                 let val_str = positional.remove(0);
                                 if let Ok(num) = val_str.parse::<u64>() {
                                     if num > 100 {
-                                        return Err("progress value must be between 0 and 100".into());
+                                        return Err(
+                                            "progress value must be between 0 and 100".into()
+                                        );
                                     }
                                     args.insert("value".into(), Value::from(num));
                                 } else {
@@ -312,7 +391,8 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             let path = std::env::var("PATH").unwrap_or_default();
             let mut argv = std::mem::take(&mut positional);
-            argv[0] = resolve(&argv[0], &path).ok_or_else(|| format!("{}: not found on PATH", argv[0]))?;
+            argv[0] = resolve(&argv[0], &path)
+                .ok_or_else(|| format!("{}: not found on PATH", argv[0]))?;
             args.insert("argv".into(), Value::from(argv));
             args.insert("path".into(), Value::String(path));
             None
@@ -342,7 +422,10 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                 "install" => {
                     args.insert("action".into(), Value::String("install".into()));
                     if positional.is_empty() {
-                        return Err("hooks install needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                        return Err(
+                            "hooks install needs an agent name (e.g. claude, gemini, codex, aider)"
+                                .into(),
+                        );
                     }
                     args.insert("agent".into(), Value::String(positional.remove(0)));
                     if !positional.is_empty() {
@@ -359,13 +442,18 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                         return Err(format!("unexpected argument {}", positional[0]));
                     }
                 }
-                other => return Err(format!("unknown hooks action \"{other}\"; use list, status, install, or uninstall")),
+                other => {
+                    return Err(format!(
+                        "unknown hooks action \"{other}\"; use list, status, install, or uninstall"
+                    ))
+                }
             }
             None
         }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
+        "ask" => Some("message"),
         "key" => Some("key"),
         _ => return Err(format!("unknown command {cmd}")),
     };
@@ -378,7 +466,13 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         (Some(name), 0) => return Err(format!("{cmd} needs a {name}")),
         (Some(_), _) => return Err(format!("{cmd} takes one argument; quote it")),
     }
-    Ok(Options { cmd, args, json, socket, bundle_id })
+    Ok(Options {
+        cmd,
+        args,
+        json,
+        socket,
+        bundle_id,
+    })
 }
 
 /// The request line: the command, its arguments, and the pane it is sent
@@ -418,7 +512,8 @@ fn render(cmd: &str, result: &Value) -> String {
                     }
                     out += &head;
                     out.push('\n');
-                    let panes: Vec<&Value> = tab["panes"].as_array().into_iter().flatten().collect();
+                    let panes: Vec<&Value> =
+                        tab["panes"].as_array().into_iter().flatten().collect();
                     match tab.get("layout").filter(|l| !l.is_null()) {
                         Some(layout) => outline(&mut out, layout, &panes, 2),
                         None => {
@@ -439,12 +534,15 @@ fn render(cmd: &str, result: &Value) -> String {
         "send" | "type" | "key" | "focus" | "title" | "notify" => String::new(),
         "tab-new" | "split" => format!("{}\n", result["id"].as_str().unwrap_or("")),
         "close" => format!("{}\n", result["state"].as_str().unwrap_or("")),
-        "run" if result.get("state").is_none() => format!("{}\n", result["id"].as_str().unwrap_or("")),
+        "run" if result.get("state").is_none() => {
+            format!("{}\n", result["id"].as_str().unwrap_or(""))
+        }
         "last" | "wait" | "run" => command_report(result),
         "status" => status_report(result),
         "progress" => progress_report(result),
         "find" => find_report(result),
         "dialog" => dialog_report(result),
+        "ask" => format!("{}\n", serde_json::to_string(result).unwrap_or_default()),
         _ => format!("{result}\n"),
     }
 }
@@ -485,20 +583,34 @@ fn command_report(result: &Value) -> String {
         return process_report(process, result);
     }
     if result["state"].as_str() == Some("gone") {
-        return format!("command {} is no longer kept\n", result["command"]["ref"].as_str().unwrap_or("?"));
+        return format!(
+            "command {} is no longer kept\n",
+            result["command"]["ref"].as_str().unwrap_or("?")
+        );
     }
     let command = &result["command"];
     if command.is_null() {
         return "no command marked by the shell in this pane (shell integration off?)\n".into();
     }
-    let status = match (result["state"].as_str(), command["running"].as_bool(), command["exitCode"].as_f64()) {
+    let status = match (
+        result["state"].as_str(),
+        command["running"].as_bool(),
+        command["exitCode"].as_f64(),
+    ) {
         (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
         (_, Some(true), _) => "running".to_string(),
-        _ if command["abandoned"].as_bool() == Some(true) => "abandoned (a new prompt came before it ended)".to_string(),
+        _ if command["abandoned"].as_bool() == Some(true) => {
+            "abandoned (a new prompt came before it ended)".to_string()
+        }
         (_, _, Some(code)) => format!("exit {}", code as i64),
         _ => "ended, no exit status".to_string(),
     };
-    let mut out = format!("$ {}", command["input"].as_str().unwrap_or("(command line not reported by the shell)"));
+    let mut out = format!(
+        "$ {}",
+        command["input"]
+            .as_str()
+            .unwrap_or("(command line not reported by the shell)")
+    );
     if let Some(cwd) = command["cwd"].as_str() {
         out += &format!("   ({cwd})");
     }
@@ -539,7 +651,10 @@ fn find_report(result: &Value) -> String {
             out += &format!("{}  {label}\n", &id[..id.len().min(8)]);
         }
         let heading = m.get("command").map(|c| {
-            let mut h = format!("$ {}", c["input"].as_str().unwrap_or("(command line not reported)"));
+            let mut h = format!(
+                "$ {}",
+                c["input"].as_str().unwrap_or("(command line not reported)")
+            );
             h += &format!("   {}", c["status"].as_str().unwrap_or(""));
             if let Some(cwd) = c["cwd"].as_str() {
                 h += &format!("   {cwd}");
@@ -565,30 +680,62 @@ fn find_report(result: &Value) -> String {
 /// The questions up, each as its frame, text and buttons; or what was pressed.
 fn dialog_report(result: &Value) -> String {
     if let Some(label) = result["pressed"].as_str() {
-        return format!("pressed {label} in \"{}\"\n", result["title"].as_str().unwrap_or(""));
+        return format!(
+            "pressed {label} in \"{}\"\n",
+            result["title"].as_str().unwrap_or("")
+        );
     }
     let mut out = String::new();
     for d in result["dialogs"].as_array().into_iter().flatten() {
-        out += &format!("{}  {}\n", d["window"].as_str().unwrap_or(""), d["title"].as_str().unwrap_or(""));
+        out += &format!(
+            "{}  {}\n",
+            d["window"].as_str().unwrap_or(""),
+            d["title"].as_str().unwrap_or("")
+        );
         for line in d["text"].as_str().unwrap_or("").lines() {
             out += &format!("  {line}\n");
         }
         let selected = d["selected"].as_str();
-        let buttons: Vec<String> = d["buttons"].as_array().into_iter().flatten()
+        let buttons: Vec<String> = d["buttons"]
+            .as_array()
+            .into_iter()
+            .flatten()
             .filter_map(Value::as_str)
-            .map(|b| if Some(b) == selected { format!("[{b}]") } else { b.to_string() })
+            .map(|b| {
+                if Some(b) == selected {
+                    format!("[{b}]")
+                } else {
+                    b.to_string()
+                }
+            })
             .collect();
         out += &format!("  buttons: {}\n", buttons.join("  "));
     }
-    if out.is_empty() { "no question is up\n".into() } else { out }
+    if out.is_empty() {
+        "no question is up\n".into()
+    } else {
+        out
+    }
 }
 
 /// A program run started: its argv, how it ended, what the pane shows.
 fn process_report(process: &Value, result: &Value) -> String {
-    let argv: Vec<&str> = process["argv"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-    let status = match (result["state"].as_str(), process["running"].as_bool(), process["exitCode"].as_f64()) {
+    let argv: Vec<&str> = process["argv"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let status = match (
+        result["state"].as_str(),
+        process["running"].as_bool(),
+        process["exitCode"].as_f64(),
+    ) {
         _ if process["startError"].is_string() => {
-            format!("could not start: {}", process["startError"].as_str().unwrap_or(""))
+            format!(
+                "could not start: {}",
+                process["startError"].as_str().unwrap_or("")
+            )
         }
         (Some("timeout"), _, _) => "still running (timed out waiting)".to_string(),
         (_, Some(true), _) => "running".to_string(),
@@ -607,7 +754,9 @@ fn process_report(process: &Value, result: &Value) -> String {
 /// How long to wait for the app's answer: a wait for as long as asked plus
 /// a margin, an unbounded one for a day; anything else the usual limit.
 fn answer_limit(opts: &Options) -> std::time::Duration {
-    let waits = opts.cmd == "wait" || (opts.cmd == "run" && opts.args.get("wait") == Some(&Value::Bool(true)));
+    let waits = opts.cmd == "wait"
+        || opts.cmd == "ask"
+        || (opts.cmd == "run" && opts.args.get("wait") == Some(&Value::Bool(true)));
     if !waits {
         return socket::TIMEOUT;
     }
@@ -619,7 +768,11 @@ fn answer_limit(opts: &Options) -> std::time::Duration {
 
 /// One pane: `*` when it has the keyboard, its id, directory and title, and status if set.
 fn pane_line(pane: &Value, depth: usize) -> String {
-    let mark = if pane["focused"].as_bool() == Some(true) { "*" } else { " " };
+    let mark = if pane["focused"].as_bool() == Some(true) {
+        "*"
+    } else {
+        " "
+    };
     let mut line = format!(
         "{}{mark}{}  {}  {}",
         "  ".repeat(depth),
@@ -646,32 +799,61 @@ fn parse_duration(s: &str) -> Result<f64, String> {
         return Err("cannot be empty".into());
     }
     if let Some(rest) = s.strip_suffix("ms") {
-        let ms: f64 = rest.trim().parse().map_err(|_| format!("invalid milliseconds in \"{s}\""))?;
-        if ms < 0.0 || !ms.is_finite() { return Err("must be positive".into()); }
+        let ms: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid milliseconds in \"{s}\""))?;
+        if ms < 0.0 || !ms.is_finite() {
+            return Err("must be positive".into());
+        }
         return Ok(ms / 1000.0);
     }
     if let Some(rest) = s.strip_suffix('s') {
-        let sec: f64 = rest.trim().parse().map_err(|_| format!("invalid seconds in \"{s}\""))?;
-        if sec < 0.0 || !sec.is_finite() { return Err("must be positive".into()); }
+        let sec: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid seconds in \"{s}\""))?;
+        if sec < 0.0 || !sec.is_finite() {
+            return Err("must be positive".into());
+        }
         return Ok(sec);
     }
     if let Some(rest) = s.strip_suffix('m') {
-        let min: f64 = rest.trim().parse().map_err(|_| format!("invalid minutes in \"{s}\""))?;
-        if min < 0.0 || !min.is_finite() { return Err("must be positive".into()); }
+        let min: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid minutes in \"{s}\""))?;
+        if min < 0.0 || !min.is_finite() {
+            return Err("must be positive".into());
+        }
         return Ok(min * 60.0);
     }
     if let Some(rest) = s.strip_suffix('h') {
-        let hr: f64 = rest.trim().parse().map_err(|_| format!("invalid hours in \"{s}\""))?;
-        if hr < 0.0 || !hr.is_finite() { return Err("must be positive".into()); }
+        let hr: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid hours in \"{s}\""))?;
+        if hr < 0.0 || !hr.is_finite() {
+            return Err("must be positive".into());
+        }
         return Ok(hr * 3600.0);
     }
     if let Some(rest) = s.strip_suffix('d') {
-        let days: f64 = rest.trim().parse().map_err(|_| format!("invalid days in \"{s}\""))?;
-        if days < 0.0 || !days.is_finite() { return Err("must be positive".into()); }
+        let days: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid days in \"{s}\""))?;
+        if days < 0.0 || !days.is_finite() {
+            return Err("must be positive".into());
+        }
         return Ok(days * 86400.0);
     }
-    let sec: f64 = s.parse().map_err(|_| format!("invalid duration \"{s}\" (expected e.g. 10m, 30s, 1h, 500ms)"))?;
-    if sec < 0.0 || !sec.is_finite() { return Err("must be positive".into()); }
+    let sec: f64 = s
+        .parse()
+        .map_err(|_| format!("invalid duration \"{s}\" (expected e.g. 10m, 30s, 1h, 500ms)"))?;
+    if sec < 0.0 || !sec.is_finite() {
+        return Err("must be positive".into());
+    }
     Ok(sec)
 }
 
@@ -684,8 +866,15 @@ fn outline(out: &mut String, node: &Value, panes: &[&Value], depth: usize) {
         }
         return;
     }
-    let ratio = node["ratio"].as_f64().map(|r| format!(" {:.0}%", r * 100.0)).unwrap_or_default();
-    *out += &format!("{}split {}{ratio}\n", "  ".repeat(depth), node["split"].as_str().unwrap_or("?"));
+    let ratio = node["ratio"]
+        .as_f64()
+        .map(|r| format!(" {:.0}%", r * 100.0))
+        .unwrap_or_default();
+    *out += &format!(
+        "{}split {}{ratio}\n",
+        "  ".repeat(depth),
+        node["split"].as_str().unwrap_or("?")
+    );
     for child in node["children"].as_array().into_iter().flatten() {
         outline(out, child, panes, depth + 1);
     }
@@ -701,14 +890,27 @@ fn resolve(program: &str, path: &str) -> Option<String> {
     path.split(':').filter(|d| !d.is_empty()).find_map(|dir| {
         let candidate = std::path::Path::new(dir).join(program);
         let meta = std::fs::metadata(&candidate).ok()?;
-        (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then(|| candidate.to_string_lossy().into_owned())
+        (meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+            .then(|| candidate.to_string_lossy().into_owned())
     })
 }
 
 fn run_hooks(opts: &Options) -> Result<(), String> {
-    let action = opts.args.get("action").and_then(Value::as_str).unwrap_or("list");
-    let yes = opts.args.get("yes").and_then(Value::as_bool).unwrap_or(false);
-    let diff_only = opts.args.get("diff_only").and_then(Value::as_bool).unwrap_or(false);
+    let action = opts
+        .args
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or("list");
+    let yes = opts
+        .args
+        .get("yes")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let diff_only = opts
+        .args
+        .get("diff_only")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let config_override = opts.args.get("config").and_then(Value::as_str);
 
     match action {
@@ -718,11 +920,19 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
             hooks::status(agent, opts.json)
         }
         "install" => {
-            let agent = opts.args.get("agent").and_then(Value::as_str).ok_or("hooks install needs an agent name")?;
+            let agent = opts
+                .args
+                .get("agent")
+                .and_then(Value::as_str)
+                .ok_or("hooks install needs an agent name")?;
             hooks::install(agent, config_override, yes, diff_only, opts.json)
         }
         "uninstall" => {
-            let agent = opts.args.get("agent").and_then(Value::as_str).ok_or("hooks uninstall needs an agent name")?;
+            let agent = opts
+                .args
+                .get("agent")
+                .and_then(Value::as_str)
+                .ok_or("hooks uninstall needs an agent name")?;
             hooks::uninstall(agent, config_override, yes, diff_only, opts.json)
         }
         other => Err(format!("unknown hooks action '{other}'")),
@@ -810,7 +1020,12 @@ fn main() -> ExitCode {
             }
         };
     }
-    let answer = match socket::exchange_within(&path, &req, answer_limit(&opts), socket::MAX_ANSWER_BYTES) {
+    let answer = match socket::exchange_within(
+        &path,
+        &req,
+        answer_limit(&opts),
+        socket::MAX_ANSWER_BYTES,
+    ) {
         Ok(a) => a,
         Err(e) if !e.sent => {
             eprintln!("takoctl: no Tako answers on {path}: {}", e.message);
@@ -839,7 +1054,21 @@ fn main() -> ExitCode {
             eprintln!("  {}", c.as_str().unwrap_or(""));
         }
     }
-    if ok { ExitCode::SUCCESS } else { ExitCode::from(1) }
+    if ok {
+        ExitCode::SUCCESS
+    } else if opts.cmd == "ask" {
+        let code = answer["error"]["code"].as_str().unwrap_or("");
+        let msg = answer["error"]["message"].as_str().unwrap_or("");
+        if code == "timeout" {
+            ExitCode::from(2)
+        } else if code == "notFound" || code == "pane_closed" || msg.contains("pane closed") {
+            ExitCode::from(3)
+        } else {
+            ExitCode::from(1)
+        }
+    } else {
+        ExitCode::from(1)
+    }
 }
 
 #[cfg(test)]
@@ -855,7 +1084,10 @@ mod tests {
         let opts = parse(&args(&["tree", "--target", "ab12", "--json"])).unwrap();
         assert!(opts.json);
         let req = request(&opts, Some("1111".into()));
-        assert_eq!(req, json!({"cmd": "tree", "args": {"target": "ab12"}, "from": "1111"}));
+        assert_eq!(
+            req,
+            json!({"cmd": "tree", "args": {"target": "ab12"}, "from": "1111"})
+        );
         // Outside a pane there is no "from".
         assert!(request(&opts, None).get("from").is_none());
         assert!(request(&opts, Some(String::new())).get("from").is_none());
@@ -864,8 +1096,10 @@ mod tests {
     #[test]
     fn text_commands_take_exactly_one_argument() {
         let opts = parse(&args(&["send", "ls -la", "--target", "ab", "--no-enter"])).unwrap();
-        assert_eq!(request(&opts, None),
-            json!({"cmd": "send", "args": {"text": "ls -la", "target": "ab", "enter": false}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "send", "args": {"text": "ls -la", "target": "ab", "enter": false}})
+        );
         let opts = parse(&args(&["key", "ctrl+c"])).unwrap();
         assert_eq!(opts.args["key"], "ctrl+c");
         let opts = parse(&args(&["type", "--", "--not-an-option"])).unwrap();
@@ -880,14 +1114,33 @@ mod tests {
 
     #[test]
     fn run_and_wait_take_their_options() {
-        let opts = parse(&args(&["run", "--split", "down", "--wait", "--timeout", "90", "--lines", "5",
-                                  "--", "/bin/echo", "a b", "--not-ours"])).unwrap();
+        let opts = parse(&args(&[
+            "run",
+            "--split",
+            "down",
+            "--wait",
+            "--timeout",
+            "90",
+            "--lines",
+            "5",
+            "--",
+            "/bin/echo",
+            "a b",
+            "--not-ours",
+        ]))
+        .unwrap();
         let req = request(&opts, None);
-        assert_eq!(req["args"]["argv"], json!(["/bin/echo", "a b", "--not-ours"]));
+        assert_eq!(
+            req["args"]["argv"],
+            json!(["/bin/echo", "a b", "--not-ours"])
+        );
         assert_eq!(req["args"]["split"], "down");
         assert_eq!(req["args"]["wait"], true);
         assert!(req["args"]["path"].is_string());
-        assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(90) + socket::TIMEOUT);
+        assert_eq!(
+            answer_limit(&opts),
+            std::time::Duration::from_secs(90) + socket::TIMEOUT
+        );
         // A bare name is found on PATH; an unknown one is a usage error.
         assert_eq!(resolve("sh", "/nope:/bin"), Some("/bin/sh".into()));
         assert_eq!(resolve("./x", "/bin"), Some("./x".into()));
@@ -897,8 +1150,14 @@ mod tests {
         assert_eq!(opts.args["command"], "12@3");
         let opts = parse(&args(&["wait", "--next"])).unwrap();
         assert_eq!(opts.args["next"], true);
-        assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(24 * 3600));
-        assert_eq!(answer_limit(&parse(&args(&["run", "--", "/bin/ls"])).unwrap()), socket::TIMEOUT);
+        assert_eq!(
+            answer_limit(&opts),
+            std::time::Duration::from_secs(24 * 3600)
+        );
+        assert_eq!(
+            answer_limit(&parse(&args(&["run", "--", "/bin/ls"])).unwrap()),
+            socket::TIMEOUT
+        );
         assert!(parse(&args(&["run"])).is_err());
         assert!(parse(&args(&["wait", "--timeout", "-1"])).is_err());
         assert!(parse(&args(&["wait", "--timeout", "1e300"])).is_err());
@@ -909,23 +1168,37 @@ mod tests {
     fn a_command_reads_as_its_line_status_and_output() {
         let result = json!({"command": {"input": "make", "cwd": "/src", "running": false,
             "finished": true, "exitCode": 2}, "output": "error: x", "more": true, "state": "finished"});
-        assert_eq!(command_report(&result), "$ make   (/src)   exit 2\n...\nerror: x\n");
+        assert_eq!(
+            command_report(&result),
+            "$ make   (/src)   exit 2\n...\nerror: x\n"
+        );
         let result = json!({"command": {"ref": "7@1", "input": "make", "running": false, "finished": true,
             "abandoned": false, "exitCode": 0}, "output": "", "incomplete": true});
-        assert_eq!(command_report(&result),
-            "$ make   exit 0   [7@1]\n(some of its output was written over or is no longer kept)\n");
+        assert_eq!(
+            command_report(&result),
+            "$ make   exit 0   [7@1]\n(some of its output was written over or is no longer kept)\n"
+        );
         let result = json!({"process": {"argv": ["/bin/ls", "/nope"], "running": false, "exitCode": 1},
             "output": "ls: /nope: No such file", "state": "finished"});
-        assert_eq!(command_report(&result), "/bin/ls /nope   exit 1\nls: /nope: No such file\n");
+        assert_eq!(
+            command_report(&result),
+            "/bin/ls /nope   exit 1\nls: /nope: No such file\n"
+        );
         let result = json!({"command": {"input": "sleep 9", "running": true}, "output": "", "state": "timeout"});
-        assert_eq!(command_report(&result), "$ sleep 9   still running (timed out waiting)\n");
+        assert_eq!(
+            command_report(&result),
+            "$ sleep 9   still running (timed out waiting)\n"
+        );
         assert!(command_report(&json!({"command": null})).starts_with("no command"));
     }
 
     #[test]
     fn notify_takes_its_text_and_a_title() {
         let opts = parse(&args(&["notify", "build done", "--title", "CI"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "notify", "args": {"text": "build done", "title": "CI"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "notify", "args": {"text": "build done", "title": "CI"}})
+        );
         assert!(parse(&args(&["notify"])).is_err());
     }
 
@@ -938,7 +1211,9 @@ mod tests {
              "command": {"input": "make", "status": "✗ exit 2", "cwd": "/src"}},
             {"id": "bbbbbbbb-2", "place": "logs", "pane": "pane 2 of 2", "line": "kernel error"}],
             "more": true});
-        assert_eq!(find_report(&result), "\
+        assert_eq!(
+            find_report(&result),
+            "\
 aaaaaaaa  tako -- tab 1 of 2
   $ make   ✗ exit 2   /src
     error: one
@@ -946,21 +1221,36 @@ aaaaaaaa  tako -- tab 1 of 2
 bbbbbbbb  logs -- pane 2 of 2
     kernel error
 ... more matches (--limit N)
-");
-        assert_eq!(find_report(&json!({"matches": [], "more": false})), "no matches\n");
+"
+        );
+        assert_eq!(
+            find_report(&json!({"matches": [], "more": false})),
+            "no matches\n"
+        );
         let opts = parse(&args(&["find", "panic", "--limit", "5"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "find", "args": {"text": "panic", "limit": 5}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "find", "args": {"text": "panic", "limit": 5}})
+        );
     }
 
     #[test]
     fn a_dialog_reads_with_its_buttons_and_the_chosen_one() {
         let result = json!({"dialogs": [{"window": "window-1", "title": "Close Terminal?",
             "text": "A process is running.", "buttons": ["Cancel", "Close"], "selected": "Close"}]});
-        assert_eq!(dialog_report(&result),
-            "window-1  Close Terminal?\n  A process is running.\n  buttons: Cancel  [Close]\n");
-        assert_eq!(dialog_report(&json!({"dialogs": []})), "no question is up\n");
+        assert_eq!(
+            dialog_report(&result),
+            "window-1  Close Terminal?\n  A process is running.\n  buttons: Cancel  [Close]\n"
+        );
+        assert_eq!(
+            dialog_report(&json!({"dialogs": []})),
+            "no question is up\n"
+        );
         let opts = parse(&args(&["dialog", "--press", "Later"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "dialog", "args": {"press": "Later"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "dialog", "args": {"press": "Later"}})
+        );
     }
 
     #[test]
@@ -992,7 +1282,8 @@ bbbbbbbb  logs -- pane 2 of 2
             "         p2  /tmp  ",
             "         p3  -  top",
             "",
-        ].join("\n");
+        ]
+        .join("\n");
         assert_eq!(render("tree", &result), want);
     }
 
@@ -1001,35 +1292,58 @@ bbbbbbbb  logs -- pane 2 of 2
         let result = json!({"windows": [{"id": "w1", "tabs": [{"id": "t1", "panes": [
             {"id": "p1", "cwd": "/src", "title": "zsh", "focused": true},
             {"id": "p2", "cwd": null, "title": "", "focused": false}]}]}]});
-        assert_eq!(render("tree", &result),
-            "window w1\n  tab t1\n    *p1  /src  zsh\n     p2  -  \n");
+        assert_eq!(
+            render("tree", &result),
+            "window w1\n  tab t1\n    *p1  /src  zsh\n     p2  -  \n"
+        );
     }
 
     #[test]
     fn status_command_parses_get_set_clear_and_options() {
         // get (default)
         let opts = parse(&args(&["status"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "get"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "status", "args": {"action": "get"}})
+        );
 
         // get (explicit)
         let opts = parse(&args(&["status", "get"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "get"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "status", "args": {"action": "get"}})
+        );
 
         // set
-        let opts = parse(&args(&["status", "set", "working", "--text", "compiling", "--ttl", "10m"])).unwrap();
-        assert_eq!(request(&opts, None), json!({
-            "cmd": "status",
-            "args": {
-                "action": "set",
-                "status": "working",
-                "text": "compiling",
-                "ttl": 600.0,
-            }
-        }));
+        let opts = parse(&args(&[
+            "status",
+            "set",
+            "working",
+            "--text",
+            "compiling",
+            "--ttl",
+            "10m",
+        ]))
+        .unwrap();
+        assert_eq!(
+            request(&opts, None),
+            json!({
+                "cmd": "status",
+                "args": {
+                    "action": "set",
+                    "status": "working",
+                    "text": "compiling",
+                    "ttl": 600.0,
+                }
+            })
+        );
 
         // clear
         let opts = parse(&args(&["status", "clear"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "status", "args": {"action": "clear"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "status", "args": {"action": "clear"}})
+        );
 
         // errors
         assert!(parse(&args(&["status", "set"])).is_err());
@@ -1045,7 +1359,10 @@ bbbbbbbb  logs -- pane 2 of 2
             "ttl": 298.5,
             "unread": true,
         });
-        assert_eq!(status_report(&result), "working (compiling) [TTL: 4m 58s] [unread]\n");
+        assert_eq!(
+            status_report(&result),
+            "working (compiling) [TTL: 4m 58s] [unread]\n"
+        );
 
         let simple = json!({
             "status": "idle",
@@ -1058,41 +1375,71 @@ bbbbbbbb  logs -- pane 2 of 2
     fn progress_command_parses_get_set_error_pause_indeterminate_clear() {
         // get (default)
         let opts = parse(&args(&["progress"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "get"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "get"}})
+        );
 
         // get (explicit)
         let opts = parse(&args(&["progress", "get"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "get"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "get"}})
+        );
 
         // number directly (e.g. 45)
         let opts = parse(&args(&["progress", "45"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "set", "value": 45}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "set", "value": 45}})
+        );
 
         // set / normal with value
         let opts = parse(&args(&["progress", "set", "60"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "set", "value": 60}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "set", "value": 60}})
+        );
 
         // indeterminate
         let opts = parse(&args(&["progress", "indeterminate"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "indeterminate"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "indeterminate"}})
+        );
 
         // error with and without value
         let opts = parse(&args(&["progress", "error"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "error"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "error"}})
+        );
 
         let opts = parse(&args(&["progress", "error", "100"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "error", "value": 100}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "error", "value": 100}})
+        );
 
         // pause with and without value
         let opts = parse(&args(&["progress", "pause"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "pause"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "pause"}})
+        );
 
         let opts = parse(&args(&["progress", "pause", "75"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "pause", "value": 75}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "pause", "value": 75}})
+        );
 
         // clear
         let opts = parse(&args(&["progress", "clear"])).unwrap();
-        assert_eq!(request(&opts, None), json!({"cmd": "progress", "args": {"action": "clear"}}));
+        assert_eq!(
+            request(&opts, None),
+            json!({"cmd": "progress", "args": {"action": "clear"}})
+        );
 
         // errors
         assert!(parse(&args(&["progress", "101"])).is_err());
@@ -1148,7 +1495,16 @@ bbbbbbbb  logs -- pane 2 of 2
         assert_eq!(opts.args["agent"], "claude");
 
         // install with flags
-        let opts = parse(&args(&["hooks", "install", "gemini", "--yes", "--diff-only", "--config", "/tmp/test.json"])).unwrap();
+        let opts = parse(&args(&[
+            "hooks",
+            "install",
+            "gemini",
+            "--yes",
+            "--diff-only",
+            "--config",
+            "/tmp/test.json",
+        ]))
+        .unwrap();
         assert_eq!(opts.args["action"], "install");
         assert_eq!(opts.args["agent"], "gemini");
         assert_eq!(opts.args["yes"], true);
@@ -1175,13 +1531,19 @@ bbbbbbbb  logs -- pane 2 of 2
 
         let opts = parse(&args(&[
             "events",
-            "--pane", "1234",
-            "--tab", "5678",
-            "--workspace", "my-ws",
-            "--type", "command_start,command_end",
-            "--cursor", "42",
-            "--json"
-        ])).unwrap();
+            "--pane",
+            "1234",
+            "--tab",
+            "5678",
+            "--workspace",
+            "my-ws",
+            "--type",
+            "command_start,command_end",
+            "--cursor",
+            "42",
+            "--json",
+        ]))
+        .unwrap();
         assert_eq!(opts.cmd, "events");
         assert_eq!(opts.args["pane"], "1234");
         assert_eq!(opts.args["tab"], "5678");
@@ -1194,5 +1556,92 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(parse(&args(&["events", "unexpected"])).is_err());
         assert!(parse(&args(&["events", "--cursor", "not_a_number"])).is_err());
     }
-}
 
+    #[test]
+    fn ask_command_parses_options_and_renders_json() {
+        // Confirmation prompt
+        let opts = parse(&args(&[
+            "ask",
+            "Deploy to production?",
+            "--confirm",
+            "--confirm-text",
+            "Ship it",
+            "--cancel-text",
+            "Abort",
+            "--title",
+            "Deploy Prompt",
+            "--target",
+            "pane-1",
+        ]))
+        .unwrap();
+        assert_eq!(opts.cmd, "ask");
+        assert_eq!(opts.args["message"], "Deploy to production?");
+        assert_eq!(opts.args["confirm"], true);
+        assert_eq!(opts.args["confirm_text"], "Ship it");
+        assert_eq!(opts.args["cancel_text"], "Abort");
+        assert_eq!(opts.args["title"], "Deploy Prompt");
+        assert_eq!(opts.args["target"], "pane-1");
+
+        // Choice prompt with multiple flags
+        let opts = parse(&args(&[
+            "ask",
+            "Select environment",
+            "--choice",
+            "dev",
+            "--choice",
+            "staging",
+            "--choices",
+            "prod,canary",
+            "--timeout",
+            "30s",
+            "--default",
+            "dev",
+        ]))
+        .unwrap();
+        assert_eq!(opts.cmd, "ask");
+        assert_eq!(opts.args["message"], "Select environment");
+        assert_eq!(
+            opts.args["choices"],
+            json!(["dev", "staging", "prod", "canary"])
+        );
+        assert_eq!(opts.args["timeout"], 30.0);
+        assert_eq!(opts.args["default"], "dev");
+        assert_eq!(
+            answer_limit(&opts),
+            std::time::Duration::from_secs(30) + socket::TIMEOUT
+        );
+
+        // Text prompt
+        let opts = parse(&args(&[
+            "ask",
+            "Enter commit message",
+            "--text",
+            "--placeholder",
+            "feat: ...",
+            "--timeout",
+            "1m",
+        ]))
+        .unwrap();
+        assert_eq!(opts.cmd, "ask");
+        assert_eq!(opts.args["message"], "Enter commit message");
+        assert_eq!(opts.args["placeholder"], "feat: ...");
+        assert_eq!(opts.args["timeout"], 60.0);
+
+        // Rendering prints JSON
+        let result = json!({
+            "answer": "Ship it",
+            "confirmed": true,
+            "type": "confirm",
+            "id": "prompt-123"
+        });
+        let rendered = render("ask", &result);
+        let parsed_rendered: Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(parsed_rendered["answer"], "Ship it");
+        assert_eq!(parsed_rendered["type"], "confirm");
+        assert!(rendered.ends_with('\n'));
+
+        // Errors
+        assert!(parse(&args(&["ask"])).is_err());
+        assert!(parse(&args(&["ask", "one", "two"])).is_err());
+    }
+}
