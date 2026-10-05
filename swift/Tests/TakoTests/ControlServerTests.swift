@@ -329,7 +329,7 @@ struct ControlServerTests {
         defer { server.stop() }
         var st = stat()
         #expect(lstat(path, &st) == 0 && st.st_mode & 0o777 == 0o600)
-        #expect(FileManager.default.fileExists(atPath: path + ".token"))
+        #expect(!FileManager.default.fileExists(atPath: path + ".token"), "No token file should ever be written to disk")
         let answer = try await ask(path, #"{"cmd":"hello","from":"\#(a.uuidString)"}"#)
         #expect(answer["ok"] as? Bool == true)
         let result = answer["result"] as? [String: Any]

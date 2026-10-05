@@ -105,35 +105,6 @@ final class ControlGrantStore: @unchecked Sendable {
         }
     }
 
-    /// Writes the primary session token to a file with 0600 permissions.
-    func writePrimaryToken(to path: String) throws {
-        var st = stat()
-        if lstat(path, &st) == 0 {
-            guard st.st_uid == getuid() else {
-                throw ControlError(.internalError, "\(path) exists and is not owned by this user")
-            }
-            unlink(path)
-        }
-        let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0o600)
-        guard fd >= 0 else {
-            throw ControlError(.internalError, "cannot write primary token to \(path): \(errno)")
-        }
-        defer { close(fd) }
-        let line = primaryToken + "\n"
-        let count = line.utf8.count
-        let written = line.withCString { write(fd, $0, count) }
-        guard written == count else {
-            throw ControlError(.internalError, "failed writing primary token to \(path)")
-        }
-    }
-
-    /// Removes the primary session token file if it exists and is owned by this user.
-    func removePrimaryToken(at path: String) {
-        var st = stat()
-        if lstat(path, &st) == 0, st.st_uid == getuid() {
-            unlink(path)
-        }
-    }
 
     /// Resets the grant store to initial state for testing.
     func resetForTesting() {

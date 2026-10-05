@@ -173,7 +173,7 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
-  --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN, or <socket>.token)
+  --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN or $TAKO_AUTH_TOKEN)
   --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay,approval)
   --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,approval; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
@@ -3115,15 +3115,6 @@ fn main() -> ExitCode {
     if opts.token.is_none() {
         if let Ok(tok) = std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN")) {
             let t = tok.trim().to_string();
-            if !t.is_empty() {
-                opts.token = Some(t);
-            }
-        }
-    }
-    if opts.token.is_none() && std::env::var("TAKO_SURFACE_ID").is_err() {
-        let token_path = format!("{path}.token");
-        if let Ok(content) = std::fs::read_to_string(&token_path) {
-            let t = content.trim().to_string();
             if !t.is_empty() {
                 opts.token = Some(t);
             }
