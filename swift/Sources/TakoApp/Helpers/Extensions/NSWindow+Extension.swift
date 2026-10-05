@@ -1,6 +1,19 @@
 import AppKit
+import ObjectiveC
+
+private var tabIdentifierKey: UInt8 = 0
 
 extension NSWindow {
+    /// Stable identifier for this window/tab, persisting across split pane additions, closures, and reordering.
+    var stableTabIdentifier: String {
+        if let existing = objc_getAssociatedObject(self, &tabIdentifierKey) as? String {
+            return existing
+        }
+        let newId = UUID().uuidString
+        objc_setAssociatedObject(self, &tabIdentifierKey, newId, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return newId
+    }
+
     /// Get the CGWindowID type for the window (used for low level CoreGraphics APIs).
     var cgWindowId: CGWindowID? {
         // "If the window doesn’t have a window device, the value of this

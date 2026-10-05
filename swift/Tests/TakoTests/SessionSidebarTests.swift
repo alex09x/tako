@@ -50,6 +50,40 @@ struct SessionSidebarTests {
         #expect(store.description(for: tabId) == nil)
     }
 
+    @Test func tabDescriptionPersistsWhenFirstSplitPaneIsClosed() {
+        let defaults = createTestDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        let surf1 = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
+        surf1.title = "Split Pane 1"
+        let surf2 = Tako.SurfaceView(frame: NSRect(x: 200, y: 0, width: 200, height: 400))
+        surf2.title = "Split Pane 2"
+        container.addSubview(surf1)
+        container.addSubview(surf2)
+        win.contentView = container
+
+        let initialItems = store.items(for: win)
+        #expect(initialItems.count == 1)
+        let tabId = initialItems[0].id
+        #expect(!tabId.isEmpty)
+
+        // Set description for the tab
+        store.setDescription("Build and Logs Tab", for: tabId)
+        let updatedItems = store.items(for: win)
+        #expect(updatedItems[0].userDescription == "Build and Logs Tab")
+
+        // Close the first split pane
+        surf1.removeFromSuperview()
+
+        // Tab still exists with surf2; row ID and description must remain intact
+        let itemsAfterClosingFirstSplit = store.items(for: win)
+        #expect(itemsAfterClosingFirstSplit.count == 1)
+        #expect(itemsAfterClosingFirstSplit[0].id == tabId)
+        #expect(itemsAfterClosingFirstSplit[0].userDescription == "Build and Logs Tab")
+    }
+
     private func createTestGitRepository(branch: String = "feature/sidebar-test") throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-git-\(UUID().uuidString)")
         let gitDir = tempDir.appendingPathComponent(".git")
@@ -58,6 +92,15 @@ struct SessionSidebarTests {
         let headFile = gitDir.appendingPathComponent("HEAD")
         try "ref: refs/heads/\(branch)\n".write(to: headFile, atomically: true, encoding: .utf8)
         return tempDir
+    }
+
+    private func waitForGitInspection(store: SessionSidebarStore, directory: String) async throws {
+        for _ in 0..<30 {
+            if store.hasGitCache(for: directory) && !store.isGitInspectionPending(for: directory) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
     }
 
     @Test func localGitInspectionReadsBranchAndDirtyStateLocallyWithoutNetwork() throws {
@@ -141,7 +184,7 @@ struct SessionSidebarTests {
         // When opt-ins are true, git is populated from local repo
         store.optInGit = true
         _ = store.items(for: window)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
 
         let itemsEnabled = store.items(for: window)
         #expect(itemsEnabled.count == 1)
@@ -368,7 +411,7 @@ struct SessionSidebarTests {
         win.contentView = surf
 
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
 
         let items1 = store.items(for: win)
         #expect(items1[0].gitBranch == "feature/first-branch")
@@ -386,7 +429,7 @@ struct SessionSidebarTests {
 
         // Triggers async inspection for new branch
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
 
         let itemsUpdated = store.items(for: win)
         #expect(itemsUpdated[0].gitBranch == "feature/second-branch")
@@ -428,7 +471,7 @@ struct SessionSidebarTests {
         group.select(winOther)
 
         let items = store.items(for: winOther)
-        let tabItem = items.first(where: { $0.id == surf1.id.uuidString })
+        let tabItem = items.first(where: { $0.id == win.stableTabIdentifier })
         #expect(tabItem != nil)
         #expect(tabItem?.latestNotification == "Task completed")
         #expect(tabItem?.unreadCount == 1)
@@ -481,7 +524,7 @@ struct SessionSidebarTests {
         win.contentView = surf
 
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
         #expect(store.items(for: win)[0].gitBranch == "branch-a")
 
         // Switch branch in repository on disk
@@ -497,7 +540,7 @@ struct SessionSidebarTests {
 
         // Command completion invalidates the directory cache and triggers refresh
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
         #expect(store.items(for: win)[0].gitBranch == "branch-b")
     }
 
@@ -526,7 +569,7 @@ struct SessionSidebarTests {
 
         // Query items again, launching inspection for generation 1
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
 
         let items = store.items(for: win)
         #expect(items[0].gitBranch == "branch-new")
@@ -557,7 +600,7 @@ struct SessionSidebarTests {
 
         // Query items again, launching inspection for epoch 1
         _ = store.items(for: win)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForGitInspection(store: store, directory: repoURL.path)
 
         let items = store.items(for: win)
         #expect(items[0].gitBranch == "branch-new")

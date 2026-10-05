@@ -100,6 +100,16 @@ final class SessionSidebarStore: ObservableObject {
         gitGenerations[directory, default: 0] += 1
     }
 
+    /// Checks whether an asynchronous Git inspection is currently in flight for a directory.
+    func isGitInspectionPending(for directory: String) -> Bool {
+        pendingGitInspections.contains(directory)
+    }
+
+    /// Checks whether Git metadata is cached for a directory.
+    func hasGitCache(for directory: String) -> Bool {
+        gitCache[directory] != nil
+    }
+
     /// Invalidates listening ports cache for a specific PID, discarding in-flight inspections.
     func invalidatePortsCache(for pid: Int) {
         portsCache.removeValue(forKey: pid)
@@ -200,7 +210,7 @@ final class SessionSidebarStore: ObservableObject {
             let surface = winSurfaces.first
             let surfaceIds = Set(winSurfaces.map(\.id))
             let surfaceId = surface?.id
-            let id = surfaceId?.uuidString ?? "\(win.windowNumber)"
+            let id = win.stableTabIdentifier
 
             let title = titleFor(window: win, surface: surface)
             let crab = aggregateCrab(for: win)
