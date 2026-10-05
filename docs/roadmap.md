@@ -582,7 +582,7 @@ conversation, and nothing runs without approval.
 Done when a locked pane ignores keyboard input but still accepts approved automation, and every
 automated keystroke is attributable in the activity log (G2).
 
-### [ ] C8. Broadcast input
+### [x] C8. Broadcast input
 
 Type into several selected panes at once. Off by default, explicit per selection, with a visible
 banner on every pane that receives the input.

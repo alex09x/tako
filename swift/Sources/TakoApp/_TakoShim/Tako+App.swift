@@ -2226,6 +2226,20 @@ extension Tako {
 
         // MARK: - TakoTerminalNSViewDelegate
 
+        /// Finds an active SurfaceView by its UUID.
+        public static func find(for uuid: UUID) -> SurfaceView? {
+            if let appDelegate = NSApp?.delegate as? TakoAppDelegate,
+               let found = appDelegate.findSurface(forUUID: uuid) {
+                return found
+            }
+            for c in TerminalController.all {
+                for view in c.surfaceTree where view.id == uuid {
+                    return view
+                }
+            }
+            return nil
+        }
+
         /// Whether interactive keyboard input is locked for this pane (C7).
         public var isInputLocked: Bool {
             get { InputOwnershipStore.shared.isLocked(for: id) }
@@ -2243,6 +2257,16 @@ extension Tako {
         public func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
             guard !isInputLocked else { return }
             writeToShell([UInt8](data))
+
+            // Track C8: Broadcast input to other selected panes if active
+            BroadcastInputStore.shared.broadcastInput(
+                from: self,
+                sourceId: id,
+                data: data
+            ) { targetId in
+                guard let target = SurfaceView.find(for: targetId) else { return nil }
+                return (target: target, isLocked: target.isInputLocked, write: { target.writeToShell($0) })
+            }
         }
 
         /// The engine's own replies -- device attributes, cursor position,
@@ -2383,6 +2407,16 @@ extension Tako {
                 return
             }
             handlePaste(cleanText)
+
+            // Track C8: Broadcast text to other selected panes if active
+            BroadcastInputStore.shared.broadcastText(
+                from: self,
+                sourceId: id,
+                text: cleanText
+            ) { targetId in
+                guard let target = SurfaceView.find(for: targetId) else { return nil }
+                return (target: target, isLocked: target.isInputLocked, insertText: { target.insertInputText($0) })
+            }
         }
 
         /// Cancels any scheduled debounced search hit refresh and resets the burst timer.
@@ -2946,6 +2980,7 @@ extension Tako {
         override open func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result {
+                BroadcastInputStore.shared.setLeader(paneId: id)
                 crab.focused()
                 NotificationStore.shared.markRead(surfaceId: self.id)
             }
@@ -3112,6 +3147,7 @@ extension Tako {
         public var mouseCaptured: Bool { core.modes().mouseTracking != .off }
 
         public func close() {
+            BroadcastInputStore.shared.paneClosed(id)
             InputOwnershipStore.shared.remove(paneId: id)
             pty?.terminate()
         }

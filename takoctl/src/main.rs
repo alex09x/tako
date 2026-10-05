@@ -100,9 +100,13 @@ commands:
   input handback          hand back input control to the agent (--owner NAME)
   input status            show input lock state, owner, and last activity attribution
   input log               show automated input activity log for the pane
+  broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
+  broadcast stop          stop broadcasting input
+  broadcast status        show current broadcast status and participating panes
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --panes P1,P2,...       broadcast: comma-separated list of target panes
   --client NAME           client name for automated input attribution (send, type, key; default: takoctl)
   --owner NAME            agent name for input lock / handback (default: agent)
   --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
@@ -344,6 +348,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "--owner" => {
                 args.insert("owner".into(), Value::String(value("--owner")?));
+            }
+            "--panes" => {
+                args.insert("panes".into(), Value::String(value("--panes")?));
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
@@ -942,6 +949,27 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "broadcast" => {
+            let sub = if positional.is_empty() {
+                "status".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "start" | "stop" | "status" => {
+                    args.insert("subcommand".into(), Value::String(sub));
+                }
+                other => {
+                    return Err(format!(
+                        "unknown broadcast action \"{other}\"; use start, stop, or status"
+                    ));
+                }
+            }
+            if !positional.is_empty() {
+                return Err(format!("unexpected argument {}", positional[0]));
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -1065,8 +1093,30 @@ fn render(cmd: &str, result: &Value) -> String {
         "task" => task_report(result),
         "resume" => resume_report(result),
         "input" => input_report(result),
+        "broadcast" => broadcast_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn broadcast_report(result: &Value) -> String {
+    let active = result["active"].as_bool().unwrap_or(false);
+    if !active {
+        return "Broadcast input is inactive.\n".to_string();
+    }
+    let count = result["count"].as_f64().unwrap_or(0.0) as usize;
+    let leader = result["leader"].as_str().unwrap_or("none");
+    let mut out = format!("Broadcast active across {count} panes (leader: {leader}):\n");
+    if let Some(panes) = result["panes"].as_array() {
+        for p in panes.iter().filter_map(Value::as_str) {
+            let is_leader = p == leader;
+            if is_leader {
+                out += &format!("  * {p} (leader)\n");
+            } else {
+                out += &format!("    {p}\n");
+            }
+        }
+    }
+    out
 }
 
 fn input_report(result: &Value) -> String {
@@ -3246,6 +3296,46 @@ bbbbbbbb  logs -- pane 2 of 2
         let rep_log = render("input", &log_val);
         assert!(rep_log.contains("Automated input activity:"));
         assert!(rep_log.contains("[2026-10-05T02:00:00Z] claude: type"));
+    }
+
+    #[test]
+    fn test_broadcast_subcommands_and_options_parsed_and_rendered() {
+        let opts_start = parse(&[
+            "broadcast".into(),
+            "start".into(),
+            "--panes".into(),
+            "p1,p2,p3".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_start.cmd, "broadcast");
+        assert_eq!(opts_start.args["subcommand"], "start");
+        assert_eq!(opts_start.args["panes"], "p1,p2,p3");
+
+        let opts_stop = parse(&["broadcast".into(), "stop".into()]).unwrap();
+        assert_eq!(opts_stop.cmd, "broadcast");
+        assert_eq!(opts_stop.args["subcommand"], "stop");
+
+        let opts_st = parse(&["broadcast".into()]).unwrap();
+        assert_eq!(opts_st.cmd, "broadcast");
+        assert_eq!(opts_st.args["subcommand"], "status");
+
+        let active_val = json!({
+            "active": true,
+            "leader": "p1",
+            "count": 3,
+            "panes": ["p1", "p2", "p3"]
+        });
+        let rep_active = render("broadcast", &active_val);
+        assert!(rep_active.contains("Broadcast active across 3 panes (leader: p1):"));
+        assert!(rep_active.contains("* p1 (leader)"));
+        assert!(rep_active.contains("p2"));
+        assert!(rep_active.contains("p3"));
+
+        let inactive_val = json!({
+            "active": false
+        });
+        let rep_inactive = render("broadcast", &inactive_val);
+        assert_eq!(rep_inactive, "Broadcast input is inactive.\n");
     }
 }
 

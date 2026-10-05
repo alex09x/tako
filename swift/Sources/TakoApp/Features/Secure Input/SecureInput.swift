@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Carbon
 import Cocoa
 import OSLog
@@ -44,7 +54,7 @@ class SecureInput: ObservableObject {
     // calls are process-wide, and a test host is never the active app, so
     // `apply()` would never get past its first guard.
     struct System {
-        var isActive: () -> Bool = { NSApp.isActive }
+        var isActive: () -> Bool = { NSApp?.isActive ?? false }
         var enable: () -> OSStatus = { EnableSecureEventInput() }
         var disable: () -> OSStatus = { DisableSecureEventInput() }
     }
@@ -93,6 +103,16 @@ class SecureInput: ObservableObject {
     func removeScoped(_ object: ObjectIdentifier) {
         scoped[object] = nil
         apply()
+    }
+
+    /// True if secure input is enabled globally or specifically for this object (C8).
+    func isSecure(for object: AnyObject) -> Bool {
+        global || scoped[ObjectIdentifier(object)] != nil
+    }
+
+    /// True if secure input is enabled for an object identifier (C8).
+    func isSecure(for objectId: ObjectIdentifier) -> Bool {
+        global || scoped[objectId] != nil
     }
 
     private func apply() {
