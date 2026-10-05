@@ -186,4 +186,41 @@ struct DiffReviewTests {
         let statusAfter = try ControlCommands.reviewCommand(statusReq, all: all)
         #expect(statusAfter["open"]?.bool == false)
     }
+
+    @Test func testUntrackedSymlinkDoesNotDiscloseOutsideFile() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-diff-test-\(UUID().uuidString)")
+        let outsideDir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-outside-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+            try? FileManager.default.removeItem(at: outsideDir)
+        }
+
+        // Create an outside secret file
+        let outsideSecretFile = outsideDir.appendingPathComponent("secret.txt")
+        let secretContent = "SECRET_TOKEN_DO_NOT_DISCLOSE_12345\nLINE_TWO_SUPER_CONFIDENTIAL\nLINE_THREE\n"
+        try secretContent.write(to: outsideSecretFile, atomically: true, encoding: .utf8)
+
+        // Create an untracked symlink in tempDir pointing to the outside secret file
+        let symlinkInWorktree = tempDir.appendingPathComponent("evil_link.txt")
+        try FileManager.default.createSymbolicLink(at: symlinkInWorktree, withDestinationURL: outsideSecretFile)
+
+        // 1. inspectUntrackedEntry directly
+        let (lineCount, patch) = GitDiffHelper.inspectUntrackedEntry(worktreePath: tempDir.path, relativePath: "evil_link.txt")
+        #expect(lineCount == 1)
+        #expect(!patch.contains("SECRET_TOKEN_DO_NOT_DISCLOSE"))
+        #expect(!patch.contains("SUPER_CONFIDENTIAL"))
+        #expect(patch.contains(outsideSecretFile.path))
+
+        // 2. getFileDiff for untracked symlink
+        let detail = GitDiffHelper.getFileDiff(worktreePath: tempDir.path, baseBranch: "main", file: "evil_link.txt")
+        #expect(!detail.patch.contains("SECRET_TOKEN_DO_NOT_DISCLOSE"))
+        #expect(!detail.patch.contains("SUPER_CONFIDENTIAL"))
+        for hunk in detail.hunks {
+            for line in hunk.lines {
+                #expect(!line.content.contains("SECRET_TOKEN_DO_NOT_DISCLOSE"))
+            }
+        }
+    }
 }

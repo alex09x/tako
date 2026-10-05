@@ -9,6 +9,11 @@
  */
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Helper for read-only Git diff operations for worktree review (D3).
 /// Invariant: Tako never commits, pushes, or edits files from this module.
@@ -124,9 +129,7 @@ public enum GitDiffHelper {
                     let rawPath = String(line.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
                     let cleanPath = rawPath.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
                     if entriesByPath[cleanPath] == nil {
-                        // Count lines for untracked file if readable
-                        let fullPath = ((worktreePath as NSString).expandingTildeInPath as NSString).appendingPathComponent(cleanPath)
-                        let lineCount = (try? String(contentsOfFile: fullPath, encoding: .utf8).components(separatedBy: "\n").count) ?? 0
+                        let (lineCount, _) = inspectUntrackedEntry(worktreePath: worktreePath, relativePath: cleanPath)
                         entriesByPath[cleanPath] = DiffFileEntry(path: cleanPath, status: .untracked, additions: lineCount, deletions: 0)
                     }
                 }
@@ -134,6 +137,64 @@ public enum GitDiffHelper {
         }
 
         return Array(entriesByPath.values).sorted { $0.path < $1.path }
+    }
+
+    /// Safely inspects an untracked filesystem entry without following symlinks.
+    ///
+    /// - Symlinks: returns (1, patch) representing the link target alone, never following
+    ///   or disclosing contents of files outside the worktree.
+    /// - Regular files: verifies canonical path containment within the worktree before reading.
+    /// - Non-regular or escaping files: returns (0, "") without reading.
+    static func inspectUntrackedEntry(worktreePath: String, relativePath: String) -> (lineCount: Int, patch: String) {
+        let canonicalWorktree = URL(fileURLWithPath: (worktreePath as NSString).expandingTildeInPath).resolvingSymlinksInPath().standardized.path
+        let fullPath = ((worktreePath as NSString).expandingTildeInPath as NSString).appendingPathComponent(relativePath)
+
+        var statBuf = stat()
+        guard lstat(fullPath, &statBuf) == 0 else {
+            return (0, "")
+        }
+
+        let isSymlink = (statBuf.st_mode & S_IFMT) == S_IFLNK
+        let isRegular = (statBuf.st_mode & S_IFMT) == S_IFREG
+
+        if isSymlink {
+            // Read ONLY the symlink target path, never follow or read the target file!
+            var linkBuf = [CChar](repeating: 0, count: 4096)
+            let len = readlink(fullPath, &linkBuf, linkBuf.count - 1)
+            let dest: String
+            if len > 0 {
+                linkBuf[len] = 0
+                dest = String(cString: linkBuf)
+            } else {
+                dest = (try? FileManager.default.destinationOfSymbolicLink(atPath: fullPath)) ?? ""
+            }
+            let patch = "--- /dev/null\n+++ b/\(relativePath)\n@@ -0,0 +1 @@\n+\(dest)\n"
+            return (1, patch)
+        }
+
+        guard isRegular else {
+            // Directory, socket, FIFO, device — not a text diff
+            return (0, "")
+        }
+
+        // Canonical containment check for regular files
+        let canonicalFilePath = URL(fileURLWithPath: fullPath).resolvingSymlinksInPath().standardized.path
+        let worktreePrefix = canonicalWorktree.hasSuffix("/") ? canonicalWorktree : "\(canonicalWorktree)/"
+        guard canonicalFilePath.hasPrefix(worktreePrefix) || canonicalFilePath == canonicalWorktree else {
+            // Resolved path escapes the worktree root! Do not read!
+            return (0, "")
+        }
+
+        guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else {
+            return (0, "")
+        }
+
+        let lines = content.components(separatedBy: "\n")
+        var buf = "--- /dev/null\n+++ b/\(relativePath)\n@@ -0,0 +1,\(lines.count) @@\n"
+        for l in lines {
+            buf += "+\(l)\n"
+        }
+        return (lines.count, buf)
     }
 
     /// Obtains the unified patch and parsed hunks for a specific file.
@@ -146,17 +207,8 @@ public enum GitDiffHelper {
 
         let patch: String
         if entry.status == .untracked {
-            let fullPath = ((worktreePath as NSString).expandingTildeInPath as NSString).appendingPathComponent(file)
-            if let content = try? String(contentsOfFile: fullPath, encoding: .utf8) {
-                let lines = content.components(separatedBy: "\n")
-                var buf = "--- /dev/null\n+++ b/\(file)\n@@ -0,0 +1,\(lines.count) @@\n"
-                for l in lines {
-                    buf += "+\(l)\n"
-                }
-                patch = buf
-            } else {
-                patch = ""
-            }
+            let (_, untrackedPatch) = inspectUntrackedEntry(worktreePath: worktreePath, relativePath: file)
+            patch = untrackedPatch
         } else {
             let res = runReadOnlyGitSafe(["diff", "--end-of-options", baseBranch, "--", file], in: worktreePath)
             patch = res.stdout
