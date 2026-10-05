@@ -531,7 +531,7 @@ action runs in a pane chosen by the action (new tab, split, existing pane).
 Done when a project's actions appear in the palette only for panes inside that project and
 nothing runs that the user did not approve.
 
-### [ ] C4. Worktree tasks
+### [x] C4. Worktree tasks
 
 Parallel agents need separate working copies.
 
