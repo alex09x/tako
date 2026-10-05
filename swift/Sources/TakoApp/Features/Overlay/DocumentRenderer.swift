@@ -54,6 +54,10 @@ public enum DocumentRenderer {
         """
     }
 
+    /// Strict Content-Security-Policy blocking all network access, script execution,
+    /// and disallowing direct file: subresource access in favor of sandboxed tako-asset: and data: URIs.
+    public static let defaultCSP = "default-src 'none'; img-src 'self' tako-asset: data:; style-src 'unsafe-inline' tako-asset:; font-src tako-asset: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';"
+
     /// Wraps markdown content into an HTML document styled with terminal theme variables.
     public static func renderMarkdownHTML(_ markdownText: String, theme: TerminalTheme?) -> String {
         let css = cssVariables(for: theme)
@@ -66,7 +70,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+          <meta http-equiv="Content-Security-Policy" content="\(defaultCSP)">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -168,7 +172,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+          <meta http-equiv="Content-Security-Policy" content="\(defaultCSP)">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -240,7 +244,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+          <meta http-equiv="Content-Security-Policy" content="\(defaultCSP)">
           <style>
             \(css)
             * { box-sizing: border-box; }
@@ -297,7 +301,7 @@ public enum DocumentRenderer {
     public static func injectThemeAndCSP(into rawHTML: String, theme: TerminalTheme?) -> String {
         let css = cssVariables(for: theme)
         let injection = """
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; style-src 'unsafe-inline' file:; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+        <meta http-equiv="Content-Security-Policy" content="\(defaultCSP)">
         <style id="tako-theme-vars">
         \(css)
         </style>
@@ -328,7 +332,7 @@ public enum DocumentRenderer {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';">
+          <meta http-equiv="Content-Security-Policy" content="\(defaultCSP)">
           <style>
             \(css)
             body {

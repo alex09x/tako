@@ -223,5 +223,56 @@ import Testing
         #expect(NetworkSandbox.blockRulesJSON.contains("^wss://"))
         #expect(NetworkSandbox.blockRulesJSON.contains("^ws://"))
         #expect(NetworkSandbox.blockRulesJSON.contains("^ftp://"))
+
+        // 4. Verify file: scheme is completely excluded from CSP subresources
+        #expect(!DocumentRenderer.defaultCSP.contains("file:"))
+        #expect(DocumentRenderer.defaultCSP.contains("tako-asset:"))
+        #expect(styled.contains("img-src 'self' tako-asset: data:"))
+        #expect(!styled.contains("img-src 'self' file:"))
+    }
+
+    @Test func testSandboxedSchemeHandlerEnforcesDirectoryContainment() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let sandboxDir = tempDir.appendingPathComponent("sandbox-\(UUID().uuidString)")
+        let outsideDir = tempDir.appendingPathComponent("outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: sandboxDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: sandboxDir)
+            try? FileManager.default.removeItem(at: outsideDir)
+        }
+
+        let insideFile = sandboxDir.appendingPathComponent("chart.png")
+        let insideData = Data([0x89, 0x50, 0x4E, 0x47])
+        try insideData.write(to: insideFile)
+
+        let outsideFile = outsideDir.appendingPathComponent("secret.png")
+        try Data([0x00, 0x01]).write(to: outsideFile)
+
+        let symlinkFile = sandboxDir.appendingPathComponent("symlink_outside.png")
+        try FileManager.default.createSymbolicLink(at: symlinkFile, withDestinationURL: outsideFile)
+
+        let handler = SandboxedSchemeHandler { sandboxDir }
+
+        // 1. Inside asset loads successfully
+        let resInside = handler.resolveAsset(url: URL(string: "tako-asset://local/chart.png")!)
+        #expect(resInside == .allowed(insideFile.resolvingSymlinksInPath().standardizedFileURL, mimeType: "image/png"))
+
+        // 2. Traversal outside sandbox is refused
+        let resTraversal = handler.resolveAsset(url: URL(string: "tako-asset://local/../outside-\(outsideDir.lastPathComponent)/secret.png")!)
+        #expect(resTraversal == .outsideSandbox)
+
+        // 3. Symlink escaping sandbox is refused
+        let resSymlink = handler.resolveAsset(url: URL(string: "tako-asset://local/symlink_outside.png")!)
+        #expect(resSymlink == .outsideSandbox)
+
+        // 4. Non-existent file in sandbox returns notFound
+        let resMissing = handler.resolveAsset(url: URL(string: "tako-asset://local/missing.png")!)
+        #expect(resMissing == .notFound)
+
+        // 5. Invalid scheme returns invalidScheme
+        let resInvalid = handler.resolveAsset(url: URL(string: "file:///etc/passwd")!)
+        #expect(resInvalid == .invalidScheme)
     }
 }
+
