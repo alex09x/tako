@@ -154,7 +154,7 @@ enum LocalGitInspection {
     private static func checkDirtyState(repoRoot: String) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", repoRoot, "status", "--porcelain", "-uno", "--ignore-submodules=dirty"]
+        process.arguments = ["-C", repoRoot, "status", "--porcelain", "--ignore-submodules=dirty"]
         process.environment = ["GIT_OPTIONAL_LOCKS": "0"]
         let pipe = Pipe()
         process.standardOutput = pipe

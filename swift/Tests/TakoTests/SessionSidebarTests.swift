@@ -69,6 +69,15 @@ struct SessionSidebarTests {
         #expect(gitInfo?.branch == "feature/sidebar-test")
         #expect(gitInfo?.isDirty == false)
 
+        // Untracked file makes repository dirty
+        let untrackedFile = repoURL.appendingPathComponent("untracked.txt")
+        try "untracked content".write(to: untrackedFile, atomically: true, encoding: .utf8)
+        let dirtyInfo = LocalGitInspection.inspect(directory: repoURL.path)
+        #expect(dirtyInfo?.isDirty == true)
+        try? FileManager.default.removeItem(at: untrackedFile)
+        let cleanInfo = LocalGitInspection.inspect(directory: repoURL.path)
+        #expect(cleanInfo?.isDirty == false)
+
         // Detached HEAD inspection
         let detachedDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-git-\(UUID().uuidString)")
         let detachedGit = detachedDir.appendingPathComponent(".git")
