@@ -37,7 +37,12 @@ class BaseTerminalController: NSWindowController,
 
     /// The currently focused surface.
     var focusedSurface: Tako.SurfaceView? {
-        didSet { syncFocusToSurfaceTree() }
+        didSet {
+            syncFocusToSurfaceTree()
+            if let focusedSurface, focusedSurface != oldValue {
+                focusedSurface.publishEvent(type: "pane_focused", payload: [:])
+            }
+        }
     }
 
     /// The tree of splits within this terminal window.
@@ -347,6 +352,14 @@ class BaseTerminalController: NSWindowController,
     /// Subclasses should call super first.
     func surfaceTreeDidChange(from: SplitTree<Tako.SurfaceView>, to: SplitTree<Tako.SurfaceView>) {
         for view in to { view.adopt(by: tako) }
+        let added = Set(to).subtracting(Set(from))
+        let removed = Set(from).subtracting(Set(to))
+        for view in added {
+            view.publishEvent(type: "pane_created", payload: ["title": .string(view.title), "cwd": view.pwd.map(JSON.string) ?? .null])
+        }
+        for view in removed {
+            view.publishEvent(type: "pane_closed", payload: [:])
+        }
         // If our surface tree becomes empty then we have no focused surface.
         if to.isEmpty {
             focusedSurface = nil

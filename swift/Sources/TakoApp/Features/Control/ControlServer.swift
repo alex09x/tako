@@ -224,18 +224,31 @@ final class ControlServer: @unchecked Sendable {
     }
 
     private func serve(_ client: Int32) {
-        let finish: @Sendable (ControlResponse) -> Void = { [self] response in
-            Self.send(response, to: client, deadline: .now() + Self.writeTimeout)
+        var closed = false
+        let closeLock = NSLock()
+        let streamClose: @Sendable () -> Void = { [self] in
+            let shouldClose = closeLock.withLock { () -> Bool in
+                if closed { return false }
+                closed = true
+                return true
+            }
+            guard shouldClose else { return }
             lock.withLock {
                 clients.remove(client)
                 connections -= 1
             }
             close(client)
         }
+        let finish: @Sendable (ControlResponse) -> Void = { [self] response in
+            Self.send(response, to: client, deadline: .now() + Self.writeTimeout)
+            streamClose()
+        }
         let gone = ControlResponse.failure(ControlError(.disabled, "remote control stopped"))
         var request: ControlRequest
         do {
             request = try ControlRequest.parse(try Self.readRequest(client, deadline: .now() + Self.readTimeout))
+            request.clientFD = client
+            request.onStreamClose = streamClose
             // Only while the connection is this server's: once answered, the
             // descriptor is closed and its number may be another file's.
             request.clientGone = { [self] in

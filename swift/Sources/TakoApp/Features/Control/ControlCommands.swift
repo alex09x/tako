@@ -91,6 +91,16 @@ enum ControlCommands {
         return result
     }
 
+    /// Resolves the window, tab, and workspace context for a surface view.
+    static func surfaceContext(_ surface: Tako.SurfaceView) -> (window: String?, tab: String?, workspace: String?) {
+        for pane in panes() {
+            if pane.surface === surface {
+                return (pane.windowID, pane.tabID, "default")
+            }
+        }
+        return (nil, nil, "default")
+    }
+
     /// The focused pane of the front window.
     /// The pane with the keyboard: the focused pane of the key window, else
     /// of the main window, else of the frontmost terminal window. Each tab is
@@ -143,6 +153,18 @@ enum ControlCommands {
                 try notify(request, surface, text: try ControlInput.text(request.args),
                            title: request.args["title"].flatMap { if case .string(let s) = $0 { s } else { nil } },
                            reply: reply)
+            case "events":
+                guard request.clientFD >= 0 else {
+                    throw ControlError(.internalError, "streaming requires active socket descriptor")
+                }
+                guard let onClose = request.onStreamClose else {
+                    throw ControlError(.internalError, "missing stream close handler")
+                }
+                try TerminalEventHub.shared.subscribe(
+                    clientFD: request.clientFD,
+                    args: request.args,
+                    onClose: onClose
+                )
             default:
                 reply(handle(request))
             }
@@ -359,7 +381,7 @@ enum ControlCommands {
                 }
             case "dialog":
                 return .ok(try dialog(request.args))
-            case "text", "close", "last", "wait", "run", "find", "notify":
+            case "text", "close", "last", "wait", "run", "find", "notify", "events":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
                 throw ControlError(.invalid, "unknown command \"\(request.cmd)\"")
@@ -444,6 +466,14 @@ enum ControlCommands {
         guard only.view.press(label) else {
             throw ControlError(.invalid, "no button \"\(label)\"; there are: \(summary["buttons"].map { "\($0.any)" } ?? "")")
         }
+        TerminalEventHub.shared.publish(
+            type: "ask_answered",
+            window: only.window,
+            payload: [
+                "answer": .string(label),
+                "title": summary["title"] ?? .null
+            ]
+        )
         return ["pressed": .string(label), "title": summary["title"] ?? .null]
     }
 
@@ -501,6 +531,14 @@ enum ControlCommands {
                 if let error {
                     once.answer(.failure(ControlError(.internalError, "not posted: \(error.localizedDescription)")))
                 } else {
+                    surface.publishEvent(
+                        type: "notification",
+                        payload: [
+                            "title": .string(content.title),
+                            "body": .string(text),
+                            "action": .string("posted")
+                        ]
+                    )
                     once.answer(.ok(["id": .string(id)]))
                 }
             }

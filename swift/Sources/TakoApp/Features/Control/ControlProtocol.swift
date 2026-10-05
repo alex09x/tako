@@ -17,7 +17,7 @@ enum ControlProtocol {
 }
 
 /// A JSON value, as much of it as requests and responses need.
-enum JSON: Equatable {
+enum JSON: Equatable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -98,6 +98,10 @@ struct ControlRequest: Equatable {
     /// Whether the client has gone -- closed its end -- so work that waits
     /// for something (`wait`) can stop. Set by the server.
     var clientGone: @Sendable () -> Bool = { false }
+    /// Raw socket descriptor when streaming (e.g. `events`).
+    var clientFD: Int32 = -1
+    /// Streaming connection cleanup callback.
+    var onStreamClose: (@Sendable () -> Void)? = nil
 
     init(cmd: String, args: [String: JSON], from: UUID?) {
         self.cmd = cmd

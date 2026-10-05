@@ -51,6 +51,8 @@ commands:
   status set STATUS       set the pane's explicit status (--text T, --ttl D)
   status clear            clear the pane's explicit status
   progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
+  events                  stream terminal events as ndjson (--pane ID, --tab ID,
+                          --workspace NAME, --type TYPES, --cursor N)
   hooks list              list supported coding-agent hook adapters and their install status
   hooks status [AGENT]    show hook installation status for AGENT or all agents
   hooks install AGENT     install Tako lifecycle hooks into AGENT's configuration
@@ -60,6 +62,11 @@ commands:
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --pane ID               events: filter by pane ID
+  --tab ID                events: filter by tab ID
+  --workspace NAME        events: filter by workspace name
+  --type TYPES            events: filter by comma-separated event types
+  --cursor N              events: resume streaming from cursor N
   --lines N               last, wait, run --wait: at most the last N lines of output
   --text TEXT             status text (truncated to 128 characters)
   --ttl DURATION          status time-to-live (e.g. 10m, 30s, 1h, 500ms)
@@ -162,6 +169,22 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--config" => {
                 args.insert("config".into(), Value::String(value("--config")?));
             }
+            "--pane" => {
+                args.insert("pane".into(), Value::String(value("--pane")?));
+            }
+            "--tab" => {
+                args.insert("tab".into(), Value::String(value("--tab")?));
+            }
+            "--workspace" => {
+                args.insert("workspace".into(), Value::String(value("--workspace")?));
+            }
+            "--type" => {
+                args.insert("type".into(), Value::String(value("--type")?));
+            }
+            "--cursor" => {
+                let n: u64 = value("--cursor")?.parse().map_err(|_| "--cursor needs a number".to_string())?;
+                args.insert("cursor".into(), Value::from(n));
+            }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
             a if cmd.is_none() => cmd = Some(a.to_string()),
@@ -171,7 +194,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
     let cmd = cmd.ok_or_else(String::new)?;
     // What each command takes besides options: one text argument or none.
     let wants = match cmd.as_str() {
-        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" => None,
+        "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait" | "dialog" | "events" => None,
         "status" => {
             let sub = if positional.is_empty() {
                 "get".to_string()
@@ -749,6 +772,44 @@ fn main() -> ExitCode {
         },
     };
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
+    if opts.cmd == "events" {
+        let res = socket::stream_events(&path, &req, |line| {
+            if let Ok(val) = serde_json::from_str::<Value>(line) {
+                if val.get("ok") == Some(&Value::Bool(false)) {
+                    if opts.json {
+                        println!("{line}");
+                    } else {
+                        let error = &val["error"];
+                        eprintln!(
+                            "takoctl: {}: {}",
+                            error["code"].as_str().unwrap_or("error"),
+                            error["message"].as_str().unwrap_or("")
+                        );
+                    }
+                    return Err("aborted".to_string());
+                }
+            }
+            use std::io::Write;
+            println!("{line}");
+            let _ = std::io::stdout().flush();
+            Ok(())
+        });
+        return match res {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) if !e.sent => {
+                eprintln!("takoctl: no Tako answers on {path}: {}", e.message);
+                ExitCode::from(3)
+            }
+            Err(e) => {
+                if e.message == "aborted" {
+                    ExitCode::from(1)
+                } else {
+                    eprintln!("takoctl: event stream error: {}", e.message);
+                    ExitCode::from(1)
+                }
+            }
+        };
+    }
     let answer = match socket::exchange_within(&path, &req, answer_limit(&opts), socket::MAX_ANSWER_BYTES) {
         Ok(a) => a,
         Err(e) if !e.sent => {
@@ -1104,6 +1165,34 @@ bbbbbbbb  logs -- pane 2 of 2
         assert!(parse(&args(&["hooks", "install"])).is_err());
         assert!(parse(&args(&["hooks", "uninstall"])).is_err());
         assert!(parse(&args(&["hooks", "invalid_action"])).is_err());
+    }
+
+    #[test]
+    fn events_command_parses_filters_and_cursor() {
+        let opts = parse(&args(&["events"])).unwrap();
+        assert_eq!(opts.cmd, "events");
+        assert!(opts.args.is_empty());
+
+        let opts = parse(&args(&[
+            "events",
+            "--pane", "1234",
+            "--tab", "5678",
+            "--workspace", "my-ws",
+            "--type", "command_start,command_end",
+            "--cursor", "42",
+            "--json"
+        ])).unwrap();
+        assert_eq!(opts.cmd, "events");
+        assert_eq!(opts.args["pane"], "1234");
+        assert_eq!(opts.args["tab"], "5678");
+        assert_eq!(opts.args["workspace"], "my-ws");
+        assert_eq!(opts.args["type"], "command_start,command_end");
+        assert_eq!(opts.args["cursor"], 42);
+        assert!(opts.json);
+
+        // Disallows positional arguments
+        assert!(parse(&args(&["events", "unexpected"])).is_err());
+        assert!(parse(&args(&["events", "--cursor", "not_a_number"])).is_err());
     }
 }
 

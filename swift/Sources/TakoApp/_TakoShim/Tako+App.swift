@@ -1893,6 +1893,17 @@ extension Tako {
                     }
                 }
             }
+
+            self.publishEvent(
+                type: "notification",
+                payload: [
+                    "id": id.map(JSON.string) ?? .null,
+                    "title": .string(title),
+                    "body": .string(body),
+                    "urgency": .number(Double(urgency)),
+                    "action": .string("posted")
+                ]
+            )
         }
 
         public func closeStructuredNotification(id: String, reportClose: Bool) {
@@ -1904,6 +1915,13 @@ extension Tako {
                 let reply = "\u{1b}]99;i=\(id):p=close;\u{1b}\\"
                 writePtyReply(reply)
             }
+            self.publishEvent(
+                type: "notification",
+                payload: [
+                    "id": .string(id),
+                    "action": .string("closed")
+                ]
+            )
         }
 
         /// How many finished commands signalled; for tests.
@@ -2217,20 +2235,64 @@ extension Tako {
             crab.promptMark()
         }
 
+        public func publishEvent(type: String, payload: [String: JSON] = [:]) {
+            let (windowID, tabID, workspaceID) = ControlCommands.surfaceContext(self)
+            TerminalEventHub.shared.publish(
+                type: type,
+                pane: id.uuidString.lowercased(),
+                tab: tabID,
+                window: windowID,
+                workspace: workspaceID,
+                payload: payload
+            )
+        }
+
         public func terminalView(_ view: TakoTerminalNSView, didReportStatus status: String, text: String?) {
             crab.setStatus(status, text: text)
+            publishEvent(
+                type: "status",
+                payload: [
+                    "status": .string(crab.paneStatus.rawValue),
+                    "status_text": text.map(JSON.string) ?? .null,
+                    "unread": .bool(crab.unread)
+                ]
+            )
         }
 
         public func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {
             crab.clearStatus()
+            publishEvent(
+                type: "status",
+                payload: [
+                    "status": .string(crab.paneStatus.rawValue),
+                    "status_text": .null,
+                    "unread": .bool(crab.unread)
+                ]
+            )
         }
 
         public func setStatus(_ status: String, text: String? = nil, ttl: TimeInterval? = nil) {
             crab.setStatus(status, text: text, ttl: ttl)
+            publishEvent(
+                type: "status",
+                payload: [
+                    "status": .string(crab.paneStatus.rawValue),
+                    "status_text": text.map(JSON.string) ?? .null,
+                    "unread": .bool(crab.unread)
+                ]
+            )
         }
 
         public func clearStatus() {
             crab.clearStatus()
+            publishEvent(
+                type: "status",
+                payload: [
+                    "status": .string(crab.paneStatus.rawValue),
+                    "status_text": .null,
+                    "unread": .bool(crab.unread)
+                ]
+            )
         }
 
         func sendOutputToAnotherPane(text: String) {
@@ -2597,9 +2659,11 @@ extension Tako {
                                 if let pwd = self.pwd {
                                     self.title = Tako.titleForDirectory(pwd)
                                 }
+                                self.publishEvent(type: "cwd", payload: ["cwd": .string(self.pwd ?? url)])
                             case .titleChanged(let title):
                                 self.title = title
                                 self.onTitleChange?(self)
+                                self.publishEvent(type: "title", payload: ["title": .string(title)])
                             case .clipboardSet(let text):
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(text, forType: .string)
@@ -2644,15 +2708,39 @@ extension Tako {
                                 self.updateProgressBar(state: self.crab.progressState, progress: self.crab.progress)
                                 (NSApp.delegate as? AppDelegate)?.setDockBadge()
                                 Tako.TabBarController.refreshAll()
+                                self.publishEvent(
+                                    type: "progress",
+                                    payload: [
+                                        "state": .string(self.crab.progressState.rawValue),
+                                        "progress": value.map { JSON.number(Double($0)) } ?? .null
+                                    ]
+                                )
                             case .commandStart:
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandStarted()
                                 self.commandStarted()
+                                var cmdText = ""
+                                var cmdRef = ""
                                 if let id = self.core.newestCommandId(),
                                    let info = self.core.firstCommandAfter(after: id > 0 ? id - 1 : 0) {
                                     self.activeRunningCommandText = info.input
+                                    cmdText = info.input ?? ""
+                                    cmdRef = "\(info.id)@\(info.epoch)"
                                 }
+                                self.publishEvent(
+                                    type: "command_start",
+                                    payload: [
+                                        "command": .string(cmdRef),
+                                        "ref": .string(cmdRef),
+                                        "line": .string(cmdText)
+                                    ]
+                                )
                             case .commandEnd(let exitCode):
+                                var cmdRef = ""
+                                if let id = self.core.newestCommandId(),
+                                   let info = self.core.firstCommandAfter(after: id > 0 ? id - 1 : 0) {
+                                    cmdRef = "\(info.id)@\(info.epoch)"
+                                }
                                 self.activeRunningCommandText = nil
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandEnded(exitCode: exitCode)
@@ -2661,12 +2749,38 @@ extension Tako {
                                 (NSApp.delegate as? AppDelegate)?.setDockBadge()
                                 Tako.TabBarController.refreshAll()
                                 self.commandEnded(exitCode: exitCode)
+                                var payload: [String: JSON] = [
+                                    "command": .string(cmdRef),
+                                    "ref": .string(cmdRef),
+                                ]
+                                if let exitCode {
+                                    payload["exit_status"] = .number(Double(exitCode))
+                                } else {
+                                    payload["exit_status"] = .null
+                                }
+                                self.publishEvent(type: "command_end", payload: payload)
                             case .promptMark:
                                 self.crab.promptMark()
                             case .statusSet(let status, let text):
                                 self.crab.setStatus(status, text: text)
+                                self.publishEvent(
+                                    type: "status",
+                                    payload: [
+                                        "status": .string(self.crab.paneStatus.rawValue),
+                                        "status_text": text.map(JSON.string) ?? .null,
+                                        "unread": .bool(self.crab.unread)
+                                    ]
+                                )
                             case .statusClear:
                                 self.crab.clearStatus()
+                                self.publishEvent(
+                                    type: "status",
+                                    payload: [
+                                        "status": .string(self.crab.paneStatus.rawValue),
+                                        "status_text": .null,
+                                        "unread": .bool(self.crab.unread)
+                                    ]
+                                )
                             case .clipboardQuery:
                                 let text = NSPasteboard.general.string(forType: .string) ?? ""
                                 let replyOutcome = self.core.feedWithOutcome(bytes: Data("\u{1b}]52;c;\(Data(text.utf8).base64EncodedString())\u{07}".utf8))
@@ -2694,6 +2808,14 @@ extension Tako {
             }, onExit: { [weak self] in
                 DispatchQueue.main.sync {
                     guard let self else { return }
+                    let exitCode = self.pty?.exitStatus
+                    var payload: [String: JSON] = [:]
+                    if let exitCode {
+                        payload["exit_status"] = .number(Double(exitCode))
+                    } else {
+                        payload["exit_status"] = .null
+                    }
+                    self.publishEvent(type: "process_exit", payload: payload)
                     self.childDidExit(started)
                 }
             })
