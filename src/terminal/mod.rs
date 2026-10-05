@@ -419,6 +419,8 @@ pub struct Terminal {
     pub(crate) unidentified_osc99: Option<InFlightOsc99>,
     /// Hierarchical context stack (OSC 3008, C5): breadcrumbs and elevation.
     pub(crate) context_stack: Vec<ContextFrame>,
+    /// Count of elevated context frames evicted due to MAX_CONTEXT_STACK_DEPTH.
+    pub(crate) evicted_elevated: usize,
 }
 
 impl Terminal {
@@ -433,12 +435,22 @@ impl Terminal {
 
     /// Whether any frame in the context stack represents an elevated context (C5).
     pub fn is_elevated(&self) -> bool {
-        self.context_stack.iter().any(|f| f.is_elevated)
+        self.evicted_elevated > 0 || self.context_stack.iter().any(|f| f.is_elevated)
     }
 
     /// The active tint color, if any, for the topmost frame or elevated state (C5).
     pub fn active_tint(&self) -> Option<&str> {
-        self.context_stack.iter().rev().find_map(|f| f.tint.as_deref())
+        self.context_stack
+            .iter()
+            .rev()
+            .find_map(|f| f.tint.as_deref())
+            .or_else(|| {
+                if self.is_elevated() {
+                    Some("#ea580c")
+                } else {
+                    None
+                }
+            })
     }
 
     /// Export the complete terminal state as a native versioned binary checkpoint.
@@ -608,6 +620,7 @@ impl Terminal {
             in_flight_osc99: HashMap::new(),
             unidentified_osc99: None,
             context_stack: Vec::new(),
+            evicted_elevated: 0,
         }
     }
 
@@ -4260,23 +4273,36 @@ impl Perform for Terminal {
             // \e]3008;pop\a
             // \e]3008;clear\a
             // \e]3008;set;<kind>;<name>[;<tint>]\a
+            const MAX_CONTEXT_STACK_DEPTH: usize = 32;
+            const MAX_CONTEXT_FIELD_LEN: usize = 128;
             if let Some(op_bytes) = params.get(1) {
                 let op = String::from_utf8_lossy(op_bytes);
                 let op_lower = op.trim().to_lowercase();
                 match op_lower.as_str() {
                     "push" | "enter" => {
-                        let kind = params
+                        let mut kind = params
                             .get(2)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .unwrap_or_default();
-                        let name = params
+                        let mut name = params
                             .get(3)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .unwrap_or_default();
-                        let explicit_tint = params
+                        let mut explicit_tint = params
                             .get(4)
                             .map(|p| String::from_utf8_lossy(p).trim().to_string())
                             .filter(|s| !s.is_empty());
+                        if kind.len() > MAX_CONTEXT_FIELD_LEN {
+                            kind = kind.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                        }
+                        if name.len() > MAX_CONTEXT_FIELD_LEN {
+                            name = name.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                        }
+                        if let Some(t) = explicit_tint.as_mut() {
+                            if t.len() > MAX_CONTEXT_FIELD_LEN {
+                                *t = t.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                        }
                         let is_elevated = kind.eq_ignore_ascii_case("sudo")
                             || kind.eq_ignore_ascii_case("elevated")
                             || kind.eq_ignore_ascii_case("root")
@@ -4295,38 +4321,62 @@ impl Perform for Terminal {
                             tint,
                             is_elevated,
                         };
+                        if self.context_stack.len() >= MAX_CONTEXT_STACK_DEPTH {
+                            if let Some(idx) = self.context_stack.iter().position(|f| !f.is_elevated) {
+                                self.context_stack.remove(idx);
+                            } else {
+                                self.evicted_elevated += 1;
+                                self.context_stack.remove(0);
+                            }
+                        }
                         self.context_stack.push(frame.clone());
                         self.events.push(TerminalEvent::ContextPush(frame));
                     }
                     "pop" | "exit" => {
                         if self.context_stack.pop().is_some() {
                             self.events.push(TerminalEvent::ContextPop);
+                        } else if self.evicted_elevated > 0 {
+                            self.evicted_elevated -= 1;
+                            self.events.push(TerminalEvent::ContextPop);
                         }
                     }
                     "clear" | "reset" => {
-                        if !self.context_stack.is_empty() {
+                        if !self.context_stack.is_empty() || self.evicted_elevated > 0 {
                             self.context_stack.clear();
+                            self.evicted_elevated = 0;
                             self.events.push(TerminalEvent::ContextClear);
                         }
                     }
                     "set" => {
-                        if !self.context_stack.is_empty() {
+                        if !self.context_stack.is_empty() || self.evicted_elevated > 0 {
                             self.context_stack.clear();
+                            self.evicted_elevated = 0;
                             self.events.push(TerminalEvent::ContextClear);
                         }
                         if params.len() > 2 {
-                            let kind = params
+                            let mut kind = params
                                 .get(2)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .unwrap_or_default();
-                            let name = params
+                            let mut name = params
                                 .get(3)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .unwrap_or_default();
-                            let explicit_tint = params
+                            let mut explicit_tint = params
                                 .get(4)
                                 .map(|p| String::from_utf8_lossy(p).trim().to_string())
                                 .filter(|s| !s.is_empty());
+                            if kind.len() > MAX_CONTEXT_FIELD_LEN {
+                                kind = kind.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                            if name.len() > MAX_CONTEXT_FIELD_LEN {
+                                name = name.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                            }
+                            if let Some(t) = explicit_tint.as_mut() {
+                                if t.len() > MAX_CONTEXT_FIELD_LEN {
+                                    *t = t.chars().take(MAX_CONTEXT_FIELD_LEN).collect();
+                                }
+                            }
                             let is_elevated = kind.eq_ignore_ascii_case("sudo")
                                 || kind.eq_ignore_ascii_case("elevated")
                                 || kind.eq_ignore_ascii_case("root")
@@ -5292,6 +5342,7 @@ impl Terminal {
         self.last_cwd = None;
         self.last_prompt_line = None;
         self.context_stack.clear();
+        self.evicted_elevated = 0;
     }
 
     /// DECALN (`ESC # 8`): fill the screen with 'E', reset the scroll

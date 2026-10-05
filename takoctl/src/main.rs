@@ -89,12 +89,18 @@ commands:
                           (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
   hooks uninstall AGENT   remove Tako lifecycle hooks from AGENT's configuration
                           (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
+  resume set -- ARGS...   record how to resume what runs in a pane (--cwd DIR)
+  resume show [TARGET]    show recorded resume session and auto-run approval status
+  resume clear [TARGET]   clear recorded resume session
+  resume run [TARGET]     manually execute recorded resume command
+  resume approve [TARGET] approve command prefix for directory (--prefix P, --cwd DIR)
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
   --child-of TARGET       split: child pane linked to parent (e.g. self or ID)
   --label NAME            split: label for child pane (e.g. subagent name)
   --approve               layout apply: trust layout file and allow running its programs
+  --prefix PREFIX         resume approve: command prefix to approve for auto-run
   --choice CHOICE         ask: add a choice (can be repeated)
   --choices C1,C2,...     ask: comma-separated list of choices
   --confirm               ask: prompt for confirmation (Yes/No)
@@ -321,6 +327,9 @@ fn parse(argv: &[String]) -> Result<Options, String> {
                     .parse()
                     .map_err(|_| "--cursor needs a number".to_string())?;
                 args.insert("cursor".into(), Value::from(n));
+            }
+            "--prefix" => {
+                args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
@@ -819,6 +828,85 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "resume" => {
+            let sub = if positional.is_empty() {
+                "show".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "set" => {
+                    args.insert("action".into(), Value::String("set".into()));
+                    if positional.is_empty() {
+                        return Err(
+                            "resume set needs a command line: takoctl resume set -- <argv...>".into(),
+                        );
+                    }
+                    let argv_vals: Vec<Value> =
+                        positional.drain(..).map(Value::String).collect();
+                    args.insert("argv".into(), Value::Array(argv_vals));
+                    if !args.contains_key("cwd") {
+                        if let Ok(dir) = std::env::current_dir() {
+                            args.insert(
+                                "cwd".into(),
+                                Value::String(dir.to_string_lossy().to_string()),
+                            );
+                        }
+                    }
+                    let mut env_map = Map::new();
+                    for (k, v) in std::env::vars() {
+                        env_map.insert(k, Value::String(v));
+                    }
+                    args.insert("env".into(), Value::Object(env_map));
+                }
+                "show" => {
+                    args.insert("action".into(), Value::String("show".into()));
+                    if !positional.is_empty() {
+                        let target = positional.remove(0);
+                        args.insert("target".into(), Value::String(target));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "clear" => {
+                    args.insert("action".into(), Value::String("clear".into()));
+                    if !positional.is_empty() {
+                        let target = positional.remove(0);
+                        args.insert("target".into(), Value::String(target));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "run" => {
+                    args.insert("action".into(), Value::String("run".into()));
+                    if !positional.is_empty() {
+                        let target = positional.remove(0);
+                        args.insert("target".into(), Value::String(target));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "approve" => {
+                    args.insert("action".into(), Value::String("approve".into()));
+                    if !positional.is_empty() {
+                        let target = positional.remove(0);
+                        args.insert("target".into(), Value::String(target));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown resume action \"{other}\"; use set, show, clear, run, or approve"
+                    ))
+                }
+            }
+            None
+        }
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
         "ask" => Some("message"),
@@ -940,8 +1028,64 @@ fn render(cmd: &str, result: &Value) -> String {
         "layout" => layout_report(result),
         "action" => action_report(result),
         "task" => task_report(result),
+        "resume" => resume_report(result),
         _ => format!("{result}\n"),
     }
+}
+
+fn resume_report(result: &Value) -> String {
+    if result["cleared"].as_bool() == Some(true) {
+        return format!(
+            "Resume session cleared for pane {}\n",
+            result["id"].as_str().unwrap_or("")
+        );
+    }
+    if result["executed"].as_bool() == Some(true) {
+        return format!(
+            "Executed resume command for pane {}\n",
+            result["id"].as_str().unwrap_or("")
+        );
+    }
+    if result["approved"].as_bool() == Some(true) && result.get("prefix").is_some() {
+        return format!(
+            "Approved prefix \"{}\" for directory \"{}\"\n",
+            result["prefix"].as_str().unwrap_or(""),
+            result["cwd"].as_str().unwrap_or("")
+        );
+    }
+    if result["has_resume"].as_bool() == Some(false) {
+        return format!(
+            "No resume session recorded for pane {}\n",
+            result["id"].as_str().unwrap_or("")
+        );
+    }
+    let mut out = String::new();
+    if let Some(id) = result["id"].as_str() {
+        out += &format!("Pane: {}\n", id);
+    }
+    if let Some(argv) = result["argv"].as_array() {
+        let cmd = argv
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        out += &format!("Command: {}\n", cmd);
+    }
+    if let Some(cwd) = result["cwd"].as_str() {
+        out += &format!("Directory: {}\n", cwd);
+    }
+    if let Some(is_imported) = result["is_imported"].as_bool() {
+        if is_imported {
+            out += "Imported: yes (untrusted, auto-run disabled)\n";
+        }
+    }
+    if let Some(approved) = result["approved"].as_bool() {
+        out += &format!("Auto-run approved: {}\n", if approved { "yes" } else { "no" });
+    }
+    if let Some(recorded_at) = result["recorded_at"].as_str() {
+        out += &format!("Recorded at: {}\n", recorded_at);
+    }
+    out
 }
 
 fn expand_path(file: &str) -> String {
@@ -2889,6 +3033,85 @@ bbbbbbbb  logs -- pane 2 of 2
             rendered_collapsed,
             "window w1\n  tab 1  \"Agent Workspace\"\n     p-parent  /src  main  (1 subagent running)  [collapsed]\n"
         );
+    }
+
+    #[test]
+    fn test_resume_cli_parsing() {
+        let opts = parse(&[
+            "resume".into(),
+            "set".into(),
+            "--cwd".into(),
+            "/Users/alex/project".into(),
+            "--".into(),
+            "claude".into(),
+            "--resume".into(),
+            "session-123".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts.cmd, "resume");
+        assert_eq!(opts.args["action"], "set");
+        assert_eq!(opts.args["cwd"], "/Users/alex/project");
+        assert_eq!(
+            opts.args["argv"],
+            json!(["claude", "--resume", "session-123"])
+        );
+
+        let opts_show = parse(&["resume".into(), "show".into(), "pane-1".into()]).unwrap();
+        assert_eq!(opts_show.cmd, "resume");
+        assert_eq!(opts_show.args["action"], "show");
+        assert_eq!(opts_show.args["target"], "pane-1");
+
+        let opts_clear = parse(&["resume".into(), "clear".into()]).unwrap();
+        assert_eq!(opts_clear.args["action"], "clear");
+
+        let opts_approve = parse(&[
+            "resume".into(),
+            "approve".into(),
+            "--prefix".into(),
+            "claude".into(),
+            "pane-1".into(),
+        ])
+        .unwrap();
+        assert_eq!(opts_approve.args["action"], "approve");
+        assert_eq!(opts_approve.args["prefix"], "claude");
+        assert_eq!(opts_approve.args["target"], "pane-1");
+    }
+
+    #[test]
+    fn test_resume_report_rendering() {
+        let show_json = json!({
+            "id": "p-123",
+            "has_resume": true,
+            "argv": ["claude", "--resume", "abc"],
+            "cwd": "/src/project",
+            "is_imported": false,
+            "approved": true,
+            "recorded_at": "2026-10-05T02:00:00Z"
+        });
+        let rep = render("resume", &show_json);
+        assert!(rep.contains("Pane: p-123"));
+        assert!(rep.contains("Command: claude --resume abc"));
+        assert!(rep.contains("Directory: /src/project"));
+        assert!(rep.contains("Auto-run approved: yes"));
+
+        let show_imported = json!({
+            "id": "p-123",
+            "has_resume": true,
+            "argv": ["claude", "--resume", "abc"],
+            "cwd": "/src/project",
+            "is_imported": true,
+            "approved": false,
+            "recorded_at": "2026-10-05T02:00:00Z"
+        });
+        let rep_imported = render("resume", &show_imported);
+        assert!(rep_imported.contains("Imported: yes (untrusted, auto-run disabled)"));
+
+        let cleared_json = json!({
+            "id": "p-123",
+            "cleared": true
+        });
+        let rep_cleared = render("resume", &cleared_json);
+        assert_eq!(rep_cleared, "Resume session cleared for pane p-123\n");
     }
 }
 
