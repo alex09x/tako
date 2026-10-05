@@ -50,7 +50,6 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
         }
 
         var depth = 0
-        var groupHasQuantifier: [Bool] = []
         let chars = Array(pattern)
         var i = 0
         var escaped = false
@@ -70,24 +69,30 @@ public struct TerminalRegexTrigger: Equatable, Sendable, Identifiable {
 
             if c == "(" {
                 depth += 1
-                groupHasQuantifier.append(false)
             } else if c == ")" {
                 if depth > 0 {
-                    let hadQuantifierInside = groupHasQuantifier.removeLast()
                     depth -= 1
-                    let nextIndex = i + 1
+                    var nextIndex = i + 1
+                    while nextIndex < chars.count && chars[nextIndex].isWhitespace {
+                        nextIndex += 1
+                    }
                     if nextIndex < chars.count {
                         let nextChar = chars[nextIndex]
                         if nextChar == "+" || nextChar == "*" || nextChar == "{" {
-                            if hadQuantifierInside {
-                                return (false, "pathological regex: nested quantifier on group causes exponential backtracking")
-                            }
+                            return (false, "pathological regex: quantified group ')\(nextChar)' causes exponential backtracking")
                         }
                     }
                 }
             } else if c == "+" || c == "*" || c == "{" {
-                if depth > 0 && !groupHasQuantifier.isEmpty {
-                    groupHasQuantifier[groupHasQuantifier.count - 1] = true
+                var nextIndex = i + 1
+                while nextIndex < chars.count && chars[nextIndex].isWhitespace {
+                    nextIndex += 1
+                }
+                if nextIndex < chars.count {
+                    let nextChar = chars[nextIndex]
+                    if nextChar == "+" || nextChar == "*" || nextChar == "{" {
+                        return (false, "pathological regex: consecutive quantifiers '\(c)\(nextChar)'")
+                    }
                 }
             }
             i += 1

@@ -192,8 +192,18 @@ final class PassiveRegexTriggerTests: XCTestCase {
     }
 
     func testPathologicalRegexRejectionAndSafetyBounds() {
-        // 1. Nested quantifiers causing exponential backtracking are rejected
-        let pathologicalPatterns = ["^(a+)+$", "(a*)*", "([0-9]+)+", #"(\w+)+"#]
+        // 1. Nested quantifiers and quantified groups causing exponential backtracking are rejected
+        let pathologicalPatterns = [
+            "^(a+)+$",
+            "(a*)*",
+            "([0-9]+)+",
+            #"(\w+)+"#,
+            "^(a|aa)+$",
+            "(a|b)+",
+            "(test){2,}",
+            "a++",
+            "a**"
+        ]
         for pat in pathologicalPatterns {
             let safety = TerminalRegexTrigger.isSafePattern(pat)
             XCTAssertFalse(safety.isSafe, "Expected \(pat) to be flagged unsafe")
