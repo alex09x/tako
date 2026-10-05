@@ -280,6 +280,21 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--path" => {
                 args.insert("path".into(), Value::String(value("--path")?));
             }
+            "--branch" => {
+                args.insert("branch".into(), Value::String(value("--branch")?));
+            }
+            "--base" => {
+                args.insert("base".into(), Value::String(value("--base")?));
+            }
+            "--archive" => {
+                args.insert("archive".into(), Value::Bool(true));
+            }
+            "--editor" => {
+                args.insert("editor".into(), Value::Bool(true));
+            }
+            "--force" => {
+                args.insert("force".into(), Value::Bool(true));
+            }
             "--cursor" => {
                 let n: u64 = value("--cursor")?
                     .parse()
@@ -695,6 +710,65 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             }
             None
         }
+        "task" => {
+            let sub = if positional.is_empty() {
+                "list".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "create" => {
+                    args.insert("action".into(), Value::String("create".into()));
+                    if positional.is_empty() {
+                        return Err("task create needs a task name".into());
+                    }
+                    let name = positional.remove(0);
+                    args.insert("name".into(), Value::String(name));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "list" => {
+                    args.insert("action".into(), Value::String("list".into()));
+                    if !positional.is_empty() {
+                        let p = positional.remove(0);
+                        args.insert("path".into(), Value::String(expand_path(&p)));
+                    }
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "status" => {
+                    args.insert("action".into(), Value::String("status".into()));
+                    if positional.is_empty() {
+                        return Err("task status needs a task name".into());
+                    }
+                    let name = positional.remove(0);
+                    args.insert("name".into(), Value::String(name));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                "finish" => {
+                    args.insert("action".into(), Value::String("finish".into()));
+                    if positional.is_empty() {
+                        return Err("task finish needs a task name".into());
+                    }
+                    let name = positional.remove(0);
+                    args.insert("name".into(), Value::String(name));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unknown task subcommand '{}'; expected create, list, status, or finish",
+                        other
+                    ));
+                }
+            }
+            None
+        }
         "split" => Some("direction"),
         "title" => Some("title"),
         "send" | "type" | "notify" | "find" => Some("text"),
@@ -791,6 +865,7 @@ fn render(cmd: &str, result: &Value) -> String {
         "workspace" => workspace_report(result),
         "layout" => layout_report(result),
         "action" => action_report(result),
+        "task" => task_report(result),
         _ => format!("{result}\n"),
     }
 }
@@ -929,6 +1004,70 @@ fn action_report(result: &Value) -> String {
         return format!(
             "Project actions {path}: {status} (sha256: {short_sha}, {count} action{})\n",
             if count == 1 { "" } else { "s" }
+        );
+    }
+    format!("{result}\n")
+}
+
+fn task_report(result: &Value) -> String {
+    if let Some(tasks) = result.get("tasks").and_then(Value::as_array) {
+        if tasks.is_empty() {
+            return "No worktree tasks found\n".into();
+        }
+        let mut out = "Worktree tasks:\n".to_string();
+        for t in tasks {
+            let name = t["name"].as_str().unwrap_or("");
+            let branch = t["branch"].as_str().unwrap_or("");
+            let status = t["status"].as_str().unwrap_or("running");
+            let worktree = t["worktree"].as_str().unwrap_or("");
+            let ahead = t["ahead"].as_f64().unwrap_or(0.0) as u64;
+            let behind = t["behind"].as_f64().unwrap_or(0.0) as u64;
+            let changed = t["changed_files"].as_f64().unwrap_or(0.0) as u64;
+            let changes_str = if changed == 0 {
+                "clean".to_string()
+            } else {
+                format!("{changed} changed file{}", if changed == 1 { "" } else { "s" })
+            };
+            out += &format!("  * {name} ({branch}): [{status}] (worktree: {worktree})\n");
+            out += &format!("      ahead: {ahead}, behind: {behind}, {changes_str}\n");
+        }
+        return out;
+    }
+    if result.get("created") == Some(&Value::Bool(true)) {
+        let name = result["name"].as_str().unwrap_or("");
+        let branch = result["branch"].as_str().unwrap_or("");
+        let base = result["base"].as_str().unwrap_or("");
+        let target = result["target"].as_str().unwrap_or("tab");
+        let worktree = result["worktree"].as_str().unwrap_or("");
+        return format!("Created worktree task '{name}' on branch {branch} (base: {base}, target: {target})\n  Worktree: {worktree}\n");
+    }
+    if result.get("finished") == Some(&Value::Bool(true)) {
+        let name = result["name"].as_str().unwrap_or("");
+        let archived = result["archived"].as_bool().unwrap_or(false);
+        let editor = result["opened_in_editor"].as_bool().unwrap_or(false);
+        let worktree = result["worktree"].as_str().unwrap_or("");
+        if archived {
+            return format!("Archived worktree task '{name}' (removed worktree at {worktree})\n");
+        } else if editor {
+            return format!("Finished worktree task '{name}' (opened in editor at {worktree})\n");
+        } else {
+            return format!("Finished worktree task '{name}'\n");
+        }
+    }
+    if let Some(status) = result.get("status").and_then(Value::as_str) {
+        let name = result["name"].as_str().unwrap_or("");
+        let branch = result["branch"].as_str().unwrap_or("");
+        let worktree = result["worktree"].as_str().unwrap_or("");
+        let ahead = result["ahead"].as_f64().unwrap_or(0.0) as u64;
+        let behind = result["behind"].as_f64().unwrap_or(0.0) as u64;
+        let changed = result["changed_files"].as_f64().unwrap_or(0.0) as u64;
+        let changes_str = if changed == 0 {
+            "clean".to_string()
+        } else {
+            format!("{changed} changed file{}", if changed == 1 { "" } else { "s" })
+        };
+        return format!(
+            "Worktree task '{name}' ({branch}): [{status}]\n  Worktree: {worktree}\n  ahead: {ahead}, behind: {behind}, {changes_str}\n"
         );
     }
     format!("{result}\n")
@@ -2422,5 +2561,133 @@ bbbbbbbb  logs -- pane 2 of 2
         // Errors
         assert!(parse(&args(&["action", "run"])).is_err());
         assert!(parse(&args(&["action", "unknown_sub"])).is_err());
+    }
+
+    #[test]
+    fn task_subcommands_and_options_parsed_and_rendered() {
+        // Task list
+        let opts = parse(&args(&["task", "list"])).unwrap();
+        assert_eq!(opts.cmd, "task");
+        assert_eq!(opts.args["action"], "list");
+
+        // Task list with path
+        let opts = parse(&args(&["task", "list", "/my/repo"])).unwrap();
+        assert_eq!(opts.cmd, "task");
+        assert_eq!(opts.args["action"], "list");
+        assert_eq!(opts.args["path"], "/my/repo");
+
+        // Task create
+        let opts = parse(&args(&[
+            "task", "create", "agent-feature",
+            "--branch", "feat/agent-ui",
+            "--base", "main",
+            "--target", "workspace",
+            "--command", "cargo test",
+            "--path", "/my/repo",
+        ]))
+        .unwrap();
+        assert_eq!(opts.cmd, "task");
+        assert_eq!(opts.args["action"], "create");
+        assert_eq!(opts.args["name"], "agent-feature");
+        assert_eq!(opts.args["branch"], "feat/agent-ui");
+        assert_eq!(opts.args["base"], "main");
+        assert_eq!(opts.args["target"], "workspace");
+        assert_eq!(opts.args["command"], "cargo test");
+        assert_eq!(opts.args["path"], "/my/repo");
+
+        // Task status
+        let opts = parse(&args(&["task", "status", "agent-feature", "--path", "/my/repo"])).unwrap();
+        assert_eq!(opts.cmd, "task");
+        assert_eq!(opts.args["action"], "status");
+        assert_eq!(opts.args["name"], "agent-feature");
+        assert_eq!(opts.args["path"], "/my/repo");
+
+        // Task finish with --archive and --editor
+        let opts = parse(&args(&["task", "finish", "agent-feature", "--archive", "--editor"])).unwrap();
+        assert_eq!(opts.cmd, "task");
+        assert_eq!(opts.args["action"], "finish");
+        assert_eq!(opts.args["name"], "agent-feature");
+        assert_eq!(opts.args["archive"], true);
+        assert_eq!(opts.args["editor"], true);
+
+        // Render list
+        let list_json = json!({
+            "tasks": [
+                {
+                    "name": "feat-1",
+                    "branch": "task/feat-1",
+                    "status": "running",
+                    "worktree": "/path/to/worktree",
+                    "ahead": 1.0,
+                    "behind": 0.0,
+                    "changed_files": 2.0
+                }
+            ]
+        });
+        assert_eq!(
+            render("task", &list_json),
+            "Worktree tasks:\n  * feat-1 (task/feat-1): [running] (worktree: /path/to/worktree)\n      ahead: 1, behind: 0, 2 changed files\n"
+        );
+
+        // Render create
+        let create_json = json!({
+            "created": true,
+            "name": "feat-1",
+            "branch": "task/feat-1",
+            "base": "main",
+            "target": "tab",
+            "worktree": "/path/to/worktree"
+        });
+        assert_eq!(
+            render("task", &create_json),
+            "Created worktree task 'feat-1' on branch task/feat-1 (base: main, target: tab)\n  Worktree: /path/to/worktree\n"
+        );
+
+        // Render finish (archived)
+        let finish_json = json!({
+            "finished": true,
+            "name": "feat-1",
+            "archived": true,
+            "opened_in_editor": false,
+            "worktree": "/path/to/worktree"
+        });
+        assert_eq!(
+            render("task", &finish_json),
+            "Archived worktree task 'feat-1' (removed worktree at /path/to/worktree)\n"
+        );
+
+        // Render finish (editor)
+        let finish_editor_json = json!({
+            "finished": true,
+            "name": "feat-1",
+            "archived": false,
+            "opened_in_editor": true,
+            "worktree": "/path/to/worktree"
+        });
+        assert_eq!(
+            render("task", &finish_editor_json),
+            "Finished worktree task 'feat-1' (opened in editor at /path/to/worktree)\n"
+        );
+
+        // Render status
+        let status_json = json!({
+            "name": "feat-1",
+            "branch": "task/feat-1",
+            "status": "running",
+            "worktree": "/path/to/worktree",
+            "ahead": 0.0,
+            "behind": 0.0,
+            "changed_files": 0.0
+        });
+        assert_eq!(
+            render("task", &status_json),
+            "Worktree task 'feat-1' (task/feat-1): [running]\n  Worktree: /path/to/worktree\n  ahead: 0, behind: 0, clean\n"
+        );
+
+        // Errors
+        assert!(parse(&args(&["task", "create"])).is_err());
+        assert!(parse(&args(&["task", "status"])).is_err());
+        assert!(parse(&args(&["task", "finish"])).is_err());
+        assert!(parse(&args(&["task", "unknown_sub"])).is_err());
     }
 }
