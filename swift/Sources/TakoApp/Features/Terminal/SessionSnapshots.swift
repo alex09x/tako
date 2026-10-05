@@ -154,7 +154,7 @@ final class SessionSnapshotSaver {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.save(surfaces(), settings: settings())
+                self?.save(surfaces(), settings: settings(), asynchronous: true)
             }
         }
     }
@@ -167,7 +167,7 @@ final class SessionSnapshotSaver {
     /// Writes the tabs that changed since their last save and removes the
     /// files of tabs that are gone. With saving off, or while Secure
     /// Keyboard Entry is on, nothing is written and saved tabs are removed.
-    func save(_ surfaces: [Tako.SurfaceView], settings: Settings, now: Date = Date()) {
+    func save(_ surfaces: [Tako.SurfaceView], settings: Settings, now: Date = Date(), asynchronous: Bool = false) {
         guard settings.enabled, !settings.secureInput else {
             store.removeAll()
             written = [:]
@@ -207,12 +207,22 @@ final class SessionSnapshotSaver {
                 store.remove(id: surface.id)
                 written[surface.id] = nil
             case .exported(let checkpoint, let generation):
-                do {
-                    let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
-                    try store.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surface.id)
-                    written[surface.id] = generation
-                } catch {
-                    written[surface.id] = nil
+                let surfaceId = surface.id
+                if asynchronous {
+                    written[surfaceId] = generation
+                    let currentStore = self.store
+                    DispatchQueue.global(qos: .utility).async {
+                        let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                        try? currentStore.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                    }
+                } else {
+                    do {
+                        let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                        try store.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
+                        written[surfaceId] = generation
+                    } catch {
+                        written[surfaceId] = nil
+                    }
                 }
             }
         }

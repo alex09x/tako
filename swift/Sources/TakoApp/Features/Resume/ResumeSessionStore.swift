@@ -159,21 +159,49 @@ public final class ResumeSessionStore {
         let forbidden = [
             "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE",
             "AUTH", "CREDENTIAL", "PRIVATE", "SIGNING", "ACCESS", "API",
-            "CERT", "BEARER", "SALT",
+            "CERT", "BEARER", "SALT", "DSN", "CONN_STRING", "CONNECTION_STRING",
+            "CONNSTRING",
         ]
         if forbidden.contains(where: { upper.contains($0) }) {
             return true
         }
         let parts = upper.components(separatedBy: CharacterSet.alphanumerics.inverted)
-        if parts.contains("PASS") || parts.contains("PWD") {
+        if parts.contains("PASS") || parts.contains("PWD") || parts.contains("DSN") {
+            return true
+        }
+        // Known credential-bearing connection strings: DATABASE_URL, REDIS_URL, MONGO_URI, AMQP_URL, etc.
+        let connPrefixes = [
+            "DATABASE", "REDIS", "MONGO", "MONGODB", "POSTGRES", "POSTGRESQL",
+            "MYSQL", "AMQP", "RABBITMQ", "SQL", "DB", "STORAGE", "SENTRY",
+            "CLICKHOUSE", "CASSANDRA", "MEMCACHED", "ELASTIC", "NEO4J",
+        ]
+        if connPrefixes.contains(where: { upper.contains($0) }) && (upper.contains("URL") || upper.contains("URI")) {
+            return true
+        }
+        if upper.hasSuffix("_URL") || upper.hasSuffix("_URI") || upper.hasSuffix("_DSN") {
+            if connPrefixes.contains(where: { upper.contains($0) }) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Checks if an environment variable value contains embedded credentials (e.g. URI userinfo or private key header).
+    public nonisolated static func isSecretValue(_ value: String) -> Bool {
+        if value.contains("://") && value.contains("@") {
+            return true
+        }
+        if value.hasPrefix("-----BEGIN ") {
             return true
         }
         return false
     }
 
-    /// Strips any environment variables whose names indicate secrets.
+    /// Strips any environment variables whose names or values indicate secrets.
     public nonisolated static func sanitizeEnvironment(_ env: [String: String]) -> [String: String] {
-        env.filter { !isSecretKey($0.key) }
+        env.filter { key, value in
+            !isSecretKey(key) && !isSecretValue(value)
+        }
     }
 
     /// Safely quotes an argv token for POSIX shell execution so that metacharacters

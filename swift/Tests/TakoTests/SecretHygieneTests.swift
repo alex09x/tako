@@ -220,9 +220,17 @@ import Testing
             "MY_PASSPHRASE": "phrase",
             "DB_PASS": "pass1",
             "DB_PWD": "pwd1",
+            "DATABASE_URL": "postgres://user:password@host/db",
+            "REDIS_URL": "redis://:secret@cache:6379/0",
+            "MONGO_URI": "mongodb://root:pass@mongo.db:27017",
+            "POSTGRES_URL": "postgresql://user:pass@localhost/db",
+            "AMQP_URL": "amqp://user:pass@localhost:5672",
+            "SENTRY_DSN": "https://public:private@sentry.io/1",
+            "CUSTOM_CRED_URL": "https://api-user:secret123@api.internal.com",
+            "SAFE_CONFIG_URL": "https://api.github.com/repos",
         ]
 
-        // 1. ResumeSessionStore.sanitizeEnvironment drops all secret keys
+        // 1. ResumeSessionStore.sanitizeEnvironment drops all secret keys and credential URLs
         let sanitized = ResumeSessionStore.sanitizeEnvironment(env)
         #expect(sanitized["PATH"] == "/usr/bin:/bin")
         #expect(sanitized["HOME"] == "/Users/alex")
@@ -230,6 +238,7 @@ import Testing
         #expect(sanitized["SHELL"] == "/bin/zsh")
         #expect(sanitized["LANG"] == "en_US.UTF-8")
         #expect(sanitized["USER"] == "alex")
+        #expect(sanitized["SAFE_CONFIG_URL"] == "https://api.github.com/repos")
 
         #expect(sanitized["OPENAI_API_KEY"] == nil)
         #expect(sanitized["GITHUB_TOKEN"] == nil)
@@ -246,13 +255,23 @@ import Testing
         #expect(sanitized["MY_PASSPHRASE"] == nil)
         #expect(sanitized["DB_PASS"] == nil)
         #expect(sanitized["DB_PWD"] == nil)
+        #expect(sanitized["DATABASE_URL"] == nil)
+        #expect(sanitized["REDIS_URL"] == nil)
+        #expect(sanitized["MONGO_URI"] == nil)
+        #expect(sanitized["POSTGRES_URL"] == nil)
+        #expect(sanitized["AMQP_URL"] == nil)
+        #expect(sanitized["SENTRY_DSN"] == nil)
+        #expect(sanitized["CUSTOM_CRED_URL"] == nil)
 
         // 2. ExportedResume automatically sanitizes environment
         let exported = ExportedResume(argv: ["zsh"], cwd: "/tmp", env: env)
         #expect(exported.env?["PATH"] == "/usr/bin:/bin")
         #expect(exported.env?["OPENAI_API_KEY"] == nil)
+        #expect(exported.env?["DATABASE_URL"] == nil)
+        #expect(exported.env?["CUSTOM_CRED_URL"] == nil)
         #expect(exported.env?["SSH_AUTH_SOCK"] == nil)
         #expect(exported.env?["SSL_CERT_FILE"] == nil)
+        #expect(exported.env?["SAFE_CONFIG_URL"] == "https://api.github.com/repos")
 
         // 3. ResumeSessionStore rejects saving records when isSecure is true
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -277,6 +296,17 @@ import Testing
         #expect(redactor.hasPatterns)
         #expect(redactor.patterns.count == 2)
 
+        // Rejection of pathological backtracking patterns (ReDoS safety)
+        #expect(throws: RedactionPatternError.self) {
+            try redactor.addPattern("^(a+)+$")
+        }
+        #expect(throws: RedactionPatternError.self) {
+            try redactor.addPattern("(a*)*")
+        }
+        #expect(throws: RedactionPatternError.self) {
+            try redactor.addPattern("([0-9]+)+")
+        }
+
         // 1. Text redaction in exported snapshot scrollback
         let originalText = "Authentication succeeded with sk-ant-api03-abcdef123456 and header Bearer eyJhbGciOiJIUzI1NiJ9. Welcome!"
         let redactedText = redactor.redact(originalText)
@@ -285,8 +315,6 @@ import Testing
         #expect(!redactedText.contains("eyJhbGci"))
 
         // 2. Binary checkpoint data redaction with CRC32 update
-        // Build a mock TKCK v5 checkpoint:
-        // Header (20 bytes): TKCK (4) | version (4) | flags (4) | payload_len (4) | checksum (4)
         let payloadString = "Session log: user authenticated with sk-ant-api03-abcdef123456 token."
         let payloadBytes = [UInt8](payloadString.utf8)
         let initialCRC = SessionSnapshotRedactor.computeCRC32(data: payloadBytes)
@@ -318,5 +346,46 @@ import Testing
         let expectedCRC = SessionSnapshotRedactor.computeCRC32(data: newPayload)
         let headerCRC = redactedCheckpoint.dropFirst(16).prefix(4).withUnsafeBytes { $0.load(as: UInt32.self) }
         #expect(headerCRC == expectedCRC)
+    }
+
+    // MARK: - Real Terminal Checkpoint Cell Redaction & Import Test
+
+    @Test func testRealBinaryCheckpointRedactsTerminalCellsAndRestoresSuccessfully() throws {
+        let redactor = SessionSnapshotRedactor.shared
+        defer { redactor.clearPatterns() }
+
+        try redactor.addPattern("sk-[A-Za-z0-9\\-_]+")
+        try redactor.addPattern("postgres://[^\\s]+")
+
+        let core = TakoCore(cols: 80, rows: 24)
+        // Feed terminal sequence so that text is placed into actual 32-bit grid cells
+        core.feed(bytes: Data("Secret API: sk-live9876543210abcdef\r\nDATABASE_URL=postgres://alice:secret123@db.prod:5432/main\r\n".utf8))
+
+        let rawBuffer = core.bufferText()
+        #expect(rawBuffer.contains("sk-live9876543210abcdef"))
+        #expect(rawBuffer.contains("postgres://alice:secret123@db.prod:5432/main"))
+
+        // Export real binary checkpoint from engine
+        let checkpoint = try core.checkpointExport(flags: 0, maxBytes: 0)
+        #expect(checkpoint.count >= 20)
+        #expect(checkpoint.prefix(4) == Data("TKCK".utf8))
+
+        // Redact the real binary checkpoint
+        let redactedCheckpoint = redactor.redact(checkpoint: checkpoint)
+
+        // The raw secret should no longer appear anywhere in the checkpoint binary data
+        let rawCheckpointString = String(decoding: redactedCheckpoint, as: UTF8.self)
+        #expect(!rawCheckpointString.contains("sk-live9876543210abcdef"))
+        #expect(!rawCheckpointString.contains("postgres://alice:secret123@db.prod:5432/main"))
+
+        // Import the redacted checkpoint into a fresh TakoCore instance to verify structure and CRC integrity
+        let restoredCore = TakoCore(cols: 80, rows: 24)
+        try restoredCore.checkpointImport(blob: redactedCheckpoint)
+
+        let restoredText = restoredCore.bufferText()
+        #expect(!restoredText.contains("sk-live9876543210abcdef"))
+        #expect(!restoredText.contains("postgres://alice:secret123@db.prod:5432/main"))
+        #expect(restoredText.contains("Secret API: ***********************"))
+        #expect(restoredText.contains("DATABASE_URL=********************************************"))
     }
 }
