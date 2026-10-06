@@ -139,6 +139,18 @@ extension AppDelegate {
 
         // We need to keep a strong reference to it so it isn't disabled.
         signals.append(sigusr2)
+
+        // Handle SIGTERM cleanly so that state saving and layout recording
+        // run before the process exits.
+        signal(SIGTERM, SIG_IGN)
+        let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigterm.setEventHandler {
+            Tako.logger.info("terminating in response to SIGTERM")
+            NSApp.terminate(nil)
+        }
+        sigterm.resume()
+        signals.append(sigterm)
     }
 
 }
+

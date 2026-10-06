@@ -157,25 +157,26 @@ extension AppUpdater {
         while /bin/kill -0 \(pid) 2>/dev/null; do
             /bin/sleep 0.1
             count=$((count + 1))
-            if [ $count -ge 20 ]; then
+            if [ $count -ge 50 ]; then
                 /bin/kill -TERM \(pid) 2>/dev/null || true
             fi
-            if [ $count -ge 35 ]; then
+            if [ $count -ge 100 ]; then
                 /bin/kill -9 \(pid) 2>/dev/null || true
                 break
             fi
         done
-        /usr/bin/open -n "\(bundleURL.path)"
+        /usr/bin/open "\(bundleURL.path)"
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", script]
         try? process.run()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
             exit(0)
         }
 
         NSApp.terminate(nil)
     }
 }
+
