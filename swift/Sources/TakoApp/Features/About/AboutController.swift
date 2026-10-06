@@ -29,7 +29,9 @@ class AboutController: NSWindowController, NSWindowDelegate {
     // MARK: - Functions
 
     func show() {
-        self.window?.orderOut(nil)
+        if isWindowLoaded {
+            self.window?.orderOut(nil)
+        }
         if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
             AboutNotice.show(in: window)
         }

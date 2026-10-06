@@ -24,15 +24,19 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
         didSet {
             if errors.count == 0 {
                 ConfigurationErrorsNotice.dismiss()
-                self.close()
-                self.window?.orderOut(nil)
+                if isWindowLoaded {
+                    self.close()
+                    self.window?.orderOut(nil)
+                }
             }
         }
     }
 
     override func showWindow(_ sender: Any?) {
         // Enforce in-terminal TUI presentation. Never display a native Cocoa window.
-        self.window?.orderOut(nil)
+        if isWindowLoaded {
+            self.window?.orderOut(nil)
+        }
         ConfigurationErrorsNotice.show(errors: errors)
     }
 

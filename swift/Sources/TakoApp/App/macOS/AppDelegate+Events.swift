@@ -307,11 +307,9 @@ extension AppDelegate {
         }
 
         // If we have configuration errors, we need to show them in the terminal TUI.
-        let c = ConfigurationErrorsController.sharedInstance
-        c.errors = config.errors
         Task { @MainActor in
-            if c.errors.count > 0 {
-                ConfigurationErrorsNotice.show(errors: c.errors, theme: config.theme)
+            if config.errors.count > 0 {
+                ConfigurationErrorsNotice.show(errors: config.errors, theme: config.theme)
             } else {
                 ConfigurationErrorsNotice.dismiss()
             }
