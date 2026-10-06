@@ -109,7 +109,7 @@ enum DiagnosticsExporter {
             try data.write(to: tempFile, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempFile.path)
             let attrs = try FileManager.default.attributesOfItem(atPath: tempFile.path)
-            if let perms = attrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
+            guard let perms = attrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 == 0o600 else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
             }
 
@@ -122,7 +122,7 @@ enum DiagnosticsExporter {
 
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destinationURL.path)
             let destAttrs = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
-            if let perms = destAttrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
+            guard let destPerms = destAttrs[.posixPermissions] as? NSNumber, destPerms.intValue & 0o777 == 0o600 else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
             }
 
