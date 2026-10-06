@@ -367,6 +367,18 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     if token.is_none() {
         token = args.get("token").and_then(Value::as_str).map(String::from);
     }
+    if token.is_none() {
+        let sock_path = socket.clone().or_else(|| crate::socket::default_path(&bundle_id).ok());
+        if let Some(sp) = sock_path {
+            let token_path = format!("{sp}.token");
+            if let Ok(content) = std::fs::read_to_string(&token_path) {
+                let trimmed = content.trim().to_string();
+                if !trimmed.is_empty() {
+                    token = Some(trimmed);
+                }
+            }
+        }
+    }
     Ok(Options {
         cmd,
         args,

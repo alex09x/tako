@@ -286,7 +286,7 @@ if not adhoc:
 # signed on its own first, and the manifest records the hash of that signed
 # file -- what Tako checks before it runs one. The app's signature then seals
 # it as part of the bundle without re-signing it.
-if os.environ.get("TAKO_WITH_ZMX") == "1" or RELEASE:
+if os.environ.get("TAKO_WITH_ZMX") != "0":
     built = subprocess.run(["scripts/build-zmx.sh"], check=True, capture_output=True,
                            text=True).stdout.strip().splitlines()[-1]
     helpers = os.path.join(APP, "Contents", "Helpers")

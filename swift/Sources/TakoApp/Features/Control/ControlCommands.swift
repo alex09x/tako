@@ -49,6 +49,9 @@ enum ControlCommands {
             case .listening:
                 server = candidate
                 socketPath = path
+                let tokenPath = path + ".token"
+                try? ControlGrantStore.shared.primaryToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
+                chmod(tokenPath, 0o600)
             case .taken:
                 socketPath = ""
                 NSLog("takoctl: another copy of Tako serves \(path); control is unavailable in this one")
@@ -60,6 +63,9 @@ enum ControlCommands {
     }
 
     static func stop() {
+        if !socketPath.isEmpty {
+            unlink(socketPath + ".token")
+        }
         server?.stop()
         server = nil
         socketPath = ""
