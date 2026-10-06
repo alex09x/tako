@@ -13,6 +13,7 @@ import SwiftUI
 import UserNotifications
 import TakoKit
 
+@MainActor
 extension AppDelegate {
     // MARK: - NSApplicationDelegate
 
@@ -45,9 +46,6 @@ extension AppDelegate {
             "NSAutoFillHeuristicControllerEnabled": false,
         ])
     }
-
-    /// Saves each tab's screen so a relaunch can show it again.
-    let sessionSaver = SessionSnapshotSaver()
 
     func sessionSaveSettings() -> SessionSnapshotSaver.Settings {
         .init(enabled: tako.config.windowSaveContent,

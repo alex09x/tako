@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 /// Keeps the layout journal current while Tako runs, and rebuilds windows
 /// from it after a run that did not end cleanly. See `LayoutJournal`.

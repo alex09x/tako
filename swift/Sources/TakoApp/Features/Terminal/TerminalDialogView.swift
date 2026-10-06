@@ -61,14 +61,14 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     private let title: String
     private let lines: [TUIText.Line]
     private let hint: String
-    private let cancelIndex: Int
+    let cancelIndex: Int
     private var buttons: [DialogButton] = []
-    private var selected = 0
+    var selected = 0
     /// The first body line shown, when the body is taller than the card.
     private var offset = 0
     private var scrollRemainder: CGFloat = 0
-    private var finish: ((Int) -> Void)?
-    private weak var previousResponder: NSResponder?
+    var finish: ((Int) -> Void)?
+    weak var previousResponder: NSResponder?
     /// A line to type into, on body row `fieldRow`, when the question asks
     /// for text; return presses the chosen button.
     var field: NSTextField?
@@ -111,7 +111,7 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         return true
     }
 
-    private init(title: String, lines: [TUIText.Line], choices: [Choice], cancelIndex: Int, style: Style) {
+    init(title: String, lines: [TUIText.Line], choices: [Choice], cancelIndex: Int, style: Style) {
         self.style = style
         self.title = title
         self.lines = lines
@@ -372,7 +372,7 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         updateSelection()
     }
 
-    private func updateSelection() {
+    func updateSelection() {
         for (index, button) in buttons.enumerated() { button.isChosen = index == selected }
     }
 
@@ -388,6 +388,4 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         }
         finish(index)
     }
-}
-
 }

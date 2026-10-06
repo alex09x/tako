@@ -7,7 +7,7 @@ import SwiftUI
 /// of the window.
 class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSToolbarDelegate {
     /// The view model for SwiftUI views
-    private var viewModel = ViewModel()
+    private var tahoeViewModel = ViewModel()
 
     deinit {
         tabBarObserver = nil
@@ -19,7 +19,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         didSet {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.viewModel.titleFont = self.titlebarFont
+                self.tahoeViewModel.titleFont = self.titlebarFont
             }
         }
     }
@@ -28,7 +28,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         didSet {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.viewModel.title = self.title
+                self.tahoeViewModel.title = self.title
             }
         }
     }
@@ -65,13 +65,13 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         // on this function to learn why we need to check this here.
         setupTabBar()
 
-        viewModel.isMainWindow = true
+        tahoeViewModel.isMainWindow = true
     }
 
     override func resignMain() {
         super.resignMain()
 
-        viewModel.isMainWindow = false
+        tahoeViewModel.isMainWindow = false
     }
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
@@ -80,7 +80,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         guard isTabBar(childViewController) else {
             // After dragging a tab into a new window, `hasTabBar` needs to be
             // updated to properly review window title
-            viewModel.hasTabBar = false
+            tahoeViewModel.hasTabBar = false
 
             super.addTitlebarAccessoryViewController(childViewController)
             return
@@ -156,7 +156,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
 
         // View model updates must happen on their own ticks.
         DispatchQueue.main.async { [weak self] in
-            self?.viewModel.hasTabBar = true
+            self?.tahoeViewModel.hasTabBar = true
         }
 
         // Find our clip view
@@ -226,7 +226,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         // View model needs to be updated on another tick because it
         // triggers view updates.
         DispatchQueue.main.async {
-            self.viewModel.hasTabBar = false
+            self.tahoeViewModel.hasTabBar = false
         }
 
         // Clear our observations
@@ -249,7 +249,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         switch itemIdentifier {
         case .title:
             let item = NSToolbarItem(itemIdentifier: .title)
-            item.view = ClickThroughHostingView(rootView: TitleItem(viewModel: viewModel))
+            item.view = ClickThroughHostingView(rootView: TitleItem(viewModel: tahoeViewModel))
             item.view?.setContentCompressionResistancePriority(.required, for: .horizontal)
             item.visibilityPriority = .user
             item.isEnabled = false

@@ -16,7 +16,7 @@ extension BaseTerminalController {
     var containingWindow: NSWindow? { self.window }
 
     var focusFollowsMouse: Bool {
-        self.derivedConfig.focusFollowsMouse
+        self.baseDerivedConfig.focusFollowsMouse
     }
     func computeTitle(title: String, bell: Bool) -> String {
         var result = title
@@ -49,7 +49,7 @@ extension BaseTerminalController {
         // which every shell integration does, immediately -- used to
         // overwrite it a moment later, so the setting looked like it did
         // nothing at all.
-        if let configured = derivedConfig.title {
+        if let configured = baseDerivedConfig.title {
             window.title = computeTitle(
                 title: configured,
                 bell: focusedSurface?.bell ?? false)
@@ -62,7 +62,7 @@ extension BaseTerminalController {
     func pwdDidChange(to: URL?) {
         guard let window else { return }
 
-        if derivedConfig.macosTitlebarProxyIcon == .visible {
+        if baseDerivedConfig.macosTitlebarProxyIcon == .visible {
             // Use the 'to' URL directly
             window.representedURL = to
         } else {
@@ -71,7 +71,7 @@ extension BaseTerminalController {
     }
 
     func cellSizeDidChange(to: NSSize) {
-        guard derivedConfig.windowStepResize else { return }
+        guard baseDerivedConfig.windowStepResize else { return }
         // Stage manager can sometimes present windows in such a way that the
         // cell size is temporarily zero due to the window being tiny. We can't
         // set content resize increments to this value, so avoid an assertion failure.
@@ -241,7 +241,7 @@ extension BaseTerminalController {
 
     // MARK: Clipboard Confirmation
 
-    @objc private func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
+    @objc func onConfirmClipboardRequest(notification: SwiftUI.Notification) {
         guard let target = notification.object as? Tako.SurfaceView else { return }
         guard self.surfaceTree.contains(target) else { return }
         if target != self.focusedSurface {

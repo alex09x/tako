@@ -76,8 +76,17 @@ public struct StickyCommandHeader: Equatable {
     }
 }
 
-/// Distinct progress states for OSC 9;4 progress reporting (B2).
-public enum ProgressState: String, Equatable, Sendable, CaseIterable {
+public typealias ProgressState = TakoTerminalNSView.ProgressState
+public typealias LinkSecurityWarning = TakoTerminalNSView.LinkSecurityWarning
+public typealias TerminalLink = TakoTerminalNSView.TerminalLink
+public typealias SemanticPathPayload = TakoTerminalNSView.SemanticPathPayload
+public typealias SemanticPathTarget = TakoTerminalNSView.SemanticPathTarget
+public typealias FilteredOutputLine = TakoTerminalNSView.FilteredOutputLine
+public typealias CommandTarget = TakoTerminalNSView.CommandTarget
+
+extension TakoTerminalNSView {
+    /// Distinct progress states for OSC 9;4 progress reporting (B2).
+    public enum ProgressState: String, Equatable, Sendable, CaseIterable {
     case none
     case normal
     case error
@@ -194,26 +203,6 @@ public struct FilteredOutputLine: Equatable, Sendable {
         self.graphemes = graphemes
     }
 }
-
-/// Structure identifying a command within a specific engine generation epoch.
-public struct CommandTarget: Hashable, Sendable {
-    public let id: UInt64
-    public let epoch: UInt64
-
-    public init(id: UInt64, epoch: UInt64) {
-        self.id = id
-        self.epoch = epoch
-    }
-}
-
-extension TakoTerminalNSView {
-    public typealias ProgressState = TakoCoreUI.ProgressState
-    public typealias LinkSecurityWarning = TakoCoreUI.LinkSecurityWarning
-    public typealias TerminalLink = TakoCoreUI.TerminalLink
-    public typealias SemanticPathPayload = TakoCoreUI.SemanticPathPayload
-    public typealias SemanticPathTarget = TakoCoreUI.SemanticPathTarget
-    public typealias FilteredOutputLine = TakoCoreUI.FilteredOutputLine
-    public typealias CommandTarget = TakoCoreUI.CommandTarget
 
     /// Checks whether a URL scheme is considered safe to open without confirmation prompt (E8: http, https, file).
     public static func isSafeScheme(_ scheme: String?) -> Bool {

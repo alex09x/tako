@@ -12,7 +12,8 @@ import AppKit
 import SwiftUI
 import TakoKit
 
-struct DerivedConfig {
+extension TerminalWindow {
+    struct DerivedConfig {
         let title: String?
         let backgroundBlur: Tako.Config.BackgroundBlur
         let backgroundColor: NSColor
@@ -64,7 +65,7 @@ extension TerminalWindow {
 
 /// A small circle indicator displayed in the tab accessory view that shows
 /// the user-assigned tab color. When no color is set, the view is hidden.
-private struct TabColorIndicatorView: View {
+struct TabColorIndicatorView: View {
     /// The tab color to display.
     let tabColor: TerminalTabColor
 

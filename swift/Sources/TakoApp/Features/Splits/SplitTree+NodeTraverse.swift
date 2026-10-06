@@ -207,3 +207,4 @@ extension SplitTree.Node {
         return try replaceInner(current: self, pathOffset: 0)
     }
 
+}

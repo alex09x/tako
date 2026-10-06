@@ -18,7 +18,7 @@ extension TitlebarTabsVenturaTerminalWindow {
         newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
     }
 
-	private func updateNewTabButtonImage() {
+	func updateNewTabButtonImage() {
 		guard let newTabButton: NSButton = titlebarContainer?.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
         guard let newTabButtonImageView = newTabButton.firstDescendant(withClassName: "NSImageView") as? NSImageView else { return }
         guard let newTabButtonImage = newTabButtonImageView.image else { return }
@@ -34,7 +34,7 @@ extension TitlebarTabsVenturaTerminalWindow {
         newTabButton.layer?.addSublayer(newTabButtonImageLayer!)
 	}
 
-	private func updateTabsForVeryDarkBackgrounds() {
+	func updateTabsForVeryDarkBackgrounds() {
 		guard hasVeryDarkBackground else { return }
         guard let titlebarContainer else { return }
 
@@ -49,7 +49,7 @@ extension TitlebarTabsVenturaTerminalWindow {
 		}
 	}
 
-	private func generateResetZoomButton() -> NSButton {
+	func generateResetZoomToolbarButton() -> NSButton {
 		let button = NSButton()
 		button.target = nil
 		button.action = #selector(TerminalController.splitZoom(_:))

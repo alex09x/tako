@@ -110,9 +110,5 @@ extension TakoTerminalNSView {
         setupAccessibility()
         startBlinkTimer()
     }
-
-    func setupAccessibility() {
-        setAccessibilityIdentifier("terminal")
-    }
 }
 #endif

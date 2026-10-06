@@ -144,7 +144,7 @@ extension BaseTerminalController {
         ] as? Tako.Config else { return }
 
         // Update our derived config
-        self.derivedConfig = DerivedConfig(config)
+        self.baseDerivedConfig = DerivedConfig(config)
 
         // Keep the Rust terminal and PTY alive; only rebuild renderer state
         // so a palette/font switch takes effect without reopening tabs.
@@ -226,7 +226,7 @@ extension BaseTerminalController {
         }
 
         if surfaceTree.zoomed != nil {
-            if derivedConfig.splitPreserveZoom.contains(.navigation) {
+            if baseDerivedConfig.splitPreserveZoom.contains(.navigation) {
                 surfaceTree = SplitTree(
                     root: surfaceTree.root,
                     zoomed: surfaceTree.root?.node(view: nextSurface))

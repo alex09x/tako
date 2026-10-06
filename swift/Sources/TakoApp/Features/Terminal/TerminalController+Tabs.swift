@@ -15,7 +15,7 @@ import TakoKit
 extension TerminalController {
     // MARK: - Methods
 
-    @objc private func takoConfigDidChange(_ notification: Notification) {
+    @objc func takoConfigDidChange(_ notification: Notification) {
         // Get our managed configuration object out
         guard let config = notification.userInfo?[
             Notification.Name.TakoConfigChangeKey
@@ -81,7 +81,7 @@ extension TerminalController {
         }
     }
 
-    @objc private func onFrameDidChange(_ notification: NSNotification) {
+    @objc func onFrameDidChange(_ notification: NSNotification) {
         // This is a huge hack to set the proper shortcut for tab selection
         // on tab reordering using the mouse. There is no event, delegate, etc.
         // as far as I can tell for when a tab is manually reordered with the
@@ -94,13 +94,6 @@ extension TerminalController {
         guard tabWindowsHash != v else { return }
         tabWindowsHash = v
         self.relabelTabs()
-    }
-
-    override func syncAppearance() {
-        // When our focus changes, we update our window appearance based on the
-        // currently focused surface.
-        guard let focusedSurface else { return }
-        syncAppearance(focusedSurface.derivedConfig)
     }
 
     func syncAppearance(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {
@@ -144,26 +137,4 @@ extension TerminalController {
         result.origin = safeOrigin
         return result
     }
-
-    /// This is called anytime a node in the surface tree is being removed.
-    override func closeSurface(
-        _ node: SplitTree<Tako.SurfaceView>.Node,
-        withConfirmation: Bool = true
-    ) {
-        // If this isn't the root then we're dealing with a split closure.
-        if surfaceTree.root != node {
-            super.closeSurface(node, withConfirmation: withConfirmation)
-            return
-        }
-
-        // More than 1 window means we have tabs and we're closing a tab
-        if let window, Tako.CustomTabGroup.group(for: window).windows.count > 1 {
-            closeTab(nil)
-            return
-        }
-
-        // 1 window, closing the window
-        closeWindow(nil)
-    }
-
 }

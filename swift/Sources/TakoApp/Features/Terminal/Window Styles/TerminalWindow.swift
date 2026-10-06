@@ -58,6 +58,21 @@ class TerminalWindow: NSWindow {
         windowController as? TerminalController
     }
 
+    var titlebarFont: NSFont? {
+        didSet {
+            let font = titlebarFont ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
+
+            titlebarTextField?.font = font
+            /// We check `hasMoreThanOneTabs` here because the system
+            /// may copy this setting to the tab’s text field at some point(e.g. entering/exiting fullscreen),
+            /// which can cause the title to be vertically misaligned (shifted downward).
+            ///
+            /// This behaviour is the opposite of what happens in the title bar’s text field, which is quite odd...
+            titlebarTextField?.usesSingleLineMode = !hasMoreThanOneTabs
+            tab.attributedTitle = attributedTitle
+        }
+    }
+
     /// The color assigned to this window's tab. Setting this updates the tab color indicator
     /// and marks the window's restorable state as dirty.
     var tabColor: TerminalTabColor = .none {
@@ -262,8 +277,7 @@ class TerminalWindow: NSWindow {
             tabBarDidDisappear()
         }
 
-
-        }
+        super.removeTitlebarAccessoryViewController(at: index)
     }
 
     // MARK: Tab Key Equivalents
@@ -345,6 +359,11 @@ class TerminalWindow: NSWindow {
     }
 
     // Used to set the titlebar font.
+
+    /// This is called by the controller when there is a need to reset the window appearance.
+    func syncAppearance(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {
+        syncWindowAppearance(surfaceConfig)
+    }
 
     deinit {
         if let observer = tabMenuObserver {

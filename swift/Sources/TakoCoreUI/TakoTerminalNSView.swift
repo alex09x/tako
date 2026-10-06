@@ -36,7 +36,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateRegexTriggerHighlights()
         }
     }
-    public private(set) var disabledTriggerIDs: Set<UUID> = []
+    public internal(set) var disabledTriggerIDs: Set<UUID> = []
     public var onTriggerMatched: ((_ trigger: TerminalRegexTrigger, _ matchingText: String, _ row: Int) -> Void)?
     var notifiedTriggerMatches: [UUID: Set<UInt64>] = [:]
 
@@ -46,7 +46,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     let stickyHeaderHintLayer = CATextLayer()
     let stickyHeaderSeparatorLayer = CALayer()
     var isHoveringStickyHeader = false
-    public private(set) var activeStickyCommandHeader: StickyCommandHeader?
+    public internal(set) var activeStickyCommandHeader: StickyCommandHeader?
 
     public let paneProgressBarLayer = CALayer()
     public var paneProgressBarEnabled: Bool = true {
@@ -59,8 +59,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             }
         }
     }
-    public private(set) var activeProgressState: ProgressState = .none
-    public private(set) var activeProgressValue: Int? = nil
+    public internal(set) var activeProgressState: ProgressState = .none
+    public internal(set) var activeProgressValue: Int? = nil
 
     public let contextTintLayer = CALayer()
     public let contextBreadcrumbsLayer = CALayer()
@@ -126,11 +126,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public var configuredEditorCommand: String? = nil
     nonisolated(unsafe) public static var editorLauncher: ((_ editor: String, _ args: [String], _ cwd: String?) -> Bool)? = nil
 
-    public private(set) var isOutputFilterActive: Bool = false
-    public private(set) var outputFilterQuery: String = ""
-    public private(set) var outputFilterIsRegex: Bool = false
-    public private(set) var outputFilterMatchingLines: [FilteredOutputLine] = []
-    public private(set) var outputFilterScrollOffset: Int = 0
+    public internal(set) var isOutputFilterActive: Bool = false
+    public internal(set) var outputFilterQuery: String = ""
+    public internal(set) var outputFilterIsRegex: Bool = false
+    public internal(set) var outputFilterMatchingLines: [FilteredOutputLine] = []
+    public internal(set) var outputFilterScrollOffset: Int = 0
 
     public var searchHitRetainedRows: [UInt64] = [] {
         didSet {
@@ -162,19 +162,19 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateStickyCommandHeader()
         }
     }
-    public private(set) var renderer: TerminalRenderer
-    public private(set) var cols: Int = 80
-    public private(set) var rows: Int = 24
+    public internal(set) var renderer: TerminalRenderer
+    public internal(set) var cols: Int = 80
+    public internal(set) var rows: Int = 24
     public var title: String = "" {
         didSet { titleDidChange() }
     }
     open func titleDidChange() {}
-    public private(set) var workingDirectory: String?
+    open var workingDirectory: String?
 
-    public private(set) var metalRenderer: MetalTerminalRenderer?
-    public private(set) var metalLayer: CAMetalLayer?
-    public private(set) var metalUnavailableReason: String?
-    public private(set) var lastFrameStatistics: TerminalMetalFrameStatistics?
+    public internal(set) var metalRenderer: MetalTerminalRenderer?
+    public internal(set) var metalLayer: CAMetalLayer?
+    public internal(set) var metalUnavailableReason: String?
+    public internal(set) var lastFrameStatistics: TerminalMetalFrameStatistics?
     public var customShaderErrors: [String] { metalRenderer?.customShaderErrors ?? [] }
 
     var metalContentScale: CGFloat = 1
@@ -241,10 +241,27 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var reportingCurrentPress: Bool = false
     var nativeSelectionCurrentPress: Bool = false
     var expandedSelectionPress: Bool = false
-    public private(set) var mouseCell: (row: Int, col: Int)?
+    public internal(set) var mouseCell: (row: Int, col: Int)?
 
     public func setMouseCell(_ cell: (row: Int, col: Int)?) {
         mouseCell = cell
+    }
+
+    func findRunningCommandId() -> UInt64? {
+        guard let newestId = core.newestCommandId(), newestId > 0 else { return nil }
+        if let info = core.firstCommandAfter(after: newestId - 1), info.id == newestId, info.running {
+            return newestId
+        }
+        return nil
+    }
+
+    /// Whether the terminal surface is currently idle at a shell prompt (not running a command, and not in alternate screen).
+    open var isAtShellPrompt: Bool {
+        guard !core.modes().alternateScreen else { return false }
+        if let runningId = findRunningCommandId(), runningId > 0 {
+            return false
+        }
+        return true
     }
 
     public var markedText: String?
@@ -255,11 +272,11 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public var linkURLDetectionEnabled: Bool = true
 
     public var onOutputFilterChanged: ((_ active: Bool, _ matchCount: Int, _ totalCount: Int) -> Void)?
-    public private(set) var currentHoveredLink: TerminalLink?
-    public private(set) var hoveredLinkTarget: String?
+    public internal(set) var currentHoveredLink: TerminalLink?
+    public internal(set) var hoveredLinkTarget: String?
     var hoveredLink: TerminalLink?
     var hoveredSemanticPath: SemanticPathTarget?
-    public private(set) var hasPresentedMatchingPreview: Bool = false
+    public internal(set) var hasPresentedMatchingPreview: Bool = false
     var lastMousePoint: NSPoint?
 
     lazy var linkUnderlineLayer: CALayer = {
@@ -359,14 +376,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
         metalLayer = nil
         metalRenderer = nil
         lastFrameStatistics = nil
-    }
-
-    public func feed(data: Data) {
-        parserCoordinator.feedSynchronously(data)
-    }
-
-    public func enqueue(data: Data) {
-        parserCoordinator.enqueue(data)
     }
 }
 #endif

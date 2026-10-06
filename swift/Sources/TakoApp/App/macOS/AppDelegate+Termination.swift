@@ -11,7 +11,7 @@
 import Cocoa
 import TakoKit
 
-extension AppDelegate {
+@MainActor extension AppDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return derivedConfig.shouldQuitAfterLastWindowClosed
     }
@@ -58,12 +58,8 @@ extension AppDelegate {
         Self.notificationCenterProvider()?.removeAllDeliveredNotifications()
     }
 
-    /// This is called when the application is already open and someone double-clicks the icon
-    /// or clicks the dock icon.
+    // MARK: - Termination Flow
 
-// MARK: - Termination Flow
-
-extension AppDelegate {
     func terminate() -> NSApplication.TerminateReply {
         let controllersNeedConfirmation = NSApplication.shared.windows
             .compactMap { $0.windowController as? BaseTerminalController }
@@ -153,7 +149,4 @@ extension AppDelegate {
             await self.replyToTermination(true)
         }
     }
-}
-
-/// Represents the state of the quick terminal controller.
 }

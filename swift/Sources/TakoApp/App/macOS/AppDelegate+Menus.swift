@@ -11,8 +11,7 @@
 import Cocoa
 import TakoKit
 
-extension AppDelegate {
-// MARK: Menu
+// MARK: - Menu
 
 extension AppDelegate {
     /// This is called for the dock right-click menu.
@@ -73,7 +72,7 @@ extension AppDelegate {
     }
 
     /// Sync all of our menu item keyboard shortcuts with the Tako configuration.
-    @MainActor private func syncMenuShortcuts(_ config: Tako.Config) {
+    @MainActor func syncMenuShortcuts(_ config: Tako.Config) {
         guard tako.readiness == .ready else { return }
 
         setupPromptNavigationMenuItems()
@@ -207,6 +206,7 @@ extension AppDelegate {
 
 // MARK: NSMenuItemValidation
 
+@MainActor
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
@@ -272,6 +272,4 @@ extension AppDelegate: NSMenuItemValidation {
             return true
         }
     }
-}
-
 }

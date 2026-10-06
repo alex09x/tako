@@ -15,23 +15,6 @@ import AppKit
 import QuartzCore
 
 extension TakoTerminalNSView {
-    func findRunningCommandId() -> UInt64? {
-        guard let newestId = core.newestCommandId(), newestId > 0 else { return nil }
-        if let info = core.firstCommandAfter(after: newestId - 1), info.id == newestId, info.running {
-            return newestId
-        }
-        return nil
-    }
-
-    /// Whether the terminal surface is currently idle at a shell prompt (not running a command, and not in alternate screen).
-    open var isAtShellPrompt: Bool {
-        guard !core.modes().alternateScreen else { return false }
-        if let runningId = findRunningCommandId(), runningId > 0 {
-            return false
-        }
-        return true
-    }
-
     /// Internal, not private: a host that moved the viewport in the engine
     /// directly (a search selecting a hit) calls it so the scrollbar follows.
     func notifyScrollPositionIfChanged() {

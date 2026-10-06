@@ -12,6 +12,7 @@ import Cocoa
 import UserNotifications
 import TakoKit
 
+extension AppDelegate {
     // MARK: - Restorable State
 
     /// We support NSSecureCoding for restorable state. Required as of macOS Sonoma (14) but a good idea anyways.
@@ -96,4 +97,5 @@ import TakoKit
         self.menuSecureInput?.state = if input.global { .on } else { .off }
         UserDefaults.tako.set(input.global, forKey: "SecureInput")
     }
+}
 

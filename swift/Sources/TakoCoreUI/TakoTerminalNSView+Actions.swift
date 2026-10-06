@@ -28,7 +28,7 @@ extension TakoTerminalNSView {
     }
 
     /// Inserts input text at the prompt, stripping any trailing line endings and routing through safe paste.
-    open func insertInputText(_ text: String) {
+    @objc open func insertInputText(_ text: String) {
         revealLiveScreenForUserInput()
         var cleanText = text
         while cleanText.hasSuffix("\n") || cleanText.hasSuffix("\r") {
@@ -40,7 +40,7 @@ extension TakoTerminalNSView {
 
     /// Routes pasted or inserted text through safe checks before sending to the shell.
     /// Withholds unsafe line breaks when DEC bracketed-paste mode is disabled until confirmed.
-    open func handlePaste(_ text: String) {
+    @objc open func handlePaste(_ text: String) {
         let isMultiLine = text.contains("\n") || text.contains("\r") || core.pasteIsUnsafe(text: text)
         let isUnbracketed = !core.modes().bracketedPaste
         if isMultiLine && isUnbracketed {

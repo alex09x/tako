@@ -74,7 +74,10 @@ extension Tako {
         /// The shell's current directory. Published so the app can follow it
         /// into window titles and the tab bar.
         @Published public internal(set) var pwd: String?
-        override public var workingDirectory: String? { pwd }
+        override open var workingDirectory: String? {
+            get { pwd }
+            set { pwd = newValue }
+        }
 
         public var surface: tako_surface_t? { nil }
 
@@ -297,7 +300,7 @@ extension Tako {
         /// Evaluates safe paste guard before sending text to the shell.
         /// If the clipboard contains newlines, safe paste is enabled, and the terminal
         /// is idle at a shell prompt, posts a confirmation request instead of pasting immediately.
-        override public func handlePaste(_ text: String) {
+        @objc override public func handlePaste(_ text: String) {
             let isMultiLine = text.contains("\n") || text.contains("\r")
             if safePaste && isMultiLine && core.cursorIsAtPrompt() && !isCommandRunning {
                 NotificationCenter.default.post(
@@ -378,7 +381,7 @@ extension Tako {
             }
         }
 
-        override public func insertInputText(_ text: String) {
+        @objc override public func insertInputText(_ text: String) {
             insertInputText(text, isBroadcastRecipient: false)
         }
     }

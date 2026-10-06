@@ -207,7 +207,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 	/// ~~just as it does in the stock tab bar.~~
     // MARK: - Split Zoom Button
 
-    lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
+    lazy var resetZoomToolbarButton: NSButton = generateResetZoomToolbarButton()
 
     // MARK: - Titlebar Font
 

@@ -11,7 +11,6 @@
 import Cocoa
 import TakoKit
 
-extension TerminalController {
 // MARK: Default Size
 
 extension TerminalController {
@@ -53,7 +52,7 @@ extension TerminalController {
         }
     }
 
-    private var defaultSize: DefaultSize? {
+    var defaultSize: DefaultSize? {
         if derivedConfig.maximize, let screen = window?.screen ?? NSScreen.main {
             // Maximize takes priority, we take up the full screen we're on.
             return .frame(screen.visibleFrame)
@@ -65,5 +64,4 @@ extension TerminalController {
             return nil
         }
     }
-}
 }

@@ -151,9 +151,6 @@ extension TerminalController {
 
     // MARK: NSWindowDelegate
 
-    // TabGroupCloseCoordinator.Controller
-    lazy private(set) var tabGroupCloseCoordinator = TabGroupCloseCoordinator()
-
     override func windowShouldClose(_ sender: NSWindow) -> Bool {
         // The window's red close button closes the whole terminal group;
         // individual tab close buttons use closeTab(_:) directly.

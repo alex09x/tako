@@ -13,8 +13,10 @@ import SwiftUI
 import TakoKit
 
 extension TerminalController {
-    func setupNotificationObservers() {
+    func setupTerminalNotificationObservers() {
         let center = NotificationCenter.default
+        center.addObserver(
+            self,
             selector: #selector(onToggleFullscreen),
             name: Tako.Notification.takoToggleFullscreen,
             object: nil)
@@ -66,40 +68,6 @@ extension TerminalController {
             name: .takoCloseWindow,
             object: nil
         )
-    }
-
-    // MARK: - TerminalViewDelegate
-
-    override func focusedSurfaceDidChange(to: Tako.SurfaceView?) {
-        super.focusedSurfaceDidChange(to: to)
-
-        // We always cancel our event listener
-        surfaceAppearanceCancellables.removeAll()
-
-        // When our focus changes, we update our window appearance based on the
-        // currently focused surface.
-        guard let focusedSurface else { return }
-        syncAppearance(focusedSurface.derivedConfig)
-
-        // We also want to get notified of certain changes to update our appearance.
-        focusedSurface.$derivedConfig
-            .dropFirst()
-            .sink { [weak self, weak focusedSurface] _ in self?.syncAppearanceOnPropertyChange(focusedSurface) }
-            .store(in: &surfaceAppearanceCancellables)
-        focusedSurface.$backgroundColor
-            .dropFirst()
-            .sink { [weak self, weak focusedSurface] _ in self?.syncAppearanceOnPropertyChange(focusedSurface) }
-            .store(in: &surfaceAppearanceCancellables)
-    }
-
-    private func syncAppearanceOnPropertyChange(_ surface: Tako.SurfaceView?) {
-        guard let surface else { return }
-        DispatchQueue.main.async { [weak self, weak surface] in
-            guard let surface else { return }
-            guard let self else { return }
-            guard self.focusedSurface == surface else { return }
-            self.syncAppearance(surface.derivedConfig)
-        }
     }
 
     // MARK: - Notifications
@@ -230,39 +198,4 @@ extension TerminalController {
 
         toggleFullscreen(mode: fullscreenMode)
     }
-
-// MARK: NSMenuItemValidation
-
-extension TerminalController {
-    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        switch item.action {
-        case #selector(closeTabsOnTheRight):
-            guard let window else { return false }
-            let tabGroup = Tako.CustomTabGroup.group(for: window)
-            guard let currentIndex = tabGroup.windows.firstIndex(of: window) else { return false }
-            return tabGroup.windows.indices.contains { $0 > currentIndex }
-
-        case #selector(returnToDefaultSize):
-            guard let window else { return false }
-
-            // Native fullscreen windows can't revert to default size.
-            if window.styleMask.contains(.fullScreen) {
-                return false
-            }
-
-            // If we're fullscreen at all then we can't change size
-            if fullscreenStyle?.isFullscreen ?? false {
-                return false
-            }
-
-            // If our window is already the default size or we don't have a
-            // default size, then disable.
-            return defaultSize?.isChanged(for: window) ?? false
-
-        default:
-            return super.validateMenuItem(item)
-        }
-    }
-}
-
 }

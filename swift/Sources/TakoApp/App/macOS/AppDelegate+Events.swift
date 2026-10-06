@@ -10,6 +10,8 @@
 
 import Cocoa
 import SwiftUI
+import OSLog
+import UserNotifications
 import TakoKit
 
 extension AppDelegate {

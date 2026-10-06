@@ -11,7 +11,8 @@
 import Cocoa
 import TakoKit
 
-struct DerivedConfig {
+extension QuickTerminalController {
+    struct DerivedConfig {
         let quickTerminalScreen: QuickTerminalScreen
         let quickTerminalAnimationDuration: Double
         let quickTerminalAutoHide: Bool
@@ -39,36 +40,36 @@ struct DerivedConfig {
             self.backgroundOpacity = config.backgroundOpacity
             self.backgroundBlur = config.backgroundBlur
         }
+    }
 }
 
-    /// Hides the dock globally (not just NSApp). This is only used if the quick terminal is
-    /// in a conflicting position with the dock.
+/// Hides the dock globally (not just NSApp). This is only used if the quick terminal is
+/// in a conflicting position with the dock.
 class HiddenDock {
-        let previousAutoHide: Bool
-        private var hidden: Bool = false
+    let previousAutoHide: Bool
+    private var hidden: Bool = false
 
-        init() {
-            previousAutoHide = Dock.autoHideEnabled
-        }
+    init() {
+        previousAutoHide = Dock.autoHideEnabled
+    }
 
-        deinit {
-            restore()
-        }
+    deinit {
+        restore()
+    }
 
-        func hide() {
-            guard !hidden else { return }
-            NSApp.acquirePresentationOption(.autoHideDock)
-            Dock.autoHideEnabled = true
-            hidden = true
-        }
+    func hide() {
+        guard !hidden else { return }
+        NSApp.acquirePresentationOption(.autoHideDock)
+        Dock.autoHideEnabled = true
+        hidden = true
+    }
 
-        func restore() {
-            guard hidden else { return }
-            NSApp.releasePresentationOption(.autoHideDock)
-            Dock.autoHideEnabled = previousAutoHide
-            hidden = false
-        }
-}
+    func restore() {
+        guard hidden else { return }
+        NSApp.releasePresentationOption(.autoHideDock)
+        Dock.autoHideEnabled = previousAutoHide
+        hidden = false
+    }
 }
 
 extension Notification.Name {

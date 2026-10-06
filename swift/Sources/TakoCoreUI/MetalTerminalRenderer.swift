@@ -100,7 +100,7 @@ public final class MetalTerminalRenderer {
     public internal(set) var customShaders: [TerminalCustomShader] = []
     public internal(set) var customShaderErrors: [String] = []
     var customShaderClock: () -> CFTimeInterval = { CACurrentMediaTime() }
-    private(set) var customShaderUniforms = TerminalCustomShaderUniforms()
+    internal(set) var customShaderUniforms = TerminalCustomShaderUniforms()
     var customShaderStartTime: CFTimeInterval = 0
     var customShaderLastFrameTime: CFTimeInterval?
     var customShaderTargets: [MTLTexture] = []

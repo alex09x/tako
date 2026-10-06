@@ -10,7 +10,8 @@
 
 import AppKit
 
-/// Remove a node from the tree. Returns the modified tree, or nil if removing
+extension SplitTree.Node {
+    /// Remove a node from the tree. Returns the modified tree, or nil if removing
     /// the node results in an empty tree.
     func remove(_ target: Node) -> Node? {
         // If we're removing ourselves, return nil

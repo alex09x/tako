@@ -16,8 +16,6 @@ import CoreGraphics
 import QuartzCore
 import simd
 
-private let srgbSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-
 extension TakoTerminalNSView {
     // MARK: - Theme colors
 

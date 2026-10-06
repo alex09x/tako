@@ -25,7 +25,7 @@ extension TerminalController {
     // Keep track of the last point that our window was launched at so that new
     // windows "cascade" over each other and don't just launch directly on top
     // of each other.
-    private static var lastCascadePoint = NSPoint(x: 0, y: 0)
+    static var lastCascadePoint = NSPoint(x: 0, y: 0)
 
     private static func applyCascade(to window: NSWindow, hasFixedPos: Bool) {
         if hasFixedPos { return }
@@ -50,7 +50,7 @@ extension TerminalController {
     // to find the preferred window to attach new tabs, perform actions, etc. We
     // always prefer the main window but if there isn't any (because we're triggered
     // by something like an AppleScript command) then we prefer the most previous main.
-    static private(set) weak var lastMain: TerminalController?
+    static internal(set) weak var lastMain: TerminalController?
 
     /// The "new window" action.
     static func newWindow(

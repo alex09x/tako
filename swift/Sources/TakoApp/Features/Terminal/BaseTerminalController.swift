@@ -89,7 +89,7 @@ class BaseTerminalController: NSWindowController,
 
     /// The window hosting this terminal view controller (TerminalViewModel).
     /// True when any surface in this controller currently has an active bell.
-    @Published private(set) var bell: Bool = false
+    @Published internal(set) var bell: Bool = false
 
     /// Whether the terminal surface should focus when the mouse is over it.
     /// Non-nil when an alert is active so we don't overlap multiple.
@@ -101,7 +101,7 @@ class BaseTerminalController: NSWindowController,
     var clipboardConfirmation: ClipboardConfirmationController?
 
     /// Fullscreen state management.
-    private(set) var fullscreenStyle: FullscreenStyle?
+    internal(set) var fullscreenStyle: FullscreenStyle?
 
     /// Event monitor (see individual events for why)
     var eventMonitor: Any?
@@ -113,7 +113,7 @@ class BaseTerminalController: NSWindowController,
     var appliedColorScheme: tako_color_scheme_e?
 
     /// The configuration derived from the Tako config so we don't need to rely on references.
-    var derivedConfig: DerivedConfig
+    var baseDerivedConfig: DerivedConfig
 
     /// Track whether background is forced opaque (true) or using config transparency (false)
     var isBackgroundOpaque: Bool = false
@@ -152,7 +152,7 @@ class BaseTerminalController: NSWindowController,
          surfaceTree tree: SplitTree<Tako.SurfaceView>? = nil
     ) {
         self.tako = tako
-        self.derivedConfig = DerivedConfig(tako.config)
+        self.baseDerivedConfig = DerivedConfig(tako.config)
         super.init(window: nil)
         self.surfaceTree = tree ?? .init(view: Tako.SurfaceView(tako, baseConfig: base))
         for view in surfaceTree { view.adopt(by: tako) }
@@ -237,6 +237,13 @@ class BaseTerminalController: NSWindowController,
             focusedSurface = nil
         }
         syncSurfaceTreeOcclusionState()
+    }
+
+    /// Override this to resync any appearance related properties. This will be called automatically
+    /// when certain window properties change that affect appearance.
+    func syncAppearance() {
+        // Purposely a no-op. This lets subclasses override this and we can call
+        // it virtually from here.
     }
 
     /// Close a surface node (which may contain splits), requesting confirmation if necessary.

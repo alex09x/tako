@@ -28,9 +28,6 @@ extension TerminalWindow {
         targetController.promptTabTitle()
     }
 
-        super.removeTitlebarAccessoryViewController(at: index)
-    }
-
     // MARK: Tab Bar
 
     /// This identifier is attached to the tab bar view controller when we detect it being
@@ -84,6 +81,8 @@ extension TerminalWindow {
             if titlebarAccessoryViewControllers.firstIndex(of: resetZoomAccessory) == nil {
                 addTitlebarAccessoryViewController(resetZoomAccessory)
             }
+        }
+    }
 }
 
 // MARK: - Tab Context Menu

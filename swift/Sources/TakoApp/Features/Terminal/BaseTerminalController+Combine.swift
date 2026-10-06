@@ -12,7 +12,8 @@ import Cocoa
 import Combine
 import TakoKit
 
-struct DerivedConfig {
+extension BaseTerminalController {
+    struct DerivedConfig {
         let macosTitlebarProxyIcon: Tako.MacOSTitlebarProxyIcon
         let windowStepResize: Bool
         let focusFollowsMouse: Bool
@@ -36,7 +37,7 @@ struct DerivedConfig {
             self.splitPreserveZoom = config.splitPreserveZoom
             self.title = config.title
         }
-}
+    }
 }
 
 extension BaseTerminalController: NSMenuItemValidation {

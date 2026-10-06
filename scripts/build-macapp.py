@@ -39,8 +39,8 @@ BUILD_NUMBER = os.environ.get("TAKO_BUILD_NUMBER") or git(
 def run(cmd, what):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        print(r.stdout[-4000:])
-        print(r.stderr[-8000:])
+        print(r.stdout)
+        print(r.stderr)
         sys.exit(f"failed: {what}")
     return r
 

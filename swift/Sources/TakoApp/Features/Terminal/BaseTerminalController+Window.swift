@@ -177,7 +177,7 @@ extension BaseTerminalController {
         syncSurfaceTreeOcclusionState()
     }
 
-    private func syncSurfaceTreeOcclusionState() {
+    func syncSurfaceTreeOcclusionState() {
         let visible = self.window?.occlusionState.contains(.visible) ?? false
         for view in surfaceTree {
             if let surface = view.surface, view.isWindowVisible != visible {

@@ -47,7 +47,7 @@ extension AppDelegate {
         WhatsNewNotice.showWhatsNew(force: true, theme: tako.config.theme)
     }
 
-    private func setupWhatsNewMenuItem() {
+    func setupWhatsNewMenuItem() {
         guard let takoMenu = NSApp.mainMenu?.items.first?.submenu,
               !takoMenu.items.contains(where: { $0.action == #selector(showWhatsNew) })
         else { return }
@@ -65,7 +65,7 @@ extension AppDelegate {
         CommandLineTool.installFromMenu(theme: tako.config.theme)
     }
 
-    private func setupCommandLineToolMenuItem() {
+    func setupCommandLineToolMenuItem() {
         guard let takoMenu = NSApp.mainMenu?.items.first?.submenu,
               !takoMenu.items.contains(where: { $0.action == #selector(installCommandLineTool) })
         else { return }
@@ -75,7 +75,7 @@ extension AppDelegate {
         takoMenu.insertItem(item, at: min(2, takoMenu.items.count))
     }
 
-    private func setupUpdateMenuItem() {
+    func setupUpdateMenuItem() {
         guard let takoMenu = NSApp.mainMenu?.items.first?.submenu else { return }
         if takoMenu.items.contains(where: { $0.action == #selector(checkForUpdates) }) {
             return
@@ -90,7 +90,7 @@ extension AppDelegate {
         takoMenu.insertItem(updateItem, at: min(1, takoMenu.items.count))
     }
 
-    private func setupPromptNavigationMenuItems() {
+    func setupPromptNavigationMenuItems() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         // Setup in Edit menu: "Select Command Output"
@@ -138,7 +138,7 @@ extension AppDelegate {
         }
     }
 
-    private func setupNotificationMenuItems() {
+    func setupNotificationMenuItems() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         // Setup in Window menu
@@ -186,7 +186,7 @@ extension AppDelegate {
         }
     }
 
-    private func setupSidebarMenuItem() {
+    func setupSidebarMenuItem() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
@@ -204,7 +204,7 @@ extension AppDelegate {
         }
     }
 
-    private func setupPaneOverviewMenuItem() {
+    func setupPaneOverviewMenuItem() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         if let viewMenu = mainMenu.items.first(where: { $0.title == "View" })?.submenu {
@@ -220,7 +220,7 @@ extension AppDelegate {
         }
     }
 
-    private func setupAttentionMenuItems() {
+    func setupAttentionMenuItems() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
@@ -268,7 +268,7 @@ extension AppDelegate {
         }
     }
 
-    private func setupWorkspaceMenuItems() {
+    func setupWorkspaceMenuItems() {
         guard let mainMenu = NSApp.mainMenu else { return }
 
         if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
@@ -310,7 +310,7 @@ extension AppDelegate {
         DiagnosticsExporter.exportToFile()
     }
 
-    private func setupDiagnosticsMenuItem() {
+    func setupDiagnosticsMenuItem() {
         guard let mainMenu = NSApp.mainMenu else { return }
         let helpMenu = mainMenu.items.first(where: { $0.title == "Help" || $0.submenu?.title == "Help" })?.submenu ?? NSApp.helpMenu
         guard let helpMenu,

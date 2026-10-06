@@ -12,23 +12,8 @@ import AppKit
 import TakoKit
 
 extension TerminalWindow {
-    var titlebarFont: NSFont? {
-        didSet {
-            let font = titlebarFont ?? NSFont.titleBarFont(ofSize: NSFont.systemFontSize)
-
-            titlebarTextField?.font = font
-            /// We check `hasMoreThanOneTabs` here because the system
-            /// may copy this setting to the tab’s text field at some point(e.g. entering/exiting fullscreen),
-            /// which can cause the title to be vertically misaligned (shifted downward).
-            ///
-            /// This behaviour is the opposite of what happens in the title bar’s text field, which is quite odd...
-            titlebarTextField?.usesSingleLineMode = !hasMoreThanOneTabs
-            tab.attributedTitle = attributedTitle
-        }
-    }
-
     // Find the NSTextField responsible for displaying the titlebar's title.
-    private var titlebarTextField: NSTextField? {
+    var titlebarTextField: NSTextField? {
         titlebarContainer?
             .firstDescendant(withClassName: "NSTitlebarView")?
             .firstDescendant(withClassName: "NSTextField") as? NSTextField
@@ -70,7 +55,7 @@ extension TerminalWindow {
     // MARK: Positioning And Styling
 
     /// This is called by the controller when there is a need to reset the window appearance.
-    func syncAppearance(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {
+    func syncWindowAppearance(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {
         // If our window is not visible, then we do nothing. Some things such as blurring
         // have no effect if the window is not visible. Ultimately, we'll have this called
         // at some point when a surface becomes focused.

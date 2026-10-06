@@ -10,6 +10,7 @@
 
 import Cocoa
 import SwiftUI
+import OSLog
 import UserNotifications
 import TakoKit
 
@@ -156,7 +157,7 @@ class AppDelegate: NSObject,
     }
 
     /// Tracks the windows that we hid for toggleVisibility.
-    private(set) var hiddenState: ToggleVisibilityState?
+    internal(set) var hiddenState: ToggleVisibilityState?
 
     /// The observer for the app appearance.
     var appearanceObserver: NSKeyValueObservation?
@@ -165,6 +166,7 @@ class AppDelegate: NSObject,
     var signals: [DispatchSourceSignal] = []
 
     let appIconUpdater = AppIconUpdater()
+    let sessionSaver = SessionSnapshotSaver()
 
     @MainActor lazy var menuShortcutManager = Tako.MenuShortcutManager()
 
