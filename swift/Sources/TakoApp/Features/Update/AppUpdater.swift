@@ -20,7 +20,7 @@ import OSLog
 final class AppUpdater: @unchecked Sendable {
     static let shared = AppUpdater()
 
-    private static let logger = Logger(
+    static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal",
         category: "AppUpdater"
     )
@@ -28,7 +28,9 @@ final class AppUpdater: @unchecked Sendable {
     private let repoOwner = "alex09x"
     private let repoName = "tako"
 
-    private var isUpdating = false
+    var isUpdating = false
+    private(set) var notifiedVersionsInSession: Set<String> = []
+    private var periodicTimer: Timer?
 
     private init() {}
 
@@ -46,6 +48,58 @@ final class AppUpdater: @unchecked Sendable {
         if arguments.contains(where: { $0.hasPrefix("--selftest") }) { return false }
         guard let version, !version.isEmpty, version != "0.0.0" else { return false }
         return true
+    }
+
+
+    /// Determines whether a found update should be presented to the user.
+    /// In silent background mode, updates already presented in this session
+    /// are suppressed so the user is not repeatedly prompted every hour.
+    /// Non-silent checks (e.g. manual menu invocation) always present.
+    @MainActor
+    func shouldPresentUpdate(version: String, silent: Bool) -> Bool {
+        if silent && notifiedVersionsInSession.contains(version) {
+            return false
+        }
+        notifiedVersionsInSession.insert(version)
+        return true
+    }
+
+    /// Resets the session-notified versions (primarily for testing or simulated app restart).
+    @MainActor
+    func resetSessionNotifiedVersions() {
+        notifiedVersionsInSession.removeAll()
+    }
+
+    /// Starts periodic background update checks at the given interval (defaults to 1 hour / 3600s).
+    @MainActor
+    func startPeriodicChecks(interval: TimeInterval = 3600) {
+        if let existing = periodicTimer, existing.isValid, existing.timeInterval == interval {
+            return
+        }
+        stopPeriodicChecks()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.checkForUpdates(silent: true)
+        }
+        timer.tolerance = min(300, max(1, interval * 0.1))
+        RunLoop.main.add(timer, forMode: .common)
+        self.periodicTimer = timer
+        Self.logger.info("Started periodic update checks every \(Int(interval))s")
+    }
+
+    /// Stops periodic background update checks.
+    @MainActor
+    func stopPeriodicChecks() {
+        if periodicTimer != nil {
+            periodicTimer?.invalidate()
+            periodicTimer = nil
+            Self.logger.info("Stopped periodic update checks")
+        }
+    }
+
+    /// Whether periodic checks are currently scheduled.
+    @MainActor
+    var isPeriodicCheckActive: Bool {
+        periodicTimer?.isValid == true
     }
 
     func checkForUpdates(silent: Bool = false) {
@@ -67,9 +121,16 @@ final class AppUpdater: @unchecked Sendable {
                 let remoteVersion = SemanticVersion(release.tagName)
 
                 if remoteVersion > currentVersion {
-                    Self.logger.info("Found update: \(release.tagName) (current: \(currentVersionString))")
-                    await MainActor.run {
-                        self.presentUpdateFound(release: release, currentVersion: currentVersionString)
+                    let shouldPresent = await MainActor.run {
+                        self.shouldPresentUpdate(version: release.tagName, silent: silent)
+                    }
+                    if shouldPresent {
+                        Self.logger.info("Found update: \(release.tagName) (current: \(currentVersionString))")
+                        await MainActor.run {
+                            self.presentUpdateFound(release: release, currentVersion: currentVersionString)
+                        }
+                    } else {
+                        Self.logger.info("Update \(release.tagName) already presented in this session, suppressing repeated background prompt")
                     }
                 } else if !silent {
                     await MainActor.run {
@@ -201,158 +262,13 @@ final class AppUpdater: @unchecked Sendable {
     }
 
     @MainActor
-    private func showErrorAlert(_ error: Error) {
+    func showErrorAlert(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = "Update Check Failed"
         alert.informativeText = "Could not check for updates:\n\(error.localizedDescription)"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()
-    }
-
-    // MARK: - Download & In-Place Update
-
-    private func performDownloadAndInstall(release: GitHubRelease) {
-        guard !isUpdating else { return }
-        isUpdating = true
-
-        // Find DMG or ZIP asset
-        let preferredAsset = release.assets.first(where: { $0.name.hasSuffix(".dmg") })
-            ?? release.assets.first(where: { $0.name.hasSuffix(".zip") })
-
-        guard let asset = preferredAsset, let assetUrl = URL(string: asset.browserDownloadUrl) else {
-            // If no binary asset found, fall back to opening the release page
-            if let webUrl = URL(string: release.htmlUrl) {
-                NSWorkspace.shared.open(webUrl)
-            }
-            isUpdating = false
-            return
-        }
-
-        Task {
-            do {
-                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                // Removed however this ends; declared first, so it runs after
-                // the image is detached below.
-                defer { try? FileManager.default.removeItem(at: tempDir) }
-
-                let downloadDestination = tempDir.appendingPathComponent(asset.name)
-                Self.logger.info("Downloading update asset from \(assetUrl.absoluteString)...")
-
-                let (tempDownloadedUrl, _) = try await URLSession.shared.download(from: assetUrl)
-                try FileManager.default.moveItem(at: tempDownloadedUrl, to: downloadDestination)
-
-                let stagedAppPath: String
-                var shouldUnmountDmg = false
-                let mountPoint = tempDir.appendingPathComponent("tako_mount").path
-                // Detached however this ends, a refused update included.
-                defer {
-                    if shouldUnmountDmg {
-                        try? Self.run("/usr/bin/hdiutil", ["detach", mountPoint, "-force"])
-                    }
-                }
-
-                if asset.name.hasSuffix(".dmg") {
-                    try FileManager.default.createDirectory(atPath: mountPoint, withIntermediateDirectories: true)
-                    try Self.run("/usr/bin/hdiutil", ["attach", downloadDestination.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint])
-                    stagedAppPath = (mountPoint as NSString).appendingPathComponent("Tako.app")
-                    shouldUnmountDmg = true
-                } else {
-                    try Self.run("/usr/bin/ditto", ["-x", "-k", downloadDestination.path, tempDir.path])
-                    stagedAppPath = tempDir.appendingPathComponent("Tako.app").path
-                }
-
-                guard FileManager.default.fileExists(atPath: stagedAppPath) else {
-                    throw UpdateError.message("Tako.app not found in downloaded archive")
-                }
-
-                // Nothing replaces this app unless the same developer signed
-                // it and Apple notarized it.
-                try Self.verify(URL(fileURLWithPath: stagedAppPath), signedBy: Self.teamIdentifier(of: Bundle.main.bundleURL))
-
-                // The bundle this process runs from, wherever it is. The new
-                // one is copied beside it first and swapped in whole, so a
-                // failed copy leaves the old app untouched.
-                let destinationBundleUrl = Bundle.main.bundleURL
-                let incoming = destinationBundleUrl.deletingLastPathComponent()
-                    .appendingPathComponent(".Tako-update-\(UUID().uuidString).app")
-                do {
-                    try Self.run("/usr/bin/ditto", [stagedAppPath, incoming.path])
-                    _ = try FileManager.default.replaceItemAt(destinationBundleUrl, withItemAt: incoming)
-                } catch {
-                    try? FileManager.default.removeItem(at: incoming)
-                    throw error
-                }
-
-
-                Self.logger.info("Successfully updated Tako to \(release.tagName) in-place at \(destinationBundleUrl.path)")
-
-                await MainActor.run {
-                    self.isUpdating = false
-                    self.showUpdateSuccessAlert(tagName: release.tagName)
-                }
-            } catch {
-                Self.logger.error("Failed to install update: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.isUpdating = false
-                    self.showErrorAlert(error)
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func showUpdateSuccessAlert(tagName: String) {
-        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            let lines = [
-                TUIText.Line(runs: [TUIText.Run(text: "Tako \(tagName) is ready to use.", kind: .bold)]),
-                TUIText.Line(runs: []),
-                TUIText.Line(runs: [TUIText.Run(text: "The update was installed successfully. Would you like to relaunch Tako now to start using the new version, or keep working and relaunch later?", kind: .plain)])
-            ]
-            Task { @MainActor in
-                let answer = await TerminalDialogView.choose(
-                    in: window,
-                    title: "Tako \(tagName) Installed",
-                    lines: lines,
-                    choices: [
-                        .init(title: "Keep Working", kind: .normal),
-                        .init(title: "Relaunch Now", kind: .primary)
-                    ],
-                    selected: 1,
-                    cancelIndex: 0,
-                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
-                )
-                if answer == 1 {
-                    Self.relaunchApp()
-                }
-            }
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "Tako \(tagName) Installed!"
-        alert.informativeText = "The update has been installed successfully.\n\nWould you like to relaunch Tako now to use \(tagName), or keep working and relaunch later?"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Relaunch Now")
-        alert.addButton(withTitle: "Keep Working")
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            Self.relaunchApp()
-        }
-    }
-
-    /// Terminates the current app process and relaunches the updated application bundle.
-    static func relaunchApp() {
-        guard NSClassFromString("XCTestCase") == nil else { return }
-        let bundleURL = Bundle.main.bundleURL
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"\(bundleURL.path)\""
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", script]
-        try? process.run()
-        NSApp.terminate(nil)
     }
 }
 

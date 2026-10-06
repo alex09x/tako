@@ -41,4 +41,46 @@ struct AppUpdaterLaunchTests {
         #expect(try TemporaryConfig("auto-update = check").autoUpdateEnabled == true)
         #expect(try TemporaryConfig("").autoUpdateEnabled == true)
     }
+
+    @Test @MainActor func sessionSuppressionForSilentChecks() {
+        let updater = AppUpdater.shared
+        updater.resetSessionNotifiedVersions()
+
+        // First check in session presents dialog
+        #expect(updater.shouldPresentUpdate(version: "v0.1.8", silent: true) == true)
+        #expect(updater.notifiedVersionsInSession.contains("v0.1.8"))
+
+        // Subsequent silent background check suppresses repeat presentation
+        #expect(updater.shouldPresentUpdate(version: "v0.1.8", silent: true) == false)
+
+        // Manual user check (silent = false) always presents
+        #expect(updater.shouldPresentUpdate(version: "v0.1.8", silent: false) == true)
+
+        // Another silent check remains suppressed for that version
+        #expect(updater.shouldPresentUpdate(version: "v0.1.8", silent: true) == false)
+
+        // A newer version released during session presents
+        #expect(updater.shouldPresentUpdate(version: "v0.1.9", silent: true) == true)
+        #expect(updater.shouldPresentUpdate(version: "v0.1.9", silent: true) == false)
+
+        // On next launch (simulated restart), previously seen version prompts again
+        updater.resetSessionNotifiedVersions()
+        #expect(updater.shouldPresentUpdate(version: "v0.1.8", silent: true) == true)
+    }
+
+    @Test @MainActor func periodicTimerLifecycle() {
+        let updater = AppUpdater.shared
+        updater.stopPeriodicChecks()
+        #expect(updater.isPeriodicCheckActive == false)
+
+        updater.startPeriodicChecks(interval: 3600)
+        #expect(updater.isPeriodicCheckActive == true)
+
+        // Re-starting with same interval keeps it active
+        updater.startPeriodicChecks(interval: 3600)
+        #expect(updater.isPeriodicCheckActive == true)
+
+        updater.stopPeriodicChecks()
+        #expect(updater.isPeriodicCheckActive == false)
+    }
 }

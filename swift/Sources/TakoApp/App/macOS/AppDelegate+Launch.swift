@@ -219,6 +219,9 @@ extension AppDelegate {
         ) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 AppUpdater.shared.checkForUpdates(silent: true)
+                Task { @MainActor in
+                    AppUpdater.shared.startPeriodicChecks()
+                }
             }
         }
 

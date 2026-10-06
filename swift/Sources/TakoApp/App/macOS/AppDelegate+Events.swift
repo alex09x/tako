@@ -279,6 +279,19 @@ extension AppDelegate {
         // Update our badge since config can change what we show.
         syncDockBadge()
 
+        // Sync periodic background update checking if auto-update setting changed
+        Task { @MainActor in
+            if AppUpdater.checksAtLaunch(
+                arguments: CommandLine.arguments,
+                version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+                enabled: config.autoUpdateEnabled
+            ) {
+                AppUpdater.shared.startPeriodicChecks()
+            } else {
+                AppUpdater.shared.stopPeriodicChecks()
+            }
+        }
+
         // Config could change window appearance. We wrap this in an async queue because when
         // this is called as part of application launch it can deadlock with an internal
         // AppKit mutex on the appearance.
