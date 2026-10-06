@@ -177,51 +177,13 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
     except Exception as e:
         metadata_error = str(e)
 
-    # Fallback path: validate build configuration and dynamically derive dependencies from manifest
-    if target and not ("apple" in target or "darwin" in target):
-        err_msg = f"Cannot resolve release dependency graph for non-Apple target '{target}' without cargo metadata"
-        if metadata_error:
-            err_msg += f" (cargo metadata failed: {metadata_error})"
-        raise RuntimeError(err_msg)
-
-    direct_names = set(derive_manifest_direct_deps(features))
-    by_name_ver, by_name = build_cargo_maps(lock_pkgs)
-
-    direct_packages = set()
-    queue = []
-    tako_lock = next((p for p in lock_pkgs if p["name"] in ("tako", "tako-core")), None)
-    if tako_lock:
-        for dep_str in tako_lock.get("dependencies", []):
-            dep_nm = dep_str.split()[0]
-            if dep_nm in direct_names:
-                resolved = resolve_dependency(dep_str, by_name_ver, by_name)
-                if resolved:
-                    direct_packages.add((resolved["name"], resolved["version"]))
-                    queue.append(resolved)
-
-    visited_pkgs = {}
-    while queue:
-        curr_pkg = queue.pop(0)
-        key = (curr_pkg["name"], curr_pkg["version"])
-        if key in visited_pkgs:
-            continue
-        visited_pkgs[key] = curr_pkg
-        for dep_spec in curr_pkg.get("dependencies", []):
-            child_pkg = resolve_dependency(dep_spec, by_name_ver, by_name)
-            if not child_pkg:
-                continue
-            child_name = child_pkg["name"]
-            if ("apple" in target or "darwin" in target) and any(child_name.startswith(p) for p in ("windows", "redox", "linux")):
-                continue
-            if child_name in ("tako", "tako-core"):
-                continue
-            child_key = (child_pkg["name"], child_pkg["version"])
-            if child_key not in visited_pkgs:
-                queue.append(child_pkg)
-
-    filtered_pkgs = []
-    for pkg in visited_pkgs.values():
-        pkg_copy = dict(pkg)
-        pkg_copy["is_direct"] = ((pkg["name"], pkg["version"]) in direct_packages)
-        filtered_pkgs.append(pkg_copy)
-    return filtered_pkgs
+    # Cargo.lock omits target cfg conditions, so resolving a target-accurate release
+    # SBOM requires Cargo metadata evaluation. Fail closed with a clear error rather than
+    # guessing or emitting foreign target packages (e.g. r-efi, wasi) in an Apple release SBOM.
+    err_msg = (
+        f"Cannot accurately resolve target-specific release dependency graph for target='{target}' "
+        f"and features='{features}' without cargo metadata: {metadata_error}. "
+        f"Ensure cargo is installed and available in PATH, or specify --include-all-lockfile "
+        f"to generate an unpruned workspace lockfile inventory."
+    )
+    raise RuntimeError(err_msg)

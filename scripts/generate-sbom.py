@@ -34,9 +34,9 @@ from sbom_models import (
     get_timestamp,
     parse_cargo_lock,
     parse_swift_packages,
-    resolve_release_cargo_packages,
     ROOT,
 )
+from sbom_resolver import resolve_release_cargo_packages
 from sbom_spdx import generate_spdx
 
 

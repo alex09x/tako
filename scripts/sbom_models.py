@@ -200,8 +200,3 @@ def get_direct_cargo_dependencies(cargo_pkgs, by_name_ver=None, by_name=None):
     return direct
 
 
-# Re-export resolution functions from sbom_resolver
-from sbom_resolver import derive_manifest_direct_deps, resolve_release_cargo_packages  # noqa: E402
-
-
-
