@@ -149,8 +149,8 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .map(String::from)
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
-    let server = mcp::McpServer::new(socket_path, capabilities, surface_id)
-        .with_token(opts.token.clone());
+    let server =
+        mcp::McpServer::new(socket_path, capabilities, surface_id).with_token(opts.token.clone());
     server
         .run_stdio()
         .map_err(|e| format!("MCP stdio server error: {e}"))
@@ -198,6 +198,45 @@ fn main() -> ExitCode {
             }
         };
     }
+    if opts.cmd == "diagnose" {
+        let app_result = (|| {
+            let inherited = std::env::var("TAKO_SOCKET").ok();
+            if opts.socket.is_none() && inherited.as_deref() == Some("") {
+                return None;
+            }
+            let path = opts
+                .socket
+                .clone()
+                .or(inherited)
+                .or_else(|| socket::default_path(&opts.bundle_id).ok())?;
+            let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
+            let ans = socket::exchange_within(
+                &path,
+                &req,
+                std::time::Duration::from_millis(500),
+                socket::MAX_ANSWER_BYTES,
+            )
+            .ok()?;
+            if ans["ok"].as_bool() == Some(true) {
+                Some(ans["result"].clone())
+            } else {
+                None
+            }
+        })();
+
+        return match handle_diagnose(&opts, app_result.as_ref()) {
+            Ok(msg) => {
+                if !msg.is_empty() {
+                    print!("{msg}");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("takoctl: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
     // Inside a Tako pane, TAKO_SOCKET is that copy's answer: its socket, or
     // empty when it serves none. Empty means stop -- never go looking for
     // another copy's socket instead.
@@ -220,7 +259,9 @@ fn main() -> ExitCode {
     };
     let mut opts = opts;
     if opts.token.is_none() {
-        if let Ok(tok) = std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN")) {
+        if let Ok(tok) =
+            std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+        {
             let t = tok.trim().to_string();
             if !t.is_empty() {
                 opts.token = Some(t);

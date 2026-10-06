@@ -372,6 +372,8 @@ enum ControlCommands {
                 return .ok(try reviewCommand(request, all: all))
             case "screenshot":
                 return .ok(try screenshotCommand(request, all: all))
+            case "diagnose":
+                return .ok(try diagnoseCommand(request, all: all))
             case "text", "close", "last", "wait", "run", "find", "notify", "events":
                 throw ControlError(.internalError, "\(request.cmd) is answered asynchronously")
             default:
