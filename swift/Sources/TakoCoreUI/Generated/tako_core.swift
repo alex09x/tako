@@ -918,66 +918,27 @@ public func FfiConverterTypeSshSession_lower(_ value: SshSession) -> UInt64 {
 public protocol TakoCoreProtocol: AnyObject, Sendable {
 
     /**
-     * Returns the active tint color hex/string, if any, for the topmost frame or elevated state (C5).
-     */
-    func activeTint()  -> String?
-
-    /**
-     * Everything the terminal holds as plain text: retained scrollback
-     * first, then the live screen, with soft wraps rejoined.
-     *
-     * This is what a host copies. `get_plain_text` below is viewport-shaped
-     * and cannot see history, so using it for a copy silently returns the
-     * last screenful of a session that has thousands of lines.
-     */
-    func bufferText()  -> String
-
-    /**
      * Export the terminal state as a native versioned binary checkpoint.
-     *
-     * Kept for source compatibility. Returns an empty buffer -- which is not
-     * a valid checkpoint and does not verify -- where the typed
-     * `checkpoint_export` would say why.
      */
     func checkpoint()  -> Data
 
     /**
      * Export bounded by a caller-supplied byte cap.
-     *
-     * The effective limit is the smaller of `max_bytes` and the 64 MiB wire
-     * cap, and `max_bytes` of 0 means "no caller limit" -- the wire cap alone.
-     * The limit covers the whole blob, container header included, so a
-     * returned checkpoint always fits the cap the caller negotiated.
-     * Exceeding it fails with `TooLarge { size, limit }` rather than
-     * allocating past it. A failed export leaves the terminal exactly as it
-     * was -- nothing truncated, nothing cleared, nothing reset.
-     *
-     * `flags` is reserved by the v1 container and must be 0.
      */
     func checkpointExport(flags: UInt32, maxBytes: UInt64) throws  -> Data
 
     /**
-     * `checkpoint_export` in a chosen container version: the newest one the
-     * peer's `checkpoint_supports` accepts, so upgrading one side never makes
-     * the other refuse its checkpoints. 0 is `checkpoint_version()`; a
-     * version this build cannot write fails with `UnsupportedVersion`.
+     * `checkpoint_export` in a chosen container version.
      */
     func checkpointExportVersion(version: UInt32, maxBytes: UInt64) throws  -> Data
 
     /**
      * Replace the terminal from a checkpoint, atomically.
-     *
-     * Fail-intact: the whole state is decoded into a new engine first and
-     * only a complete one is swapped in, so a rejected import leaves the
-     * destination byte-identical to what it was. The epoch is published in
-     * the same critical section as the swap, so no reader can observe the new
-     * engine under the old generation or the reverse.
      */
     func checkpointImport(blob: Data) throws
 
     /**
-     * A checkpoint's version and geometry, without committing to importing
-     * it -- so a host can decide first.
+     * A checkpoint's version and geometry, without committing to importing it.
      */
     func checkpointInspect(blob: Data) throws  -> FfiCheckpointInfo
 
@@ -992,11 +953,20 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func checkpointVersion()  -> UInt32
 
     /**
-     * Discards the current selection, if any.
+     * Restore the terminal state from a native checkpoint.
+     * Returns true on success, false if the payload is invalid or corrupted.
      */
-    func clearSelection()
+    func restore(bytes: Data)  -> Bool
 
-    func cols()  -> UInt32
+    /**
+     * Verify the integrity and version of a native checkpoint payload.
+     */
+    func verifyCheckpoint(bytes: Data)  -> Bool
+
+    /**
+     * Returns the active tint color hex/string, if any.
+     */
+    func activeTint()  -> String?
 
     /**
      * Returns command marks for all recorded commands whose prompt line is retained.
@@ -1004,81 +974,22 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func commandMarks()  -> [FfiCommandMark]
 
     /**
-     * Command `id` of engine generation `epoch` (both from a
-     * `FfiCommandInfo`), as `last_command` reports one. `None` when that
-     * generation is gone (an import or reset since) or the record is.
+     * Command `id` of engine generation `epoch`.
      */
     func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
 
     /**
-     * Returns the current context frames in stack order (root first, active top last) (C5).
+     * Returns the current context frames in stack order.
      */
     func contextStack()  -> [FfiContextFrame]
 
-    func cursorCol()  -> UInt32
-
     /**
-     * Whether the cursor sits on an OSC 133 prompt row (for prompt-jump
-     * and click-to-move features in the host app).
+     * Whether the cursor sits on an OSC 133 prompt row.
      */
     func cursorIsAtPrompt()  -> Bool
 
-    func cursorRow()  -> UInt32
-
     /**
-     * The cursor's current visual style (DECSCUSR).
-     */
-    func cursorStyle()  -> FfiCursorStyle
-
-    func cursorVisible()  -> Bool
-
-    /**
-     * Encodes a key event into the bytes to write to the PTY, honoring
-     * the terminal's live DECCKM and Kitty-keyboard state. Empty when the
-     * event produces no input (e.g. a release in legacy mode).
-     */
-    func encodeKey(event: FfiKeyEvent)  -> Data
-
-    /**
-     * Encodes a mouse event using whichever tracking/encoding modes the
-     * terminal currently has enabled. Empty when mouse reporting is off
-     * or the event can't be represented.
-     */
-    func encodeMouse(event: FfiMouseEvent)  -> Data
-
-    /**
-     * Encodes pasted text, bracketing it when the app enabled DEC mode
-     * 2004 and always stripping the paste terminator.
-     */
-    func encodePaste(text: String)  -> Data
-
-    /**
-     * Updates the drag endpoint of the current selection. No-op if no
-     * selection has been started.
-     */
-    func extendSelection(row: UInt32, col: UInt32)
-
-    /**
-     * Feeds raw PTY output bytes into the terminal's VT100/ANSI parser.
-     */
-    func feed(bytes: Data)
-
-    /**
-     * Feeds PTY bytes and reports the result of that feed in one shot,
-     * taking the terminal lock exactly once: parse, drain output, drain
-     * events, then observe damage and Synchronized Output state.
-     *
-     * The point is atomicity -- `feed` + `take_output` + `take_events` +
-     * `is_synchronized_output_active` as four separate calls lets another
-     * feed slip in between them, so the host can see events belonging to a
-     * mode state that no longer holds. Damage is only OBSERVED here, never
-     * drained; `render_frame` remains the single consumer of damaged rows.
-     */
-    func feedWithOutcome(bytes: Data)  -> FfiFeedOutcome
-
-    /**
-     * The first command recorded after `after` -- running, finished or
-     * abandoned -- in the current generation.
+     * The first command recorded after `after`.
      */
     func firstCommandAfter(after: UInt64)  -> FfiCommandInfo?
 
@@ -1088,75 +999,121 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func firstRetainedLine()  -> UInt64
 
     /**
-     * Returns the styled cell at (row, col) in the currently active grid,
-     * or `None` if out of bounds.
-     */
-    func getCell(row: UInt32, col: UInt32)  -> FfiCell?
-
-    /**
-     * Returns the plain-text characters of one row of the active grid
-     * (no color/attrs) -- convenient for quick text extraction/debugging.
-     */
-    func getLine(row: UInt32)  -> String
-
-    /**
-     * Returns bounded plain text from start_row for up to max_rows lines.
-     */
-    func getPlainText(startRow: UInt32, maxRows: UInt32)  -> String
-
-    /**
-     * The decoded image data for a Kitty Graphics image id, ready to
-     * upload as a texture. `None` if no such image is stored.
-     */
-    func graphicsImage(imageId: UInt32)  -> FfiStoredImage?
-
-    /**
-     * Metadata for a stored Kitty Graphics image, without cloning payload
-     * bytes. `None` if no such image id is currently stored.
-     */
-    func graphicsImageMetadata(imageId: UInt32)  -> FfiGraphicsImageMetadata?
-
-    /**
-     * Currently live Kitty Graphics placements, in display order.
-     */
-    func graphicsPlacements()  -> [FfiGraphicsPlacement]
-
-    /**
-     * Whether a selection is currently active.
-     */
-    func hasSelection()  -> Bool
-
-    /**
-     * Whether clipboard query / reading escape sequences (OSC 52 ; ... ; ?) are allowed (Track G4).
-     * Defaults to false (WriteOnly policy).
-     */
-    func isClipboardReadAllowed()  -> Bool
-
-    /**
-     * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
+     * Whether any frame in the context stack represents an elevated context.
      */
     func isElevated()  -> Bool
 
     /**
-     * Whether a Synchronized Output frame (mode 2026) is currently open --
-     * a host-side redraw trigger that doesn't go through `take_damage`
-     * (a cursor blink timer, say) needs this to know not to paint a real,
-     * unfinished frame the app never intended to be visible on its own.
+     * Whether a Synchronized Output frame (mode 2026) is currently open.
      */
     func isSynchronizedOutputActive()  -> Bool
 
     /**
-     * The Kitty keyboard protocol's currently active progressive-
-     * enhancement flags, as a raw bitmask.
+     * The newest command the shell marked (OSC 133).
+     */
+    func lastCommand(maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
+
+    /**
+     * Current DEC private-mode state.
+     */
+    func modes()  -> FfiTerminalModes
+
+    func mouseShiftCapture()  -> Bool?
+
+    /**
+     * The newest command record's id.
+     */
+    func newestCommandId()  -> UInt64?
+
+    /**
+     * The OSC 133 semantic mark of retained line `row`.
+     */
+    func retainedSemanticPrompt(row: UInt64)  -> UInt8
+
+    /**
+     * The OSC 133 semantic mark of `row`.
+     */
+    func rowSemanticPrompt(row: UInt32)  -> UInt8
+
+    /**
+     * Jumps the viewport down to the next OSC 133 prompt mark.
+     */
+    func scrollToNextPrompt()  -> Bool
+
+    /**
+     * Jumps the viewport up to the previous OSC 133 prompt mark.
+     */
+    func scrollToPreviousPrompt()  -> Bool
+
+    /**
+     * Selects the entire output of the current or previous command.
+     */
+    func selectCommandOutput()  -> Bool
+
+    /**
+     * Give command `id` its start time in unix milliseconds.
+     */
+    func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64)  -> Bool
+
+    /**
+     * The current engine generation. Bumped by every checkpoint import.
+     */
+    func stateEpoch()  -> UInt64
+
+    /**
+     * Encodes a key event into the bytes to write to the PTY.
+     */
+    func encodeKey(event: FfiKeyEvent)  -> Data
+
+    /**
+     * Encodes a mouse event using whichever tracking/encoding modes are enabled.
+     */
+    func encodeMouse(event: FfiMouseEvent)  -> Data
+
+    /**
+     * Encodes pasted text, bracketing it when the app enabled DEC mode 2004.
+     */
+    func encodePaste(text: String)  -> Data
+
+    /**
+     * Feeds raw PTY output bytes into the terminal's VT100/ANSI parser.
+     */
+    func feed(bytes: Data)
+
+    /**
+     * Feeds PTY bytes and reports the result of that feed in one shot.
+     */
+    func feedWithOutcome(bytes: Data)  -> FfiFeedOutcome
+
+    /**
+     * Whether clipboard query / reading escape sequences are allowed.
+     */
+    func isClipboardReadAllowed()  -> Bool
+
+    /**
+     * The Kitty keyboard protocol's currently active flags.
      */
     func kittyKeyboardFlags()  -> UInt8
 
     /**
-     * The newest command the shell marked (OSC 133), not abandoned, with
-     * its exit status and the last `max_lines` lines it printed, at most
-     * `max_bytes` of them. `None` when the shell marked none.
+     * Whether pasting this text unbracketed would be risky.
      */
-    func lastCommand(maxLines: UInt32, maxBytes: UInt32)  -> FfiCommandOutput?
+    func pasteIsUnsafe(text: String)  -> Bool
+
+    /**
+     * Enable or disable clipboard query / reading escape sequences.
+     */
+    func setClipboardReadAllowed(allowed: Bool)
+
+    /**
+     * Drains queued host-visible events.
+     */
+    func takeEvents()  -> [FfiEvent]
+
+    /**
+     * Drains and returns any queued device-reply bytes.
+     */
+    func takeOutput()  -> Data
 
     /**
      * Forces a full redraw on the next `takeDamage()`.
@@ -1164,159 +1121,29 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func markAllDamaged()
 
     /**
-     * Maximum image memory (in bytes) configured for this terminal.
-     */
-    func maxImageMemoryBytes()  -> UInt64
-
-    /**
-     * Current DEC private-mode state (autowrap, mouse tracking,
-     * bracketed paste, focus events, ...).
-     */
-    func modes()  -> FfiTerminalModes
-
-    /**
-     * What the running program asked of Shift with XTSHIFTESCAPE (`CSI > Ps
-     * s`): `true` to have it reported with mouse events, `false` to leave it
-     * to the terminal's selection, `None` if it has not asked. The host's
-     * `mouse-shift-capture` decides whether the request counts.
-     */
-    func mouseShiftCapture()  -> Bool?
-
-    /**
-     * The newest command record's id, whatever became of the command --
-     * running, finished or abandoned. A wait for the next command starts
-     * after it.
-     */
-    func newestCommandId()  -> UInt64?
-
-    /**
-     * Whether pasting this text unbracketed would be risky (contains
-     * newlines or control characters) -- for a host-side confirmation.
-     */
-    func pasteIsUnsafe(text: String)  -> Bool
-
-    /**
-     * Single call per frame: returns frame metadata, damaged rows, selection,
-     * graphics placements, and packed viewport cells captured under one terminal lock.
-     *
-     * Always carries the complete viewport, so this caller's *cells* can
-     * never go stale no matter who else is reading. Its `damaged_rows`
-     * hint is the one shared resource -- see `render_frame_delta` for the
-     * ownership rule.
+     * Single call per frame: snapshot + packed viewport cells under one lock.
      */
     func renderFrame()  -> FfiRenderFrame
 
     /**
-     * One frame for a host that keeps its own row cache: the same metadata
-     * `render_frame` returns, but only the rows that actually changed --
-     * or the whole viewport when a delta would be wrong or pointless.
-     *
-     * A full 100x50 frame is 80'000 bytes over the boundary every time the
-     * cursor blinks; one changed row is 1'600. That difference is the
-     * entire point of this call.
-     *
-     * Pass the `frame_version` of the last payload you successfully
-     * applied, or 0 if you have none. The reply's `frame_version` is what
-     * you pass next time.
-     *
-     * # Damage ownership
-     *
-     * The terminal's damage is a single-consumer resource: reading it
-     * clears it (`Terminal::take_damage`), so two readers cannot both see
-     * the same dirty rows. This API does not pretend otherwise -- it makes
-     * the conflict *loud* instead:
-     *
-     * * `render_frame` / `snapshot` / `take_damage` still drain damage as
-     * they always did, and each records that it did. The next delta then
-     * comes back as a full resync with `DamageOwnershipLost`, so a delta
-     * consumer that shares a core with a full-frame renderer repaints
-     * redundantly -- never wrongly.
-     * * A delta consumer that misses a frame presents a `since_version`
-     * that is not the one we handed out and gets `VersionMismatch`, so a
-     * second delta renderer on one core degrades to full frames rather
-     * than silently diverging.
-     * * `render_frame`'s cells are unaffected either way: it always packs
-     * the entire viewport. Only its `damaged_rows` hint can be emptied
-     * by a delta call, which is why a full-frame caller must treat that
-     * list as advisory once a delta consumer exists.
-     *
-     * The supported arrangement is one damage consumer per core. The
-     * checks above exist so that violating it is expensive, not silent.
+     * One frame for a host that keeps its own row cache.
      */
     func renderFrameDelta(sinceVersion: UInt64)  -> FfiRenderFrameDelta
 
     /**
      * `render_frame`, plus up to `rows_below` rows from beneath the viewport.
-     *
-     * A host translating the grid by a fraction of a cell uncovers a strip at
-     * the bottom edge. Without these rows that strip is background, and the
-     * motion reads as an exposed edge rather than as scrolling.
-     *
-     * The rows come from the same accessor as the viewport itself, one index
-     * past its last row: scrolled back, that is the next real line; at the
-     * tail there is nothing below the screen and the rows come back blank,
-     * which is exactly what should be drawn there.
-     *
-     * `rows_below` is clamped to `MAX_OVERSCAN_ROWS` -- a fractional offset is
-     * under one cell by construction, so one row always suffices, and the
-     * clamp keeps a wrong argument from allocating an unbounded frame.
      */
     func renderFrameOverscan(rowsBelow: UInt32)  -> FfiRenderFrameOverscan
 
     /**
-     * Resets the terminal state completely, except the base colors from
-     * `set_base_colors`: those are the host's theme, not terminal state.
-     */
-    func reset()
-
-    /**
-     * Resizes the active/alternate grids.
-     */
-    func resize(cols: UInt32, rows: UInt32)
-
-    /**
-     * Restore the terminal state from a native checkpoint.
-     * Returns true on success, false if the payload is invalid or corrupted.
-     */
-    func restore(bytes: Data)  -> Bool
-
-    /**
-     * The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
-     * 0 unset, 1 prompt, 2 prompt continuation.
-     */
-    func retainedSemanticPrompt(row: UInt64)  -> UInt8
-
-    /**
-     * The OSC 133 semantic mark of `row`: 0 unset, 1 prompt,
-     * 2 prompt continuation.
-     */
-    func rowSemanticPrompt(row: UInt32)  -> UInt8
-
-    func rows()  -> UInt32
-
-    /**
-     * Where the viewport sits as a fraction: 0 is the oldest retained line,
-     * 1 is the live screen. A detachable surface stores this across teardown
-     * -- a line number would not survive scrollback eviction.
+     * Where the viewport sits as a fraction (0 oldest, 1 live).
      */
     func scrollPosition()  -> Double
 
     /**
-     * Scrolls to a specific viewport offset (lines scrolled into scrollback).
+     * Scrolls to a specific viewport offset.
      */
     func scrollTo(offset: UInt32)
-
-    /**
-     * Jumps the viewport down to the next OSC 133 prompt mark.
-     * Returns true if a prompt mark was found and jumped to; false otherwise.
-     */
-    func scrollToNextPrompt()  -> Bool
-
-    /**
-     * Jumps the viewport up to the previous OSC 133 prompt mark.
-     * Returns true if a prompt mark was found and jumped to; false otherwise.
-     */
-    func scrollToPreviousPrompt()  -> Bool
 
     /**
      * Snaps the viewport back to the live screen.
@@ -1339,185 +1166,24 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func scrollbackLen()  -> UInt32
 
     /**
-     * One bounded step of a search over scrollback and screen, backwards
-     * from line `before` (exclusive; `None` starts at the newest line).
-     * Whole logical lines, whole grapheme clusters, case-insensitive. The
-     * terminal is held for this step only, so a host searches a long
-     * history in steps, off its main thread, and output keeps flowing
-     * between them. Lines are absolute -- see `search_first_line`.
-     */
-    func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32)  -> FfiSearchChunk
-
-    /**
-     * The absolute number of the oldest retained line and the scrollback
-     * length, read together: what turns a search hit's line into a row.
-     */
-    func searchFirstLine()  -> FfiRetainedLines
-
-    /**
-     * Whether `hit` is still where it was found, with the same text --
-     * checked before a host jumps to it, so new output, eviction, a clear
-     * or a reflow never sends the selection to some other line.
-     */
-    func searchHitIsCurrent(needle: String, hit: FfiSearchHit)  -> Bool
-
-    /**
-     * Selects the entire output of the current or previous command bounded
-     * by OSC 133 marks. Returns true if output was selected; false otherwise.
-     */
-    func selectCommandOutput()  -> Bool
-
-    /**
-     * Selects the whole logical line under `(row, col)`, as a triple-click
-     * does, following soft wraps in both directions.
-     */
-    func selectLine(row: UInt32, col: UInt32)
-
-    /**
-     * Checks `hit` and selects it, scrolling it into view, all under one
-     * hold of the terminal, so output in between cannot move the selection
-     * to other cells. False -- and nothing changed -- when the hit is no
-     * longer there.
-     */
-    func selectSearchHit(needle: String, hit: FfiSearchHit)  -> Bool
-
-    /**
-     * Selects the word under `(row, col)`, as a double-click does. A run
-     * continues across a soft wrap, so a path or URL broken by the screen
-     * edge still selects whole.
-     */
-    func selectWord(row: UInt32, col: UInt32)
-
-    /**
-     * The plain text covered by the current selection, or `None` if
-     * there's no active selection.
-     */
-    func selectedText()  -> String?
-
-    /**
-     * The normalized bounds of the current selection, for highlighting.
-     * Returns `None` if there's no active selection.
-     */
-    func selectionRange()  -> FfiSelectionRange?
-
-    /**
-     * Sets the host's base theme: default foreground/background/cursor
-     * colors and indexed palette entries, applied underneath whatever a
-     * running program has set via OSC 4/10/11/12.
-     *
-     * Base colors are what OSC 104 (all or by index), OSC 110/111/112, and
-     * a full reset (RIS, `ESC c`) restore to, instead of the engine's
-     * built-in defaults -- and what OSC 4/10/11/12 queries report until a
-     * program overrides them. Calling this while a session is already
-     * running immediately updates any live color a program hasn't
-     * explicitly overridden, so a theme change takes effect without
-     * clobbering a program's own color choices. `foreground`, `background`,
-     * and `cursor` of `None` revert that slot to unconfigured (the engine's
-     * built-in default). `palette` only touches the listed indices; indices
-     * not listed keep whatever base they already had (the built-in default
-     * if never set).
-     */
-    func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])
-
-    /**
-     * Enable or disable clipboard query / reading escape sequences (Track G4).
-     */
-    func setClipboardReadAllowed(allowed: Bool)
-
-    /**
-     * Tells the engine whether the host shows a dark or a light colour
-     * scheme: what `CSI ? 996 n` answers, and what a program that set mode
-     * 2031 is sent, unasked, when it changes. That report is queued like
-     * any other reply, so drain `take_output` after calling this.
-     */
-    func setColorScheme(dark: Bool)
-
-    /**
-     * Give command `id` (from a `CommandStart` event) its start time, in
-     * unix milliseconds. Only the first time counts; ignored when `epoch`
-     * is not the current engine generation or there is no such command.
-     */
-    func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64)  -> Bool
-
-    /**
-     * Sets the host's cursor style: what a program's DECSCUSR 0 and a reset
-     * return to. It applies at once unless a program has chosen a style.
-     */
-    func setDefaultCursorStyle(shape: FfiCursorShape, blinking: Bool)
-
-    /**
-     * Sets the host's grapheme-width-method: whether a grapheme cluster
-     * takes its presentation width (`Unicode`, upstream's default: an emoji
-     * sequence is two columns) or the sum of its codepoints' widths
-     * (`Legacy`). It is mode 2027's value now and after every reset; a
-     * program can still change the mode.
+     * Sets the host's grapheme-width-method.
      */
     func setGraphemeWidthMethod(method: FfiGraphemeWidthMethod)
 
     /**
-     * Set maximum image memory (in bytes) for this terminal, evicting LRU images if necessary.
-     */
-    func setMaxImageMemoryBytes(max: UInt64)
-
-    /**
-     * Restores a fraction from `scroll_position`. Out-of-range values are
-     * clamped, because the caller is usually replaying a stored number.
+     * Restores a fraction from `scroll_position`.
      */
     func setScrollPosition(position: Double)
 
     /**
-     * Sets how many lines of history the terminal keeps; 0 keeps none.
-     * Shrinking it drops the oldest lines.
-     */
-    func setScrollbackLimit(lines: UInt32)
-
-    /**
-     * One call per frame: geometry, cursor, title, modes, viewport, the
-     * damaged row list, selection and graphics placements.
+     * Geometry, cursor, title, modes, viewport, damaged rows, selection, placements.
      */
     func snapshot()  -> FfiSnapshot
 
     /**
-     * Begins a new selection at `(row, col)` in the given mode.
-     */
-    func startSelection(row: UInt32, col: UInt32, mode: FfiSelectionMode)
-
-    /**
-     * The current engine generation. Bumped by every checkpoint import.
-     */
-    func stateEpoch()  -> UInt64
-
-    /**
-     * Rows changed since the last call (viewport indices); clears the
-     * flags. A scroll or resize reports every row.
+     * Rows changed since the last call (viewport indices); clears the flags.
      */
     func takeDamage()  -> [UInt32]
-
-    /**
-     * Drains queued host-visible events (bell, clipboard, notifications).
-     */
-    func takeEvents()  -> [FfiEvent]
-
-    /**
-     * Drains and returns any queued device-reply bytes (DA/DSR/XTVERSION/
-     * Kitty-keyboard-query responses) for the caller to write back to the
-     * PTY's input.
-     */
-    func takeOutput()  -> Data
-
-    /**
-     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of
-     * them, read from the end only as far as needed (see
-     * `Terminal::text_tail`). Holds the terminal for that much and no more.
-     */
-    func textTail(maxLines: UInt32, maxBytes: UInt32)  -> FfiTextTail
-
-    func title()  -> String
-
-    /**
-     * Verify the integrity and version of a native checkpoint payload.
-     */
-    func verifyCheckpoint(bytes: Data)  -> Bool
 
     /**
      * The clusters of the cells `viewport_packed` marks `PACKED_GRAPHEME`.
@@ -1531,37 +1197,167 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
 
     /**
      * The whole viewport as packed bytes: 16 per cell, rows top to bottom.
-     *
-     * Returning `Vec<FfiCell>` costs about seven microseconds per cell,
-     * because every field of every cell crosses the boundary as its own
-     * read. A full screen is tens of thousands of cells, so a frame spent
-     * something like eighty milliseconds just being handed over -- twelve
-     * frames a second before any drawing happened. One buffer of fixed
-     * records is a memcpy instead.
-     *
-     * Layout, little-endian, per cell:
-     *
-     * | offset | size | field |
-     * |---|---|---|
-     * | 0 | 4 | Unicode scalar, 0 for the tail of a wide pair |
-     * | 4 | 3 | foreground r, g, b |
-     * | 7 | 3 | background r, g, b |
-     * | 10 | 2 | attribute bits (see `PACKED_*` below) |
-     * | 12 | 1 | SGR 4:x underline style |
-     * | 13 | 3 | underline colour r, g, b |
-     *
-     * A cell holding more than one codepoint carries its first as the
-     * scalar and `PACKED_GRAPHEME` in its bits; `viewport_graphemes` (or a
-     * frame's `graphemes`) has the whole cluster.
      */
     func viewportPacked()  -> Data
 
     /**
-     * One viewport row as styled cells -- one call per row instead of
-     * `cols` calls to `get_cell`, and it reads through the scrollback
-     * offset set by `scroll_viewport_*`.
+     * One viewport row as styled cells.
      */
     func viewportRow(row: UInt32)  -> [FfiCell]
+
+    /**
+     * Whole logical lines, whole grapheme clusters, case-insensitive.
+     */
+    func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32)  -> FfiSearchChunk
+
+    /**
+     * Oldest retained line and scrollback length.
+     */
+    func searchFirstLine()  -> FfiRetainedLines
+
+    /**
+     * Whether `hit` is still where it was found, with the same text.
+     */
+    func searchHitIsCurrent(needle: String, hit: FfiSearchHit)  -> Bool
+
+    /**
+     * Checks `hit` and selects it, scrolling it into view.
+     */
+    func selectSearchHit(needle: String, hit: FfiSearchHit)  -> Bool
+
+    /**
+     * Discards the current selection, if any.
+     */
+    func clearSelection()
+
+    /**
+     * Updates the drag endpoint of the current selection.
+     */
+    func extendSelection(row: UInt32, col: UInt32)
+
+    /**
+     * Whether a selection is currently active.
+     */
+    func hasSelection()  -> Bool
+
+    /**
+     * Selects the whole logical line under `(row, col)`.
+     */
+    func selectLine(row: UInt32, col: UInt32)
+
+    /**
+     * Selects the word under `(row, col)`.
+     */
+    func selectWord(row: UInt32, col: UInt32)
+
+    /**
+     * The plain text covered by the current selection.
+     */
+    func selectedText()  -> String?
+
+    /**
+     * The normalized bounds of the current selection, for highlighting.
+     */
+    func selectionRange()  -> FfiSelectionRange?
+
+    /**
+     * Begins a new selection at `(row, col)` in the given mode.
+     */
+    func startSelection(row: UInt32, col: UInt32, mode: FfiSelectionMode)
+
+    /**
+     * Everything the terminal holds as plain text.
+     */
+    func bufferText()  -> String
+
+    func cols()  -> UInt32
+
+    func cursorCol()  -> UInt32
+
+    func cursorRow()  -> UInt32
+
+    func cursorStyle()  -> FfiCursorStyle
+
+    func cursorVisible()  -> Bool
+
+    /**
+     * Returns the styled cell at (row, col) in the currently active grid.
+     */
+    func getCell(row: UInt32, col: UInt32)  -> FfiCell?
+
+    /**
+     * Returns the plain-text characters of one row of the active grid.
+     */
+    func getLine(row: UInt32)  -> String
+
+    /**
+     * Returns bounded plain text from start_row for up to max_rows lines.
+     */
+    func getPlainText(startRow: UInt32, maxRows: UInt32)  -> String
+
+    /**
+     * The decoded image data for a Kitty Graphics image id.
+     */
+    func graphicsImage(imageId: UInt32)  -> FfiStoredImage?
+
+    /**
+     * Metadata for a stored Kitty Graphics image.
+     */
+    func graphicsImageMetadata(imageId: UInt32)  -> FfiGraphicsImageMetadata?
+
+    /**
+     * Currently live Kitty Graphics placements, in display order.
+     */
+    func graphicsPlacements()  -> [FfiGraphicsPlacement]
+
+    /**
+     * Maximum image memory (in bytes) configured for this terminal.
+     */
+    func maxImageMemoryBytes()  -> UInt64
+
+    /**
+     * Resets the terminal state completely, except the base colors.
+     */
+    func reset()
+
+    /**
+     * Resizes the active/alternate grids.
+     */
+    func resize(cols: UInt32, rows: UInt32)
+
+    func rows()  -> UInt32
+
+    /**
+     * Sets the host's base theme.
+     */
+    func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])
+
+    /**
+     * Tells the engine whether the host shows a dark or a light colour scheme.
+     */
+    func setColorScheme(dark: Bool)
+
+    /**
+     * Sets the host's cursor style.
+     */
+    func setDefaultCursorStyle(shape: FfiCursorShape, blinking: Bool)
+
+    /**
+     * Set maximum image memory (in bytes) for this terminal.
+     */
+    func setMaxImageMemoryBytes(max: UInt64)
+
+    /**
+     * Sets how many lines of history the terminal keeps; 0 keeps none.
+     */
+    func setScrollbackLimit(lines: UInt32)
+
+    /**
+     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of them.
+     */
+    func textTail(maxLines: UInt32, maxBytes: UInt32)  -> FfiTextTail
+
+    func title()  -> String
 
 }
 open class TakoCore: TakoCoreProtocol, @unchecked Sendable {
@@ -1628,40 +1424,7 @@ public convenience init(cols: UInt32, rows: UInt32) {
 
 
     /**
-     * Returns the active tint color hex/string, if any, for the topmost frame or elevated state (C5).
-     */
-open func activeTint() -> String?  {
-    return try!  FfiConverterOptionString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_active_tint(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Everything the terminal holds as plain text: retained scrollback
-     * first, then the live screen, with soft wraps rejoined.
-     *
-     * This is what a host copies. `get_plain_text` below is viewport-shaped
-     * and cannot see history, so using it for a copy silently returns the
-     * last screenful of a session that has thousands of lines.
-     */
-open func bufferText() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_buffer_text(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
      * Export the terminal state as a native versioned binary checkpoint.
-     *
-     * Kept for source compatibility. Returns an empty buffer -- which is not
-     * a valid checkpoint and does not verify -- where the typed
-     * `checkpoint_export` would say why.
      */
 open func checkpoint() -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
@@ -1674,16 +1437,6 @@ open func checkpoint() -> Data  {
 
     /**
      * Export bounded by a caller-supplied byte cap.
-     *
-     * The effective limit is the smaller of `max_bytes` and the 64 MiB wire
-     * cap, and `max_bytes` of 0 means "no caller limit" -- the wire cap alone.
-     * The limit covers the whole blob, container header included, so a
-     * returned checkpoint always fits the cap the caller negotiated.
-     * Exceeding it fails with `TooLarge { size, limit }` rather than
-     * allocating past it. A failed export leaves the terminal exactly as it
-     * was -- nothing truncated, nothing cleared, nothing reset.
-     *
-     * `flags` is reserved by the v1 container and must be 0.
      */
 open func checkpointExport(flags: UInt32, maxBytes: UInt64)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeTakoCheckpointError_lift) {
@@ -1697,10 +1450,7 @@ open func checkpointExport(flags: UInt32, maxBytes: UInt64)throws  -> Data  {
 }
 
     /**
-     * `checkpoint_export` in a chosen container version: the newest one the
-     * peer's `checkpoint_supports` accepts, so upgrading one side never makes
-     * the other refuse its checkpoints. 0 is `checkpoint_version()`; a
-     * version this build cannot write fails with `UnsupportedVersion`.
+     * `checkpoint_export` in a chosen container version.
      */
 open func checkpointExportVersion(version: UInt32, maxBytes: UInt64)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeTakoCheckpointError_lift) {
@@ -1715,12 +1465,6 @@ open func checkpointExportVersion(version: UInt32, maxBytes: UInt64)throws  -> D
 
     /**
      * Replace the terminal from a checkpoint, atomically.
-     *
-     * Fail-intact: the whole state is decoded into a new engine first and
-     * only a complete one is swapped in, so a rejected import leaves the
-     * destination byte-identical to what it was. The epoch is published in
-     * the same critical section as the swap, so no reader can observe the new
-     * engine under the old generation or the reverse.
      */
 open func checkpointImport(blob: Data)throws   {try rustCallWithError(FfiConverterTypeTakoCheckpointError_lift) {
         uniffiCallStatus in
@@ -1732,8 +1476,7 @@ open func checkpointImport(blob: Data)throws   {try rustCallWithError(FfiConvert
 }
 
     /**
-     * A checkpoint's version and geometry, without committing to importing
-     * it -- so a host can decide first.
+     * A checkpoint's version and geometry, without committing to importing it.
      */
 open func checkpointInspect(blob: Data)throws  -> FfiCheckpointInfo  {
     return try  FfiConverterTypeFfiCheckpointInfo_lift(try rustCallWithError(FfiConverterTypeTakoCheckpointError_lift) {
@@ -1771,20 +1514,39 @@ open func checkpointVersion() -> UInt32  {
 }
 
     /**
-     * Discards the current selection, if any.
+     * Restore the terminal state from a native checkpoint.
+     * Returns true on success, false if the payload is invalid or corrupted.
      */
-open func clearSelection()  {try! rustCall() {
+open func restore(bytes: Data) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_clear_selection(
-            self.uniffiCloneHandle(),uniffiCallStatus
+    uniffi_tako_core_fn_method_takocore_restore(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),uniffiCallStatus
     )
-}
+})
 }
 
-open func cols() -> UInt32  {
-    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    /**
+     * Verify the integrity and version of a native checkpoint payload.
+     */
+open func verifyCheckpoint(bytes: Data) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_cols(
+    uniffi_tako_core_fn_method_takocore_verify_checkpoint(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Returns the active tint color hex/string, if any.
+     */
+open func activeTint() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_active_tint(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -1803,9 +1565,7 @@ open func commandMarks() -> [FfiCommandMark]  {
 }
 
     /**
-     * Command `id` of engine generation `epoch` (both from a
-     * `FfiCommandInfo`), as `last_command` reports one. `None` when that
-     * generation is gone (an import or reset since) or the record is.
+     * Command `id` of engine generation `epoch`.
      */
 open func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: UInt32) -> FfiCommandOutput?  {
     return try!  FfiConverterOptionTypeFfiCommandOutput.lift(try! rustCall() {
@@ -1821,7 +1581,7 @@ open func commandOutput(id: UInt64, epoch: UInt64, maxLines: UInt32, maxBytes: U
 }
 
     /**
-     * Returns the current context frames in stack order (root first, active top last) (C5).
+     * Returns the current context frames in stack order.
      */
 open func contextStack() -> [FfiContextFrame]  {
     return try!  FfiConverterSequenceTypeFfiContextFrame.lift(try! rustCall() {
@@ -1832,18 +1592,8 @@ open func contextStack() -> [FfiContextFrame]  {
 })
 }
 
-open func cursorCol() -> UInt32  {
-    return try!  FfiConverterUInt32.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_cursor_col(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
     /**
-     * Whether the cursor sits on an OSC 133 prompt row (for prompt-jump
-     * and click-to-move features in the host app).
+     * Whether the cursor sits on an OSC 133 prompt row.
      */
 open func cursorIsAtPrompt() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
@@ -1854,130 +1604,8 @@ open func cursorIsAtPrompt() -> Bool  {
 })
 }
 
-open func cursorRow() -> UInt32  {
-    return try!  FfiConverterUInt32.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_cursor_row(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
     /**
-     * The cursor's current visual style (DECSCUSR).
-     */
-open func cursorStyle() -> FfiCursorStyle  {
-    return try!  FfiConverterTypeFfiCursorStyle_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_cursor_style(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-open func cursorVisible() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_cursor_visible(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Encodes a key event into the bytes to write to the PTY, honoring
-     * the terminal's live DECCKM and Kitty-keyboard state. Empty when the
-     * event produces no input (e.g. a release in legacy mode).
-     */
-open func encodeKey(event: FfiKeyEvent) -> Data  {
-    return try!  FfiConverterData.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_encode_key(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeFfiKeyEvent_lower(event),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Encodes a mouse event using whichever tracking/encoding modes the
-     * terminal currently has enabled. Empty when mouse reporting is off
-     * or the event can't be represented.
-     */
-open func encodeMouse(event: FfiMouseEvent) -> Data  {
-    return try!  FfiConverterData.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_encode_mouse(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeFfiMouseEvent_lower(event),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Encodes pasted text, bracketing it when the app enabled DEC mode
-     * 2004 and always stripping the paste terminator.
-     */
-open func encodePaste(text: String) -> Data  {
-    return try!  FfiConverterData.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_encode_paste(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(text),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Updates the drag endpoint of the current selection. No-op if no
-     * selection has been started.
-     */
-open func extendSelection(row: UInt32, col: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_extend_selection(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),
-        FfiConverterUInt32.lower(col),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Feeds raw PTY output bytes into the terminal's VT100/ANSI parser.
-     */
-open func feed(bytes: Data)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_feed(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(bytes),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Feeds PTY bytes and reports the result of that feed in one shot,
-     * taking the terminal lock exactly once: parse, drain output, drain
-     * events, then observe damage and Synchronized Output state.
-     *
-     * The point is atomicity -- `feed` + `take_output` + `take_events` +
-     * `is_synchronized_output_active` as four separate calls lets another
-     * feed slip in between them, so the host can see events belonging to a
-     * mode state that no longer holds. Damage is only OBSERVED here, never
-     * drained; `render_frame` remains the single consumer of damaged rows.
-     */
-open func feedWithOutcome(bytes: Data) -> FfiFeedOutcome  {
-    return try!  FfiConverterTypeFfiFeedOutcome_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_feed_with_outcome(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(bytes),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The first command recorded after `after` -- running, finished or
-     * abandoned -- in the current generation.
+     * The first command recorded after `after`.
      */
 open func firstCommandAfter(after: UInt64) -> FfiCommandInfo?  {
     return try!  FfiConverterOptionTypeFfiCommandInfo.lift(try! rustCall() {
@@ -2002,115 +1630,7 @@ open func firstRetainedLine() -> UInt64  {
 }
 
     /**
-     * Returns the styled cell at (row, col) in the currently active grid,
-     * or `None` if out of bounds.
-     */
-open func getCell(row: UInt32, col: UInt32) -> FfiCell?  {
-    return try!  FfiConverterOptionTypeFfiCell.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_get_cell(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),
-        FfiConverterUInt32.lower(col),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Returns the plain-text characters of one row of the active grid
-     * (no color/attrs) -- convenient for quick text extraction/debugging.
-     */
-open func getLine(row: UInt32) -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_get_line(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Returns bounded plain text from start_row for up to max_rows lines.
-     */
-open func getPlainText(startRow: UInt32, maxRows: UInt32) -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_get_plain_text(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(startRow),
-        FfiConverterUInt32.lower(maxRows),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The decoded image data for a Kitty Graphics image id, ready to
-     * upload as a texture. `None` if no such image is stored.
-     */
-open func graphicsImage(imageId: UInt32) -> FfiStoredImage?  {
-    return try!  FfiConverterOptionTypeFfiStoredImage.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_graphics_image(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(imageId),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Metadata for a stored Kitty Graphics image, without cloning payload
-     * bytes. `None` if no such image id is currently stored.
-     */
-open func graphicsImageMetadata(imageId: UInt32) -> FfiGraphicsImageMetadata?  {
-    return try!  FfiConverterOptionTypeFfiGraphicsImageMetadata.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_graphics_image_metadata(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(imageId),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Currently live Kitty Graphics placements, in display order.
-     */
-open func graphicsPlacements() -> [FfiGraphicsPlacement]  {
-    return try!  FfiConverterSequenceTypeFfiGraphicsPlacement.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_graphics_placements(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Whether a selection is currently active.
-     */
-open func hasSelection() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_has_selection(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Whether clipboard query / reading escape sequences (OSC 52 ; ... ; ?) are allowed (Track G4).
-     * Defaults to false (WriteOnly policy).
-     */
-open func isClipboardReadAllowed() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_is_clipboard_read_allowed(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Whether any frame in the context stack represents an elevated context (sudo, root) (C5).
+     * Whether any frame in the context stack represents an elevated context.
      */
 open func isElevated() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
@@ -2122,10 +1642,7 @@ open func isElevated() -> Bool  {
 }
 
     /**
-     * Whether a Synchronized Output frame (mode 2026) is currently open --
-     * a host-side redraw trigger that doesn't go through `take_damage`
-     * (a cursor blink timer, say) needs this to know not to paint a real,
-     * unfinished frame the app never intended to be visible on its own.
+     * Whether a Synchronized Output frame (mode 2026) is currently open.
      */
 open func isSynchronizedOutputActive() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
@@ -2137,8 +1654,219 @@ open func isSynchronizedOutputActive() -> Bool  {
 }
 
     /**
-     * The Kitty keyboard protocol's currently active progressive-
-     * enhancement flags, as a raw bitmask.
+     * The newest command the shell marked (OSC 133).
+     */
+open func lastCommand(maxLines: UInt32, maxBytes: UInt32) -> FfiCommandOutput?  {
+    return try!  FfiConverterOptionTypeFfiCommandOutput.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_last_command(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxLines),
+        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Current DEC private-mode state.
+     */
+open func modes() -> FfiTerminalModes  {
+    return try!  FfiConverterTypeFfiTerminalModes_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_modes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func mouseShiftCapture() -> Bool?  {
+    return try!  FfiConverterOptionBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_mouse_shift_capture(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The newest command record's id.
+     */
+open func newestCommandId() -> UInt64?  {
+    return try!  FfiConverterOptionUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_newest_command_id(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The OSC 133 semantic mark of retained line `row`.
+     */
+open func retainedSemanticPrompt(row: UInt64) -> UInt8  {
+    return try!  FfiConverterUInt8.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_retained_semantic_prompt(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(row),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The OSC 133 semantic mark of `row`.
+     */
+open func rowSemanticPrompt(row: UInt32) -> UInt8  {
+    return try!  FfiConverterUInt8.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_row_semantic_prompt(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Jumps the viewport down to the next OSC 133 prompt mark.
+     */
+open func scrollToNextPrompt() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_scroll_to_next_prompt(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Jumps the viewport up to the previous OSC 133 prompt mark.
+     */
+open func scrollToPreviousPrompt() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_scroll_to_previous_prompt(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Selects the entire output of the current or previous command.
+     */
+open func selectCommandOutput() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_command_output(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Give command `id` its start time in unix milliseconds.
+     */
+open func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_command_time(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(epoch),
+        FfiConverterUInt64.lower(id),
+        FfiConverterUInt64.lower(unixMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The current engine generation. Bumped by every checkpoint import.
+     */
+open func stateEpoch() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_state_epoch(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Encodes a key event into the bytes to write to the PTY.
+     */
+open func encodeKey(event: FfiKeyEvent) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_encode_key(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeFfiKeyEvent_lower(event),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Encodes a mouse event using whichever tracking/encoding modes are enabled.
+     */
+open func encodeMouse(event: FfiMouseEvent) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_encode_mouse(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeFfiMouseEvent_lower(event),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Encodes pasted text, bracketing it when the app enabled DEC mode 2004.
+     */
+open func encodePaste(text: String) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_encode_paste(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(text),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Feeds raw PTY output bytes into the terminal's VT100/ANSI parser.
+     */
+open func feed(bytes: Data)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_feed(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Feeds PTY bytes and reports the result of that feed in one shot.
+     */
+open func feedWithOutcome(bytes: Data) -> FfiFeedOutcome  {
+    return try!  FfiConverterTypeFfiFeedOutcome_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_feed_with_outcome(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Whether clipboard query / reading escape sequences are allowed.
+     */
+open func isClipboardReadAllowed() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_is_clipboard_read_allowed(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The Kitty keyboard protocol's currently active flags.
      */
 open func kittyKeyboardFlags() -> UInt8  {
     return try!  FfiConverterUInt8.lift(try! rustCall() {
@@ -2150,17 +1878,50 @@ open func kittyKeyboardFlags() -> UInt8  {
 }
 
     /**
-     * The newest command the shell marked (OSC 133), not abandoned, with
-     * its exit status and the last `max_lines` lines it printed, at most
-     * `max_bytes` of them. `None` when the shell marked none.
+     * Whether pasting this text unbracketed would be risky.
      */
-open func lastCommand(maxLines: UInt32, maxBytes: UInt32) -> FfiCommandOutput?  {
-    return try!  FfiConverterOptionTypeFfiCommandOutput.lift(try! rustCall() {
+open func pasteIsUnsafe(text: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_last_command(
+    uniffi_tako_core_fn_method_takocore_paste_is_unsafe(
             self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(maxLines),
-        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
+        FfiConverterString.lower(text),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Enable or disable clipboard query / reading escape sequences.
+     */
+open func setClipboardReadAllowed(allowed: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_clipboard_read_allowed(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(allowed),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Drains queued host-visible events.
+     */
+open func takeEvents() -> [FfiEvent]  {
+    return try!  FfiConverterSequenceTypeFfiEvent.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_take_events(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Drains and returns any queued device-reply bytes.
+     */
+open func takeOutput() -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_take_output(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -2177,81 +1938,7 @@ open func markAllDamaged()  {try! rustCall() {
 }
 
     /**
-     * Maximum image memory (in bytes) configured for this terminal.
-     */
-open func maxImageMemoryBytes() -> UInt64  {
-    return try!  FfiConverterUInt64.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_max_image_memory_bytes(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Current DEC private-mode state (autowrap, mouse tracking,
-     * bracketed paste, focus events, ...).
-     */
-open func modes() -> FfiTerminalModes  {
-    return try!  FfiConverterTypeFfiTerminalModes_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_modes(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * What the running program asked of Shift with XTSHIFTESCAPE (`CSI > Ps
-     * s`): `true` to have it reported with mouse events, `false` to leave it
-     * to the terminal's selection, `None` if it has not asked. The host's
-     * `mouse-shift-capture` decides whether the request counts.
-     */
-open func mouseShiftCapture() -> Bool?  {
-    return try!  FfiConverterOptionBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_mouse_shift_capture(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The newest command record's id, whatever became of the command --
-     * running, finished or abandoned. A wait for the next command starts
-     * after it.
-     */
-open func newestCommandId() -> UInt64?  {
-    return try!  FfiConverterOptionUInt64.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_newest_command_id(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Whether pasting this text unbracketed would be risky (contains
-     * newlines or control characters) -- for a host-side confirmation.
-     */
-open func pasteIsUnsafe(text: String) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_paste_is_unsafe(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(text),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Single call per frame: returns frame metadata, damaged rows, selection,
-     * graphics placements, and packed viewport cells captured under one terminal lock.
-     *
-     * Always carries the complete viewport, so this caller's *cells* can
-     * never go stale no matter who else is reading. Its `damaged_rows`
-     * hint is the one shared resource -- see `render_frame_delta` for the
-     * ownership rule.
+     * Single call per frame: snapshot + packed viewport cells under one lock.
      */
 open func renderFrame() -> FfiRenderFrame  {
     return try!  FfiConverterTypeFfiRenderFrame_lift(try! rustCall() {
@@ -2263,41 +1950,7 @@ open func renderFrame() -> FfiRenderFrame  {
 }
 
     /**
-     * One frame for a host that keeps its own row cache: the same metadata
-     * `render_frame` returns, but only the rows that actually changed --
-     * or the whole viewport when a delta would be wrong or pointless.
-     *
-     * A full 100x50 frame is 80'000 bytes over the boundary every time the
-     * cursor blinks; one changed row is 1'600. That difference is the
-     * entire point of this call.
-     *
-     * Pass the `frame_version` of the last payload you successfully
-     * applied, or 0 if you have none. The reply's `frame_version` is what
-     * you pass next time.
-     *
-     * # Damage ownership
-     *
-     * The terminal's damage is a single-consumer resource: reading it
-     * clears it (`Terminal::take_damage`), so two readers cannot both see
-     * the same dirty rows. This API does not pretend otherwise -- it makes
-     * the conflict *loud* instead:
-     *
-     * * `render_frame` / `snapshot` / `take_damage` still drain damage as
-     * they always did, and each records that it did. The next delta then
-     * comes back as a full resync with `DamageOwnershipLost`, so a delta
-     * consumer that shares a core with a full-frame renderer repaints
-     * redundantly -- never wrongly.
-     * * A delta consumer that misses a frame presents a `since_version`
-     * that is not the one we handed out and gets `VersionMismatch`, so a
-     * second delta renderer on one core degrades to full frames rather
-     * than silently diverging.
-     * * `render_frame`'s cells are unaffected either way: it always packs
-     * the entire viewport. Only its `damaged_rows` hint can be emptied
-     * by a delta call, which is why a full-frame caller must treat that
-     * list as advisory once a delta consumer exists.
-     *
-     * The supported arrangement is one damage consumer per core. The
-     * checks above exist so that violating it is expensive, not silent.
+     * One frame for a host that keeps its own row cache.
      */
 open func renderFrameDelta(sinceVersion: UInt64) -> FfiRenderFrameDelta  {
     return try!  FfiConverterTypeFfiRenderFrameDelta_lift(try! rustCall() {
@@ -2311,19 +1964,6 @@ open func renderFrameDelta(sinceVersion: UInt64) -> FfiRenderFrameDelta  {
 
     /**
      * `render_frame`, plus up to `rows_below` rows from beneath the viewport.
-     *
-     * A host translating the grid by a fraction of a cell uncovers a strip at
-     * the bottom edge. Without these rows that strip is background, and the
-     * motion reads as an exposed edge rather than as scrolling.
-     *
-     * The rows come from the same accessor as the viewport itself, one index
-     * past its last row: scrolled back, that is the next real line; at the
-     * tail there is nothing below the screen and the rows come back blank,
-     * which is exactly what should be drawn there.
-     *
-     * `rows_below` is clamped to `MAX_OVERSCAN_ROWS` -- a fractional offset is
-     * under one cell by construction, so one row always suffices, and the
-     * clamp keeps a wrong argument from allocating an unbounded frame.
      */
 open func renderFrameOverscan(rowsBelow: UInt32) -> FfiRenderFrameOverscan  {
     return try!  FfiConverterTypeFfiRenderFrameOverscan_lift(try! rustCall() {
@@ -2336,85 +1976,7 @@ open func renderFrameOverscan(rowsBelow: UInt32) -> FfiRenderFrameOverscan  {
 }
 
     /**
-     * Resets the terminal state completely, except the base colors from
-     * `set_base_colors`: those are the host's theme, not terminal state.
-     */
-open func reset()  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_reset(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Resizes the active/alternate grids.
-     */
-open func resize(cols: UInt32, rows: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_resize(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(cols),
-        FfiConverterUInt32.lower(rows),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Restore the terminal state from a native checkpoint.
-     * Returns true on success, false if the payload is invalid or corrupted.
-     */
-open func restore(bytes: Data) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_restore(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(bytes),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The OSC 133 semantic mark of retained line `row` (0 = oldest in scrollback):
-     * 0 unset, 1 prompt, 2 prompt continuation.
-     */
-open func retainedSemanticPrompt(row: UInt64) -> UInt8  {
-    return try!  FfiConverterUInt8.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_retained_semantic_prompt(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(row),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The OSC 133 semantic mark of `row`: 0 unset, 1 prompt,
-     * 2 prompt continuation.
-     */
-open func rowSemanticPrompt(row: UInt32) -> UInt8  {
-    return try!  FfiConverterUInt8.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_row_semantic_prompt(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),uniffiCallStatus
-    )
-})
-}
-
-open func rows() -> UInt32  {
-    return try!  FfiConverterUInt32.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_rows(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Where the viewport sits as a fraction: 0 is the oldest retained line,
-     * 1 is the live screen. A detachable surface stores this across teardown
-     * -- a line number would not survive scrollback eviction.
+     * Where the viewport sits as a fraction (0 oldest, 1 live).
      */
 open func scrollPosition() -> Double  {
     return try!  FfiConverterDouble.lift(try! rustCall() {
@@ -2426,7 +1988,7 @@ open func scrollPosition() -> Double  {
 }
 
     /**
-     * Scrolls to a specific viewport offset (lines scrolled into scrollback).
+     * Scrolls to a specific viewport offset.
      */
 open func scrollTo(offset: UInt32)  {try! rustCall() {
         uniffiCallStatus in
@@ -2435,32 +1997,6 @@ open func scrollTo(offset: UInt32)  {try! rustCall() {
         FfiConverterUInt32.lower(offset),uniffiCallStatus
     )
 }
-}
-
-    /**
-     * Jumps the viewport down to the next OSC 133 prompt mark.
-     * Returns true if a prompt mark was found and jumped to; false otherwise.
-     */
-open func scrollToNextPrompt() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_scroll_to_next_prompt(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Jumps the viewport up to the previous OSC 133 prompt mark.
-     * Returns true if a prompt mark was found and jumped to; false otherwise.
-     */
-open func scrollToPreviousPrompt() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_scroll_to_previous_prompt(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
 }
 
     /**
@@ -2511,233 +2047,7 @@ open func scrollbackLen() -> UInt32  {
 }
 
     /**
-     * One bounded step of a search over scrollback and screen, backwards
-     * from line `before` (exclusive; `None` starts at the newest line).
-     * Whole logical lines, whole grapheme clusters, case-insensitive. The
-     * terminal is held for this step only, so a host searches a long
-     * history in steps, off its main thread, and output keeps flowing
-     * between them. Lines are absolute -- see `search_first_line`.
-     */
-open func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32) -> FfiSearchChunk  {
-    return try!  FfiConverterTypeFfiSearchChunk_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_search_chunk(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(needle),
-        FfiConverterOptionUInt64.lower(before),
-        FfiConverterUInt32.lower(maxRows),
-        FfiConverterUInt32.lower(maxHits),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The absolute number of the oldest retained line and the scrollback
-     * length, read together: what turns a search hit's line into a row.
-     */
-open func searchFirstLine() -> FfiRetainedLines  {
-    return try!  FfiConverterTypeFfiRetainedLines_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_search_first_line(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Whether `hit` is still where it was found, with the same text --
-     * checked before a host jumps to it, so new output, eviction, a clear
-     * or a reflow never sends the selection to some other line.
-     */
-open func searchHitIsCurrent(needle: String, hit: FfiSearchHit) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_search_hit_is_current(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(needle),
-        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Selects the entire output of the current or previous command bounded
-     * by OSC 133 marks. Returns true if output was selected; false otherwise.
-     */
-open func selectCommandOutput() -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_select_command_output(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Selects the whole logical line under `(row, col)`, as a triple-click
-     * does, following soft wraps in both directions.
-     */
-open func selectLine(row: UInt32, col: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_select_line(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),
-        FfiConverterUInt32.lower(col),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Checks `hit` and selects it, scrolling it into view, all under one
-     * hold of the terminal, so output in between cannot move the selection
-     * to other cells. False -- and nothing changed -- when the hit is no
-     * longer there.
-     */
-open func selectSearchHit(needle: String, hit: FfiSearchHit) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_select_search_hit(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(needle),
-        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Selects the word under `(row, col)`, as a double-click does. A run
-     * continues across a soft wrap, so a path or URL broken by the screen
-     * edge still selects whole.
-     */
-open func selectWord(row: UInt32, col: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_select_word(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),
-        FfiConverterUInt32.lower(col),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * The plain text covered by the current selection, or `None` if
-     * there's no active selection.
-     */
-open func selectedText() -> String?  {
-    return try!  FfiConverterOptionString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_selected_text(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The normalized bounds of the current selection, for highlighting.
-     * Returns `None` if there's no active selection.
-     */
-open func selectionRange() -> FfiSelectionRange?  {
-    return try!  FfiConverterOptionTypeFfiSelectionRange.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_selection_range(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Sets the host's base theme: default foreground/background/cursor
-     * colors and indexed palette entries, applied underneath whatever a
-     * running program has set via OSC 4/10/11/12.
-     *
-     * Base colors are what OSC 104 (all or by index), OSC 110/111/112, and
-     * a full reset (RIS, `ESC c`) restore to, instead of the engine's
-     * built-in defaults -- and what OSC 4/10/11/12 queries report until a
-     * program overrides them. Calling this while a session is already
-     * running immediately updates any live color a program hasn't
-     * explicitly overridden, so a theme change takes effect without
-     * clobbering a program's own color choices. `foreground`, `background`,
-     * and `cursor` of `None` revert that slot to unconfigured (the engine's
-     * built-in default). `palette` only touches the listed indices; indices
-     * not listed keep whatever base they already had (the built-in default
-     * if never set).
-     */
-open func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_base_colors(
-            self.uniffiCloneHandle(),
-        FfiConverterOptionTypeFfiRgb.lower(foreground),
-        FfiConverterOptionTypeFfiRgb.lower(background),
-        FfiConverterOptionTypeFfiRgb.lower(cursor),
-        FfiConverterSequenceTypeFfiPaletteEntry.lower(palette),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Enable or disable clipboard query / reading escape sequences (Track G4).
-     */
-open func setClipboardReadAllowed(allowed: Bool)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_clipboard_read_allowed(
-            self.uniffiCloneHandle(),
-        FfiConverterBool.lower(allowed),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Tells the engine whether the host shows a dark or a light colour
-     * scheme: what `CSI ? 996 n` answers, and what a program that set mode
-     * 2031 is sent, unasked, when it changes. That report is queued like
-     * any other reply, so drain `take_output` after calling this.
-     */
-open func setColorScheme(dark: Bool)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_color_scheme(
-            self.uniffiCloneHandle(),
-        FfiConverterBool.lower(dark),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Give command `id` (from a `CommandStart` event) its start time, in
-     * unix milliseconds. Only the first time counts; ignored when `epoch`
-     * is not the current engine generation or there is no such command.
-     */
-open func setCommandTime(epoch: UInt64, id: UInt64, unixMs: UInt64) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_command_time(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(epoch),
-        FfiConverterUInt64.lower(id),
-        FfiConverterUInt64.lower(unixMs),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Sets the host's cursor style: what a program's DECSCUSR 0 and a reset
-     * return to. It applies at once unless a program has chosen a style.
-     */
-open func setDefaultCursorStyle(shape: FfiCursorShape, blinking: Bool)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_default_cursor_style(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeFfiCursorShape_lower(shape),
-        FfiConverterBool.lower(blinking),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Sets the host's grapheme-width-method: whether a grapheme cluster
-     * takes its presentation width (`Unicode`, upstream's default: an emoji
-     * sequence is two columns) or the sum of its codepoints' widths
-     * (`Legacy`). It is mode 2027's value now and after every reset; a
-     * program can still change the mode.
+     * Sets the host's grapheme-width-method.
      */
 open func setGraphemeWidthMethod(method: FfiGraphemeWidthMethod)  {try! rustCall() {
         uniffiCallStatus in
@@ -2749,20 +2059,7 @@ open func setGraphemeWidthMethod(method: FfiGraphemeWidthMethod)  {try! rustCall
 }
 
     /**
-     * Set maximum image memory (in bytes) for this terminal, evicting LRU images if necessary.
-     */
-open func setMaxImageMemoryBytes(max: UInt64)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_max_image_memory_bytes(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt64.lower(max),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * Restores a fraction from `scroll_position`. Out-of-range values are
-     * clamped, because the caller is usually replaying a stored number.
+     * Restores a fraction from `scroll_position`.
      */
 open func setScrollPosition(position: Double)  {try! rustCall() {
         uniffiCallStatus in
@@ -2774,21 +2071,7 @@ open func setScrollPosition(position: Double)  {try! rustCall() {
 }
 
     /**
-     * Sets how many lines of history the terminal keeps; 0 keeps none.
-     * Shrinking it drops the oldest lines.
-     */
-open func setScrollbackLimit(lines: UInt32)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_set_scrollback_limit(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(lines),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * One call per frame: geometry, cursor, title, modes, viewport, the
-     * damaged row list, selection and graphics placements.
+     * Geometry, cursor, title, modes, viewport, damaged rows, selection, placements.
      */
 open func snapshot() -> FfiSnapshot  {
     return try!  FfiConverterTypeFfiSnapshot_lift(try! rustCall() {
@@ -2800,104 +2083,13 @@ open func snapshot() -> FfiSnapshot  {
 }
 
     /**
-     * Begins a new selection at `(row, col)` in the given mode.
-     */
-open func startSelection(row: UInt32, col: UInt32, mode: FfiSelectionMode)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_start_selection(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(row),
-        FfiConverterUInt32.lower(col),
-        FfiConverterTypeFfiSelectionMode_lower(mode),uniffiCallStatus
-    )
-}
-}
-
-    /**
-     * The current engine generation. Bumped by every checkpoint import.
-     */
-open func stateEpoch() -> UInt64  {
-    return try!  FfiConverterUInt64.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_state_epoch(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Rows changed since the last call (viewport indices); clears the
-     * flags. A scroll or resize reports every row.
+     * Rows changed since the last call (viewport indices); clears the flags.
      */
 open func takeDamage() -> [UInt32]  {
     return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_take_damage(
             self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Drains queued host-visible events (bell, clipboard, notifications).
-     */
-open func takeEvents() -> [FfiEvent]  {
-    return try!  FfiConverterSequenceTypeFfiEvent.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_take_events(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Drains and returns any queued device-reply bytes (DA/DSR/XTVERSION/
-     * Kitty-keyboard-query responses) for the caller to write back to the
-     * PTY's input.
-     */
-open func takeOutput() -> Data  {
-    return try!  FfiConverterData.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_take_output(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of
-     * them, read from the end only as far as needed (see
-     * `Terminal::text_tail`). Holds the terminal for that much and no more.
-     */
-open func textTail(maxLines: UInt32, maxBytes: UInt32) -> FfiTextTail  {
-    return try!  FfiConverterTypeFfiTextTail_lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_text_tail(
-            self.uniffiCloneHandle(),
-        FfiConverterUInt32.lower(maxLines),
-        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
-    )
-})
-}
-
-open func title() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_title(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Verify the integrity and version of a native checkpoint payload.
-     */
-open func verifyCheckpoint(bytes: Data) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_verify_checkpoint(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(bytes),uniffiCallStatus
     )
 })
 }
@@ -2928,28 +2120,6 @@ open func viewportOffset() -> UInt32  {
 
     /**
      * The whole viewport as packed bytes: 16 per cell, rows top to bottom.
-     *
-     * Returning `Vec<FfiCell>` costs about seven microseconds per cell,
-     * because every field of every cell crosses the boundary as its own
-     * read. A full screen is tens of thousands of cells, so a frame spent
-     * something like eighty milliseconds just being handed over -- twelve
-     * frames a second before any drawing happened. One buffer of fixed
-     * records is a memcpy instead.
-     *
-     * Layout, little-endian, per cell:
-     *
-     * | offset | size | field |
-     * |---|---|---|
-     * | 0 | 4 | Unicode scalar, 0 for the tail of a wide pair |
-     * | 4 | 3 | foreground r, g, b |
-     * | 7 | 3 | background r, g, b |
-     * | 10 | 2 | attribute bits (see `PACKED_*` below) |
-     * | 12 | 1 | SGR 4:x underline style |
-     * | 13 | 3 | underline colour r, g, b |
-     *
-     * A cell holding more than one codepoint carries its first as the
-     * scalar and `PACKED_GRAPHEME` in its bits; `viewport_graphemes` (or a
-     * frame's `graphemes`) has the whole cluster.
      */
 open func viewportPacked() -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
@@ -2961,9 +2131,7 @@ open func viewportPacked() -> Data  {
 }
 
     /**
-     * One viewport row as styled cells -- one call per row instead of
-     * `cols` calls to `get_cell`, and it reads through the scrollback
-     * offset set by `scroll_viewport_*`.
+     * One viewport row as styled cells.
      */
 open func viewportRow(row: UInt32) -> [FfiCell]  {
     return try!  FfiConverterSequenceTypeFfiCell.lift(try! rustCall() {
@@ -2971,6 +2139,430 @@ open func viewportRow(row: UInt32) -> [FfiCell]  {
     uniffi_tako_core_fn_method_takocore_viewport_row(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(row),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Whole logical lines, whole grapheme clusters, case-insensitive.
+     */
+open func searchChunk(needle: String, before: UInt64?, maxRows: UInt32, maxHits: UInt32) -> FfiSearchChunk  {
+    return try!  FfiConverterTypeFfiSearchChunk_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_chunk(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterOptionUInt64.lower(before),
+        FfiConverterUInt32.lower(maxRows),
+        FfiConverterUInt32.lower(maxHits),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Oldest retained line and scrollback length.
+     */
+open func searchFirstLine() -> FfiRetainedLines  {
+    return try!  FfiConverterTypeFfiRetainedLines_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_first_line(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Whether `hit` is still where it was found, with the same text.
+     */
+open func searchHitIsCurrent(needle: String, hit: FfiSearchHit) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_search_hit_is_current(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Checks `hit` and selects it, scrolling it into view.
+     */
+open func selectSearchHit(needle: String, hit: FfiSearchHit) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_search_hit(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(needle),
+        FfiConverterTypeFfiSearchHit_lower(hit),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Discards the current selection, if any.
+     */
+open func clearSelection()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_clear_selection(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Updates the drag endpoint of the current selection.
+     */
+open func extendSelection(row: UInt32, col: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_extend_selection(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),
+        FfiConverterUInt32.lower(col),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Whether a selection is currently active.
+     */
+open func hasSelection() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_has_selection(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Selects the whole logical line under `(row, col)`.
+     */
+open func selectLine(row: UInt32, col: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_line(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),
+        FfiConverterUInt32.lower(col),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Selects the word under `(row, col)`.
+     */
+open func selectWord(row: UInt32, col: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_select_word(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),
+        FfiConverterUInt32.lower(col),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * The plain text covered by the current selection.
+     */
+open func selectedText() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_selected_text(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The normalized bounds of the current selection, for highlighting.
+     */
+open func selectionRange() -> FfiSelectionRange?  {
+    return try!  FfiConverterOptionTypeFfiSelectionRange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_selection_range(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Begins a new selection at `(row, col)` in the given mode.
+     */
+open func startSelection(row: UInt32, col: UInt32, mode: FfiSelectionMode)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_start_selection(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),
+        FfiConverterUInt32.lower(col),
+        FfiConverterTypeFfiSelectionMode_lower(mode),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Everything the terminal holds as plain text.
+     */
+open func bufferText() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_buffer_text(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func cols() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_cols(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func cursorCol() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_cursor_col(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func cursorRow() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_cursor_row(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func cursorStyle() -> FfiCursorStyle  {
+    return try!  FfiConverterTypeFfiCursorStyle_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_cursor_style(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func cursorVisible() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_cursor_visible(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Returns the styled cell at (row, col) in the currently active grid.
+     */
+open func getCell(row: UInt32, col: UInt32) -> FfiCell?  {
+    return try!  FfiConverterOptionTypeFfiCell.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_get_cell(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),
+        FfiConverterUInt32.lower(col),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Returns the plain-text characters of one row of the active grid.
+     */
+open func getLine(row: UInt32) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_get_line(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(row),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Returns bounded plain text from start_row for up to max_rows lines.
+     */
+open func getPlainText(startRow: UInt32, maxRows: UInt32) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_get_plain_text(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(startRow),
+        FfiConverterUInt32.lower(maxRows),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * The decoded image data for a Kitty Graphics image id.
+     */
+open func graphicsImage(imageId: UInt32) -> FfiStoredImage?  {
+    return try!  FfiConverterOptionTypeFfiStoredImage.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_graphics_image(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(imageId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Metadata for a stored Kitty Graphics image.
+     */
+open func graphicsImageMetadata(imageId: UInt32) -> FfiGraphicsImageMetadata?  {
+    return try!  FfiConverterOptionTypeFfiGraphicsImageMetadata.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_graphics_image_metadata(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(imageId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Currently live Kitty Graphics placements, in display order.
+     */
+open func graphicsPlacements() -> [FfiGraphicsPlacement]  {
+    return try!  FfiConverterSequenceTypeFfiGraphicsPlacement.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_graphics_placements(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Maximum image memory (in bytes) configured for this terminal.
+     */
+open func maxImageMemoryBytes() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_max_image_memory_bytes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Resets the terminal state completely, except the base colors.
+     */
+open func reset()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_reset(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Resizes the active/alternate grids.
+     */
+open func resize(cols: UInt32, rows: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_resize(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(cols),
+        FfiConverterUInt32.lower(rows),uniffiCallStatus
+    )
+}
+}
+
+open func rows() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Sets the host's base theme.
+     */
+open func setBaseColors(foreground: FfiRgb?, background: FfiRgb?, cursor: FfiRgb?, palette: [FfiPaletteEntry])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_base_colors(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypeFfiRgb.lower(foreground),
+        FfiConverterOptionTypeFfiRgb.lower(background),
+        FfiConverterOptionTypeFfiRgb.lower(cursor),
+        FfiConverterSequenceTypeFfiPaletteEntry.lower(palette),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Tells the engine whether the host shows a dark or a light colour scheme.
+     */
+open func setColorScheme(dark: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_color_scheme(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(dark),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Sets the host's cursor style.
+     */
+open func setDefaultCursorStyle(shape: FfiCursorShape, blinking: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_default_cursor_style(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeFfiCursorShape_lower(shape),
+        FfiConverterBool.lower(blinking),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Set maximum image memory (in bytes) for this terminal.
+     */
+open func setMaxImageMemoryBytes(max: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_max_image_memory_bytes(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(max),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Sets how many lines of history the terminal keeps; 0 keeps none.
+     */
+open func setScrollbackLimit(lines: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_scrollback_limit(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(lines),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * The last `max_lines` lines of `buffer_text`, at most `max_bytes` of them.
+     */
+open func textTail(maxLines: UInt32, maxBytes: UInt32) -> FfiTextTail  {
+    return try!  FfiConverterTypeFfiTextTail_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_text_tail(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxLines),
+        FfiConverterUInt32.lower(maxBytes),uniffiCallStatus
+    )
+})
+}
+
+open func title() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_title(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -3028,12 +2620,6 @@ public func FfiConverterTypeTakoCore_lower(_ value: TakoCore) -> UInt64 {
  * foreground/background RGB, and boolean style flags.
  */
 public struct FfiCell: Equatable, Hashable {
-    /**
-     * The character as a Unicode scalar, not a string: a rendered frame
-     * carries tens of thousands of cells and a `String` per cell means a
-     * heap allocation per cell, every frame. 0 means the cell holds
-     * nothing -- the tail of a double-width pair.
-     */
     public var ch: UInt32
     public var fgR: UInt8
     public var fgG: UInt8
@@ -3050,65 +2636,17 @@ public struct FfiCell: Equatable, Hashable {
     public var hidden: Bool
     public var strikethrough: Bool
     public var overline: Bool
-    /**
-     * SGR 4:x underline style: 0 none/legacy-single, 1 single, 2 double,
-     * 3 curly, 4 dotted, 5 dashed.
-     */
     public var underlineStyle: UInt8
-    /**
-     * Resolved underline color (falls back to the foreground).
-     */
     public var ulR: UInt8
     public var ulG: UInt8
     public var ulB: UInt8
-    /**
-     * The URI of the OSC 8 hyperlink this cell is part of, or `None` if
-     * this cell isn't part of a hyperlink span.
-     */
     public var hyperlinkUri: String?
-    /**
-     * True when this cell holds the left half of a double-width character.
-     * A renderer needs it to know the glyph owns the next cell too; without
-     * it, everything after a CJK character in the row is off by one.
-     */
     public var wide: Bool
-    /**
-     * The whole grapheme cluster, starting with `ch`, when the cell holds
-     * more than one codepoint (combining marks, an emoji ZWJ sequence, a
-     * flag); `None` when `ch` is all of it.
-     */
     public var grapheme: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(
-        /**
-         * The character as a Unicode scalar, not a string: a rendered frame
-         * carries tens of thousands of cells and a `String` per cell means a
-         * heap allocation per cell, every frame. 0 means the cell holds
-         * nothing -- the tail of a double-width pair.
-         */ch: UInt32, fgR: UInt8, fgG: UInt8, fgB: UInt8, bgR: UInt8, bgG: UInt8, bgB: UInt8, bold: Bool, dim: Bool, italic: Bool, underline: Bool, blink: Bool, reverse: Bool, hidden: Bool, strikethrough: Bool, overline: Bool,
-        /**
-         * SGR 4:x underline style: 0 none/legacy-single, 1 single, 2 double,
-         * 3 curly, 4 dotted, 5 dashed.
-         */underlineStyle: UInt8,
-        /**
-         * Resolved underline color (falls back to the foreground).
-         */ulR: UInt8, ulG: UInt8, ulB: UInt8,
-        /**
-         * The URI of the OSC 8 hyperlink this cell is part of, or `None` if
-         * this cell isn't part of a hyperlink span.
-         */hyperlinkUri: String?,
-        /**
-         * True when this cell holds the left half of a double-width character.
-         * A renderer needs it to know the glyph owns the next cell too; without
-         * it, everything after a CJK character in the row is off by one.
-         */wide: Bool,
-        /**
-         * The whole grapheme cluster, starting with `ch`, when the cell holds
-         * more than one codepoint (combining marks, an emoji ZWJ sequence, a
-         * flag); `None` when `ch` is all of it.
-         */grapheme: String? = nil) {
+    public init(ch: UInt32, fgR: UInt8, fgG: UInt8, fgB: UInt8, bgR: UInt8, bgG: UInt8, bgB: UInt8, bold: Bool, dim: Bool, italic: Bool, underline: Bool, blink: Bool, reverse: Bool, hidden: Bool, strikethrough: Bool, overline: Bool, underlineStyle: UInt8, ulR: UInt8, ulG: UInt8, ulB: UInt8, hyperlinkUri: String?, wide: Bool, grapheme: String? = nil) {
         self.ch = ch
         self.fgR = fgR
         self.fgG = fgG
@@ -3219,9 +2757,6 @@ public func FfiConverterTypeFfiCell_lower(_ value: FfiCell) -> RustBuffer {
 }
 
 
-/**
- * What a checkpoint declares about itself, without decoding it.
- */
 public struct FfiCheckpointInfo: Equatable, Hashable {
     public var version: UInt32
     public var flags: UInt32
@@ -3288,16 +2823,8 @@ public func FfiConverterTypeFfiCheckpointInfo_lower(_ value: FfiCheckpointInfo) 
 }
 
 
-/**
- * What the shell said about a command (OSC 133). `exit_code` is only
- * meaningful when `finished`; a finished command without one is not a
- * success.
- */
 public struct FfiCommandInfo: Equatable, Hashable {
     public var id: UInt64
-    /**
-     * The engine generation the id belongs to (see `state_epoch`).
-     */
     public var epoch: UInt64
     public var running: Bool
     public var finished: Bool
@@ -3310,10 +2837,7 @@ public struct FfiCommandInfo: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: UInt64,
-        /**
-         * The engine generation the id belongs to (see `state_epoch`).
-         */epoch: UInt64, running: Bool, finished: Bool, abandoned: Bool, exitCode: Int32?, cwd: String?, input: String?, inputTruncated: Bool, startedAtMs: UInt64?) {
+    public init(id: UInt64, epoch: UInt64, running: Bool, finished: Bool, abandoned: Bool, exitCode: Int32?, cwd: String?, input: String?, inputTruncated: Bool, startedAtMs: UInt64?) {
         self.id = id
         self.epoch = epoch
         self.running = running
@@ -3385,25 +2909,16 @@ public func FfiConverterTypeFfiCommandInfo_lower(_ value: FfiCommandInfo) -> Rus
 }
 
 
-/**
- * A mark associated with a recorded command prompt line.
- */
 public struct FfiCommandMark: Equatable, Hashable {
     public var commandId: UInt64
     public var promptLine: UInt64
     public var retainedRow: UInt64
-    /**
-     * 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
-     */
     public var status: UInt8
     public var exitCode: Int32?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(commandId: UInt64, promptLine: UInt64, retainedRow: UInt64,
-        /**
-         * 0 = running, 1 = success (exit code 0), 2 = error (non-zero or abandoned/none)
-         */status: UInt8, exitCode: Int32?) {
+    public init(commandId: UInt64, promptLine: UInt64, retainedRow: UInt64, status: UInt8, exitCode: Int32?) {
         self.commandId = commandId
         self.promptLine = promptLine
         self.retainedRow = retainedRow
@@ -3460,44 +2975,17 @@ public func FfiConverterTypeFfiCommandMark_lower(_ value: FfiCommandMark) -> Rus
 }
 
 
-/**
- * See `TakoCore::last_command`.
- */
 public struct FfiCommandOutput: Equatable, Hashable {
     public var command: FfiCommandInfo
-    /**
-     * What it printed, oldest line first.
-     */
     public var output: String
     public var lines: UInt32
-    /**
-     * The oldest returned line was cut at its front to fit.
-     */
     public var truncated: Bool
-    /**
-     * It printed more lines than returned.
-     */
     public var more: Bool
-    /**
-     * Some of what it printed is not here (see `Grid::command_output`).
-     */
     public var incomplete: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(command: FfiCommandInfo,
-        /**
-         * What it printed, oldest line first.
-         */output: String, lines: UInt32,
-        /**
-         * The oldest returned line was cut at its front to fit.
-         */truncated: Bool,
-        /**
-         * It printed more lines than returned.
-         */more: Bool,
-        /**
-         * Some of what it printed is not here (see `Grid::command_output`).
-         */incomplete: Bool) {
+    public init(command: FfiCommandInfo, output: String, lines: UInt32, truncated: Bool, more: Bool, incomplete: Bool) {
         self.command = command
         self.output = output
         self.lines = lines
@@ -3557,9 +3045,6 @@ public func FfiConverterTypeFfiCommandOutput_lower(_ value: FfiCommandOutput) ->
 }
 
 
-/**
- * A frame in the hierarchical context stack (OSC 3008, C5).
- */
 public struct FfiContextFrame: Equatable, Hashable {
     public var kind: String
     public var name: String
@@ -3622,9 +3107,6 @@ public func FfiConverterTypeFfiContextFrame_lower(_ value: FfiContextFrame) -> R
 }
 
 
-/**
- * The cursor's current visual style (DECSCUSR), for a Swift renderer.
- */
 public struct FfiCursorStyle: Equatable, Hashable {
     public var shape: FfiCursorShape
     public var blinking: Bool
@@ -3679,68 +3161,16 @@ public func FfiConverterTypeFfiCursorStyle_lower(_ value: FfiCursorStyle) -> Rus
 }
 
 
-/**
- * Everything the host needs to know right after handing the parser a chunk
- * of PTY bytes, gathered under the SAME lock as the parse itself: the device
- * replies to write back, the events that fired, whether a repaint is now
- * pending, and whether the app is mid Synchronized Output frame.
- *
- * `has_damage` is deliberately non-draining -- `render_frame` is still the
- * one call that consumes damage, so a host can feed several chunks, see the
- * signal go true, and coalesce them into a single frame without losing rows.
- */
 public struct FfiFeedOutcome: Equatable, Hashable {
-    /**
-     * Device replies (DA/DSR/XTVERSION/...) to write back to the PTY.
-     */
     public var output: Data
-    /**
-     * Host-visible events queued by this feed (bell, title, clipboard, ...).
-     */
     public var events: [FfiEvent]
-    /**
-     * Whether a repaint is pending. Does NOT clear the damage flags.
-     */
     public var hasDamage: Bool
-    /**
-     * Whether mode 2026 is open after this feed, i.e. the app has not yet
-     * finished the frame and nothing should be painted on its own.
-     */
     public var synchronizedOutputActive: Bool
-    /**
-     * The engine generation this outcome was produced under.
-     *
-     * Outcomes are captured off the main thread and applied later, so an
-     * outcome parsed before a checkpoint import can reach the host after it.
-     * A host compares this against the engine's current epoch and drops what
-     * no longer describes the terminal it has.
-     */
     public var epoch: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(
-        /**
-         * Device replies (DA/DSR/XTVERSION/...) to write back to the PTY.
-         */output: Data,
-        /**
-         * Host-visible events queued by this feed (bell, title, clipboard, ...).
-         */events: [FfiEvent],
-        /**
-         * Whether a repaint is pending. Does NOT clear the damage flags.
-         */hasDamage: Bool,
-        /**
-         * Whether mode 2026 is open after this feed, i.e. the app has not yet
-         * finished the frame and nothing should be painted on its own.
-         */synchronizedOutputActive: Bool,
-        /**
-         * The engine generation this outcome was produced under.
-         *
-         * Outcomes are captured off the main thread and applied later, so an
-         * outcome parsed before a checkpoint import can reach the host after it.
-         * A host compares this against the engine's current epoch and drops what
-         * no longer describes the terminal it has.
-         */epoch: UInt64) {
+    public init(output: Data, events: [FfiEvent], hasDamage: Bool, synchronizedOutputActive: Bool, epoch: UInt64) {
         self.output = output
         self.events = events
         self.hasDamage = hasDamage
@@ -3797,32 +3227,14 @@ public func FfiConverterTypeFfiFeedOutcome_lower(_ value: FfiFeedOutcome) -> Rus
 }
 
 
-/**
- * The whole grapheme cluster of a packed cell whose attribute bits carry
- * `PACKED_GRAPHEME`.
- */
 public struct FfiGrapheme: Equatable, Hashable {
-    /**
-     * The row's position in the payload's packed rows -- for a delta frame
-     * an index into `row_indices`, not a viewport row.
-     */
     public var row: UInt32
     public var col: UInt32
-    /**
-     * The cluster, starting with the cell's scalar.
-     */
     public var text: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(
-        /**
-         * The row's position in the payload's packed rows -- for a delta frame
-         * an index into `row_indices`, not a viewport row.
-         */row: UInt32, col: UInt32,
-        /**
-         * The cluster, starting with the cell's scalar.
-         */text: String) {
+    public init(row: UInt32, col: UInt32, text: String) {
         self.row = row
         self.col = col
         self.text = text
@@ -3935,9 +3347,6 @@ public func FfiConverterTypeFfiGraphicsImageMetadata_lower(_ value: FfiGraphicsI
 }
 
 
-/**
- * Where a Kitty Graphics image is displayed, in cell coordinates.
- */
 public struct FfiGraphicsPlacement: Equatable, Hashable {
     public var imageId: UInt32
     public var placementId: UInt32
@@ -4000,35 +3409,10 @@ public func FfiConverterTypeFfiGraphicsPlacement_lower(_ value: FfiGraphicsPlace
 }
 
 
-/**
- * A key event to encode for the PTY.
- */
 public struct FfiKeyEvent: Equatable, Hashable {
     public var key: FfiKey
-    /**
-     * The typed character when `key` is `Character`; ignored otherwise.
-     * This is the character *with* modifiers applied -- `A`, not `a`.
-     *
-     * For any key, a non-empty value here also carries a dead-key/IME
-     * commit: the text this event actually produced, which wins over the
-     * key's default bytes (mirrors `key_encode::KeyEvent::text`).
-     */
     public var text: String
-    /**
-     * Which key this physically is, as the ASCII it would type on a US
-     * layout. On a Cyrillic layout the `c` key types U+0441 and its
-     * unshifted form is U+0441 too, so without this `ctrl+c` on a Russian
-     * layout produces the letter rather than 0x03.
-     */
     public var physicalText: String
-    /**
-     * The same key with no modifiers applied, when the host can report it.
-     *
-     * The Kitty keyboard protocol identifies a key by its base codepoint
-     * and reports shift separately. Without this, a shifted key is sent
-     * under the shifted codepoint and a protocol-aware shell drops it --
-     * which is how shift came to type nothing at all.
-     */
     public var unshiftedText: String
     public var shift: Bool
     public var alt: Bool
@@ -4036,41 +3420,11 @@ public struct FfiKeyEvent: Equatable, Hashable {
     public var superKey: Bool
     public var press: Bool
     public var `repeat`: Bool
-    /**
-     * True while a dead-key/IME composition is in progress and this event
-     * has not committed text yet (mirrors `key_encode::KeyEvent::composing`).
-     */
     public var composing: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(key: FfiKey,
-        /**
-         * The typed character when `key` is `Character`; ignored otherwise.
-         * This is the character *with* modifiers applied -- `A`, not `a`.
-         *
-         * For any key, a non-empty value here also carries a dead-key/IME
-         * commit: the text this event actually produced, which wins over the
-         * key's default bytes (mirrors `key_encode::KeyEvent::text`).
-         */text: String,
-        /**
-         * Which key this physically is, as the ASCII it would type on a US
-         * layout. On a Cyrillic layout the `c` key types U+0441 and its
-         * unshifted form is U+0441 too, so without this `ctrl+c` on a Russian
-         * layout produces the letter rather than 0x03.
-         */physicalText: String,
-        /**
-         * The same key with no modifiers applied, when the host can report it.
-         *
-         * The Kitty keyboard protocol identifies a key by its base codepoint
-         * and reports shift separately. Without this, a shifted key is sent
-         * under the shifted codepoint and a protocol-aware shell drops it --
-         * which is how shift came to type nothing at all.
-         */unshiftedText: String, shift: Bool, alt: Bool, ctrl: Bool, superKey: Bool, press: Bool, `repeat`: Bool,
-        /**
-         * True while a dead-key/IME composition is in progress and this event
-         * has not committed text yet (mirrors `key_encode::KeyEvent::composing`).
-         */composing: Bool) {
+    public init(key: FfiKey, text: String, physicalText: String, unshiftedText: String, shift: Bool, alt: Bool, ctrl: Bool, superKey: Bool, press: Bool, `repeat`: Bool, composing: Bool) {
         self.key = key
         self.text = text
         self.physicalText = physicalText
@@ -4145,9 +3499,6 @@ public func FfiConverterTypeFfiKeyEvent_lower(_ value: FfiKeyEvent) -> RustBuffe
 }
 
 
-/**
- * A mouse event to encode for the PTY, in cell coordinates.
- */
 public struct FfiMouseEvent: Equatable, Hashable {
     public var button: FfiMouseButton
     public var action: FfiMouseAction
@@ -4222,9 +3573,6 @@ public func FfiConverterTypeFfiMouseEvent_lower(_ value: FfiMouseEvent) -> RustB
 }
 
 
-/**
- * One indexed palette entry in the host's base-color configuration.
- */
 public struct FfiPaletteEntry: Equatable, Hashable {
     public var index: UInt8
     public var color: FfiRgb
@@ -4279,43 +3627,15 @@ public func FfiConverterTypeFfiPaletteEntry_lower(_ value: FfiPaletteEntry) -> R
 }
 
 
-/**
- * Everything a renderer needs for one frame, including packed viewport cells,
- * captured under a single terminal lock to eliminate snapshot/viewport_packed tearing.
- */
 public struct FfiRenderFrame: Equatable, Hashable {
     public var snapshot: FfiSnapshot
     public var packedCells: Data
-    /**
-     * The engine generation this frame was taken from, read in the same
-     * critical section as the geometry and the cells.
-     *
-     * A checkpoint import replaces the whole engine; a host that publishes
-     * geometry from one call and cells from another can straddle that
-     * replacement. Carrying the epoch inside the frame is what makes
-     * "this frame is stale" observable rather than inferred.
-     */
     public var epoch: UInt64
-    /**
-     * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-     */
     public var graphemes: [FfiGrapheme]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(snapshot: FfiSnapshot, packedCells: Data,
-        /**
-         * The engine generation this frame was taken from, read in the same
-         * critical section as the geometry and the cells.
-         *
-         * A checkpoint import replaces the whole engine; a host that publishes
-         * geometry from one call and cells from another can straddle that
-         * replacement. Carrying the epoch inside the frame is what makes
-         * "this frame is stale" observable rather than inferred.
-         */epoch: UInt64,
-        /**
-         * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-         */graphemes: [FfiGrapheme] = []) {
+    public init(snapshot: FfiSnapshot, packedCells: Data, epoch: UInt64, graphemes: [FfiGrapheme] = []) {
         self.snapshot = snapshot
         self.packedCells = packedCells
         self.epoch = epoch
@@ -4369,34 +3689,7 @@ public func FfiConverterTypeFfiRenderFrame_lower(_ value: FfiRenderFrame) -> Rus
 }
 
 
-/**
- * One frame for a host that keeps its own row cache: frame metadata plus
- * either the whole packed viewport or only the packed rows that changed,
- * captured under a single terminal lock.
- *
- * The payload is self-describing on purpose -- a host never has to infer
- * geometry from the byte count:
- *
- * * `row_indices` -- the viewport row index of each packed row, in payload
- * order, ascending. `row_ranges` is the same list collapsed into runs.
- * * `packed_cells` -- `row_indices.len() * row_stride` bytes, rows back to
- * back, each row `cols` cells of `cell_stride` bytes in the layout
- * documented on `viewport_packed`.
- * * `full_resync` -- `row_indices` is `0..rows` and the payload replaces
- * the host's cache. `resync_reason` says why.
- * * `frame_version` -- monotonic, strictly increasing, never 0. Pass it
- * back as the next call's `since_version`.
- * * `base_version` -- the version this delta applies on top of, or 0 for a
- * full resync (which applies on top of nothing).
- *
- * `snapshot.damaged_rows` is set to `row_indices`, so the record cannot
- * disagree with itself.
- */
 public struct FfiRenderFrameDelta: Equatable, Hashable {
-    /**
-     * Cursor, title, modes, selection, graphics -- always current, even
-     * when no cell changed.
-     */
     public var snapshot: FfiSnapshot
     public var frameVersion: UInt64
     public var baseVersion: UInt64
@@ -4404,38 +3697,16 @@ public struct FfiRenderFrameDelta: Equatable, Hashable {
     public var resyncReason: FfiResyncReason
     public var cols: UInt32
     public var rows: UInt32
-    /**
-     * Bytes per packed cell (`PACKED_CELL_SIZE`).
-     */
     public var cellStride: UInt32
-    /**
-     * Bytes per packed row (`cols * cell_stride`).
-     */
     public var rowStride: UInt32
     public var rowIndices: [UInt32]
     public var rowRanges: [FfiRowRange]
     public var packedCells: Data
-    /**
-     * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-     */
     public var graphemes: [FfiGrapheme]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(
-        /**
-         * Cursor, title, modes, selection, graphics -- always current, even
-         * when no cell changed.
-         */snapshot: FfiSnapshot, frameVersion: UInt64, baseVersion: UInt64, fullResync: Bool, resyncReason: FfiResyncReason, cols: UInt32, rows: UInt32,
-        /**
-         * Bytes per packed cell (`PACKED_CELL_SIZE`).
-         */cellStride: UInt32,
-        /**
-         * Bytes per packed row (`cols * cell_stride`).
-         */rowStride: UInt32, rowIndices: [UInt32], rowRanges: [FfiRowRange], packedCells: Data,
-        /**
-         * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-         */graphemes: [FfiGrapheme] = []) {
+    public init(snapshot: FfiSnapshot, frameVersion: UInt64, baseVersion: UInt64, fullResync: Bool, resyncReason: FfiResyncReason, cols: UInt32, rows: UInt32, cellStride: UInt32, rowStride: UInt32, rowIndices: [UInt32], rowRanges: [FfiRowRange], packedCells: Data, graphemes: [FfiGrapheme] = []) {
         self.snapshot = snapshot
         self.frameVersion = frameVersion
         self.baseVersion = baseVersion
@@ -4516,57 +3787,16 @@ public func FfiConverterTypeFfiRenderFrameDelta_lower(_ value: FfiRenderFrameDel
 }
 
 
-/**
- * One frame plus the rows immediately *below* the viewport, so a host can
- * translate the whole grid by a fraction of a cell and still have something
- * to draw in the strip that translation exposes at the bottom edge.
- *
- * `packed_cells` holds `snapshot.rows + overscan_rows` rows in the layout
- * `viewport_packed` documents; the first `snapshot.rows` of them are the
- * viewport itself, so a host that ignores `overscan_rows` sees exactly the
- * frame `render_frame` would have given it.
- *
- * Everything else in `snapshot` -- cursor position, geometry, selection --
- * stays viewport-relative and is unaffected by the extra rows.
- */
 public struct FfiRenderFrameOverscan: Equatable, Hashable {
     public var snapshot: FfiSnapshot
     public var packedCells: Data
     public var overscanRows: UInt32
-    /**
-     * The engine generation this frame was taken from, on the same terms as
-     * `FfiRenderFrame::epoch` and read in the same critical section.
-     *
-     * Carried here rather than left to the caller precisely because the
-     * caller cannot get it right: a host that turns this into an
-     * `FfiRenderFrame` by asking the engine for its epoch afterwards has
-     * already left the lock, and a checkpoint import landing in between
-     * would stamp cells from the old engine with the new generation --
-     * which is the straddle the epoch exists to make visible.
-     */
     public var epoch: UInt64
-    /**
-     * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-     */
     public var graphemes: [FfiGrapheme]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(snapshot: FfiSnapshot, packedCells: Data, overscanRows: UInt32,
-        /**
-         * The engine generation this frame was taken from, on the same terms as
-         * `FfiRenderFrame::epoch` and read in the same critical section.
-         *
-         * Carried here rather than left to the caller precisely because the
-         * caller cannot get it right: a host that turns this into an
-         * `FfiRenderFrame` by asking the engine for its epoch afterwards has
-         * already left the lock, and a checkpoint import landing in between
-         * would stamp cells from the old engine with the new generation --
-         * which is the straddle the epoch exists to make visible.
-         */epoch: UInt64,
-        /**
-         * Clusters of the cells marked `PACKED_GRAPHEME`, in payload order.
-         */graphemes: [FfiGrapheme] = []) {
+    public init(snapshot: FfiSnapshot, packedCells: Data, overscanRows: UInt32, epoch: UInt64, graphemes: [FfiGrapheme] = []) {
         self.snapshot = snapshot
         self.packedCells = packedCells
         self.overscanRows = overscanRows
@@ -4623,10 +3853,6 @@ public func FfiConverterTypeFfiRenderFrameOverscan_lower(_ value: FfiRenderFrame
 }
 
 
-/**
- * The oldest retained line's absolute number, and how many lines are in
- * scrollback.
- */
 public struct FfiRetainedLines: Equatable, Hashable {
     public var firstLine: UInt64
     public var scrollbackLen: UInt32
@@ -4681,10 +3907,6 @@ public func FfiConverterTypeFfiRetainedLines_lower(_ value: FfiRetainedLines) ->
 }
 
 
-/**
- * A bare RGB triple, for the host's base-color configuration
- * (`TakoCore::set_base_colors`).
- */
 public struct FfiRgb: Equatable, Hashable {
     public var r: UInt8
     public var g: UInt8
@@ -4743,13 +3965,6 @@ public func FfiConverterTypeFfiRgb_lower(_ value: FfiRgb) -> RustBuffer {
 }
 
 
-/**
- * A contiguous run of viewport rows carried by one delta payload.
- *
- * `start` is a viewport row index (0 = top row as currently scrolled),
- * `count` the number of consecutive rows. Ranges are ascending and never
- * overlap, so a host can turn them straight into texture-upload regions.
- */
 public struct FfiRowRange: Equatable, Hashable {
     public var start: UInt32
     public var count: UInt32
@@ -4804,31 +4019,16 @@ public func FfiConverterTypeFfiRowRange_lower(_ value: FfiRowRange) -> RustBuffe
 }
 
 
-/**
- * One step of a search; see `TakoCore::search_chunk`.
- */
 public struct FfiSearchChunk: Equatable, Hashable {
-    /**
-     * Newest first.
-     */
     public var hits: [FfiSearchHit]
     public var nextBefore: UInt64?
     public var firstLine: UInt64
     public var endLine: UInt64
-    /**
-     * True only when a hit past the limit was actually found.
-     */
     public var truncated: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(
-        /**
-         * Newest first.
-         */hits: [FfiSearchHit], nextBefore: UInt64?, firstLine: UInt64, endLine: UInt64,
-        /**
-         * True only when a hit past the limit was actually found.
-         */truncated: Bool) {
+    public init(hits: [FfiSearchHit], nextBefore: UInt64?, firstLine: UInt64, endLine: UInt64, truncated: Bool) {
         self.hits = hits
         self.nextBefore = nextBefore
         self.firstLine = firstLine
@@ -4885,37 +4085,19 @@ public func FfiConverterTypeFfiSearchChunk_lower(_ value: FfiSearchChunk) -> Rus
 }
 
 
-/**
- * A search hit: cells from `(start_line, start_col)` to `(end_line,
- * end_col)`, inclusive, on absolute lines.
- */
 public struct FfiSearchHit: Equatable, Hashable {
     public var startLine: UInt64
     public var startCol: UInt32
     public var endLine: UInt64
     public var endCol: UInt32
-    /**
-     * Context before the match, the match as shown, context after.
-     */
     public var before: String
     public var matched: String
     public var after: String
-    /**
-     * The command whose output holds the hit, read under the same lock as
-     * the hit itself; `None` when its rows are not all one command's.
-     */
     public var command: FfiCommandInfo?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(startLine: UInt64, startCol: UInt32, endLine: UInt64, endCol: UInt32,
-        /**
-         * Context before the match, the match as shown, context after.
-         */before: String, matched: String, after: String,
-        /**
-         * The command whose output holds the hit, read under the same lock as
-         * the hit itself; `None` when its rows are not all one command's.
-         */command: FfiCommandInfo?) {
+    public init(startLine: UInt64, startCol: UInt32, endLine: UInt64, endCol: UInt32, before: String, matched: String, after: String, command: FfiCommandInfo?) {
         self.startLine = startLine
         self.startCol = startCol
         self.endLine = endLine
@@ -4981,10 +4163,6 @@ public func FfiConverterTypeFfiSearchHit_lower(_ value: FfiSearchHit) -> RustBuf
 }
 
 
-/**
- * The normalized `(start, end)` bounds of the current selection, in
- * reading order, for a Swift renderer to highlight.
- */
 public struct FfiSelectionRange: Equatable, Hashable {
     public var startRow: UInt32
     public var startCol: UInt32
@@ -5065,19 +4243,13 @@ public struct FfiSnapshot: Equatable, Hashable {
     public var modes: FfiTerminalModes
     public var viewportOffset: UInt32
     public var scrollbackLen: UInt32
-    /**
-     * Viewport rows that changed since the previous snapshot.
-     */
     public var damagedRows: [UInt32]
     public var selection: FfiSelectionRange?
     public var graphicsPlacements: [FfiGraphicsPlacement]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(cols: UInt32, rows: UInt32, cursorRow: UInt32, cursorCol: UInt32, cursorVisible: Bool, cursorStyle: FfiCursorStyle, title: String, modes: FfiTerminalModes, viewportOffset: UInt32, scrollbackLen: UInt32,
-        /**
-         * Viewport rows that changed since the previous snapshot.
-         */damagedRows: [UInt32], selection: FfiSelectionRange?, graphicsPlacements: [FfiGraphicsPlacement]) {
+    public init(cols: UInt32, rows: UInt32, cursorRow: UInt32, cursorCol: UInt32, cursorVisible: Bool, cursorStyle: FfiCursorStyle, title: String, modes: FfiTerminalModes, viewportOffset: UInt32, scrollbackLen: UInt32, damagedRows: [UInt32], selection: FfiSelectionRange?, graphicsPlacements: [FfiGraphicsPlacement]) {
         self.cols = cols
         self.rows = rows
         self.cursorRow = cursorRow
@@ -5158,11 +4330,6 @@ public func FfiConverterTypeFfiSnapshot_lower(_ value: FfiSnapshot) -> RustBuffe
 }
 
 
-/**
- * A Kitty Graphics image, decoded and ready for a Swift renderer to upload
- * as a texture: `pixels` is raw RGB/RGBA data for those formats, or the
- * verbatim PNG file bytes for `Png`.
- */
 public struct FfiStoredImage: Equatable, Hashable {
     public var format: FfiImageFormat
     public var width: UInt32
@@ -5225,11 +4392,6 @@ public func FfiConverterTypeFfiStoredImage_lower(_ value: FfiStoredImage) -> Rus
 }
 
 
-/**
- * Snapshot of the terminal's DEC private-mode state -- what a Swift
- * renderer/input layer needs to decide how to encode mouse events, whether
- * to auto-wrap, whether pasted text should be bracketed, etc.
- */
 public struct FfiTerminalModes: Equatable, Hashable {
     public var autowrap: Bool
     public var originMode: Bool
@@ -5316,30 +4478,15 @@ public func FfiConverterTypeFfiTerminalModes_lower(_ value: FfiTerminalModes) ->
 }
 
 
-/**
- * See `TakoCore::text_tail`.
- */
 public struct FfiTextTail: Equatable, Hashable {
     public var text: String
     public var lines: UInt32
-    /**
-     * The oldest returned line was cut at the front to fit.
-     */
     public var truncated: Bool
-    /**
-     * Older lines exist than those returned.
-     */
     public var more: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(text: String, lines: UInt32,
-        /**
-         * The oldest returned line was cut at the front to fit.
-         */truncated: Bool,
-        /**
-         * Older lines exist than those returned.
-         */more: Bool) {
+    public init(text: String, lines: UInt32, truncated: Bool, more: Bool) {
         self.text = text
         self.lines = lines
         self.truncated = truncated
@@ -5539,9 +4686,6 @@ public func FfiConverterTypeSshPrompt_lower(_ value: SshPrompt) -> RustBuffer {
 }
 
 
-/**
- * Mirrors `crate::cursor_style::CursorShape` for FFI consumption.
- */
 
 public enum FfiCursorShape: Equatable, Hashable {
 
@@ -5615,9 +4759,6 @@ public func FfiConverterTypeFfiCursorShape_lower(_ value: FfiCursorShape) -> Rus
 
 
 
-/**
- * Host-visible side effect drained via `takeEvents()`.
- */
 
 public enum FfiEvent: Equatable, Hashable {
 
@@ -5633,15 +4774,8 @@ public enum FfiEvent: Equatable, Hashable {
     )
     case progress(state: UInt8, value: UInt8?
     )
-    /**
-     * OSC 133;C -- a command started running. `id` names its record for
-     * `set_command_time`; absent on the alternate screen.
-     */
     case commandStart(id: UInt64?
     )
-    /**
-     * OSC 133;D -- a command finished, with its exit code when reported.
-     */
     case commandEnd(exitCode: Int32?
     )
     case promptMark
@@ -5652,18 +4786,9 @@ public enum FfiEvent: Equatable, Hashable {
     )
     case notificationClose(id: String, reportClose: Bool
     )
-    /**
-     * OSC 3008 context frame pushed onto the stack (C5).
-     */
     case contextPush(frame: FfiContextFrame
     )
-    /**
-     * OSC 3008 top context frame popped from the stack (C5).
-     */
     case contextPop
-    /**
-     * OSC 3008 context stack cleared (C5).
-     */
     case contextClear
 
 
@@ -5852,10 +4977,6 @@ public func FfiConverterTypeFfiEvent_lower(_ value: FfiEvent) -> RustBuffer {
 
 
 
-/**
- * Mirrors `crate::terminal::GraphemeWidthMethod` (upstream's
- * `grapheme-width-method`).
- */
 
 public enum FfiGraphemeWidthMethod: Equatable, Hashable {
 
@@ -5922,9 +5043,6 @@ public func FfiConverterTypeFfiGraphemeWidthMethod_lower(_ value: FfiGraphemeWid
 
 
 
-/**
- * Mirrors `crate::graphics::ImageFormat` for FFI consumption.
- */
 
 public enum FfiImageFormat: Equatable, Hashable {
 
@@ -5998,10 +5116,6 @@ public func FfiConverterTypeFfiImageFormat_lower(_ value: FfiImageFormat) -> Rus
 
 
 
-/**
- * Keys a host can send; mirrors `key_encode::Key` (the char variant is
- * carried separately since UniFFI enums can't hold a `char`).
- */
 
 public enum FfiKey: Equatable, Hashable {
 
@@ -6047,10 +5161,6 @@ public enum FfiKey: Equatable, Hashable {
     case keypad7
     case keypad8
     case keypad9
-    /**
-     * The modifier keys as events in their own right (only ever reported
-     * under the Kitty protocol's report-all flag).
-     */
     case shiftLeft
     case shiftRight
     case controlLeft
@@ -6059,14 +5169,7 @@ public enum FfiKey: Equatable, Hashable {
     case altRight
     case metaLeft
     case metaRight
-    /**
-     * Text with no key behind it (e.g. IME-composed text with no
-     * originating physical key).
-     */
     case unidentified
-    /**
-     * A printable character: the codepoint travels in `FfiKeyEvent::text`.
-     */
     case character
 
 
@@ -6610,9 +5713,6 @@ public func FfiConverterTypeFfiMouseButton_lower(_ value: FfiMouseButton) -> Rus
 
 
 
-/**
- * Mirrors `crate::modes::MouseTracking` for FFI consumption.
- */
 
 public enum FfiMouseTracking: Equatable, Hashable {
 
@@ -6693,58 +5793,17 @@ public func FfiConverterTypeFfiMouseTracking_lower(_ value: FfiMouseTracking) ->
 
 
 
-/**
- * Why a delta frame had to carry the whole viewport instead of just the
- * rows that moved. `Delta` means it did not: the payload is incremental.
- *
- * Every value other than `Delta` is a hard "throw away what you have":
- * the host's row cache no longer describes this terminal, so the payload
- * is a full resync it must adopt wholesale.
- */
 
 public enum FfiResyncReason: Equatable, Hashable {
 
-    /**
-     * Incremental payload: only the listed rows changed.
-     */
     case delta
-    /**
-     * No delta has ever been handed out for this core.
-     */
     case firstFrame
-    /**
-     * The caller's `sinceVersion` is not the version we last handed it --
-     * it missed a frame (dropped, crashed, or a second renderer exists).
-     */
     case versionMismatch
-    /**
-     * The grid geometry changed; old row indices mean nothing now.
-     */
     case resized
-    /**
-     * The viewport scrolled over scrollback, so every row index moved.
-     */
     case viewportScrolled
-    /**
-     * Primary <-> alternate screen switch: a different grid entirely.
-     */
     case screenSwitched
-    /**
-     * The terminal was reset and replaced.
-     */
     case reset
-    /**
-     * Every row is dirty (`markAllDamaged`, a full repaint, a resize the
-     * terminal handled internally) -- cache-invalidation equivalent, so a
-     * delta would be the whole viewport anyway.
-     */
     case fullDamage
-    /**
-     * Another consumer (`takeDamage`, `snapshot`, `renderFrame`) drained
-     * the terminal's damage between two delta calls, so the rows we can
-     * still see no longer describe everything that changed. See the
-     * ownership rule on `render_frame_delta`.
-     */
     case damageOwnershipLost
 
 
@@ -6849,12 +5908,6 @@ public func FfiConverterTypeFfiResyncReason_lower(_ value: FfiResyncReason) -> R
 
 
 
-/**
- * UniFFI-exported wrapper around `Terminal`. UniFFI objects are shared via
- * `Arc<Self>` across the FFI boundary, so mutability is achieved with an
- * internal `Mutex`.
- * Mirrors `crate::terminal::SelectionMode` for FFI consumption.
- */
 
 public enum FfiSelectionMode: Equatable, Hashable {
 
@@ -7004,13 +6057,6 @@ public func FfiConverterTypeSshAuth_lower(_ value: SshAuth) -> RustBuffer {
 
 
 
-/**
- * The typed failures of the checkpoint API.
- *
- * A bool cannot tell "corrupt payload" from "valid payload of a version I
- * cannot read", and those two need different decisions from a peer: retry or
- * negotiate down versus fail explicitly.
- */
 public
 enum TakoCheckpointError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
@@ -8009,283 +7055,283 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_active_tint() != 5204) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint() != 49665) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_buffer_text() != 40313) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_export() != 54072) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint() != 12952) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_export_version() != 60745) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_export() != 57215) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_import() != 64288) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_export_version() != 24461) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_inspect() != 29564) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_import() != 15989) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_supports() != 16306) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_inspect() != 34766) {
+    if (uniffi_tako_core_checksum_method_takocore_checkpoint_version() != 63608) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_supports() != 12731) {
+    if (uniffi_tako_core_checksum_method_takocore_restore() != 22734) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_checkpoint_version() != 40207) {
+    if (uniffi_tako_core_checksum_method_takocore_verify_checkpoint() != 44028) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_clear_selection() != 45654) {
+    if (uniffi_tako_core_checksum_method_takocore_active_tint() != 45069) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cols() != 18796) {
+    if (uniffi_tako_core_checksum_method_takocore_command_marks() != 19337) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_command_marks() != 17400) {
+    if (uniffi_tako_core_checksum_method_takocore_command_output() != 29983) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_command_output() != 54790) {
+    if (uniffi_tako_core_checksum_method_takocore_context_stack() != 38592) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_context_stack() != 8093) {
+    if (uniffi_tako_core_checksum_method_takocore_cursor_is_at_prompt() != 10497) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cursor_col() != 48435) {
+    if (uniffi_tako_core_checksum_method_takocore_first_command_after() != 35464) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cursor_is_at_prompt() != 56085) {
+    if (uniffi_tako_core_checksum_method_takocore_first_retained_line() != 62049) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cursor_row() != 26166) {
+    if (uniffi_tako_core_checksum_method_takocore_is_elevated() != 20093) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cursor_style() != 65313) {
+    if (uniffi_tako_core_checksum_method_takocore_is_synchronized_output_active() != 54582) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_cursor_visible() != 53103) {
+    if (uniffi_tako_core_checksum_method_takocore_last_command() != 55429) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_encode_key() != 29951) {
+    if (uniffi_tako_core_checksum_method_takocore_modes() != 29996) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_encode_mouse() != 33457) {
+    if (uniffi_tako_core_checksum_method_takocore_mouse_shift_capture() != 45860) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_encode_paste() != 38111) {
+    if (uniffi_tako_core_checksum_method_takocore_newest_command_id() != 55455) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_extend_selection() != 51178) {
+    if (uniffi_tako_core_checksum_method_takocore_retained_semantic_prompt() != 47483) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_feed() != 32216) {
+    if (uniffi_tako_core_checksum_method_takocore_row_semantic_prompt() != 27705) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_feed_with_outcome() != 18184) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_to_next_prompt() != 13837) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_first_command_after() != 27620) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_to_previous_prompt() != 31881) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_first_retained_line() != 63445) {
+    if (uniffi_tako_core_checksum_method_takocore_select_command_output() != 10322) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_get_cell() != 48280) {
+    if (uniffi_tako_core_checksum_method_takocore_set_command_time() != 47199) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_get_line() != 14476) {
+    if (uniffi_tako_core_checksum_method_takocore_state_epoch() != 34940) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_get_plain_text() != 10751) {
+    if (uniffi_tako_core_checksum_method_takocore_encode_key() != 39619) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_graphics_image() != 34118) {
+    if (uniffi_tako_core_checksum_method_takocore_encode_mouse() != 64662) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_graphics_image_metadata() != 38373) {
+    if (uniffi_tako_core_checksum_method_takocore_encode_paste() != 51255) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_graphics_placements() != 33315) {
+    if (uniffi_tako_core_checksum_method_takocore_feed() != 64482) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_has_selection() != 50914) {
+    if (uniffi_tako_core_checksum_method_takocore_feed_with_outcome() != 22717) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_is_clipboard_read_allowed() != 19983) {
+    if (uniffi_tako_core_checksum_method_takocore_is_clipboard_read_allowed() != 12485) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_is_elevated() != 8387) {
+    if (uniffi_tako_core_checksum_method_takocore_kitty_keyboard_flags() != 44706) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_is_synchronized_output_active() != 2949) {
+    if (uniffi_tako_core_checksum_method_takocore_paste_is_unsafe() != 53042) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_kitty_keyboard_flags() != 35046) {
+    if (uniffi_tako_core_checksum_method_takocore_set_clipboard_read_allowed() != 21794) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_last_command() != 42246) {
+    if (uniffi_tako_core_checksum_method_takocore_take_events() != 47530) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_mark_all_damaged() != 59514) {
+    if (uniffi_tako_core_checksum_method_takocore_take_output() != 52915) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_max_image_memory_bytes() != 12533) {
+    if (uniffi_tako_core_checksum_method_takocore_mark_all_damaged() != 25411) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_modes() != 25418) {
+    if (uniffi_tako_core_checksum_method_takocore_render_frame() != 19542) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_mouse_shift_capture() != 41674) {
+    if (uniffi_tako_core_checksum_method_takocore_render_frame_delta() != 44200) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_newest_command_id() != 16855) {
+    if (uniffi_tako_core_checksum_method_takocore_render_frame_overscan() != 24484) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_paste_is_unsafe() != 40277) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_position() != 55535) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_render_frame() != 3473) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_to() != 42371) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_render_frame_delta() != 24033) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_bottom() != 2106) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_render_frame_overscan() != 25880) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_down() != 30280) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_reset() != 3228) {
+    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_up() != 3677) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_resize() != 49837) {
+    if (uniffi_tako_core_checksum_method_takocore_scrollback_len() != 12738) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_restore() != 25502) {
+    if (uniffi_tako_core_checksum_method_takocore_set_grapheme_width_method() != 59294) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_retained_semantic_prompt() != 47279) {
+    if (uniffi_tako_core_checksum_method_takocore_set_scroll_position() != 51977) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_row_semantic_prompt() != 63888) {
+    if (uniffi_tako_core_checksum_method_takocore_snapshot() != 31026) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_rows() != 16156) {
+    if (uniffi_tako_core_checksum_method_takocore_take_damage() != 38645) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_position() != 6736) {
+    if (uniffi_tako_core_checksum_method_takocore_viewport_graphemes() != 2789) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_to() != 42228) {
+    if (uniffi_tako_core_checksum_method_takocore_viewport_offset() != 65430) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_to_next_prompt() != 36194) {
+    if (uniffi_tako_core_checksum_method_takocore_viewport_packed() != 84) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_to_previous_prompt() != 58449) {
+    if (uniffi_tako_core_checksum_method_takocore_viewport_row() != 40597) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_bottom() != 32061) {
+    if (uniffi_tako_core_checksum_method_takocore_search_chunk() != 18654) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_down() != 29332) {
+    if (uniffi_tako_core_checksum_method_takocore_search_first_line() != 5274) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scroll_viewport_up() != 53494) {
+    if (uniffi_tako_core_checksum_method_takocore_search_hit_is_current() != 41520) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_scrollback_len() != 13828) {
+    if (uniffi_tako_core_checksum_method_takocore_select_search_hit() != 63093) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_search_chunk() != 116) {
+    if (uniffi_tako_core_checksum_method_takocore_clear_selection() != 42795) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_search_first_line() != 33532) {
+    if (uniffi_tako_core_checksum_method_takocore_extend_selection() != 58604) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_search_hit_is_current() != 61340) {
+    if (uniffi_tako_core_checksum_method_takocore_has_selection() != 51627) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_select_command_output() != 38129) {
+    if (uniffi_tako_core_checksum_method_takocore_select_line() != 25312) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_select_line() != 40152) {
+    if (uniffi_tako_core_checksum_method_takocore_select_word() != 64182) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_select_search_hit() != 65357) {
+    if (uniffi_tako_core_checksum_method_takocore_selected_text() != 59913) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_select_word() != 45409) {
+    if (uniffi_tako_core_checksum_method_takocore_selection_range() != 34476) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_selected_text() != 1851) {
+    if (uniffi_tako_core_checksum_method_takocore_start_selection() != 18898) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_selection_range() != 44414) {
+    if (uniffi_tako_core_checksum_method_takocore_buffer_text() != 24420) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_base_colors() != 24192) {
+    if (uniffi_tako_core_checksum_method_takocore_cols() != 30461) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_clipboard_read_allowed() != 26441) {
+    if (uniffi_tako_core_checksum_method_takocore_cursor_col() != 37637) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_color_scheme() != 18592) {
+    if (uniffi_tako_core_checksum_method_takocore_cursor_row() != 55740) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_command_time() != 11609) {
+    if (uniffi_tako_core_checksum_method_takocore_cursor_style() != 17761) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_default_cursor_style() != 59804) {
+    if (uniffi_tako_core_checksum_method_takocore_cursor_visible() != 4923) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_grapheme_width_method() != 40704) {
+    if (uniffi_tako_core_checksum_method_takocore_get_cell() != 26705) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_max_image_memory_bytes() != 53881) {
+    if (uniffi_tako_core_checksum_method_takocore_get_line() != 55103) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_scroll_position() != 51241) {
+    if (uniffi_tako_core_checksum_method_takocore_get_plain_text() != 15160) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_set_scrollback_limit() != 49525) {
+    if (uniffi_tako_core_checksum_method_takocore_graphics_image() != 61983) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_snapshot() != 2708) {
+    if (uniffi_tako_core_checksum_method_takocore_graphics_image_metadata() != 13465) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_start_selection() != 42826) {
+    if (uniffi_tako_core_checksum_method_takocore_graphics_placements() != 30035) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_state_epoch() != 5417) {
+    if (uniffi_tako_core_checksum_method_takocore_max_image_memory_bytes() != 63543) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_take_damage() != 34279) {
+    if (uniffi_tako_core_checksum_method_takocore_reset() != 32373) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_take_events() != 37233) {
+    if (uniffi_tako_core_checksum_method_takocore_resize() != 778) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_take_output() != 61657) {
+    if (uniffi_tako_core_checksum_method_takocore_rows() != 55463) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_text_tail() != 51790) {
+    if (uniffi_tako_core_checksum_method_takocore_set_base_colors() != 32373) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_title() != 50854) {
+    if (uniffi_tako_core_checksum_method_takocore_set_color_scheme() != 41115) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_verify_checkpoint() != 55788) {
+    if (uniffi_tako_core_checksum_method_takocore_set_default_cursor_style() != 41755) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_viewport_graphemes() != 20404) {
+    if (uniffi_tako_core_checksum_method_takocore_set_max_image_memory_bytes() != 342) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_viewport_offset() != 29061) {
+    if (uniffi_tako_core_checksum_method_takocore_set_scrollback_limit() != 9633) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_viewport_packed() != 8332) {
+    if (uniffi_tako_core_checksum_method_takocore_text_tail() != 43853) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_viewport_row() != 29587) {
+    if (uniffi_tako_core_checksum_method_takocore_title() != 57460) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_sshsession_answer_keyboard_interactive() != 57481) {
@@ -8306,7 +7352,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_sshsession_send() != 34617) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_constructor_takocore_new() != 29955) {
+    if (uniffi_tako_core_checksum_constructor_takocore_new() != 47620) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_constructor_sshsession_connect() != 20172) {
