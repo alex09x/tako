@@ -40,6 +40,24 @@ struct DiagnosticsTests {
         #expect(redacted.contains("normal_config = value"))
     }
 
+    @Test("DiagnosticsRedactor masks multi-line PEM private keys")
+    func testRedactMultiLinePemKey() {
+        let text = """
+        config_key = value
+        -----BEGIN RSA PRIVATE KEY-----
+        MIIEowIBAAKCAQEA0m...
+        secret_key_bytes_12345
+        -----END RSA PRIVATE KEY-----
+        after_key = normal
+        """
+        let redacted = DiagnosticsRedactor.redactSecrets(in: text)
+        #expect(!redacted.contains("secret_key_bytes_12345"))
+        #expect(!redacted.contains("RSA PRIVATE KEY"))
+        #expect(redacted.contains("[REDACTED_PRIVATE_KEY]"))
+        #expect(redacted.contains("config_key = value"))
+        #expect(redacted.contains("after_key = normal"))
+    }
+
     @Test("DiagnosticsExporter collects report without terminal contents by default")
     @MainActor
     func testCollectReportExcludesTerminalByDefault() {

@@ -39,11 +39,24 @@ pub fn reduce_path(path: &str) -> String {
 
 pub fn redact_secrets(text: &str) -> String {
     let mut out = Vec::new();
+    let mut in_private_key = false;
+
     for line in text.lines() {
         let reduced = reduce_path(line);
         let mut sanitized = reduced;
 
-        // Mask private key headers
+        // Mask complete private key blocks (BEGIN ... PRIVATE KEY ... END ... PRIVATE KEY)
+        if sanitized.contains("BEGIN ") && sanitized.contains("PRIVATE KEY-----") {
+            in_private_key = true;
+            out.push("[REDACTED_PRIVATE_KEY]".to_string());
+            continue;
+        }
+        if in_private_key {
+            if sanitized.contains("END ") && sanitized.contains("PRIVATE KEY-----") {
+                in_private_key = false;
+            }
+            continue;
+        }
         if sanitized.contains("PRIVATE KEY-----") {
             out.push("[REDACTED_PRIVATE_KEY]".to_string());
             continue;
@@ -153,7 +166,10 @@ pub fn collect_crashes() -> Vec<Value> {
                 .to_string();
             let preview = fs::read_to_string(&p)
                 .ok()
-                .map(|s| s.lines().take(20).collect::<Vec<_>>().join("\n"))
+                .map(|s| {
+                    let top = s.lines().take(20).collect::<Vec<_>>().join("\n");
+                    redact_secrets(&top)
+                })
                 .unwrap_or_default();
             reports.push(json!({
                 "filename": name,
@@ -260,8 +276,31 @@ pub fn handle_diagnose(opts: &Options, app_result: Option<&Value>) -> Result<Str
         .map(expand_path)
         .unwrap_or(default_out);
 
-    fs::write(&out_path, &json_text)
-        .map_err(|e| format!("failed to write diagnostics to {out_path}: {e}"))?;
+    let target_path = std::path::Path::new(&out_path);
+    let existed = target_path.exists();
+
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file_opts = OpenOptions::new();
+        file_opts.write(true).create(true).truncate(true);
+        if !existed {
+            file_opts.mode(0o600);
+        }
+        let mut f = file_opts
+            .open(&out_path)
+            .map_err(|e| format!("failed to write diagnostics to {out_path}: {e}"))?;
+        f.write_all(json_text.as_bytes())
+            .map_err(|e| format!("failed to write diagnostics to {out_path}: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&out_path, &json_text)
+            .map_err(|e| format!("failed to write diagnostics to {out_path}: {e}"))?;
+    }
 
     let terminal_included = opts
         .args
@@ -319,5 +358,42 @@ mod tests {
         let out = handle_diagnose(&opts, None).unwrap();
         let val: Value = serde_json::from_str(&out).unwrap();
         assert!(val["cli_version"].is_string());
+    }
+
+    #[test]
+    fn test_redact_multiline_pem_private_key() {
+        let input = "before = 1\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0m...\n...base64_data...\n-----END RSA PRIVATE KEY-----\nafter = 2";
+        let redacted = redact_secrets(input);
+        assert!(!redacted.contains("MIIEowIBAAKCAQEA0m"));
+        assert!(!redacted.contains("base64_data"));
+        assert!(!redacted.contains("RSA PRIVATE KEY"));
+        assert!(redacted.contains("[REDACTED_PRIVATE_KEY]"));
+        assert!(redacted.contains("before = 1"));
+        assert!(redacted.contains("after = 2"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_diagnose_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp_dir = std::env::temp_dir();
+        let out_file = tmp_dir.join(format!(
+            "test-diag-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let opts = crate::cli::parse(&[
+            "diagnose".into(),
+            "--out".into(),
+            out_file.to_str().unwrap().into(),
+        ])
+        .unwrap();
+        handle_diagnose(&opts, None).unwrap();
+        let meta = std::fs::metadata(&out_file).unwrap();
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_file(out_file);
     }
 }

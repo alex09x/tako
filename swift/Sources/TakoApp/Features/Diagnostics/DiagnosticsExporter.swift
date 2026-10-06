@@ -73,6 +73,7 @@ enum DiagnosticsExporter {
             guard response == .OK, let url = panel.url else { return }
             do {
                 try data.write(to: url, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 completion?(.success(url))
             } catch {
@@ -201,7 +202,7 @@ enum DiagnosticsExporter {
             let filePath = (diagDir as NSString).appendingPathComponent(filename)
             guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { return nil }
             let lines = content.components(separatedBy: "\n").prefix(30)
-            let preview = lines.joined(separator: "\n")
+            let preview = DiagnosticsRedactor.redactSecrets(in: lines.joined(separator: "\n"))
             return DiagnosticsCrashSummary(
                 filename: filename,
                 date: defaultFilenameTimestamp(),

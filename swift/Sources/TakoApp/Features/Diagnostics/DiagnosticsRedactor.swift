@@ -35,8 +35,8 @@ public enum DiagnosticsRedactor {
         // 1. Redact home directories in text
         result = reducePathInText(result)
 
-        // 2. Private keys (PEM / OpenSSH)
-        if let pemRegex = try? NSRegularExpression(pattern: "-----BEGIN [A-Z ]+ PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]+ PRIVATE KEY-----", options: []) {
+        // 2. Private keys (PEM / OpenSSH / RSA / EC / DSA / PKCS8)
+        if let pemRegex = try? NSRegularExpression(pattern: "-----BEGIN [A-Z0-9_ -]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z0-9_ -]*PRIVATE KEY-----", options: []) {
             let range = NSRange(result.startIndex..<result.endIndex, in: result)
             result = pemRegex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "[REDACTED_PRIVATE_KEY]")
         }
