@@ -2652,7 +2652,7 @@ extension Tako {
                 regexTriggers = []
                 return
             }
-            if let cfg = activeConfig {
+            if let cfg = config {
                 PassiveTriggerStore.shared.setConfigTriggers(cfg.triggers)
             }
             regexTriggers = PassiveTriggerStore.shared.allTriggers

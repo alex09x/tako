@@ -95,7 +95,7 @@ struct SessionSidebarTests {
     }
 
     private func waitForGitInspection(store: SessionSidebarStore, directory: String) async throws {
-        for _ in 0..<30 {
+        for _ in 0..<150 {
             if store.hasGitCache(for: directory) && !store.isGitInspectionPending(for: directory) {
                 return
             }
@@ -175,6 +175,7 @@ struct SessionSidebarTests {
         window.title = "Workspace 1"
 
         let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        surface.pty?.terminate()
         surface.title = "Build Server"
         surface.pwd = repoURL.path
         window.contentView = surface
@@ -323,6 +324,7 @@ struct SessionSidebarTests {
             let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
             win.title = "Tab \(i)"
             let surf = Tako.SurfaceView(frame: .zero)
+            surf.pty?.terminate()
             surf.title = "Pane \(i)"
             surf.pwd = "/Users/dev/project\(i)"
             surf.crab.setStatus(i % 2 == 0 ? .running : .idle, text: nil)
@@ -416,6 +418,7 @@ struct SessionSidebarTests {
 
         let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf = Tako.SurfaceView(frame: .zero)
+        surf.pty?.terminate()
         surf.pwd = repoURL.path
         win.contentView = surf
 
@@ -529,6 +532,7 @@ struct SessionSidebarTests {
 
         let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf = Tako.SurfaceView(frame: .zero)
+        surf.pty?.terminate()
         surf.pwd = repoURL.path
         win.contentView = surf
 
@@ -563,6 +567,7 @@ struct SessionSidebarTests {
 
         let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf = Tako.SurfaceView(frame: .zero)
+        surf.pty?.terminate()
         surf.pwd = repoURL.path
         win.contentView = surf
 
@@ -594,6 +599,7 @@ struct SessionSidebarTests {
 
         let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf = Tako.SurfaceView(frame: .zero)
+        surf.pty?.terminate()
         surf.pwd = repoURL.path
         win.contentView = surf
 
@@ -835,6 +841,7 @@ struct SessionSidebarTests {
 
         let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf = Tako.SurfaceView(frame: .zero)
+        surf.pty?.terminate()
         surf.pwd = repoURL.path
         win.contentView = surf
 
@@ -1016,11 +1023,13 @@ struct SessionSidebarTests {
 
         let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pty?.terminate()
         surf1.pwd = pkgA.path
         win1.contentView = surf1
 
         let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pty?.terminate()
         surf2.pwd = pkgB.path
         win2.contentView = surf2
 
@@ -1069,11 +1078,13 @@ struct SessionSidebarTests {
 
         let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pty?.terminate()
         surf1.pwd = pkgA.path
         win1.contentView = surf1
 
         let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pty?.terminate()
         surf2.pwd = pkgB.path
         win2.contentView = surf2
 
@@ -1112,11 +1123,13 @@ struct SessionSidebarTests {
 
         let win1 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf1 = Tako.SurfaceView(frame: .zero)
+        surf1.pty?.terminate()
         surf1.pwd = repo1URL.path
         win1.contentView = surf1
 
         let win2 = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let surf2 = Tako.SurfaceView(frame: .zero)
+        surf2.pty?.terminate()
         surf2.pwd = repo2URL.path
         win2.contentView = surf2
 

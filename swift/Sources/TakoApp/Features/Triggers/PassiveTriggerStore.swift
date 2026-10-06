@@ -36,6 +36,7 @@ public final class PassiveTriggerStore {
 
     /// Sets triggers loaded from user configuration files.
     public func setConfigTriggers(_ triggers: [TerminalRegexTrigger]) {
+        guard self.configTriggers != triggers else { return }
         self.configTriggers = triggers
         NotificationCenter.default.post(name: .passiveTriggersDidChange, object: nil)
     }
