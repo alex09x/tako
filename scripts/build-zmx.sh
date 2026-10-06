@@ -20,7 +20,16 @@ ZIG_TARBALL=zig-aarch64-macos-$ZIG_VERSION.tar.xz
 ZIG_SHA256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
 OPTIMIZE=ReleaseSafe
 
-KEY="$ZMX_COMMIT-zig$ZIG_VERSION-$OPTIMIZE-aarch64-macos"
+PATCH_KEY=""
+if [ -d "patches/zmx" ]; then
+    patches=$(ls patches/zmx/*.patch 2>/dev/null || true)
+    if [ -n "$patches" ]; then
+        PATCH_HASH=$(cat patches/zmx/*.patch | shasum -a 256 | cut -c1-16)
+        PATCH_KEY="-patch$PATCH_HASH"
+    fi
+fi
+
+KEY="$ZMX_COMMIT$PATCH_KEY-zig$ZIG_VERSION-$OPTIMIZE-aarch64-macos"
 OUT="target/zmx/$KEY"
 # A cache entry is the executable, the record of where it came from and the
 # notices that must ship with it -- all of them or it is not used.
@@ -70,8 +79,18 @@ if [ "$(git -C "$SRC" rev-parse HEAD)" != "$ZMX_COMMIT" ]; then
     exit 1
 fi
 
-log "building zmx $ZMX_VERSION with Zig $ZIG_VERSION ($OPTIMIZE)"
+git -C "$SRC" checkout -f FETCH_HEAD -q
+git -C "$SRC" clean -fd -q
 root="$(pwd)"
+if [ -d "patches/zmx" ]; then
+    for patch in patches/zmx/*.patch; do
+        [ -f "$patch" ] || continue
+        log "applying patch $(basename "$patch")"
+        git -C "$SRC" apply "$root/$patch"
+    done
+fi
+
+log "building zmx $ZMX_VERSION with Zig $ZIG_VERSION ($OPTIMIZE)"
 prefix="$root/target/zmx-build/$KEY"
 # Zig's global cache under target/ too, not in the user's home.
 export ZIG_GLOBAL_CACHE_DIR="$root/target/zig-cache"

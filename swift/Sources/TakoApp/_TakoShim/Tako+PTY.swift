@@ -261,12 +261,40 @@ final class PTY {
         markEnded()
         guard !masterClosed else { return }
         masterClosed = true
-        kill(child, SIGHUP)
+        let target = child
+        var foregroundPgrp: pid_t = 0
+        if master >= 0 {
+            _ = ioctl(master, TIOCGPGRP, &foregroundPgrp)
+        }
+        if foregroundPgrp > 1 && foregroundPgrp != target {
+            kill(-foregroundPgrp, SIGHUP)
+            kill(foregroundPgrp, SIGHUP)
+        }
+        if target > 1 {
+            kill(-target, SIGHUP)
+            kill(target, SIGHUP)
+        } else if target > 0 {
+            kill(target, SIGHUP)
+        }
         // Closing a pty master waits while its reader is inside read(),
         // which lasts until every process on the terminal has let go of it.
-        // That is not the main thread's to wait for.
+        // Escalating to SIGKILL after a grace period prevents background
+        // processes like top, htop, or loopers from remaining orphaned.
         let fd = master
-        DispatchQueue.global(qos: .utility).async { close(fd) }
+        DispatchQueue.global(qos: .utility).async {
+            usleep(150_000)
+            if foregroundPgrp > 1 && foregroundPgrp != target {
+                kill(-foregroundPgrp, SIGKILL)
+                kill(foregroundPgrp, SIGKILL)
+            }
+            if target > 1 {
+                kill(-target, SIGKILL)
+                kill(target, SIGKILL)
+            } else if target > 0 {
+                kill(target, SIGKILL)
+            }
+            close(fd)
+        }
     }
 
     deinit {

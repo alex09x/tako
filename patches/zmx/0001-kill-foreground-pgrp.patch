@@ -1,0 +1,29 @@
+--- a/src/loop.zig
++++ b/src/loop.zig
+@@ -1065,13 +1065,26 @@ pub const Daemon = struct {
+         // gracefully shutdown shell processes, shells tend to ignore SIGTERM so we send SIGHUP
+         // instead
+         //   https://www.gnu.org/software/bash/manual/html_node/Signals.html
++        // Foreground jobs (e.g. top, vim, htop) run in their own process group,
++        // distinct from the shell's PGID. Signal both pgrp and self.pid.
++        var pgrp: lib_posix.pid_t = 0;
++        if (self.pty_fd >= 0 and cross.c.ioctl(self.pty_fd, cross.c.TIOCGPGRP, &pgrp) == 0 and pgrp > 1) {
++            lib_posix.kill(-pgrp, lib_posix.SIG.HUP) catch {};
++            lib_posix.kill(pgrp, lib_posix.SIG.HUP) catch {};
++        }
+         // negative pid means kill process and children
+         std.log.info("sending SIGHUP session={s} pid={d}", .{ self.session_name, self.pid });
+         lib_posix.kill(-self.pid, lib_posix.SIG.HUP) catch |err| {
+             std.log.warn("failed to send SIGHUP to pty child err={s}", .{@errorName(err)});
+         };
++        lib_posix.kill(self.pid, lib_posix.SIG.HUP) catch {};
+         std.Io.sleep(io, std.Io.Duration.fromMilliseconds(500), .real) catch unreachable;
++        if (pgrp > 1) {
++            lib_posix.kill(-pgrp, lib_posix.SIG.KILL) catch {};
++            lib_posix.kill(pgrp, lib_posix.SIG.KILL) catch {};
++        }
+         lib_posix.kill(-self.pid, lib_posix.SIG.KILL) catch |err| {
+             std.log.warn("failed to send SIGKILL to pty child err={s}", .{@errorName(err)});
+         };
++        lib_posix.kill(self.pid, lib_posix.SIG.KILL) catch {};
+     }

@@ -84,6 +84,11 @@ extension AppDelegate {
                     openIDs: Set(Self.restorableSurfaces().map(\.id)))
             }
         }
+        DispatchQueue.global(qos: .utility).async {
+            let activeIDs = Set(Self.restorableSurfaces().map(\.id))
+            let activeNames = Set(activeIDs.map { SessionNamespace.sessionName(for: $0) })
+            SessionSweeper.sweepOrphans(home: SessionPlaces.home, activeNames: activeNames, registry: SessionPlaces.registry)
+        }
         // System settings overrides
         UserDefaults.tako.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
