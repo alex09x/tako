@@ -82,6 +82,7 @@ extension AppUpdater {
                     .appendingPathComponent(".Tako-update-\(UUID().uuidString).app")
                 do {
                     try Self.run("/usr/bin/ditto", [stagedAppPath, incoming.path])
+                    try? Self.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", incoming.path])
                     _ = try FileManager.default.replaceItemAt(destinationBundleUrl, withItemAt: incoming)
                 } catch {
                     try? FileManager.default.removeItem(at: incoming)
@@ -145,15 +146,36 @@ extension AppUpdater {
     }
 
     /// Terminates the current app process and relaunches the updated application bundle.
+    @MainActor
     static func relaunchApp() {
         guard NSClassFromString("XCTestCase") == nil else { return }
+        isRelaunching = true
         let bundleURL = Bundle.main.bundleURL
         let pid = ProcessInfo.processInfo.processIdentifier
-        let script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"\(bundleURL.path)\""
+        let script = """
+        count=0
+        while /bin/kill -0 \(pid) 2>/dev/null; do
+            /bin/sleep 0.1
+            count=$((count + 1))
+            if [ $count -ge 20 ]; then
+                /bin/kill -TERM \(pid) 2>/dev/null || true
+            fi
+            if [ $count -ge 35 ]; then
+                /bin/kill -9 \(pid) 2>/dev/null || true
+                break
+            fi
+        done
+        /usr/bin/open -n "\(bundleURL.path)"
+        """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", script]
         try? process.run()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            exit(0)
+        }
+
         NSApp.terminate(nil)
     }
 }

@@ -63,6 +63,9 @@ enum WhatsNewNotice {
             return
         }
         let activeTheme = theme ?? (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        if let existing = TerminalDialogView.pending(in: window) {
+            existing.withdraw()
+        }
         show(in: window, version: currentVersion, theme: activeTheme)
     }
 

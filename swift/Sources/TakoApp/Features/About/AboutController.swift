@@ -19,6 +19,10 @@ class AboutController: NSWindowController, NSWindowDelegate {
     // MARK: - Functions
 
     func show() {
+        if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            AboutNotice.show(in: window)
+            return
+        }
         if window == nil { _ = self.window }
         window?.center()
         window?.makeKeyAndOrderFront(nil)

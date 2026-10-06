@@ -339,7 +339,7 @@ extension Tako {
                 return
             }
             if infoRect.contains(point) {
-                NSApp.sendAction(#selector(AppDelegate.showAbout(_:)), to: nil, from: self)
+                AboutNotice.show(in: self.window, theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme)
                 return
             }
             if plusRect.contains(point) {

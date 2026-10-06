@@ -40,7 +40,8 @@ extension AppDelegate {
     }
 
     @IBAction func showAbout(_ sender: Any?) {
-        AboutController.shared.show()
+        let window = (sender as? NSView)?.window ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+        AboutNotice.show(in: window, theme: tako.config.theme)
     }
 
     @IBAction func showWhatsNew(_ sender: Any?) {

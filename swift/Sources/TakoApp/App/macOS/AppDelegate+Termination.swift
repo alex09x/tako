@@ -17,6 +17,7 @@ import TakoKit
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if AppUpdater.isRelaunching { return .terminateNow }
         let windows = NSApplication.shared.windows
         if windows.isEmpty { return .terminateNow }
 

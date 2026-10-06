@@ -32,6 +32,10 @@ final class AppUpdater: @unchecked Sendable {
     private(set) var notifiedVersionsInSession: Set<String> = []
     private var periodicTimer: Timer?
 
+    /// Flag set when the user confirms an in-place update relaunch.
+    /// Bypasses interactive quit confirmation so AppKit terminates immediately.
+    @MainActor static var isRelaunching: Bool = false
+
     private init() {}
 
     // MARK: - Public API
