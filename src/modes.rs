@@ -17,18 +17,18 @@ pub enum MouseTracking {
 }
 
 pub struct TerminalModes {
-    pub autowrap: bool,             // DECAWM, mode 7, default true
-    pub origin_mode: bool,          // DECOM, mode 6, default false
-    pub cursor_key_app_mode: bool,  // DECCKM, mode 1, default false
+    pub autowrap: bool,                // DECAWM, mode 7, default true
+    pub origin_mode: bool,             // DECOM, mode 6, default false
+    pub cursor_key_app_mode: bool,     // DECCKM, mode 1, default false
     pub mouse_tracking: MouseTracking, // default Off
-    pub mouse_utf8: bool,           // mode 1005, default false
-    pub mouse_sgr: bool,            // mode 1006, default false
-    pub focus_events: bool,         // mode 1004, default false
-    pub bracketed_paste: bool,      // mode 2004, default false
-    pub insert: bool,               // IRM, ANSI mode 4 (CSI 4 h/l), default false
-    pub linefeed_mode: bool,        // LNM, ANSI mode 20: LF implies CR, default false
-    pub reverse_wrap: bool,         // DEC mode 45, default false
-    pub reverse_wrap_extended: bool, // xterm mode 1045, default false
+    pub mouse_utf8: bool,              // mode 1005, default false
+    pub mouse_sgr: bool,               // mode 1006, default false
+    pub focus_events: bool,            // mode 1004, default false
+    pub bracketed_paste: bool,         // mode 2004, default false
+    pub insert: bool,                  // IRM, ANSI mode 4 (CSI 4 h/l), default false
+    pub linefeed_mode: bool,           // LNM, ANSI mode 20: LF implies CR, default false
+    pub reverse_wrap: bool,            // DEC mode 45, default false
+    pub reverse_wrap_extended: bool,   // xterm mode 1045, default false
     pub left_right_margin_mode: bool,
     /// Mode 1007: wheel events scroll the alternate screen as arrow keys.
     pub alternate_scroll: bool, // DECLRMM, mode 69: CSI s sets margins, default false

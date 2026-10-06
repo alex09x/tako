@@ -26,9 +26,7 @@ pub struct KittyKeyboardState {
 
 impl KittyKeyboardState {
     pub fn new() -> Self {
-        Self {
-            stack: Vec::new(),
-        }
+        Self { stack: Vec::new() }
     }
 
     /// Heap this stack holds, by capacity.

@@ -51,11 +51,17 @@ fn ris_forgets_the_request() {
 
 #[test]
 fn a_checkpoint_carries_the_request() {
-    for (sequence, expected) in [(&b""[..], None), (b"\x1b[>0s", Some(false)), (b"\x1b[>1s", Some(true))] {
+    for (sequence, expected) in [
+        (&b""[..], None),
+        (b"\x1b[>0s", Some(false)),
+        (b"\x1b[>1s", Some(true)),
+    ] {
         let mut term = Terminal::new(20, 4);
         term.feed(sequence);
         let mut restored = Terminal::new(20, 4);
-        restored.import_checkpoint(&term.export_checkpoint().unwrap()).unwrap();
+        restored
+            .import_checkpoint(&term.export_checkpoint().unwrap())
+            .unwrap();
         assert_eq!(restored.modes().shift_capture, expected);
     }
 }

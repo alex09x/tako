@@ -71,10 +71,26 @@ fn another_resource_leaves_it_alone() {
 #[test]
 fn the_other_resources_report_what_the_encoder_always_does() {
     let mut term = Terminal::new(20, 4);
-    assert_eq!(reply(&mut term, b"\x1b[?0m"), "\x1b[>0;0m", "modifyKeyboard");
-    assert_eq!(reply(&mut term, b"\x1b[?1m"), "\x1b[>1;2m", "modifyCursorKeys");
-    assert_eq!(reply(&mut term, b"\x1b[?2m"), "\x1b[>2;2m", "modifyFunctionKeys");
-    assert_eq!(reply(&mut term, b"\x1b[?3m"), "\x1b[>3;0m", "modifyKeypadKeys");
+    assert_eq!(
+        reply(&mut term, b"\x1b[?0m"),
+        "\x1b[>0;0m",
+        "modifyKeyboard"
+    );
+    assert_eq!(
+        reply(&mut term, b"\x1b[?1m"),
+        "\x1b[>1;2m",
+        "modifyCursorKeys"
+    );
+    assert_eq!(
+        reply(&mut term, b"\x1b[?2m"),
+        "\x1b[>2;2m",
+        "modifyFunctionKeys"
+    );
+    assert_eq!(
+        reply(&mut term, b"\x1b[?3m"),
+        "\x1b[>3;0m",
+        "modifyKeypadKeys"
+    );
     assert_eq!(reply(&mut term, b"\x1b[?9m"), "", "no such resource");
 }
 
@@ -89,11 +105,13 @@ fn a_reset_turns_it_off() {
 fn a_checkpoint_carries_it() {
     let mut term = Terminal::new(20, 4);
     term.feed(b"\x1b[>4;2m");
-    let restored = tako_core::terminal::checkpoint::import(&term.export_checkpoint().unwrap()).unwrap();
+    let restored =
+        tako_core::terminal::checkpoint::import(&term.export_checkpoint().unwrap()).unwrap();
     assert_eq!(restored.modes().modify_other_keys, 2);
 
     let plain = Terminal::new(20, 4);
-    let restored = tako_core::terminal::checkpoint::import(&plain.export_checkpoint().unwrap()).unwrap();
+    let restored =
+        tako_core::terminal::checkpoint::import(&plain.export_checkpoint().unwrap()).unwrap();
     assert_eq!(restored.modes().modify_other_keys, 0);
 }
 
@@ -123,7 +141,11 @@ fn the_key_encoder_follows_what_the_program_asked_for() {
     core.feed(b"\x1b[>4;2m".to_vec());
     assert_eq!(core.encode_key(ctrl('i')), b"\x1b[27;5;105~".to_vec());
     core.feed(b"\x1b[>4;1m".to_vec());
-    assert_eq!(core.encode_key(ctrl('i')), b"\x1b[105;5u".to_vec(), "level 1 encodes like off");
+    assert_eq!(
+        core.encode_key(ctrl('i')),
+        b"\x1b[105;5u".to_vec(),
+        "level 1 encodes like off"
+    );
     // ctrl+c keeps its interrupt byte at every level.
     core.feed(b"\x1b[>4;2m".to_vec());
     assert_eq!(core.encode_key(ctrl('c')), vec![0x03]);

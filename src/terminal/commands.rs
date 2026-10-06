@@ -77,7 +77,12 @@ pub struct CommandLog {
 
 impl Default for CommandLog {
     fn default() -> Self {
-        Self { records: VecDeque::new(), next_id: Some(1), running: None, text_bytes: 0 }
+        Self {
+            records: VecDeque::new(),
+            next_id: Some(1),
+            running: None,
+            text_bytes: 0,
+        }
     }
 }
 
@@ -159,7 +164,8 @@ impl CommandLog {
             }
             _ => false,
         }
-    }    /// Update prompt line numbers for records when visible rows reflow.
+    }
+    /// Update prompt line numbers for records when visible rows reflow.
     pub fn remap_prompt_lines(&mut self, remaps: &[(u64, u64)]) {
         if remaps.is_empty() {
             return;
@@ -186,7 +192,10 @@ impl CommandLog {
             if let Some(prompt) = rec.prompt_line {
                 if discard_range.contains(&prompt) {
                     rec.prompt_line = None;
-                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                } else if shift_range
+                    .as_ref()
+                    .is_some_and(|shift| shift.contains(&prompt))
+                {
                     rec.prompt_line = Some(prompt + delta);
                 }
             }
@@ -205,7 +214,10 @@ impl CommandLog {
             if let Some(prompt) = rec.prompt_line {
                 if discard_range.contains(&prompt) {
                     rec.prompt_line = None;
-                } else if shift_range.as_ref().is_some_and(|shift| shift.contains(&prompt)) {
+                } else if shift_range
+                    .as_ref()
+                    .is_some_and(|shift| shift.contains(&prompt))
+                {
                     rec.prompt_line = Some(prompt - delta);
                 }
             }
@@ -275,7 +287,9 @@ impl CommandLog {
                 return Err("command id not below next id");
             }
             if r.cwd.as_ref().is_some_and(|c| c.len() > MAX_CWD_BYTES)
-                || r.input.as_ref().is_some_and(|i| i.chars().count() > MAX_INPUT_CHARS)
+                || r.input
+                    .as_ref()
+                    .is_some_and(|i| i.chars().count() > MAX_INPUT_CHARS)
             {
                 return Err("command text too long");
             }
@@ -283,7 +297,9 @@ impl CommandLog {
             if running_here != (running == Some(r.id)) {
                 return Err("running command inconsistent");
             }
-            text_bytes = text_bytes.checked_add(r.text_bytes()).ok_or("command text overflow")?;
+            text_bytes = text_bytes
+                .checked_add(r.text_bytes())
+                .ok_or("command text overflow")?;
             last = Some(r.id);
         }
         if text_bytes > MAX_COMMAND_TEXT_BYTES {
@@ -297,6 +313,11 @@ impl CommandLog {
         if next_id == Some(0) {
             return Err("next command id is zero");
         }
-        Ok(Self { records: records.into(), next_id, running, text_bytes })
+        Ok(Self {
+            records: records.into(),
+            next_id,
+            running,
+            text_bytes,
+        })
     }
 }

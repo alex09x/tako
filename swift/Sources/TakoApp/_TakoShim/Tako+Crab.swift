@@ -51,110 +51,6 @@ extension Tako {
         }
     }
 
-    /// One explicit status per pane from reported signals (B1).
-    public enum PaneStatus: String, Codable, CaseIterable, Equatable, Sendable {
-        case idle
-        case running
-        case working
-        case waitingForInput = "waiting_for_input"
-        case needsApproval = "needs_approval"
-        case done
-        case error
-        case disconnected
-        case unknown
-
-        public static func parse(_ raw: String) -> PaneStatus? {
-            let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if normalized == "thinking" {
-                return .working
-            }
-            return PaneStatus(rawValue: normalized)
-        }
-
-        /// Priority across panes in a tab:
-        /// disconnected > error > needs_approval > waiting_for_input > working > running > done > idle > unknown
-        public var priority: Int {
-            switch self {
-            case .disconnected: return 8
-            case .error: return 7
-            case .needsApproval: return 6
-            case .waitingForInput: return 5
-            case .working: return 4
-            case .running: return 3
-            case .done: return 2
-            case .idle: return 1
-            case .unknown: return 0
-            }
-        }
-
-        public var crabState: CrabState {
-            switch self {
-            case .disconnected: return .ghost
-            case .error: return .failed(code: nil)
-            case .needsApproval, .waitingForInput: return .attention
-            case .working, .running: return .running
-            case .done: return .succeeded
-            case .idle, .unknown: return .idle
-            }
-        }
-    }
-
-    /// Sanitizes status text: strips C0/C1 control characters, trims whitespace, limits length to 128 characters.
-    public static func sanitizeStatusText(_ raw: String) -> String? {
-        let filtered = raw.filter { char in
-            guard let scalar = char.unicodeScalars.first, char.unicodeScalars.count == 1 else { return true }
-            let val = scalar.value
-            return !(val < 0x20 || val == 0x7f || (val >= 0x80 && val <= 0x9f))
-        }
-        let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return nil }
-        return String(trimmed.prefix(128))
-    }
-
-    /// Parses a duration string (e.g. "10m", "30s", "1h", "600") into seconds.
-    public static func parseStatusDuration(_ raw: String) -> TimeInterval? {
-        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !s.isEmpty else { return nil }
-        let multiplier: Double
-        let numStr: Substring
-        if s.hasSuffix("ms") {
-            multiplier = 0.001
-            numStr = s.dropLast(2)
-        } else if s.hasSuffix("s") {
-            multiplier = 1.0
-            numStr = s.dropLast(1)
-        } else if s.hasSuffix("m") {
-            multiplier = 60.0
-            numStr = s.dropLast(1)
-        } else if s.hasSuffix("h") {
-            multiplier = 3600.0
-            numStr = s.dropLast(1)
-        } else if s.hasSuffix("d") {
-            multiplier = 86400.0
-            numStr = s.dropLast(1)
-        } else {
-            multiplier = 1.0
-            numStr = s[...]
-        }
-        guard let val = Double(numStr), val > 0, val.isFinite else { return nil }
-        return val * multiplier
-    }
-
-    /// The brand palette.
-    enum Brand {
-        static let ember = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1)
-        static let claw = NSColor(srgbRed: 0xFF / 255, green: 0x7A / 255, blue: 0x3D / 255, alpha: 1)
-        static let rust = NSColor(srgbRed: 0xC2 / 255, green: 0x3E / 255, blue: 0x0E / 255, alpha: 1)
-        static let ink = NSColor(srgbRed: 0x1A / 255, green: 0x15 / 255, blue: 0x12 / 255, alpha: 1)
-        static let paper = NSColor(srgbRed: 0xFA / 255, green: 0xF7 / 255, blue: 0xF2 / 255, alpha: 1)
-        /// Terminal body and chrome, warm rather than blue.
-        static let surface = NSColor(srgbRed: 0x14 / 255, green: 0x10 / 255, blue: 0x0E / 255, alpha: 1)
-        static let text = NSColor(srgbRed: 0xED / 255, green: 0xE6 / 255, blue: 0xDF / 255, alpha: 1)
-        static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
-        static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1)
-        static let error = NSColor(srgbRed: 0xD5 / 255, green: 0x4E / 255, blue: 0x53 / 255, alpha: 1)
-    }
-
     /// Tracks one surface's command lifecycle and turns it into a crab state,
     /// pane status, and elapsed time.
     @MainActor
@@ -267,7 +163,9 @@ extension Tako {
             // A command too short to have shown as running should not flash
             // green either.
             guard let ran, ran >= Self.minimumVisibleDuration else {
+                signalStatus = .idle
                 state = .idle
+                unread = false
                 recomputeEffectiveStatus()
                 return
             }
@@ -397,6 +295,9 @@ extension Tako {
                     // keep ghost state
                 } else if case .running = state, signalStatus == .running {
                     // keep running state
+                } else if signalStatus == .running {
+                    // Command has not yet reached minimum visible duration
+                    state = .idle
                 } else {
                     state = paneStatus.crabState
                 }

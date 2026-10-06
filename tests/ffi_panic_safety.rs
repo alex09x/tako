@@ -121,7 +121,9 @@ fn takocore_stays_responsive_under_concurrent_access() {
         }));
     }
     for handle in handles {
-        handle.join().expect("no thread should panic under ordinary concurrent use");
+        handle
+            .join()
+            .expect("no thread should panic under ordinary concurrent use");
     }
 
     // The core is still fully functional afterward.

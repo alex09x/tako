@@ -25,7 +25,11 @@ fn drain_and_wait(pty: &mut Pty) -> i32 {
     let fd = pty.master.as_raw_fd();
     let mut buf = [0u8; 4096];
     while Instant::now() < deadline {
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         let ret = unsafe { libc::poll(&mut pfd, 1, 200) };
         if ret < 0 {
             if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
@@ -43,7 +47,10 @@ fn drain_and_wait(pty: &mut Pty) -> i32 {
             Err(_) => break, // EIO: the slave side is gone
         }
     }
-    assert!(Instant::now() < deadline, "child did not close its pty within 10 s");
+    assert!(
+        Instant::now() < deadline,
+        "child did not close its pty within 10 s"
+    );
     pty.wait()
 }
 
@@ -159,7 +166,11 @@ fn test_spawn_shell_convenience_and_io() {
 #[test]
 fn test_spawn_command_env_vars() {
     let mut pty = Pty::spawn_command(
-        &["/bin/sh", "-c", "printf 'VAR_A=%s;VAR_B=%s\\n' \"$VAR_A\" \"$VAR_B\""],
+        &[
+            "/bin/sh",
+            "-c",
+            "printf 'VAR_A=%s;VAR_B=%s\\n' \"$VAR_A\" \"$VAR_B\"",
+        ],
         &[("VAR_A", "apple_pie"), ("VAR_B", "banana_split")],
         24,
         80,
@@ -209,22 +220,22 @@ fn test_resize_stty_size_interactive() {
 
     pty.master.write_all(b"stty size\n").unwrap();
     pty.master.flush().unwrap();
-    let out1 = read_until(&mut pty, "24 80", Duration::from_secs(5))
-        .unwrap_or_else(|e| panic!("{e}"));
+    let out1 =
+        read_until(&mut pty, "24 80", Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
     assert!(out1.contains("24 80"));
 
     pty.resize(37, 105);
     pty.master.write_all(b"stty size\n").unwrap();
     pty.master.flush().unwrap();
-    let out2 = read_until(&mut pty, "37 105", Duration::from_secs(5))
-        .unwrap_or_else(|e| panic!("{e}"));
+    let out2 =
+        read_until(&mut pty, "37 105", Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
     assert!(out2.contains("37 105"));
 
     pty.resize(52, 133);
     pty.master.write_all(b"stty size\n").unwrap();
     pty.master.flush().unwrap();
-    let out3 = read_until(&mut pty, "52 133", Duration::from_secs(5))
-        .unwrap_or_else(|e| panic!("{e}"));
+    let out3 =
+        read_until(&mut pty, "52 133", Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
     assert!(out3.contains("52 133"));
 
     pty.master.write_all(b"exit 0\n").unwrap();
@@ -235,8 +246,8 @@ fn test_resize_stty_size_interactive() {
 #[test]
 fn test_resize_stty_size_direct() {
     let mut pty = Pty::spawn_command(&["stty", "size"], &[], 42, 115);
-    let out = read_until(&mut pty, "42 115", Duration::from_secs(5))
-        .unwrap_or_else(|e| panic!("{e}"));
+    let out =
+        read_until(&mut pty, "42 115", Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
     assert!(out.contains("42 115"));
     assert_eq!(drain_and_wait(&mut pty), 0);
 }
@@ -274,7 +285,11 @@ fn test_wait_after_child_already_reaped() {
 fn test_exec_failure_exit_127() {
     let mut pty = Pty::spawn_command(&["/nonexistent_binary_xyz_404"], &[], 24, 80);
     assert!(pty.pid() > 0);
-    assert_eq!(drain_and_wait(&mut pty), 127, "failed execvp must cause child to exit 127");
+    assert_eq!(
+        drain_and_wait(&mut pty),
+        127,
+        "failed execvp must cause child to exit 127"
+    );
 }
 
 #[test]

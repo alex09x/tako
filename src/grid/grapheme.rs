@@ -86,7 +86,11 @@ impl GraphemeTable {
         if !self.free.is_empty() {
             return false;
         }
-        let threshold = if self.collect_at == 0 { FIRST_COLLECTION } else { self.collect_at };
+        let threshold = if self.collect_at == 0 {
+            FIRST_COLLECTION
+        } else {
+            self.collect_at
+        };
         if self.entries.len() < threshold.min(MAX_ENTRIES) {
             return false;
         }

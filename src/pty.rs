@@ -17,8 +17,8 @@
 
 use std::collections::HashMap;
 use std::ffi::{CString, OsString};
-use std::os::unix::ffi::OsStrExt;
 use std::fs::File;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::FromRawFd;
 
 pub struct Pty {
@@ -96,8 +96,7 @@ impl Pty {
             .iter()
             .map(|a| CString::new(*a).expect("argv entry contains a NUL"))
             .collect();
-        let mut arg_ptrs: Vec<*const libc::c_char> =
-            args.iter().map(|a| a.as_ptr()).collect();
+        let mut arg_ptrs: Vec<*const libc::c_char> = args.iter().map(|a| a.as_ptr()).collect();
         arg_ptrs.push(std::ptr::null());
 
         let exec_path = resolve_program_path(argv[0]);

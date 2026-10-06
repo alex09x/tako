@@ -34,7 +34,11 @@ fn drain_and_wait(pty: &mut Pty) -> i32 {
     let fd = pty.master.as_raw_fd();
     let mut buf = [0u8; 4096];
     while Instant::now() < deadline {
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         let ret = unsafe { libc::poll(&mut pfd, 1, 200) };
         if ret < 0 {
             if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
@@ -52,7 +56,10 @@ fn drain_and_wait(pty: &mut Pty) -> i32 {
             Err(_) => break, // EIO: the slave side is gone
         }
     }
-    assert!(Instant::now() < deadline, "child did not close its pty within 10 s");
+    assert!(
+        Instant::now() < deadline,
+        "child did not close its pty within 10 s"
+    );
     pty.wait()
 }
 
@@ -171,9 +178,15 @@ fn test_child_sees_callers_vars_and_term() {
 #[test]
 fn test_child_sees_inherited_env_var() {
     let home = std::env::var("HOME").expect("test process has HOME");
-    let mut pty = Pty::spawn_command(&["/bin/sh", "-c", "printf 'HOME=%s\\n' \"$HOME\""], &[], 24, 80);
+    let mut pty = Pty::spawn_command(
+        &["/bin/sh", "-c", "printf 'HOME=%s\\n' \"$HOME\""],
+        &[],
+        24,
+        80,
+    );
     let expected = format!("HOME={home}");
-    let out = read_until(&mut pty, &expected, Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
+    let out =
+        read_until(&mut pty, &expected, Duration::from_secs(5)).unwrap_or_else(|e| panic!("{e}"));
     assert!(out.contains(&expected));
     assert_eq!(drain_and_wait(&mut pty), 0);
 }
@@ -195,12 +208,7 @@ fn test_bare_program_name_found_via_path() {
 /// same outcome a failed `execvp` PATH search would have produced.
 #[test]
 fn test_missing_bare_program_exits_127() {
-    let mut pty = Pty::spawn_command(
-        &["definitely_not_a_real_command_xyz_987"],
-        &[],
-        24,
-        80,
-    );
+    let mut pty = Pty::spawn_command(&["definitely_not_a_real_command_xyz_987"], &[], 24, 80);
     assert!(pty.pid() > 0);
     assert_eq!(
         drain_and_wait(&mut pty),

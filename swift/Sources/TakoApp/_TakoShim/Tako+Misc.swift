@@ -127,9 +127,18 @@ extension Tako {
             }
 
             // Keep enablement state fresh in case menu validation hasn't run yet.
-            parentMenu.update()
-            guard item.isEnabled else {
-                return false
+            if let target = item.target as? NSObject, let action = item.action {
+                guard target.responds(to: action) else {
+                    return false
+                }
+                if let validator = target as? NSMenuItemValidation {
+                    guard validator.validateMenuItem(item) else { return false }
+                }
+            } else {
+                parentMenu.update()
+                guard item.isEnabled else {
+                    return false
+                }
             }
 
             let index = parentMenu.index(of: item)
@@ -137,7 +146,11 @@ extension Tako {
                 return false
             }
 
-            parentMenu.performActionForItem(at: index)
+            if let target = item.target as? NSObject, let action = item.action {
+                _ = target.perform(action, with: item)
+            } else {
+                parentMenu.performActionForItem(at: index)
+            }
             return true
         }
     }

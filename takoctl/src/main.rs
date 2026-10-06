@@ -37,7 +37,7 @@ pub use screenshot::*;
 
 use std::process::ExitCode;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 fn run_hooks(opts: &Options) -> Result<(), String> {
     let action = opts

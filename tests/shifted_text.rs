@@ -16,7 +16,7 @@
 // character, so every capital arrived lower case -- a bug no engine test
 // could have caught, because the engine was doing exactly what it was told.
 
-use tako_core::key_encode::{encode, EncodeConfig, Key, KeyEvent, Mods};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, encode};
 
 fn typed(ch: char, mods: Mods) -> Vec<u8> {
     encode(
@@ -90,7 +90,6 @@ fn shift_does_not_alter_the_character_it_is_given() {
 fn control_letter_still_encodes_as_a_control_byte() {
     assert_eq!(typed('c', Mods::CTRL), vec![0x03]);
 }
-
 
 // The Kitty keyboard protocol identifies a key by its *base* codepoint and
 // reports shift as a modifier. Sending the shifted codepoint instead gives a

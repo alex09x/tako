@@ -8,26 +8,26 @@
  * SPDX-License-Identifier: MIT
  */
 
-pub mod parser;
-pub mod grid;
-pub mod terminal;
-pub mod ffi;
-pub mod charset;
-pub mod modes;
-pub mod tabstops;
-pub mod kitty_keyboard;
-pub mod response;
-pub mod graphics;
-pub mod cursor_style;
-pub mod palette;
-pub mod title_stack;
-pub mod key_encode;
-pub mod mouse_encode;
-pub mod paste;
 pub mod capi;
+pub mod charset;
+pub mod cursor_style;
+pub mod ffi;
+pub mod graphics;
+pub mod grid;
+pub mod key_encode;
+pub mod kitty_keyboard;
+pub mod modes;
+pub mod mouse_encode;
+pub mod palette;
+pub mod parser;
+pub mod paste;
 #[cfg(feature = "pty")]
 pub mod pty;
+pub mod response;
 #[cfg(feature = "ssh")]
 pub mod ssh;
+pub mod tabstops;
+pub mod terminal;
+pub mod title_stack;
 
 uniffi::setup_scaffolding!();

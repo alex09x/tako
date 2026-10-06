@@ -9,21 +9,33 @@
  */
 
 use eframe::egui;
-use tako_core::grid::Color;
-use tako_core::terminal::Terminal;
-use tako_core::pty::Pty;
-use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use tako_core::grid::Color;
+use tako_core::pty::Pty;
+use tako_core::terminal::Terminal;
 
 /// Resolves a `Color` to a concrete RGB triple -- mirrors
 /// `ffi::resolve_color`, duplicated here since that one is private to the
 /// FFI module and this demo talks to `Terminal` directly, in-process.
 fn resolve_color(color: Color, default: egui::Color32) -> egui::Color32 {
     const ANSI_16: [(u8, u8, u8); 16] = [
-        (0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0),
-        (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
-        (128, 128, 128), (255, 0, 0), (0, 255, 0), (255, 255, 0),
-        (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255),
+        (0, 0, 0),
+        (128, 0, 0),
+        (0, 128, 0),
+        (128, 128, 0),
+        (0, 0, 128),
+        (128, 0, 128),
+        (0, 128, 128),
+        (192, 192, 192),
+        (128, 128, 128),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (0, 0, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
     ];
     fn cube(v: u8) -> u8 {
         if v == 0 { 0 } else { v * 40 + 55 }
@@ -121,17 +133,38 @@ impl eframe::App for TakoTerminal {
                     egui::Event::Text(text) => {
                         let _ = self.pty_writer.write_all(text.as_bytes());
                     }
-                    egui::Event::Key { key, pressed: true, modifiers: _, .. } => {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers: _,
+                        ..
+                    } => {
                         use egui::Key;
                         match key {
-                            Key::Enter => { let _ = self.pty_writer.write_all(b"\r"); },
-                            Key::Backspace => { let _ = self.pty_writer.write_all(b"\x7F"); },
-                            Key::Escape => { let _ = self.pty_writer.write_all(b"\x1B"); },
-                            Key::Tab => { let _ = self.pty_writer.write_all(b"\t"); },
-                            Key::ArrowUp => { let _ = self.pty_writer.write_all(b"\x1B[A"); },
-                            Key::ArrowDown => { let _ = self.pty_writer.write_all(b"\x1B[B"); },
-                            Key::ArrowRight => { let _ = self.pty_writer.write_all(b"\x1B[C"); },
-                            Key::ArrowLeft => { let _ = self.pty_writer.write_all(b"\x1B[D"); },
+                            Key::Enter => {
+                                let _ = self.pty_writer.write_all(b"\r");
+                            }
+                            Key::Backspace => {
+                                let _ = self.pty_writer.write_all(b"\x7F");
+                            }
+                            Key::Escape => {
+                                let _ = self.pty_writer.write_all(b"\x1B");
+                            }
+                            Key::Tab => {
+                                let _ = self.pty_writer.write_all(b"\t");
+                            }
+                            Key::ArrowUp => {
+                                let _ = self.pty_writer.write_all(b"\x1B[A");
+                            }
+                            Key::ArrowDown => {
+                                let _ = self.pty_writer.write_all(b"\x1B[B");
+                            }
+                            Key::ArrowRight => {
+                                let _ = self.pty_writer.write_all(b"\x1B[C");
+                            }
+                            Key::ArrowLeft => {
+                                let _ = self.pty_writer.write_all(b"\x1B[D");
+                            }
                             _ => {}
                         }
                     }
@@ -153,7 +186,9 @@ impl eframe::App for TakoTerminal {
                 for row in 0..self.rows {
                     let mut col = 0;
                     while col < self.cols {
-                        let Some(cell) = grid.get(row, col) else { break };
+                        let Some(cell) = grid.get(row, col) else {
+                            break;
+                        };
                         if cell.is_wide_spacer {
                             col += 1;
                             continue;
@@ -175,7 +210,9 @@ impl eframe::App for TakoTerminal {
                         text.push(if cell.char == '\0' { ' ' } else { cell.char });
                         col += 1;
                         while col < self.cols {
-                            let Some(next) = grid.get(row, col) else { break };
+                            let Some(next) = grid.get(row, col) else {
+                                break;
+                            };
                             if next.is_wide_spacer {
                                 col += 1;
                                 continue;
@@ -186,8 +223,7 @@ impl eframe::App for TakoTerminal {
                                 || (!is_cursor
                                     && (next.fg != grid.get(row, start_col).unwrap().fg
                                         || next.bg != grid.get(row, start_col).unwrap().bg
-                                        || next.attrs
-                                            != grid.get(row, start_col).unwrap().attrs))
+                                        || next.attrs != grid.get(row, start_col).unwrap().attrs))
                             {
                                 break;
                             }
@@ -195,13 +231,14 @@ impl eframe::App for TakoTerminal {
                             col += 1;
                         }
 
-                        let underline = if cell.attrs.contains(tako_core::grid::CellAttrs::UNDERLINE)
-                            || cell.hyperlink.is_some()
-                        {
-                            egui::Stroke::new(1.0_f32, fg)
-                        } else {
-                            egui::Stroke::NONE
-                        };
+                        let underline =
+                            if cell.attrs.contains(tako_core::grid::CellAttrs::UNDERLINE)
+                                || cell.hyperlink.is_some()
+                            {
+                                egui::Stroke::new(1.0_f32, fg)
+                            } else {
+                                egui::Stroke::NONE
+                            };
                         job.append(
                             &text,
                             0.0,

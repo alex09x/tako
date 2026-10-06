@@ -11,7 +11,7 @@
 // Parity tests ported from upstream's key-encoding test suite in
 // the upstream `key_encode` test suite (specifically the "ctrlseq: ..." group).
 
-use tako_core::key_encode::{ctrl_seq, encode, EncodeConfig, Key, KeyEvent, Mods};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, ctrl_seq, encode};
 
 const DEFAULT_CONFIG: EncodeConfig = EncodeConfig {
     cursor_key_app_mode: false,
@@ -135,7 +135,10 @@ fn ctrlseq_caps_ascii_letter() {
 #[test]
 fn ctrlseq_shift_does_not_generate_ctrl_seq() {
     assert_eq!(ctrl_seq("C", Some('c'), None, Mods::SHIFT), None);
-    assert_eq!(ctrl_seq("C", Some('c'), None, Mods::SHIFT | Mods::CTRL), None);
+    assert_eq!(
+        ctrl_seq("C", Some('c'), None, Mods::SHIFT | Mods::CTRL),
+        None
+    );
 }
 
 /// Upstream test: "ctrlseq: russian ctrl c"
@@ -163,7 +166,10 @@ fn ctrlseq_russian_ctrl_c() {
 /// tests `ctrl_seq()` directly, matching upstream's real test.
 #[test]
 fn ctrlseq_russian_shifted_ctrl_c() {
-    assert_eq!(ctrl_seq("с", Some('с'), Some('c'), Mods::CTRL | Mods::SHIFT), None);
+    assert_eq!(
+        ctrl_seq("с", Some('с'), Some('c'), Mods::CTRL | Mods::SHIFT),
+        None
+    );
 }
 
 /// Upstream test: "ctrlseq: russian alt ctrl c"

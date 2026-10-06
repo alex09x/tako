@@ -69,7 +69,19 @@ mod tests {
 
     #[test]
     fn test_ascii_passthrough() {
-        let sample = ['a', 'z', 'A', 'Z', '0', '9', ' ', '`', '~', '\n', '\u{1F600}'];
+        let sample = [
+            'a',
+            'z',
+            'A',
+            'Z',
+            '0',
+            '9',
+            ' ',
+            '`',
+            '~',
+            '\n',
+            '\u{1F600}',
+        ];
         for c in sample {
             assert_eq!(translate(Charset::Ascii, c), c);
         }

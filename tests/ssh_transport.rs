@@ -67,7 +67,11 @@ struct Events(Arc<Recorder>);
 
 impl SshEvents for Events {
     fn on_host_key(&self, algorithm: String, fingerprint: String) -> bool {
-        self.0.host_keys.lock().unwrap().push((algorithm, fingerprint));
+        self.0
+            .host_keys
+            .lock()
+            .unwrap()
+            .push((algorithm, fingerprint));
         self.0.accept_host_key.load(Ordering::SeqCst)
     }
 
@@ -110,7 +114,9 @@ fn config(host: &str, port: u16, auth: SshAuth) -> SshConfig {
 }
 
 fn password() -> SshAuth {
-    SshAuth::Password { password: "unused".to_string() }
+    SshAuth::Password {
+        password: "unused".to_string(),
+    }
 }
 
 /// A port nothing is listening on, so `connect` has something to fail
@@ -132,7 +138,9 @@ fn a_refused_connection_is_reported_not_swallowed() {
         Box::new(Events(rec.clone())),
     );
 
-    let reason = rec.wait_closed(Duration::from_secs(10)).expect("never reported a close");
+    let reason = rec
+        .wait_closed(Duration::from_secs(10))
+        .expect("never reported a close");
     assert!(!reason.is_empty(), "a failure has to say why");
     assert!(!rec.connected.load(Ordering::SeqCst));
 }
@@ -152,7 +160,9 @@ fn a_bad_private_key_fails_before_any_socket_work_matters() {
         Box::new(Events(rec.clone())),
     );
 
-    let reason = rec.wait_closed(Duration::from_secs(10)).expect("never reported a close");
+    let reason = rec
+        .wait_closed(Duration::from_secs(10))
+        .expect("never reported a close");
     assert!(!reason.is_empty());
 }
 
@@ -164,7 +174,9 @@ fn an_unresolvable_host_is_reported() {
         Box::new(Events(rec.clone())),
     );
 
-    let reason = rec.wait_closed(Duration::from_secs(15)).expect("never reported a close");
+    let reason = rec
+        .wait_closed(Duration::from_secs(15))
+        .expect("never reported a close");
     assert!(!reason.is_empty());
 }
 
@@ -265,9 +277,17 @@ fn refusing_the_host_key_stops_the_connection() {
         Box::new(Events(rec.clone())),
     );
 
-    let reason = rec.wait_closed(Duration::from_secs(15)).expect("never reported a close");
-    assert!(!rec.host_keys.lock().unwrap().is_empty(), "the key was never offered");
-    assert!(!rec.connected.load(Ordering::SeqCst), "connected despite a refused key");
+    let reason = rec
+        .wait_closed(Duration::from_secs(15))
+        .expect("never reported a close");
+    assert!(
+        !rec.host_keys.lock().unwrap().is_empty(),
+        "the key was never offered"
+    );
+    assert!(
+        !rec.connected.load(Ordering::SeqCst),
+        "connected despite a refused key"
+    );
     assert!(!reason.is_empty());
 }
 
@@ -328,7 +348,10 @@ fn the_fingerprint_matches_what_ssh_keygen_prints_for_that_key() {
         }
     };
     let path = format!("/etc/ssh/ssh_host_{stem}_key.pub");
-    let Ok(output) = std::process::Command::new("ssh-keygen").args(["-lf", &path]).output() else {
+    let Ok(output) = std::process::Command::new("ssh-keygen")
+        .args(["-lf", &path])
+        .output()
+    else {
         eprintln!("skipped: ssh-keygen is not available");
         return;
     };

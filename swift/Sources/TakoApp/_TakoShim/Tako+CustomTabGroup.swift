@@ -168,18 +168,25 @@ extension Tako {
         static func leave(_ window: NSWindow) {
             guard let group = groupsByWindow[ObjectIdentifier(window)] else { return }
             groupsByWindow.removeValue(forKey: ObjectIdentifier(window))
-            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
 
             guard let index = group.windows.firstIndex(of: window) else { return }
             group.windows.remove(at: index)
 
-            if group.selectedWindow === window {
-                let visible = group.visibleWindows
-                let next = visible.first
-                group.selectedWindow = next
-                next?.makeKeyAndOrderFront(nil)
+            let isSelected = group.selectedWindow === window
+            let visible = group.visibleWindows
+            let next = index < visible.count ? visible[index] : visible.last
+
+            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+
+            if isSelected {
+                if let next {
+                    group.select(next)
+                } else {
+                    group.selectedWindow = nil
+                }
+            } else {
+                Tako.TabBarController.refreshAll()
             }
-            Tako.TabBarController.refreshAll()
         }
 
         /// Reorder a window within its own group (Cmd+Shift+[/]).

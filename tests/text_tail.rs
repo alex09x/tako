@@ -49,7 +49,11 @@ fn the_byte_limit_cuts_the_oldest_line_at_a_character_boundary() {
     assert!(tail.text.ends_with("\nend"), "{:?}", tail.text);
     assert!(tail.text.len() <= 9, "{:?}", tail.text);
     // Whole characters only.
-    assert!(tail.text.chars().all(|c| c == 'ё' || c == '\n' || "end".contains(c)));
+    assert!(
+        tail.text
+            .chars()
+            .all(|c| c == 'ё' || c == '\n' || "end".contains(c))
+    );
 }
 
 #[test]
@@ -65,5 +69,9 @@ fn a_huge_history_costs_only_the_tail() {
         assert_eq!(t.text_tail(1, 1 << 20).text, "last");
     }
     // A hundred one-line reads: nowhere near a hundred walks of 100k rows.
-    assert!(start.elapsed() < std::time::Duration::from_millis(500), "{:?}", start.elapsed());
+    assert!(
+        start.elapsed() < std::time::Duration::from_millis(500),
+        "{:?}",
+        start.elapsed()
+    );
 }

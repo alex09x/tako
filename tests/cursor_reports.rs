@@ -144,7 +144,11 @@ fn homing_on_origin_mode_respects_left_and_right_margins() {
     feed(&mut t, "X");
 
     let row = t.dump_text().lines().nth(4).unwrap_or_default().to_string();
-    assert_eq!(row.find('X'), Some(9), "landed at the wrong column: {row:?}");
+    assert_eq!(
+        row.find('X'),
+        Some(9),
+        "landed at the wrong column: {row:?}"
+    );
 }
 
 #[test]

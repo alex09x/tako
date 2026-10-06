@@ -52,10 +52,18 @@ fn resize_through_tiny_intermediate_size_keeps_default_tabstops() {
     term.resize(151, 39);
 
     term.feed(b"\t");
-    assert_eq!(term.cursor(), (0, 8), "first tab should land on the default column-8 stop");
+    assert_eq!(
+        term.cursor(),
+        (0, 8),
+        "first tab should land on the default column-8 stop"
+    );
 
     term.feed(b"\t");
-    assert_eq!(term.cursor(), (0, 16), "second tab should land on the default column-16 stop");
+    assert_eq!(
+        term.cursor(),
+        (0, 16),
+        "second tab should land on the default column-16 stop"
+    );
 }
 
 // PORTED in tests/parity_revived.rs: "Terminal: resize preserves pixel dimensions when omitted"

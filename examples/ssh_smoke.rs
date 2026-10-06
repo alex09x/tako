@@ -73,7 +73,10 @@ impl SshEvents for Screen {
 
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn main() {
@@ -84,9 +87,12 @@ fn main() {
 
     let auth = if let Some(path) = arg("--key") {
         let path = shellexpand(&path);
-        let pem = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("could not read {path}: {e}"));
-        SshAuth::PrivateKey { pem, passphrase: arg("--passphrase") }
+        let pem =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read {path}: {e}"));
+        SshAuth::PrivateKey {
+            pem,
+            passphrase: arg("--passphrase"),
+        }
     } else if let Some(password) = arg("--password") {
         SshAuth::Password { password }
     } else {

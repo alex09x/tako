@@ -73,10 +73,7 @@ fn decrqss_unknown_setting() {
 fn decrqss_sgr_truecolor() {
     let mut term = Terminal::new(80, 24);
     term.feed(b"\x1b[38;2;1;2;3m\x1bP$qm\x1b\\");
-    assert_eq!(
-        term.take_output(),
-        b"\x1bP1$r0;38:2::1:2:3m\x1b\\".to_vec()
-    );
+    assert_eq!(term.take_output(), b"\x1bP1$r0;38:2::1:2:3m\x1b\\".to_vec());
 }
 
 /// XTGETTCAP: a known string capability ("TN" = terminal name), hex in,
@@ -100,9 +97,7 @@ fn xtgettcap_known_capability() {
     let bytes: Vec<u8> = body
         .as_bytes()
         .chunks(2)
-        .map(|p| {
-            u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap()
-        })
+        .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
         .collect();
     assert_eq!(String::from_utf8(bytes).unwrap(), "xterm-256color");
 }

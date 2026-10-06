@@ -35,7 +35,9 @@ fn command_end_carries_exit_code() {
     term.feed(b"\x1b]133;D;101\x07");
     assert_eq!(
         term.take_events(),
-        vec![TerminalEvent::CommandEnd { exit_code: Some(101) }]
+        vec![TerminalEvent::CommandEnd {
+            exit_code: Some(101)
+        }]
     );
 }
 
@@ -65,7 +67,10 @@ fn prompt_start_emits_no_command_event() {
 fn events_drain_between_commands() {
     let mut term = Terminal::new(20, 5);
     term.feed(b"\x1b]133;C\x07");
-    assert_eq!(term.take_events(), vec![TerminalEvent::CommandStart { id: Some(1) }]);
+    assert_eq!(
+        term.take_events(),
+        vec![TerminalEvent::CommandStart { id: Some(1) }]
+    );
     assert!(term.take_events().is_empty());
     term.feed(b"\x1b]133;D;0\x07");
     assert_eq!(
@@ -85,4 +90,3 @@ fn prompt_start_after_running_command_emits_command_end() {
         vec![TerminalEvent::CommandEnd { exit_code: None }]
     );
 }
-

@@ -11,9 +11,9 @@
 // End-to-end checks that the input encoders are wired to live terminal
 // state through the same paths the FFI layer uses.
 
-use tako_core::key_encode::{encode as encode_key, EncodeConfig, Key, KeyEvent, Mods};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, encode as encode_key};
 use tako_core::mouse_encode::{
-    encode as encode_mouse, MouseAction, MouseButton, MouseEncoding, MouseEvent, MouseMods,
+    MouseAction, MouseButton, MouseEncoding, MouseEvent, MouseMods, encode as encode_mouse,
 };
 use tako_core::paste;
 use tako_core::terminal::Terminal;
@@ -64,7 +64,10 @@ fn kitty_flags_change_key_encoding() {
     assert_eq!(encode_key(key(Key::Escape), cfg(&term)), b"\x1b".to_vec());
     term.feed(b"\x1b[>1u"); // push DISAMBIGUATE
     assert_eq!(term.kitty_keyboard_flags(), 1);
-    assert_eq!(encode_key(key(Key::Escape), cfg(&term)), b"\x1b[27u".to_vec());
+    assert_eq!(
+        encode_key(key(Key::Escape), cfg(&term)),
+        b"\x1b[27u".to_vec()
+    );
     term.feed(b"\x1b[<1u"); // pop
     assert_eq!(encode_key(key(Key::Escape), cfg(&term)), b"\x1b".to_vec());
 }
@@ -93,7 +96,11 @@ fn mouse_encoding_follows_live_modes() {
         b"\x1b[<0;1;1M".to_vec()
     );
     // A coordinate X10 cannot represent has no encoding, but SGR does.
-    let far = MouseEvent { col: 500, row: 500, ..ev };
+    let far = MouseEvent {
+        col: 500,
+        row: 500,
+        ..ev
+    };
     assert!(encode_mouse(far, MouseEncoding::X10).is_none());
     assert_eq!(
         encode_mouse(far, MouseEncoding::Sgr).unwrap(),
@@ -107,7 +114,10 @@ fn mouse_encoding_follows_live_modes() {
 fn paste_brackets_follow_mode_2004() {
     let mut term = Terminal::new(20, 5);
     assert!(!term.modes().bracketed_paste);
-    assert_eq!(paste::encode("hi", term.modes().bracketed_paste), b"hi".to_vec());
+    assert_eq!(
+        paste::encode("hi", term.modes().bracketed_paste),
+        b"hi".to_vec()
+    );
 
     term.feed(b"\x1b[?2004h");
     assert!(term.modes().bracketed_paste);

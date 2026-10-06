@@ -16,8 +16,14 @@ use tako_core::cursor_style::{CursorShape, CursorStyle};
 use tako_core::ffi::{FfiCursorShape, TakoCore};
 use tako_core::terminal::Terminal;
 
-const BAR: CursorStyle = CursorStyle { shape: CursorShape::Bar, blinking: false };
-const UNDERLINE_BLINK: CursorStyle = CursorStyle { shape: CursorShape::Underline, blinking: true };
+const BAR: CursorStyle = CursorStyle {
+    shape: CursorShape::Bar,
+    blinking: false,
+};
+const UNDERLINE_BLINK: CursorStyle = CursorStyle {
+    shape: CursorShape::Underline,
+    blinking: true,
+};
 
 #[test]
 fn the_host_default_applies_at_once_while_no_program_chose_a_style() {
