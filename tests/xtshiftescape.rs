@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // XTSHIFTESCAPE (CSI > Ps s): a program says whether Shift should reach it
 // with mouse events or stay the terminal's, for extending a selection. The
 // host's mouse-shift-capture decides whether the request counts; the engine

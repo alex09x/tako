@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Search over scrollback and screen: absolute line numbers that survive
 // scrolling and eviction, soft-wrapped lines searched whole, grapheme
 // clusters and wide characters on the cells they occupy, bounded steps.

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Grapheme clusters: a cell keeps every codepoint of the cluster it shows,
 // and the cluster follows the cell through every grid operation -- scrolling
 // and scroll regions, erases, character and line insertion and deletion,

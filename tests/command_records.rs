@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Which command printed a row (OSC 133): row owners, the command table, the
 // command each search hit belongs to, start times from the host, and how all
 // of it survives reflow, eviction, reset and checkpoints.

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // XTMODKEYS modifyOtherKeys: vim and others ask for level 2 (`CSI > 4 ; 2 m`)
 // so ctrl, alt and shift combinations stop colliding with plain keys. The
 // terminal remembers the level, reports it, carries it in checkpoints, and

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Cross-cutting panic-safety guarantees for the two FFI surfaces:
 //!
 //! * `src/capi.rs` -- every `prod_vt_*` extern "C" function routes its body

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import SwiftUI
 import TakoKit
@@ -177,7 +187,7 @@ struct PaneOverviewView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
-                            paneCard(item: item, isSelected: index == store.selectedIndex)
+                            PaneOverviewCard(item: item, isSelected: index == store.selectedIndex)
                                 .id(index)
                                 .onTapGesture {
                                     store.selectedIndex = index
@@ -192,162 +202,6 @@ struct PaneOverviewView: View {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     proxy.scrollTo(store.selectedIndex, anchor: .center)
                 }
-            }
-        }
-    }
-
-    // MARK: - Pane Card
-
-    private func paneCard(item: PaneOverviewItem, isSelected: Bool) -> some View {
-        let statusColor = Color(nsColor: item.statusColor)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            // Card Top Row: Status badge and window/tab provenance
-            HStack(spacing: 8) {
-                // Status Pill
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 7, height: 7)
-
-                    Text(item.statusLabel.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(statusColor)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(statusColor.opacity(0.15))
-                .clipShape(Capsule())
-
-                if let text = item.statusText, !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: Palette.dim))
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                // Window / Tab provenance tag
-                Text("Tab \(item.tabIndex + 1)")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color(nsColor: Palette.badge))
-                    .cornerRadius(4)
-            }
-
-            // Pane Title
-            Text(item.title)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(Color(nsColor: Palette.activeText))
-                .lineLimit(1)
-
-            // Live Thumbnail: Terminal Output Preview
-            thumbnailView(item: item)
-
-            // Card Footer: Working directory & running elapsed time
-            HStack(spacing: 6) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-
-                Text(item.directoryDisplay)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-                    .lineLimit(1)
-
-                Spacer()
-
-                if let elapsed = item.elapsed {
-                    Text(elapsed)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color(nsColor: Tako.Brand.ember))
-                }
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: Palette.cardBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isSelected ? Color(nsColor: Tako.Brand.ember) : statusColor.opacity(0.85),
-                    lineWidth: isSelected ? 2.5 : 1.5
-                )
-        )
-        .shadow(
-            color: isSelected ? Color(nsColor: Tako.Brand.ember).opacity(0.35) : statusColor.opacity(0.15),
-            radius: isSelected ? 8 : 4,
-            x: 0,
-            y: 2
-        )
-        .contentShape(Rectangle())
-    }
-
-    // MARK: - Thumbnail View
-
-    private func thumbnailView(item: PaneOverviewItem) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if item.thumbnailLines.isEmpty {
-                Text("~ $")
-                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(item.thumbnailLines.prefix(8).enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                            .foregroundColor(Color(nsColor: Palette.terminalText))
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-
-            Spacer(minLength: 0)
-
-            // Progress bar if active
-            if item.progressState != .none {
-                progressBarView(state: item.progressState, value: item.progressValue)
-                    .frame(height: 3)
-                    .padding(.top, 4)
-            }
-        }
-        .padding(8)
-        .frame(height: 110)
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: Palette.terminalBackground))
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(nsColor: Palette.hairline), lineWidth: 0.5)
-        )
-    }
-
-    private func progressBarView(state: TakoTerminalNSView.ProgressState, value: Int?) -> some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            let color: Color = switch state {
-            case .normal: Color(nsColor: Tako.Brand.ok)
-            case .error: Color(nsColor: Tako.Brand.error)
-            case .paused: Color(nsColor: Tako.Brand.ember)
-            case .indeterminate: Color(nsColor: Tako.Brand.ember)
-            case .none: Color.clear
-            }
-
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(color.opacity(0.2))
-
-                let fraction = min(max(Double(value ?? (state == .indeterminate ? 50 : 0)) / 100.0, 0.05), 1.0)
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(color)
-                    .frame(width: width * CGFloat(fraction))
             }
         }
     }
@@ -430,17 +284,6 @@ struct PaneOverviewView: View {
 
     // MARK: - Theme Palette
 
-    private enum Palette {
-        static let modalBackground = NSColor(srgbRed: 0x1A / 255, green: 0x16 / 255, blue: 0x14 / 255, alpha: 0.98)
-        static let modalBorder = NSColor(srgbRed: 0x36 / 255, green: 0x30 / 255, blue: 0x2B / 255, alpha: 1)
-        static let cardBackground = NSColor(srgbRed: 0x22 / 255, green: 0x1D / 255, blue: 0x1A / 255, alpha: 1)
-        static let terminalBackground = NSColor(srgbRed: 0x12 / 255, green: 0x0F / 255, blue: 0x0D / 255, alpha: 1)
-        static let terminalText = NSColor(srgbRed: 0xD6 / 255, green: 0xCF / 255, blue: 0xC7 / 255, alpha: 1)
-        static let activeText = NSColor(srgbRed: 0xFA / 255, green: 0xF7 / 255, blue: 0xF2 / 255, alpha: 1)
-        static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
-        static let hairline = NSColor(srgbRed: 0x2E / 255, green: 0x28 / 255, blue: 0x24 / 255, alpha: 1)
-        static let searchBackground = NSColor(srgbRed: 0x14 / 255, green: 0x10 / 255, blue: 0x0E / 255, alpha: 1)
-        static let badge = NSColor(srgbRed: 0x2D / 255, green: 0x26 / 255, blue: 0x22 / 255, alpha: 1)
-        static let buttonBackground = NSColor(srgbRed: 0x2D / 255, green: 0x26 / 255, blue: 0x22 / 255, alpha: 1)
-    }
+    private typealias Palette = PaneOverviewPalette
 }
+

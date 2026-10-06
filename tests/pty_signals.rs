@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 #![cfg(feature = "pty")]
 // A program started in the terminal gets default signal handling, whatever
 // the host process ignores. Its own binary: it changes process-wide signal

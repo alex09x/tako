@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Feeds real ANSI/VT100 output through the full `Terminal` engine and
 //! re-renders the resulting grid to this process's own stdout using real
 //! truecolor SGR codes derived from the stored `Cell` state -- a round-trip

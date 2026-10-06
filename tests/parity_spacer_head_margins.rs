@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // 1:1 ports of the four upstream spacer_head x margins tests
 // (upstream `Terminal` "deleteLines wide character spacer head ..."), unblocked
 // by is_wide_spacer_head + plain_string_unwrapped().

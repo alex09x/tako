@@ -1,13 +1,3 @@
-/*
- * tako — Terminal emulator
- * Copyright (c) 2026 Alexander Panasenko
- *
- * Contact: alex@prod.codes
- * Author: https://prod.codes/about/
- * Project: https://github.com/alex09x/tako
- * SPDX-License-Identifier: MIT
- */
-
 import AppKit
 import Combine
 import CoreGraphics
@@ -2652,7 +2642,7 @@ extension Tako {
                 regexTriggers = []
                 return
             }
-            if let cfg = activeConfig {
+            if let cfg = config {
                 PassiveTriggerStore.shared.setConfigTriggers(cfg.triggers)
             }
             regexTriggers = PassiveTriggerStore.shared.allTriggers

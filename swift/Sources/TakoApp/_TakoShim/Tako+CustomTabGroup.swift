@@ -201,9 +201,9 @@ extension Tako {
             // Also keep windows array consistent
             if let current = group.windows.firstIndex(of: window) {
                 group.windows.remove(at: current)
-                let targetWindow = newVisible[clamped]
-                let targetIdx = group.windows.firstIndex(of: targetWindow) ?? group.windows.count
-                group.windows.insert(window, at: min(targetIdx, group.windows.count))
+                let nextVisible = clamped + 1 < newVisible.count ? newVisible[clamped + 1] : nil
+                let targetIdx = nextVisible.flatMap { group.windows.firstIndex(of: $0) } ?? group.windows.count
+                group.windows.insert(window, at: targetIdx)
             }
 
             TabBarController.refreshAll()

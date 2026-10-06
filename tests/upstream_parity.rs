@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! A curated set of test cases translated 1:1 (input bytes + expected
 //! observable state) from the upstream terminal core's test suite
 //! into this crate's own `Terminal` API. Scoped to behavior this port actually

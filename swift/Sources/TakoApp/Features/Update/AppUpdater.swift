@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Security
 import Foundation
@@ -21,56 +31,6 @@ final class AppUpdater: @unchecked Sendable {
     private var isUpdating = false
 
     private init() {}
-
-    // MARK: - Models
-
-    struct GitHubRelease: Codable, Sendable {
-        let tagName: String
-        let name: String?
-        let body: String?
-        let htmlUrl: String
-        let assets: [GitHubAsset]
-
-        enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name"
-            case name
-            case body
-            case htmlUrl = "html_url"
-            case assets
-        }
-    }
-
-    struct GitHubAsset: Codable, Sendable {
-        let name: String
-        let browserDownloadUrl: String
-        let size: Int
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case browserDownloadUrl = "browser_download_url"
-            case size
-        }
-    }
-
-    struct SemanticVersion: Comparable, Equatable, Sendable {
-        let major: Int
-        let minor: Int
-        let patch: Int
-
-        init(_ raw: String) {
-            let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "vV \t\n\r"))
-            let components = trimmed.split(separator: ".").compactMap { Int($0) }
-            self.major = components.indices.contains(0) ? components[0] : 0
-            self.minor = components.indices.contains(1) ? components[1] : 0
-            self.patch = components.indices.contains(2) ? components[2] : 0
-        }
-
-        static func < (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
-            if lhs.major != rhs.major { return lhs.major < rhs.major }
-            if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
-            return lhs.patch < rhs.patch
-        }
-    }
 
     // MARK: - Public API
 
@@ -393,69 +353,6 @@ final class AppUpdater: @unchecked Sendable {
         process.arguments = ["-c", script]
         try? process.run()
         NSApp.terminate(nil)
-    }
-}
-
-// MARK: - Install checks
-
-extension AppUpdater {
-    enum UpdateError: LocalizedError {
-        case message(String)
-        var errorDescription: String? {
-            if case .message(let text) = self { return text }
-            return nil
-        }
-    }
-
-    /// Runs a tool and fails unless it exits 0.
-    static func run(_ tool: String, _ arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = arguments
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw UpdateError.message("\((tool as NSString).lastPathComponent) failed with status \(process.terminationStatus)")
-        }
-    }
-
-    /// The Team ID that signed the bundle at `url`, nil for an ad-hoc or
-    /// unsigned one.
-    static func teamIdentifier(of url: URL) -> String? {
-        var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
-        var info: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              let dict = info as? [String: Any] else { return nil }
-        return dict[kSecCodeInfoTeamIdentifier as String] as? String
-    }
-
-    /// Refuses a downloaded app unless it carries a valid Developer ID
-    /// signature from `team` and Gatekeeper accepts it as notarized. A build
-    /// with no team of its own (ad-hoc, local) has nothing to compare with,
-    /// so it never installs updates by itself.
-    static func verify(_ app: URL, signedBy team: String?) throws {
-        guard let team, !team.isEmpty else {
-            throw UpdateError.message("This copy of Tako is not signed by a developer, so it cannot check an update is genuine. Download the new version from the releases page.")
-        }
-        var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code else {
-            throw UpdateError.message("The downloaded Tako.app is not a code bundle.")
-        }
-        let text = "anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = \"\(team)\""
-        var requirement: SecRequirement?
-        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess else {
-            throw UpdateError.message("Could not build the signature requirement.")
-        }
-        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
-        guard SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess else {
-            throw UpdateError.message("The downloaded Tako.app is not signed by the same developer as this one.")
-        }
-        do {
-            try run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path])
-        } catch {
-            throw UpdateError.message("Gatekeeper does not accept the downloaded Tako.app as notarized.")
-        }
     }
 }
 
