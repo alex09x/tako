@@ -12,6 +12,7 @@ pub mod control;
 pub mod diagnostics;
 pub mod inspect;
 pub mod layout;
+pub mod redact;
 pub mod review;
 pub mod session;
 
@@ -19,6 +20,7 @@ pub use control::*;
 pub use diagnostics::*;
 pub use inspect::*;
 pub use layout::*;
+pub use redact::*;
 pub use review::*;
 pub use session::*;
 

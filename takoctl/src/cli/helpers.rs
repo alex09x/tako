@@ -109,3 +109,54 @@ pub fn parse_duration(s: &str) -> Result<f64, String> {
     }
     Ok(sec)
 }
+
+pub fn dispatch_and_validate(
+    cmd: &str,
+    args: &mut serde_json::Map<String, Value>,
+    positional: &mut Vec<String>,
+    dashdash: bool,
+    client: Option<&str>,
+    scopes: Option<&[String]>,
+    description: Option<&str>,
+    token: Option<&str>,
+) -> Result<(), String> {
+    let handled = super::control::parse(
+        cmd,
+        args,
+        positional,
+        client,
+        scopes,
+        description,
+        token,
+    )?
+    .or(super::session::parse(cmd, args, positional)?)
+    .or(super::layout::parse(cmd, args, positional)?)
+    .or(super::inspect::parse(cmd, args, positional, dashdash)?)
+    .or(super::review::parse(cmd, args, positional)?)
+    .or(super::diagnose::parse(cmd, args, positional)?);
+
+    let wants = if handled.is_some() {
+        None
+    } else {
+        match cmd {
+            "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
+            | "dialog" | "events" | "mcp" | "diagnose" => None,
+            "title" => Some("title"),
+            "send" | "type" | "notify" | "find" => Some("text"),
+            "ask" => Some("message"),
+            "key" => Some("key"),
+            _ => return Err(format!("unknown command {cmd}")),
+        }
+    };
+    match (wants, positional.len()) {
+        (None, 0) => {}
+        (None, _) => return Err(format!("unexpected argument {}", positional[0])),
+        (Some(name), 1) => {
+            args.insert(name.into(), Value::String(positional.remove(0)));
+        }
+        (Some(name), 0) => return Err(format!("{cmd} needs a {name}")),
+        (Some(_), _) => return Err(format!("{cmd} takes one argument; quote it")),
+    }
+    Ok(())
+}
+
