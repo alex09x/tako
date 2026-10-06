@@ -391,6 +391,7 @@ class AppDelegate: NSObject,
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
         setupWorkspaceMenuItems()
+        setupDiagnosticsMenuItem()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
@@ -1331,6 +1332,23 @@ class AppDelegate: NSObject,
             newWorkspaceItem.setImageIfDesired(systemSymbolName: "plus.rectangle.on.folder")
             windowMenu.addItem(newWorkspaceItem)
         }
+    }
+
+    @IBAction func exportDiagnostics(_ sender: Any?) {
+        DiagnosticsExporter.exportToFile()
+    }
+
+    private func setupDiagnosticsMenuItem() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        let helpMenu = mainMenu.items.first(where: { $0.title == "Help" || $0.submenu?.title == "Help" })?.submenu ?? NSApp.helpMenu
+        guard let helpMenu,
+              !helpMenu.items.contains(where: { $0.action == #selector(exportDiagnostics) })
+        else { return }
+        let item = NSMenuItem(title: "Export Diagnostics…", action: #selector(exportDiagnostics), keyEquivalent: "")
+        item.target = self
+        item.setImageIfDesired(systemSymbolName: "stethoscope")
+        helpMenu.addItem(NSMenuItem.separator())
+        helpMenu.addItem(item)
     }
 
     @IBAction func jumpToNextAttention(_ sender: Any?) {

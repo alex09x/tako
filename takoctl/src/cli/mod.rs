@@ -9,6 +9,7 @@
  */
 
 mod control;
+mod diagnose;
 mod helpers;
 mod inspect;
 mod layout;
@@ -250,6 +251,15 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             "--editor" => {
                 args.insert("editor".into(), Value::Bool(true));
             }
+            "--stdout" => {
+                args.insert("stdout".into(), Value::Bool(true));
+            }
+            "--include-terminal" => {
+                args.insert("include_terminal".into(), Value::Bool(true));
+            }
+            "--benchmark" => {
+                args.insert("benchmark".into(), Value::Bool(true));
+            }
             "--force" => {
                 args.insert("force".into(), Value::Bool(true));
             }
@@ -290,7 +300,9 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
                     return Err(format!("{arg} cannot be empty"));
                 }
                 for s in &list {
-                    if !["read", "input", "layout", "signal", "overlay", "approval"].contains(&s.as_str()) {
+                    if !["read", "input", "layout", "signal", "overlay", "approval"]
+                        .contains(&s.as_str())
+                    {
                         return Err(format!(
                             "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay, approval"
                         ));
@@ -354,14 +366,15 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     .or(session::parse(&cmd, &mut args, &mut positional)?)
     .or(layout::parse(&cmd, &mut args, &mut positional)?)
     .or(inspect::parse(&cmd, &mut args, &mut positional, dashdash)?)
-    .or(review::parse(&cmd, &mut args, &mut positional)?);
+    .or(review::parse(&cmd, &mut args, &mut positional)?)
+    .or(diagnose::parse(&cmd, &mut args, &mut positional)?);
 
     let wants = if handled.is_some() {
         None
     } else {
         match cmd.as_str() {
             "version" | "tree" | "text" | "tab-new" | "focus" | "close" | "last" | "wait"
-            | "dialog" | "events" | "mcp" => None,
+            | "dialog" | "events" | "mcp" | "diagnose" => None,
             "title" => Some("title"),
             "send" | "type" | "notify" | "find" => Some("text"),
             "ask" => Some("message"),

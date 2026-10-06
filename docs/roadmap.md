@@ -332,7 +332,9 @@ Agentic work means many panes printing fast at once. Set budgets and hold them:
 Done when the benchmark runs on the test Mac in `scripts/ci.sh`, its numbers are recorded per
 release, and a regression beyond the written budget fails the run.
 
-### [ ] A7. Diagnostics the user controls
+### [x] A7. Diagnostics the user controls
+
+Status: shipped in [#50](https://github.com/alex09x/tako/pull/50).
 
 - `takoctl diagnose` and *Help > Export Diagnostics*: versions, configuration with secrets and
   paths reduced, recent logs, crash reports and the benchmark of A6, written to a local file the

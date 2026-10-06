@@ -120,6 +120,8 @@ commands:
   grant create            create a scoped authorization grant (--client NAME, --scope SCOPES, --desc DESC)
   grant revoke TOKEN      revoke an authorization grant
   grant list              list active authorization grants
+  diagnose [PATH]         export self-contained diagnostics bundle with secrets/paths redacted
+                          (--out PATH, --stdout, --include-terminal, --benchmark)
 
 options:
   --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)

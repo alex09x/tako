@@ -9,12 +9,14 @@
  */
 
 pub mod control;
+pub mod diagnostics;
 pub mod inspect;
 pub mod layout;
 pub mod review;
 pub mod session;
 
 pub use control::*;
+pub use diagnostics::*;
 pub use inspect::*;
 pub use layout::*;
 pub use review::*;
@@ -127,5 +129,3 @@ pub fn render(cmd: &str, result: &Value) -> String {
         _ => format!("{result}\n"),
     }
 }
-
-
