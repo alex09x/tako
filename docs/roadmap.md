@@ -864,10 +864,9 @@ enforced in the engine rather than by convention in the app.
 
 Done when a test that types a password under secure input finds it in none of these places.
 
-### [ ] G6. Supply chain
+### [x] G6. Supply chain
 
-Signed and notarized releases (shipped) plus a software bill of materials per release, pinned
-build inputs and documented steps to reproduce a release build.
+Signed and notarized releases (shipped) plus a software bill of materials per release (SPDX 2.3 and CycloneDX 1.5 JSON via `scripts/generate-sbom.py`), pinned build inputs (`rust-toolchain.toml`, `Cargo.lock`, `Package.swift`), documented reproduction steps in [`docs/reproducible-builds.md`](reproducible-builds.md), and automated two-root verification in `scripts/verify-reproducible-build.sh`.
 
 Done when a release ships its SBOM and a second machine reproduces the engine artifact from the
 documented steps.

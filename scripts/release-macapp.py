@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+#
+# tako — Terminal emulator
+# Copyright (c) 2026 Alexander Panasenko
+#
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
+
 """Turn a signed Tako.app into something a stranger can download and open.
 
 Signing is not enough. macOS refuses a downloaded app that Apple has never
@@ -214,9 +224,21 @@ def finish(dmg, zip_path):
     run(["spctl", "-a", "-vvv", "-t", "exec", APP], "assess app")
     run(["xcrun", "stapler", "validate", dmg], "validate dmg")
 
+    step("generating release Software Bill of Materials (SBOM)")
+    version, _ = version_of(APP)
+    run([sys.executable, os.path.join(ROOT, "scripts", "generate-sbom.py"),
+         "--version", version, "--output-dir", BUILD], "generate sbom")
+
+    spdx_path = os.path.join(BUILD, f"Tako-{version}-sbom.spdx.json")
+    cdx_path = os.path.join(BUILD, f"Tako-{version}-sbom.cdx.json")
+
     size = os.path.getsize(dmg) / (1024 * 1024)
     print(f"\n{dmg} -- {size:.1f} MB, notarized and stapled")
     print(f"{zip_path} -- the stapled app, for the release and the updater")
+    if os.path.exists(spdx_path):
+        print(f"{spdx_path} -- SPDX 2.3 release SBOM")
+    if os.path.exists(cdx_path):
+        print(f"{cdx_path} -- CycloneDX 1.5 release SBOM")
     print("This opens on a Mac that has never seen it, with no right-click "
           "and no Gatekeeper prompt.")
 
