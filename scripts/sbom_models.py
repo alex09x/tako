@@ -284,15 +284,31 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
                         "is_direct": (pkg_id in direct_pkg_ids),
                     })
                 return packages
-    except Exception:
-        pass
+        else:
+            metadata_error = res.stderr.strip() or f"exit status {res.returncode}"
+    except Exception as e:
+        metadata_error = str(e)
 
-    # Fallback: traverse Cargo.lock starting only from non-dev direct dependencies
+    # Fallback path: validate build configuration and dynamically derive dependencies from manifest
+    if target and not ("apple" in target or "darwin" in target):
+        err_msg = f"Cannot resolve release dependency graph for non-Apple target '{target}' without cargo metadata"
+        if metadata_error:
+            err_msg += f" (cargo metadata failed: {metadata_error})"
+        raise RuntimeError(err_msg)
+
+    direct_names = set(derive_manifest_direct_deps(features))
     by_name_ver, by_name = build_cargo_maps(lock_pkgs)
-    direct_names = [
-        "base64", "bitflags", "libc", "russh", "smallvec", "thiserror",
-        "tokio", "unicode-normalization", "unicode-segmentation", "unicode-width", "uniffi"
-    ]
+
+    direct_packages = set()
+    tako_lock = next((p for p in lock_pkgs if p["name"] in ("tako", "tako-core")), None)
+    if tako_lock:
+        for dep_str in tako_lock.get("dependencies", []):
+            dep_nm = dep_str.split()[0]
+            if dep_nm in direct_names:
+                resolved = resolve_dependency(dep_str, by_name_ver, by_name)
+                if resolved:
+                    direct_packages.add((resolved["name"], resolved["version"]))
+
     visited_names = set()
     queue = list(direct_names)
     while queue:
@@ -303,6 +319,8 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
         for cand in by_name.get(nm, []):
             for dep in cand.get("dependencies", []):
                 dep_nm = dep.split()[0]
+                if ("apple" in target or "darwin" in target) and any(dep_nm.startswith(p) for p in ("windows", "redox", "linux")):
+                    continue
                 if dep_nm not in visited_names and dep_nm not in ("tako", "tako-core"):
                     queue.append(dep_nm)
 
@@ -310,6 +328,71 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
     for pkg in lock_pkgs:
         if pkg["name"] in visited_names and pkg["name"] not in ("tako", "tako-core"):
             pkg_copy = dict(pkg)
-            pkg_copy["is_direct"] = (pkg["name"] in direct_names)
+            pkg_copy["is_direct"] = ((pkg["name"], pkg["version"]) in direct_packages)
             filtered_pkgs.append(pkg_copy)
     return filtered_pkgs
+
+
+def derive_manifest_direct_deps(features_spec=""):
+    """Derives direct non-dev dependencies from Cargo.toml given an active feature set."""
+    manifest_path = os.path.join(ROOT, "Cargo.toml")
+    if not os.path.isfile(manifest_path):
+        return []
+
+    active_features = [f.strip() for f in features_spec.split(",") if f.strip()]
+    if tomllib is not None:
+        with open(manifest_path, "rb") as f:
+            manifest = tomllib.load(f)
+        deps_table = manifest.get("dependencies", {})
+        features_table = manifest.get("features", {})
+    else:
+        deps_table = {}
+        features_table = {}
+        current_section = None
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    current_section = stripped[1:-1].strip()
+                    continue
+                if current_section == "dependencies" and "=" in stripped:
+                    key = stripped.split("=")[0].strip()
+                    opt = "optional = true" in stripped
+                    deps_table[key] = {"optional": opt}
+                elif current_section == "features" and "=" in stripped:
+                    k, v = stripped.split("=", 1)
+                    k = k.strip()
+                    items = [x.strip().strip('"').strip("'") for x in v.strip().strip("[]").split(",") if x.strip()]
+                    features_table[k] = items
+
+    for f in active_features:
+        if f not in features_table and f != "default":
+            raise RuntimeError(f"Unknown feature '{f}' requested in --features '{features_spec}'")
+
+    direct = set()
+    for name, spec in deps_table.items():
+        if isinstance(spec, dict):
+            if not spec.get("optional", False):
+                direct.add(name)
+        else:
+            direct.add(name)
+
+    feat_queue = list(active_features)
+    visited_feats = set()
+    while feat_queue:
+        feat = feat_queue.pop(0)
+        if feat in visited_feats:
+            continue
+        visited_feats.add(feat)
+        for item in features_table.get(feat, []):
+            if item.startswith("dep:"):
+                dep_name = item[4:]
+                if dep_name in deps_table:
+                    direct.add(dep_name)
+            elif "/" in item:
+                dep_name = item.split("/")[0]
+                if dep_name in deps_table:
+                    direct.add(dep_name)
+            elif item in features_table:
+                feat_queue.append(item)
+    return sorted(direct)

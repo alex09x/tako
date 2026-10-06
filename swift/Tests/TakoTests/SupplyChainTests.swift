@@ -255,4 +255,40 @@ import Testing
         #expect(content.contains("SPDX 2.3"), "Documentation must document SPDX 2.3 format")
         #expect(content.contains("CycloneDX 1.5"), "Documentation must document CycloneDX 1.5 format")
     }
+
+    // MARK: - 6. Target and Features Configuration Validation
+
+    @Test func testGenerateSbomTargetAndFeaturesValidation() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let scriptPath = repoRoot.appendingPathComponent("scripts/generate-sbom.py").path
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [
+            scriptPath,
+            "--features", "desktop-demo",
+            "--format", "spdx",
+            "--output-dir", tempDir.path
+        ]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0, "generate-sbom.py with desktop-demo must succeed")
+
+        let spdxFile = tempDir.appendingPathComponent("tako-sbom.spdx.json")
+        let data = try Data(contentsOf: spdxFile)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let packages = json["packages"] as? [[String: Any]] else {
+            Issue.record("Failed to read packages from desktop-demo SPDX document")
+            return
+        }
+        let eframePkg = packages.first { ($0["name"] as? String) == "eframe" }
+        #expect(eframePkg != nil, "desktop-demo SBOM must include eframe")
+        let russhPkg = packages.first { ($0["name"] as? String) == "russh" }
+        #expect(russhPkg == nil, "desktop-demo SBOM must exclude russh")
+    }
 }
