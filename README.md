@@ -1,16 +1,12 @@
 # Tako 🐙
 
-A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 17+, powered by a pure-Rust emulation engine and a native Metal renderer.
+Tako is a fast, lightweight, GPU-accelerated terminal for macOS, and a remote-only SSH terminal client for iOS. The shared terminal engine is implemented in Rust and rendered with Metal, but the macOS app runs local shells on-device while the iOS app connects to a remote host over SSH.
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14.0%2B-blue.svg)](https://apple.com/macos)
 [![iOS 17+](https://img.shields.io/badge/iOS-17.0%2B-green.svg)](https://apple.com/ios)
 [![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange.svg)](https://rust-lang.org)
 [![Metal](https://img.shields.io/badge/Renderer-Metal-purple.svg)](https://developer.apple.com/metal/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-<p align="center">
-  <img src="swift/preview-macos.png" alt="Tako Terminal on macOS" width="760">
-</p>
 
 ---
 
@@ -56,6 +52,21 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 
 - **Cross-Platform Swift Component**:
   - Shared view layer: `TakoTerminalNSView` for macOS (AppKit) and `TakoTerminalView` for iOS (UIKit).
+  - The iOS surface is a remote terminal view used with SSH; it does not run a local shell on device.
+
+---
+
+## Platform Notes
+
+### macOS
+
+Tako is a full local terminal on macOS. It runs shells and terminal jobs on-device, integrates with macOS input and windowing behavior, and uses a PTY-backed execution model.
+
+### iOS
+
+Tako on iOS is not a standalone local terminal environment. The iOS app is designed around SSH sessions to a remote host because iOS does not allow the local shell execution model used by the macOS app. If you are expecting an iPhone or iPad app that runs a local shell on-device, that is not what this project provides.
+
+The iOS surface is a terminal client for remote access.
 
 ---
 
@@ -136,7 +147,7 @@ The Swift suites need the engine built locally first:
 
 ## Configuration
 
-Tako reads its configuration from `~/.config/tako/config`. 
+Tako reads its configuration from `~/.config/tako/config`.
 
 Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to automatically create and open this file in your default editor.
 
