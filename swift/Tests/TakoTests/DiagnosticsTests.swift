@@ -102,4 +102,25 @@ struct DiagnosticsTests {
         let perms = attrs[.posixPermissions] as? NSNumber
         #expect(perms?.intValue == 0o600)
     }
+
+    @Test("DiagnosticsExporter writeSecurely restores original destination if validation throws")
+    func testWriteSecurelyRestoresOriginalFileOnFailure() throws {
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("test-restore-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        let originalContent = "original-user-data".data(using: .utf8)!
+        try originalContent.write(to: dest)
+
+        struct SimulatedFailure: Error {}
+
+        #expect(throws: SimulatedFailure.self) {
+            try DiagnosticsExporter.writeSecurely(data: "new-data".data(using: .utf8)!, to: dest) { _ in
+                throw SimulatedFailure()
+            }
+        }
+
+        #expect(FileManager.default.fileExists(atPath: dest.path))
+        let restoredData = try Data(contentsOf: dest)
+        #expect(restoredData == originalContent)
+    }
 }

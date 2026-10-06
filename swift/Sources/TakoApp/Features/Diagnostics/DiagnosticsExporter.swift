@@ -90,11 +90,20 @@ enum DiagnosticsExporter {
     }
 
     /// Writes diagnostics data securely to destinationURL with 0600 permissions,
-    /// writing to a temporary file first and removing any unhardened output on failure.
-    nonisolated static func writeSecurely(data: Data, to destinationURL: URL) throws {
+    /// writing to a temporary file first, preserving any pre-existing destination
+    /// until permissions are verified, and restoring the prior file if hardening fails.
+    nonisolated static func writeSecurely(
+        data: Data,
+        to destinationURL: URL,
+        postMoveValidator: ((URL) throws -> Void)? = nil
+    ) throws {
         let tempDir = FileManager.default.temporaryDirectory
         let tempFile = tempDir.appendingPathComponent("tako-diagnostics-\(UUID().uuidString).json")
-        var destinationCreated = false
+        let destinationExisted = FileManager.default.fileExists(atPath: destinationURL.path)
+        let backupURL = destinationExisted
+            ? destinationURL.deletingLastPathComponent().appendingPathComponent(".tako-backup-\(UUID().uuidString)-\(destinationURL.lastPathComponent)")
+            : nil
+        var destinationReplacedOrCreated = false
 
         do {
             try data.write(to: tempFile, options: .atomic)
@@ -104,22 +113,33 @@ enum DiagnosticsExporter {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
             }
 
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: tempFile, backupItemName: nil, options: [])
-            } else {
-                try FileManager.default.moveItem(at: tempFile, to: destinationURL)
+            if let backupURL {
+                try FileManager.default.moveItem(at: destinationURL, to: backupURL)
             }
-            destinationCreated = true
+
+            try FileManager.default.moveItem(at: tempFile, to: destinationURL)
+            destinationReplacedOrCreated = true
 
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destinationURL.path)
             let destAttrs = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
             if let perms = destAttrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
             }
+
+            if let postMoveValidator {
+                try postMoveValidator(destinationURL)
+            }
+
+            if let backupURL {
+                try? FileManager.default.removeItem(at: backupURL)
+            }
         } catch {
             try? FileManager.default.removeItem(at: tempFile)
-            if destinationCreated {
+            if destinationReplacedOrCreated {
                 try? FileManager.default.removeItem(at: destinationURL)
+            }
+            if let backupURL, FileManager.default.fileExists(atPath: backupURL.path) {
+                try? FileManager.default.moveItem(at: backupURL, to: destinationURL)
             }
             throw error
         }
