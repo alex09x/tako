@@ -70,6 +70,14 @@ required-features = ["ssh"]
 name = "test_sshd"
 required-features = ["ssh"]
 
+[[test]]
+name = "ssh_protocols"
+required-features = ["ssh"]
+
+[[test]]
+name = "ssh_password_auth"
+required-features = ["ssh"]
+
 [features]
 default = []
 # Opt-in: pseudoterminal support (src/pty.rs). Needed to run a real program
