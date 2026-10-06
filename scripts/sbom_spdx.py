@@ -108,6 +108,7 @@ def generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
             })
 
         download_loc = f"https://crates.io/api/v1/crates/{name}/{ver}/download" if "crates.io" in pkg.get("source", "") else "NOASSERTION"
+        license_str = pkg.get("license") or "NOASSERTION"
 
         spdx_packages.append({
             "SPDXID": spdx_id,
@@ -116,8 +117,8 @@ def generate_spdx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
             "downloadLocation": download_loc,
             "filesAnalyzed": False,
             "checksums": checksums,
-            "licenseConcluded": "NOASSERTION",
-            "licenseDeclared": "NOASSERTION",
+            "licenseConcluded": license_str,
+            "licenseDeclared": license_str,
             "copyrightText": "NOASSERTION",
             "externalRefs": [
                 {

@@ -131,16 +131,17 @@ def parse_swift_packages():
     if os.path.isfile(root_pkg):
         with open(root_pkg, "r", encoding="utf-8") as f:
             content = f.read()
-            # Match binaryTarget(name: "...", url: "...", checksum: "...")
-            bt_match = re.search(r'name:\s*"([^"]+)",\s*url:\s*"([^"]+)",\s*checksum:\s*"([^"]+)"', content, re.MULTILINE)
-            if bt_match:
-                packages.append({
-                    "name": bt_match.group(1),
-                    "version": "0.1.7",
-                    "url": bt_match.group(2),
-                    "checksum": bt_match.group(3),
-                    "ecosystem": "swift",
-                })
+        name_m = re.search(r'binaryTarget\s*\(\s*name:\s*"([^"]+)"', content)
+        url_m = re.search(r'url:\s*"([^"]+)"', content)
+        chk_m = re.search(r'checksum:\s*"([^"]+)"', content)
+        if name_m and url_m and chk_m:
+            packages.append({
+                "name": name_m.group(1),
+                "version": "0.1.7",
+                "url": url_m.group(1),
+                "checksum": chk_m.group(3) if chk_m.lastindex and chk_m.lastindex >= 3 else chk_m.group(1),
+                "ecosystem": "swift",
+            })
     return packages
 
 
@@ -182,14 +183,133 @@ def resolve_dependency(dep_spec, by_name_ver, by_name):
     return None
 
 
-def get_direct_cargo_dependencies(cargo_pkgs, by_name_ver, by_name):
+def get_direct_cargo_dependencies(cargo_pkgs, by_name_ver=None, by_name=None):
     """Finds direct dependencies of the root tako / tako-core crate."""
+    direct = [p for p in cargo_pkgs if p.get("is_direct")]
+    if direct:
+        return direct
     tako_pkg = next((p for p in cargo_pkgs if p["name"] in ("tako-core", "tako")), None)
     if not tako_pkg:
         return []
-    direct = []
+    if by_name_ver is None or by_name is None:
+        by_name_ver, by_name = build_cargo_maps(cargo_pkgs)
     for dep_str in tako_pkg.get("dependencies", []):
         resolved = resolve_dependency(dep_str, by_name_ver, by_name)
         if resolved and resolved not in direct:
             direct.append(resolved)
     return direct
+
+
+def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"):
+    """Resolves Cargo packages for the actual release build configuration.
+
+    Filters out dev-dependencies and inactive optional features using cargo metadata,
+    retaining only the packages built into the release artifact.
+    Falls back to Cargo.lock traversal if cargo metadata is unavailable.
+    """
+    cargo_lock_path = os.path.join(ROOT, "Cargo.lock")
+    lock_pkgs = parse_cargo_lock(cargo_lock_path)
+    checksum_map = {(p["name"], p["version"]): p.get("checksum", "") for p in lock_pkgs}
+
+    try:
+        import json
+        cmd = [
+            "cargo", "metadata",
+            "--format-version", "1",
+            "--features", features,
+            "--filter-platform", target,
+            "--offline"
+        ]
+        res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        if res.returncode != 0:
+            cmd.pop()
+            res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+
+        if res.returncode == 0:
+            meta = json.loads(res.stdout)
+            raw_pkgs = {p["id"]: p for p in meta.get("packages", [])}
+            nodes = {n["id"]: n for n in meta.get("resolve", {}).get("nodes", [])}
+            root_id = meta.get("resolve", {}).get("root")
+
+            if root_id and root_id in nodes:
+                visited = set()
+                queue = [root_id]
+                direct_pkg_ids = set()
+                dep_graph = {}
+
+                root_node = nodes[root_id]
+                for dep in root_node.get("deps", []):
+                    dep_kinds = dep.get("dep_kinds", [])
+                    if any(k.get("kind") != "dev" for k in dep_kinds) if dep_kinds else True:
+                        direct_pkg_ids.add(dep["pkg"])
+
+                while queue:
+                    curr = queue.pop(0)
+                    if curr in visited:
+                        continue
+                    visited.add(curr)
+                    curr_node = nodes.get(curr, {})
+                    curr_deps = []
+                    for dep in curr_node.get("deps", []):
+                        dep_kinds = dep.get("dep_kinds", [])
+                        if any(k.get("kind") != "dev" for k in dep_kinds) if dep_kinds else True:
+                            dep_pkg_id = dep["pkg"]
+                            curr_deps.append(dep_pkg_id)
+                            if dep_pkg_id not in visited:
+                                queue.append(dep_pkg_id)
+                    dep_graph[curr] = curr_deps
+
+                packages = []
+                for pkg_id in visited:
+                    raw = raw_pkgs.get(pkg_id)
+                    if not raw or raw["name"] in ("tako", "tako-core"):
+                        continue
+                    name = raw["name"]
+                    ver = raw["version"]
+                    chk = checksum_map.get((name, ver), "")
+                    lic = raw.get("license") or "NOASSERTION"
+                    child_deps = []
+                    for child_id in dep_graph.get(pkg_id, []):
+                        child_raw = raw_pkgs.get(child_id)
+                        if child_raw and child_raw["name"] not in ("tako", "tako-core"):
+                            child_deps.append(f"{child_raw['name']} {child_raw['version']}")
+                    packages.append({
+                        "name": name,
+                        "version": ver,
+                        "source": raw.get("source") or "",
+                        "checksum": chk,
+                        "license": lic,
+                        "dependencies": child_deps,
+                        "ecosystem": "cargo",
+                        "is_direct": (pkg_id in direct_pkg_ids),
+                    })
+                return packages
+    except Exception:
+        pass
+
+    # Fallback: traverse Cargo.lock starting only from non-dev direct dependencies
+    by_name_ver, by_name = build_cargo_maps(lock_pkgs)
+    direct_names = [
+        "base64", "bitflags", "libc", "russh", "smallvec", "thiserror",
+        "tokio", "unicode-normalization", "unicode-segmentation", "unicode-width", "uniffi"
+    ]
+    visited_names = set()
+    queue = list(direct_names)
+    while queue:
+        nm = queue.pop(0)
+        if nm in visited_names:
+            continue
+        visited_names.add(nm)
+        for cand in by_name.get(nm, []):
+            for dep in cand.get("dependencies", []):
+                dep_nm = dep.split()[0]
+                if dep_nm not in visited_names and dep_nm not in ("tako", "tako-core"):
+                    queue.append(dep_nm)
+
+    filtered_pkgs = []
+    for pkg in lock_pkgs:
+        if pkg["name"] in visited_names and pkg["name"] not in ("tako", "tako-core"):
+            pkg_copy = dict(pkg)
+            pkg_copy["is_direct"] = (pkg["name"] in direct_names)
+            filtered_pkgs.append(pkg_copy)
+    return filtered_pkgs

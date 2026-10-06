@@ -98,7 +98,13 @@ def generate_cyclonedx(version, commit, cargo_pkgs, swift_pkgs, timestamp):
             "purl": bom_ref,
             "scope": "required"
         }
-        if pkg["checksum"]:
+        lic = pkg.get("license")
+        if lic and lic != "NOASSERTION":
+            if " " in lic:
+                comp["licenses"] = [{"expression": lic}]
+            else:
+                comp["licenses"] = [{"license": {"id": lic}}]
+        if pkg.get("checksum"):
             comp["hashes"] = [
                 {"alg": "SHA-256", "content": pkg["checksum"]}
             ]

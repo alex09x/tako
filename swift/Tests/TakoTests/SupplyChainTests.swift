@@ -104,6 +104,10 @@ import Testing
         #expect(rootPkg?["licenseConcluded"] as? String == "MIT")
         #expect(rootPkg?["supplier"] as? String == "Person: Alexander Panasenko (alex@prod.codes)")
 
+        // Ensure unbuilt and dev dependencies are excluded from release SBOM
+        #expect(packages.first { ($0["name"] as? String) == "criterion" } == nil, "criterion dev-dependency must not be in release SBOM")
+        #expect(packages.first { ($0["name"] as? String) == "eframe" } == nil, "eframe optional dependency must not be in release SBOM")
+
         // Ensure cargo dependencies are documented with purl and checksums
         let libcPkg = packages.first { ($0["name"] as? String) == "libc" }
         #expect(libcPkg != nil, "SPDX document must include libc dependency")
@@ -123,7 +127,9 @@ import Testing
             ($0["relationshipType"] as? String) == "DEPENDS_ON" &&
             ($0["spdxElementId"] as? String) == "SPDXRef-Package-tako"
         }
-        #expect(rootDependsOn.count >= 10 && rootDependsOn.count <= 25, "Root package must connect to direct dependencies only, got \(rootDependsOn.count)")
+        #expect(rootDependsOn.count == 12, "Root package must connect to exactly 12 direct dependencies, got \(rootDependsOn.count)")
+        let rootTargetNames = rootDependsOn.compactMap { $0["relatedSpdxElement"] as? String }
+        #expect(!rootTargetNames.contains { $0.contains("bytes") }, "Direct root dependencies must not include bytes dev-dependency")
 
         let allDependsOn = relationships.filter { ($0["relationshipType"] as? String) == "DEPENDS_ON" }
         #expect(allDependsOn.count > 500, "SPDX document must record complete DAG of crate-to-crate DEPENDS_ON relationships, got \(allDependsOn.count)")
@@ -191,7 +197,9 @@ import Testing
             Issue.record("Missing components list in CycloneDX document")
             return
         }
-        #expect(components.count >= 10, "CycloneDX document must contain all dependency components")
+        #expect(components.count >= 200 && components.count <= 220, "CycloneDX document must contain release dependency components, got \(components.count)")
+        #expect(components.first { ($0["name"] as? String) == "criterion" } == nil, "criterion dev-dependency must not be in release CycloneDX SBOM")
+        #expect(components.first { ($0["name"] as? String) == "eframe" } == nil, "eframe optional dependency must not be in release CycloneDX SBOM")
 
         let libc = components.first { ($0["name"] as? String) == "libc" }
         #expect(libc != nil, "CycloneDX document must include libc component")
@@ -208,7 +216,8 @@ import Testing
         let rootDep = dependencies.first { ($0["ref"] as? String) == "pkg:github/alex09x/tako@0.1.7" }
         #expect(rootDep != nil, "CycloneDX document must include root dependency node")
         let rootDependsOn = rootDep?["dependsOn"] as? [String] ?? []
-        #expect(rootDependsOn.count >= 10 && rootDependsOn.count <= 25, "Root dependency node must connect to direct dependencies only, got \(rootDependsOn.count)")
+        #expect(rootDependsOn.count == 12, "Root dependency node must connect to exactly 12 direct dependencies, got \(rootDependsOn.count)")
+        #expect(!rootDependsOn.contains { $0.contains("pkg:cargo/bytes") }, "Direct root dependencies must not include bytes dev-dependency")
 
         let cratesWithDependencies = dependencies.filter {
             ($0["ref"] as? String) != "pkg:github/alex09x/tako@0.1.7" &&

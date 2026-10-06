@@ -29,7 +29,14 @@ if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 from sbom_cyclonedx import generate_cyclonedx
-from sbom_models import get_git_info, get_timestamp, parse_cargo_lock, parse_swift_packages, ROOT
+from sbom_models import (
+    get_git_info,
+    get_timestamp,
+    parse_cargo_lock,
+    parse_swift_packages,
+    resolve_release_cargo_packages,
+    ROOT,
+)
 from sbom_spdx import generate_spdx
 
 
@@ -45,6 +52,9 @@ def main():
     parser.add_argument("--output-dir", default=os.path.join(ROOT, "target", "macapp"), help="Directory to save generated SBOM files")
     parser.add_argument("--version", default="", help="Release version (defaults to git tag or TAKO_VERSION)")
     parser.add_argument("--format", choices=["spdx", "cyclonedx", "all"], default="all", help="Output format")
+    parser.add_argument("--target", default="aarch64-apple-darwin", help="Target triple for release artifact (default: aarch64-apple-darwin)")
+    parser.add_argument("--features", default="ssh", help="Features enabled for release artifact (default: ssh)")
+    parser.add_argument("--include-all-lockfile", action="store_true", help="Include all crates from Cargo.lock instead of release artifact scope")
     args = parser.parse_args()
 
     commit, version = get_git_info()
@@ -52,8 +62,11 @@ def main():
         version = args.version.lstrip("v")
 
     timestamp = get_timestamp()
-    cargo_lock = os.path.join(ROOT, "Cargo.lock")
-    cargo_pkgs = parse_cargo_lock(cargo_lock)
+    if args.include_all_lockfile:
+        cargo_lock = os.path.join(ROOT, "Cargo.lock")
+        cargo_pkgs = parse_cargo_lock(cargo_lock)
+    else:
+        cargo_pkgs = resolve_release_cargo_packages(target=args.target, features=args.features)
     swift_pkgs = parse_swift_packages()
 
     os.makedirs(args.output_dir, exist_ok=True)
