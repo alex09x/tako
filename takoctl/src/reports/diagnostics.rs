@@ -78,16 +78,18 @@ pub fn redact_secrets(text: &str) -> String {
             }
         }
 
-        // Known token prefixes
-        if sanitized.contains("ghp_") || sanitized.contains("glpat-") || sanitized.contains("xox") {
-            for token_prefix in &["ghp_", "glpat-", "xoxb-", "xoxp-", "xoxa-"] {
-                if let Some(start) = sanitized.find(token_prefix) {
-                    let end = sanitized[start..]
-                        .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',')
-                        .map(|e| start + e)
-                        .unwrap_or(sanitized.len());
-                    sanitized.replace_range(start..end, "[REDACTED_TOKEN]");
-                }
+        // Known token prefixes (GitHub, GitLab, Slack, AWS)
+        const TOKEN_PREFIXES: &[&str] = &[
+            "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "glpat-", "xoxb-", "xoxp-", "xoxa-", "xoxr-",
+            "xoxs-", "AKIA",
+        ];
+        for token_prefix in TOKEN_PREFIXES {
+            while let Some(start) = sanitized.find(token_prefix) {
+                let end = sanitized[start..]
+                    .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',')
+                    .map(|e| start + e)
+                    .unwrap_or(sanitized.len());
+                sanitized.replace_range(start..end, "[REDACTED_TOKEN]");
             }
         }
 
@@ -333,13 +335,16 @@ mod tests {
 
     #[test]
     fn test_redact_secrets() {
-        let input = "api_key: abc123xyz789\ntoken = supersecret\nnormal_line = true\nghp_123456789012345678901234567890";
+        let input = "api_key: abc123xyz789\ntoken = supersecret\nnormal_line = true\nghp_123456789012345678901234567890\noauth = gho_abcdef12345678901234567890\nuser_auth: ghu_99887766554433221100";
         let redacted = redact_secrets(input);
         assert!(!redacted.contains("abc123xyz789"));
         assert!(!redacted.contains("supersecret"));
         assert!(!redacted.contains("ghp_123456789012345678901234567890"));
+        assert!(!redacted.contains("gho_abcdef12345678901234567890"));
+        assert!(!redacted.contains("ghu_99887766554433221100"));
         assert!(redacted.contains("normal_line = true"));
         assert!(redacted.contains("[REDACTED]"));
+        assert!(redacted.contains("[REDACTED_TOKEN]"));
     }
 
     #[test]

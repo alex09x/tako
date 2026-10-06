@@ -73,7 +73,11 @@ enum DiagnosticsExporter {
             guard response == .OK, let url = panel.url else { return }
             do {
                 try data.write(to: url, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                if let perms = attrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
+                }
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 completion?(.success(url))
             } catch {
