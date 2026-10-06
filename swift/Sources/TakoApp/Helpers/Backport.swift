@@ -1,13 +1,3 @@
-/*
- * tako — Terminal emulator
- * Copyright (c) 2026 Alexander Panasenko
- *
- * Contact: alex@prod.codes
- * Author: https://prod.codes/about/
- * Project: https://github.com/alex09x/tako
- * SPDX-License-Identifier: MIT
- */
-
 import SwiftUI
 
 // All backport view modifiers go as an extension on this. We use this so we

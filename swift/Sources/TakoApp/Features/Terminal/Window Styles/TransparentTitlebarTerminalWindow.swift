@@ -1,13 +1,3 @@
-/*
- * tako — Terminal emulator
- * Copyright (c) 2026 Alexander Panasenko
- *
- * Contact: alex@prod.codes
- * Author: https://prod.codes/about/
- * Project: https://github.com/alex09x/tako
- * SPDX-License-Identifier: MIT
- */
-
 import AppKit
 
 /// A terminal window style that provides a transparent titlebar effect. With this effect, the titlebar
