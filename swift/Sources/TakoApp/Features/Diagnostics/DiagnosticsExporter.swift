@@ -72,12 +72,7 @@ enum DiagnosticsExporter {
         let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try data.write(to: url, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-                let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
-                if let perms = attrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
-                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
-                }
+                try writeSecurely(data: data, to: url)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 completion?(.success(url))
             } catch {
@@ -91,6 +86,42 @@ enum DiagnosticsExporter {
             panel.beginSheetModal(for: targetWindow, completionHandler: handleResponse)
         } else {
             handleResponse(panel.runModal())
+        }
+    }
+
+    /// Writes diagnostics data securely to destinationURL with 0600 permissions,
+    /// writing to a temporary file first and removing any unhardened output on failure.
+    nonisolated static func writeSecurely(data: Data, to destinationURL: URL) throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("tako-diagnostics-\(UUID().uuidString).json")
+        var destinationCreated = false
+
+        do {
+            try data.write(to: tempFile, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempFile.path)
+            let attrs = try FileManager.default.attributesOfItem(atPath: tempFile.path)
+            if let perms = attrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
+            }
+
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: tempFile, backupItemName: nil, options: [])
+            } else {
+                try FileManager.default.moveItem(at: tempFile, to: destinationURL)
+            }
+            destinationCreated = true
+
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destinationURL.path)
+            let destAttrs = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
+            if let perms = destAttrs[.posixPermissions] as? NSNumber, perms.intValue & 0o777 != 0o600 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM), userInfo: [NSLocalizedDescriptionKey: "Diagnostics export requires owner-only file permissions (0600)"])
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: tempFile)
+            if destinationCreated {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+            throw error
         }
     }
 

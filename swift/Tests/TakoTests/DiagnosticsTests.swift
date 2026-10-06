@@ -88,4 +88,18 @@ struct DiagnosticsTests {
             Issue.record("Expected diagnose to succeed, failed with: \(err.message)")
         }
     }
+
+    @Test("DiagnosticsExporter writeSecurely sets 0600 permissions")
+    func testWriteSecurelyPermissions() throws {
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("test-diag-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        let sampleData = "{\"test\": true}".data(using: .utf8)!
+        try DiagnosticsExporter.writeSecurely(data: sampleData, to: dest)
+
+        #expect(FileManager.default.fileExists(atPath: dest.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: dest.path)
+        let perms = attrs[.posixPermissions] as? NSNumber
+        #expect(perms?.intValue == 0o600)
+    }
 }
