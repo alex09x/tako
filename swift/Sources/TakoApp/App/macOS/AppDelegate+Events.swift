@@ -306,12 +306,14 @@ extension AppDelegate {
             NSApp.setActivationPolicy(.accessory)
         }
 
-        // If we have configuration errors, we need to show them.
+        // If we have configuration errors, we need to show them in the terminal TUI.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors
-        if c.errors.count > 0 {
-            if c.window == nil || !c.window!.isVisible {
-                c.showWindow(self)
+        Task { @MainActor in
+            if c.errors.count > 0 {
+                ConfigurationErrorsNotice.show(errors: c.errors, theme: config.theme)
+            } else {
+                ConfigurationErrorsNotice.dismiss()
             }
         }
 

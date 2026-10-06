@@ -18,6 +18,14 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
         }
     }
 
+    override func showWindow(_ sender: Any?) {
+        if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            ConfigurationErrorsNotice.show(errors: errors, in: window)
+            return
+        }
+        super.showWindow(sender)
+    }
+
     // MARK: - NSWindowController
 
     override func windowWillLoad() {

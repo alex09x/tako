@@ -256,9 +256,33 @@ final class AppUpdater: @unchecked Sendable {
 
     @MainActor
     private func showUpToDateAlert(version: String? = nil) {
+        let current = version ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.8")
+        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            let lines = [
+                TUIText.Line(runs: [
+                    TUIText.Run(text: "Tako v\(current) is currently the newest version available.", kind: .plain)
+                ]),
+                TUIText.Line(runs: []),
+                TUIText.Line(runs: [
+                    TUIText.Run(text: "You are running the latest release.", kind: .muted)
+                ])
+            ]
+            Task { @MainActor in
+                _ = await TerminalDialogView.choose(
+                    in: window,
+                    title: "You're Up to Date",
+                    lines: lines,
+                    choices: [.init(title: "OK", kind: .primary)],
+                    selected: 0,
+                    cancelIndex: 0,
+                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+                )
+            }
+            return
+        }
+
         let alert = NSAlert()
         alert.messageText = "You're up to date!"
-        let current = version ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.2")
         alert.informativeText = "Tako v\(current) is currently the newest version available."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
@@ -267,6 +291,30 @@ final class AppUpdater: @unchecked Sendable {
 
     @MainActor
     func showErrorAlert(_ error: Error) {
+        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            let lines = [
+                TUIText.Line(runs: [
+                    TUIText.Run(text: "Could not check for updates:", kind: .bold)
+                ]),
+                TUIText.Line(runs: []),
+                TUIText.Line(runs: [
+                    TUIText.Run(text: error.localizedDescription, kind: .plain)
+                ])
+            ]
+            Task { @MainActor in
+                _ = await TerminalDialogView.choose(
+                    in: window,
+                    title: "Update Check Failed",
+                    lines: lines,
+                    choices: [.init(title: "OK", kind: .primary)],
+                    selected: 0,
+                    cancelIndex: 0,
+                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+                )
+            }
+            return
+        }
+
         let alert = NSAlert()
         alert.messageText = "Update Check Failed"
         alert.informativeText = "Could not check for updates:\n\(error.localizedDescription)"
