@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // 1:1 ports of upstream tests for reverse wrap (modes 45/1045) and
 // insert mode (IRM, ANSI mode 4). Sources: the upstream `reverse_wrap` test suite,
 // the upstream `irm` test suite.

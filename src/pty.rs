@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! A pseudoterminal and the process on the other end of it.
 //!
 //! Enough to run a real program under a real PTY, which is what any honest

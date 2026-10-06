@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 #![no_main]
 //! Stateful terminal fuzz target: exercises sequences of interleaved feed,
 //! resize, viewport scrolling, selection (linear, rectangular, word, line),

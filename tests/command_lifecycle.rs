@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // OSC 133 command lifecycle as host events.
 //
 // The tab-bar crab indicator is driven by these: it starts running on a

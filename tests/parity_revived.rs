@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Tests revived from SKIPPED status after their blocking APIs were
 // implemented (answerback, xtversion/scheme/pixel-size host config,
 // plain_string_unwrapped, G2/G3 + single shifts, progress events).

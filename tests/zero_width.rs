@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Zero-width codepoints -- combining marks, joiners, variation selectors --
 // belong to the character before them. Printing each into a column of its
 // own shifted everything after it: macOS stores file names decomposed

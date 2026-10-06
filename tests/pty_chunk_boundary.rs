@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // Regression fixture: a real byte capture from `agy --dangerously-skip-permissions`
 // (Google's Antigravity CLI) redrawing its slash-command dropdown, recorded by
 // spawning it under a pty and typing "/c". Captured live against TakoCore.app

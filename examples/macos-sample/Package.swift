@@ -1,4 +1,15 @@
 // swift-tools-version:5.9
+
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import PackageDescription
 
 // A window with a shell in it: the least a macOS app needs to embed TakoCore.

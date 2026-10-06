@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 /// Wraps `text` for bracketed paste when `bracketed` is true (DEC mode
 /// 2004 active), otherwise returns the text bytes unchanged.
 pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 // What full-screen programs rely on. A modern TUI renderer keeps a buffer of
 // cells and sends only the difference between frames, picking the cheapest
 // sequence for each change: erase or repeat characters, insert or delete

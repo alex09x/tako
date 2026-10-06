@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 #![no_main]
 //! Escape sequence stress target: exercises primary/alternate screen buffers,
 //! CSI, OSC, DCS, APC, SGR, DECSCUSR, margins, tabstops, hyperlinks, and

@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 //! Targeted behavioral tests for the UniFFI Swift-facing API in
 //! src/ffi/mod.rs (TakoCore and friends), driven through its public Rust
 //! surface (the same surface UniFFI generates Swift bindings from).
