@@ -113,9 +113,15 @@ fn htop_startup_does_not_crash() {
     feeds(&mut t, "\x1b[30;42m");
     feeds(&mut t, " 42.3%]\x1b[m");
     // mem bar
-    feeds(&mut t, "\x1b[2;1H\x1b[30;42mMem[\x1b[34;42m######\x1b[30;42m      3.2G/16.0G]\x1b[m");
+    feeds(
+        &mut t,
+        "\x1b[2;1H\x1b[30;42mMem[\x1b[34;42m######\x1b[30;42m      3.2G/16.0G]\x1b[m",
+    );
     // process list header
-    feeds(&mut t, "\x1b[3;1H\x1b[30;42m  PID USER      PRI  NI  VIRT   RES S  CPU% MEM%  TIME+   Command\x1b[m\x1b[K");
+    feeds(
+        &mut t,
+        "\x1b[3;1H\x1b[30;42m  PID USER      PRI  NI  VIRT   RES S  CPU% MEM%  TIME+   Command\x1b[m\x1b[K",
+    );
     // 40 process rows
     for i in 0..40usize {
         let pid = 1000 + i;
@@ -133,7 +139,10 @@ fn htop_startup_does_not_crash() {
         );
     }
     // footer with function keys
-    feeds(&mut t, "\x1b[48;1H\x1b[30;42m F1Help  F2Setup  F3SearchF4Filter\x1b[m");
+    feeds(
+        &mut t,
+        "\x1b[48;1H\x1b[30;42m F1Help  F2Setup  F3SearchF4Filter\x1b[m",
+    );
     feeds(&mut t, "\x1b[?1049l\x1b[?7h");
 }
 
@@ -157,7 +166,10 @@ fn tmux_startup_does_not_crash() {
     feeds(&mut t, "\x1b]2;0:zsh\x07");
     // pane content
     feeds(&mut t, "\x1b[1;1H");
-    feeds(&mut t, "\x1b[32muser\x1b[m@\x1b[34mhost\x1b[m:\x1b[36m~\x1b[m$ ");
+    feeds(
+        &mut t,
+        "\x1b[32muser\x1b[m@\x1b[34mhost\x1b[m:\x1b[36m~\x1b[m$ ",
+    );
     // window split creates two panes — simulate by drawing an ASCII divider
     feeds(&mut t, "\x1b[1;110H");
     for row in 1..=49usize {
@@ -184,15 +196,24 @@ fn nano_startup_does_not_crash() {
         feeds(&mut t, format!("\x1b[{row};1H\x1b[K"));
     }
     // menu bar
-    feeds(&mut t, "\x1b[23;1H\x1b[7m^G\x1b[m Help   \x1b[7m^X\x1b[m Exit   \x1b[7m^O\x1b[m Write  \x1b[7m^R\x1b[m Read");
-    feeds(&mut t, "\x1b[24;1H\x1b[7m^K\x1b[m Cut    \x1b[7m^U\x1b[m Paste  \x1b[7m^W\x1b[m Where  \x1b[7m^\\\x1b[m Replac");
+    feeds(
+        &mut t,
+        "\x1b[23;1H\x1b[7m^G\x1b[m Help   \x1b[7m^X\x1b[m Exit   \x1b[7m^O\x1b[m Write  \x1b[7m^R\x1b[m Read",
+    );
+    feeds(
+        &mut t,
+        "\x1b[24;1H\x1b[7m^K\x1b[m Cut    \x1b[7m^U\x1b[m Paste  \x1b[7m^W\x1b[m Where  \x1b[7m^\\\x1b[m Replac",
+    );
     // typing simulation
     for i in 0..80u8 {
         let ch = (b'a' + (i % 26)) as char;
         feeds(&mut t, ch.to_string());
     }
     // save dialog
-    feeds(&mut t, "\x1b[24;1H\x1b[7mFile Name to Write: \x1b[mtest.txt\x07");
+    feeds(
+        &mut t,
+        "\x1b[24;1H\x1b[7mFile Name to Write: \x1b[mtest.txt\x07",
+    );
     feeds(&mut t, "\x1b[?1049l");
 }
 
@@ -268,7 +289,10 @@ fn bash_prompt_does_not_crash() {
     let mut t = t(80, 24);
     // typical PS1 with colors, bold, reset
     for _ in 0..10 {
-        feeds(&mut t, "\x1b[01;32muser@host\x1b[00m:\x1b[01;34m~/projects\x1b[00m$ ");
+        feeds(
+            &mut t,
+            "\x1b[01;32muser@host\x1b[00m:\x1b[01;34m~/projects\x1b[00m$ ",
+        );
         feeds(&mut t, "ls -la\r\n");
         feeds(&mut t, "\x1b[01;34mtotal 42\x1b[m\r\n");
         feeds(&mut t, "drwxr-xr-x  5 user group  160 Aug  7 14:00 .\r\n");
@@ -281,10 +305,16 @@ fn zsh_prompt_with_unicode_does_not_crash() {
     let mut t = t(80, 24);
     // zsh with Powerline-style prompt using Unicode glyphs
     for _ in 0..5 {
-        feeds(&mut t, "\x1b[34;42m ~/proj \x1b[42;33m\u{e0b0}\x1b[30;43m main \x1b[43;0m\u{e0b0}\x1b[m ");
+        feeds(
+            &mut t,
+            "\x1b[34;42m ~/proj \x1b[42;33m\u{e0b0}\x1b[30;43m main \x1b[43;0m\u{e0b0}\x1b[m ",
+        );
         feeds(&mut t, "cargo test\r\n");
         feeds(&mut t, "\x1b[32mrunning 243 tests\x1b[m\r\n");
-        feeds(&mut t, "test result: \x1b[32mok\x1b[m. 243 passed; 0 failed\r\n");
+        feeds(
+            &mut t,
+            "test result: \x1b[32mok\x1b[m. 243 passed; 0 failed\r\n",
+        );
     }
 }
 
@@ -365,8 +395,14 @@ fn apc_sequences_do_not_crash() {
 #[test]
 fn mixed_rtl_ltr_text_does_not_crash() {
     let mut t = t(80, 24);
-    feeds(&mut t, "Hello \u{0645}\u{0631}\u{062d}\u{0628}\u{0627} World\r\n");
-    feeds(&mut t, "\u{05E9}\u{05DC}\u{05D5}\u{05DD} mixed with ascii\r\n");
+    feeds(
+        &mut t,
+        "Hello \u{0645}\u{0631}\u{062d}\u{0628}\u{0627} World\r\n",
+    );
+    feeds(
+        &mut t,
+        "\u{05E9}\u{05DC}\u{05D5}\u{05DD} mixed with ascii\r\n",
+    );
     feeds(&mut t, "Normal line\r\n");
 }
 
@@ -409,7 +445,9 @@ fn combining_chars_do_not_crash() {
         '\u{0308}', // combining umlaut
         '\u{0327}', // combining cedilla
     ];
-    let s: String = std::iter::once(base).chain(combining.iter().copied()).collect();
+    let s: String = std::iter::once(base)
+        .chain(combining.iter().copied())
+        .collect();
     for _ in 0..80 {
         feeds(&mut t, s.as_bytes());
     }
@@ -420,7 +458,10 @@ fn combining_chars_do_not_crash() {
 fn zwj_emoji_sequences_do_not_crash() {
     let mut t = t(80, 10);
     // family: man+woman+girl+boy ZWJ sequence
-    feeds(&mut t, "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}\r\n");
+    feeds(
+        &mut t,
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}\r\n",
+    );
     // flag (regional indicator letters): 🇺🇸
     feeds(&mut t, "\u{1F1FA}\u{1F1F8} flag\r\n");
     // skin tone modifier
@@ -445,11 +486,11 @@ fn osc_color_query_storm_does_not_crash() {
 fn mode_toggle_storm_does_not_crash() {
     let mut t = t(80, 24);
     let modes = [
-        "\x1b[?1h",   // app cursor
+        "\x1b[?1h", // app cursor
         "\x1b[?1l",
-        "\x1b[?7h",   // wraparound
+        "\x1b[?7h", // wraparound
         "\x1b[?7l",
-        "\x1b[?25h",  // cursor visible
+        "\x1b[?25h", // cursor visible
         "\x1b[?25l",
         "\x1b[?1000h", // mouse X10
         "\x1b[?1000l",
@@ -471,9 +512,9 @@ fn cursor_save_restore_across_resize_does_not_crash() {
     let mut t = t(80, 24);
     for _ in 0..50 {
         feeds(&mut t, "\x1b[12;40H"); // move cursor
-        feeds(&mut t, "\x1b7");       // save (DEC)
+        feeds(&mut t, "\x1b7"); // save (DEC)
         t.resize(40, 12);
-        feeds(&mut t, "\x1b8");       // restore — must clamp to new size
+        feeds(&mut t, "\x1b8"); // restore — must clamp to new size
         feeds(&mut t, "X");
         t.resize(80, 24);
         feeds(&mut t, "\x1b[s\x1b[u"); // ANSI save/restore
@@ -485,24 +526,24 @@ fn cursor_save_restore_across_resize_does_not_crash() {
 fn scroll_region_with_origin_mode_does_not_crash() {
     let mut t = t(80, 24);
     feeds(&mut t, "\x1b[5;20r"); // set scroll region rows 5-20
-    feeds(&mut t, "\x1b[?6h");   // origin mode on
+    feeds(&mut t, "\x1b[?6h"); // origin mode on
     for i in 1..=16u32 {
         feeds(&mut t, format!("\x1b[{i};1H\x1b[K  line {i}"));
     }
-    feeds(&mut t, "\x1b[?6l");   // origin mode off
-    feeds(&mut t, "\x1b[r");     // reset scroll region
+    feeds(&mut t, "\x1b[?6l"); // origin mode off
+    feeds(&mut t, "\x1b[r"); // reset scroll region
 }
 
 /// Protected cells (DECSCA) should survive erase operations.
 #[test]
 fn protected_cells_do_not_crash() {
     let mut t = t(80, 24);
-    feeds(&mut t, "\x1b[1\"q");  // DECSCA protect
+    feeds(&mut t, "\x1b[1\"q"); // DECSCA protect
     feeds(&mut t, "PROTECTED");
-    feeds(&mut t, "\x1b[0\"q");  // DECSCA unprotect
-    feeds(&mut t, "\x1b[?2K");   // selective erase
-    feeds(&mut t, "\x1b[?1J");   // selective erase above
-    feeds(&mut t, "\x1b[?2J");   // selective erase display
+    feeds(&mut t, "\x1b[0\"q"); // DECSCA unprotect
+    feeds(&mut t, "\x1b[?2K"); // selective erase
+    feeds(&mut t, "\x1b[?1J"); // selective erase above
+    feeds(&mut t, "\x1b[?2J"); // selective erase display
 }
 
 /// Kitty keyboard protocol: push / pop stack depth.

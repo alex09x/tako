@@ -193,7 +193,9 @@ impl Terminal {
                         .and_then(|l| l.get(col).copied())
                         .unwrap_or_default()
                 } else {
-                    grid.get(abs_row - scrollback_len, col).copied().unwrap_or_default()
+                    grid.get(abs_row - scrollback_len, col)
+                        .copied()
+                        .unwrap_or_default()
                 };
                 push_glyph(grid, &mut line, &cell);
             }

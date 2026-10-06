@@ -20,7 +20,7 @@
 // `c` with control held, which is in no control-sequence table -- so nothing
 // usable reached the pty and `tail -f` could not be interrupted.
 
-use tako_core::key_encode::{encode, EncodeConfig, Key, KeyEvent, Mods};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, encode};
 
 const CFG: EncodeConfig = EncodeConfig {
     cursor_key_app_mode: false,
@@ -43,7 +43,11 @@ fn macos_key(text: &str, unshifted: char, mods: Mods) -> KeyEvent {
         press: true,
         unshifted: Some(unshifted),
         physical: Some(unshifted),
-        text: if text.is_empty() { None } else { Some(text.to_string()) },
+        text: if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        },
         composing: false,
     }
 }
@@ -80,11 +84,7 @@ fn every_ctrl_letter_maps_to_its_control_byte() {
         }
         let produced = char::from_u32(i as u32 + 1).unwrap();
         let ev = macos_key(&produced.to_string(), letter, Mods::CTRL);
-        assert_eq!(
-            encode(ev, CFG).as_slice(),
-            &[i as u8 + 1],
-            "ctrl+{letter}"
-        );
+        assert_eq!(encode(ev, CFG).as_slice(), &[i as u8 + 1], "ctrl+{letter}");
     }
 }
 
@@ -92,10 +92,22 @@ fn every_ctrl_letter_maps_to_its_control_byte() {
 /// reaches the shell, shift included.
 #[test]
 fn plain_and_shifted_typing_still_sends_its_text() {
-    assert_eq!(encode(macos_key("a", 'a', Mods::empty()), CFG).as_slice(), b"a");
-    assert_eq!(encode(macos_key("A", 'a', Mods::SHIFT), CFG).as_slice(), b"A");
-    assert_eq!(encode(macos_key("1", '1', Mods::empty()), CFG).as_slice(), b"1");
-    assert_eq!(encode(macos_key("!", '1', Mods::SHIFT), CFG).as_slice(), b"!");
+    assert_eq!(
+        encode(macos_key("a", 'a', Mods::empty()), CFG).as_slice(),
+        b"a"
+    );
+    assert_eq!(
+        encode(macos_key("A", 'a', Mods::SHIFT), CFG).as_slice(),
+        b"A"
+    );
+    assert_eq!(
+        encode(macos_key("1", '1', Mods::empty()), CFG).as_slice(),
+        b"1"
+    );
+    assert_eq!(
+        encode(macos_key("!", '1', Mods::SHIFT), CFG).as_slice(),
+        b"!"
+    );
 }
 
 // ── Through the FFI, the way the app actually sends a key ────────────────────
@@ -134,16 +146,31 @@ fn the_host_path_sends_the_interrupt_byte_for_ctrl_c() {
 #[test]
 fn the_host_path_sends_ctrl_d_and_ctrl_z() {
     let core = TakoCore::new(80, 24);
-    assert_eq!(core.encode_key(ffi_event("\u{4}", "d", true, false)), b"\x04".to_vec());
-    assert_eq!(core.encode_key(ffi_event("\u{1a}", "z", true, false)), b"\x1a".to_vec());
+    assert_eq!(
+        core.encode_key(ffi_event("\u{4}", "d", true, false)),
+        b"\x04".to_vec()
+    );
+    assert_eq!(
+        core.encode_key(ffi_event("\u{1a}", "z", true, false)),
+        b"\x1a".to_vec()
+    );
 }
 
 #[test]
 fn the_host_path_leaves_ordinary_typing_alone() {
     let core = TakoCore::new(80, 24);
-    assert_eq!(core.encode_key(ffi_event("a", "a", false, false)), b"a".to_vec());
-    assert_eq!(core.encode_key(ffi_event("A", "a", false, true)), b"A".to_vec());
-    assert_eq!(core.encode_key(ffi_event("!", "1", false, true)), b"!".to_vec());
+    assert_eq!(
+        core.encode_key(ffi_event("a", "a", false, false)),
+        b"a".to_vec()
+    );
+    assert_eq!(
+        core.encode_key(ffi_event("A", "a", false, true)),
+        b"A".to_vec()
+    );
+    assert_eq!(
+        core.encode_key(ffi_event("!", "1", false, true)),
+        b"!".to_vec()
+    );
 }
 
 /// Non-Latin layouts identify the key by the character the layout produces,

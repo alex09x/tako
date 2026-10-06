@@ -65,7 +65,10 @@ fn reply_is_a_dcs_carrying_the_request_id_and_four_hex_digits() {
     let mut t = Terminal::new(10, 2);
     feed(&mut t, "AB");
 
-    assert_eq!(raw_reply(&mut t, "\x1b[42;0;1;1;2;10*y"), "\x1bP42!~FF7D\x1b\\");
+    assert_eq!(
+        raw_reply(&mut t, "\x1b[42;0;1;1;2;10*y"),
+        "\x1bP42!~FF7D\x1b\\"
+    );
 }
 
 #[test]
@@ -108,11 +111,11 @@ fn printable_text_sums_its_code_points_and_negates_the_result() {
 fn each_attribute_adds_its_documented_weight() {
     // 'A' is 0x41 throughout; only the attribute changes.
     for (sgr, weight) in [
-        ("\x1b[4m", 0x10u32),  // underline
-        ("\x1b[7m", 0x20),     // reverse
-        ("\x1b[5m", 0x40),     // blink
-        ("\x1b[1m", 0x80),     // bold
-        ("\x1b[8m", 0x08),     // hidden
+        ("\x1b[4m", 0x10u32), // underline
+        ("\x1b[7m", 0x20),    // reverse
+        ("\x1b[5m", 0x40),    // blink
+        ("\x1b[1m", 0x80),    // bold
+        ("\x1b[8m", 0x08),    // hidden
     ] {
         let mut t = Terminal::new(10, 2);
         feed(&mut t, &format!("{sgr}A\x1b[m"));
@@ -278,10 +281,7 @@ fn the_no_trim_bit_counts_plain_spaces() {
 
     // Bounded to the three written cells, because the same bit also brings
     // never-written cells into the sum (see below).
-    let expected = format!(
-        "{:04X}",
-        (0x41u32 + 0x20 + 0x42).wrapping_neg() & 0xffff
-    );
+    let expected = format!("{:04X}", (0x41u32 + 0x20 + 0x42).wrapping_neg() & 0xffff);
     assert_eq!(checksum(&mut t, "\x1b[1;0;1;1;1;3*y"), expected);
 }
 

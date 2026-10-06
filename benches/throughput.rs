@@ -11,8 +11,8 @@
 //! Throughput benchmarks for the terminal engine: how fast `feed` chews
 //! through the byte patterns real programs emit.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tako_core::grid::{Cell, Grid, DEFAULT_SCROLLBACK_CAPACITY};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use tako_core::grid::{Cell, DEFAULT_SCROLLBACK_CAPACITY, Grid};
 use tako_core::parser::{Parser, Perform};
 use tako_core::terminal::Terminal;
 
@@ -187,7 +187,14 @@ fn bench_grid_scroll(c: &mut Criterion) {
         let mut grid = Grid::with_scrollback_capacity(COLS, ROWS, capacity);
         for row in 0..ROWS {
             for col in 0..COLS {
-                grid.set(row, col, Cell { char: 'x', ..Cell::default() });
+                grid.set(
+                    row,
+                    col,
+                    Cell {
+                        char: 'x',
+                        ..Cell::default()
+                    },
+                );
             }
         }
         grid

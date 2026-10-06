@@ -66,7 +66,11 @@ fn clicking_a_gap_selects_the_gap_not_the_words_around_it() {
     // Checked through the range rather than the text: copying deliberately
     // trims trailing whitespace, so a run of spaces extracts as nothing.
     let ((_, from), (_, to)) = t.selection_range().expect("nothing selected");
-    assert_eq!((from, to), (1, 4), "the gap between 'a' and 'b' is columns 1..4");
+    assert_eq!(
+        (from, to),
+        (1, 4),
+        "the gap between 'a' and 'b' is columns 1..4"
+    );
 }
 
 #[test]
@@ -241,7 +245,11 @@ fn selection_addresses_the_viewport_while_scrolled_back() {
         .iter()
         .map(|c| if c.char == '\0' { ' ' } else { c.char })
         .collect();
-    let first_word = row0.split_whitespace().next().unwrap_or_default().to_string();
+    let first_word = row0
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string();
 
     t.select_word(0, 1);
     assert_eq!(selected(&t), first_word, "viewport row 0 was {row0:?}");

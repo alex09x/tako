@@ -15,13 +15,20 @@ use tako_core::ffi::TakoCore;
 use tako_core::terminal::Terminal;
 
 fn lines(n: usize) -> Vec<u8> {
-    (0..n).map(|i| format!("line {i}\r\n")).collect::<String>().into_bytes()
+    (0..n)
+        .map(|i| format!("line {i}\r\n"))
+        .collect::<String>()
+        .into_bytes()
 }
 
 fn oldest_retained(t: &Terminal) -> String {
     let grid = t.active_grid();
     let line = grid.scrollback_line(grid.scrollback_len() - 1).unwrap();
-    line.iter().map(|c| c.char).collect::<String>().trim_end_matches(['\0', ' ']).to_string()
+    line.iter()
+        .map(|c| c.char)
+        .collect::<String>()
+        .trim_end_matches(['\0', ' '])
+        .to_string()
 }
 
 #[test]
@@ -78,5 +85,11 @@ fn the_ffi_sets_the_limit_too() {
     core.feed(lines(50));
     core.set_scrollback_limit(3);
     core.feed(lines(10));
-    assert!(core.buffer_text().lines().filter(|l| l.starts_with("line")).count() <= 3 + 4);
+    assert!(
+        core.buffer_text()
+            .lines()
+            .filter(|l| l.starts_with("line"))
+            .count()
+            <= 3 + 4
+    );
 }

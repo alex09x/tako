@@ -358,10 +358,7 @@ mod tests {
                 row: 0,
             };
             let expected_sgr = format!("\x1b[<{num};1;1M").into_bytes();
-            assert_eq!(
-                encode(press_event, MouseEncoding::Sgr),
-                Some(expected_sgr)
-            );
+            assert_eq!(encode(press_event, MouseEncoding::Sgr), Some(expected_sgr));
 
             let release_event = MouseEvent {
                 button: btn,

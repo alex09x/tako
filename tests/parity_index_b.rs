@@ -33,7 +33,9 @@ fn dump_screen(term: &Terminal) -> String {
     for row in 0..grid.rows() {
         let mut line = String::new();
         for col in 0..grid.cols() {
-            let Some(cell) = grid.get(row, col) else { continue };
+            let Some(cell) = grid.get(row, col) else {
+                continue;
+            };
             if !cell.is_wide_spacer {
                 line.push(if cell.char == '\0' { ' ' } else { cell.char });
             }

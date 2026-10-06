@@ -1920,7 +1920,7 @@ fn test_import_refuses_when_the_retained_destination_plus_replacement_exceeds_th
 fn test_retained_capacity_outlives_a_logical_clear() {
     use tako_core::terminal::checkpoint::{import_cost, retained_cost};
 
-    const PAYLOAD: usize = 8 << 20;
+    const PAYLOAD: usize = 32 * 1024;
 
     let mut term = Terminal::new(20, 6);
     let mut input = Vec::with_capacity(PAYLOAD + 8);
@@ -1940,8 +1940,8 @@ fn test_retained_capacity_outlives_a_logical_clear() {
         "an in-flight OSC belongs in the retained cost"
     );
 
-    // CAN abandons the sequence; the next OSC calls `clear` on the same
-    // buffer. Logically the payload is gone.
+    // CAN abandons the sequence; within the 64 KiB pool threshold, the next
+    // OSC calls `clear` on the same buffer. Logically the payload is gone.
     term.feed(b"\x18");
     term.feed(b"\x1b]0;short\x07");
 
@@ -1959,7 +1959,7 @@ fn test_retained_capacity_outlives_a_logical_clear() {
         "the buffer is still allocated and must still be counted: retained={retained}"
     );
     assert!(
-        retained > decoded.saturating_mul(100),
+        retained > decoded.saturating_add(PAYLOAD as u64 / 2),
         "this test is only meaningful when the two numbers diverge sharply: \
          retained={retained} decoded={decoded}"
     );
@@ -1983,36 +1983,42 @@ fn test_import_counts_storage_the_destination_retained_after_a_logical_clear() {
         CheckpointError, MAX_IMPORT_ALLOC_BYTES, import_cost, retained_cost,
     };
 
-    // 10_000 x 680, primary and alternate: ~415 MiB decoded, and a container
-    // of a few kilobytes -- so the blob itself is not what tips the budget.
-    let blob = {
-        let mut source = Terminal::new(10_000, 680);
+    // 9_996 x 839 calibrated to land ~73 KiB below MAX_IMPORT_ALLOC_BYTES,
+    // so fresh accepts it while dest (holding pooled parser buffers) trips it.
+    let (blob, incoming) = {
+        let mut source = Terminal::new(9_996, 839);
         source.feed(b"the replacement state");
-        source
+        let inc = import_cost(&source);
+        let b = source
             .export_checkpoint()
-            .expect("a big but legal state exports")
-    };
-    let incoming = {
-        let mut probe = Terminal::new(10_000, 680);
-        probe.feed(b"the replacement state");
-        import_cost(&probe)
+            .expect("a big but legal state exports");
+        (b, inc)
     };
     assert!(
         incoming < MAX_IMPORT_ALLOC_BYTES,
         "the incoming state must be legal on its own: {incoming}"
     );
 
-    // A destination that has consumed a 70 MiB OSC and then abandoned it: the
-    // buffer doubled to 128 MiB and is still allocated.
+    // A destination that has consumed pooled OSC and APC buffers within the
+    // 64 KiB pool threshold and then abandoned them: both buffers retain their
+    // capacity after a logical clear.
     let mut dest = Terminal::new(20, 6);
     dest.feed(b"the destination that must survive\r\n");
-    let mut input = Vec::with_capacity((70 << 20) + 8);
+    let mut input = Vec::with_capacity((48 * 1024) + 8);
     input.extend_from_slice(b"\x1b]0;");
-    input.extend(std::iter::repeat_n(b'x', 70 << 20));
+    input.extend(std::iter::repeat_n(b'x', 48 * 1024));
     dest.feed(&input);
     drop(input);
     dest.feed(b"\x18");
     dest.feed(b"\x1b]0;short\x07");
+
+    let mut apc_input = Vec::with_capacity((48 * 1024) + 8);
+    apc_input.extend_from_slice(b"\x1b_");
+    apc_input.extend(std::iter::repeat_n(b'y', 48 * 1024));
+    dest.feed(&apc_input);
+    drop(apc_input);
+    dest.feed(b"\x18");
+    dest.feed(b"\x1b_short\x1b\\");
 
     let dest_decoded = import_cost(&dest);
     let dest_retained = retained_cost(&dest);
@@ -2081,13 +2087,17 @@ fn test_import_counts_the_payloads_of_events_the_host_has_not_collected() {
     const EVENTS: usize = 120;
     const EACH: usize = 1 << 20;
 
-    /// A terminal carrying `EVENTS` undelivered OSC 0 titles of `EACH` bytes.
+    /// A terminal carrying `EVENTS` undelivered OSC 52 clipboard writes of `EACH` bytes.
     fn destination_with_queued_events() -> Terminal {
         let mut term = Terminal::new(20, 6);
         term.feed(b"the destination that must survive\r\n");
-        let mut osc = Vec::with_capacity(EACH + 8);
-        osc.extend_from_slice(b"\x1b]0;");
-        osc.extend(std::iter::repeat_n(b'x', EACH));
+        let payload = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(vec![b'A'; EACH])
+        };
+        let mut osc = Vec::with_capacity(payload.len() + 16);
+        osc.extend_from_slice(b"\x1b]52;c;");
+        osc.extend_from_slice(payload.as_bytes());
         osc.push(0x07);
         for _ in 0..EVENTS {
             term.feed(&osc);

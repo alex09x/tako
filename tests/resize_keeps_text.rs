@@ -21,12 +21,21 @@ use tako_core::terminal::Terminal;
 fn narrowing_keeps_what_was_printed() {
     let mut t = Terminal::new(80, 24);
     t.feed(b"PTY xterm-256color 80x24\r\nAUTH password\r\nTYPE SOMETHING\r\n");
-    assert!(t.dump_text().contains("AUTH password"), "sanity: text is there at 80 cols");
+    assert!(
+        t.dump_text().contains("AUTH password"),
+        "sanity: text is there at 80 cols"
+    );
 
     t.resize(47, 24);
     let after = t.dump_text();
-    assert!(after.contains("AUTH password"), "narrowing lost the text:\n{after}");
-    assert!(after.contains("TYPE SOMETHING"), "narrowing lost the text:\n{after}");
+    assert!(
+        after.contains("AUTH password"),
+        "narrowing lost the text:\n{after}"
+    );
+    assert!(
+        after.contains("TYPE SOMETHING"),
+        "narrowing lost the text:\n{after}"
+    );
 }
 
 #[test]
@@ -69,9 +78,19 @@ fn orientation_round_trip_restores_rows_archived_by_a_transient_height() {
         screen.contains("fixture pty ready"),
         "restored portrait left the banner in scrollback:\n{screen}"
     );
-    assert!(screen.contains("Unicode OK"), "restored portrait lost row two:\n{screen}");
-    assert!(screen.contains("$"), "restored portrait lost the prompt:\n{screen}");
-    assert_eq!(t.cursor().0, 2, "cursor did not follow the restored prompt row");
+    assert!(
+        screen.contains("Unicode OK"),
+        "restored portrait lost row two:\n{screen}"
+    );
+    assert!(
+        screen.contains("$"),
+        "restored portrait lost the prompt:\n{screen}"
+    );
+    assert_eq!(
+        t.cursor().0,
+        2,
+        "cursor did not follow the restored prompt row"
+    );
 }
 
 #[test]

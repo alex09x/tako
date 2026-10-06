@@ -10,9 +10,15 @@
 
 // Upstream tests ported 1:1 from the upstream `key_encode` test suite (group: kitty)
 
-use tako_core::key_encode::{encode, EncodeConfig, Key, KeyEvent, Mods, OptionAsAlt};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, OptionAsAlt, encode};
 
-fn make_key_event(key: Key, mods: Mods, press: bool, repeat: bool, unshifted: Option<char>) -> KeyEvent {
+fn make_key_event(
+    key: Key,
+    mods: Mods,
+    press: bool,
+    repeat: bool,
+    unshifted: Option<char>,
+) -> KeyEvent {
     KeyEvent {
         key,
         mods,
@@ -65,7 +71,15 @@ fn cfg(kitty_flags: u8) -> EncodeConfig {
 /// Upstream test: "kitty: plain text"
 #[test]
 fn kitty_plain_text() {
-    let ev = make_key_event_full(Key::Char('a'), Mods::empty(), true, false, None, Some("abcd"), false);
+    let ev = make_key_event_full(
+        Key::Char('a'),
+        Mods::empty(),
+        true,
+        false,
+        None,
+        Some("abcd"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(1)), b"abcd");
 }
 
@@ -80,47 +94,77 @@ fn kitty_repeat_with_just_disambiguate() {
 #[test]
 fn kitty_enter_backspace_tab() {
     assert_eq!(
-        encode(make_key_event(Key::Enter, Mods::empty(), true, false, None), cfg(1)),
+        encode(
+            make_key_event(Key::Enter, Mods::empty(), true, false, None),
+            cfg(1)
+        ),
         b"\r"
     );
     assert_eq!(
-        encode(make_key_event(Key::Backspace, Mods::empty(), true, false, None), cfg(1)),
+        encode(
+            make_key_event(Key::Backspace, Mods::empty(), true, false, None),
+            cfg(1)
+        ),
         b"\x7f"
     );
     assert_eq!(
-        encode(make_key_event(Key::Backspace, Mods::empty(), true, false, None), cfg(1)),
+        encode(
+            make_key_event(Key::Backspace, Mods::empty(), true, false, None),
+            cfg(1)
+        ),
         b"\x7f"
     );
     assert_eq!(
-        encode(make_key_event(Key::Tab, Mods::empty(), true, false, None), cfg(1)),
+        encode(
+            make_key_event(Key::Tab, Mods::empty(), true, false, None),
+            cfg(1)
+        ),
         b"\t"
     );
 
     // No release events if "report_all" is not set
     assert_eq!(
-        encode(make_key_event(Key::Enter, Mods::empty(), false, false, None), cfg(3)),
+        encode(
+            make_key_event(Key::Enter, Mods::empty(), false, false, None),
+            cfg(3)
+        ),
         b""
     );
     assert_eq!(
-        encode(make_key_event(Key::Backspace, Mods::empty(), false, false, None), cfg(3)),
+        encode(
+            make_key_event(Key::Backspace, Mods::empty(), false, false, None),
+            cfg(3)
+        ),
         b""
     );
     assert_eq!(
-        encode(make_key_event(Key::Tab, Mods::empty(), false, false, None), cfg(3)),
+        encode(
+            make_key_event(Key::Tab, Mods::empty(), false, false, None),
+            cfg(3)
+        ),
         b""
     );
 
     // Release events if "report_all" is set
     assert_eq!(
-        encode(make_key_event(Key::Enter, Mods::empty(), false, false, None), cfg(11)),
+        encode(
+            make_key_event(Key::Enter, Mods::empty(), false, false, None),
+            cfg(11)
+        ),
         b"\x1b[13;1:3u"
     );
     assert_eq!(
-        encode(make_key_event(Key::Backspace, Mods::empty(), false, false, None), cfg(11)),
+        encode(
+            make_key_event(Key::Backspace, Mods::empty(), false, false, None),
+            cfg(11)
+        ),
         b"\x1b[127;1:3u"
     );
     assert_eq!(
-        encode(make_key_event(Key::Tab, Mods::empty(), false, false, None), cfg(11)),
+        encode(
+            make_key_event(Key::Tab, Mods::empty(), false, false, None),
+            cfg(11)
+        ),
         b"\x1b[9;1:3u"
     );
 }
@@ -198,7 +242,15 @@ fn kitty_composing_with_modifier() {
 /// Upstream test: "kitty: composed text with report all"
 #[test]
 fn kitty_composed_text_with_report_all() {
-    let ev = make_key_event_full(Key::Unidentified, Mods::empty(), true, false, None, Some("\u{fb}"), false);
+    let ev = make_key_event_full(
+        Key::Unidentified,
+        Mods::empty(),
+        true,
+        false,
+        None,
+        Some("\u{fb}"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(31)), "\u{fb}".as_bytes());
 }
 
@@ -219,7 +271,15 @@ fn kitty_matching_unshifted_codepoint() {
 /// Upstream test: "kitty: report alternates with caps"
 #[test]
 fn kitty_report_alternates_with_caps() {
-    let ev = make_key_event_full(Key::Char('j'), Mods::CAPS_LOCK, true, false, Some('j'), Some("J"), false);
+    let ev = make_key_event_full(
+        Key::Char('j'),
+        Mods::CAPS_LOCK,
+        true,
+        false,
+        Some('j'),
+        Some("J"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(29)), b"\x1b[106;65;74u"); // disambiguate + report_all + report_alternates + report_associated
 }
 
@@ -247,7 +307,15 @@ fn kitty_report_alternates_with_ru_layout_shifted() {
 /// Upstream test: "kitty: report alternates with ru layout caps lock"
 #[test]
 fn kitty_report_alternates_with_ru_layout_caps_lock() {
-    let ev = make_key_event_full(Key::Char(';'), Mods::CAPS_LOCK, true, false, Some('ч'), Some("Ч"), false);
+    let ev = make_key_event_full(
+        Key::Char(';'),
+        Mods::CAPS_LOCK,
+        true,
+        false,
+        Some('ч'),
+        Some("Ч"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(29)), b"\x1b[1095::59;65;1063u"); // disambiguate + report_all + report_alternates + report_associated
 }
 
@@ -293,7 +361,15 @@ fn kitty_report_associated_with_alt_text_on_macos_with_option() {
     // macos_option_as_alt = false: Alt does not suppress associated text, so
     // the composed character ("∑", option+w on a US Mac layout) still comes
     // through.
-    let ev = make_key_event_full(Key::Char('w'), Mods::ALT, true, false, Some('w'), Some("\u{2211}"), false);
+    let ev = make_key_event_full(
+        Key::Char('w'),
+        Mods::ALT,
+        true,
+        false,
+        Some('w'),
+        Some("\u{2211}"),
+        false,
+    );
     let config = EncodeConfig {
         cursor_key_app_mode: false,
         keypad_app_mode: false,
@@ -313,7 +389,15 @@ fn kitty_report_associated_with_alt_text_on_macos_with_alt() {
     // macos_option_as_alt = true: Alt is a real modifier now, so it
     // suppresses the associated text -- with the modifier, no text section;
     // without it, the composed character still comes through.
-    let with_alt = make_key_event_full(Key::Char('w'), Mods::ALT, true, false, Some('w'), Some("\u{2211}"), false);
+    let with_alt = make_key_event_full(
+        Key::Char('w'),
+        Mods::ALT,
+        true,
+        false,
+        Some('w'),
+        Some("\u{2211}"),
+        false,
+    );
     let config = EncodeConfig {
         cursor_key_app_mode: false,
         keypad_app_mode: false,
@@ -326,7 +410,15 @@ fn kitty_report_associated_with_alt_text_on_macos_with_alt() {
     };
     assert_eq!(encode(with_alt, config), b"\x1b[119;3u");
 
-    let without_alt = make_key_event_full(Key::Char('w'), Mods::empty(), true, false, Some('w'), Some("\u{2211}"), false);
+    let without_alt = make_key_event_full(
+        Key::Char('w'),
+        Mods::empty(),
+        true,
+        false,
+        Some('w'),
+        Some("\u{2211}"),
+        false,
+    );
     let actual = encode(without_alt, config);
     assert_eq!(&actual[..], "\u{1b}[119;;8721u".as_bytes());
 }
@@ -366,14 +458,30 @@ fn kitty_enter_with_utf8_dead_key_state() {
     // An IME confirmation still sends an Enter key, so when it carries
     // committed text (and that text is not itself a single control
     // character), the text wins over Enter's own default bytes.
-    let ev = make_key_event_full(Key::Enter, Mods::empty(), true, false, Some('\r'), Some("A"), false);
+    let ev = make_key_event_full(
+        Key::Enter,
+        Mods::empty(),
+        true,
+        false,
+        Some('\r'),
+        Some("A"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(13)), b"A");
 }
 
 /// Upstream test: "kitty: keypad number"
 #[test]
 fn kitty_keypad_number() {
-    let ev = make_key_event_full(Key::Keypad1, Mods::empty(), true, false, None, Some("1"), false);
+    let ev = make_key_event_full(
+        Key::Keypad1,
+        Mods::empty(),
+        true,
+        false,
+        None,
+        Some("1"),
+        false,
+    );
     let actual = encode(ev, cfg(31));
     assert_eq!(&actual[1..], b"[57400;;49u");
 }
@@ -383,7 +491,15 @@ fn kitty_keypad_number() {
 fn kitty_backspace_with_utf8_dead_key_state() {
     // Backspace's dead-key text commit encodes nothing at all: the IME
     // already modified the preedit buffer, so there is nothing left to send.
-    let ev = make_key_event_full(Key::Backspace, Mods::empty(), true, false, Some('\r'), Some("A"), false);
+    let ev = make_key_event_full(
+        Key::Backspace,
+        Mods::empty(),
+        true,
+        false,
+        Some('\r'),
+        Some("A"),
+        false,
+    );
     assert_eq!(encode(ev, cfg(31)), b"");
 }
 
@@ -412,22 +528,40 @@ use tako_core::key_encode::kitty_sequence_encode;
 #[test]
 fn kitty_sequence_backspace() {
     // Plain.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 0, [None, None], None), b"\x1b[127u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 0, [None, None], None),
+        b"\x1b[127u"
+    );
     // Release event.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 3, [None, None], None), b"\x1b[127;1:3u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 3, [None, None], None),
+        b"\x1b[127;1:3u"
+    );
     // Shift.
-    assert_eq!(kitty_sequence_encode(127, b'u', 2, 0, [None, None], None), b"\x1b[127;2u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 2, 0, [None, None], None),
+        b"\x1b[127;2u"
+    );
 }
 
 /// Upstream test: "KittySequence: text"
 #[test]
 fn kitty_sequence_text() {
     // Plain.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("A")), b"\x1b[127;;65u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("A")),
+        b"\x1b[127;;65u"
+    );
     // Release.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 3, [None, None], Some("A")), b"\x1b[127;1:3;65u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 3, [None, None], Some("A")),
+        b"\x1b[127;1:3;65u"
+    );
     // Shift.
-    assert_eq!(kitty_sequence_encode(127, b'u', 2, 0, [None, None], Some("A")), b"\x1b[127;2;65u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 2, 0, [None, None], Some("A")),
+        b"\x1b[127;2;65u"
+    );
 }
 
 /// Upstream test: "KittySequence: text with control characters"
@@ -435,26 +569,41 @@ fn kitty_sequence_text() {
 fn kitty_sequence_text_with_control_characters() {
     // By itself: the only codepoint is control, so the whole text section
     // (and its leading ";;") is omitted.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("\n")), b"\x1b[127u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("\n")),
+        b"\x1b[127u"
+    );
     // With other printables: the control codepoint is skipped, not the text
     // section itself.
-    assert_eq!(kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("A\n")), b"\x1b[127;;65u");
+    assert_eq!(
+        kitty_sequence_encode(127, b'u', 1, 0, [None, None], Some("A\n")),
+        b"\x1b[127;;65u"
+    );
 }
 
 /// Upstream test: "KittySequence: special no mods"
 #[test]
 fn kitty_sequence_special_no_mods() {
-    assert_eq!(kitty_sequence_encode(1, b'A', 1, 0, [None, None], None), b"\x1b[A");
+    assert_eq!(
+        kitty_sequence_encode(1, b'A', 1, 0, [None, None], None),
+        b"\x1b[A"
+    );
 }
 
 /// Upstream test: "KittySequence: special mods only"
 #[test]
 fn kitty_sequence_special_mods_only() {
-    assert_eq!(kitty_sequence_encode(1, b'A', 2, 0, [None, None], None), b"\x1b[1;2A");
+    assert_eq!(
+        kitty_sequence_encode(1, b'A', 2, 0, [None, None], None),
+        b"\x1b[1;2A"
+    );
 }
 
 /// Upstream test: "KittySequence: special mods and event"
 #[test]
 fn kitty_sequence_special_mods_and_event() {
-    assert_eq!(kitty_sequence_encode(1, b'A', 2, 3, [None, None], None), b"\x1b[1;2:3A");
+    assert_eq!(
+        kitty_sequence_encode(1, b'A', 2, 3, [None, None], None),
+        b"\x1b[1;2:3A"
+    );
 }

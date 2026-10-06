@@ -87,7 +87,10 @@ mod tests {
 
     #[test]
     fn test_encode_plain_text() {
-        assert_eq!(encode("hello world", true), b"\x1b[200~hello world\x1b[201~");
+        assert_eq!(
+            encode("hello world", true),
+            b"\x1b[200~hello world\x1b[201~"
+        );
         assert_eq!(encode("hello world", false), b"hello world");
     }
 
@@ -126,7 +129,10 @@ mod tests {
         assert_eq!(sanitize("\x01foo\x02bar"), "foobar");
         // ETX (0x03 / Ctrl+C)
         assert_eq!(sanitize("echo 'stop'\x03"), "echo 'stop'");
-        assert_eq!(encode("echo 'stop'\x03", true), b"\x1b[200~echo 'stop'\x1b[201~");
+        assert_eq!(
+            encode("echo 'stop'\x03", true),
+            b"\x1b[200~echo 'stop'\x1b[201~"
+        );
         // EOT (0x04 / Ctrl+D), ENQ (0x05), ACK (0x06), BEL (0x07), BS (0x08)
         assert_eq!(sanitize("a\x04b\x05c\x06d\x07e\x08f"), "abcdef");
         // Tab (0x09) preserved
@@ -149,14 +155,20 @@ mod tests {
     #[test]
     fn test_del_stripped() {
         assert_eq!(sanitize("hello\x7fworld"), "helloworld");
-        assert_eq!(encode("hello\x7fworld", true), b"\x1b[200~helloworld\x1b[201~");
+        assert_eq!(
+            encode("hello\x7fworld", true),
+            b"\x1b[200~helloworld\x1b[201~"
+        );
     }
 
     #[test]
     fn test_c1_controls_stripped() {
         // C1 CSI: \u{009b}
         assert_eq!(sanitize("hello\u{009b}2Jworld"), "hello2Jworld");
-        assert_eq!(encode("hello\u{009b}2Jworld", true), b"\x1b[200~hello2Jworld\x1b[201~");
+        assert_eq!(
+            encode("hello\u{009b}2Jworld", true),
+            b"\x1b[200~hello2Jworld\x1b[201~"
+        );
         // C1 OSC: \u{009d}
         assert_eq!(sanitize("cmd\u{009d}52;c;test\u{009c}"), "cmd52;c;test");
         // C1 DCS: \u{0090}, C1 APC: \u{009f}, C1 SOS: \u{0098}

@@ -168,7 +168,11 @@ impl TestServer {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(server.dir.join("client.pub"));
         keygen_full("ed25519", &path, passphrase, None)?;
-        std::fs::copy(server.dir.join("client.pub"), server.dir.join("authorized_keys")).ok()?;
+        std::fs::copy(
+            server.dir.join("client.pub"),
+            server.dir.join("authorized_keys"),
+        )
+        .ok()?;
         server.client_key = std::fs::read_to_string(&path).ok()?;
         Some(server)
     }
@@ -284,7 +288,8 @@ fn keygen_full(kind: &str, path: &Path, passphrase: &str, bits: Option<&str>) ->
     let bits = bits.map(str::to_string).or(inline_bits);
 
     let mut cmd = Command::new("ssh-keygen");
-    cmd.args(["-q", "-t", kind, "-N", passphrase, "-f"]).arg(path);
+    cmd.args(["-q", "-t", kind, "-N", passphrase, "-f"])
+        .arg(path);
     if let Some(bits) = bits {
         cmd.args(["-b", &bits]);
     } else if kind == "rsa" {
@@ -423,34 +428,56 @@ fn authenticates_with_an_rsa_client_key() {
 
 #[test]
 fn negotiates_curve25519() {
-    with_server("ed25519", "ed25519", "KexAlgorithms curve25519-sha256", |server| {
-        let out = server.shell_says(PROBE).expect("connection failed");
-        assert!(out.contains("TAKO_MARKER"), "no shell output: {out:?}");
-    });
+    with_server(
+        "ed25519",
+        "ed25519",
+        "KexAlgorithms curve25519-sha256",
+        |server| {
+            let out = server.shell_says(PROBE).expect("connection failed");
+            assert!(out.contains("TAKO_MARKER"), "no shell output: {out:?}");
+        },
+    );
 }
 
 #[test]
 fn negotiates_ecdh_over_the_nist_curves() {
-    for curve in ["ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521"] {
-        with_server("ed25519", "ed25519", &format!("KexAlgorithms {curve}"), |server| {
-            let out = server
-                .shell_says(PROBE)
-                .unwrap_or_else(|e| panic!("{curve} failed: {e}"));
-            assert!(out.contains("TAKO_MARKER"), "{curve}: no shell output");
-        });
+    for curve in [
+        "ecdh-sha2-nistp256",
+        "ecdh-sha2-nistp384",
+        "ecdh-sha2-nistp521",
+    ] {
+        with_server(
+            "ed25519",
+            "ed25519",
+            &format!("KexAlgorithms {curve}"),
+            |server| {
+                let out = server
+                    .shell_says(PROBE)
+                    .unwrap_or_else(|e| panic!("{curve} failed: {e}"));
+                assert!(out.contains("TAKO_MARKER"), "{curve}: no shell output");
+            },
+        );
     }
 }
 
 #[test]
 fn negotiates_finite_field_diffie_hellman() {
     // The fallback an old or conservatively configured server leaves on.
-    for kex in ["diffie-hellman-group14-sha256", "diffie-hellman-group16-sha512"] {
-        with_server("ed25519", "ed25519", &format!("KexAlgorithms {kex}"), |server| {
-            let out = server
-                .shell_says(PROBE)
-                .unwrap_or_else(|e| panic!("{kex} failed: {e}"));
-            assert!(out.contains("TAKO_MARKER"), "{kex}: no shell output");
-        });
+    for kex in [
+        "diffie-hellman-group14-sha256",
+        "diffie-hellman-group16-sha512",
+    ] {
+        with_server(
+            "ed25519",
+            "ed25519",
+            &format!("KexAlgorithms {kex}"),
+            |server| {
+                let out = server
+                    .shell_says(PROBE)
+                    .unwrap_or_else(|e| panic!("{kex} failed: {e}"));
+                assert!(out.contains("TAKO_MARKER"), "{kex}: no shell output");
+            },
+        );
     }
 }
 
@@ -465,12 +492,17 @@ fn negotiates_each_supported_cipher() {
         "aes192-ctr",
         "aes256-ctr",
     ] {
-        with_server("ed25519", "ed25519", &format!("Ciphers {cipher}"), |server| {
-            let out = server
-                .shell_says(PROBE)
-                .unwrap_or_else(|e| panic!("{cipher} failed: {e}"));
-            assert!(out.contains("TAKO_MARKER"), "{cipher}: no shell output");
-        });
+        with_server(
+            "ed25519",
+            "ed25519",
+            &format!("Ciphers {cipher}"),
+            |server| {
+                let out = server
+                    .shell_says(PROBE)
+                    .unwrap_or_else(|e| panic!("{cipher} failed: {e}"));
+                assert!(out.contains("TAKO_MARKER"), "{cipher}: no shell output");
+            },
+        );
     }
 }
 
@@ -541,8 +573,14 @@ fn utf8_survives_the_round_trip() {
             // under a UTF-8 locale, which a CI sshd need not give the shell.
             .shell_says("printf '\\344\\270\\226\\347\\225\\214 \\320\\277\\321\\200\\320\\270\\320\\262\\320\\265\\321\\202\\n'; printf 'TAKO_%s\\n' MARKER")
             .expect("connection failed");
-        assert!(out.contains("\u{4e16}\u{754c}"), "CJK did not survive: {out:?}");
-        assert!(out.contains("\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442}"), "Cyrillic did not survive");
+        assert!(
+            out.contains("\u{4e16}\u{754c}"),
+            "CJK did not survive: {out:?}"
+        );
+        assert!(
+            out.contains("\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442}"),
+            "Cyrillic did not survive"
+        );
     });
 }
 
@@ -619,7 +657,10 @@ fn an_encrypted_key_without_its_passphrase_is_reported() {
         return;
     };
     let result = server.shell_says_with_passphrase(PROBE, None);
-    assert!(result.is_err(), "an encrypted key opened without its passphrase");
+    assert!(
+        result.is_err(),
+        "an encrypted key opened without its passphrase"
+    );
 }
 
 // ── Cleanliness ──────────────────────────────────────────────────────────────
@@ -629,18 +670,19 @@ fn an_encrypted_key_without_its_passphrase_is_reported() {
 #[test]
 fn a_server_is_gone_once_its_test_ends() {
     let port = {
-        let Some(server) = require_server(
-            TestServer::start("ed25519", "ed25519", ""),
-            "cleanup test",
-        ) else {
+        let Some(server) =
+            require_server(TestServer::start("ed25519", "ed25519", ""), "cleanup test")
+        else {
             return;
         };
         let port = server.port;
-        assert!(TcpStream::connect_timeout(
-            &format!("127.0.0.1:{port}").parse().unwrap(),
-            Duration::from_millis(200)
-        )
-        .is_ok());
+        assert!(
+            TcpStream::connect_timeout(
+                &format!("127.0.0.1:{port}").parse().unwrap(),
+                Duration::from_millis(200)
+            )
+            .is_ok()
+        );
         port
     };
 

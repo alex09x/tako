@@ -257,41 +257,98 @@ fn test_null_out_params_return_zero() {
     let mut len: usize = 0;
 
     // prod_vt_viewport_text
-    assert_eq!(unsafe { prod_vt_viewport_text(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_viewport_text(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
-    assert_eq!(unsafe { prod_vt_viewport_text(vt.as_ptr(), null_mut(), null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_viewport_text(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_viewport_text(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_viewport_text(vt.as_ptr(), null_mut(), null_mut()) },
+        0
+    );
 
     // prod_vt_viewport_ansi
-    assert_eq!(unsafe { prod_vt_viewport_ansi(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_viewport_ansi(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_viewport_ansi(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_viewport_ansi(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_snapshot_ansi
-    assert_eq!(unsafe { prod_vt_snapshot_ansi(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_snapshot_ansi(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_snapshot_ansi_v2
-    assert_eq!(unsafe { prod_vt_snapshot_ansi_v2(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_snapshot_ansi_v2(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi_v2(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi_v2(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_title
-    assert_eq!(unsafe { prod_vt_title(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_title(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_title(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_title(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_drain_responses
-    assert_eq!(unsafe { prod_vt_drain_responses(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_drain_responses(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_drain_responses(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_drain_responses(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_checkpoint
-    assert_eq!(unsafe { prod_vt_checkpoint(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_checkpoint(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_checkpoint_export
-    assert_eq!(unsafe { prod_vt_checkpoint_export(vt.as_ptr(), null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_export(vt.as_ptr(), &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_export(vt.as_ptr(), null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_export(vt.as_ptr(), &mut ptr, null_mut()) },
+        0
+    );
 
     // prod_vt_checkpoint_export_limited
-    assert_eq!(unsafe { prod_vt_checkpoint_export_limited(vt.as_ptr(), 1024, null_mut(), &mut len) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_export_limited(vt.as_ptr(), 1024, &mut ptr, null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_export_limited(vt.as_ptr(), 1024, null_mut(), &mut len) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_export_limited(vt.as_ptr(), 1024, &mut ptr, null_mut()) },
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +372,10 @@ fn test_row_ansi_wide_characters_and_all_text_attributes() {
     // The text must contain the wide characters and the styled letters
     assert!(ansi_str.contains("你好"), "must contain wide characters");
     assert!(ansi_str.contains("\x1b["), "must emit ANSI SGR escapes");
-    assert!(ansi_str.contains(";1") || ansi_str.contains("\x1b[0;1"), "bold attr emitted");
+    assert!(
+        ansi_str.contains(";1") || ansi_str.contains("\x1b[0;1"),
+        "bold attr emitted"
+    );
     assert!(ansi_str.contains(";2"), "dim attr emitted");
     assert!(ansi_str.contains(";3"), "italic attr emitted");
     assert!(ansi_str.contains(";4"), "underline attr emitted");
@@ -373,7 +433,11 @@ fn test_write_and_discard_events_safe() {
     unsafe { prod_vt_discard_events(vt.as_ptr()) };
 
     let text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt.as_ptr(), o, l)) }.unwrap();
-    assert_eq!(String::from_utf8(text).unwrap().trim(), "", "nothing should have been written");
+    assert_eq!(
+        String::from_utf8(text).unwrap().trim(),
+        "",
+        "nothing should have been written"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -408,12 +472,18 @@ fn test_resize_and_scrolling_edge_cases() {
     // Scroll up (positive delta)
     unsafe { prod_vt_scroll_delta(vt.as_ptr(), 5) };
     let mut active: c_int = -1;
-    assert_eq!(unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) },
+        1
+    );
     assert_eq!(active, 0, "viewport must not be active when scrolled up");
 
     // Scroll down (negative delta)
     unsafe { prod_vt_scroll_delta(vt.as_ptr(), -2) };
-    assert_eq!(unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) },
+        1
+    );
     assert_eq!(active, 0);
 
     // Scroll delta with 0 is no-op
@@ -421,7 +491,10 @@ fn test_resize_and_scrolling_edge_cases() {
 
     // Scroll to bottom restores active viewport
     unsafe { prod_vt_scroll_bottom(vt.as_ptr()) };
-    assert_eq!(unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_viewport_active(vt.as_ptr(), &mut active) },
+        1
+    );
     assert_eq!(active, 1, "viewport must be active when scrolled to bottom");
 }
 
@@ -532,8 +605,16 @@ fn test_prod_vt_mode_all_variants() {
 fn test_state_queries_null_safety() {
     let vt = TestVt::new(40, 10, 100);
     let mut val: c_int = 0;
-    let mut cursor = ProdVtCursor { x: 0, y: 0, visible: 0 };
-    let mut bar = ProdVtScrollbar { total: 0, offset: 0, len: 0 };
+    let mut cursor = ProdVtCursor {
+        x: 0,
+        y: 0,
+        visible: 0,
+    };
+    let mut bar = ProdVtScrollbar {
+        total: 0,
+        offset: 0,
+        len: 0,
+    };
 
     // active screen
     assert_eq!(unsafe { prod_vt_active_screen(null_mut(), &mut val) }, 0);
@@ -541,7 +622,10 @@ fn test_state_queries_null_safety() {
 
     // viewport active
     assert_eq!(unsafe { prod_vt_viewport_active(null_mut(), &mut val) }, 0);
-    assert_eq!(unsafe { prod_vt_viewport_active(vt.as_ptr(), null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_viewport_active(vt.as_ptr(), null_mut()) },
+        0
+    );
 
     // cursor state
     assert_eq!(unsafe { prod_vt_cursor_state(null_mut(), &mut cursor) }, 0);
@@ -549,7 +633,10 @@ fn test_state_queries_null_safety() {
 
     // scrollbar state
     assert_eq!(unsafe { prod_vt_scrollbar_state(null_mut(), &mut bar) }, 0);
-    assert_eq!(unsafe { prod_vt_scrollbar_state(vt.as_ptr(), null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_scrollbar_state(vt.as_ptr(), null_mut()) },
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -571,19 +658,41 @@ fn test_snapshot_ansi_scrollback_wide_chars_and_multiline() {
     // Test viewport ANSI (only live rows)
     let vp_ansi = unsafe { take_buffer(|o, l| prod_vt_viewport_ansi(vt.as_ptr(), o, l)) }.unwrap();
     let vp_str = String::from_utf8(vp_ansi).unwrap();
-    assert!(vp_str.contains("live screen 1"), "viewport contains live screen row 1");
-    assert!(vp_str.contains("\r\n"), "multi-row output separated by CRLF");
+    assert!(
+        vp_str.contains("live screen 1"),
+        "viewport contains live screen row 1"
+    );
+    assert!(
+        vp_str.contains("\r\n"),
+        "multi-row output separated by CRLF"
+    );
 
     // Test snapshot ANSI (scrollback + live rows)
-    let snap_ansi = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt.as_ptr(), o, l)) }.unwrap();
+    let snap_ansi =
+        unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi(vt.as_ptr(), o, l)) }.unwrap();
     let snap_str = String::from_utf8(snap_ansi).unwrap();
-    assert!(snap_str.contains("line 1 你好"), "scrollback contains line 1 with wide chars");
-    assert!(snap_str.contains("line 2 test"), "scrollback contains line 2");
-    assert!(snap_str.contains("live screen 2"), "snapshot contains live screen 2");
+    assert!(
+        snap_str.contains("line 1 你好"),
+        "scrollback contains line 1 with wide chars"
+    );
+    assert!(
+        snap_str.contains("line 2 test"),
+        "scrollback contains line 2"
+    );
+    assert!(
+        snap_str.contains("live screen 2"),
+        "snapshot contains live screen 2"
+    );
 
     // NULL vt safety
-    assert_eq!(unsafe { prod_vt_viewport_ansi(null_mut(), null_mut(), null_mut()) }, 0);
-    assert_eq!(unsafe { prod_vt_snapshot_ansi(null_mut(), null_mut(), null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_viewport_ansi(null_mut(), null_mut(), null_mut()) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi(null_mut(), null_mut(), null_mut()) },
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -608,18 +717,25 @@ fn test_snapshot_ansi_v2_comprehensive() {
 
     assert!(s.contains("sb1 你好"), "v2 scrollback includes wide chars");
     assert!(s.contains("content"), "v2 includes screen content");
-    assert!(s.contains("\x1b[?25l"), "v2 emits cursor hide sequence when cursor is invisible");
+    assert!(
+        s.contains("\x1b[?25l"),
+        "v2 emits cursor hide sequence when cursor is invisible"
+    );
     assert!(s.contains("\x1b["), "v2 emits cursor position sequence");
 
     // Test with pending wrap: fill entire row of width 10
     let vt_wrap = TestVt::new(10, 3, 100);
     vt_wrap.write(b"0123456789"); // exactly 10 chars fills the row, cursor wraps next char
-    let snap_wrap = unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt_wrap.as_ptr(), o, l)) }.unwrap();
+    let snap_wrap =
+        unsafe { take_buffer(|o, l| prod_vt_snapshot_ansi_v2(vt_wrap.as_ptr(), o, l)) }.unwrap();
     let s_wrap = String::from_utf8(snap_wrap).unwrap();
     assert!(s_wrap.contains("0123456789"));
 
     // Test NULL vt safety
-    assert_eq!(unsafe { prod_vt_snapshot_ansi_v2(null_mut(), null_mut(), null_mut()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_snapshot_ansi_v2(null_mut(), null_mut(), null_mut()) },
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -676,12 +792,21 @@ fn test_restore_and_import_rejects_corrupted_data() {
 
     // NULL data or len == 0 returns 0
     assert_eq!(unsafe { prod_vt_restore(vt.as_ptr(), null(), 0) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_import(vt.as_ptr(), null(), 0) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_import(vt.as_ptr(), null(), 0) },
+        0
+    );
 
     // Corrupt data returns 0
     let bad = b"corrupted bytes for checkpoint";
-    assert_eq!(unsafe { prod_vt_restore(vt.as_ptr(), bad.as_ptr(), bad.len()) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_import(vt.as_ptr(), bad.as_ptr(), bad.len()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_restore(vt.as_ptr(), bad.as_ptr(), bad.len()) },
+        0
+    );
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_import(vt.as_ptr(), bad.as_ptr(), bad.len()) },
+        0
+    );
 
     // Verify terminal state remains intact (fail-intact contract)
     let text = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt.as_ptr(), o, l)) }.unwrap();
@@ -695,14 +820,26 @@ fn test_checkpoint_status_messages_all_variants() {
         (PROD_VT_OK, "ok"),
         (PROD_VT_ERR_NULL_ARGUMENT, "null argument"),
         (PROD_VT_ERR_BUFFER_TOO_SMALL, "buffer too small"),
-        (PROD_VT_ERR_UNEXPECTED_EOF, "unexpected end of checkpoint buffer"),
+        (
+            PROD_VT_ERR_UNEXPECTED_EOF,
+            "unexpected end of checkpoint buffer",
+        ),
         (PROD_VT_ERR_INVALID_MAGIC, "invalid checkpoint magic"),
-        (PROD_VT_ERR_UNSUPPORTED_VERSION, "unsupported checkpoint version"),
+        (
+            PROD_VT_ERR_UNSUPPORTED_VERSION,
+            "unsupported checkpoint version",
+        ),
         (PROD_VT_ERR_CHECKSUM_MISMATCH, "checkpoint CRC32 mismatch"),
         (PROD_VT_ERR_INVALID_PAYLOAD_LENGTH, "invalid payload length"),
         (PROD_VT_ERR_INVALID_DATA, "invalid checkpoint data"),
-        (PROD_VT_ERR_DIMENSION_OUT_OF_BOUNDS, "terminal dimension out of bounds"),
-        (PROD_VT_ERR_ALLOCATION_LIMIT, "checkpoint memory limit exceeded"),
+        (
+            PROD_VT_ERR_DIMENSION_OUT_OF_BOUNDS,
+            "terminal dimension out of bounds",
+        ),
+        (
+            PROD_VT_ERR_ALLOCATION_LIMIT,
+            "checkpoint memory limit exceeded",
+        ),
         (PROD_VT_ERR_TOO_LARGE, "checkpoint exceeds the wire limit"),
         (-999, "unknown checkpoint status"),
         (42, "unknown checkpoint status"),
@@ -768,7 +905,9 @@ fn test_checkpoint_export2_null_and_error_paths() {
 
     // NULL out_len
     assert_eq!(
-        unsafe { prod_vt_checkpoint_export2(vt.as_ptr(), 0, buf.as_mut_ptr(), buf.len(), null_mut()) },
+        unsafe {
+            prod_vt_checkpoint_export2(vt.as_ptr(), 0, buf.as_mut_ptr(), buf.len(), null_mut())
+        },
         PROD_VT_ERR_NULL_ARGUMENT
     );
 
@@ -781,14 +920,18 @@ fn test_checkpoint_export2_null_and_error_paths() {
 
     // NULL vt
     assert_eq!(
-        unsafe { prod_vt_checkpoint_export2(null_mut(), 0, buf.as_mut_ptr(), buf.len(), &mut out_len) },
+        unsafe {
+            prod_vt_checkpoint_export2(null_mut(), 0, buf.as_mut_ptr(), buf.len(), &mut out_len)
+        },
         PROD_VT_ERR_NULL_ARGUMENT
     );
     assert_eq!(out_len, 0);
 
     // max_bytes too small -> PROD_VT_ERR_TOO_LARGE
     assert_eq!(
-        unsafe { prod_vt_checkpoint_export2(vt.as_ptr(), 5, buf.as_mut_ptr(), buf.len(), &mut out_len) },
+        unsafe {
+            prod_vt_checkpoint_export2(vt.as_ptr(), 5, buf.as_mut_ptr(), buf.len(), &mut out_len)
+        },
         PROD_VT_ERR_TOO_LARGE
     );
 
@@ -846,7 +989,9 @@ fn test_checkpoint_import2_null_and_error_paths() {
     if valid_ckpt2.len() > 30 {
         valid_ckpt2[28] = 0xFF;
         let forged_data = reseal_checkpoint(valid_ckpt2);
-        let err = unsafe { prod_vt_checkpoint_import2(vt.as_ptr(), forged_data.as_ptr(), forged_data.len()) };
+        let err = unsafe {
+            prod_vt_checkpoint_import2(vt.as_ptr(), forged_data.as_ptr(), forged_data.len())
+        };
         assert!(err == PROD_VT_ERR_INVALID_DATA || err < 0);
     }
 }
@@ -913,7 +1058,10 @@ fn test_checkpoint_verify_null_and_errors() {
     // Old verify returns 0
     assert_eq!(unsafe { prod_vt_checkpoint_verify(null(), 10) }, 0);
     assert_eq!(unsafe { prod_vt_checkpoint_verify(b"x".as_ptr(), 0) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_verify(short_junk.as_ptr(), short_junk.len()) }, 0);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_verify(short_junk.as_ptr(), short_junk.len()) },
+        0
+    );
 
     // Corrupt data of >= 20 bytes returns invalid magic
     let junk = b"bad checkpoint data 20 bytes long!!";
@@ -956,25 +1104,31 @@ fn test_encode_wheel_all_encodings_and_directions() {
     vt.write(b"\x1b[?1000h\x1b[?1006h");
 
     // SGR Wheel up
-    let up_sgr = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
+    let up_sgr =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
     assert_eq!(String::from_utf8(up_sgr).unwrap(), "\x1b[<64;11;6M");
 
     // SGR Wheel down
-    let down_sgr = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
+    let down_sgr =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
     assert_eq!(String::from_utf8(down_sgr).unwrap(), "\x1b[<65;11;6M");
 
     // Switch to UTF-8 encoding (1005), disable SGR (1006)
     vt.write(b"\x1b[?1006l\x1b[?1005h");
-    let up_utf8 = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
+    let up_utf8 =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
     assert!(!up_utf8.is_empty(), "UTF8 wheel up emitted");
-    let down_utf8 = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
+    let down_utf8 =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
     assert!(!down_utf8.is_empty(), "UTF8 wheel down emitted");
 
     // Disable UTF-8 (1005) -> default X10 encoding
     vt.write(b"\x1b[?1005l");
-    let up_x10 = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
+    let up_x10 =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 1, 10, 5, o, l)) }.unwrap();
     assert_eq!(up_x10.len(), 6, "X10 mouse sequence is 6 bytes");
-    let down_x10 = unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
+    let down_x10 =
+        unsafe { take_buffer(|o, l| prod_vt_encode_wheel(vt.as_ptr(), 0, 10, 5, o, l)) }.unwrap();
     assert_eq!(down_x10.len(), 6, "X10 mouse sequence is 6 bytes");
 
     // NULL out parameters return 0
@@ -1000,7 +1154,10 @@ fn test_title_and_drain_responses_c_abi() {
     // Set title via OSC 2
     vt.write(b"\x1b]2;Special Test Title\x07");
     let title_bytes = unsafe { take_buffer(|o, l| prod_vt_title(vt.as_ptr(), o, l)) }.unwrap();
-    assert_eq!(String::from_utf8(title_bytes).unwrap(), "Special Test Title");
+    assert_eq!(
+        String::from_utf8(title_bytes).unwrap(),
+        "Special Test Title"
+    );
 
     // Query device attributes (DA1) -> causes terminal to emit response
     vt.write(b"\x1b[c");
@@ -1008,7 +1165,8 @@ fn test_title_and_drain_responses_c_abi() {
     assert!(!resp.is_empty(), "responses must be drained");
 
     // Second drain is empty
-    let empty_resp = unsafe { take_buffer(|o, l| prod_vt_drain_responses(vt.as_ptr(), o, l)) }.unwrap();
+    let empty_resp =
+        unsafe { take_buffer(|o, l| prod_vt_drain_responses(vt.as_ptr(), o, l)) }.unwrap();
     assert!(empty_resp.is_empty(), "subsequent drain must be empty");
 }
 

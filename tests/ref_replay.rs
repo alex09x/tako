@@ -35,7 +35,10 @@ fn cases() -> Vec<PathBuf> {
         .filter(|p| p.join("input.recording").is_file())
         .collect();
     dirs.sort();
-    assert!(!dirs.is_empty(), "no recordings found under tests/fixtures/ref");
+    assert!(
+        !dirs.is_empty(),
+        "no recordings found under tests/fixtures/ref"
+    );
     dirs
 }
 
@@ -179,6 +182,7 @@ fn first_difference(expected: &str, actual: &str) -> String {
         "  expected {} lines, got {} (first extra: {:?})",
         exp.len(),
         act.len(),
-        exp.get(act.len().min(exp.len())).or(act.get(exp.len().min(act.len())))
+        exp.get(act.len().min(exp.len()))
+            .or(act.get(exp.len().min(act.len())))
     )
 }

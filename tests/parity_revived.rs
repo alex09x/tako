@@ -115,7 +115,10 @@ fn progress_report_events() {
         term.feed(&seq[mid..]);
         assert_eq!(
             term.take_events(),
-            vec![TerminalEvent::Progress { state: *state, value: *value }]
+            vec![TerminalEvent::Progress {
+                state: *state,
+                value: *value
+            }]
         );
     }
 }
@@ -208,7 +211,6 @@ fn save_cursor_round_trips_gr_slot() {
     assert!(term.modes().origin_mode);
     assert_eq!(term.gr_slot(), 3);
 }
-
 
 /// Upstream test: "Terminal: print writes to bottom if scrolled"
 #[test]

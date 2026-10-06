@@ -36,9 +36,14 @@ fn buffer_text_includes_scrollback_not_just_the_screen() {
     let t = filled(40, 6, 50);
     let text = t.buffer_text();
 
-    assert!(text.contains("line0"), "the oldest line is missing: copy lost history");
+    assert!(
+        text.contains("line0"),
+        "the oldest line is missing: copy lost history"
+    );
     assert!(text.contains("line49"), "the newest line is missing");
-    let seen = (0..50).filter(|i| text.contains(&format!("line{i}\n"))).count();
+    let seen = (0..50)
+        .filter(|i| text.contains(&format!("line{i}\n")))
+        .count();
     assert_eq!(seen, 50, "not every line survived");
 }
 
@@ -58,7 +63,12 @@ fn buffer_text_rejoins_a_soft_wrapped_line() {
     t.feed(b"this line is definitely longer than twenty\r\n");
     let _ = t.take_output();
 
-    let first = t.buffer_text().lines().next().unwrap_or_default().to_string();
+    let first = t
+        .buffer_text()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string();
     assert_eq!(first, "this line is definitely longer than twenty");
 }
 
@@ -119,13 +129,20 @@ fn a_position_survives_a_round_trip() {
     let mut t = filled(40, 6, 60);
     t.scroll_viewport_up(20);
     let saved = t.scroll_position();
-    assert!(saved > 0.0 && saved < 1.0, "expected a mid-buffer position, got {saved}");
+    assert!(
+        saved > 0.0 && saved < 1.0,
+        "expected a mid-buffer position, got {saved}"
+    );
 
     t.scroll_viewport_bottom();
     assert_eq!(t.scroll_position(), 1.0);
 
     t.set_scroll_position(saved);
-    assert_eq!(t.viewport_offset(), 20, "restoring landed on a different line");
+    assert_eq!(
+        t.viewport_offset(),
+        20,
+        "restoring landed on a different line"
+    );
 }
 
 #[test]

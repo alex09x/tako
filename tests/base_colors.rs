@@ -36,7 +36,11 @@ const BUILTIN_IDX1: (u8, u8, u8) = (0xCC, 0x66, 0x66); // default_color(1)
 const BUILTIN_IDX2: (u8, u8, u8) = (0xB5, 0xBD, 0x68); // default_color(2)
 
 fn osc4_set(index: u8, rgb: (u8, u8, u8)) -> Vec<u8> {
-    format!("\x1b]4;{};#{:02x}{:02x}{:02x}\x07", index, rgb.0, rgb.1, rgb.2).into_bytes()
+    format!(
+        "\x1b]4;{};#{:02x}{:02x}{:02x}\x07",
+        index, rgb.0, rgb.1, rgb.2
+    )
+    .into_bytes()
 }
 
 // ── Engine API (Terminal) ───────────────────────────────────────────────
@@ -51,14 +55,23 @@ fn set_base_colors_applies_immediately_when_nothing_overridden() {
         &[(1, BASE_IDX1), (2, BASE_IDX2)],
     );
 
-    assert_eq!(term.default_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
-    assert_eq!(term.base_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_eq!(
+        term.default_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
+    assert_eq!(
+        term.base_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
     assert_eq!(term.palette().get(1), BASE_IDX1);
     assert_eq!(term.palette().get(2), BASE_IDX2);
     assert_eq!(term.palette().base(1), BASE_IDX1);
 
     // An index the host never mentioned keeps the built-in default.
-    assert_eq!(term.palette().get(3), tako_core::palette::Palette::new().get(3));
+    assert_eq!(
+        term.palette().get(3),
+        tako_core::palette::Palette::new().get(3)
+    );
 }
 
 #[test]
@@ -81,8 +94,16 @@ fn program_override_via_osc_wins_until_reset() {
     let new_base_idx1 = (44, 55, 66);
     term.set_base_colors(Some(new_base_fg), None, None, &[(1, new_base_idx1)]);
 
-    assert_eq!(term.default_colors().0, Some(program_fg), "program's fg override got clobbered");
-    assert_eq!(term.palette().get(1), program_idx1, "program's palette override got clobbered");
+    assert_eq!(
+        term.default_colors().0,
+        Some(program_fg),
+        "program's fg override got clobbered"
+    );
+    assert_eq!(
+        term.palette().get(1),
+        program_idx1,
+        "program's palette override got clobbered"
+    );
     assert_eq!(term.base_colors().0, Some(new_base_fg));
     assert_eq!(term.palette().base(1), new_base_idx1);
 }
@@ -90,14 +111,24 @@ fn program_override_via_osc_wins_until_reset() {
 #[test]
 fn theme_change_updates_non_overridden_entries_immediately() {
     let mut term = Terminal::new(10, 3);
-    term.set_base_colors(Some(BASE_FG), Some(BASE_BG), None, &[(1, BASE_IDX1), (2, BASE_IDX2)]);
+    term.set_base_colors(
+        Some(BASE_FG),
+        Some(BASE_BG),
+        None,
+        &[(1, BASE_IDX1), (2, BASE_IDX2)],
+    );
 
     // Program only overrides index 2, leaves fg/bg/index1 alone.
     term.feed(&osc4_set(2, (9, 9, 9)));
 
     let new_fg = (7, 8, 9);
     let new_idx1 = (12, 13, 14);
-    term.set_base_colors(Some(new_fg), Some(BASE_BG), None, &[(1, new_idx1), (2, (250, 250, 250))]);
+    term.set_base_colors(
+        Some(new_fg),
+        Some(BASE_BG),
+        None,
+        &[(1, new_idx1), (2, (250, 250, 250))],
+    );
 
     // Non-overridden entries follow the new base immediately.
     assert_eq!(term.default_colors().0, Some(new_fg));
@@ -117,7 +148,11 @@ fn osc104_all_and_by_index_restore_to_base_not_builtin() {
     term.feed(b"\x1b]104;1\x07");
     assert_eq!(term.palette().get(1), BASE_IDX1);
     assert_ne!(term.palette().get(1), BUILTIN_IDX1);
-    assert_eq!(term.palette().get(2), (2, 2, 2), "untouched index must stay overridden");
+    assert_eq!(
+        term.palette().get(2),
+        (2, 2, 2),
+        "untouched index must stay overridden"
+    );
 
     // Reset everything.
     term.feed(b"\x1b]104\x07");
@@ -132,10 +167,16 @@ fn osc110_111_112_restore_default_colors_to_base() {
     term.feed(b"\x1b]10;#010101\x07");
     term.feed(b"\x1b]11;#020202\x07");
     term.feed(b"\x1b]12;#030303\x07");
-    assert_ne!(term.default_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_ne!(
+        term.default_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
 
     term.feed(b"\x1b]110\x07\x1b]111\x07\x1b]112\x07");
-    assert_eq!(term.default_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_eq!(
+        term.default_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
 }
 
 #[test]
@@ -154,11 +195,17 @@ fn ris_restores_everything_to_base() {
 
     term.feed(b"\x1bc"); // RIS
 
-    assert_eq!(term.default_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_eq!(
+        term.default_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
     assert_eq!(term.palette().get(1), BASE_IDX1);
     assert_ne!(term.palette().get(1), BUILTIN_IDX1);
     // The host's base configuration itself survives RIS.
-    assert_eq!(term.base_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_eq!(
+        term.base_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
 }
 
 #[test]
@@ -167,7 +214,10 @@ fn ris_without_a_configured_base_clears_overrides_to_unconfigured() {
     // must not survive a full reset either.
     let mut term = Terminal::new(10, 3);
     term.feed(b"\x1b]10;#010101\x07\x1b]11;#020202\x07");
-    assert_eq!(term.default_colors(), (Some((1, 1, 1)), Some((2, 2, 2)), None));
+    assert_eq!(
+        term.default_colors(),
+        (Some((1, 1, 1)), Some((2, 2, 2)), None)
+    );
 
     term.feed(b"\x1bc"); // RIS
     assert_eq!(term.default_colors(), (None, None, None));
@@ -194,7 +244,10 @@ fn queries_report_base_until_a_program_changes_them() {
 
     // Once a program overrides it, the query reports the live value instead.
     term.feed(b"\x1b]10;#ff0000\x07\x1b]10;?\x07");
-    assert_eq!(term.take_output(), b"\x1b]10;rgb:ffff/0000/0000\x07".to_vec());
+    assert_eq!(
+        term.take_output(),
+        b"\x1b]10;rgb:ffff/0000/0000\x07".to_vec()
+    );
 }
 
 #[test]
@@ -265,7 +318,10 @@ fn ffi_set_base_colors_resolves_into_rendered_cells() {
         Some(rgb(BASE_FG.0, BASE_FG.1, BASE_FG.2)),
         Some(rgb(BASE_BG.0, BASE_BG.1, BASE_BG.2)),
         None,
-        vec![FfiPaletteEntry { index: 1, color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2) }],
+        vec![FfiPaletteEntry {
+            index: 1,
+            color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2),
+        }],
     );
 
     // A plain glyph uses Color::Default, which must resolve to the host's
@@ -302,8 +358,14 @@ fn ffi_theme_change_updates_non_overridden_palette_entries_only() {
         None,
         None,
         vec![
-            FfiPaletteEntry { index: 1, color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2) },
-            FfiPaletteEntry { index: 2, color: rgb(BASE_IDX2.0, BASE_IDX2.1, BASE_IDX2.2) },
+            FfiPaletteEntry {
+                index: 1,
+                color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2),
+            },
+            FfiPaletteEntry {
+                index: 2,
+                color: rgb(BASE_IDX2.0, BASE_IDX2.1, BASE_IDX2.2),
+            },
         ],
     );
     // Cell A references index 1 (left alone); cell B references index 2
@@ -321,8 +383,14 @@ fn ffi_theme_change_updates_non_overridden_palette_entries_only() {
         None,
         None,
         vec![
-            FfiPaletteEntry { index: 1, color: rgb(new_base_idx1.0, new_base_idx1.1, new_base_idx1.2) },
-            FfiPaletteEntry { index: 2, color: rgb(new_base_idx2.0, new_base_idx2.1, new_base_idx2.2) },
+            FfiPaletteEntry {
+                index: 1,
+                color: rgb(new_base_idx1.0, new_base_idx1.1, new_base_idx1.2),
+            },
+            FfiPaletteEntry {
+                index: 2,
+                color: rgb(new_base_idx2.0, new_base_idx2.1, new_base_idx2.2),
+            },
         ],
     );
 
@@ -344,7 +412,10 @@ fn ffi_reset_keeps_the_host_base_colors_and_drops_program_overrides() {
         Some(rgb(BASE_FG.0, BASE_FG.1, BASE_FG.2)),
         Some(rgb(BASE_BG.0, BASE_BG.1, BASE_BG.2)),
         Some(rgb(BASE_CURSOR.0, BASE_CURSOR.1, BASE_CURSOR.2)),
-        vec![FfiPaletteEntry { index: 1, color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2) }],
+        vec![FfiPaletteEntry {
+            index: 1,
+            color: rgb(BASE_IDX1.0, BASE_IDX1.1, BASE_IDX1.2),
+        }],
     );
     core.feed(b"\x1b]10;#090909\x07".to_vec());
     core.feed(osc4_set(1, (9, 9, 9)));
@@ -362,11 +433,22 @@ fn ffi_reset_keeps_the_host_base_colors_and_drops_program_overrides() {
     // Still a reset: the old content and the program's override are gone.
     assert!(!core.buffer_text().contains("old"));
     let mut term = Terminal::new(10, 3);
-    term.set_base_colors(Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR), &[(1, BASE_IDX1)]);
+    term.set_base_colors(
+        Some(BASE_FG),
+        Some(BASE_BG),
+        Some(BASE_CURSOR),
+        &[(1, BASE_IDX1)],
+    );
     term.feed(b"\x1b]10;#090909\x07");
     let fresh = term.fresh_keeping_host_config();
-    assert_eq!(fresh.base_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
-    assert_eq!(fresh.default_colors(), (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR)));
+    assert_eq!(
+        fresh.base_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
+    assert_eq!(
+        fresh.default_colors(),
+        (Some(BASE_FG), Some(BASE_BG), Some(BASE_CURSOR))
+    );
     assert_eq!(fresh.palette().get(1), BASE_IDX1);
     assert_eq!(fresh.palette().get(2), term.palette().base(2));
 }

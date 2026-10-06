@@ -200,7 +200,10 @@ fn parser_retained_capacity_spilled_params() {
     for i in 0..24 {
         params.push(i);
     }
-    assert!(params.spilled(), "24 params must spill past 16 inline slots");
+    assert!(
+        params.spilled(),
+        "24 params must spill past 16 inline slots"
+    );
     let snap = ParserSnapshot {
         state: State::CsiParam,
         intermediates: smallvec::SmallVec::new(),
@@ -430,13 +433,7 @@ fn csi_intermediate_control_and_transitions() {
     assert_eq!(parser.state, State::Ground);
     assert_eq!(
         performer.actions,
-        vec![Action::CsiDispatch(
-            vec![],
-            0,
-            vec![b' ', b'$'],
-            true,
-            'm'
-        )]
+        vec![Action::CsiDispatch(vec![], 0, vec![b' ', b'$'], true, 'm')]
     );
 
     performer.actions.clear();
@@ -621,10 +618,7 @@ fn dcs_passthrough_control_put_and_cancel() {
     assert_eq!(parser.state, State::Ground);
     assert_eq!(
         performer.actions,
-        vec![
-            Action::Hook(vec![0], 0, vec![], false, 'p'),
-            Action::Unhook,
-        ]
+        vec![Action::Hook(vec![0], 0, vec![], false, 'p'), Action::Unhook,]
     );
 
     performer.actions.clear();
@@ -633,10 +627,7 @@ fn dcs_passthrough_control_put_and_cancel() {
     assert_eq!(parser.state, State::Ground);
     assert_eq!(
         performer.actions,
-        vec![
-            Action::Hook(vec![0], 0, vec![], false, 'p'),
-            Action::Unhook,
-        ]
+        vec![Action::Hook(vec![0], 0, vec![], false, 'p'), Action::Unhook,]
     );
 }
 

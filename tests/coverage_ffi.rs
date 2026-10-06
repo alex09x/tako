@@ -14,8 +14,8 @@
 
 use tako_core::ffi::{
     FfiCursorShape, FfiEvent, FfiImageFormat, FfiKey, FfiKeyEvent, FfiMouseAction, FfiMouseButton,
-    FfiMouseEvent, FfiMouseTracking, FfiSelectionMode, TakoCheckpointError, TakoCore,
-    PACKED_CELL_SIZE,
+    FfiMouseEvent, FfiMouseTracking, FfiSelectionMode, PACKED_CELL_SIZE, TakoCheckpointError,
+    TakoCore,
 };
 
 fn default_key_event(key: FfiKey) -> FfiKeyEvent {
@@ -108,7 +108,11 @@ fn viewport_packed_layout_matches_documented_offsets() {
     assert_eq!(packed[9], cell.bg_b);
 
     // Cell 1: untouched grid cell (internal NUL) packs as a space, not 0.
-    let ch1 = u32::from_le_bytes(packed[PACKED_CELL_SIZE..PACKED_CELL_SIZE + 4].try_into().unwrap());
+    let ch1 = u32::from_le_bytes(
+        packed[PACKED_CELL_SIZE..PACKED_CELL_SIZE + 4]
+            .try_into()
+            .unwrap(),
+    );
     assert_eq!(ch1, u32::from(' '));
 }
 
@@ -178,17 +182,13 @@ fn graphics_image_metadata_reports_every_format() {
 
     // f=24 RGB, 1x1 pixel, t=d (data inline in the APC, not a file).
     let payload_rgb = base64_encode(&[10, 20, 30]);
-    core.feed(
-        format!("\x1b_Ga=t,t=d,f=24,s=1,v=1,i=1;{payload_rgb}\x1b\\").into_bytes(),
-    );
+    core.feed(format!("\x1b_Ga=t,t=d,f=24,s=1,v=1,i=1;{payload_rgb}\x1b\\").into_bytes());
     let meta = core.graphics_image_metadata(1).expect("rgb image stored");
     assert_eq!(meta.format, FfiImageFormat::Rgb);
 
     // f=32 RGBA, 1x1 pixel.
     let payload_rgba = base64_encode(&[10, 20, 30, 255]);
-    core.feed(
-        format!("\x1b_Ga=t,t=d,f=32,s=1,v=1,i=2;{payload_rgba}\x1b\\").into_bytes(),
-    );
+    core.feed(format!("\x1b_Ga=t,t=d,f=32,s=1,v=1,i=2;{payload_rgba}\x1b\\").into_bytes());
     let meta = core.graphics_image_metadata(2).expect("rgba image stored");
     assert_eq!(meta.format, FfiImageFormat::Rgba);
 
@@ -242,16 +242,39 @@ fn take_events_reports_every_variant() {
 
     let events = core.take_events();
     assert!(events.contains(&FfiEvent::Bell));
-    assert!(events.contains(&FfiEvent::TitleChanged { title: "hello".to_string() }));
-    assert!(events.iter().any(|e| matches!(e, FfiEvent::ClipboardSet { text } if text == "hello")));
+    assert!(events.contains(&FfiEvent::TitleChanged {
+        title: "hello".to_string()
+    }));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, FfiEvent::ClipboardSet { text } if text == "hello"))
+    );
     assert!(events.contains(&FfiEvent::ClipboardQuery));
-    assert!(events.iter().any(|e| matches!(e, FfiEvent::Notification { .. })));
-    assert!(events.iter().any(|e| matches!(e, FfiEvent::PwdChanged { url } if url == "file:///tmp")));
-    assert!(events.iter().any(|e| matches!(e, FfiEvent::Progress { .. })));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, FfiEvent::Notification { .. }))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, FfiEvent::PwdChanged { url } if url == "file:///tmp"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, FfiEvent::Progress { .. }))
+    );
     assert!(events.contains(&FfiEvent::CommandStart { id: Some(1) }));
     assert!(events.contains(&FfiEvent::CommandEnd { exit_code: Some(0) }));
-    assert!(events.iter().any(|e| matches!(e, FfiEvent::StructuredNotification { title, .. } if title == "Hello OSC 99")));
-    assert!(events.contains(&FfiEvent::NotificationClose { id: "c1".to_string(), report_close: true }));
+    assert!(events.iter().any(
+        |e| matches!(e, FfiEvent::StructuredNotification { title, .. } if title == "Hello OSC 99")
+    ));
+    assert!(events.contains(&FfiEvent::NotificationClose {
+        id: "c1".to_string(),
+        report_close: true
+    }));
 }
 
 // -----------------------------------------------------------------------
@@ -267,11 +290,17 @@ fn checkpoint_bool_wrappers_round_trip() {
     let blob = core.checkpoint();
     assert!(!blob.is_empty());
     assert!(core.verify_checkpoint(blob.clone()));
-    assert!(!core.verify_checkpoint(vec![1, 2, 3]), "garbage does not verify");
+    assert!(
+        !core.verify_checkpoint(vec![1, 2, 3]),
+        "garbage does not verify"
+    );
 
     let dest = TakoCore::new(20, 5);
     assert!(dest.restore(blob));
-    assert_eq!(dest.get_line(0).trim_end_matches(['\0', ' ']), "hello there");
+    assert_eq!(
+        dest.get_line(0).trim_end_matches(['\0', ' ']),
+        "hello there"
+    );
     assert!(!dest.restore(Vec::new()), "empty payload fails to restore");
 }
 
@@ -342,7 +371,10 @@ fn encode_key_named_keys_produce_expected_bytes() {
     assert_eq!(core.encode_key(default_key_event(FfiKey::Escape)), b"\x1b");
     assert_eq!(core.encode_key(default_key_event(FfiKey::Up)), b"\x1b[A");
     assert_eq!(core.encode_key(default_key_event(FfiKey::F1)), b"\x1bOP");
-    assert_eq!(core.encode_key(default_key_event(FfiKey::KeypadEnter)), b"\r");
+    assert_eq!(
+        core.encode_key(default_key_event(FfiKey::KeypadEnter)),
+        b"\r"
+    );
     assert_eq!(core.encode_key(default_key_event(FfiKey::Space)), b" ");
 }
 
@@ -394,7 +426,12 @@ fn encode_key_respects_live_cursor_key_app_mode() {
 // Mouse encoding, paste (src/ffi/mod.rs:1038-1102)
 // -----------------------------------------------------------------------
 
-fn mouse_event(button: FfiMouseButton, action: FfiMouseAction, col: u32, row: u32) -> FfiMouseEvent {
+fn mouse_event(
+    button: FfiMouseButton,
+    action: FfiMouseAction,
+    col: u32,
+    row: u32,
+) -> FfiMouseEvent {
     FfiMouseEvent {
         button,
         action,
@@ -411,7 +448,12 @@ fn mouse_event(button: FfiMouseButton, action: FfiMouseAction, col: u32, row: u3
 #[test]
 fn encode_mouse_off_produces_no_bytes() {
     let core = TakoCore::new(20, 5);
-    let bytes = core.encode_mouse(mouse_event(FfiMouseButton::Left, FfiMouseAction::Press, 1, 1));
+    let bytes = core.encode_mouse(mouse_event(
+        FfiMouseButton::Left,
+        FfiMouseAction::Press,
+        1,
+        1,
+    ));
     assert!(bytes.is_empty());
 }
 
@@ -420,10 +462,23 @@ fn encode_mouse_off_produces_no_bytes() {
 fn encode_mouse_normal_tracking_drops_motion_reports_presses() {
     let core = TakoCore::new(20, 5);
     core.feed(b"\x1b[?1000h".to_vec());
-    let motion = core.encode_mouse(mouse_event(FfiMouseButton::None, FfiMouseAction::Motion, 1, 1));
-    assert!(motion.is_empty(), "plain normal tracking must not report motion");
+    let motion = core.encode_mouse(mouse_event(
+        FfiMouseButton::None,
+        FfiMouseAction::Motion,
+        1,
+        1,
+    ));
+    assert!(
+        motion.is_empty(),
+        "plain normal tracking must not report motion"
+    );
 
-    let press = core.encode_mouse(mouse_event(FfiMouseButton::Left, FfiMouseAction::Press, 1, 1));
+    let press = core.encode_mouse(mouse_event(
+        FfiMouseButton::Left,
+        FfiMouseAction::Press,
+        1,
+        1,
+    ));
     assert!(!press.is_empty());
 }
 
@@ -433,7 +488,12 @@ fn encode_mouse_normal_tracking_drops_motion_reports_presses() {
 fn encode_mouse_sgr_encoding_reports_one_based_coordinates() {
     let core = TakoCore::new(20, 5);
     core.feed(b"\x1b[?1000h\x1b[?1006h".to_vec());
-    let bytes = core.encode_mouse(mouse_event(FfiMouseButton::Left, FfiMouseAction::Press, 4, 2));
+    let bytes = core.encode_mouse(mouse_event(
+        FfiMouseButton::Left,
+        FfiMouseAction::Press,
+        4,
+        2,
+    ));
     let text = String::from_utf8(bytes).unwrap();
     assert_eq!(text, "\x1b[<0;5;3M");
 }
@@ -483,8 +543,14 @@ fn viewport_offset_scrollback_len_and_viewport_row_track_scroll_state() {
 
     let row = core.viewport_row(0);
     assert_eq!(row.len(), 10);
-    let text: String = row.iter().map(|c| char::from_u32(c.ch).unwrap_or(' ')).collect();
-    assert!(text.trim_end().starts_with('L'), "viewport_row must read the scrolled-to line, got {text:?}");
+    let text: String = row
+        .iter()
+        .map(|c| char::from_u32(c.ch).unwrap_or(' '))
+        .collect();
+    assert!(
+        text.trim_end().starts_with('L'),
+        "viewport_row must read the scrolled-to line, got {text:?}"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -592,7 +658,11 @@ fn scroll_to_is_absolute_from_the_bottom() {
     assert_eq!(core.viewport_offset(), 5);
 
     core.scroll_to(2);
-    assert_eq!(core.viewport_offset(), 2, "scroll_to must be absolute, not additive");
+    assert_eq!(
+        core.viewport_offset(),
+        2,
+        "scroll_to must be absolute, not additive"
+    );
 
     core.scroll_to(0);
     assert_eq!(core.viewport_offset(), 0);
@@ -609,7 +679,11 @@ fn scroll_position_round_trips_and_clamps() {
     assert_eq!(core.scroll_position(), 1.0, "live screen is fraction 1");
 
     core.set_scroll_position(0.0);
-    assert_eq!(core.scroll_position(), 0.0, "oldest retained line is fraction 0");
+    assert_eq!(
+        core.scroll_position(),
+        0.0,
+        "oldest retained line is fraction 0"
+    );
 
     core.set_scroll_position(-5.0);
     assert_eq!(core.scroll_position(), 0.0, "below range clamps to 0");
@@ -630,7 +704,11 @@ fn get_plain_text_joins_wraps_trims_and_bounds_check() {
     let core = TakoCore::new(10, 5);
     core.feed(b"a line with more than ten chars\r\nshort".to_vec());
 
-    assert_eq!(core.get_plain_text(50, 5), "", "start_row past the grid returns empty");
+    assert_eq!(
+        core.get_plain_text(50, 5),
+        "",
+        "start_row past the grid returns empty"
+    );
 
     let text = core.get_plain_text(0, 5);
     let lines: Vec<&str> = text.split('\n').collect();

@@ -23,9 +23,11 @@ fn default_clipboard_policy_is_write_only_and_drops_query() {
     // Write should be allowed by default
     term.feed(b"\x1b]52;c;aGVsbG8=\x07"); // "hello" in base64
     let events = term.take_events();
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, TerminalEvent::ClipboardSet(s) if s == "hello")));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, TerminalEvent::ClipboardSet(s) if s == "hello"))
+    );
 }
 
 #[test]
@@ -209,7 +211,7 @@ fn progress_value_clamping_to_100() {
 
 #[test]
 fn parser_raw_osc_payload_is_bounded() {
-    use tako_core::parser::{Parser, Perform, MAX_OSC_RAW_BYTES};
+    use tako_core::parser::{MAX_OSC_RAW_BYTES, Parser, Perform};
     struct Dummy;
     impl Perform for Dummy {
         fn print(&mut self, _: char) {}
@@ -249,12 +251,19 @@ fn osc99_chunk_accumulation_and_limits() {
     term.feed(seq2.as_bytes());
 
     let events = term.take_events();
-    let notif = events.iter().find_map(|e| match e {
-        TerminalEvent::StructuredNotification { title, .. } => Some(title),
-        _ => None,
-    }).expect("structured notification emitted");
+    let notif = events
+        .iter()
+        .find_map(|e| match e {
+            TerminalEvent::StructuredNotification { title, .. } => Some(title),
+            _ => None,
+        })
+        .expect("structured notification emitted");
 
-    assert_eq!(notif.chars().count(), 128, "title accumulation clamped to 128 chars");
+    assert_eq!(
+        notif.chars().count(),
+        128,
+        "title accumulation clamped to 128 chars"
+    );
 }
 
 #[test]
@@ -307,7 +316,7 @@ fn osc_excessive_parameter_count_rejected() {
 
     // 10,000 semicolons within OSC sequence
     let mut seq = Vec::from(b"\x1b]0");
-    seq.extend(std::iter::repeat(b';').take(10_000));
+    seq.extend(std::iter::repeat_n(b';', 10_000));
     seq.push(b'\x07');
 
     let start = std::time::Instant::now();
@@ -320,7 +329,10 @@ fn osc_excessive_parameter_count_rejected() {
         elapsed
     );
     let events = term.take_events();
-    assert!(events.is_empty(), "OSC with excessive parameters must be rejected without dispatching");
+    assert!(
+        events.is_empty(),
+        "OSC with excessive parameters must be rejected without dispatching"
+    );
 }
 
 #[test]
@@ -394,6 +406,3 @@ fn parser_releases_oversized_buffers_when_canceled() {
         "canceling oversized APC with SUB must reclaim memory"
     );
 }
-
-
-

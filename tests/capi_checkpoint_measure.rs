@@ -142,7 +142,9 @@ fn filled_terminal(lines: u32) -> *mut c_void {
     let mut text = Vec::new();
     for line in 0..lines {
         for col in 0..110u32 {
-            text.push(b'a' + ((line.wrapping_mul(31).wrapping_add(col.wrapping_mul(7))) % 26) as u8);
+            text.push(
+                b'a' + ((line.wrapping_mul(31).wrapping_add(col.wrapping_mul(7))) % 26) as u8,
+            );
         }
         text.extend_from_slice(b"\r\n");
     }
@@ -222,7 +224,6 @@ fn test_size_query_does_not_materialize_the_checkpoint() {
     );
 }
 
-
 /// A terminal parked mid-sequence with `payload` bytes accumulated in the
 /// parser's raw buffer. `intro` is the sequence that opens the string -- no
 /// terminator is sent, so the parser is still inside it and the bytes are
@@ -241,7 +242,10 @@ fn export_exactly(vt: *mut c_void, size: usize) -> Vec<u8> {
     let mut written: usize = 0;
     let status =
         unsafe { prod_vt_checkpoint_export2(vt, 0, buf.as_mut_ptr(), buf.len(), &mut written) };
-    assert_eq!(status, PROD_VT_OK, "export of a {size}-byte checkpoint failed");
+    assert_eq!(
+        status, PROD_VT_OK,
+        "export of a {size}-byte checkpoint failed"
+    );
     assert_eq!(written, size, "the size query and the export disagreed");
     buf
 }
@@ -274,9 +278,8 @@ fn test_measuring_an_in_flight_string_does_not_copy_its_payload() {
             let vt = terminal_in_flight(intro, payload);
 
             let mut measured: usize = 0;
-            let (status, cost) = bytes_allocated_by(|| unsafe {
-                prod_vt_checkpoint_measure2(vt, 0, &mut measured)
-            });
+            let (status, cost) =
+                bytes_allocated_by(|| unsafe { prod_vt_checkpoint_measure2(vt, 0, &mut measured) });
             assert_eq!(status, PROD_VT_OK, "{label}: measuring failed");
             assert!(
                 measured > payload,
@@ -292,9 +295,11 @@ fn test_measuring_an_in_flight_string_does_not_copy_its_payload() {
             // it produces the same state.
             let dest = unsafe { prod_vt_new(80, 24, 100) };
             assert!(!dest.is_null());
-            let status =
-                unsafe { prod_vt_checkpoint_import2(dest, blob.as_ptr(), blob.len()) };
-            assert_eq!(status, PROD_VT_OK, "{label}: import of the measured blob failed");
+            let status = unsafe { prod_vt_checkpoint_import2(dest, blob.as_ptr(), blob.len()) };
+            assert_eq!(
+                status, PROD_VT_OK,
+                "{label}: import of the measured blob failed"
+            );
 
             let terminator = b"\x1b\\PING\r\n";
             unsafe { prod_vt_write(vt, terminator.as_ptr(), terminator.len()) };
@@ -362,20 +367,25 @@ fn test_measuring_an_in_flight_string_does_not_copy_its_payload() {
 /// estimate, and pins the reservation to what the heap actually holds.
 #[test]
 fn test_retained_cost_counts_the_payloads_of_queued_events() {
-    use tako_core::terminal::checkpoint::retained_cost;
     use tako_core::terminal::Terminal;
+    use tako_core::terminal::checkpoint::retained_cost;
 
     const EVENTS: usize = 8;
     const EACH: usize = 1 << 20;
     const PAYLOADS: i64 = (EVENTS * EACH) as i64;
 
+    let payload = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(vec![b'x'; EACH])
+    };
+
     arm_counter();
 
     let mut term = Terminal::new(20, 6);
     for _ in 0..EVENTS {
-        let mut osc = Vec::with_capacity(EACH + 8);
-        osc.extend_from_slice(b"\x1b]0;");
-        osc.extend(std::iter::repeat_n(b'x', EACH));
+        let mut osc = Vec::with_capacity(payload.len() + 16);
+        osc.extend_from_slice(b"\x1b]52;c;");
+        osc.extend_from_slice(payload.as_bytes());
         osc.push(0x07);
         term.feed(&osc);
         // The fixture's own buffer is not the terminal's memory. Dropping it
@@ -397,7 +407,7 @@ fn test_retained_cost_counts_the_payloads_of_queued_events() {
 
     assert_eq!(
         drained_count, EVENTS,
-        "each OSC 0 should have queued exactly one title event"
+        "each OSC 52 should have queued exactly one clipboard event"
     );
 
     // What the events were actually holding, as the allocator saw it.

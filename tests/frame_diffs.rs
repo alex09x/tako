@@ -46,7 +46,10 @@ struct Case {
 }
 
 fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn words(s: &str) -> Vec<String> {
@@ -54,7 +57,9 @@ fn words(s: &str) -> Vec<String> {
 }
 
 fn load(profile: &str) -> Vec<Case> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/frame_diffs").join(format!("{profile}.txt"));
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/frame_diffs")
+        .join(format!("{profile}.txt"));
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut cases: Vec<Case> = Vec::new();
     for line in text.lines() {
@@ -64,18 +69,41 @@ fn load(profile: &str) -> Vec<Case> {
             "case" => {
                 let (id, size) = rest.split_once(' ').unwrap();
                 let (cols, rows) = size.split_once('x').unwrap();
-                cases.push(Case { id: id.to_string(), cols: cols.parse().unwrap(), rows: rows.parse().unwrap(), frames: Vec::new() });
+                cases.push(Case {
+                    id: id.to_string(),
+                    cols: cols.parse().unwrap(),
+                    rows: rows.parse().unwrap(),
+                    frames: Vec::new(),
+                });
             }
-            "frame" => cases.last_mut().unwrap().frames.push(Frame { sent: Vec::new(), rows: Vec::new() }),
-            "sent" => cases.last_mut().unwrap().frames.last_mut().unwrap().sent = unhex(rest),
-            "row" => cases.last_mut().unwrap().frames.last_mut().unwrap().rows.push(Row {
-                text: String::from_utf8(unhex(rest)).unwrap(),
-                fg: Vec::new(),
-                bg: Vec::new(),
-                attrs: Vec::new(),
+            "frame" => cases.last_mut().unwrap().frames.push(Frame {
+                sent: Vec::new(),
+                rows: Vec::new(),
             }),
+            "sent" => cases.last_mut().unwrap().frames.last_mut().unwrap().sent = unhex(rest),
+            "row" => cases
+                .last_mut()
+                .unwrap()
+                .frames
+                .last_mut()
+                .unwrap()
+                .rows
+                .push(Row {
+                    text: String::from_utf8(unhex(rest)).unwrap(),
+                    fg: Vec::new(),
+                    bg: Vec::new(),
+                    attrs: Vec::new(),
+                }),
             "fg" | "bg" | "at" => {
-                let row = cases.last_mut().unwrap().frames.last_mut().unwrap().rows.last_mut().unwrap();
+                let row = cases
+                    .last_mut()
+                    .unwrap()
+                    .frames
+                    .last_mut()
+                    .unwrap()
+                    .rows
+                    .last_mut()
+                    .unwrap();
                 let list = match key {
                     "fg" => &mut row.fg,
                     "bg" => &mut row.bg,
@@ -116,26 +144,42 @@ fn attrs(a: CellAttrs) -> String {
 /// says nothing about foreground or attributes.
 fn difference(term: &Terminal, frame: &Frame) -> Option<String> {
     for (r, want) in frame.rows.iter().enumerate() {
-        let cells: Vec<_> = term.viewport_row(r).into_iter().filter(|c| !c.is_wide_spacer).collect();
-        let text: String = cells.iter().map(|c| if c.char == '\0' { ' ' } else { c.char }).collect();
+        let cells: Vec<_> = term
+            .viewport_row(r)
+            .into_iter()
+            .filter(|c| !c.is_wide_spacer)
+            .collect();
+        let text: String = cells
+            .iter()
+            .map(|c| if c.char == '\0' { ' ' } else { c.char })
+            .collect();
         if text != want.text {
             return Some(format!("row {r}\n   got {text:?}\n  want {:?}", want.text));
         }
         for (i, (cell, ch)) in cells.iter().zip(want.text.chars()).enumerate() {
             let bg = color(cell.bg);
             if bg != want.bg[i] {
-                return Some(format!("row {r} cell {i} ({ch:?}) background {bg}, want {}", want.bg[i]));
+                return Some(format!(
+                    "row {r} cell {i} ({ch:?}) background {bg}, want {}",
+                    want.bg[i]
+                ));
             }
             if ch == ' ' {
                 continue;
             }
             let fg = color(cell.fg);
             if fg != want.fg[i] {
-                return Some(format!("row {r} cell {i} ({ch:?}) foreground {fg}, want {}", want.fg[i]));
+                return Some(format!(
+                    "row {r} cell {i} ({ch:?}) foreground {fg}, want {}",
+                    want.fg[i]
+                ));
             }
             let at = attrs(cell.attrs);
             if at != want.attrs[i] {
-                return Some(format!("row {r} cell {i} ({ch:?}) attributes {at}, want {}", want.attrs[i]));
+                return Some(format!(
+                    "row {r} cell {i} ({ch:?}) attributes {at}, want {}",
+                    want.attrs[i]
+                ));
             }
         }
     }
@@ -151,7 +195,10 @@ fn replay(profile: &str) {
         for (n, frame) in case.frames.iter().enumerate() {
             term.feed(&frame.sent);
             if let Some(diff) = difference(&term, frame) {
-                failures.push(format!("case {} ({}x{}) frame {n}: {diff}", case.id, case.cols, case.rows));
+                failures.push(format!(
+                    "case {} ({}x{}) frame {n}: {diff}",
+                    case.id, case.cols, case.rows
+                ));
                 break;
             }
         }
@@ -161,7 +208,12 @@ fn replay(profile: &str) {
         "{profile}: {} of {} cases left a different frame than the renderer drew:\n{}",
         failures.len(),
         cases.len(),
-        failures.iter().take(8).cloned().collect::<Vec<_>>().join("\n")
+        failures
+            .iter()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 

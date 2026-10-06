@@ -23,8 +23,8 @@ impl TitleStack {
     /// Heap this stack holds, by capacity: the spine plus each title's own
     /// allocation.
     pub fn retained_capacity_bytes(&self) -> u64 {
-        let mut total = (self.stack.capacity() as u64)
-            .saturating_mul(std::mem::size_of::<String>() as u64);
+        let mut total =
+            (self.stack.capacity() as u64).saturating_mul(std::mem::size_of::<String>() as u64);
         for item in &self.stack {
             total = total.saturating_add(item.capacity() as u64);
         }

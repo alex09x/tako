@@ -22,7 +22,9 @@
 use tako_core::terminal::Terminal;
 
 fn row(t: &Terminal, r: usize, n: usize) -> String {
-    (0..n).map(|c| t.active_grid().get(r, c).unwrap().char).collect()
+    (0..n)
+        .map(|c| t.active_grid().get(r, c).unwrap().char)
+        .collect()
 }
 
 #[test]

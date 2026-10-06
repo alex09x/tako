@@ -41,7 +41,9 @@ fn run(t: &mut Terminal, line: &str, output: &str, code: Option<i32>) {
 }
 
 fn hits(t: &Terminal, needle: &str) -> Vec<SearchHit> {
-    t.active_grid().search_chunk(needle, None, usize::MAX, usize::MAX).hits
+    t.active_grid()
+        .search_chunk(needle, None, usize::MAX, usize::MAX)
+        .hits
 }
 
 fn command_of(t: &Terminal, needle: &str) -> Option<u64> {
@@ -99,8 +101,14 @@ fn a_command_without_d_is_abandoned_and_does_not_take_the_next_ones_output() {
     let first = command_of(&t, "first").unwrap();
     let second = command_of(&t, "second").unwrap();
     assert_ne!(first, second);
-    assert_eq!(t.commands().get(first).unwrap().status, CommandStatus::Abandoned);
-    assert_eq!(t.commands().get(second).unwrap().status, CommandStatus::Completed(Some(1)));
+    assert_eq!(
+        t.commands().get(first).unwrap().status,
+        CommandStatus::Abandoned
+    );
+    assert_eq!(
+        t.commands().get(second).unwrap().status,
+        CommandStatus::Completed(Some(1))
+    );
     // The second prompt is no one's output.
     assert_eq!(command_of(&t, "two"), None);
 }
@@ -113,8 +121,17 @@ fn c_without_d_then_c_abandons_the_first() {
     t.feed(C);
     t.feed(b"two\r\n");
     let one = command_of(&t, "one").unwrap();
-    assert_eq!(t.commands().get(one).unwrap().status, CommandStatus::Abandoned);
-    assert_eq!(t.commands().get(command_of(&t, "two").unwrap()).unwrap().status, CommandStatus::Running);
+    assert_eq!(
+        t.commands().get(one).unwrap().status,
+        CommandStatus::Abandoned
+    );
+    assert_eq!(
+        t.commands()
+            .get(command_of(&t, "two").unwrap())
+            .unwrap()
+            .status,
+        CommandStatus::Running
+    );
 }
 
 #[test]
@@ -122,7 +139,10 @@ fn d_without_a_code_is_finished_but_not_a_success() {
     let mut t = Terminal::new(30, 8);
     run(&mut t, "x", "out\r\n", None);
     let id = command_of(&t, "out").unwrap();
-    assert_eq!(t.commands().get(id).unwrap().status, CommandStatus::Completed(None));
+    assert_eq!(
+        t.commands().get(id).unwrap().status,
+        CommandStatus::Completed(None)
+    );
 }
 
 #[test]
@@ -168,7 +188,14 @@ fn a_partial_write_over_unknown_content_is_mixed_and_stays_mixed() {
 #[test]
 fn partial_erases_inserts_and_deletes_count_as_writes() {
     // ECH, ICH, DCH and a partial EL over a prompt row while a command runs.
-    for seq in [&b"\x1b[2X"[..], b"\x1b[2@", b"\x1b[2P", b"\x1b[K", b"\x1b[1K", b"   "] {
+    for seq in [
+        &b"\x1b[2X"[..],
+        b"\x1b[2@",
+        b"\x1b[2P",
+        b"\x1b[K",
+        b"\x1b[1K",
+        b"   ",
+    ] {
         let mut t = Terminal::new(30, 4);
         t.feed(b"prompt");
         t.feed(b"\x1b[1;3H");
@@ -261,7 +288,10 @@ fn the_alternate_screen_records_nothing() {
     t.feed(C);
     t.feed(b"inside");
     t.feed(&d(0));
-    assert!(t.take_events().contains(&TerminalEvent::CommandStart { id: None }));
+    assert!(
+        t.take_events()
+            .contains(&TerminalEvent::CommandStart { id: None })
+    );
     assert_eq!(t.commands().records().len(), 0);
     assert_eq!(command_of(&t, "inside"), None);
 }
@@ -321,7 +351,10 @@ fn ids_keep_counting_across_a_reset() {
     t.feed(b"\x1bc");
     assert_eq!(t.commands().records().len(), 0);
     t.feed(C);
-    assert!(t.take_events().contains(&TerminalEvent::CommandStart { id: Some(2) }));
+    assert!(
+        t.take_events()
+            .contains(&TerminalEvent::CommandStart { id: Some(2) })
+    );
 }
 
 #[test]
@@ -340,7 +373,8 @@ fn the_table_keeps_the_newest_records_and_a_forgotten_id_groups_nothing() {
     // The row still names id 1, which is gone: no group.
     assert_eq!(command_of(&t, "oldest"), Some(1));
     let mut copy = Terminal::new(20, 4);
-    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
+    copy.import_checkpoint(&t.export_checkpoint().unwrap())
+        .unwrap();
     // Export wrote that row as unowned.
     assert_eq!(command_of(&copy, "oldest"), Some(1));
     assert_eq!(copy.commands().records().len(), MAX_COMMAND_RECORDS);
@@ -360,7 +394,8 @@ fn a_checkpoint_keeps_owners_records_and_the_running_command() {
     assert!(t.set_command_started_at(2, 1234));
 
     let mut copy = Terminal::new(30, 8);
-    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
+    copy.import_checkpoint(&t.export_checkpoint().unwrap())
+        .unwrap();
     let records = |t: &Terminal| t.commands().records().cloned().collect::<Vec<_>>();
     assert_eq!(records(&copy), records(&t));
     assert_eq!(owners(&copy), owners(&t));
@@ -374,7 +409,10 @@ fn a_checkpoint_keeps_owners_records_and_the_running_command() {
     assert_eq!(rec.input.as_deref(), Some("tail -f"));
     // New commands do not reuse an id.
     copy.feed(C);
-    assert!(copy.take_events().contains(&TerminalEvent::CommandStart { id: Some(3) }));
+    assert!(
+        copy.take_events()
+            .contains(&TerminalEvent::CommandStart { id: Some(3) })
+    );
 }
 
 #[test]
@@ -388,7 +426,9 @@ fn a_v3_checkpoint_carries_no_commands() {
     assert_eq!(copy.commands().records().len(), 0);
     assert_eq!(command_of(&copy, "files"), None);
     // Rows that show nothing are free for the next command.
-    let blank = (0..8).filter(|&r| copy.active_grid().row_owner(r) == RowOwner::Empty).count();
+    let blank = (0..8)
+        .filter(|&r| copy.active_grid().row_owner(r) == RowOwner::Empty)
+        .count();
     assert!(blank > 0);
     copy.feed(C);
     copy.feed(b"\x1b[8;1Hnew");
@@ -430,7 +470,10 @@ fn a_start_time_lands_once_even_after_the_command_ended() {
     assert!(core.set_command_time(epoch, id, 1000));
     assert!(!core.set_command_time(epoch, id, 2000));
     let chunk = core.search_chunk("output".into(), None, 100, 10);
-    assert_eq!(chunk.hits[0].command.as_ref().unwrap().started_at_ms, Some(1000));
+    assert_eq!(
+        chunk.hits[0].command.as_ref().unwrap().started_at_ms,
+        Some(1000)
+    );
 }
 
 #[test]
@@ -464,23 +507,43 @@ fn a_multiline_command_line_stays_within_the_limit_and_round_trips() {
     let id = command_of(&t, "result").unwrap();
     let rec = t.commands().get(id).unwrap().clone();
     let input = rec.input.unwrap();
-    assert!(input.chars().count() <= MAX_INPUT_CHARS, "{}", input.chars().count());
+    assert!(
+        input.chars().count() <= MAX_INPUT_CHARS,
+        "{}",
+        input.chars().count()
+    );
     assert!(input.contains('\n'));
     assert!(rec.input_truncated);
     let mut copy = Terminal::new(50, 30);
-    copy.import_checkpoint(&t.export_checkpoint().unwrap()).unwrap();
-    assert_eq!(copy.commands().get(id).unwrap().input.as_deref(), Some(input.as_str()));
+    copy.import_checkpoint(&t.export_checkpoint().unwrap())
+        .unwrap();
+    assert_eq!(
+        copy.commands().get(id).unwrap().input.as_deref(),
+        Some(input.as_str())
+    );
 }
 
 #[test]
 fn rows_moving_under_the_command_line_drop_it() {
     let cases: [(&str, &[u8]); 7] = [
-        ("erase below from above", b"\x1b[1;1H\x1b[J\x1b[2;3Hreplacement"),
-        ("erase above from below", b"\x1b[3;1H\x1b[1J\x1b[2;3Hreplacement"),
+        (
+            "erase below from above",
+            b"\x1b[1;1H\x1b[J\x1b[2;3Hreplacement",
+        ),
+        (
+            "erase above from below",
+            b"\x1b[3;1H\x1b[1J\x1b[2;3Hreplacement",
+        ),
         ("insert line", b"\x1b[1;1H\x1b[L\x1b[1;1Hreplacement"),
         ("delete line", b"\x1b[1;1H\x1b[M\x1b[1;1Hreplacement"),
-        ("region scroll up", b"\x1b[1;3r\x1b[3;1H\n\x1b[r\x1b[1;1Hreplacement"),
-        ("region scroll down", b"\x1b[1;3r\x1b[1;1H\x1bM\x1b[r\x1b[1;1Hreplacement"),
+        (
+            "region scroll up",
+            b"\x1b[1;3r\x1b[3;1H\n\x1b[r\x1b[1;1Hreplacement",
+        ),
+        (
+            "region scroll down",
+            b"\x1b[1;3r\x1b[1;1H\x1bM\x1b[r\x1b[1;1Hreplacement",
+        ),
         ("whole line erased", b"\x1b[2K\x1b[1;3Hreplacement"),
     ];
     for (name, seq) in cases {
@@ -501,15 +564,18 @@ fn rows_moving_under_the_command_line_drop_it() {
     }
 }
 
-
-
 #[test]
 fn import_cost_matches_what_a_v4_import_charges() {
     use tako_core::terminal::checkpoint::{import_cost, import_traced};
     let mut t = Terminal::with_scrollback(30, 6, 50);
     t.feed(b"\x1b]7;file://h/some/dir\x07");
     for i in 0..5 {
-        run(&mut t, &format!("cmd {i}"), &format!("out {i}\r\nmixed "), Some(i));
+        run(
+            &mut t,
+            &format!("cmd {i}"),
+            &format!("out {i}\r\nmixed "),
+            Some(i),
+        );
         t.feed(b"prompt junk\r\n");
     }
     t.feed(B);
@@ -547,7 +613,10 @@ fn continuation_prompts_keep_the_whole_command_line() {
     t.feed(C);
     t.feed(b"looped\r\n");
     let rec = t.commands().get(command_of(&t, "looped").unwrap()).unwrap();
-    assert_eq!(rec.input.as_deref(), Some("for x in a b\n> do echo $x; done"));
+    assert_eq!(
+        rec.input.as_deref(),
+        Some("for x in a b\n> do echo $x; done")
+    );
     // A primary P is a new prompt: the next command line starts after it.
     t.feed(&d(0));
     t.feed(b"\x1b]133;P;k=i\x07$ \x1b]133;B\x07ls\r\n");
@@ -620,7 +689,9 @@ fn no_last_command_without_marks_and_abandoned_ones_are_skipped() {
 #[test]
 fn the_ffi_reports_the_last_command() {
     let core = TakoCore::new(30, 8);
-    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07bad\r\n\x1b]133;D;1\x07".to_vec());
+    core.feed(
+        b"\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07bad\r\n\x1b]133;D;1\x07".to_vec(),
+    );
     let last = core.last_command(10, 1000).expect("a command");
     assert_eq!(last.output, "bad");
     assert!(last.command.finished);
@@ -635,7 +706,9 @@ fn a_quiet_last_command_survives_sweeps() {
         run(&mut t, "cd /tmp", "", Some(0));
     }
     run(&mut t, "true", "", Some(0));
-    let (rec, out) = t.last_command(10, 1000).expect("the newest command is kept");
+    let (rec, out) = t
+        .last_command(10, 1000)
+        .expect("the newest command is kept");
     assert_eq!(rec.input.as_deref(), Some("true"));
     assert_eq!(out.text, "");
 }
@@ -669,7 +742,9 @@ fn reading_a_few_lines_of_a_long_output_stops_early() {
 #[test]
 fn the_first_command_after_another_is_found_even_when_abandoned() {
     let core = TakoCore::new(30, 8);
-    core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07ok\r\n\x1b]133;C\x07fine\r\n\x1b]133;D;0\x07".to_vec());
+    core.feed(
+        b"\x1b]133;A\x07$ \x1b]133;B\x07ok\r\n\x1b]133;C\x07fine\r\n\x1b]133;D;0\x07".to_vec(),
+    );
     let before = core.newest_command_id().expect("one command");
     // A command that starts and is abandoned by a new prompt, then another.
     core.feed(b"\x1b]133;A\x07$ \x1b]133;B\x07sleep\r\n\x1b]133;C\x07".to_vec());
@@ -794,7 +869,8 @@ fn command_marks_remap_after_reflow() {
     // Ensure prompt row for command 3 matches its new remapped position and has SemanticPrompt::Prompt
     let cmd3_mark = &marks_after[2];
     assert_eq!(
-        t.active_grid().retained_semantic_prompt(cmd3_mark.retained_row),
+        t.active_grid()
+            .retained_semantic_prompt(cmd3_mark.retained_row),
         SemanticPrompt::Prompt
     );
 }
@@ -808,7 +884,9 @@ fn pending_prompt_line_preserved_across_checkpoint() {
     let data = t.export_checkpoint().expect("export checkpoint");
 
     let mut restored = Terminal::new(40, 10);
-    restored.import_checkpoint(&data).expect("import checkpoint");
+    restored
+        .import_checkpoint(&data)
+        .expect("import checkpoint");
 
     // Command output begins and finishes in restored terminal
     restored.feed(b"\x1b]133;C\x07hello\r\n\x1b]133;D;0\x07");
@@ -845,7 +923,8 @@ fn continuation_prompts_preserve_initial_prompt_line_and_emit_marks() {
     assert_eq!(marks_after.len(), 1);
     assert_eq!(marks_after[0].status, CommandMarkStatus::Success);
     assert_eq!(
-        t.active_grid().retained_semantic_prompt(marks_after[0].retained_row),
+        t.active_grid()
+            .retained_semantic_prompt(marks_after[0].retained_row),
         SemanticPrompt::Prompt
     );
 }
@@ -874,7 +953,8 @@ fn prompt_mark_tracked_when_scrollback_is_zero() {
     assert_eq!(marks.len(), 1);
     assert_eq!(marks[0].retained_row, 1);
     assert_eq!(
-        t.active_grid().retained_semantic_prompt(marks[0].retained_row),
+        t.active_grid()
+            .retained_semantic_prompt(marks[0].retained_row),
         SemanticPrompt::Prompt
     );
 
@@ -884,14 +964,18 @@ fn prompt_mark_tracked_when_scrollback_is_zero() {
     assert_eq!(marks.len(), 1);
     assert_eq!(marks[0].retained_row, 0);
     assert_eq!(
-        t.active_grid().retained_semantic_prompt(marks[0].retained_row),
+        t.active_grid()
+            .retained_semantic_prompt(marks[0].retained_row),
         SemanticPrompt::Prompt
     );
 
     // Another scroll: prompt scrolls off the screen; with 0 scrollback, it is evicted
     t.feed(b"scroll 3\r\n");
     let marks = t.command_marks();
-    assert!(marks.is_empty(), "evicted prompt with zero scrollback has no mark");
+    assert!(
+        marks.is_empty(),
+        "evicted prompt with zero scrollback has no mark"
+    );
 }
 
 #[test]
@@ -940,7 +1024,10 @@ fn prompt_marks_remap_through_vertical_row_edits() {
     // 4. Delete the line containing prompt: cursor at row 3 (1-based: 4), CSI 1 M
     t.feed(b"\x1b[4;1H\x1b[1M");
     let marks = t.command_marks();
-    assert!(marks.is_empty(), "deleted prompt line should have its mark removed");
+    assert!(
+        marks.is_empty(),
+        "deleted prompt line should have its mark removed"
+    );
 }
 
 #[test]
@@ -999,7 +1086,11 @@ fn prompt_marks_remap_when_prompt_begins_on_wrapped_row() {
     t.resize(30, 10);
 
     let marks = t.command_marks();
-    assert_eq!(marks.len(), 1, "mark must be retained after widening merges wrapped row");
+    assert_eq!(
+        marks.len(),
+        1,
+        "mark must be retained after widening merges wrapped row"
+    );
     assert_eq!(marks[0].retained_row, 0, "mark must remap to merged row 0");
     assert_eq!(marks[0].prompt_line, 0, "prompt_line must remap to 0");
     assert_eq!(
@@ -1012,7 +1103,10 @@ fn prompt_marks_remap_when_prompt_begins_on_wrapped_row() {
 
     let marks = t.command_marks();
     assert_eq!(marks.len(), 1, "mark must be retained after narrowing");
-    assert_eq!(marks[0].retained_row, 0, "mark must be at start of prompt line (row 0)");
+    assert_eq!(
+        marks[0].retained_row, 0,
+        "mark must be at start of prompt line (row 0)"
+    );
     assert_eq!(marks[0].prompt_line, 0, "prompt_line must remain 0");
     assert_eq!(
         t.active_grid().retained_semantic_prompt(0),
@@ -1039,7 +1133,9 @@ fn sticky_command_header_tracks_output_and_scroll_to_prompt() {
     // Live screen sits at the bottom (viewport_offset == 0).
     // Prompt at row 0 has scrolled into scrollback, so vp_top is around row 21.
     // vp_top is within output of "cat file.txt" (rows 1..31).
-    let header = t.sticky_command_header().expect("sticky header must be pinned while scrolled into output");
+    let header = t
+        .sticky_command_header()
+        .expect("sticky header must be pinned while scrolled into output");
     assert_eq!(header.command, "cat file.txt");
     assert_eq!(header.prompt_retained_row, 0);
     assert_eq!(header.status, CommandMarkStatus::Success);
@@ -1048,18 +1144,29 @@ fn sticky_command_header_tracks_output_and_scroll_to_prompt() {
     assert!(t.scroll_to_prompt(header.prompt_retained_row));
     // Viewport is now scrolled so prompt_retained_row (0) is at top of screen (vp_top == 0).
     // Prompt is visible on screen, so sticky header must be None!
-    assert!(t.sticky_command_header().is_none(), "header must unpin when prompt is visible on screen");
+    assert!(
+        t.sticky_command_header().is_none(),
+        "header must unpin when prompt is visible on screen"
+    );
 
     // Scroll back down into output:
     t.scroll_viewport_down(10);
-    let header2 = t.sticky_command_header().expect("sticky header must re-pin when scrolled back into output");
+    let header2 = t
+        .sticky_command_header()
+        .expect("sticky header must re-pin when scrolled back into output");
     assert_eq!(header2.command, "cat file.txt");
 
     // Alternate screen buffer must suppress sticky header:
     t.feed(b"\x1b[?1049h");
-    assert!(t.sticky_command_header().is_none(), "alternate screen must suppress sticky header");
+    assert!(
+        t.sticky_command_header().is_none(),
+        "alternate screen must suppress sticky header"
+    );
     t.feed(b"\x1b[?1049l");
-    assert!(t.sticky_command_header().is_some(), "sticky header restores on primary screen");
+    assert!(
+        t.sticky_command_header().is_some(),
+        "sticky header restores on primary screen"
+    );
 }
 
 #[test]
@@ -1079,7 +1186,9 @@ fn sticky_command_header_multiple_commands_and_zero_output() {
     t.feed(b"\x1b]133;A\x07$ ");
 
     // While sitting at bottom, vp_top is in output of "make all"
-    let header = t.sticky_command_header().expect("header should pin make all");
+    let header = t
+        .sticky_command_header()
+        .expect("header should pin make all");
     assert_eq!(header.command, "make all");
     assert_eq!(header.status, CommandMarkStatus::Error(Some(1)));
 
@@ -1101,7 +1210,10 @@ fn sticky_command_header_requires_osc133_boundaries_and_command_text() {
     for i in 1..=30 {
         t.feed(format!("unmarked {}\r\n", i).as_bytes());
     }
-    assert!(t.sticky_command_header().is_none(), "must never appear without OSC 133 boundaries");
+    assert!(
+        t.sticky_command_header().is_none(),
+        "must never appear without OSC 133 boundaries"
+    );
 
     // Command without 133;B (empty input text)
     t.feed(b"\x1b]133;A\x07$ \x1b]133;C\x07");
@@ -1109,7 +1221,10 @@ fn sticky_command_header_requires_osc133_boundaries_and_command_text() {
         t.feed(format!("no-b {}\r\n", i).as_bytes());
     }
     t.feed(b"\x1b]133;D;0\x07");
-    assert!(t.sticky_command_header().is_none(), "must not appear without command name");
+    assert!(
+        t.sticky_command_header().is_none(),
+        "must not appear without command name"
+    );
 }
 
 #[test]
@@ -1123,7 +1238,9 @@ fn sticky_command_header_running_command() {
         t.feed(format!("data {}\r\n", i).as_bytes());
     }
 
-    let header = t.sticky_command_header().expect("running command output must pin header");
+    let header = t
+        .sticky_command_header()
+        .expect("running command output must pin header");
     assert_eq!(header.command, "streaming-job");
     assert_eq!(header.status, CommandMarkStatus::Running);
 
@@ -1160,7 +1277,9 @@ fn sticky_command_header_unowned_text_between_commands_suppresses_header() {
     // Scroll up into git log's output:
     // Scroll back by 10 lines:
     t.scroll_viewport_up(10);
-    let header = t.sticky_command_header().expect("should pin git log when scrolled into its output");
+    let header = t
+        .sticky_command_header()
+        .expect("should pin git log when scrolled into its output");
     assert_eq!(header.command, "git log");
 }
 
@@ -1175,16 +1294,31 @@ fn sticky_command_header_preserves_header_when_prompt_evicted_from_scrollback() 
     t.feed(b"\x1b]133;D;0\x07");
 
     // The prompt line (line 0) was evicted because 30 lines exceeded the 10-line scrollback capacity:
-    assert!(t.first_retained_line() > 0, "prompt line must have been evicted");
-    assert!(t.command_marks().is_empty(), "command_marks must omit evicted prompt");
+    assert!(
+        t.first_retained_line() > 0,
+        "prompt line must have been evicted"
+    );
+    assert!(
+        t.command_marks().is_empty(),
+        "command_marks must omit evicted prompt"
+    );
 
     // Scroll up into retained scrollback:
     t.scroll_viewport_up(8);
-    let header = t.sticky_command_header().expect("header must be preserved even when prompt is evicted");
+    let header = t
+        .sticky_command_header()
+        .expect("header must be preserved even when prompt is evicted");
     assert_eq!(header.command, "cargo test");
-    assert_eq!(header.prompt_retained_row, 0, "evicted prompt falls back to row 0");
+    assert_eq!(
+        header.prompt_retained_row, 0,
+        "evicted prompt falls back to row 0"
+    );
 
     // Click jump to prompt (row 0):
     assert!(t.scroll_to_prompt(header.prompt_retained_row));
-    assert_eq!(t.viewport_offset(), 10, "scrolled to top of retained scrollback");
+    assert_eq!(
+        t.viewport_offset(),
+        10,
+        "scrolled to top of retained scrollback"
+    );
 }

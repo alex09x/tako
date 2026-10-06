@@ -15,9 +15,7 @@ pub struct ResponseQueue {
 
 impl ResponseQueue {
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 
     /// Heap this queue holds, by capacity. `take` swaps the buffer out, but a

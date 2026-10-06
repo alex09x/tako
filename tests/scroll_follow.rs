@@ -55,7 +55,11 @@ fn output_does_not_drag_the_viewport_to_the_bottom() {
     t.feed(b"new output\r\n");
     let _ = t.take_output();
 
-    assert_ne!(t.viewport_offset(), 0, "output snapped the view to the bottom");
+    assert_ne!(
+        t.viewport_offset(),
+        0,
+        "output snapped the view to the bottom"
+    );
     assert_eq!(row_text(&t, 0), before, "the visible text moved under us");
 }
 
@@ -155,7 +159,11 @@ fn switching_to_the_alternate_screen_returns_to_the_live_view() {
     t.feed(b"\x1b[?1049h"); // an app takes the alternate screen
     let _ = t.take_output();
 
-    assert_eq!(t.viewport_offset(), 0, "alt screen inherited a scrollback offset");
+    assert_eq!(
+        t.viewport_offset(),
+        0,
+        "alt screen inherited a scrollback offset"
+    );
 }
 
 #[test]

@@ -266,7 +266,10 @@ fn bell_effect_callback() {
     assert_eq!(term.take_events(), vec![TerminalEvent::Bell]);
 
     term.feed(b"\x07\x07");
-    assert_eq!(term.take_events(), vec![TerminalEvent::Bell, TerminalEvent::Bell]);
+    assert_eq!(
+        term.take_events(),
+        vec![TerminalEvent::Bell, TerminalEvent::Bell]
+    );
 }
 
 /// Upstream test: "desktop_notification effect callback"

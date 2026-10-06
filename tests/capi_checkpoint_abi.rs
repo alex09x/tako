@@ -182,10 +182,14 @@ fn export_via_abi(vt: *mut c_void, max_bytes: u64) -> Vec<u8> {
 
     let mut buf = vec![0u8; needed];
     let mut written: usize = 0;
-    let code =
-        unsafe { prod_vt_checkpoint_export2(vt, max_bytes, buf.as_mut_ptr(), buf.len(), &mut written) };
+    let code = unsafe {
+        prod_vt_checkpoint_export2(vt, max_bytes, buf.as_mut_ptr(), buf.len(), &mut written)
+    };
     assert_eq!(code, PROD_VT_OK, "{}", status_text(code));
-    assert_eq!(written, needed, "the sizing call and the writing call agree");
+    assert_eq!(
+        written, needed,
+        "the sizing call and the writing call agree"
+    );
     buf.truncate(written);
     buf
 }
@@ -243,9 +247,8 @@ fn export_sizes_then_writes_exactly() {
     // nothing -- the sentinel survives.
     let mut short = vec![0xABu8; blob.len() - 1];
     let mut needed: usize = 0;
-    let code = unsafe {
-        prod_vt_checkpoint_export2(vt, 0, short.as_mut_ptr(), short.len(), &mut needed)
-    };
+    let code =
+        unsafe { prod_vt_checkpoint_export2(vt, 0, short.as_mut_ptr(), short.len(), &mut needed) };
     assert_eq!(code, PROD_VT_ERR_BUFFER_TOO_SMALL);
     assert_eq!(needed, blob.len());
     assert!(short.iter().all(|&b| b == 0xAB), "nothing was written");
@@ -274,9 +277,8 @@ fn export_reports_zero_length_on_every_non_sizing_failure() {
 
     // A NULL out_len is the one thing that cannot be made deterministic, so it
     // is rejected before anything else happens.
-    let code = unsafe {
-        prod_vt_checkpoint_export2(vt, 0, std::ptr::null_mut(), 0, std::ptr::null_mut())
-    };
+    let code =
+        unsafe { prod_vt_checkpoint_export2(vt, 0, std::ptr::null_mut(), 0, std::ptr::null_mut()) };
     assert_eq!(code, PROD_VT_ERR_NULL_ARGUMENT);
 
     // A NULL buffer with a non-zero capacity is a caller bug, not a size query.
@@ -345,7 +347,11 @@ fn import_reports_which_refusal_it_is() {
     // And the good one still imports.
     let code = unsafe { prod_vt_checkpoint_import2(dest, good.as_ptr(), good.len()) };
     assert_eq!(code, PROD_VT_OK, "{}", status_text(code));
-    assert_eq!(export_via_abi(dest, 0), good, "the round trip is byte-exact");
+    assert_eq!(
+        export_via_abi(dest, 0),
+        good,
+        "the round trip is byte-exact"
+    );
 
     unsafe { prod_vt_free(dest) };
     unsafe { prod_vt_free(vt) };
@@ -375,7 +381,8 @@ fn inspect_fills_on_success_and_zeroes_on_failure() {
     assert_eq!(code, PROD_VT_ERR_INVALID_MAGIC);
     assert_eq!(info, ZERO_INFO, "the 40x10 answer did not survive");
 
-    let code = unsafe { prod_vt_checkpoint_inspect2(good.as_ptr(), good.len(), std::ptr::null_mut()) };
+    let code =
+        unsafe { prod_vt_checkpoint_inspect2(good.as_ptr(), good.len(), std::ptr::null_mut()) };
     assert_eq!(code, PROD_VT_ERR_NULL_ARGUMENT);
 
     unsafe { prod_vt_free(vt) };
@@ -386,7 +393,10 @@ fn verify_reports_the_reason() {
     let vt = vt_with(b"verify me");
     let good = export_via_abi(vt, 0);
 
-    assert_eq!(unsafe { prod_vt_checkpoint_verify2(good.as_ptr(), good.len()) }, PROD_VT_OK);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_verify2(good.as_ptr(), good.len()) },
+        PROD_VT_OK
+    );
     assert_eq!(
         unsafe { prod_vt_checkpoint_verify2(std::ptr::null(), 0) },
         PROD_VT_ERR_NULL_ARGUMENT
@@ -420,17 +430,32 @@ fn legacy_boolean_symbols_still_mean_one_and_zero() {
     // The alias and the limited form agree with it.
     let mut ptr2: *mut u8 = std::ptr::null_mut();
     let mut len2: usize = 0;
-    assert_eq!(unsafe { prod_vt_checkpoint_export(vt, &mut ptr2, &mut len2) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_export(vt, &mut ptr2, &mut len2) },
+        1
+    );
     assert_eq!(unsafe { std::slice::from_raw_parts(ptr2, len2) }, &blob[..]);
     unsafe { prod_vt_buffer_free(ptr2) };
 
     let dest = unsafe { prod_vt_new(40, 10, 200) };
-    assert_eq!(unsafe { prod_vt_restore(dest, blob.as_ptr(), blob.len()) }, 1);
-    assert_eq!(unsafe { prod_vt_checkpoint_import(dest, blob.as_ptr(), blob.len()) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_restore(dest, blob.as_ptr(), blob.len()) },
+        1
+    );
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_import(dest, blob.as_ptr(), blob.len()) },
+        1
+    );
     assert_eq!(unsafe { prod_vt_restore(dest, std::ptr::null(), 0) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_verify(blob.as_ptr(), blob.len()) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_verify(blob.as_ptr(), blob.len()) },
+        1
+    );
     assert_eq!(unsafe { prod_vt_checkpoint_verify(std::ptr::null(), 0) }, 0);
-    assert_eq!(unsafe { prod_vt_checkpoint_supports(prod_vt_checkpoint_version()) }, 1);
+    assert_eq!(
+        unsafe { prod_vt_checkpoint_supports(prod_vt_checkpoint_version()) },
+        1
+    );
     assert_eq!(unsafe { prod_vt_checkpoint_supports(0) }, 0);
 
     unsafe { prod_vt_free(dest) };
@@ -457,9 +482,7 @@ fn legacy_failure_leaves_defined_outputs_not_the_callers_stale_ones() {
     let mut ptr = sentinel;
     let mut len = stale;
     assert_eq!(
-        unsafe {
-            prod_vt_checkpoint_export_limited(std::ptr::null_mut(), 0, &mut ptr, &mut len)
-        },
+        unsafe { prod_vt_checkpoint_export_limited(std::ptr::null_mut(), 0, &mut ptr, &mut len) },
         0
     );
     assert!(ptr.is_null());
@@ -508,7 +531,9 @@ fn header_declarations() -> Vec<String> {
                 .collect();
             // A declaration, not a mention in prose: the identifier is
             // immediately followed by its parameter list.
-            tail[name.len()..].starts_with('(').then(|| format!("prod_vt_{name}"))
+            tail[name.len()..]
+                .starts_with('(')
+                .then(|| format!("prod_vt_{name}"))
         })
         .collect();
     names.sort();
@@ -518,19 +543,27 @@ fn header_declarations() -> Vec<String> {
 
 /// Every `prod_vt_*` symbol `capi.rs` exports.
 fn exported_declarations() -> Vec<String> {
-    let capi = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/capi.rs"))
-        .expect("src/capi.rs");
-    let mut names: Vec<String> = capi
-        .split("pub extern \"C\" fn prod_vt_")
-        .skip(1)
-        .map(|tail| {
+    let capi_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/capi");
+    let files: Vec<_> = if capi_dir.is_dir() {
+        std::fs::read_dir(capi_dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|ext| ext == "rs"))
+            .collect()
+    } else {
+        vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/capi.rs")]
+    };
+    let mut names: Vec<String> = Vec::new();
+    for file in files {
+        let capi = std::fs::read_to_string(file).expect("capi file");
+        for tail in capi.split("pub extern \"C\" fn prod_vt_").skip(1) {
             let name: String = tail
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .collect();
-            format!("prod_vt_{name}")
-        })
-        .collect();
+            names.push(format!("prod_vt_{name}"));
+        }
+    }
     names.sort();
     names.dedup();
     names
@@ -629,12 +662,17 @@ fn export3_writes_the_version_asked_for() {
         let mut buf = vec![0u8; needed];
         let mut got = 0usize;
         assert_eq!(
-            unsafe { prod_vt_checkpoint_export3(vt, asked, 0, buf.as_mut_ptr(), buf.len(), &mut got) },
+            unsafe {
+                prod_vt_checkpoint_export3(vt, asked, 0, buf.as_mut_ptr(), buf.len(), &mut got)
+            },
             PROD_VT_OK
         );
         assert_eq!(got, needed);
         assert_eq!(u32::from_le_bytes(buf[4..8].try_into().unwrap()), written);
-        assert_eq!(unsafe { prod_vt_checkpoint_import2(vt, buf.as_ptr(), got) }, PROD_VT_OK);
+        assert_eq!(
+            unsafe { prod_vt_checkpoint_import2(vt, buf.as_ptr(), got) },
+            PROD_VT_OK
+        );
     }
 
     for asked in [1u32, 7] {

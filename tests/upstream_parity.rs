@@ -184,7 +184,10 @@ fn shift_out_in_toggles_between_g0_and_g1_repeatedly() {
     term.feed(b"``"); // G1 active -> two diamonds
     term.feed(b"\x0f"); // SI: shift back to G0
     term.feed(b"`"); // literal backtick again
-    let row: String = (0..4).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..4)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "`\u{25C6}\u{25C6}`");
 }
 
@@ -194,8 +197,14 @@ fn linefeed_and_carriage_return() {
     let mut term = Terminal::new(80, 80);
     term.feed(b"hello\r\nworld");
     assert_eq!(term.cursor(), (1, 5));
-    let row0: String = (0..5).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
-    let row1: String = (0..5).map(|c| term.active_grid().get(1, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row0: String = (0..5)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
+    let row1: String = (0..5)
+        .map(|c| term.active_grid().get(1, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row0, "hello");
     assert_eq!(row1, "world");
 }
@@ -248,11 +257,20 @@ fn insert_lines_shifts_cursor_row_and_below_down_within_the_region() {
     term.feed(b"\x1b[2;2H"); // (1,1), on the "DEF" row
     term.feed(b"\x1b[1L"); // IL: insert 1 blank line at the cursor's row
     assert_eq!(term.active_grid().get(0, 0).unwrap().char, 'A'); // untouched, above the insertion
-    let row1: String = (0..3).map(|c| term.active_grid().get(1, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row1: String = (0..3)
+        .map(|c| term.active_grid().get(1, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row1, "   "); // the new blank line lands exactly at the cursor's row
-    let row2: String = (0..3).map(|c| term.active_grid().get(2, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row2: String = (0..3)
+        .map(|c| term.active_grid().get(2, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row2, "DEF"); // pushed down by one
-    let row3: String = (0..3).map(|c| term.active_grid().get(3, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row3: String = (0..3)
+        .map(|c| term.active_grid().get(3, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row3, "GHI");
 }
 
@@ -264,9 +282,15 @@ fn delete_lines_removes_cursor_row_and_shifts_below_up() {
     term.feed(b"\x1b[2;2H"); // (1,1), on the "DEF" row
     term.feed(b"\x1b[1M"); // DL: delete 1 line at the cursor's row
     assert_eq!(term.active_grid().get(0, 0).unwrap().char, 'A'); // untouched
-    let row1: String = (0..3).map(|c| term.active_grid().get(1, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row1: String = (0..3)
+        .map(|c| term.active_grid().get(1, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row1, "GHI"); // shifted up into the deleted row's place
-    let row2: String = (0..3).map(|c| term.active_grid().get(2, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row2: String = (0..3)
+        .map(|c| term.active_grid().get(2, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row2, "   "); // a blank line appears at the bottom of the region
 }
 
@@ -277,7 +301,10 @@ fn delete_chars_removes_at_cursor_and_shifts_line_left() {
     term.feed(b"ABC123");
     term.feed(b"\x1b[1;3H"); // row 1, col 3 (1-based) -> (0,2), on the first '3'... actually on 'C'
     term.feed(b"\x1b[2P"); // DCH: delete 2 characters at the cursor ('C','1'), shifting "23" left
-    let row: String = (0..6).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..6)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "AB23  ");
 }
 
@@ -323,7 +350,10 @@ fn linefeed_unsets_pending_wrap() {
 fn cursor_up_resets_pending_wrap() {
     let mut term = Terminal::new(5, 5);
     term.feed(b"ABCDE\x1b[AX");
-    let row: String = (0..5).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..5)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "ABCDX");
 }
 
@@ -333,7 +363,10 @@ fn cursor_down_resets_pending_wrap() {
     let mut term = Terminal::new(5, 5);
     term.feed(b"ABCDE\x1b[BX");
     assert_eq!(term.active_grid().get(1, 4).unwrap().char, 'X');
-    let row0: String = (0..5).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row0: String = (0..5)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row0, "ABCDE");
 }
 
@@ -342,7 +375,10 @@ fn cursor_down_resets_pending_wrap() {
 fn cursor_right_resets_pending_wrap() {
     let mut term = Terminal::new(5, 5);
     term.feed(b"ABCDE\x1b[CX");
-    let row: String = (0..5).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..5)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "ABCDX");
 }
 
@@ -351,7 +387,10 @@ fn cursor_right_resets_pending_wrap() {
 fn erase_line_resets_pending_wrap() {
     let mut term = Terminal::new(5, 5);
     term.feed(b"ABCDE\x1b[KX");
-    let row: String = (0..5).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..5)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "ABCDX");
 }
 
@@ -373,7 +412,10 @@ fn save_restore_cursor_round_trips_pending_wrap() {
 fn erase_chars_simple_operation() {
     let mut term = Terminal::new(10, 10);
     term.feed(b"ABC\x1b[1;1H\x1b[2X");
-    let row: String = (0..3).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..3)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, "  C");
 }
 
@@ -382,6 +424,9 @@ fn erase_chars_simple_operation() {
 fn erase_chars_minimum_one() {
     let mut term = Terminal::new(10, 10);
     term.feed(b"ABC\x1b[1;1H\x1b[X");
-    let row: String = (0..3).map(|c| term.active_grid().get(0, c).unwrap().char).map(|ch| if ch == '\0' { ' ' } else { ch }).collect();
+    let row: String = (0..3)
+        .map(|c| term.active_grid().get(0, c).unwrap().char)
+        .map(|ch| if ch == '\0' { ' ' } else { ch })
+        .collect();
     assert_eq!(row, " BC");
 }

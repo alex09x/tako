@@ -433,5 +433,3 @@ fn select_command_output_preserves_interior_blank_lines() {
     // Ensure no prompt bleed
     assert!(!text.contains('$'));
 }
-
-

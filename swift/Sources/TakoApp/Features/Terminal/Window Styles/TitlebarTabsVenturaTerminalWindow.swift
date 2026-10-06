@@ -1,10 +1,20 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Cocoa
 
 /// Titlebar tabs for macOS 13 to 15.
 class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     /// This is used to determine if certain elements should be drawn light or dark and should
     /// be updated whenever the window background color or surrounding elements changes.
-    fileprivate var isLightTheme: Bool = false
+    var isLightTheme: Bool = false
 
     lazy var titlebarColor: NSColor = backgroundColor {
         didSet {
@@ -15,7 +25,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     }
 
     // false if all three traffic lights are missing/hidden, otherwise true
-    private var hasWindowButtons: Bool {
+    var hasWindowButtons: Bool {
         // if standardWindowButton(.theButton) == nil, the button isn't there, so coalesce to true
         let closeIsHidden = standardWindowButton(.closeButton)?.isHiddenOrHasHiddenAncestor ?? true
         let miniaturizeIsHidden = standardWindowButton(.miniaturizeButton)?.isHiddenOrHasHiddenAncestor ?? true
@@ -166,7 +176,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         backgroundColor.luminance < 0.05
     }
 
-    private var newTabButtonImageLayer: VibrantLayer?
+    var newTabButtonImageLayer: VibrantLayer?
 
     func updateTabBar() {
         newTabButtonImageLayer = nil
@@ -184,12 +194,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     // Since we are coloring the new tab button's image, it doesn't respond to the
     // window's key status changes in terms of becoming less prominent visually,
     // so we need to do it manually.
-    private func updateNewTabButtonOpacity() {
-        guard let newTabButton: NSButton = titlebarContainer?.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
-        guard let newTabButtonImageView = newTabButton.firstDescendant(withClassName: "NSImageView") as? NSImageView else { return }
-
-        newTabButtonImageView.alphaValue = isKeyWindow ? 1 : 0.5
-    }
 
     /// Update: This method only add a vibrant overlay now,
     /// since the image itself supports light/dark tint,
@@ -201,58 +205,9 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     ///
     /// ~~Color the new tab button's image to match the color of the tab title/keyboard shortcut labels,~~
 	/// ~~just as it does in the stock tab bar.~~
-	private func updateNewTabButtonImage() {
-		guard let newTabButton: NSButton = titlebarContainer?.firstDescendant(withClassName: "NSTabBarNewTabButton") as? NSButton else { return }
-        guard let newTabButtonImageView = newTabButton.firstDescendant(withClassName: "NSImageView") as? NSImageView else { return }
-        guard let newTabButtonImage = newTabButtonImageView.image else { return }
-
-        let imageLayer = newTabButtonImageLayer ?? VibrantLayer(forAppearance: isLightTheme ? .light : .dark)!
-        imageLayer.frame = NSRect(origin: NSPoint(x: newTabButton.bounds.midX - newTabButtonImage.size.width/2, y: newTabButton.bounds.midY - newTabButtonImage.size.height/2), size: newTabButtonImage.size)
-        imageLayer.contentsGravity = .resizeAspect
-        imageLayer.opacity = 0.5
-
-        newTabButtonImageLayer = imageLayer
-
-        newTabButton.layer?.sublayers?.first(where: { $0.className == "VibrantLayer" })?.removeFromSuperlayer()
-        newTabButton.layer?.addSublayer(newTabButtonImageLayer!)
-	}
-
-	private func updateTabsForVeryDarkBackgrounds() {
-		guard hasVeryDarkBackground else { return }
-        guard let titlebarContainer else { return }
-
-		if let tabGroup = tabGroup, tabGroup.isTabBarVisible {
-			guard let activeTabBackgroundView = titlebarContainer.firstDescendant(withClassName: "NSTabButton")?.superview?.subviews.last?.firstDescendant(withID: "_backgroundView")
-			else { return }
-
-			activeTabBackgroundView.layer?.backgroundColor = titlebarColor.cgColor
-			titlebarContainer.layer?.backgroundColor = titlebarColor.highlight(withLevel: 0.14)?.cgColor
-		} else {
-			titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
-		}
-	}
-
     // MARK: - Split Zoom Button
 
-    private lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
-
-	private func generateResetZoomButton() -> NSButton {
-		let button = NSButton()
-		button.target = nil
-		button.action = #selector(TerminalController.splitZoom(_:))
-		button.isBordered = false
-		button.allowsExpansionToolTips = true
-		button.toolTip = "Reset Zoom"
-		button.contentTintColor = .controlAccentColor
-		button.state = .on
-		button.image = NSImage(named: "ResetZoom")
-		button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
-		button.translatesAutoresizingMaskIntoConstraints = false
-		button.widthAnchor.constraint(equalToConstant: 20).isActive = true
-		button.heightAnchor.constraint(equalToConstant: 20).isActive = true
-
-		return button
-	}
+    lazy var resetZoomToolbarButton: NSButton = generateResetZoomButton()
 
     // MARK: - Titlebar Font
 
@@ -266,9 +221,9 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     // MARK: - Titlebar Tabs
 
-    private var windowButtonsBackdrop: WindowButtonsBackdropView?
+    var windowButtonsBackdrop: WindowButtonsBackdropView?
 
-    private var windowDragHandle: WindowDragView?
+    var windowDragHandle: WindowDragView?
 
     // Used by the window controller to enable/disable titlebar tabs.
     var titlebarTabs = false {
@@ -298,41 +253,6 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     // custom toolbar conditionally generates the items based on this setting. I tried to
     // invalidate the toolbar items and force a refresh, but as far as I can tell that
     // isn't possible.
-    func generateToolbar() {
-        let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
-
-        toolbar = terminalToolbar
-        toolbarStyle = .unifiedCompact
-        if let resetZoomItem = terminalToolbar.items.first(where: { $0.itemIdentifier == .resetZoom }) {
-            resetZoomItem.view = resetZoomToolbarButton
-            resetZoomItem.view!.removeConstraints(resetZoomItem.view!.constraints)
-            resetZoomItem.view!.widthAnchor.constraint(equalToConstant: 22).isActive = true
-            resetZoomItem.view!.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        }
-    }
-
-    // For titlebar tabs, we want to hide the separator view so that we get rid
-    // of an aesthetically unpleasing shadow.
-    private func hideTitleBarSeparators() {
-        guard let titlebarContainer else { return }
-        for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
-            v.isHidden = true
-        }
-    }
-
-    // HACK: hide the "collapsed items" marker from the toolbar if it's present.
-    // idk why it appears in macOS 15.0+ but it does... so... make it go away. (sigh)
-    private func hideToolbarOverflowButton() {
-        guard let windowButtonsBackdrop = windowButtonsBackdrop else { return }
-        guard let titlebarView = windowButtonsBackdrop.superview else { return }
-        guard titlebarView.className == "NSTitlebarView" else { return }
-        guard let toolbarView = titlebarView.subviews.first(where: {
-            $0.className == "NSToolbarView"
-        }) else { return }
-
-        toolbarView.subviews.first(where: { $0.className == "NSToolbarClippedItemsIndicatorViewer" })?.isHidden = true
-    }
-
     // This is called by macOS for native tabbing in order to add the tab bar. We hook into
     // this, detect the tab bar being added, and override its behavior.
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
@@ -367,323 +287,4 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
     }
 
     // To be called immediately after the tab bar is disabled.
-    private func resetCustomTabBarViews() {
-        // Hide the window buttons backdrop.
-        windowButtonsBackdrop?.isHidden = true
-
-        // Hide the window drag handle.
-        windowDragHandle?.isHidden = true
-
-        // Re-enable the main toolbar title
-        if let toolbar = toolbar as? TerminalToolbar {
-            toolbar.titleIsHidden = false
-        }
-    }
-
-    private func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {
-        // We need a toolbar as a target for our titlebar tabs.
-        if toolbar == nil {
-            generateToolbar()
-        }
-
-        // The main title conflicts with titlebar tabs, so hide it
-        if let toolbar = toolbar as? TerminalToolbar {
-            toolbar.titleIsHidden = true
-        }
-
-        // HACK: wait a tick before doing anything, to avoid edge cases during startup... :/
-        // If we don't do this then on launch windows with restored state with tabs will end
-        // up with messed up tab bars that don't show all tabs.
-        DispatchQueue.main.async { [weak self] in
-            let accessoryView = tabBarController.view
-            guard let accessoryClipView = accessoryView.superview else { return }
-            guard let titlebarView = accessoryClipView.superview else { return }
-            guard titlebarView.className == "NSTitlebarView" else { return }
-            guard let toolbarView = titlebarView.subviews.first(where: {
-                $0.className == "NSToolbarView"
-            }) else { return }
-
-            self?.addWindowButtonsBackdrop(titlebarView: titlebarView, toolbarView: toolbarView)
-            guard let windowButtonsBackdrop = self?.windowButtonsBackdrop else { return }
-
-            self?.addWindowDragHandle(titlebarView: titlebarView, toolbarView: toolbarView)
-
-            accessoryClipView.translatesAutoresizingMaskIntoConstraints = false
-            accessoryClipView.leftAnchor.constraint(equalTo: windowButtonsBackdrop.rightAnchor).isActive = true
-            accessoryClipView.rightAnchor.constraint(equalTo: toolbarView.rightAnchor).isActive = true
-            accessoryClipView.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
-            accessoryClipView.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
-            accessoryClipView.needsLayout = true
-
-            accessoryView.translatesAutoresizingMaskIntoConstraints = false
-            accessoryView.leftAnchor.constraint(equalTo: accessoryClipView.leftAnchor).isActive = true
-            accessoryView.rightAnchor.constraint(equalTo: accessoryClipView.rightAnchor).isActive = true
-            accessoryView.topAnchor.constraint(equalTo: accessoryClipView.topAnchor).isActive = true
-            accessoryView.heightAnchor.constraint(equalTo: accessoryClipView.heightAnchor).isActive = true
-            accessoryView.needsLayout = true
-
-            self?.hideToolbarOverflowButton()
-            self?.hideTitleBarSeparators()
-        }
-    }
-
-    private func addWindowButtonsBackdrop(titlebarView: NSView, toolbarView: NSView) {
-        guard windowButtonsBackdrop?.superview != titlebarView else {
-            /// replacing existing backdrop aggressively
-            /// may cause incorrect hierarchy
-            ///
-            /// because multiple windows are adding this around the 'same time'
-            return
-        }
-        windowButtonsBackdrop?.removeFromSuperview()
-        windowButtonsBackdrop = nil
-
-        let view = WindowButtonsBackdropView(window: self)
-        view.identifier = NSUserInterfaceItemIdentifier("_windowButtonsBackdrop")
-        titlebarView.addSubview(view)
-
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
-        view.rightAnchor.constraint(equalTo: toolbarView.leftAnchor, constant: hasWindowButtons ? 78 : 0).isActive = true
-        view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
-        view.heightAnchor.constraint(equalTo: toolbarView.heightAnchor).isActive = true
-
-        windowButtonsBackdrop = view
-    }
-
-    private func addWindowDragHandle(titlebarView: NSView, toolbarView: NSView) {
-        // If we already made the view, just make sure it's unhidden and correctly placed as a subview.
-        guard windowDragHandle?.superview != titlebarView.superview else {
-            // similar to `addWindowButtonsBackdrop`
-            return
-        }
-        windowDragHandle?.removeFromSuperview()
-
-        let view = WindowDragView()
-        view.identifier = NSUserInterfaceItemIdentifier("_windowDragHandle")
-        titlebarView.superview?.addSubview(view)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.leftAnchor.constraint(equalTo: toolbarView.leftAnchor).isActive = true
-        view.rightAnchor.constraint(equalTo: toolbarView.rightAnchor).isActive = true
-        view.topAnchor.constraint(equalTo: toolbarView.topAnchor).isActive = true
-        view.bottomAnchor.constraint(equalTo: toolbarView.topAnchor, constant: 12).isActive = true
-
-        windowDragHandle = view
-    }
-
-}
-
-// Passes mouseDown events from this view to window.performDrag so that you can drag the window by it.
-class WindowDragView: NSView {
-    override public func mouseDown(with event: NSEvent) {
-        // Drag the window for single left clicks, double clicks should bypass the drag handle.
-        if event.type == .leftMouseDown && event.clickCount == 1 {
-            window?.performDrag(with: event)
-            NSCursor.closedHand.set()
-        } else {
-            super.mouseDown(with: event)
-        }
-    }
-
-    override public func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        window?.disableCursorRects()
-        NSCursor.openHand.set()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        window?.enableCursorRects()
-        NSCursor.arrow.set()
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .openHand)
-    }
-}
-
-// A view that matches the color of selected and unselected tabs in the adjacent tab bar.
-class WindowButtonsBackdropView: NSView {
-    // This must be weak because the window has this view. Otherwise
-    // a retain cycle occurs.
-	private weak var terminalWindow: TitlebarTabsVenturaTerminalWindow?
-    private var isLightTheme: Bool {
-        // using up-to-date value from hosting window directly
-        terminalWindow?.isLightTheme ?? false
-    }
-    private let overlayLayer = VibrantLayer()
-
-    var isHighlighted: Bool = true {
-        didSet {
-            guard let terminalWindow else { return }
-
-            if isLightTheme {
-                overlayLayer.isHidden = isHighlighted
-                layer?.backgroundColor = .clear
-            } else {
-				let systemOverlayColor = NSColor(cgColor: CGColor(genericGrayGamma2_2Gray: 0.0, alpha: 0.45))!
-				let titlebarBackgroundColor = terminalWindow.titlebarColor.blended(withFraction: 1, of: systemOverlayColor)
-
-				let highlightedColor = terminalWindow.hasVeryDarkBackground ? terminalWindow.backgroundColor : .clear
-				let backgroundColor = terminalWindow.hasVeryDarkBackground ? titlebarBackgroundColor : systemOverlayColor
-
-                overlayLayer.isHidden = true
-				layer?.backgroundColor = isHighlighted ? highlightedColor?.cgColor : backgroundColor?.cgColor
-            }
-        }
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    init(window: TitlebarTabsVenturaTerminalWindow) {
-		self.terminalWindow = window
-
-        super.init(frame: .zero)
-
-        wantsLayer = true
-
-        overlayLayer.frame = layer!.bounds
-        overlayLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        overlayLayer.backgroundColor = CGColor(genericGrayGamma2_2Gray: 0.95, alpha: 1)
-
-        layer?.addSublayer(overlayLayer)
-    }
-}
-
-// MARK: Toolbar
-
-// Custom NSToolbar subclass that displays a centered window title,
-// in order to accommodate the titlebar tabs feature.
-class TerminalToolbar: NSToolbar, NSToolbarDelegate {
-    private let titleTextField = CenteredDynamicLabel(labelWithString: "Tako")
-
-    var titleText: String {
-        get {
-            titleTextField.stringValue
-        }
-
-        set {
-            titleTextField.stringValue = newValue
-        }
-    }
-
-    var titleFont: NSFont? {
-        get {
-            titleTextField.font
-        }
-
-        set {
-            titleTextField.font = newValue
-        }
-    }
-
-    var titleIsHidden: Bool {
-        get {
-            titleTextField.isHidden
-        }
-
-        set {
-            titleTextField.isHidden = newValue
-        }
-    }
-
-    override init(identifier: NSToolbar.Identifier) {
-        super.init(identifier: identifier)
-
-        delegate = self
-        centeredItemIdentifiers.insert(.titleText)
-    }
-
-    func toolbar(_ toolbar: NSToolbar,
-                 itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        var item: NSToolbarItem
-
-        switch itemIdentifier {
-        case .titleText:
-            item = NSToolbarItem(itemIdentifier: .titleText)
-            item.view = self.titleTextField
-            item.visibilityPriority = .user
-
-            // This ensures the title text field doesn't disappear when shrinking the view
-            self.titleTextField.translatesAutoresizingMaskIntoConstraints = false
-            self.titleTextField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            self.titleTextField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-
-            // Add constraints to the toolbar item's view
-            NSLayoutConstraint.activate([
-                // Set the height constraint to match the toolbar's height
-                self.titleTextField.heightAnchor.constraint(equalToConstant: 22), // Adjust as needed
-            ])
-
-            item.isEnabled = true
-        case .resetZoom:
-            item = NSToolbarItem(itemIdentifier: .resetZoom)
-        default:
-            item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        }
-
-        return item
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        return [.titleText, .flexibleSpace, .space, .resetZoom]
-    }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // These space items are here to ensure that the title remains centered when it starts
-        // getting smaller than the max size so starts clipping. Lucky for us, two of the
-        // built-in spacers plus the un-zoom button item seems to exactly match the space
-        // on the left that's reserved for the window buttons.
-        return [.flexibleSpace, .titleText, .flexibleSpace]
-    }
-}
-
-/// A label that expands to fit whatever text you put in it and horizontally centers itself in the current window.
-class CenteredDynamicLabel: NSTextField {
-    override func viewDidMoveToSuperview() {
-        // Configure the text field
-        isEditable = false
-        isBordered = false
-        drawsBackground = false
-        alignment = .center
-        lineBreakMode = .byTruncatingTail
-        cell?.truncatesLastVisibleLine = true
-
-        // Use Auto Layout
-        translatesAutoresizingMaskIntoConstraints = false
-
-        // Set content hugging and compression resistance priorities
-        setContentHuggingPriority(.defaultLow, for: .horizontal)
-        setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-    }
-
-    /// Click through, so we can double click here to enlarge current window
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    // Vertically center the text
-    override func draw(_ dirtyRect: NSRect) {
-        guard let attributedString = self.attributedStringValue.mutableCopy() as? NSMutableAttributedString else {
-            super.draw(dirtyRect)
-            return
-        }
-
-        let textSize = attributedString.size()
-
-        let yOffset = (self.bounds.height - textSize.height) / 2 - 1 // -1 to center it better
-
-        let centeredRect = NSRect(x: self.bounds.origin.x, y: self.bounds.origin.y + yOffset,
-                                  width: self.bounds.width, height: textSize.height)
-
-        attributedString.draw(in: centeredRect)
-    }
-}
-
-extension NSToolbarItem.Identifier {
-    static let resetZoom = NSToolbarItem.Identifier("ResetZoom")
-    static let titleText = NSToolbarItem.Identifier("TitleText")
 }

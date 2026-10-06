@@ -11,7 +11,7 @@
 // Ported 1:1 from upstream's tests in the upstream `key_encode` test suite.
 // Reference: the upstream `key_encode` test suite
 
-use tako_core::key_encode::{encode, EncodeConfig, Key, KeyEvent, Mods, OptionAsAlt};
+use tako_core::key_encode::{EncodeConfig, Key, KeyEvent, Mods, OptionAsAlt, encode};
 
 /// Upstream test: "legacy: backspace with utf8 (dead key state)"
 #[test]
@@ -422,7 +422,7 @@ fn legacy_fixterm_awkward_letters() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -435,7 +435,7 @@ fn legacy_fixterm_awkward_letters() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -448,7 +448,7 @@ fn legacy_fixterm_awkward_letters() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -461,7 +461,7 @@ fn legacy_fixterm_awkward_letters() {
             repeat: false,
             press: true,
             unshifted: Some('2'),
-        physical: Some('2'),
+            physical: Some('2'),
             text: None,
             composing: false,
         };
@@ -614,7 +614,7 @@ fn legacy_f1() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -627,7 +627,7 @@ fn legacy_f1() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -640,7 +640,7 @@ fn legacy_f1() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -653,7 +653,7 @@ fn legacy_f1() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };
@@ -666,7 +666,7 @@ fn legacy_f1() {
             repeat: false,
             press: true,
             unshifted: None,
-        physical: None,
+            physical: None,
             text: None,
             composing: false,
         };

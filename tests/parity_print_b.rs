@@ -10,8 +10,8 @@
 
 // Source: the upstream `print_b` test suite
 
-use tako_core::terminal::Terminal;
 use tako_core::grid::CellAttrs;
+use tako_core::terminal::Terminal;
 
 /// Upstream test: "Terminal: print wide char at right edge with hyperlink"
 #[test]

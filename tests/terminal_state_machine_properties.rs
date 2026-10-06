@@ -559,9 +559,10 @@ fn test_fuzz_state_machine_sequences_across_seeds() {
 
             // Periodically or after every step verify invariants
             if (step % 5 == 0 || step == op_count - 1)
-                && std::panic::catch_unwind(|| assert_durable_invariants(&term)).is_err() {
-                    panic!("seed {seed}, step {step}, after {op:?}");
-                }
+                && std::panic::catch_unwind(|| assert_durable_invariants(&term)).is_err()
+            {
+                panic!("seed {seed}, step {step}, after {op:?}");
+            }
         }
     }
 }

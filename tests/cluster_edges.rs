@@ -34,9 +34,21 @@ fn after(input: &str, n: usize) -> Vec<String> {
 fn a_combining_mark_joins_the_character_before_it() {
     // "e" then U+0301, however the "e" arrived.
     assert_eq!(after("bce\u{301}", 3), ["b", "c", "é"], "bare");
-    assert_eq!(after("bce\u{301}\x1b[K", 3), ["b", "c", "é"], "then an erase");
-    assert_eq!(after("bce\u{301}x", 4), ["b", "c", "é", "x"], "then another character");
-    assert_eq!(after("a\u{301}b\u{301}c", 3), ["á", "b\u{301}", "c"], "several in a row");
+    assert_eq!(
+        after("bce\u{301}\x1b[K", 3),
+        ["b", "c", "é"],
+        "then an erase"
+    );
+    assert_eq!(
+        after("bce\u{301}x", 4),
+        ["b", "c", "é", "x"],
+        "then another character"
+    );
+    assert_eq!(
+        after("a\u{301}b\u{301}c", 3),
+        ["á", "b\u{301}", "c"],
+        "several in a row"
+    );
 }
 
 #[test]
@@ -46,7 +58,10 @@ fn a_combining_mark_joins_a_wide_character_whole() {
 
 #[test]
 fn a_skin_tone_joins_the_emoji_it_modifies() {
-    assert_eq!(after("\u{1f44b}\u{1f3ff}x", 3), ["\u{1f44b}\u{1f3ff}", "", "x"]);
+    assert_eq!(
+        after("\u{1f44b}\u{1f3ff}x", 3),
+        ["\u{1f44b}\u{1f3ff}", "", "x"]
+    );
 }
 
 #[test]
@@ -60,7 +75,11 @@ fn a_single_shift_applies_to_one_character_only() {
     // Charsets map one codepoint at a time, as in xterm, so the "a" of a
     // cluster is mapped and its mark stays on it. What must hold is that the
     // shift is used up there and never reaches the "b".
-    assert_eq!(after("\x1b*0\x1bNa\u{301}b", 2), ["▒\u{301}", "b"], "cluster, then plain");
+    assert_eq!(
+        after("\x1b*0\x1bNa\u{301}b", 2),
+        ["▒\u{301}", "b"],
+        "cluster, then plain"
+    );
     assert_eq!(after("\x1b*0\x1bNab", 2), ["▒", "b"], "mapped, then plain");
 }
 
@@ -74,6 +93,10 @@ fn a_long_run_of_marks_stays_linear() {
     let start = Instant::now();
     t.feed(input.as_bytes());
     let elapsed = start.elapsed();
-    assert!(elapsed < Duration::from_secs(10), "{} bytes of one cluster took {elapsed:?}", input.len());
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "{} bytes of one cluster took {elapsed:?}",
+        input.len()
+    );
     assert_eq!(t.cursor(), (0, 1), "still one cell");
 }

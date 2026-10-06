@@ -20,7 +20,9 @@ fn line(h: &SearchHit) -> String {
 }
 
 fn all(t: &Terminal, needle: &str) -> Vec<SearchHit> {
-    t.active_grid().search_chunk(needle, None, usize::MAX, usize::MAX).hits
+    t.active_grid()
+        .search_chunk(needle, None, usize::MAX, usize::MAX)
+        .hits
 }
 
 #[test]
@@ -168,8 +170,14 @@ fn each_hit_carries_its_own_place_in_the_line() {
     t.feed(b"foo bar foo");
     let hits = all(&t, "foo");
     assert_eq!(hits.len(), 2);
-    assert_eq!((hits[0].before.as_str(), hits[0].after.as_str()), ("foo bar ", ""));
-    assert_eq!((hits[1].before.as_str(), hits[1].after.as_str()), ("", " bar foo"));
+    assert_eq!(
+        (hits[0].before.as_str(), hits[0].after.as_str()),
+        ("foo bar ", "")
+    );
+    assert_eq!(
+        (hits[1].before.as_str(), hits[1].after.as_str()),
+        ("", " bar foo")
+    );
 }
 
 #[test]
@@ -183,8 +191,17 @@ fn a_huge_line_costs_only_what_was_asked_for() {
     let chunk = grid.search_chunk("a", None, 50, 3);
     assert_eq!(chunk.hits.len(), 3);
     assert!(chunk.truncated);
-    assert!(chunk.hits.iter().all(|h| h.before.chars().count() <= 40 && h.after.chars().count() <= 80));
-    assert!(started.elapsed() < std::time::Duration::from_millis(200), "{:?}", started.elapsed());
+    assert!(
+        chunk
+            .hits
+            .iter()
+            .all(|h| h.before.chars().count() <= 40 && h.after.chars().count() <= 80)
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(200),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[test]

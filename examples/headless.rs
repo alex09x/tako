@@ -72,8 +72,18 @@ fn parse_args() -> Options {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--rows" => opts.rows = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
-            "--cols" => opts.cols = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+            "--rows" => {
+                opts.rows = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage())
+            }
+            "--cols" => {
+                opts.cols = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage())
+            }
             "--dump" => opts.dump = Some(args.next().unwrap_or_else(|| usage())),
             "--quiet" => opts.quiet = true,
             "--no-stdin" => opts.no_stdin = true,

@@ -129,7 +129,10 @@ unsafe fn write_seq(vt: *mut c_void, bytes: &[u8]) {
 unsafe fn export_checkpoint(vt: *mut c_void) -> Vec<u8> {
     let mut needed: usize = 0;
     let st = unsafe { prod_vt_checkpoint_export2(vt, 0, std::ptr::null_mut(), 0, &mut needed) };
-    assert_eq!(st, -2, "sizing probe must report PROD_VT_ERR_BUFFER_TOO_SMALL");
+    assert_eq!(
+        st, -2,
+        "sizing probe must report PROD_VT_ERR_BUFFER_TOO_SMALL"
+    );
     let mut buf = vec![0u8; needed];
     let mut written: usize = 0;
     let st =
@@ -208,15 +211,19 @@ fn test_regression_control_retains_queued_payloads_without_discard() {
     const SIZE: usize = 1 << 20; // 1 MiB each -> ~10 MiB payload
     let expected_min_bytes = (UPDATES * SIZE) as i64;
 
+    let payload = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(vec![b'A'; SIZE])
+    };
+
     let vt = unsafe { prod_vt_new(80, 24, 100) };
 
     arm_counter();
 
-    for i in 0..UPDATES {
-        let mut osc = Vec::with_capacity(SIZE + 16);
-        osc.extend_from_slice(b"\x1b]0;");
-        let byte = b'A' + (i % 26) as u8;
-        osc.extend(std::iter::repeat_n(byte, SIZE));
+    for _ in 0..UPDATES {
+        let mut osc = Vec::with_capacity(payload.len() + 16);
+        osc.extend_from_slice(b"\x1b]52;c;");
+        osc.extend_from_slice(payload.as_bytes());
         osc.push(0x07);
         unsafe { write_seq(vt, &osc) };
         drop(osc);
@@ -227,7 +234,7 @@ fn test_regression_control_retains_queued_payloads_without_discard() {
 
     assert!(
         retained_without_discard >= expected_min_bytes,
-        "regression control: without discard, {UPDATES} x 1 MiB OSC titles must retain at least {expected_min_bytes} bytes, got {retained_without_discard}"
+        "regression control: without discard, {UPDATES} x 1 MiB OSC payloads must retain at least {expected_min_bytes} bytes, got {retained_without_discard}"
     );
 
     unsafe { prod_vt_free(vt) };
@@ -239,15 +246,19 @@ fn test_queued_payload_storage_actually_released_by_discard() {
     const SIZE: usize = 1 << 20; // 1 MiB each -> ~10 MiB payload
     let expected_min_bytes = (UPDATES * SIZE) as i64;
 
+    let payload = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(vec![b'A'; SIZE])
+    };
+
     let vt = unsafe { prod_vt_new(80, 24, 100) };
 
     arm_counter();
 
-    for i in 0..UPDATES {
-        let mut osc = Vec::with_capacity(SIZE + 16);
-        osc.extend_from_slice(b"\x1b]0;");
-        let byte = b'A' + (i % 26) as u8;
-        osc.extend(std::iter::repeat_n(byte, SIZE));
+    for _ in 0..UPDATES {
+        let mut osc = Vec::with_capacity(payload.len() + 16);
+        osc.extend_from_slice(b"\x1b]52;c;");
+        osc.extend_from_slice(payload.as_bytes());
         osc.push(0x07);
         unsafe { write_seq(vt, &osc) };
         drop(osc);
@@ -301,7 +312,10 @@ fn test_current_title_grid_and_parser_continuation_preserved() {
 
     let text_bytes = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt, o, l)) }.unwrap();
     let text = String::from_utf8_lossy(&text_bytes);
-    assert!(text.contains("Line 1\nLine 2"), "grid text must be preserved: {text}");
+    assert!(
+        text.contains("Line 1\nLine 2"),
+        "grid text must be preserved: {text}"
+    );
 
     // 2. Parser continuation: an SGR sequence (underline + italic) split so that
     //    the discard lands mid-escape, between the parameters and the final byte.
@@ -315,7 +329,8 @@ fn test_current_title_grid_and_parser_continuation_preserved() {
     unsafe { write_seq(vt, sgr_tail) };
     unsafe { write_seq(control, sgr_tail) };
 
-    let updated_text_bytes = unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt, o, l)) }.unwrap();
+    let updated_text_bytes =
+        unsafe { take_buffer(|o, l| prod_vt_viewport_text(vt, o, l)) }.unwrap();
     let updated_text = String::from_utf8_lossy(&updated_text_bytes);
     assert!(
         updated_text.contains("StyledText"),
@@ -428,10 +443,7 @@ fn test_pending_responses_preserved() {
 
     // Draining again returns empty
     let empty_responses = unsafe { take_buffer(|o, l| prod_vt_drain_responses(vt, o, l)) }.unwrap();
-    assert!(
-        empty_responses.is_empty(),
-        "second drain must be empty"
-    );
+    assert!(empty_responses.is_empty(), "second drain must be empty");
 
     unsafe { prod_vt_free(vt) };
 }
@@ -454,9 +466,8 @@ fn test_checkpoint_export_remains_non_mutating() {
 
     let mut buf1 = vec![0u8; needed];
     let mut written1: usize = 0;
-    let st1 = unsafe {
-        prod_vt_checkpoint_export2(vt, 0, buf1.as_mut_ptr(), buf1.len(), &mut written1)
-    };
+    let st1 =
+        unsafe { prod_vt_checkpoint_export2(vt, 0, buf1.as_mut_ptr(), buf1.len(), &mut written1) };
     assert_eq!(st1, 0); // PROD_VT_OK
     assert_eq!(written1, needed);
 
@@ -466,9 +477,8 @@ fn test_checkpoint_export_remains_non_mutating() {
     // Export again: must produce byte-for-byte identical checkpoint!
     let mut buf2 = vec![0u8; needed];
     let mut written2: usize = 0;
-    let st2 = unsafe {
-        prod_vt_checkpoint_export2(vt, 0, buf2.as_mut_ptr(), buf2.len(), &mut written2)
-    };
+    let st2 =
+        unsafe { prod_vt_checkpoint_export2(vt, 0, buf2.as_mut_ptr(), buf2.len(), &mut written2) };
     assert_eq!(st2, 0); // PROD_VT_OK
     assert_eq!(written2, needed);
     assert_eq!(buf1, buf2, "checkpoint bytes must be identical");

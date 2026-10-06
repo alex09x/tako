@@ -35,9 +35,7 @@ fn cbt_left_beyond_first_column() {
         10,
         1,
         &["\x1b[?W", "\x1b[10Z", "A"],
-        &[
-            "A         ",
-        ],
+        &["A         "],
         (0, 1),
     );
 }
@@ -49,9 +47,7 @@ fn cbt_left_starting_after_tab_stop() {
         11,
         1,
         &["\x1b[?W", "\x1b[1;10H", "X", "\x1b[Z", "A"],
-        &[
-            "        AX ",
-        ],
+        &["        AX "],
         (0, 9),
     );
 }
@@ -63,9 +59,7 @@ fn cbt_left_starting_on_tabstop() {
         10,
         1,
         &["\x1b[?W", "\x1b[1;9H", "X", "\x1b[1;9H", "\x1b[Z", "A"],
-        &[
-            "A       X ",
-        ],
+        &["A       X "],
         (0, 1),
     );
 }
@@ -76,10 +70,19 @@ fn cbt_left_margin_with_origin_mode() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?W", "\x1b[?6h", "\x1b[?69h", "\x1b[3;6s", "\x1b[1;2H", "X", "\x1b[Z", "A"],
         &[
-            "  AX      ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?W",
+            "\x1b[?6h",
+            "\x1b[?69h",
+            "\x1b[3;6s",
+            "\x1b[1;2H",
+            "X",
+            "\x1b[Z",
+            "A",
         ],
+        &["  AX      "],
         (0, 3),
     );
 }
@@ -91,9 +94,7 @@ fn cht_right_beyond_last_column() {
         10,
         1,
         &["\x1b[?W", "\x1b[100I", "A"],
-        &[
-            "         A",
-        ],
+        &["         A"],
         (0, 9),
     );
 }
@@ -105,9 +106,7 @@ fn cht_right_from_before_tabstop() {
         10,
         1,
         &["\x1b[?W", "\x1b[1;2H", "A", "\x1b[I", "X"],
-        &[
-            " A      X ",
-        ],
+        &[" A      X "],
         (0, 9),
     );
 }
@@ -120,10 +119,18 @@ fn cht_right_margin() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?W", "\x1b[?69h", "\x1b[3;6s", "\x1b[1;1H", "X", "\x1b[I", "A"],
         &[
-            "X    A    ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?W",
+            "\x1b[?69h",
+            "\x1b[3;6s",
+            "\x1b[1;1H",
+            "X",
+            "\x1b[I",
+            "A",
         ],
+        &["X    A    "],
         (0, 5),
     );
 }
@@ -135,10 +142,7 @@ fn cr_pending_wrap_is_unset() {
         10,
         2,
         &["\x1b[10G", "A", "\x0d", "X"],
-        &[
-            "X        A",
-            "          ",
-        ],
+        &["X        A", "          "],
         (0, 1),
     );
 }
@@ -149,10 +153,17 @@ fn cr_left_margin() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[2;5s", "\x1b[4G", "A", "\x0d", "X"],
         &[
-            " X A      ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[2;5s",
+            "\x1b[4G",
+            "A",
+            "\x0d",
+            "X",
         ],
+        &[" X A      "],
         (0, 2),
     );
 }
@@ -163,10 +174,18 @@ fn cr_left_of_left_margin() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[2;5s", "\x1b[4G", "A", "\x1b[1G", "\x0d", "X"],
         &[
-            "X  A      ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[2;5s",
+            "\x1b[4G",
+            "A",
+            "\x1b[1G",
+            "\x0d",
+            "X",
         ],
+        &["X  A      "],
         (0, 1),
     );
 }
@@ -177,10 +196,19 @@ fn cr_left_margin_with_origin_mode() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?6h", "\x1b[?69h", "\x1b[2;5s", "\x1b[4G", "A", "\x1b[1G", "\x0d", "X"],
         &[
-            " X A      ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?6h",
+            "\x1b[?69h",
+            "\x1b[2;5s",
+            "\x1b[4G",
+            "A",
+            "\x1b[1G",
+            "\x0d",
+            "X",
         ],
+        &[" X A      "],
         (0, 2),
     );
 }
@@ -192,10 +220,7 @@ fn cub_pending_wrap_is_unset() {
         10,
         2,
         &["\x1b[10G", "A", "\x1b[D", "XYZ"],
-        &[
-            "        XY",
-            "Z         ",
-        ],
+        &["        XY", "Z         "],
         (1, 1),
     );
 }
@@ -207,10 +232,7 @@ fn cub_leftmost_boundary_with_reverse_wrap_disabled() {
         10,
         2,
         &["\x1b[?45l", "A\x0a", "\x1b[10D", "B"],
-        &[
-            "A         ",
-            "B         ",
-        ],
+        &["A         ", "B         "],
         (1, 1),
     );
 }
@@ -221,11 +243,17 @@ fn cub_reverse_wrap() {
     check(
         10,
         2,
-        &["\x1b[?7h", "\x1b[?45h", "\x1b[1;1H", "\x1b[2J", "\x1b[10G", "AB", "\x1b[D", "X"],
         &[
-            "         A",
-            "X         ",
+            "\x1b[?7h",
+            "\x1b[?45h",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[10G",
+            "AB",
+            "\x1b[D",
+            "X",
         ],
+        &["         A", "X         "],
         (1, 1),
     );
 }
@@ -237,11 +265,7 @@ fn cud_cursor_down() {
         10,
         3,
         &["A", "\x1b[2B", "X"],
-        &[
-            "A         ",
-            "          ",
-            " X        ",
-        ],
+        &["A         ", "          ", " X        "],
         (2, 2),
     );
 }
@@ -252,13 +276,16 @@ fn cud_cursor_down_above_bottom_margin() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "\x0a\x0a\x0a\x0a", "\x1b[1;3r", "A", "\x1b[5B", "X"],
         &[
-            "A         ",
-            "          ",
-            " X        ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x0a\x0a\x0a\x0a",
+            "\x1b[1;3r",
+            "A",
+            "\x1b[5B",
+            "X",
         ],
+        &["A         ", "          ", " X        ", "          "],
         (2, 2),
     );
 }
@@ -269,7 +296,16 @@ fn cud_cursor_down_below_bottom_margin() {
     check(
         10,
         5,
-        &["\x1b[1;1H", "\x1b[2J", "\x0a\x0a\x0a\x0a\x0a", "\x1b[1;3r", "A", "\x1b[4;1H", "\x1b[5B", "X"],
+        &[
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x0a\x0a\x0a\x0a\x0a",
+            "\x1b[1;3r",
+            "A",
+            "\x1b[4;1H",
+            "\x1b[5B",
+            "X",
+        ],
         &[
             "A         ",
             "          ",
@@ -288,10 +324,7 @@ fn cup_normal_usage() {
         10,
         2,
         &["\x1b[1;1H", "\x1b[2J", "\x1b[2;3H", "A"],
-        &[
-            "          ",
-            "  A       ",
-        ],
+        &["          ", "  A       "],
         (1, 3),
     );
 }
@@ -303,11 +336,7 @@ fn cup_off_the_screen() {
         10,
         3,
         &["\x1b[1;1H", "\x1b[2J", "\x1b[500;500H", "A"],
-        &[
-            "          ",
-            "          ",
-            "         A",
-        ],
+        &["          ", "          ", "         A"],
         (2, 9),
     );
 }
@@ -321,11 +350,15 @@ fn cup_relative_to_origin() {
     check(
         10,
         2,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[2;3r", "\x1b[?6h", "\x1b[1;1H", "X"],
         &[
-            "X         ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[2;3r",
+            "\x1b[?6h",
+            "\x1b[1;1H",
+            "X",
         ],
+        &["X         ", "          "],
         (0, 1),
     );
 }
@@ -339,11 +372,17 @@ fn cup_relative_to_origin_with_margins() {
     check(
         10,
         2,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[3;5s", "\x1b[2;3r", "\x1b[?6h", "\x1b[1;1H", "X"],
         &[
-            "  X       ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[2;3r",
+            "\x1b[?6h",
+            "\x1b[1;1H",
+            "X",
         ],
+        &["  X       ", "          "],
         (0, 3),
     );
 }
@@ -356,12 +395,17 @@ fn cup_limits_with_scroll_region_and_origin_mode() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[3;5s", "\x1b[2;3r", "\x1b[?6h", "\x1b[500;500H", "X"],
         &[
-            "          ",
-            "          ",
-            "    X     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[2;3r",
+            "\x1b[?6h",
+            "\x1b[500;500H",
+            "X",
         ],
+        &["          ", "          ", "    X     "],
         (2, 4),
     );
 }
@@ -373,9 +417,7 @@ fn cup_pending_wrap_is_unset() {
         10,
         1,
         &["\x1b[10G", "A", "\x1b[1;1H", "X"],
-        &[
-            "X        A",
-        ],
+        &["X        A"],
         (0, 1),
     );
 }
@@ -387,10 +429,7 @@ fn cuf_pending_wrap_is_unset() {
         10,
         2,
         &["\x1b[10G", "A", "\x1b[C", "XYZ"],
-        &[
-            "         X",
-            "YZ        ",
-        ],
+        &["         X", "YZ        "],
         (1, 2),
     );
 }
@@ -398,15 +437,7 @@ fn cuf_pending_wrap_is_unset() {
 #[test]
 fn cuf_rightmost_boundary() {
     // CUF Rightmost Boundary
-    check(
-        10,
-        1,
-        &["A", "\x1b[500C", "B"],
-        &[
-            "A        B",
-        ],
-        (0, 9),
-    );
+    check(10, 1, &["A", "\x1b[500C", "B"], &["A        B"], (0, 9));
 }
 
 #[test]
@@ -417,10 +448,16 @@ fn cuf_left_of_right_margin() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[3;5s", "\x1b[1G", "\x1b[500C", "X"],
         &[
-            "    X     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[1G",
+            "\x1b[500C",
+            "X",
         ],
+        &["    X     "],
         (0, 4),
     );
 }
@@ -431,10 +468,16 @@ fn cuf_right_of_right_margin() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[3;5s", "\x1b[6G", "\x1b[500C", "X"],
         &[
-            "         X",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[6G",
+            "\x1b[500C",
+            "X",
         ],
+        &["         X"],
         (0, 9),
     );
 }
@@ -446,11 +489,7 @@ fn cuu_normal_usage() {
         10,
         3,
         &["\x1b[1;1H", "\x1b[2J", "\x1b[3;1H", "A", "\x1b[2A", "X"],
-        &[
-            " X        ",
-            "          ",
-            "A         ",
-        ],
+        &[" X        ", "          ", "A         "],
         (0, 2),
     );
 }
@@ -461,13 +500,16 @@ fn cuu_below_top_margin() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[2;4r", "\x1b[3;1H", "A", "\x1b[5A", "X"],
         &[
-            "          ",
-            " X        ",
-            "A         ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[2;4r",
+            "\x1b[3;1H",
+            "A",
+            "\x1b[5A",
+            "X",
         ],
+        &["          ", " X        ", "A         ", "          "],
         (1, 2),
     );
 }
@@ -478,7 +520,16 @@ fn cuu_above_top_margin() {
     check(
         10,
         5,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[3;5r", "\x1b[3;1H", "A", "\x1b[2;1H", "\x1b[5A", "X"],
+        &[
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[3;5r",
+            "\x1b[3;1H",
+            "A",
+            "\x1b[2;1H",
+            "\x1b[5A",
+            "X",
+        ],
         &[
             "X         ",
             "          ",
@@ -496,12 +547,16 @@ fn dl_simple_delete_line() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[M"],
         &[
-            "ABC     ",
-            "GHI     ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[M",
         ],
+        &["ABC     ", "GHI     ", "        "],
         (1, 0),
     );
 }
@@ -516,12 +571,17 @@ fn dl_cursor_outside_scroll_region() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[3;4r", "\x1b[2;2H", "\x1b[M"],
         &[
-            "ABC     ",
-            "GHI     ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[3;4r",
+            "\x1b[2;2H",
+            "\x1b[M",
         ],
+        &["ABC     ", "GHI     ", "        "],
         (1, 0),
     );
 }
@@ -532,13 +592,18 @@ fn dl_with_top_bottom_scroll_regions() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI\x0d\x0a", "123", "\x1b[1;3r", "\x1b[2;2H", "\x1b[M"],
         &[
-            "ABC     ",
-            "GHI     ",
-            "        ",
-            "123     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI\x0d\x0a",
+            "123",
+            "\x1b[1;3r",
+            "\x1b[2;2H",
+            "\x1b[M",
         ],
+        &["ABC     ", "GHI     ", "        ", "123     "],
         (1, 0),
     );
 }
@@ -549,12 +614,18 @@ fn dl_with_left_right_scroll_regions() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC123\x0d\x0a", "DEF456\x0d\x0a", "GHI789", "\x1b[?69h", "\x1b[2;4s", "\x1b[2;2H", "\x1b[M"],
         &[
-            "ABC123  ",
-            "DHI756  ",
-            "G   89  ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC123\x0d\x0a",
+            "DEF456\x0d\x0a",
+            "GHI789",
+            "\x1b[?69h",
+            "\x1b[2;4s",
+            "\x1b[2;2H",
+            "\x1b[M",
         ],
+        &["ABC123  ", "DHI756  ", "G   89  "],
         (1, 1),
     );
 }
@@ -565,13 +636,16 @@ fn il_simple_insert_line() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[L"],
         &[
-            "ABC     ",
-            "        ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[L",
         ],
+        &["ABC     ", "        ", "DEF     ", "GHI     "],
         (1, 0),
     );
 }
@@ -586,12 +660,17 @@ fn il_cursor_outside_scroll_region() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[3;4r", "\x1b[2;2H", "\x1b[L"],
         &[
-            "ABC     ",
-            "        ",
-            "DEF     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[3;4r",
+            "\x1b[2;2H",
+            "\x1b[L",
         ],
+        &["ABC     ", "        ", "DEF     "],
         (1, 0),
     );
 }
@@ -602,13 +681,18 @@ fn il_with_top_bottom_scroll_regions() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI\x0d\x0a", "123", "\x1b[1;3r", "\x1b[2;2H", "\x1b[L"],
         &[
-            "ABC     ",
-            "        ",
-            "DEF     ",
-            "123     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI\x0d\x0a",
+            "123",
+            "\x1b[1;3r",
+            "\x1b[2;2H",
+            "\x1b[L",
         ],
+        &["ABC     ", "        ", "DEF     ", "123     "],
         (1, 0),
     );
 }
@@ -619,13 +703,18 @@ fn il_with_left_right_scroll_regions() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC123\x0d\x0a", "DEF456\x0d\x0a", "GHI789", "\x1b[?69h", "\x1b[2;4s", "\x1b[2;2H", "\x1b[L"],
         &[
-            "ABC123  ",
-            "D   56  ",
-            "GEF489  ",
-            " HI7    ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC123\x0d\x0a",
+            "DEF456\x0d\x0a",
+            "GHI789",
+            "\x1b[?69h",
+            "\x1b[2;4s",
+            "\x1b[2;2H",
+            "\x1b[L",
         ],
+        &["ABC123  ", "D   56  ", "GEF489  ", " HI7    "],
         (1, 1),
     );
 }
@@ -637,9 +726,7 @@ fn dch_simple_delete_character() {
         8,
         1,
         &["ABC123", "\x1b[3G", "\x1b[2P"],
-        &[
-            "AB23    ",
-        ],
+        &["AB23    "],
         (0, 2),
     );
 }
@@ -651,9 +738,7 @@ fn dch_with_sgr_state() {
         8,
         1,
         &["ABC123", "\x1b[3G", "\x1b[41m", "\x1b[2P"],
-        &[
-            "AB23    ",
-        ],
+        &["AB23    "],
         (0, 2),
     );
 }
@@ -664,10 +749,16 @@ fn dch_outside_left_right_scroll_region() {
     check(
         8,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "ABC123", "\x1b[?69h", "\x1b[3;5s", "\x1b[2G", "\x1b[P"],
         &[
-            "ABC123  ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC123",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[2G",
+            "\x1b[P",
         ],
+        &["ABC123  "],
         (0, 1),
     );
 }
@@ -678,10 +769,16 @@ fn dch_inside_left_right_scroll_region() {
     check(
         8,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "ABC123", "\x1b[?69h", "\x1b[3;5s", "\x1b[4G", "\x1b[P"],
         &[
-            "ABC2 3  ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC123",
+            "\x1b[?69h",
+            "\x1b[3;5s",
+            "\x1b[4G",
+            "\x1b[P",
         ],
+        &["ABC2 3  "],
         (0, 3),
     );
 }
@@ -693,9 +790,7 @@ fn dch_split_wide_character() {
         10,
         1,
         &["\x1b[1;1H", "\x1b[2J", "A橋123", "\x1b[3G", "\x1b[P"],
-        &[
-            "A 123     ",
-        ],
+        &["A 123     "],
         (0, 2),
     );
 }
@@ -706,13 +801,16 @@ fn decstbm_full_screen_scroll_up() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[r", "\x1b[T"],
         &[
-            "        ",
-            "ABC     ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[r",
+            "\x1b[T",
         ],
+        &["        ", "ABC     ", "DEF     ", "GHI     "],
         (0, 0),
     );
 }
@@ -723,13 +821,16 @@ fn decstbm_top_only_scroll_up() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2r", "\x1b[T"],
         &[
-            "ABC     ",
-            "        ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2r",
+            "\x1b[T",
         ],
+        &["ABC     ", "        ", "DEF     ", "GHI     "],
         (0, 0),
     );
 }
@@ -740,13 +841,16 @@ fn decstbm_top_and_bottom_scroll_up() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[1;2r", "\x1b[T"],
         &[
-            "        ",
-            "ABC     ",
-            "GHI     ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[1;2r",
+            "\x1b[T",
         ],
+        &["        ", "ABC     ", "GHI     ", "        "],
         (0, 0),
     );
 }
@@ -757,13 +861,16 @@ fn decstbm_top_equal_bottom_scroll_up() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2r", "\x1b[T"],
         &[
-            "        ",
-            "ABC     ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2r",
+            "\x1b[T",
         ],
+        &["        ", "ABC     ", "DEF     ", "GHI     "],
         (2, 3),
     );
 }
@@ -774,12 +881,17 @@ fn decslrm_full_screen() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[s", "\x1b[X"],
         &[
-            " BC     ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[s",
+            "\x1b[X",
         ],
+        &[" BC     ", "DEF     ", "GHI     "],
         (0, 0),
     );
 }
@@ -790,13 +902,18 @@ fn decslrm_left_only() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[2s", "\x1b[2G", "\x1b[L"],
         &[
-            "A       ",
-            "DBC     ",
-            "GEF     ",
-            " HI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[2s",
+            "\x1b[2G",
+            "\x1b[L",
         ],
+        &["A       ", "DBC     ", "GEF     ", " HI     "],
         (0, 1),
     );
 }
@@ -807,13 +924,18 @@ fn decslrm_left_and_right() {
     check(
         8,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[1;2s", "\x1b[2G", "\x1b[L"],
         &[
-            "  C     ",
-            "ABF     ",
-            "DEI     ",
-            "GH      ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[1;2s",
+            "\x1b[2G",
+            "\x1b[L",
         ],
+        &["  C     ", "ABF     ", "DEI     ", "GH      "],
         (0, 0),
     );
 }
@@ -824,12 +946,17 @@ fn decslrm_left_equal_to_right() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[2;2s", "\x1b[X"],
         &[
-            "ABC     ",
-            "DEF     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[2;2s",
+            "\x1b[X",
         ],
+        &["ABC     ", "DEF     ", "GHI     "],
         (2, 3),
     );
 }
@@ -837,15 +964,7 @@ fn decslrm_left_equal_to_right() {
 #[test]
 fn ech_simple_operation() {
     // ECH Simple Operation
-    check(
-        8,
-        1,
-        &["ABC", "\x1b[1G", "\x1b[2X"],
-        &[
-            "  C     ",
-        ],
-        (0, 0),
-    );
+    check(8, 1, &["ABC", "\x1b[1G", "\x1b[2X"], &["  C     "], (0, 0));
 }
 
 #[test]
@@ -855,9 +974,7 @@ fn ech_erasing_beyond_edge_of_screen() {
         8,
         1,
         &["\x1b[8G", "\x1b[2D", "ABC", "\x1b[D", "\x1b[10X"],
-        &[
-            "     A  ",
-        ],
+        &["     A  "],
         (0, 6),
     );
 }
@@ -869,9 +986,7 @@ fn ech_reset_pending_wrap_state() {
         8,
         1,
         &["\x1b[8G", "A", "\x1b[X", "X"],
-        &[
-            "       X",
-        ],
+        &["       X"],
         (0, 7),
     );
 }
@@ -883,9 +998,7 @@ fn ech_with_sgr_state() {
         8,
         1,
         &["ABC", "\x1b[1G", "\x1b[41m", "\x1b[2X"],
-        &[
-            "  C     ",
-        ],
+        &["  C     "],
         (0, 0),
     );
 }
@@ -897,9 +1010,7 @@ fn ech_multi_cell_character() {
         8,
         1,
         &["橋BC", "\x1b[1G", "\x1b[X", "X"],
-        &[
-            "X BC    ",
-        ],
+        &["X BC    "],
         (0, 1),
     );
 }
@@ -910,10 +1021,17 @@ fn ech_left_right_scroll_region_ignored() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[1;3s", "\x1b[4G", "ABC", "\x1b[1G", "\x1b[4X"],
         &[
-            "    BC    ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[1;3s",
+            "\x1b[4G",
+            "ABC",
+            "\x1b[1G",
+            "\x1b[4X",
         ],
+        &["    BC    "],
         (0, 0),
     );
 }
@@ -925,9 +1043,7 @@ fn el_simple_erase_right() {
         8,
         1,
         &["ABCDE", "\x1b[3G", "\x1b[0K"],
-        &[
-            "AB      ",
-        ],
+        &["AB      "],
         (0, 2),
     );
 }
@@ -939,9 +1055,7 @@ fn el_erase_right_resets_pending_wrap() {
         8,
         1,
         &["\x1b[8G", "A", "\x1b[0K", "X"],
-        &[
-            "       X",
-        ],
+        &["       X"],
         (0, 7),
     );
 }
@@ -953,9 +1067,7 @@ fn el_erase_right_with_sgr_state() {
         8,
         1,
         &["ABC", "\x1b[2G", "\x1b[41m", "\x1b[0K"],
-        &[
-            "A       ",
-        ],
+        &["A       "],
         (0, 1),
     );
 }
@@ -967,9 +1079,7 @@ fn el_erase_right_multi_cell_character() {
         8,
         1,
         &["AB橋DE", "\x1b[4G", "\x1b[0K"],
-        &[
-            "AB      ",
-        ],
+        &["AB      "],
         (0, 3),
     );
 }
@@ -980,10 +1090,16 @@ fn el_erase_right_with_left_right_margins() {
     check(
         10,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "ABCDE", "\x1b[?69h", "\x1b[1;3s", "\x1b[2G", "\x1b[0K"],
         &[
-            "A         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABCDE",
+            "\x1b[?69h",
+            "\x1b[1;3s",
+            "\x1b[2G",
+            "\x1b[0K",
         ],
+        &["A         "],
         (0, 1),
     );
 }
@@ -995,9 +1111,7 @@ fn el_simple_erase_left() {
         8,
         1,
         &["ABCDE", "\x1b[3G", "\x1b[1K"],
-        &[
-            "   DE   ",
-        ],
+        &["   DE   "],
         (0, 2),
     );
 }
@@ -1009,9 +1123,7 @@ fn el_erase_left_with_sgr_state() {
         8,
         1,
         &["ABC", "\x1b[2G", "\x1b[41m", "\x1b[1K"],
-        &[
-            "  C     ",
-        ],
+        &["  C     "],
         (0, 1),
     );
 }
@@ -1023,9 +1135,7 @@ fn el_erase_left_multi_cell_character() {
         8,
         1,
         &["AB橋DE", "\x1b[3G", "\x1b[1K"],
-        &[
-            "    DE  ",
-        ],
+        &["    DE  "],
         (0, 2),
     );
 }
@@ -1037,9 +1147,7 @@ fn el_simple_erase_complete_line() {
         8,
         1,
         &["ABCDE", "\x1b[3G", "\x1b[2K"],
-        &[
-            "        ",
-        ],
+        &["        "],
         (0, 2),
     );
 }
@@ -1051,9 +1159,7 @@ fn el_erase_complete_with_sgr_state() {
         8,
         1,
         &["ABC", "\x1b[2G", "\x1b[41m", "\x1b[2K"],
-        &[
-            "        ",
-        ],
+        &["        "],
         (0, 1),
     );
 }
@@ -1065,10 +1171,7 @@ fn ind_no_scroll_region_top_of_screen() {
         10,
         2,
         &["\x1b[1;1H", "\x1b[2J", "A", "\x1bD", "X"],
-        &[
-            "A         ",
-            " X        ",
-        ],
+        &["A         ", " X        "],
         (1, 2),
     );
 }
@@ -1080,10 +1183,7 @@ fn ind_bottom_of_primary_screen() {
         10,
         2,
         &["\x1b[1;1H", "\x1b[2J", "\x1b[2;1H", "A", "\x1bD", "X"],
-        &[
-            "A         ",
-            " X        ",
-        ],
+        &["A         ", " X        "],
         (1, 2),
     );
 }
@@ -1095,10 +1195,7 @@ fn ind_inside_scroll_region() {
         10,
         2,
         &["\x1b[1;1H", "\x1b[2J", "\x1b[1;3r", "A", "\x1bD", "X"],
-        &[
-            "A         ",
-            " X        ",
-        ],
+        &["A         ", " X        "],
         (1, 2),
     );
 }
@@ -1109,13 +1206,18 @@ fn ind_bottom_of_scroll_region() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[1;3r", "\x1b[4;1H", "B", "\x1b[3;1H", "A", "\x1bD", "X"],
         &[
-            "          ",
-            "A         ",
-            " X        ",
-            "B         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[1;3r",
+            "\x1b[4;1H",
+            "B",
+            "\x1b[3;1H",
+            "A",
+            "\x1bD",
+            "X",
         ],
+        &["          ", "A         ", " X        ", "B         "],
         (2, 2),
     );
 }
@@ -1126,7 +1228,16 @@ fn ind_bottom_of_primary_screen_with_scroll_region() {
     check(
         10,
         5,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[1;3r", "\x1b[3;1H", "A", "\x1b[5;1H", "\x1bD", "X"],
+        &[
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[1;3r",
+            "\x1b[3;1H",
+            "A",
+            "\x1b[5;1H",
+            "\x1bD",
+            "X",
+        ],
         &[
             "          ",
             "          ",
@@ -1144,12 +1255,19 @@ fn ind_outside_of_left_right_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?69h", "\x1b[1;3r", "\x1b[3;5s", "\x1b[3;3H", "A", "\x1b[3;1H", "\x1bD", "X"],
         &[
-            "          ",
-            "          ",
-            "X A       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?69h",
+            "\x1b[1;3r",
+            "\x1b[3;5s",
+            "\x1b[3;3H",
+            "A",
+            "\x1b[3;1H",
+            "\x1bD",
+            "X",
         ],
+        &["          ", "          ", "X A       "],
         (2, 1),
     );
 }
@@ -1160,12 +1278,19 @@ fn ind_inside_of_left_right_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "AAAAAA\x0d\x0a", "AAAAAA\x0d\x0a", "AAAAAA", "\x1b[?69h", "\x1b[1;3s", "\x1b[1;3r", "\x1b[3;1H", "\x1bD"],
         &[
-            "AAAAAA    ",
-            "AAAAAA    ",
-            "   AAA    ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "AAAAAA\x0d\x0a",
+            "AAAAAA\x0d\x0a",
+            "AAAAAA",
+            "\x1b[?69h",
+            "\x1b[1;3s",
+            "\x1b[1;3r",
+            "\x1b[3;1H",
+            "\x1bD",
         ],
+        &["AAAAAA    ", "AAAAAA    ", "   AAA    "],
         (2, 0),
     );
 }
@@ -1176,12 +1301,16 @@ fn ed_simple_erase_below() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[0J"],
         &[
-            "ABC     ",
-            "D       ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[0J",
         ],
+        &["ABC     ", "D       ", "        "],
         (1, 1),
     );
 }
@@ -1192,12 +1321,17 @@ fn ed_erase_below_with_sgr_state() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[0J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[41m", "\x1b[0J"],
         &[
-            "ABC     ",
-            "D       ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[0J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[41m",
+            "\x1b[0J",
         ],
+        &["ABC     ", "D       ", "        "],
         (1, 1),
     );
 }
@@ -1208,12 +1342,16 @@ fn ed_erase_below_with_multi_cell_character() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "AB橋C\x0d\x0a", "DE橋F\x0d\x0a", "GH橋I", "\x1b[2;3H", "\x1b[0J"],
         &[
-            "AB橋C   ",
-            "DE      ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "AB橋C\x0d\x0a",
+            "DE橋F\x0d\x0a",
+            "GH橋I",
+            "\x1b[2;3H",
+            "\x1b[0J",
         ],
+        &["AB橋C   ", "DE      ", "        "],
         (1, 2),
     );
 }
@@ -1226,12 +1364,16 @@ fn ed_simple_erase_above() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[1J"],
         &[
-            "        ",
-            "  F     ",
-            "GHI     ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[1J",
         ],
+        &["        ", "  F     ", "GHI     "],
         (1, 1),
     );
 }
@@ -1242,12 +1384,16 @@ fn ed_simple_erase_complete() {
     check(
         8,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[2J"],
         &[
-            "        ",
-            "        ",
-            "        ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[2J",
         ],
+        &["        ", "        ", "        "],
         (1, 1),
     );
 }
@@ -1258,13 +1404,17 @@ fn ri_no_scroll_region_top_of_screen() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "A\x0d\x0a", "B\x0d\x0a", "C\x0d\x0a", "\x1b[1;1H", "\x1bM", "X"],
         &[
-            "X         ",
-            "A         ",
-            "B         ",
-            "C         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "A\x0d\x0a",
+            "B\x0d\x0a",
+            "C\x0d\x0a",
+            "\x1b[1;1H",
+            "\x1bM",
+            "X",
         ],
+        &["X         ", "A         ", "B         ", "C         "],
         (0, 1),
     );
 }
@@ -1275,12 +1425,17 @@ fn ri_no_scroll_region_not_top_of_screen() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "A\x0d\x0a", "B\x0d\x0a", "C", "\x1b[2;1H", "\x1bM", "X"],
         &[
-            "X         ",
-            "B         ",
-            "C         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "A\x0d\x0a",
+            "B\x0d\x0a",
+            "C",
+            "\x1b[2;1H",
+            "\x1bM",
+            "X",
         ],
+        &["X         ", "B         ", "C         "],
         (0, 1),
     );
 }
@@ -1291,12 +1446,18 @@ fn ri_top_bottom_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "A\x0d\x0a", "B\x0d\x0a", "C", "\x1b[2;3r", "\x1b[2;1H", "\x1bM", "X"],
         &[
-            "A         ",
-            "X         ",
-            "B         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "A\x0d\x0a",
+            "B\x0d\x0a",
+            "C",
+            "\x1b[2;3r",
+            "\x1b[2;1H",
+            "\x1bM",
+            "X",
         ],
+        &["A         ", "X         ", "B         "],
         (1, 1),
     );
 }
@@ -1307,12 +1468,17 @@ fn ri_outside_of_top_bottom_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "A\x0d\x0a", "B\x0d\x0a", "C", "\x1b[2;3r", "\x1b[1;1H", "\x1bM"],
         &[
-            "A         ",
-            "B         ",
-            "C         ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "A\x0d\x0a",
+            "B\x0d\x0a",
+            "C",
+            "\x1b[2;3r",
+            "\x1b[1;1H",
+            "\x1bM",
         ],
+        &["A         ", "B         ", "C         "],
         (0, 0),
     );
 }
@@ -1323,13 +1489,18 @@ fn ri_left_right_scroll_region() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[2;3s", "\x1b[1;2H", "\x1bM"],
         &[
-            "A         ",
-            "DBC       ",
-            "GEF       ",
-            " HI       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[2;3s",
+            "\x1b[1;2H",
+            "\x1bM",
         ],
+        &["A         ", "DBC       ", "GEF       ", " HI       "],
         (0, 1),
     );
 }
@@ -1340,12 +1511,18 @@ fn ri_outside_left_right_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[?69h", "\x1b[2;3s", "\x1b[2;1H", "\x1bM"],
         &[
-            "ABC       ",
-            "DEF       ",
-            "GHI       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[?69h",
+            "\x1b[2;3s",
+            "\x1b[2;1H",
+            "\x1bM",
         ],
+        &["ABC       ", "DEF       ", "GHI       "],
         (0, 0),
     );
 }
@@ -1356,13 +1533,17 @@ fn sd_outside_of_top_bottom_scroll_region() {
     check(
         10,
         4,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[3;4r", "\x1b[2;2H", "\x1b[T"],
         &[
-            "ABC       ",
-            "DEF       ",
-            "          ",
-            "GHI       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[3;4r",
+            "\x1b[2;2H",
+            "\x1b[T",
         ],
+        &["ABC       ", "DEF       ", "          ", "GHI       "],
         (1, 1),
     );
 }
@@ -1373,12 +1554,16 @@ fn su_simple_usage() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;2H", "\x1b[S"],
         &[
-            "DEF       ",
-            "GHI       ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;2H",
+            "\x1b[S",
         ],
+        &["DEF       ", "GHI       ", "          "],
         (1, 1),
     );
 }
@@ -1389,12 +1574,17 @@ fn su_top_bottom_scroll_region() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC\x0d\x0a", "DEF\x0d\x0a", "GHI", "\x1b[2;3r", "\x1b[1;1H", "\x1b[S"],
         &[
-            "ABC       ",
-            "GHI       ",
-            "          ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC\x0d\x0a",
+            "DEF\x0d\x0a",
+            "GHI",
+            "\x1b[2;3r",
+            "\x1b[1;1H",
+            "\x1b[S",
         ],
+        &["ABC       ", "GHI       ", "          "],
         (0, 0),
     );
 }
@@ -1405,12 +1595,18 @@ fn su_left_right_scroll_regions() {
     check(
         10,
         3,
-        &["\x1b[1;1H", "\x1b[2J", "ABC123\x0d\x0a", "DEF456\x0d\x0a", "GHI789", "\x1b[?69h", "\x1b[2;4s", "\x1b[2;2H", "\x1b[S"],
         &[
-            "AEF423    ",
-            "DHI756    ",
-            "G   89    ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "ABC123\x0d\x0a",
+            "DEF456\x0d\x0a",
+            "GHI789",
+            "\x1b[?69h",
+            "\x1b[2;4s",
+            "\x1b[2;2H",
+            "\x1b[S",
         ],
+        &["AEF423    ", "DHI756    ", "G   89    "],
         (1, 1),
     );
 }
@@ -1421,13 +1617,18 @@ fn su_preserves_pending_wrap() {
     check(
         10,
         4,
-        &["\x1b[1;10H", "\x1b[2J", "A", "\x1b[2;10H", "B", "\x1b[3;10H", "C", "\x1b[S", "X"],
         &[
-            "         B",
-            "         C",
-            "          ",
-            "X         ",
+            "\x1b[1;10H",
+            "\x1b[2J",
+            "A",
+            "\x1b[2;10H",
+            "B",
+            "\x1b[3;10H",
+            "C",
+            "\x1b[S",
+            "X",
         ],
+        &["         B", "         C", "          ", "X         "],
         (3, 1),
     );
 }
@@ -1438,7 +1639,15 @@ fn su_scroll_full_top_bottom_scroll_region() {
     check(
         10,
         5,
-        &["\x1b[1;1H", "\x1b[2J", "top", "\x1b[5;1H", "ABCDEF", "\x1b[2;5r", "\x1b[4S"],
+        &[
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "top",
+            "\x1b[5;1H",
+            "ABCDEF",
+            "\x1b[2;5r",
+            "\x1b[4S",
+        ],
         &[
             "top       ",
             "          ",
@@ -1456,10 +1665,16 @@ fn tbc_clear_single_tab_stop() {
     check(
         23,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?W", "\x09", "\x1b[g", "\x1b[1G", "\x09"],
         &[
-            "                       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?W",
+            "\x09",
+            "\x1b[g",
+            "\x1b[1G",
+            "\x09",
         ],
+        &["                       "],
         (0, 16),
     );
 }
@@ -1470,10 +1685,15 @@ fn tbc_clear_all_tab_stops() {
     check(
         23,
         1,
-        &["\x1b[1;1H", "\x1b[2J", "\x1b[?W", "\x1b[3g", "\x1b[1G", "\x09"],
         &[
-            "                       ",
+            "\x1b[1;1H",
+            "\x1b[2J",
+            "\x1b[?W",
+            "\x1b[3g",
+            "\x1b[1G",
+            "\x09",
         ],
+        &["                       "],
         (0, 22),
     );
 }

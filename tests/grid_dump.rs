@@ -85,7 +85,11 @@ fn dump_header_names_the_alternate_screen() {
     feed(&mut t, "\x1b[?1049h");
 
     assert!(
-        t.dump().lines().next().unwrap().contains("screen=alternate"),
+        t.dump()
+            .lines()
+            .next()
+            .unwrap()
+            .contains("screen=alternate"),
         "alt screen not reported: {}",
         t.dump()
     );
@@ -203,7 +207,14 @@ fn every_attribute_has_a_name_in_the_snapshot() {
 
     let dump = t.dump();
     for name in [
-        "bold", "dim", "italic", "underline", "blink", "reverse", "strike", "overline",
+        "bold",
+        "dim",
+        "italic",
+        "underline",
+        "blink",
+        "reverse",
+        "strike",
+        "overline",
     ] {
         assert!(dump.contains(name), "{name} missing from: {dump}");
     }
