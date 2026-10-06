@@ -59,7 +59,6 @@ enum WhatsNewNotice {
     /// Shows the What's New dialog immediately in the active window.
     static func showWhatsNew(force: Bool = true, theme: TerminalTheme? = nil) {
         guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else {
-            AboutController.shared.show()
             return
         }
         let activeTheme = theme ?? (NSApp.delegate as? AppDelegate)?.tako.config.theme

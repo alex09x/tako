@@ -64,7 +64,6 @@ enum AboutNotice {
     /// Shows the About Tako dialog in the specified or frontmost terminal window.
     static func show(in window: NSWindow? = nil, theme: TerminalTheme? = nil) {
         guard let targetWindow = window ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else {
-            AboutController.shared.show()
             return
         }
 

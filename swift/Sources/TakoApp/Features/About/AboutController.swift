@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import Cocoa
 import SwiftUI
@@ -19,15 +29,10 @@ class AboutController: NSWindowController, NSWindowDelegate {
     // MARK: - Functions
 
     func show() {
+        self.window?.orderOut(nil)
         if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
             AboutNotice.show(in: window)
-            return
         }
-        if window == nil { _ = self.window }
-        window?.center()
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        viewModel.startCyclingIcons()
     }
 
     func hide() {

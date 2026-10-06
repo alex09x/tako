@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import Cocoa
 import SwiftUI
@@ -13,17 +23,17 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
     @Published var errors: [String] = [] {
         didSet {
             if errors.count == 0 {
-                self.window?.performClose(nil)
+                ConfigurationErrorsNotice.dismiss()
+                self.close()
+                self.window?.orderOut(nil)
             }
         }
     }
 
     override func showWindow(_ sender: Any?) {
-        if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            ConfigurationErrorsNotice.show(errors: errors, in: window)
-            return
-        }
-        super.showWindow(sender)
+        // Enforce in-terminal TUI presentation. Never display a native Cocoa window.
+        self.window?.orderOut(nil)
+        ConfigurationErrorsNotice.show(errors: errors)
     }
 
     // MARK: - NSWindowController
@@ -40,3 +50,4 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
         window.titlebarAppearsTransparent = true
     }
 }
+

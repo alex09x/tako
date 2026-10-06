@@ -16,6 +16,11 @@ import TakoKit
 /// allowing the user to view diagnostics, open config, reload config, or ignore.
 @MainActor
 enum ConfigurationErrorsNotice {
+    private static var pendingErrors: [String]?
+    private static var pendingTheme: TerminalTheme?
+    private static var keyWindowObserver: NSObjectProtocol?
+    private static var retryCount = 0
+
     /// Formatted TUI lines for configuration errors.
     static func lines(errors: [String], width: Int = 62) -> [TUIText.Line] {
         var result: [TUIText.Line] = [
@@ -45,23 +50,72 @@ enum ConfigurationErrorsNotice {
     }
 
     /// Shows configuration errors in the specified or frontmost terminal window.
+    /// Never falls back to a native Cocoa window; queues presentation until a terminal window is ready.
     static func show(errors: [String], in window: NSWindow? = nil, theme: TerminalTheme? = nil) {
-        guard !errors.isEmpty else { return }
-
-        guard let targetWindow = window ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else {
-            // If no terminal window is available yet, wait briefly at launch or fall back
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                if let lateWindow = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-                    show(errors: errors, in: lateWindow, theme: theme)
-                } else {
-                    let c = ConfigurationErrorsController.sharedInstance
-                    c.errors = errors
-                    c.showWindow(nil)
-                }
-            }
+        guard !errors.isEmpty else {
+            dismiss(in: window)
             return
         }
 
+        guard let targetWindow = window ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else {
+            // Queue pending errors and wait for a terminal window to become available
+            pendingErrors = errors
+            pendingTheme = theme
+            startAwaitingWindow()
+            return
+        }
+
+        stopAwaitingWindow()
+        present(errors: errors, in: targetWindow, theme: theme)
+    }
+
+    private static func startAwaitingWindow() {
+        guard keyWindowObserver == nil else { return }
+        retryCount = 0
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            checkAwaitingWindow()
+        }
+        scheduleRetry()
+    }
+
+    private static func scheduleRetry() {
+        guard retryCount < 10 else { return }
+        retryCount += 1
+        let delay: TimeInterval = retryCount < 4 ? 0.25 : 0.6
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            checkAwaitingWindow()
+        }
+    }
+
+    private static func checkAwaitingWindow() {
+        guard let errors = pendingErrors, !errors.isEmpty else {
+            stopAwaitingWindow()
+            return
+        }
+        if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+            let theme = pendingTheme
+            stopAwaitingWindow()
+            present(errors: errors, in: window, theme: theme)
+        } else if retryCount < 10 {
+            scheduleRetry()
+        }
+    }
+
+    private static func stopAwaitingWindow() {
+        if let observer = keyWindowObserver {
+            NotificationCenter.default.removeObserver(observer)
+            keyWindowObserver = nil
+        }
+        pendingErrors = nil
+        pendingTheme = nil
+        retryCount = 0
+    }
+
+    private static func present(errors: [String], in targetWindow: NSWindow, theme: TerminalTheme?) {
         if let existing = TerminalDialogView.pending(in: targetWindow) {
             existing.withdraw()
         }
@@ -96,12 +150,15 @@ enum ConfigurationErrorsNotice {
         }
     }
 
-    /// Dismisses any visible configuration error TUI dialog.
+    /// Dismisses any visible configuration error TUI dialog and clears the pending queue.
     static func dismiss(in window: NSWindow? = nil) {
-        let target = window ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
-        if let target, let pending = TerminalDialogView.pending(in: target),
-           pending.accessibilityLabel()?.hasPrefix("Configuration Errors") == true {
-            pending.withdraw()
+        stopAwaitingWindow()
+        let targets = window != nil ? [window!] : NSApp.windows
+        for target in targets {
+            if let pending = TerminalDialogView.pending(in: target),
+               pending.accessibilityLabel()?.hasPrefix("Configuration Errors") == true {
+                pending.withdraw()
+            }
         }
     }
 }
