@@ -256,4 +256,13 @@ struct ConfigTests {
         let gotoToNextSplit = try #require(config.keyboardShortcut(for: "goto_split:next"))
         #expect(gotoToNextSplit == .init("]", modifiers: [.command]))
     }
+
+    @Test
+    func equalizeSplitsBindingWithEqualsKeyTrigger() async throws {
+        let config = try TemporaryConfig("""
+        keybind = cmd+opt+==equalize_splits
+        """)
+        let shortcut = try #require(config.keyboardShortcut(for: "equalize_splits"))
+        #expect(shortcut == .init("=", modifiers: [.command, .option]))
+    }
 }

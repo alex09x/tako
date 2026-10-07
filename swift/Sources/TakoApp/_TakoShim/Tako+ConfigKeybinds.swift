@@ -173,7 +173,7 @@ extension Tako.Config {
 
     /// The `=` between trigger and action. An `=` right after a `+` (or at the very
     /// start) is the key itself, as in `cmd+==increase_font_size:1`.
-    private static func triggerSeparator(in line: String) -> String.Index? {
+    static func triggerSeparator(in line: String) -> String.Index? {
         var index = line.startIndex
         while let eq = line[index...].firstIndex(of: "=") {
             if eq != line.startIndex, line[line.index(before: eq)] != "+" {

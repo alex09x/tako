@@ -39,6 +39,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     let style: Style
+    let configFile: KeybindConfigFile
     var allItems: [KeybindActionItem] = KeybindRegistry.allActions
     var filteredItems: [KeybindActionItem] = []
     var selectedIndex: Int = 0
@@ -57,16 +58,21 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     let visibleRows: Int = 14
     var totalRows: Int { visibleRows + 9 }
 
-    static func show(in window: NSWindow, theme: TerminalTheme? = nil) {
+    static func show(in window: NSWindow, theme: TerminalTheme? = nil, configPath: String? = nil) {
         if let existing = window.contentView?.subviews.first(where: { $0 is TerminalSettingsDialog }) {
             (existing as? TerminalSettingsDialog)?.withdraw()
             return
         }
 
         guard let content = window.contentView else { return }
-        KeybindConfigFile.shared.reload()
+        let resolvedPath = configPath
+            ?? (NSApp.delegate as? AppDelegate)?.tako.activeConfigPath
+            ?? ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"]
 
-        let dialog = TerminalSettingsDialog(style: .from(theme))
+        let configFile = KeybindConfigFile(configPath: resolvedPath)
+        configFile.reload()
+
+        let dialog = TerminalSettingsDialog(style: .from(theme), configFile: configFile)
         dialog.frame = content.bounds
         dialog.autoresizingMask = [.width, .height]
         dialog.previousResponder = window.firstResponder
@@ -76,8 +82,9 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         dialog.needsLayout = true
     }
 
-    init(style: Style) {
+    init(style: Style, configFile: KeybindConfigFile? = nil) {
         self.style = style
+        self.configFile = configFile ?? .shared
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor

@@ -22,7 +22,7 @@ extension AppDelegate {
     @IBAction func showSettings(_ sender: Any?) {
         guard let window = (sender as? NSView)?.window
             ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) else { return }
-        TerminalSettingsDialog.show(in: window, theme: tako.config.theme)
+        TerminalSettingsDialog.show(in: window, theme: tako.config.theme, configPath: tako.activeConfigPath)
     }
 
     @IBAction func reloadConfig(_ sender: Any?) {

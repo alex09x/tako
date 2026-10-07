@@ -53,7 +53,7 @@ extension TerminalSettingsDialog {
 
         // List Rows (Row 5 to 5 + visibleRows)
         let startRow = 5
-        let customOverrides = KeybindConfigFile.shared.customOverrides
+        let customOverrides = configFile.customOverrides
 
         for i in 0..<visibleRows {
             let itemIndex = scrollOffset + i
