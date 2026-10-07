@@ -115,3 +115,20 @@ struct SettingsViewCoverageTests {
         #expect(hosting.fittingSize.height > 0)
     }
 }
+
+@Suite
+@MainActor
+struct KeybindingsSettingsCoverageTests {
+    @Test func registryContainsAllCategories() {
+        let categories = Set(KeybindRegistry.allActions.map(\.category))
+        #expect(categories.count == KeybindCategory.allCases.count)
+    }
+
+    @Test func formatTriggerProducesExpectedSymbols() {
+        #expect(KeybindRegistry.format(trigger: "cmd+shift+return") == "⇧⌘↩")
+        #expect(KeybindRegistry.format(trigger: "ctrl+opt+]") == "⌃⌥]")
+        #expect(KeybindRegistry.format(trigger: "opt+cmd+=") == "⌥⌘=")
+        #expect(KeybindRegistry.format(trigger: "cmd+d") == "⌘D")
+    }
+}
+

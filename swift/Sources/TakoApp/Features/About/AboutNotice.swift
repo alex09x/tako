@@ -84,12 +84,13 @@ enum AboutNotice {
                 lines: contentLines,
                 choices: [
                     .init(title: "What's New", kind: .normal),
+                    .init(title: "Settings & Hotkeys", kind: .normal),
                     .init(title: "GitHub", kind: .normal),
                     .init(title: "Check Updates", kind: .normal),
                     .init(title: "Close", kind: .primary)
                 ],
-                selected: 3,
-                cancelIndex: 3,
+                selected: 4,
+                cancelIndex: 4,
                 theme: activeTheme
             )
 
@@ -97,10 +98,12 @@ enum AboutNotice {
             case 0:
                 WhatsNewNotice.showWhatsNew(force: true, theme: activeTheme)
             case 1:
+                TerminalSettingsDialog.show(in: targetWindow, theme: activeTheme)
+            case 2:
                 if let url = URL(string: "https://github.com/alex09x/tako") {
                     NSWorkspace.shared.open(url)
                 }
-            case 2:
+            case 3:
                 AppUpdater.shared.checkForUpdates(silent: false)
             default:
                 break

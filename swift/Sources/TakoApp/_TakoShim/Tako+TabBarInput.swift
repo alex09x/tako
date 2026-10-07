@@ -58,7 +58,7 @@ extension Tako.TabBarView {
             toolTip = "Project Workspace: \(ws.name)\(count > 0 ? " (\(count) needing attention)" : "") — Click to switch"
         } else if infoHovered {
             let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-            toolTip = v.isEmpty ? "About Tako" : "About Tako (v\(v))"
+            toolTip = v.isEmpty ? "About Tako & Settings" : "About Tako & Settings (v\(v))"
         } else if splitHovered {
             toolTip = "Split Terminal Right (⌘D)"
         } else if plusHovered {

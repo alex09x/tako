@@ -1,26 +1,39 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
+import AppKit
 import SwiftUI
 
-struct SettingsView: View {
-    // We need access to our app delegate to know if we're quitting or not.
+/// Settings view container. Primary settings and keybindings are presented
+/// through the in-terminal TUI card (TerminalSettingsDialog).
+public struct SettingsView: View {
     @EnvironmentObject private var appDelegate: AppDelegate
 
-    var body: some View {
-        HStack {
-            Image("AppIconImage")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 128, height: 128)
+    public init() {}
 
-            VStack(alignment: .leading) {
-                Text("Coming Soon. 🚧").font(.title)
-                Text("You can't configure settings in the GUI yet. To modify settings, " +
-                     "edit the file at $HOME/.config/tako/config and restart Tako.")
-                .multilineTextAlignment(.leading)
-                .lineLimit(nil)
+    public var body: some View {
+        VStack(spacing: 12) {
+            Text("Tako Settings")
+                .font(.headline)
+            Text("Keybindings and configuration are managed via the in-terminal TUI settings card (⌘,).")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Open In-Terminal Settings") {
+                if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+                    TerminalSettingsDialog.show(in: window)
+                }
             }
         }
-        .padding()
-        .frame(minWidth: 500, maxWidth: 500, minHeight: 156, maxHeight: 156)
+        .padding(24)
+        .frame(minWidth: 400, minHeight: 180)
     }
 }
 
