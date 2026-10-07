@@ -138,9 +138,12 @@ extension TerminalSettingsDialog {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
 
-        KeybindConfigFile.shared.setKeybind(action: item.id, trigger: trigger)
-        let formatted = KeybindRegistry.format(trigger: trigger)
-        statusMessage = "Updated '\(item.title)' to \(formatted)."
+        if KeybindConfigFile.shared.setKeybind(action: item.id, trigger: trigger) {
+            let formatted = KeybindRegistry.format(trigger: trigger)
+            statusMessage = "Updated '\(item.title)' to \(formatted)."
+        } else {
+            statusMessage = "Error: Failed to write to config file."
+        }
         isRecording = false
         recordingHeldModifiers = []
         needsDisplay = true
@@ -217,8 +220,11 @@ extension TerminalSettingsDialog {
     func resetSelected() {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
-        KeybindConfigFile.shared.removeKeybind(action: item.id)
-        statusMessage = "Reset '\(item.title)' to default."
+        if KeybindConfigFile.shared.removeKeybind(action: item.id) {
+            statusMessage = "Reset '\(item.title)' to default."
+        } else {
+            statusMessage = "Error: Failed to reset config file."
+        }
         needsDisplay = true
     }
 

@@ -65,6 +65,10 @@ public enum KeybindRegistry {
         KeybindActionItem(id: "goto_tab:3", title: "Switch to Tab 3", category: .tabs),
         KeybindActionItem(id: "goto_tab:4", title: "Switch to Tab 4", category: .tabs),
         KeybindActionItem(id: "goto_tab:5", title: "Switch to Tab 5", category: .tabs),
+        KeybindActionItem(id: "goto_tab:6", title: "Switch to Tab 6", category: .tabs),
+        KeybindActionItem(id: "goto_tab:7", title: "Switch to Tab 7", category: .tabs),
+        KeybindActionItem(id: "goto_tab:8", title: "Switch to Tab 8", category: .tabs),
+        KeybindActionItem(id: "goto_tab:9", title: "Switch to Tab 9", category: .tabs),
 
         // Splits
         KeybindActionItem(id: "new_split:right", title: "Split Right (Vertical)", category: .splits),
@@ -231,6 +235,44 @@ public enum KeybindRegistry {
         case 101: return "f9"; case 109: return "f10"; case 103: return "f11"; case 111: return "f12"
 
         default:
+            return nil
+        }
+    }
+
+    /// Resolves macOS physical hardware virtual keycode into canonical unshifted key character or symbol.
+    public static func canonicalKeyEquivalent(for keyCode: UInt16) -> String? {
+        guard let name = keyName(for: keyCode) else { return nil }
+        switch name {
+        case "bracket_left": return "["
+        case "bracket_right": return "]"
+        case "minus": return "-"
+        case "equal": return "="
+        case "backslash": return "\\"
+        case "semicolon": return ";"
+        case "quote": return "'"
+        case "comma": return ","
+        case "period": return "."
+        case "slash": return "/"
+        case "grave_accent": return "`"
+        case "return": return "\r"
+        case "tab": return "\t"
+        case "space": return " "
+        case "escape": return "\u{1b}"
+        case "up": return "\u{F700}"
+        case "down": return "\u{F701}"
+        case "left": return "\u{F702}"
+        case "right": return "\u{F703}"
+        case "page_up": return "\u{F72C}"
+        case "page_down": return "\u{F72D}"
+        case "home": return "\u{F729}"
+        case "end": return "\u{F72B}"
+        default:
+            if name.hasPrefix("f"), let n = Int(name.dropFirst()), (1...35).contains(n),
+               let scalar = UnicodeScalar(NSF1FunctionKey + n - 1) {
+                return String(Character(scalar))
+            } else if name.count == 1 {
+                return name
+            }
             return nil
         }
     }

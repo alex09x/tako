@@ -70,7 +70,15 @@ extension Tako {
 
         /// Where the configuration was loaded from, if not the default
         /// search path. Kept so a reload goes back to the same file.
-        private let configPath: String?
+        public let configPath: String?
+
+        /// The effective filesystem path of the configuration file.
+        public var activeConfigPath: String {
+            if let configPath, !configPath.isEmpty {
+                return (configPath as NSString).expandingTildeInPath
+            }
+            return ("~/.config/tako/config" as NSString).expandingTildeInPath
+        }
 
         public init(configPath: String? = nil) {
             self.configPath = configPath

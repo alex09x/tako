@@ -16,9 +16,15 @@ import Foundation
 public final class KeybindConfigFile: ObservableObject {
     public static let shared = KeybindConfigFile()
 
-    /// Path to user configuration file.
+    /// Path to active user configuration file.
     public var configPath: String {
-        ("~/.config/tako/config" as NSString).expandingTildeInPath
+        if let env = ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"], !env.isEmpty {
+            return (env as NSString).expandingTildeInPath
+        }
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            return appDelegate.tako.activeConfigPath
+        }
+        return ("~/.config/tako/config" as NSString).expandingTildeInPath
     }
 
     /// Map of action name to customized trigger string (e.g. ["toggle_split_zoom": "cmd+shift+return"]).
@@ -56,80 +62,93 @@ public final class KeybindConfigFile: ObservableObject {
     }
 
     /// Saves or updates a keybinding in the config file.
-    public func setKeybind(action: String, trigger: String) {
-        ensureConfigFileExists()
+    @discardableResult
+    public func setKeybind(action: String, trigger: String) -> Bool {
+        do {
+            try ensureConfigFileExists()
+            let content = try String(contentsOfFile: configPath, encoding: .utf8)
+            var lines = content.components(separatedBy: "\n")
+            var replaced = false
+            let newLine = "keybind = \(trigger)=\(action)"
 
-        guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return }
-        var lines = content.components(separatedBy: "\n")
-        var replaced = false
-
-        let newLine = "keybind = \(trigger)=\(action)"
-
-        for i in 0..<lines.count {
-            let line = lines[i].trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("keybind") && line.contains("=\(action)") {
-                lines[i] = newLine
-                replaced = true
-                break
+            for i in 0..<lines.count {
+                let line = lines[i].trimmingCharacters(in: .whitespaces)
+                if line.hasPrefix("keybind") && line.contains("=\(action)") {
+                    lines[i] = newLine
+                    replaced = true
+                    break
+                }
             }
-        }
 
-        if !replaced {
-            // Append right before trailing empty lines or at end
-            if let lastNonEmpty = lines.lastIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
-                lines.insert(newLine, at: lastNonEmpty + 1)
-            } else {
-                lines.append(newLine)
+            if !replaced {
+                if let lastNonEmpty = lines.lastIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                    lines.insert(newLine, at: lastNonEmpty + 1)
+                } else {
+                    lines.append(newLine)
+                }
             }
-        }
 
-        saveLinesAndReload(lines)
+            try saveLinesAndReload(lines)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Removes a custom keybinding override for an action, reverting it to default.
-    public func removeKeybind(action: String) {
-        guard FileManager.default.fileExists(atPath: configPath),
-              let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return }
+    @discardableResult
+    public func removeKeybind(action: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: configPath) else { return false }
+        do {
+            let content = try String(contentsOfFile: configPath, encoding: .utf8)
+            var lines = content.components(separatedBy: "\n")
+            lines.removeAll { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return trimmed.hasPrefix("keybind") && trimmed.contains("=\(action)")
+            }
 
-        var lines = content.components(separatedBy: "\n")
-        lines.removeAll { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed.hasPrefix("keybind") && trimmed.contains("=\(action)")
+            try saveLinesAndReload(lines)
+            return true
+        } catch {
+            return false
         }
-
-        saveLinesAndReload(lines)
     }
 
     /// Resets all custom keybinding overrides back to application defaults.
-    public func resetAllKeybinds() {
-        guard FileManager.default.fileExists(atPath: configPath),
-              let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return }
+    @discardableResult
+    public func resetAllKeybinds() -> Bool {
+        guard FileManager.default.fileExists(atPath: configPath) else { return false }
+        do {
+            let content = try String(contentsOfFile: configPath, encoding: .utf8)
+            var lines = content.components(separatedBy: "\n")
+            lines.removeAll { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return trimmed.hasPrefix("keybind")
+            }
 
-        var lines = content.components(separatedBy: "\n")
-        lines.removeAll { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed.hasPrefix("keybind")
+            try saveLinesAndReload(lines)
+            return true
+        } catch {
+            return false
         }
-
-        saveLinesAndReload(lines)
     }
 
     // MARK: - Private Helpers
 
-    private func ensureConfigFileExists() {
+    private func ensureConfigFileExists() throws {
         let dir = (configPath as NSString).deletingLastPathComponent
         if !FileManager.default.fileExists(atPath: dir) {
-            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
         if !FileManager.default.fileExists(atPath: configPath) {
             let initial = "# Tako Terminal Configuration\n"
-            try? initial.write(toFile: configPath, atomically: true, encoding: .utf8)
+            try initial.write(toFile: configPath, atomically: true, encoding: .utf8)
         }
     }
 
-    private func saveLinesAndReload(_ lines: [String]) {
+    private func saveLinesAndReload(_ lines: [String]) throws {
         let output = lines.joined(separator: "\n")
-        try? output.write(toFile: configPath, atomically: true, encoding: .utf8)
+        try output.write(toFile: configPath, atomically: true, encoding: .utf8)
         reload()
 
         if let appDelegate = NSApp.delegate as? AppDelegate {

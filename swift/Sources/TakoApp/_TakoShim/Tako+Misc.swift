@@ -106,19 +106,31 @@ extension Tako {
         func performTakoBindingMenuKeyEquivalent(with event: NSEvent) -> Bool {
             // Convert this event into the same normalized lookup key we use when
             // syncing menu shortcuts from configuration.
-            guard let key = MenuShortcutKey(event: event) else {
-                return false
+            var candidateKey = MenuShortcutKey(event: event)
+            var weakItem = candidateKey.flatMap { menuItemsByShortcut[$0] }
+
+            if let key = candidateKey, let item = weakItem, item.value == nil {
+                menuItemsByShortcut.removeValue(forKey: key)
+                weakItem = nil
+            }
+
+            // If layout-dependent charactersIgnoringModifiers didn't match (e.g. non-US or
+            // Cyrillic keyboard layouts), fall back to hardware virtual keyCode (US ANSI mapping).
+            if weakItem == nil,
+               let fallbackKey = MenuShortcutKey(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+                if let item = menuItemsByShortcut[fallbackKey] {
+                    if item.value == nil {
+                        menuItemsByShortcut.removeValue(forKey: fallbackKey)
+                    } else {
+                        candidateKey = fallbackKey
+                        weakItem = item
+                    }
+                }
             }
 
             // If we don't have an entry for this key combo, no Tako-owned
             // menu shortcut exists for this event.
-            guard let weakItem = menuItemsByShortcut[key] else {
-                return false
-            }
-
-            // Weak references can be nil if a menu item was deallocated after sync.
-            guard let item = weakItem.value else {
-                menuItemsByShortcut.removeValue(forKey: key)
+            guard let key = candidateKey, let item = weakItem?.value else {
                 return false
             }
 
@@ -293,6 +305,12 @@ extension Tako.MenuShortcutManager {
         init?(event: NSEvent) {
             guard let keyEquivalent = event.charactersIgnoringModifiers else { return nil }
             self.init(keyEquivalent: keyEquivalent, modifiers: event.modifierFlags)
+        }
+
+        /// Fallback from hardware virtual keyCode (layout-independent US ANSI mapping).
+        init?(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+            guard let keyEquivalent = KeybindRegistry.canonicalKeyEquivalent(for: keyCode) else { return nil }
+            self.init(keyEquivalent: keyEquivalent, modifiers: modifiers)
         }
 
         /// Create from a `NSMenuItem`
