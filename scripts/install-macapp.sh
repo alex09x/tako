@@ -37,7 +37,9 @@ echo "==> installing to $DEST"
 mkdir -p "$(dirname "$DEST")"
 rm -rf "$DEST"
 cp -R "$BUILT" "$DEST"
-codesign --force --deep --sign - "$DEST" >/dev/null 2>&1
+if ! codesign --verify --quiet "$DEST" 2>/dev/null; then
+    codesign --force --deep --sign - "$DEST" >/dev/null 2>&1
+fi
 # Only ever set on something downloaded; harmless, and clearing it keeps a
 # locally built app from being questioned.
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true

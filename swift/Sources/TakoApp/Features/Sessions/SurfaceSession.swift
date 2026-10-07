@@ -99,6 +99,7 @@ final class SurfaceSession {
     /// within a bound. After this no client exit closes a tab and no
     /// session is ended.
     static func detachAll(_ surfaces: [Tako.SurfaceView]) {
+        appIsDetaching = true
         let open = Set(surfaces.compactMap { $0.persistence.map(ObjectIdentifier.init) })
         // Terminals closed but still held for undo are not coming back:
         // their sessions end now, like any closed terminal's.
@@ -107,10 +108,10 @@ final class SurfaceSession {
             Ending(session).start(reportFailure: false)
         }
         // Every ending still under way -- these, and those started earlier
-        // when an undo expired -- gets a bounded time to finish. Whatever
+        // when an undo expired -- gets a bounded time to finish without blocking
+        // the main runloop or triggering a macOS spinning beach ball. Whatever
         // has not finished is recorded so the next launch asks about it.
-        Ending.settleBeforeQuit(within: 4)
-        appIsDetaching = true
+        Ending.settleBeforeQuit(within: 0.15)
         for surface in surfaces {
             guard let session = surface.persistence else { continue }
             if !session.ended { try? session.save(.detached) }

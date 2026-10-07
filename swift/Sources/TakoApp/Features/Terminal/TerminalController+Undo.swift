@@ -18,22 +18,26 @@ extension TerminalController {
 
         cancelPendingInitialPresentation()
 
+        let tabGroup = Tako.CustomTabGroup.group(for: window)
+        let windows: [NSWindow] = tabGroup.windows
+        let controllers = windows.compactMap { $0.windowController as? TerminalController }
+
+        // When closing the last window with quit-after-last-window-closed enabled,
+        // closing the window means closing the application. Routing through NSApp.terminate
+        // allows persistent sessions to be safely detached and window layout to be saved
+        // so everything restores on next launch, while cleanly terminating the process.
+        if controllers.count >= TerminalController.all.count && tako.config.shouldQuitAfterLastWindowClosed {
+            NSApp.terminate(nil)
+            return
+        }
+
         registerUndoForCloseWindow()
 
-        let tabGroup = Tako.CustomTabGroup.group(for: window)
-        if tabGroup.windows.count > 1 {
-            tabGroup.windows.forEach { window in
-                // Clear out the surfacetree to ensure there is no undo state.
-                // This prevents unnecessary undos registered since AppKit may
-                // process them on later ticks so we can't just disable undo registration.
-                if let controller = window.windowController as? TerminalController {
-                    controller.cancelPendingInitialPresentation()
-                    controller.surfaceTree = .init()
-                }
-
-                window.close()
+        windows.forEach { window in
+            if let controller = window.windowController as? TerminalController {
+                controller.cancelPendingInitialPresentation()
+                controller.undoManager?.removeAllActions(withTarget: controller)
             }
-        } else {
             window.close()
         }
     }
