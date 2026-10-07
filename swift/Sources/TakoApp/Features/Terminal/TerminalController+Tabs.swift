@@ -45,7 +45,7 @@ extension TerminalController {
     /// changes, when a window is closed, and when tabs are reordered
     /// with the mouse.
     func relabelTabs() {
-        let groupWindows = window.map { Tako.CustomTabGroup.group(for: $0).windows } ?? []
+        let groupWindows = window.map { Tako.CustomTabGroup.group(for: $0).visibleWindows } ?? []
 
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.

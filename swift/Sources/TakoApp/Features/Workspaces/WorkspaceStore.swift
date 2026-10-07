@@ -157,7 +157,7 @@ public final class WorkspaceStore: ObservableObject {
 
     // MARK: - Tab Management
 
-    public func assignTab(tabIdentifier: String, to workspaceId: UUID) {
+    public func assignTab(tabIdentifier: String, to workspaceId: UUID, at index: Int? = nil) {
         guard workspace(for: workspaceId) != nil else { return }
 
         for i in 0..<workspaces.count {
@@ -168,7 +168,11 @@ public final class WorkspaceStore: ObservableObject {
         }
 
         if let targetIndex = workspaces.firstIndex(where: { $0.id == workspaceId }) {
-            workspaces[targetIndex].tabIdentifiers.append(tabIdentifier)
+            if let index, index >= 0, index <= workspaces[targetIndex].tabIdentifiers.count {
+                workspaces[targetIndex].tabIdentifiers.insert(tabIdentifier, at: index)
+            } else {
+                workspaces[targetIndex].tabIdentifiers.append(tabIdentifier)
+            }
             if workspaces[targetIndex].activeTabIdentifier == nil {
                 workspaces[targetIndex].activeTabIdentifier = tabIdentifier
             }
@@ -197,10 +201,11 @@ public final class WorkspaceStore: ObservableObject {
 
     public func reorderTabs(in workspaceId: UUID, newOrder: [String]) {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
-        let currentSet = Set(workspaces[index].tabIdentifiers)
         var ordered: [String] = []
-        for id in newOrder where currentSet.contains(id) {
-            ordered.append(id)
+        for id in newOrder {
+            if !ordered.contains(id) {
+                ordered.append(id)
+            }
         }
         // Append any unmentioned tabs to the end
         for id in workspaces[index].tabIdentifiers where !ordered.contains(id) {

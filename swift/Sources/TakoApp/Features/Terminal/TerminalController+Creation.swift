@@ -275,12 +275,6 @@ extension TerminalController {
         // so we have to bring it back out.
         if parent.isMiniaturized { parent.deminiaturize(self) }
 
-        // Assign the new tab to the active workspace
-        WorkspaceStore.shared.assignTab(
-            tabIdentifier: window.stableTabIdentifier,
-            to: WorkspaceStore.shared.activeWorkspaceId
-        )
-
         // Add the window to our custom tab group and show it. AppKit's
         // native tabbing is disallowed for every terminal window (see
         // TerminalWindow.swift), so grouping/order/selection is modelled in
@@ -288,6 +282,10 @@ extension TerminalController {
         let group = Tako.CustomTabGroup.group(for: parent)
         switch tako.config.windowNewTabPosition {
         case "end":
+            WorkspaceStore.shared.assignTab(
+                tabIdentifier: window.stableTabIdentifier,
+                to: WorkspaceStore.shared.activeWorkspaceId
+            )
             // If we already have a group and we want the new tab to open at the end,
             // then we use the last window in the group as the anchor.
             if let last = group.windows.last {
@@ -298,7 +296,15 @@ extension TerminalController {
 
         case "current": fallthrough
         default:
-            Tako.CustomTabGroup.join(window, to: parent, select: true)
+            if let currentIdx = group.visibleWindows.firstIndex(of: parent) {
+                Tako.CustomTabGroup.insert(window, into: parent, at: currentIdx + 1, select: true)
+            } else {
+                WorkspaceStore.shared.assignTab(
+                    tabIdentifier: window.stableTabIdentifier,
+                    to: WorkspaceStore.shared.activeWorkspaceId
+                )
+                Tako.CustomTabGroup.join(window, to: parent, select: true)
+            }
         }
 
         // We're dispatching this async because otherwise the lastCascadePoint doesn't

@@ -86,9 +86,10 @@ extension TerminalController {
     @IBAction func closeTabsOnTheRight(_ sender: Any?) {
         guard let window = window else { return }
         let tabGroup = Tako.CustomTabGroup.group(for: window)
-        guard let currentIndex = tabGroup.windows.firstIndex(of: window) else { return }
+        let visible = tabGroup.visibleWindows
+        guard let currentIndex = visible.firstIndex(of: window) else { return }
 
-        let tabsToClose = tabGroup.windows.enumerated().filter { $0.offset > currentIndex }
+        let tabsToClose = visible.enumerated().filter { $0.offset > currentIndex }
         guard !tabsToClose.isEmpty else { return }
 
         let needsConfirm = tabsToClose.contains { (_, candidate) in

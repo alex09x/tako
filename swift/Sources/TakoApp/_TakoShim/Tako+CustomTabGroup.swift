@@ -146,13 +146,13 @@ extension Tako {
             let target = group(for: anchor)
             groupsByWindow[ObjectIdentifier(window)] = target
 
+            let clamped = max(0, min(index, target.windows.count))
             if WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) == nil {
-                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId, at: clamped)
             }
 
             guard !target.windows.contains(window) else { return }
             window.setFrame(anchor.frame, display: false)
-            let clamped = max(0, min(index, target.windows.count))
             target.windows.insert(window, at: clamped)
             if select {
                 target.select(window)
@@ -214,6 +214,21 @@ extension Tako {
             }
 
             TabBarController.refreshAll()
+        }
+
+        /// Updates the internal windows order to match the specified order.
+        func setWindowOrder(_ newOrder: [NSWindow]) {
+            let currentSet = Set(windows.map(ObjectIdentifier.init))
+            var ordered: [NSWindow] = []
+            for w in newOrder where currentSet.contains(ObjectIdentifier(w)) {
+                if !ordered.contains(w) {
+                    ordered.append(w)
+                }
+            }
+            for w in windows where !ordered.contains(w) {
+                ordered.append(w)
+            }
+            self.windows = ordered
         }
 
         func select(_ window: NSWindow) {

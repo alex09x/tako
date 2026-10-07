@@ -143,7 +143,8 @@ enum LayoutRecorder {
         let encoder = JSONEncoder()
         var windows: [LayoutJournal.Window] = []
         for group in groups {
-            let controllers = group.windows.compactMap { $0.windowController as? TerminalController }
+            let visible = group.visibleWindows
+            let controllers = visible.compactMap { $0.windowController as? TerminalController }
             let tabs: [Any] = controllers.compactMap { controller in
                 guard let data = try? encoder.encode(TerminalRestorableState(from: controller)) else { return nil }
                 return try? JSONSerialization.jsonObject(with: data)
@@ -167,6 +168,7 @@ enum LayoutRecorder {
         for entry in journal.windows {
             var anchor: NSWindow?
             var selected: NSWindow?
+            var restoredWindows: [NSWindow] = []
             for (index, tab) in entry.tabs.enumerated() {
                 // Every tab was checked to decode before this journal was
                 // chosen; a failure here would be a bug, not damage.
@@ -193,11 +195,21 @@ enum LayoutRecorder {
                     window.setFrame(onScreen(entry.frame), display: false)
                     anchor = window
                 }
+                restoredWindows.append(window)
                 if index == entry.selectedTab { selected = window }
             }
-            if let selected, let anchor {
-                Tako.CustomTabGroup.group(for: anchor).select(selected)
-                if entry.isKey { keyWindow = selected }
+            if let anchor {
+                let group = Tako.CustomTabGroup.group(for: anchor)
+                group.setWindowOrder(restoredWindows)
+                let restoredIds = restoredWindows.map(\.stableTabIdentifier)
+                WorkspaceStore.shared.reorderTabs(
+                    in: WorkspaceStore.shared.activeWorkspaceId,
+                    newOrder: restoredIds
+                )
+                if let selected {
+                    group.select(selected)
+                    if entry.isKey { keyWindow = selected }
+                }
             }
         }
         keyWindow?.makeKeyAndOrderFront(nil)
