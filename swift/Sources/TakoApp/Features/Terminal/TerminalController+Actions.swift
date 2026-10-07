@@ -122,18 +122,19 @@ extension TerminalController {
 
         // We need to check all the windows in our tab group for confirmation
         // if we're closing the window.
-        let windows: [NSWindow] = Tako.CustomTabGroup.group(for: window).windows
-        guard let confirmController = windows
-            .compactMap({ $0.windowController as? TerminalController })
-            .first(where: { $0.surfaceTree.contains(where: { $0.needsConfirmClose }) })
-        else {
+        let tabGroup = Tako.CustomTabGroup.group(for: window)
+        let windows: [NSWindow] = tabGroup.windows
+        let controllers = windows.compactMap { $0.windowController as? TerminalController }
+        let needsConfirm = controllers.contains { $0.surfaceTree.contains(where: { $0.needsConfirmClose }) }
+        guard needsConfirm else {
             closeWindowImmediately()
             return
         }
 
-        // We call confirmClose on the proper controller so the alert is
-        // attached to the window that needs confirmation.
-        confirmController.confirmClose(
+        // We call confirmClose on the currently active / visible controller so the alert is
+        // attached to the window the user is actually looking at and interacting with.
+        let activeController = (tabGroup.selectedWindow?.windowController as? TerminalController) ?? self
+        activeController.confirmClose(
             messageText: "Close Window?",
             informativeText: "All terminal sessions in this window will be terminated.",
         ) {
