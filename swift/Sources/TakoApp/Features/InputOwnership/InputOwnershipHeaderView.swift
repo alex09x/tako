@@ -17,7 +17,6 @@ public struct InputOwnershipHeaderView: View {
     var isSecureInput: Bool = false
     @ObservedObject var store: InputOwnershipStore = .shared
     @ObservedObject var secureInput: SecureInput = .shared
-    @State private var isHovered: Bool = false
     @State private var showActivityLog: Bool = false
 
     public init(paneId: UUID, isSecureInput: Bool = false) {
@@ -35,166 +34,108 @@ public struct InputOwnershipHeaderView: View {
 
     public var body: some View {
         let state = inputState
-        let showBar = state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType || isHovered
+        let showBar = state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType
 
-        ZStack(alignment: .top) {
-            // Subtle hover zone at the top edge of the pane
-            Color.clear
-                .frame(height: 14)
-                .contentShape(Rectangle())
-                .onHover { isHovered = $0 }
-
-            if showBar {
-                HStack(spacing: 8) {
-                    if state.isLocked {
-                        Label {
-                            Text(state.owner.isAgent ? "Locked (\(state.owner.agentName ?? "agent"))" : "Locked")
-                                .font(.system(size: 11, weight: .medium))
-                        } icon: {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 10))
-                        }
-                        .foregroundColor(.secondary)
-                        .accessibilityLabel("Pane input locked")
-
-                        Spacer()
-
-                        Button("Take Over") {
-                            store.takeOver(paneId: paneId)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.mini)
-                        .tint(Color(nsColor: Tako.Brand.ember))
-                        .help("Unlock keyboard input for this pane")
-                    } else if let prevAgent = state.previousAgent {
-                        Label {
-                            Text("Interactive (taken over)")
-                                .font(.system(size: 11, weight: .medium))
-                        } icon: {
-                            Image(systemName: "keyboard")
-                                .font(.system(size: 10))
-                        }
-                        .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        Button("Hand Back") {
-                            store.handBack(paneId: paneId, to: prevAgent)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .help("Hand input control back to \(prevAgent) and lock keyboard typing")
-                    } else {
-                        Label {
-                            Text("Interactive")
-                                .font(.system(size: 11, weight: .medium))
-                        } icon: {
-                            Image(systemName: "keyboard")
-                                .font(.system(size: 10))
-                        }
-                        .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        Button("Lock") {
-                            store.lock(paneId: paneId)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .help("Lock keyboard typing for this pane")
+        if showBar {
+            HStack(spacing: 8) {
+                if state.isLocked {
+                    Label {
+                        Text(state.owner.isAgent ? "Locked (\(state.owner.agentName ?? "agent"))" : "Locked")
+                            .font(.system(size: 11, weight: .medium))
+                    } icon: {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 10))
                     }
+                    .foregroundColor(.secondary)
+                    .accessibilityLabel("Pane input locked")
 
-                    // Pane-level "automation may type here" switch (G1)
-                    if state.automationMayType {
+                    Spacer()
+
+                    Button("Take Over") {
+                        store.takeOver(paneId: paneId)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                    .tint(Color(nsColor: Tako.Brand.ember))
+                    .help("Unlock keyboard input for this pane")
+                } else if let prevAgent = state.previousAgent {
+                    Label {
+                        Text("Interactive (taken over)")
+                            .font(.system(size: 11, weight: .medium))
+                    } icon: {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("Hand Back") {
+                        store.handBack(paneId: paneId, to: prevAgent)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help("Hand input control back to \(prevAgent) and lock keyboard typing")
+                }
+
+                // Pane-level "automation may type here" switch (G1)
+                if state.automationMayType {
+                    Button {
+                        store.setAutomationMayType(paneId: paneId, allowed: false)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 9))
+                            Text("Auto-type on")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.mini)
+                    .help("Automation may type into this pane. Click to revoke.")
+                }
+
+                // Automated activity attribution mark & popover (Track G2)
+                // Hidden and disabled during secure input sessions for snapshot privacy.
+                if !effectiveSecure {
+                    if let mark = state.lastActivityMark {
                         Button {
-                            store.setAutomationMayType(paneId: paneId, allowed: false)
+                            showActivityLog.toggle()
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: 4) {
                                 Image(systemName: "bolt.fill")
                                     .font(.system(size: 9))
-                                Text("Auto-type on")
-                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.orange)
+                                Text("\(mark.client): \(mark.action)")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                        .controlSize(.mini)
-                        .help("Automation may type into this pane. Click to revoke.")
-                    } else if isHovered {
-                        Button {
-                            store.setAutomationMayType(paneId: paneId, allowed: true)
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "bolt")
-                                    .font(.system(size: 9))
-                                Text("Allow auto-type")
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .help("Allow external automation to type into this pane")
-                    }
-
-                    // Automated activity attribution mark & popover (Track G2)
-                    // Hidden and disabled during secure input sessions for snapshot privacy.
-                    if !effectiveSecure {
-                        if let mark = state.lastActivityMark {
-                            Button {
-                                showActivityLog.toggle()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.orange)
-                                    Text("\(mark.client): \(mark.action)")
-                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.15))
-                                .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Automated input from \(mark.client). Click to view activity log.")
-                            .help("View automated activity log for this pane")
-                            .popover(isPresented: $showActivityLog) {
-                                PaneActivityLogView(paneId: paneId, isSecureInput: effectiveSecure)
-                            }
-                        } else if isHovered {
-                            Button {
-                                showActivityLog.toggle()
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "clock.arrow.circlepath")
-                                        .font(.system(size: 9))
-                                    Text("Activity")
-                                        .font(.system(size: 10, weight: .medium))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                            .help("View automated activity log for this pane")
-                            .popover(isPresented: $showActivityLog) {
-                                PaneActivityLogView(paneId: paneId, isSecureInput: effectiveSecure)
-                            }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Automated input from \(mark.client). Click to view activity log.")
+                        .help("View automated activity log for this pane")
+                        .popover(isPresented: $showActivityLog) {
+                            PaneActivityLogView(paneId: paneId, isSecureInput: effectiveSecure)
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(state.isLocked ? Color.secondary.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                .onHover { isHovered = $0 }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.easeInOut(duration: 0.15), value: state.isLocked)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(state.isLocked ? Color.secondary.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.15), value: state.isLocked)
         }
     }
 }

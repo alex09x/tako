@@ -26,7 +26,11 @@ extension TerminalController {
         // closing the window means closing the application. Routing through NSApp.terminate
         // allows persistent sessions to be safely detached and window layout to be saved
         // so everything restores on next launch, while cleanly terminating the process.
-        if controllers.count >= TerminalController.all.count && tako.config.shouldQuitAfterLastWindowClosed {
+        let otherTerminalGroups = Tako.CustomTabGroup.allGroups.filter {
+            $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController })
+        }
+        let isLastWindow = controllers.count >= TerminalController.all.count || otherTerminalGroups.isEmpty
+        if isLastWindow && tako.config.shouldQuitAfterLastWindowClosed {
             NSApp.terminate(nil)
             return
         }
@@ -39,6 +43,15 @@ extension TerminalController {
                 controller.undoManager?.removeAllActions(withTarget: controller)
             }
             window.close()
+        }
+
+        if tako.config.shouldQuitAfterLastWindowClosed {
+            let remaining = Tako.CustomTabGroup.allGroups.filter {
+                $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController && $0.isVisible })
+            }
+            if remaining.isEmpty {
+                NSApp.terminate(nil)
+            }
         }
     }
 
