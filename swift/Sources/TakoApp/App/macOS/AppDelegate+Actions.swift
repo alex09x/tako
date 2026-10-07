@@ -269,44 +269,6 @@ extension AppDelegate {
         }
     }
 
-    func setupWorkspaceMenuItems() {
-        guard let mainMenu = NSApp.mainMenu else { return }
-
-        if let windowMenu = mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
-            windowMenu.addItem(NSMenuItem.separator())
-
-            let nextWorkspaceItem = NSMenuItem(
-                title: "Next Workspace",
-                action: #selector(nextWorkspace(_:)),
-                keyEquivalent: "]"
-            )
-            nextWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
-            nextWorkspaceItem.target = nil
-            nextWorkspaceItem.setImageIfDesired(systemSymbolName: "chevron.right.2")
-            windowMenu.addItem(nextWorkspaceItem)
-
-            let prevWorkspaceItem = NSMenuItem(
-                title: "Previous Workspace",
-                action: #selector(previousWorkspace(_:)),
-                keyEquivalent: "["
-            )
-            prevWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
-            prevWorkspaceItem.target = nil
-            prevWorkspaceItem.setImageIfDesired(systemSymbolName: "chevron.left.2")
-            windowMenu.addItem(prevWorkspaceItem)
-
-            let newWorkspaceItem = NSMenuItem(
-                title: "New Workspace…",
-                action: #selector(newWorkspace(_:)),
-                keyEquivalent: "n"
-            )
-            newWorkspaceItem.keyEquivalentModifierMask = [.control, .option]
-            newWorkspaceItem.target = nil
-            newWorkspaceItem.setImageIfDesired(systemSymbolName: "plus.rectangle.on.folder")
-            windowMenu.addItem(newWorkspaceItem)
-        }
-    }
-
     @IBAction func exportDiagnostics(_ sender: Any?) {
         DiagnosticsExporter.exportToFile()
     }

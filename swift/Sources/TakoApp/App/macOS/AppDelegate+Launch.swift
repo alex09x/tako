@@ -202,7 +202,6 @@ extension AppDelegate {
         setupSidebarMenuItem()
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
-        setupWorkspaceMenuItems()
         setupWorkspaceTopLevelMenu()
         NotificationCenter.default.addObserver(
             forName: .takoWorkspaceDidChange,
