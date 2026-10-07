@@ -11,6 +11,7 @@
 import Cocoa
 import TakoKit
 
+@MainActor
 extension AppDelegate {
     // MARK: - Workspace Actions
 
@@ -23,8 +24,25 @@ extension AppDelegate {
     }
 
     @IBAction func newWorkspace(_ sender: Any?) {
-        let ws = WorkspaceStore.shared.createWorkspace(name: "")
-        WorkspaceStore.shared.switchWorkspace(to: ws.id)
+        promptNewWorkspace()
+    }
+
+    func promptNewWorkspace() {
+        let alert = NSAlert()
+        alert.messageText = "New Project Workspace"
+        alert.informativeText = "Enter a name for the new workspace:"
+        alert.alertStyle = .informational
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        input.placeholderString = "e.g. backend, docs, tako"
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
+            let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
+            WorkspaceStore.shared.switchWorkspace(to: ws.id)
+        }
     }
 
     @IBAction func showHelp(_ sender: Any) {

@@ -94,6 +94,12 @@ class AppDelegate: NSObject,
     @IBOutlet var menuMoveSplitDividerLeft: NSMenuItem?
     @IBOutlet var menuMoveSplitDividerRight: NSMenuItem?
 
+    var menuPreviousTab: NSMenuItem?
+    var menuNextTab: NSMenuItem?
+    var menuMoveTabLeft: NSMenuItem?
+    var menuMoveTabRight: NSMenuItem?
+    var menuGotoTabs: [NSMenuItem] = []
+
     /// The dock menu
     var dockMenu: NSMenu = NSMenu()
 

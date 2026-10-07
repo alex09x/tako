@@ -32,6 +32,10 @@ extension Tako.Config {
             return "jump_to_prompt:previous"
         case "jump_to_prompt:down":
             return "jump_to_prompt:next"
+        case "previous_tab":
+            return "goto_tab:previous"
+        case "next_tab":
+            return "goto_tab:next"
         default:
             return action
         }
@@ -72,6 +76,10 @@ extension Tako.Config {
         "goto_tab:7": .init("7", modifiers: .command),
         "goto_tab:8": .init("8", modifiers: .command),
         "goto_tab:9": .init("9", modifiers: .command),
+        "goto_tab:previous": .init(.tab, modifiers: [.control, .shift]),
+        "goto_tab:next": .init(.tab, modifiers: .control),
+        "move_tab:-1": .init("[", modifiers: [.command, .shift]),
+        "move_tab:1": .init("]", modifiers: [.command, .shift]),
         "new_tab": .init("t", modifiers: .command),
         "new_window": .init("n", modifiers: .command),
         "new_split:right": .init("d", modifiers: .command),
@@ -80,13 +88,23 @@ extension Tako.Config {
         "toggle_quick_terminal": .init("`", modifiers: [.command, .shift]),
         "reload_config": .init(",", modifiers: [.command, .shift]),
         "open_config": .init(",", modifiers: .command),
+        "goto_split:previous": .init("[", modifiers: .command),
         "goto_split:next": .init("]", modifiers: .command),
+        "goto_split:up": .init(.upArrow, modifiers: [.command, .option]),
+        "goto_split:down": .init(.downArrow, modifiers: [.command, .option]),
+        "goto_split:left": .init(.leftArrow, modifiers: [.command, .option]),
+        "goto_split:right": .init(.rightArrow, modifiers: [.command, .option]),
+        "toggle_split_zoom": .init("z", modifiers: [.command, .shift]),
+        "resize_split:up,10": .init(.upArrow, modifiers: [.command, .control, .option]),
+        "resize_split:down,10": .init(.downArrow, modifiers: [.command, .control, .option]),
+        "resize_split:left,10": .init(.leftArrow, modifiers: [.command, .control, .option]),
+        "resize_split:right,10": .init(.rightArrow, modifiers: [.command, .control, .option]),
+        "equalize_splits": .init("=", modifiers: [.command, .option]),
         "quit": .init("q", modifiers: .command),
         "close_tab": .init("w", modifiers: [.command, .option]),
         "close_window": .init("w", modifiers: [.command, .shift]),
         "close_all_windows": .init("w", modifiers: [.command, .shift, .option]),
         "undo": .init("z", modifiers: .command),
-        "redo": .init("z", modifiers: [.command, .shift]),
         "copy_to_clipboard": .init("c", modifiers: .command),
         "paste_from_clipboard": .init("v", modifiers: .command),
         "paste_from_selection": .init("v", modifiers: [.command, .shift]),

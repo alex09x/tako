@@ -115,10 +115,9 @@ extension Tako.TabBarView {
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
             let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty {
-                let ws = WorkspaceStore.shared.createWorkspace(name: name)
-                WorkspaceStore.shared.switchWorkspace(to: ws.id)
-            }
+            let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
+            let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
+            WorkspaceStore.shared.switchWorkspace(to: ws.id)
         }
     }
 }

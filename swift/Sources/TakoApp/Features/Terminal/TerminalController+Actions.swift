@@ -164,4 +164,66 @@ extension TerminalController {
         toggleFullscreen(mode: .native)
     }
 
+    // MARK: - Tab Selection & Reordering
+
+    func gotoTab(at index: Int) {
+        guard let window = self.window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        let visible = group.visibleWindows
+        guard !visible.isEmpty else { return }
+        if index == 8 {
+            if let last = visible.last { group.select(last) }
+        } else if index >= 0 && index < visible.count {
+            group.select(visible[index])
+        }
+    }
+
+    @IBAction func gotoTab1(_ sender: Any?) { gotoTab(at: 0) }
+    @IBAction func gotoTab2(_ sender: Any?) { gotoTab(at: 1) }
+    @IBAction func gotoTab3(_ sender: Any?) { gotoTab(at: 2) }
+    @IBAction func gotoTab4(_ sender: Any?) { gotoTab(at: 3) }
+    @IBAction func gotoTab5(_ sender: Any?) { gotoTab(at: 4) }
+    @IBAction func gotoTab6(_ sender: Any?) { gotoTab(at: 5) }
+    @IBAction func gotoTab7(_ sender: Any?) { gotoTab(at: 6) }
+    @IBAction func gotoTab8(_ sender: Any?) { gotoTab(at: 7) }
+    @IBAction func gotoTab9(_ sender: Any?) { gotoTab(at: 8) }
+
+    @IBAction func previousTab(_ sender: Any?) {
+        guard let window = self.window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        let visible = group.visibleWindows
+        guard visible.count > 1, let current = group.selectedWindow, let idx = visible.firstIndex(of: current) else { return }
+        let prevIdx = idx == 0 ? visible.count - 1 : idx - 1
+        group.select(visible[prevIdx])
+    }
+
+    @IBAction func nextTab(_ sender: Any?) {
+        guard let window = self.window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        let visible = group.visibleWindows
+        guard visible.count > 1, let current = group.selectedWindow, let idx = visible.firstIndex(of: current) else { return }
+        let nextIdx = idx == visible.count - 1 ? 0 : idx + 1
+        group.select(visible[nextIdx])
+    }
+
+    @IBAction func moveTabLeft(_ sender: Any?) {
+        guard let window = self.window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        guard let selectedWindow = group.selectedWindow else { return }
+        let visible = group.visibleWindows
+        guard let idx = visible.firstIndex(of: selectedWindow), idx > 0 else { return }
+        Tako.CustomTabGroup.move(selectedWindow, to: idx - 1, in: group)
+        LayoutRecorder.record()
+    }
+
+    @IBAction func moveTabRight(_ sender: Any?) {
+        guard let window = self.window else { return }
+        let group = Tako.CustomTabGroup.group(for: window)
+        guard let selectedWindow = group.selectedWindow else { return }
+        let visible = group.visibleWindows
+        guard let idx = visible.firstIndex(of: selectedWindow), idx < visible.count - 1 else { return }
+        Tako.CustomTabGroup.move(selectedWindow, to: idx + 1, in: group)
+        LayoutRecorder.record()
+    }
+
 }

@@ -76,6 +76,7 @@ extension AppDelegate {
         guard tako.readiness == .ready else { return }
 
         setupPromptNavigationMenuItems()
+        setupTabNavigationMenuItems()
 
         menuShortcutManager.reset()
 
@@ -144,11 +145,13 @@ extension AppDelegate {
         //
         // syncMenuShortcut(config, action: "toggle_fullscreen", menuItem: self.menuToggleFullScreen)
 
+        syncTabShortcuts(config)
+
         // Dock menu
         reloadDockMenu()
     }
 
-    @MainActor private func syncMenuShortcut(_ config: Tako.Config, action: String, menuItem: NSMenuItem?) {
+    @MainActor func syncMenuShortcut(_ config: Tako.Config, action: String, menuItem: NSMenuItem?) {
         menuShortcutManager.syncMenuShortcut(config, action: action, menuItem: menuItem)
     }
 

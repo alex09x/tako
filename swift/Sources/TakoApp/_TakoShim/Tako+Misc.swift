@@ -226,7 +226,7 @@ private extension Tako.MenuShortcutManager {
             return false
         }
 
-        menu.keyEquivalent = key.keyEquivalent
+        menu.keyEquivalent = key.appKitKeyEquivalent
         menu.keyEquivalentModifierMask = key.modifierFlags
 
         // Later registrations intentionally override earlier ones for the same key.
@@ -240,6 +240,18 @@ extension Tako.MenuShortcutManager {
     struct MenuShortcutKey: Hashable {
         private static let shortcutModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
 
+        private static let shiftedToUnshifted: [String: String] = [
+            "{": "[", "}": "]", "~": "`", "!": "1", "@": "2", "#": "3",
+            "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9",
+            ")": "0", "_": "-", "+": "=", ":": ";", "\"": "'", "<": ",",
+            ">": ".", "?": "/", "|": "\\"
+        ]
+
+        private static let unshiftedToShifted: [String: String] = [
+            "[": "{", "]": "}", "`": "~", "-": "_", "=": "+", ";": ":",
+            "'": "\"", ",": "<", ".": ">", "/": "?", "\\": "|"
+        ]
+
         let keyEquivalent: String
         // Make it Hashable
         private let modifiersRawValue: UInt
@@ -248,13 +260,28 @@ extension Tako.MenuShortcutManager {
             NSEvent.ModifierFlags(rawValue: modifiersRawValue)
         }
 
+        var appKitKeyEquivalent: String {
+            guard modifierFlags.contains(.shift) else { return keyEquivalent }
+            if let shifted = Self.unshiftedToShifted[keyEquivalent] {
+                return shifted
+            }
+            if keyEquivalent.count == 1, let char = keyEquivalent.first, char.isLetter {
+                return keyEquivalent.uppercased()
+            }
+            return keyEquivalent
+        }
+
         init?(keyEquivalent: String, modifiers: NSEvent.ModifierFlags) {
-            let normalized = keyEquivalent.lowercased()
-            guard !normalized.isEmpty else { return nil }
+            var rawKey = keyEquivalent
             var mods = modifiers.intersection(Self.shortcutModifiers)
+            if mods.contains(.shift), let unshifted = Self.shiftedToUnshifted[rawKey] {
+                rawKey = unshifted
+            }
+            let normalized = rawKey.lowercased()
+            guard !normalized.isEmpty else { return nil }
             if
-                keyEquivalent.lowercased() != keyEquivalent.uppercased(),
-                normalized.uppercased() == keyEquivalent {
+                rawKey.lowercased() != rawKey.uppercased(),
+                normalized.uppercased() == rawKey {
                 // If key equivalent is case sensitive and
                 // it's originally uppercased, then we need to add `shift` to the modifiers
                 mods.insert(.shift)

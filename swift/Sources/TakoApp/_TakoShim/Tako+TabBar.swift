@@ -112,7 +112,7 @@ extension Tako {
 
         var workspaceHovered = false
         var showsWorkspacePill: Bool {
-            WorkspaceStore.shared.workspaces.count > 1 || WorkspaceStore.shared.activeWorkspace.name != "Default"
+            true
         }
 
         var workspacePillRect: CGRect {
@@ -153,7 +153,7 @@ extension Tako {
         // MARK: Layout
 
         /// Right edge reserved for buttons: ⓘ info, ◫ split, + new tab.
-        private var buttonsReservedWidth: CGFloat {
+        var buttonsReservedWidth: CGFloat {
             Metrics.buttonSize * Metrics.buttonCount + Metrics.buttonGap * (Metrics.buttonCount - 1) + Metrics.buttonMarginRight
         }
 

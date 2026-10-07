@@ -203,6 +203,16 @@ extension AppDelegate {
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
         setupWorkspaceMenuItems()
+        setupWorkspaceTopLevelMenu()
+        NotificationCenter.default.addObserver(
+            forName: .takoWorkspaceDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.setupWorkspaceTopLevelMenu()
+            }
+        }
         setupDiagnosticsMenuItem()
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)

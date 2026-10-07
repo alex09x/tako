@@ -24,6 +24,15 @@ extension Tako.TabBarView {
         tracking = area
     }
 
+    /// Full-height hit-test for tabs across the titlebar row so clicks and drags
+    /// in the upper pixels don't fall through to native window dragging.
+    func hitTab(at point: CGPoint) -> Tab? {
+        guard showsStrip else { return nil }
+        guard point.x >= effectiveFirstTabX && point.x < bounds.width - buttonsReservedWidth else { return nil }
+        guard point.y >= 0 && point.y <= bounds.height else { return nil }
+        return tabs.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }
+    }
+
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         // Do NOT call layoutTabs() here: it calls NSString.sizeWithAttributes
@@ -37,7 +46,7 @@ extension Tako.TabBarView {
         let previousInfo = infoHovered
         let previousWorkspace = workspaceHovered
         workspaceHovered = showsWorkspacePill && workspacePillRect.contains(point)
-        hovered = stripRect.contains(point) ? tabs.first { $0.frame.contains(point) }?.index : nil
+        hovered = hitTab(at: point)?.index
         hoveredClose = hovered.map { closeRect(of: tabs[$0]).contains(point) } ?? false
         plusHovered = plusRect.contains(point)
         splitHovered = splitRect.contains(point)
@@ -102,7 +111,7 @@ extension Tako.TabBarView {
             NSApp.sendAction(#selector(BaseTerminalController.splitRight(_:)), to: nil, from: self)
             return
         }
-        guard showsStrip, stripRect.contains(point), let tab = tabs.first(where: { $0.frame.contains(point) }) else {
+        guard let tab = hitTab(at: point) else {
             // Empty bar: drag the window, or zoom it on a double click.
             if event.clickCount == 2 {
                 window?.performZoom(nil)
@@ -194,6 +203,6 @@ extension Tako.TabBarView {
             self.needsDisplay = true
         }
         badgeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 }
