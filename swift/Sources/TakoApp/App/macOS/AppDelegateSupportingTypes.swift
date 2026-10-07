@@ -19,7 +19,7 @@ extension AppDelegate {
 
         init() {
             self.initialWindow = true
-            self.shouldQuitAfterLastWindowClosed = false
+            self.shouldQuitAfterLastWindowClosed = true
             self.quickTerminalPosition = .top
         }
 

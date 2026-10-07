@@ -62,8 +62,8 @@ extension Tako.Config {
 
     /// Whether the application should terminate after the last window closes.
     ///
-    /// WHY: Standard macOS multi-window app behavior keeps app running when last window closes; default to false.
-    var shouldQuitAfterLastWindowClosed: Bool { rawBool("quit-after-last-window-closed", default: false) }
+    /// WHY: Modern terminal emulator behavior terminates the process when the last window closes; default to true.
+    var shouldQuitAfterLastWindowClosed: Bool { rawBool("quit-after-last-window-closed", default: true) }
 
     /// Custom title string override for the terminal window.
     ///
