@@ -91,6 +91,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    private var isWithdrawing: Bool = false
+
     private func setupSearchField() {
         let field = NSTextField()
         field.placeholderString = "Filter actions or shortcuts (type to search)…"
@@ -102,8 +104,10 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         field.focusRingType = .none
         field.usesSingleLineMode = true
         field.delegate = self
+        field.nextKeyView = self
         addSubview(field)
         self.searchField = field
+        self.nextKeyView = field
     }
 
     private func setupButtons() {
@@ -134,10 +138,20 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func withdraw() {
+        guard !isWithdrawing else { return }
+        isWithdrawing = true
         if let previous = previousResponder {
             window?.makeFirstResponder(previous)
         }
         removeFromSuperview()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        if isWithdrawing { return true }
+        if let next = window?.firstResponder as? NSView, next.isDescendant(of: self) {
+            return true
+        }
+        return false
     }
 
     override var isFlipped: Bool { true }

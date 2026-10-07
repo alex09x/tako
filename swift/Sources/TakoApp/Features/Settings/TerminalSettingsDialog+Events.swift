@@ -25,7 +25,36 @@ extension TerminalSettingsDialog {
             handleRecordingKey(event)
             return true
         }
-        return super.performKeyEquivalent(with: event)
+
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard !flags.isEmpty else {
+            return false
+        }
+
+        // Allow Cmd+, to toggle/close settings
+        if flags == .command && event.charactersIgnoringModifiers == "," {
+            withdraw()
+            return true
+        }
+
+        // Allow Cmd+W to close settings
+        if flags == .command && event.charactersIgnoringModifiers?.lowercased() == "w" {
+            withdraw()
+            return true
+        }
+
+        // Allow standard clipboard and text editing shortcuts while searching
+        if let field = searchField, window?.firstResponder == field.currentEditor() {
+            if flags == .command, let char = event.charactersIgnoringModifiers?.lowercased() {
+                if ["a", "c", "v", "x", "z"].contains(char) {
+                    return super.performKeyEquivalent(with: event)
+                }
+            }
+        }
+
+        // Modal containment: block all other key equivalents (split, tab, window actions)
+        // so they never trigger on the underlying terminal while settings is displayed.
+        return true
     }
 
     override func keyDown(with event: NSEvent) {
@@ -47,19 +76,21 @@ extension TerminalSettingsDialog {
             if let field = searchField {
                 window?.makeFirstResponder(field)
             }
-        case 44:                               // '/' key -> Focus search
-            if let field = searchField {
-                window?.makeFirstResponder(field)
-            }
         default:
-            switch event.charactersIgnoringModifiers?.lowercased() {
+            guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { break }
+            switch chars {
             case "r": startRecording()
             case "d": resetSelected()
             case "/":
                 if let field = searchField {
                     window?.makeFirstResponder(field)
                 }
-            default: break
+            default:
+                if let field = searchField, let first = chars.first, (first.isLetter || first.isNumber) {
+                    window?.makeFirstResponder(field)
+                    field.stringValue += chars
+                    controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+                }
             }
         }
     }
@@ -71,6 +102,7 @@ extension TerminalSettingsDialog {
         if event.keyCode == 53 && flags.isEmpty {
             isRecording = false
             statusMessage = "Recording cancelled."
+            recordingHeldModifiers = []
             needsDisplay = true
             return
         }
@@ -79,14 +111,21 @@ extension TerminalSettingsDialog {
         if (event.keyCode == 51 || event.keyCode == 117) && flags.isEmpty {
             resetSelected()
             isRecording = false
+            recordingHeldModifiers = []
             return
         }
 
-        let key = resolveKey(from: event)
-        guard !key.isEmpty else { return }
+        guard let key = resolveKey(from: event) else { return }
 
-        let isSpecial = ["return", "tab", "space", "escape", "up", "down", "left", "right"].contains(key)
-        guard !flags.isEmpty || isSpecial else { return }
+        let isFnKey = (122 == event.keyCode || 120 == event.keyCode || (96...101).contains(event.keyCode) ||
+                       103 == event.keyCode || 109 == event.keyCode || 111 == event.keyCode || 118 == event.keyCode)
+
+        // Shortcuts must require at least one modifier key unless it is an explicit function key (F1-F12)
+        guard !flags.isEmpty || isFnKey else {
+            statusMessage = "Modifier required (⌘, ⌃, ⌥, ⇧ + key). Esc to cancel."
+            needsDisplay = true
+            return
+        }
 
         var parts: [String] = []
         if flags.contains(.control) { parts.append("ctrl") }
@@ -107,32 +146,21 @@ extension TerminalSettingsDialog {
         needsDisplay = true
     }
 
-    private func resolveKey(from event: NSEvent) -> String {
-        switch event.keyCode {
-        case 36: return "return"
-        case 48: return "tab"
-        case 49: return "space"
-        case 51: return "backspace"
-        case 53: return "escape"
-        case 117: return "delete"
-        case 123: return "left"
-        case 124: return "right"
-        case 125: return "down"
-        case 126: return "up"
-        default:
-            guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { return "" }
-            let c = chars.first!
-            if c == "\r" { return "return" }
-            if c == "\t" { return "tab" }
-            return String(c)
+    private func resolveKey(from event: NSEvent) -> String? {
+        if let name = KeybindRegistry.keyName(for: event.keyCode) {
+            return name
         }
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { return nil }
+        let c = chars.first!
+        return (c.isASCII && (c.isLetter || c.isNumber)) ? String(c) : nil
     }
+
+    // MARK: - Mouse Events (Modal containment)
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-        let card = cardRect
-        guard card.contains(pt) else {
-            withdraw()
+        guard cardRect.contains(pt) else {
+            // Modal: clicks on backdrop do not dismiss and do not pass through to terminal
             return
         }
 
@@ -151,6 +179,13 @@ extension TerminalSettingsDialog {
             }
         }
     }
+
+    override func mouseUp(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func rightMouseUp(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
+    override func otherMouseUp(with event: NSEvent) {}
 
     func moveSelection(_ delta: Int) {
         guard !filteredItems.isEmpty else { return }
@@ -222,13 +257,37 @@ extension TerminalSettingsDialog {
             moveSelection(1)
             return true
         }
-        if commandSelector == #selector(cancelOperation(_:)) {
+        if commandSelector == #selector(moveUp(_:)) {
             window?.makeFirstResponder(self)
+            moveSelection(-1)
+            return true
+        }
+        if commandSelector == #selector(pageDown(_:)) {
+            window?.makeFirstResponder(self)
+            moveSelection(visibleRows)
+            return true
+        }
+        if commandSelector == #selector(pageUp(_:)) {
+            window?.makeFirstResponder(self)
+            moveSelection(-visibleRows)
+            return true
+        }
+        if commandSelector == #selector(cancelOperation(_:)) {
+            if let field = searchField, !field.stringValue.isEmpty {
+                field.stringValue = ""
+                controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+            } else {
+                withdraw()
+            }
             return true
         }
         if commandSelector == #selector(insertNewline(_:)) {
             window?.makeFirstResponder(self)
             startRecording()
+            return true
+        }
+        if commandSelector == #selector(insertTab(_:)) || commandSelector == #selector(insertBacktab(_:)) {
+            window?.makeFirstResponder(self)
             return true
         }
         return false

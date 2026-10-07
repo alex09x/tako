@@ -138,8 +138,6 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-
-
     /// Asks in `window` and answers the index of the button pressed --
     /// `cancelIndex` for escape or a withdrawn question. Nil when the window
     /// has no content view to draw in.
@@ -364,8 +362,18 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// The first body line shown; for tests.
     var scrollOffset: Int { offset }
 
-    /// Clicks outside the card do nothing: the question stays until answered.
+    /// Clicks outside the card do nothing: modal backdrop blocks underlying terminal.
     override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}; override func mouseDragged(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}; override func rightMouseUp(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}; override func otherMouseUp(with event: NSEvent) {}
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard !flags.isEmpty else { return false }
+        if flags == .command && event.charactersIgnoringModifiers?.lowercased() == "w" { withdraw(); return true }
+        return true
+    }
 
     func move(_ step: Int) {
         selected = (selected + step + buttons.count) % buttons.count
