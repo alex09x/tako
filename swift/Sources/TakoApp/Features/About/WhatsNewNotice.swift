@@ -42,6 +42,7 @@ enum WhatsNewNotice {
     /// Offers the What's New announcement at launch if this version hasn't been announced yet.
     static func offerAtLaunch(theme: TerminalTheme?) {
         guard NSClassFromString("XCTestCase") == nil,
+              !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }),
               Tako.launchSource == .app || Tako.launchSource == .cli else { return }
 
         let version = currentVersion

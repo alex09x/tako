@@ -124,6 +124,9 @@ extension TerminalController {
             // All new_window actions force our app to be active, so that the new
             // window is focused and visible.
             NSApp.activate(ignoringOtherApps: true)
+            if let target = c.focusedSurface {
+                Tako.moveFocus(to: target)
+            }
         }
 
         // Setup our undo
@@ -195,6 +198,9 @@ extension TerminalController {
                         Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
                     }
                 }
+            }
+            if let target = c.focusedSurface {
+                Tako.moveFocus(to: target)
             }
         }
 

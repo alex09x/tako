@@ -124,6 +124,7 @@ enum CommandLineTool {
     /// At launch: asks once, in a terminal window, when it is not installed.
     static func offerAtLaunch(theme: TerminalTheme?) {
         guard NSClassFromString("XCTestCase") == nil,
+              !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }),
               let bundled, !isInstalled(bundled: bundled),
               !UserDefaults.tako.bool(forKey: declinedKey) else { return }
         // After the windows are up.

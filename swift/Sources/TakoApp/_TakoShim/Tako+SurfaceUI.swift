@@ -26,7 +26,15 @@ extension Tako {
         let surfaceView: SurfaceView
         var isSplit: Bool = false
 
-        func makeNSView(context: Context) -> SurfaceView { surfaceView }
+        func makeNSView(context: Context) -> SurfaceView {
+            DispatchQueue.main.async { [weak surfaceView] in
+                guard let surfaceView, let window = surfaceView.window else { return }
+                if window.firstResponder == nil || window.firstResponder === window.contentView {
+                    window.makeFirstResponder(surfaceView)
+                }
+            }
+            return surfaceView
+        }
         func updateNSView(_ nsView: SurfaceView, context: Context) {}
     }
 

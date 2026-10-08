@@ -310,5 +310,45 @@ final class TakoTerminalNSViewInputContextTests: XCTestCase {
         XCTAssertEqual(view.markedRange().location, NSNotFound)
         XCTAssertFalse(view.hasMarkedText())
     }
+
+    // MARK: - Direct InsertText and Dictation Support
+
+    func testDirectInsertTextDeliversBytesWithoutActiveAccumulator() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+        _ = makeWindow(with: view)
+
+        view.insertText("echo hello", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertFalse(delegate.inputDataReceived.isEmpty)
+        let string = String(data: delegate.inputDataReceived, encoding: .utf8)
+        XCTAssertEqual(string, "echo hello")
+    }
+
+    func testSingleCharacterInsertTextDeliversBytesWithoutActiveAccumulator() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+        _ = makeWindow(with: view)
+
+        view.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertFalse(delegate.inputDataReceived.isEmpty)
+        let string = String(data: delegate.inputDataReceived, encoding: .utf8)
+        XCTAssertEqual(string, "a")
+    }
+
+    func testFirstRectReturnsScreenCoordinates() {
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        let window = makeWindow(with: view)
+        window.setFrame(NSRect(x: 100, y: 100, width: 600, height: 300), display: false)
+
+        let rect = view.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
+        XCTAssertGreaterThan(rect.width, 0)
+        XCTAssertGreaterThan(rect.height, 0)
+        XCTAssertGreaterThanOrEqual(rect.origin.x, 100)
+        XCTAssertGreaterThanOrEqual(rect.origin.y, 100)
+    }
 }
 #endif

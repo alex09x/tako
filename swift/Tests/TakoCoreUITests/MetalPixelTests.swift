@@ -60,7 +60,7 @@ final class MetalPixelTests: XCTestCase {
         static let overlineBit: UInt16 = 1 << 8
     }
 
-    private func packed(_ cells: [CellSpec]) -> Data {
+    func packed(_ cells: [CellSpec]) -> Data {
         var bytes = [UInt8]()
         bytes.reserveCapacity(cells.count * TerminalCell.byteSize)
         for cell in cells {
@@ -79,7 +79,7 @@ final class MetalPixelTests: XCTestCase {
         return Data(bytes)
     }
 
-    private func frame(
+    func frame(
         cols: UInt32,
         rows: UInt32,
         cells: [CellSpec]? = nil,
@@ -124,10 +124,10 @@ final class MetalPixelTests: XCTestCase {
 
     /// 10x20 pixel cells with no backing scale, so a cell's pixels are at
     /// exactly `(col * 10, row * 20)`.
-    private static let cellWidth = 10
-    private static let cellHeight = 20
+    static let cellWidth = 10
+    static let cellHeight = 20
 
-    private func metrics() -> TerminalMetalCellMetrics {
+    func metrics() -> TerminalMetalCellMetrics {
         TerminalMetalCellMetrics(
             font: CTFontCreateWithName("Menlo" as CFString, 12, nil),
             cellWidth: CGFloat(Self.cellWidth),
@@ -137,7 +137,7 @@ final class MetalPixelTests: XCTestCase {
         )
     }
 
-    private func makeLibrary(device: MTLDevice) throws -> MTLLibrary {
+    func makeLibrary(device: MTLDevice) throws -> MTLLibrary {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -186,13 +186,13 @@ final class MetalPixelTests: XCTestCase {
         }
     }
 
-    private func device() throws -> MTLDevice {
+    func device() throws -> MTLDevice {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "no Metal device")
         try XCTSkipUnless(device.hasUnifiedMemory, "reading a texture back needs shared storage")
         return device
     }
 
-    private func render(
+    func render(
         _ frame: FfiRenderFrame,
         cols: Int,
         rows: Int,

@@ -195,6 +195,9 @@ final class PTY {
     /// what the user actually logs in with. Upstream reads passwd too,
     /// which is why it opens fish here and we were opening zsh.
     static var loginShell: String {
+        if ProcessInfo.processInfo.environment["TAKO_SELFTEST_DIR"] != nil {
+            return "/bin/zsh"
+        }
         if let pw = getpwuid(getuid()), let shell = pw.pointee.pw_shell {
             let path = String(cString: shell)
             if !path.isEmpty { return path }
