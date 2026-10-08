@@ -276,4 +276,93 @@ public enum KeybindRegistry {
             return nil
         }
     }
+
+    /// Normalizes a trigger string into a canonical representation for reliable comparison.
+    public static func normalizeTrigger(_ trigger: String) -> String {
+        let parts = trigger.split(separator: "+", omittingEmptySubsequences: false).map {
+            $0.trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        guard let key = parts.last, !key.isEmpty else { return trigger.lowercased() }
+        var mods: Set<String> = []
+        for mod in parts.dropLast() {
+            switch mod {
+            case "ctrl", "control": mods.insert("ctrl")
+            case "opt", "alt", "option": mods.insert("opt")
+            case "shift": mods.insert("shift")
+            case "cmd", "command", "super": mods.insert("cmd")
+            default: break
+            }
+        }
+        var ordered: [String] = []
+        if mods.contains("ctrl") { ordered.append("ctrl") }
+        if mods.contains("opt") { ordered.append("opt") }
+        if mods.contains("shift") { ordered.append("shift") }
+        if mods.contains("cmd") { ordered.append("cmd") }
+        ordered.append(key)
+        return ordered.joined(separator: "+")
+    }
+
+    /// Converts a SwiftUI KeyboardShortcut into a canonical trigger string.
+    public static func trigger(for shortcut: SwiftUI.KeyboardShortcut) -> String {
+        var mods: [String] = []
+        if shortcut.modifiers.contains(.control) { mods.append("ctrl") }
+        if shortcut.modifiers.contains(.option) { mods.append("opt") }
+        if shortcut.modifiers.contains(.shift) { mods.append("shift") }
+        if shortcut.modifiers.contains(.command) { mods.append("cmd") }
+
+        let keyStr: String
+        switch shortcut.key {
+        case .return: keyStr = "return"
+        case .tab: keyStr = "tab"
+        case .space: keyStr = "space"
+        case .escape: keyStr = "escape"
+        case .delete: keyStr = "backspace"
+        case .deleteForward: keyStr = "delete"
+        case .upArrow: keyStr = "up"
+        case .downArrow: keyStr = "down"
+        case .leftArrow: keyStr = "left"
+        case .rightArrow: keyStr = "right"
+        case .pageUp: keyStr = "page_up"
+        case .pageDown: keyStr = "page_down"
+        case .home: keyStr = "home"
+        case .end: keyStr = "end"
+        default:
+            keyStr = shortcut.key.character.description.lowercased()
+        }
+        return (mods + [keyStr]).joined(separator: "+")
+    }
+
+    /// Finds any action that currently holds the given trigger (via custom override or active default),
+    /// excluding the specified target action.
+    public static func findConflict(
+        for trigger: String,
+        targetAction: String,
+        customOverrides: [String: String]
+    ) -> KeybindActionItem? {
+        let canonicalTarget = Tako.Config.canonicalActionName(targetAction)
+        let normalizedNew = normalizeTrigger(trigger)
+        let targetShortcut = Tako.Config.parseTrigger(trigger)
+
+        for item in allActions {
+            let canonicalItem = Tako.Config.canonicalActionName(item.id)
+            if canonicalItem == canonicalTarget { continue }
+
+            if let custom = customOverrides[canonicalItem] {
+                if normalizeTrigger(custom) == normalizedNew {
+                    return item
+                }
+                if let targetShortcut, let customShortcut = Tako.Config.parseTrigger(custom), targetShortcut == customShortcut {
+                    return item
+                }
+            } else if let def = defaultShortcut(for: canonicalItem) {
+                if normalizeTrigger(self.trigger(for: def)) == normalizedNew {
+                    return item
+                }
+                if let targetShortcut, targetShortcut == def {
+                    return item
+                }
+            }
+        }
+        return nil
+    }
 }

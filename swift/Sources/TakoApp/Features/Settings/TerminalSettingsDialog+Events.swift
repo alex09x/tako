@@ -63,6 +63,11 @@ extension TerminalSettingsDialog {
             return
         }
 
+        if let conflict = pendingConflict {
+            handleConflictConfirmation(event, conflict: conflict)
+            return
+        }
+
         switch event.keyCode {
         case 126: moveSelection(-1)            // Up
         case 125: moveSelection(1)             // Down
@@ -138,9 +143,58 @@ extension TerminalSettingsDialog {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
 
-        if configFile.setKeybind(action: item.id, trigger: trigger) {
+        if let conflict = KeybindRegistry.findConflict(
+            for: trigger,
+            targetAction: item.id,
+            customOverrides: configFile.customOverrides
+        ) {
             let formatted = KeybindRegistry.format(trigger: trigger)
-            statusMessage = "Updated '\(item.title)' to \(formatted)."
+            let shortConflict = String(conflict.title.prefix(18))
+            pendingConflict = ConflictInfo(targetItem: item, conflictingItem: conflict, trigger: trigger)
+            statusMessage = "Conflict: \(formatted) used by '\(shortConflict)'. Overwrite? (Return=Yes, Esc=No)"
+            isRecording = false
+            recordingHeldModifiers = []
+            needsDisplay = true
+            return
+        }
+
+        applyKeybind(action: item.id, trigger: trigger, title: item.title)
+    }
+
+    private func handleConflictConfirmation(_ event: NSEvent, conflict: ConflictInfo) {
+        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        // Return / Enter (36, 76) or 'y' confirms overwrite
+        if event.keyCode == 36 || event.keyCode == 76 || chars == "y" {
+            pendingConflict = nil
+            let conflictCanonical = KeybindConfigFile.canonicalActionName(conflict.conflictingItem.id)
+            if configFile.customOverrides[conflictCanonical] != nil {
+                configFile.removeKeybind(action: conflict.conflictingItem.id)
+            }
+            applyKeybind(action: conflict.targetItem.id, trigger: conflict.trigger, title: conflict.targetItem.title, reassignedFrom: conflict.conflictingItem.title)
+            return
+        }
+
+        // Esc (53) or 'n' cancels overwrite
+        if event.keyCode == 53 || chars == "n" {
+            pendingConflict = nil
+            statusMessage = "Reassignment cancelled."
+            needsDisplay = true
+            return
+        }
+
+        // Any other key clears pending conflict and handles the key normally
+        pendingConflict = nil
+        keyDown(with: event)
+    }
+
+    private func applyKeybind(action: String, trigger: String, title: String, reassignedFrom: String? = nil) {
+        if configFile.setKeybind(action: action, trigger: trigger) {
+            let formatted = KeybindRegistry.format(trigger: trigger)
+            if let from = reassignedFrom {
+                statusMessage = "Reassigned \(formatted) from '\(from)' to '\(title)'."
+            } else {
+                statusMessage = "Updated '\(title)' to \(formatted)."
+            }
         } else {
             statusMessage = "Error: Failed to write to config file."
         }
@@ -161,6 +215,7 @@ extension TerminalSettingsDialog {
     // MARK: - Mouse Events (Modal containment)
 
     override func mouseDown(with event: NSEvent) {
+        pendingConflict = nil
         let pt = convert(event.locationInWindow, from: nil)
         guard cardRect.contains(pt) else {
             // Modal: clicks on backdrop do not dismiss and do not pass through to terminal
@@ -192,6 +247,7 @@ extension TerminalSettingsDialog {
 
     func moveSelection(_ delta: Int) {
         guard !filteredItems.isEmpty else { return }
+        pendingConflict = nil
         selectedIndex = min(max(selectedIndex + delta, 0), filteredItems.count - 1)
         if selectedIndex < scrollOffset {
             scrollOffset = selectedIndex
@@ -203,6 +259,7 @@ extension TerminalSettingsDialog {
 
     func scrollTo(_ target: Int) {
         guard !filteredItems.isEmpty else { return }
+        pendingConflict = nil
         selectedIndex = min(max(target, 0), filteredItems.count - 1)
         scrollOffset = max(0, min(selectedIndex, filteredItems.count - visibleRows))
         needsDisplay = true
@@ -210,6 +267,7 @@ extension TerminalSettingsDialog {
 
     func startRecording() {
         guard selectedIndex < filteredItems.count else { return }
+        pendingConflict = nil
         isRecording = true
         recordingHeldModifiers = []
         statusMessage = nil
@@ -219,6 +277,7 @@ extension TerminalSettingsDialog {
 
     func resetSelected() {
         guard selectedIndex < filteredItems.count else { return }
+        pendingConflict = nil
         let item = filteredItems[selectedIndex]
         let canonicalId = KeybindConfigFile.canonicalActionName(item.id)
         let wasCustom = configFile.customOverrides[canonicalId] != nil
@@ -247,6 +306,7 @@ extension TerminalSettingsDialog {
     // MARK: - NSTextFieldDelegate (Search)
 
     func controlTextDidChange(_ obj: Notification) {
+        pendingConflict = nil
         guard let field = searchField else { return }
         let query = field.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
         if query.isEmpty {

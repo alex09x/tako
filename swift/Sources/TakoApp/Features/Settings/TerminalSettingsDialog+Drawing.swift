@@ -109,7 +109,12 @@ extension TerminalSettingsDialog {
 
         // Bottom Banner / Hint
         let bottomRow = totalRows - 2
-        if isRecording {
+        if let conflict = pendingConflict {
+            let formatted = KeybindRegistry.format(trigger: conflict.trigger)
+            let shortConflict = String(conflict.conflictingItem.title.prefix(18))
+            let msg = "⚠️ Conflict: \(formatted) used by '\(shortConflict)'. Overwrite? (Return=Yes, Esc=No)"
+            drawText(msg, col: 3, row: bottomRow, font: style.boldFont, color: TakoTUI.ember)
+        } else if isRecording {
             let held = formatHeldModifiers(recordingHeldModifiers)
             let prompt = held.isEmpty
                 ? "RECORDING: Press shortcut keys on keyboard… (Esc to cancel)"

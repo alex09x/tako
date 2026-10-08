@@ -184,12 +184,17 @@ extension Tako.Config {
         return nil
     }
 
+    /// Parses a single trigger string like `cmd+L` or `super+shift+d` into a `KeyboardShortcut`.
+    public static func parseTrigger(_ trigger: String) -> SwiftUI.KeyboardShortcut? {
+        parseTrigger(trigger[...])
+    }
+
     /// Parses a single trigger like `cmd+L`, `super+shift+d` or
     /// `global:cmd+grave_accent` into a `KeyboardShortcut`. A letter is lowercased for
     /// the `KeyEquivalent` (upstream's trigger syntax is case-insensitive); no shift is
     /// implied by an uppercase letter here -- that inference belongs to
     /// `MenuShortcutKey`, which converts the result afterward.
-    private static func parseTrigger(_ trigger: Substring) -> SwiftUI.KeyboardShortcut? {
+    static func parseTrigger(_ trigger: Substring) -> SwiftUI.KeyboardShortcut? {
         var trigger = trigger.trimmingCharacters(in: .whitespaces)[...]
         // Where the binding applies (everywhere, globally, ...) does not change which
         // key the menu item shows.

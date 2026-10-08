@@ -47,6 +47,12 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     var searchField: NSTextField?
     var isRecording: Bool = false
     var recordingHeldModifiers: NSEvent.ModifierFlags = []
+    struct ConflictInfo {
+        let targetItem: KeybindActionItem
+        let conflictingItem: KeybindActionItem
+        let trigger: String
+    }
+    var pendingConflict: ConflictInfo?
     var statusMessage: String?
     var buttons: [DialogButton] = []
     weak var previousResponder: NSResponder?
