@@ -60,31 +60,22 @@ public enum KeybindRegistry {
         KeybindActionItem(id: "move_tab:-1", title: "Move Tab Left", category: .tabs),
         KeybindActionItem(id: "new_window", title: "New Window", category: .tabs),
         KeybindActionItem(id: "close_window", title: "Close Window", category: .tabs),
-        KeybindActionItem(id: "goto_tab:1", title: "Switch to Tab 1", category: .tabs),
-        KeybindActionItem(id: "goto_tab:2", title: "Switch to Tab 2", category: .tabs),
-        KeybindActionItem(id: "goto_tab:3", title: "Switch to Tab 3", category: .tabs),
-        KeybindActionItem(id: "goto_tab:4", title: "Switch to Tab 4", category: .tabs),
-        KeybindActionItem(id: "goto_tab:5", title: "Switch to Tab 5", category: .tabs),
-        KeybindActionItem(id: "goto_tab:6", title: "Switch to Tab 6", category: .tabs),
-        KeybindActionItem(id: "goto_tab:7", title: "Switch to Tab 7", category: .tabs),
-        KeybindActionItem(id: "goto_tab:8", title: "Switch to Tab 8", category: .tabs),
-        KeybindActionItem(id: "goto_tab:9", title: "Switch to Tab 9", category: .tabs),
+        KeybindActionItem(id: "close_all_windows", title: "Close All Windows", category: .tabs),
+        KeybindActionItem(id: "goto_tab:1", title: "Switch to Tab 1", category: .tabs), KeybindActionItem(id: "goto_tab:2", title: "Switch to Tab 2", category: .tabs), KeybindActionItem(id: "goto_tab:3", title: "Switch to Tab 3", category: .tabs),
+        KeybindActionItem(id: "goto_tab:4", title: "Switch to Tab 4", category: .tabs), KeybindActionItem(id: "goto_tab:5", title: "Switch to Tab 5", category: .tabs), KeybindActionItem(id: "goto_tab:6", title: "Switch to Tab 6", category: .tabs),
+        KeybindActionItem(id: "goto_tab:7", title: "Switch to Tab 7", category: .tabs), KeybindActionItem(id: "goto_tab:8", title: "Switch to Tab 8", category: .tabs), KeybindActionItem(id: "goto_tab:9", title: "Switch to Tab 9", category: .tabs),
 
         // Splits
         KeybindActionItem(id: "new_split:right", title: "Split Right (Vertical)", category: .splits),
         KeybindActionItem(id: "new_split:down", title: "Split Down (Horizontal)", category: .splits),
         KeybindActionItem(id: "goto_split:next", title: "Focus Next Split", category: .splits),
         KeybindActionItem(id: "goto_split:previous", title: "Focus Previous Split", category: .splits),
-        KeybindActionItem(id: "goto_split:left", title: "Focus Left Split", category: .splits),
-        KeybindActionItem(id: "goto_split:right", title: "Focus Right Split", category: .splits),
-        KeybindActionItem(id: "goto_split:up", title: "Focus Split Above", category: .splits),
-        KeybindActionItem(id: "goto_split:down", title: "Focus Split Below", category: .splits),
+        KeybindActionItem(id: "goto_split:left", title: "Focus Left Split", category: .splits), KeybindActionItem(id: "goto_split:right", title: "Focus Right Split", category: .splits),
+        KeybindActionItem(id: "goto_split:up", title: "Focus Split Above", category: .splits), KeybindActionItem(id: "goto_split:down", title: "Focus Split Below", category: .splits),
         KeybindActionItem(id: "toggle_split_zoom", title: "Zoom / Fullscreen Split", category: .splits),
         KeybindActionItem(id: "equalize_splits", title: "Equalize Splits", category: .splits),
-        KeybindActionItem(id: "resize_split:left,10", title: "Resize Split Left", category: .splits),
-        KeybindActionItem(id: "resize_split:right,10", title: "Resize Split Right", category: .splits),
-        KeybindActionItem(id: "resize_split:up,10", title: "Resize Split Up", category: .splits),
-        KeybindActionItem(id: "resize_split:down,10", title: "Resize Split Down", category: .splits),
+        KeybindActionItem(id: "resize_split:left,10", title: "Resize Split Left", category: .splits), KeybindActionItem(id: "resize_split:right,10", title: "Resize Split Right", category: .splits),
+        KeybindActionItem(id: "resize_split:up,10", title: "Resize Split Up", category: .splits), KeybindActionItem(id: "resize_split:down,10", title: "Resize Split Down", category: .splits),
 
         // Workspaces
         KeybindActionItem(id: "next_workspace", title: "Next Workspace", category: .workspaces),
@@ -92,9 +83,12 @@ public enum KeybindRegistry {
         KeybindActionItem(id: "new_workspace", title: "New Workspace", category: .workspaces),
 
         // Terminal
+        KeybindActionItem(id: "quit", title: "Quit Tako", category: .terminal),
         KeybindActionItem(id: "increase_font_size:1", title: "Increase Font Size", category: .terminal),
         KeybindActionItem(id: "decrease_font_size:1", title: "Decrease Font Size", category: .terminal),
         KeybindActionItem(id: "reset_font_size", title: "Reset Font Size", category: .terminal),
+        KeybindActionItem(id: "jump_to_prompt:previous", title: "Jump to Previous Prompt", category: .terminal),
+        KeybindActionItem(id: "jump_to_prompt:next", title: "Jump to Next Prompt", category: .terminal),
         KeybindActionItem(id: "toggle_quick_terminal", title: "Toggle Quick Terminal", category: .terminal),
         KeybindActionItem(id: "reload_config", title: "Reload Configuration", category: .terminal),
         KeybindActionItem(id: "open_config", title: "Open Settings / Config", category: .terminal),
@@ -106,8 +100,11 @@ public enum KeybindRegistry {
         KeybindActionItem(id: "undo", title: "Undo", category: .edit),
         KeybindActionItem(id: "redo", title: "Redo", category: .edit),
         KeybindActionItem(id: "select_all", title: "Select All", category: .edit),
+        KeybindActionItem(id: "select_command_output", title: "Select Command Output", category: .edit),
         KeybindActionItem(id: "start_search", title: "Find in Current Tab", category: .edit),
         KeybindActionItem(id: "find_all", title: "Find in All Tabs", category: .edit),
+        KeybindActionItem(id: "navigate_search:next", title: "Find Next", category: .edit),
+        KeybindActionItem(id: "navigate_search:previous", title: "Find Previous", category: .edit),
     ]
 
     /// Default shortcut for action ID.
@@ -125,22 +122,11 @@ public enum KeybindRegistry {
         if shortcut.modifiers.contains(.command) { str += "⌘" }
 
         switch shortcut.key {
-        case .return: str += "↩"
-        case .tab: str += "⇥"
-        case .space: str += "Space"
-        case .escape: str += "⎋"
-        case .delete: str += "⌫"
-        case .deleteForward: str += "⌦"
-        case .upArrow: str += "↑"
-        case .downArrow: str += "↓"
-        case .leftArrow: str += "←"
-        case .rightArrow: str += "→"
-        case .pageUp: str += "⇞"
-        case .pageDown: str += "⇟"
-        case .home: str += "↖"
-        case .end: str += "↘"
-        default:
-            str += shortcut.key.character.description.uppercased()
+        case .return: str += "↩"; case .tab: str += "⇥"; case .space: str += "Space"
+        case .escape: str += "⎋"; case .delete: str += "⌫"; case .deleteForward: str += "⌦"
+        case .upArrow: str += "↑"; case .downArrow: str += "↓"; case .leftArrow: str += "←"; case .rightArrow: str += "→"
+        case .pageUp: str += "⇞"; case .pageDown: str += "⇟"; case .home: str += "↖"; case .end: str += "↘"
+        default: str += shortcut.key.character.description.uppercased()
         }
         return str
     }
@@ -160,33 +146,16 @@ public enum KeybindRegistry {
             }
         }
         switch keyPart.lowercased() {
-        case "return", "enter": str += "↩"
-        case "tab": str += "⇥"
-        case "space": str += "Space"
-        case "escape": str += "⎋"
-        case "backspace": str += "⌫"
-        case "delete": str += "⌦"
-        case "up", "arrow_up": str += "↑"
-        case "down", "arrow_down": str += "↓"
-        case "left", "arrow_left": str += "←"
-        case "right", "arrow_right": str += "→"
-        case "bracket_left": str += "["
-        case "bracket_right": str += "]"
-        case "minus": str += "-"
-        case "equal": str += "="
-        case "grave_accent": str += "`"
-        case "backslash": str += "\\"
-        case "semicolon": str += ";"
-        case "quote": str += "'"
-        case "comma": str += ","
-        case "period": str += "."
-        case "slash": str += "/"
-        case "page_up": str += "⇞"
-        case "page_down": str += "⇟"
-        case "home": str += "↖"
-        case "end": str += "↘"
-        default:
-            str += keyPart.uppercased()
+        case "return", "enter": str += "↩"; case "tab": str += "⇥"; case "space": str += "Space"
+        case "escape": str += "⎋"; case "backspace": str += "⌫"; case "delete": str += "⌦"
+        case "up", "arrow_up": str += "↑"; case "down", "arrow_down": str += "↓"
+        case "left", "arrow_left": str += "←"; case "right", "arrow_right": str += "→"
+        case "bracket_left": str += "["; case "bracket_right": str += "]"
+        case "minus": str += "-"; case "equal": str += "="; case "grave_accent": str += "`"
+        case "backslash": str += "\\"; case "semicolon": str += ";"; case "quote": str += "'"
+        case "comma": str += ","; case "period": str += "."; case "slash": str += "/"
+        case "page_up": str += "⇞"; case "page_down": str += "⇟"; case "home": str += "↖"; case "end": str += "↘"
+        default: str += keyPart.uppercased()
         }
         return str
     }
@@ -235,29 +204,18 @@ public enum KeybindRegistry {
     public static func canonicalKeyEquivalent(for keyCode: UInt16) -> String? {
         guard let name = keyName(for: keyCode) else { return nil }
         switch name {
-        case "bracket_left": return "["
-        case "bracket_right": return "]"
-        case "minus": return "-"
-        case "equal": return "="
-        case "backslash": return "\\"
-        case "semicolon": return ";"
-        case "quote": return "'"
-        case "comma": return ","
-        case "period": return "."
-        case "slash": return "/"
-        case "grave_accent": return "`"
-        case "return": return "\r"
-        case "tab": return "\t"
-        case "space": return " "
+        case "bracket_left": return "["; case "bracket_right": return "]"
+        case "minus": return "-"; case "equal": return "="
+        case "backslash": return "\\"; case "semicolon": return ";"
+        case "quote": return "'"; case "comma": return ","
+        case "period": return "."; case "slash": return "/"
+        case "grave_accent": return "`"; case "return": return "\r"
+        case "tab": return "\t"; case "space": return " "
         case "escape": return "\u{1b}"
-        case "up": return "\u{F700}"
-        case "down": return "\u{F701}"
-        case "left": return "\u{F702}"
-        case "right": return "\u{F703}"
-        case "page_up": return "\u{F72C}"
-        case "page_down": return "\u{F72D}"
-        case "home": return "\u{F729}"
-        case "end": return "\u{F72B}"
+        case "up": return "\u{F700}"; case "down": return "\u{F701}"
+        case "left": return "\u{F702}"; case "right": return "\u{F703}"
+        case "page_up": return "\u{F72C}"; case "page_down": return "\u{F72D}"
+        case "home": return "\u{F729}"; case "end": return "\u{F72B}"
         default:
             if name.hasPrefix("f"), let n = Int(name.dropFirst()), (1...35).contains(n),
                let scalar = UnicodeScalar(NSF1FunctionKey + n - 1) {
@@ -324,9 +282,38 @@ public enum KeybindRegistry {
         return (mods + [keyStr]).joined(separator: "+")
     }
 
+    /// Retrieves or synthesizes a KeybindActionItem for any valid action identifier.
+    public static func actionItem(for id: String) -> KeybindActionItem {
+        let canonical = Tako.Config.canonicalActionName(id)
+        if let existing = allActions.first(where: { Tako.Config.canonicalActionName($0.id) == canonical }) {
+            return existing
+        }
+        let title: String
+        let category: KeybindCategory
+        switch canonical {
+        case "quit": title = "Quit Tako"; category = .terminal
+        case "close_all_windows": title = "Close All Windows"; category = .tabs
+        case "navigate_search:next": title = "Find Next"; category = .edit
+        case "navigate_search:previous": title = "Find Previous"; category = .edit
+        case "search_selection": title = "Search Selection"; category = .edit
+        case "scroll_to_selection": title = "Scroll to Selection"; category = .terminal
+        case "jump_to_prompt:previous": title = "Jump to Previous Prompt"; category = .terminal
+        case "jump_to_prompt:next": title = "Jump to Next Prompt"; category = .terminal
+        case "select_command_output": title = "Select Command Output"; category = .edit
+        case "toggle_output_filter": title = "Toggle Output Filter"; category = .terminal
+        case "focus_mode": title = "Focus Mode"; category = .terminal
+        default:
+            title = id.replacingOccurrences(of: "_", with: " ")
+                      .replacingOccurrences(of: ":", with: " ")
+                      .capitalized
+            category = .terminal
+        }
+        return KeybindActionItem(id: id, title: title, category: category)
+    }
+
     /// Finds any action that currently holds the given trigger (via custom override or active default),
-    /// excluding the specified target action. Resolves collisions, shadowed defaults, and shifted punctuation
-    /// using runtime MenuShortcutKey canonicalization.
+    /// excluding the specified target action. Resolves collisions, shadowed defaults, shifted punctuation,
+    /// and unregistered default shortcuts (e.g. quit, close_all_windows) using runtime MenuShortcutKey canonicalization.
     public static func findConflict(
         for trigger: String,
         targetAction: String,
@@ -339,18 +326,35 @@ public enum KeybindRegistry {
         let canonicalTarget = Tako.Config.canonicalActionName(targetAction)
         let overrides = Tako.Config.parseKeybindOverrides(configLines)
 
+        var seenCanonical: Set<String> = []
+        var candidateIds: [String] = []
         for item in allActions {
-            let canonicalItem = Tako.Config.canonicalActionName(item.id)
+            let canonical = Tako.Config.canonicalActionName(item.id)
+            if !seenCanonical.contains(canonical) {
+                seenCanonical.insert(canonical)
+                candidateIds.append(item.id)
+            }
+        }
+        for actionId in Set(Tako.Config.defaultKeyboardShortcuts.keys).union(overrides.keys) {
+            let canonical = Tako.Config.canonicalActionName(actionId)
+            if !seenCanonical.contains(canonical) {
+                seenCanonical.insert(canonical)
+                candidateIds.append(actionId)
+            }
+        }
+
+        for actionId in candidateIds {
+            let canonicalItem = Tako.Config.canonicalActionName(actionId)
             if canonicalItem == canonicalTarget { continue }
 
             let activeShortcut: SwiftUI.KeyboardShortcut?
-            switch overrides[canonicalItem] ?? overrides[item.id] {
+            switch overrides[canonicalItem] ?? overrides[actionId] {
             case .shortcut(let s):
                 activeShortcut = s
             case .unbound:
                 activeShortcut = nil
             case nil:
-                if let def = defaultShortcut(for: canonicalItem) {
+                if let def = defaultShortcut(for: canonicalItem) ?? defaultShortcut(for: actionId) {
                     let defKey = Tako.MenuShortcutManager.MenuShortcutKey(def)
                     let isClaimed = overrides.values.contains { override in
                         if case .shortcut(let s) = override {
@@ -367,7 +371,7 @@ public enum KeybindRegistry {
             if let active = activeShortcut,
                let activeKey = Tako.MenuShortcutManager.MenuShortcutKey(active),
                activeKey == targetKey {
-                return item
+                return actionItem(for: actionId)
             }
         }
         return nil

@@ -167,4 +167,46 @@ struct KeybindConflictTests {
         )
         #expect(conflict == nil)
     }
+
+    @Test
+    func findConflictDetectsQuitDefaultShortcut() {
+        // Quit is bound to cmd+q by default. Recording cmd+q for new_tab must report conflict.
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+q",
+            targetAction: "new_tab",
+            configLines: []
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "quit")
+        #expect(conflict?.title == "Quit Tako")
+    }
+
+    @Test
+    func findConflictDetectsCloseAllWindowsDefaultShortcut() {
+        // close_all_windows defaults to cmd+opt+shift+w.
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+opt+shift+w",
+            targetAction: "new_tab",
+            configLines: []
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "close_all_windows")
+        #expect(conflict?.title == "Close All Windows")
+    }
+
+    @Test
+    func findConflictDetectsCustomUnregisteredAction() {
+        // A custom action in config not present in defaultKeyboardShortcuts.
+        let configLines = [
+            "keybind = cmd+k=custom_external_action"
+        ]
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+k",
+            targetAction: "new_tab",
+            configLines: configLines
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "custom_external_action")
+        #expect(conflict?.title == "Custom External Action")
+    }
 }
