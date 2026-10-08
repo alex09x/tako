@@ -29,8 +29,8 @@ public final class KeybindConfigFile: ObservableObject {
 
     /// Path to active user configuration file, or nil if no active path could be resolved.
     public var configPath: String? {
-        if let explicit = explicitConfigPath, !explicit.isEmpty {
-            return (explicit as NSString).expandingTildeInPath
+        if let explicit = explicitConfigPath {
+            return explicit.isEmpty ? nil : (explicit as NSString).expandingTildeInPath
         }
         if let appDelegate = NSApp.delegate as? AppDelegate {
             return appDelegate.tako.activeConfigPath
@@ -38,7 +38,7 @@ public final class KeybindConfigFile: ObservableObject {
         if let env = ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"], !env.isEmpty {
             return (env as NSString).expandingTildeInPath
         }
-        return nil
+        return ("~/.config/tako/config" as NSString).expandingTildeInPath
     }
 
     /// Finds the trigger/action separator `=` in a keybind value string (e.g. "cmd+opt+==equalize_splits"),
@@ -115,8 +115,12 @@ public final class KeybindConfigFile: ObservableObject {
     /// Removes a custom keybinding override for an action, reverting it to default.
     @discardableResult
     public func removeKeybind(action: String) -> Bool {
-        guard let path = configPath else { return false }
-        guard FileManager.default.fileExists(atPath: path) && customOverrides[action] != nil else {
+        guard customOverrides[action] != nil else {
+            return true
+        }
+        guard let path = configPath else { return true }
+        guard FileManager.default.fileExists(atPath: path) else {
+            customOverrides.removeValue(forKey: action)
             return true
         }
         do {
@@ -140,8 +144,12 @@ public final class KeybindConfigFile: ObservableObject {
     /// Resets all custom keybinding overrides back to application defaults.
     @discardableResult
     public func resetAllKeybinds() -> Bool {
-        guard let path = configPath else { return false }
-        guard FileManager.default.fileExists(atPath: path) && !customOverrides.isEmpty else {
+        guard !customOverrides.isEmpty else {
+            return true
+        }
+        guard let path = configPath else { return true }
+        guard FileManager.default.fileExists(atPath: path) else {
+            customOverrides.removeAll()
             return true
         }
         do {

@@ -85,8 +85,8 @@ struct KeybindConfigFileTests {
         let configFile = KeybindConfigFile(configPath: "")
         if configFile.configPath == nil {
             #expect(configFile.setKeybind(action: "new_tab", trigger: "cmd+t") == false)
-            #expect(configFile.removeKeybind(action: "new_tab") == false)
-            #expect(configFile.resetAllKeybinds() == false)
+            #expect(configFile.removeKeybind(action: "new_tab") == true)
+            #expect(configFile.resetAllKeybinds() == true)
         }
     }
 
