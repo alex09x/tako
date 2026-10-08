@@ -100,4 +100,71 @@ struct KeybindConflictTests {
         #expect(conflict != nil)
         #expect(conflict?.id == "new_tab")
     }
+
+    @Test
+    func findConflictIdentifiesShadowedDefaultHolder() {
+        // Config assigns cmd+t to close_surface.
+        // The active parser unbinds new_tab, so close_surface is the active holder of cmd+t.
+        // Checking cmd+t against another action (e.g. new_split:right) must report close_surface, NOT new_tab.
+        let configLines = [
+            "keybind = cmd+t=close_surface"
+        ]
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+t",
+            targetAction: "new_split:right",
+            configLines: configLines
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "close_surface")
+        #expect(conflict?.title == "Close Split / Tab")
+    }
+
+    @Test
+    func findConflictDetectsShiftedPunctuationEquivalence() {
+        // Config assigns cmd+shift+! to close_surface.
+        // Runtime MenuShortcutKey normalizes cmd+shift+! to key "1" with [.command, .shift].
+        // Checking cmd+shift+1 against another action must detect conflict with close_surface.
+        let configLines = [
+            "keybind = cmd+shift+!=close_surface"
+        ]
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+shift+1",
+            targetAction: "new_split:right",
+            configLines: configLines
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "close_surface")
+        #expect(conflict?.title == "Close Split / Tab")
+    }
+
+    @Test
+    func findConflictDetectsUnshiftedToShiftedPunctuationEquivalence() {
+        // Existing binding in config is cmd+shift+1.
+        // Recording cmd+shift+! (or pressing Shift+1) must report conflict.
+        let configLines = [
+            "keybind = cmd+shift+1=close_surface"
+        ]
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+shift+!",
+            targetAction: "new_split:right",
+            configLines: configLines
+        )
+        #expect(conflict != nil)
+        #expect(conflict?.id == "close_surface")
+    }
+
+    @Test
+    func findConflictReturnsNilWhenDefaultIsUnbound() {
+        // Config unbinds cmd+t.
+        // Checking cmd+t against new_split:right should return nil because cmd+t is free.
+        let configLines = [
+            "keybind = cmd+t=unbind"
+        ]
+        let conflict = KeybindRegistry.findConflict(
+            for: "cmd+t",
+            targetAction: "new_split:right",
+            configLines: configLines
+        )
+        #expect(conflict == nil)
+    }
 }

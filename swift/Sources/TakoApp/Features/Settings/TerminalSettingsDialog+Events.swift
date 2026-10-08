@@ -143,11 +143,7 @@ extension TerminalSettingsDialog {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
 
-        if let conflict = KeybindRegistry.findConflict(
-            for: trigger,
-            targetAction: item.id,
-            customOverrides: configFile.customOverrides
-        ) {
+        if let conflict = configFile.findConflict(for: trigger, targetAction: item.id) {
             let formatted = KeybindRegistry.format(trigger: trigger)
             let shortConflict = String(conflict.title.prefix(18))
             pendingConflict = ConflictInfo(targetItem: item, conflictingItem: conflict, trigger: trigger)

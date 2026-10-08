@@ -249,7 +249,7 @@ private extension Tako.MenuShortcutManager {
 
 extension Tako.MenuShortcutManager {
     /// Hashable key for a menu shortcut match, normalized for quick lookup.
-    struct MenuShortcutKey: Hashable {
+    public struct MenuShortcutKey: Hashable {
         private static let shortcutModifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
 
         private static let shiftedToUnshifted: [String: String] = [
@@ -264,15 +264,15 @@ extension Tako.MenuShortcutManager {
             "'": "\"", ",": "<", ".": ">", "/": "?", "\\": "|"
         ]
 
-        let keyEquivalent: String
+        public let keyEquivalent: String
         // Make it Hashable
         private let modifiersRawValue: UInt
 
-        var modifierFlags: NSEvent.ModifierFlags {
+        public var modifierFlags: NSEvent.ModifierFlags {
             NSEvent.ModifierFlags(rawValue: modifiersRawValue)
         }
 
-        var appKitKeyEquivalent: String {
+        public var appKitKeyEquivalent: String {
             guard modifierFlags.contains(.shift) else { return keyEquivalent }
             if let shifted = Self.unshiftedToShifted[keyEquivalent] {
                 return shifted
@@ -283,10 +283,11 @@ extension Tako.MenuShortcutManager {
             return keyEquivalent
         }
 
-        init?(keyEquivalent: String, modifiers: NSEvent.ModifierFlags) {
+        public init?(keyEquivalent: String, modifiers: NSEvent.ModifierFlags) {
             var rawKey = keyEquivalent
             var mods = modifiers.intersection(Self.shortcutModifiers)
-            if mods.contains(.shift), let unshifted = Self.shiftedToUnshifted[rawKey] {
+            if let unshifted = Self.shiftedToUnshifted[rawKey] {
+                mods.insert(.shift)
                 rawKey = unshifted
             }
             let normalized = rawKey.lowercased()
@@ -302,13 +303,13 @@ extension Tako.MenuShortcutManager {
             self.modifiersRawValue = mods.rawValue
         }
 
-        init?(event: NSEvent) {
+        public init?(event: NSEvent) {
             guard let keyEquivalent = event.charactersIgnoringModifiers else { return nil }
             self.init(keyEquivalent: keyEquivalent, modifiers: event.modifierFlags)
         }
 
         /// Fallback from hardware virtual keyCode (layout-independent US ANSI mapping).
-        init?(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+        public init?(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
             guard let keyEquivalent = KeybindRegistry.canonicalKeyEquivalent(for: keyCode) else { return nil }
             self.init(keyEquivalent: keyEquivalent, modifiers: modifiers)
         }
@@ -316,7 +317,7 @@ extension Tako.MenuShortcutManager {
         /// Create from a `NSMenuItem`
         ///
         /// - Important: This will check whether the `keyEquivalent` is uppercased by `.shift` modifier.
-        init?(_ menuItem: NSMenuItem) {
+        public init?(_ menuItem: NSMenuItem) {
             self.init(
                 keyEquivalent: menuItem.keyEquivalent,
                 modifiers: menuItem.keyEquivalentModifierMask,
@@ -324,7 +325,7 @@ extension Tako.MenuShortcutManager {
         }
 
         /// Create from a swiftUI `KeyboardShortcut`
-        init?(_ shortcut: KeyboardShortcut) {
+        public init?(_ shortcut: KeyboardShortcut) {
             // Configured shortcuts arrive lowercased from
             // `Tako.Config.keyboardShortcut(for:)`.
             let keyEquivalent = shortcut.key.character.description
@@ -332,7 +333,13 @@ extension Tako.MenuShortcutManager {
             self.init(keyEquivalent: keyEquivalent, modifiers: modifierMask)
         }
 
-        var swiftUIShortcut: KeyboardShortcut? {
+        /// Create from a Tako trigger string (e.g. "cmd+shift+!", "super+t", "cmd+1").
+        public init?(trigger: String) {
+            guard let shortcut = Tako.Config.parseTrigger(trigger) else { return nil }
+            self.init(shortcut)
+        }
+
+        public var swiftUIShortcut: KeyboardShortcut? {
             guard let character = keyEquivalent.first else { return nil }
             return KeyboardShortcut(
                 KeyEquivalent(character),

@@ -112,16 +112,8 @@ public enum KeybindRegistry {
 
     /// Default shortcut for action ID.
     public static func defaultShortcut(for action: String) -> SwiftUI.KeyboardShortcut? {
-        if action == "next_workspace" {
-            return .init("]", modifiers: [.control, .option])
-        }
-        if action == "previous_workspace" {
-            return .init("[", modifiers: [.control, .option])
-        }
-        if action == "new_workspace" {
-            return .init("n", modifiers: [.control, .option])
-        }
-        return Tako.Config.defaultKeyboardShortcuts[action]
+        let canonical = Tako.Config.canonicalActionName(action)
+        return Tako.Config.defaultKeyboardShortcuts[canonical] ?? Tako.Config.defaultKeyboardShortcuts[action]
     }
 
     /// Formats a trigger or KeyboardShortcut into user-visible symbols (e.g. ⌘⇧↩).
@@ -333,36 +325,61 @@ public enum KeybindRegistry {
     }
 
     /// Finds any action that currently holds the given trigger (via custom override or active default),
-    /// excluding the specified target action.
+    /// excluding the specified target action. Resolves collisions, shadowed defaults, and shifted punctuation
+    /// using runtime MenuShortcutKey canonicalization.
     public static func findConflict(
         for trigger: String,
         targetAction: String,
-        customOverrides: [String: String]
+        configLines: [String] = []
     ) -> KeybindActionItem? {
+        guard let targetKey = Tako.MenuShortcutManager.MenuShortcutKey(trigger: trigger) else {
+            return nil
+        }
+
         let canonicalTarget = Tako.Config.canonicalActionName(targetAction)
-        let normalizedNew = normalizeTrigger(trigger)
-        let targetShortcut = Tako.Config.parseTrigger(trigger)
+        let overrides = Tako.Config.parseKeybindOverrides(configLines)
 
         for item in allActions {
             let canonicalItem = Tako.Config.canonicalActionName(item.id)
             if canonicalItem == canonicalTarget { continue }
 
-            if let custom = customOverrides[canonicalItem] {
-                if normalizeTrigger(custom) == normalizedNew {
-                    return item
+            let activeShortcut: SwiftUI.KeyboardShortcut?
+            switch overrides[canonicalItem] ?? overrides[item.id] {
+            case .shortcut(let s):
+                activeShortcut = s
+            case .unbound:
+                activeShortcut = nil
+            case nil:
+                if let def = defaultShortcut(for: canonicalItem) {
+                    let defKey = Tako.MenuShortcutManager.MenuShortcutKey(def)
+                    let isClaimed = overrides.values.contains { override in
+                        if case .shortcut(let s) = override {
+                            return Tako.MenuShortcutManager.MenuShortcutKey(s) == defKey
+                        }
+                        return false
+                    }
+                    activeShortcut = isClaimed ? nil : def
+                } else {
+                    activeShortcut = nil
                 }
-                if let targetShortcut, let customShortcut = Tako.Config.parseTrigger(custom), targetShortcut == customShortcut {
-                    return item
-                }
-            } else if let def = defaultShortcut(for: canonicalItem) {
-                if normalizeTrigger(self.trigger(for: def)) == normalizedNew {
-                    return item
-                }
-                if let targetShortcut, targetShortcut == def {
-                    return item
-                }
+            }
+
+            if let active = activeShortcut,
+               let activeKey = Tako.MenuShortcutManager.MenuShortcutKey(active),
+               activeKey == targetKey {
+                return item
             }
         }
         return nil
+    }
+
+    /// Backwards compatibility overload for callers passing a customOverrides dictionary.
+    public static func findConflict(
+        for trigger: String,
+        targetAction: String,
+        customOverrides: [String: String]
+    ) -> KeybindActionItem? {
+        let lines = customOverrides.map { "keybind = \($0.value)=\($0.key)" }
+        return findConflict(for: trigger, targetAction: targetAction, configLines: lines)
     }
 }

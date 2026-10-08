@@ -83,6 +83,22 @@ public final class KeybindConfigFile: ObservableObject {
         self.customOverrides = overrides
     }
 
+    /// Raw lines of the active configuration file, or empty array if file does not exist.
+    public var rawConfigLines: [String] {
+        guard let path = configPath,
+              FileManager.default.fileExists(atPath: path),
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return []
+        }
+        return content.components(separatedBy: "\n")
+    }
+
+    /// Finds any action that currently holds the given trigger (via custom override or active default),
+    /// resolving collisions and shifted key equivalents in the same manner as Tako runtime dispatch.
+    public func findConflict(for trigger: String, targetAction: String) -> KeybindActionItem? {
+        KeybindRegistry.findConflict(for: trigger, targetAction: targetAction, configLines: rawConfigLines)
+    }
+
     /// Saves or updates a keybinding in the config file.
     @discardableResult
     public func setKeybind(action: String, trigger: String) -> Bool {
@@ -94,13 +110,25 @@ public final class KeybindConfigFile: ObservableObject {
             var replaced = false
             let canonicalTarget = Self.canonicalActionName(action)
             let newLine = "keybind = \(trigger)=\(action)"
+            let targetKey = Tako.MenuShortcutManager.MenuShortcutKey(trigger: trigger)
 
-            for i in 0..<lines.count {
+            for i in (0..<lines.count).reversed() {
                 let line = lines[i].trimmingCharacters(in: .whitespaces)
-                if let parsed = Self.parseLineAction(line), Self.canonicalActionName(parsed.action) == canonicalTarget {
+                guard let parsed = Self.parseLineAction(line) else { continue }
+                let actionMatch = Self.canonicalActionName(parsed.action) == canonicalTarget
+                let triggerMatch: Bool
+                if let parsedKey = Tako.MenuShortcutManager.MenuShortcutKey(trigger: parsed.trigger),
+                   let targetKey = targetKey {
+                    triggerMatch = (parsedKey == targetKey)
+                } else {
+                    triggerMatch = (parsed.trigger == trigger)
+                }
+
+                if actionMatch {
                     lines[i] = newLine
                     replaced = true
-                    break
+                } else if triggerMatch {
+                    lines.remove(at: i)
                 }
             }
 

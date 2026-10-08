@@ -14,7 +14,7 @@ import SwiftUI
 import TakoKit
 
 extension Tako.Config {
-    enum KeybindOverride {
+    enum KeybindOverride: Equatable {
         case shortcut(SwiftUI.KeyboardShortcut)
         case unbound
     }
@@ -100,6 +100,9 @@ extension Tako.Config {
         "resize_split:left,10": .init(.leftArrow, modifiers: [.command, .control, .option]),
         "resize_split:right,10": .init(.rightArrow, modifiers: [.command, .control, .option]),
         "equalize_splits": .init("=", modifiers: [.command, .option]),
+        "next_workspace": .init("]", modifiers: [.control, .option]),
+        "previous_workspace": .init("[", modifiers: [.control, .option]),
+        "new_workspace": .init("n", modifiers: [.control, .option]),
         "quit": .init("q", modifiers: .command),
         "close_tab": .init("w", modifiers: [.command, .option]),
         "close_window": .init("w", modifiers: [.command, .shift]),
@@ -145,7 +148,15 @@ extension Tako.Config {
         }
 
         for rawLine in lines {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            var line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+            if line.hasPrefix("keybind") {
+                guard let firstEq = line.firstIndex(of: "=") else { continue }
+                line = line[line.index(after: firstEq)...].trimmingCharacters(in: .whitespaces)
+            }
+            if line.hasPrefix("\"") && line.hasSuffix("\"") && line.count >= 2 {
+                line = String(line.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+            }
             if line == "clear" {
                 result = defaultKeyboardShortcuts.mapValues { _ in KeybindOverride.unbound }
                 continue
@@ -156,10 +167,16 @@ extension Tako.Config {
             let canonical = canonicalActionName(rawAction)
 
             let holders = Set(defaultKeyboardShortcuts.keys).union(result.keys)
-            for holder in holders where current(holder) == shortcut {
-                result[holder] = .unbound
-                let holderCanonical = canonicalActionName(holder)
-                result[holderCanonical] = .unbound
+            let shortcutKey = Tako.MenuShortcutManager.MenuShortcutKey(shortcut)
+            for holder in holders {
+                if let cur = current(holder) {
+                    let curKey = Tako.MenuShortcutManager.MenuShortcutKey(cur)
+                    if cur == shortcut || (shortcutKey != nil && curKey == shortcutKey) {
+                        result[holder] = .unbound
+                        let holderCanonical = canonicalActionName(holder)
+                        result[holderCanonical] = .unbound
+                    }
+                }
             }
             if rawAction != "unbind" {
                 result[canonical] = .shortcut(shortcut)
