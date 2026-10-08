@@ -114,4 +114,37 @@ struct KeybindConfigFileTests {
         let content = try String(contentsOfFile: tempUrl.path, encoding: .utf8)
         #expect(content == "# Only comments\n")
     }
+
+    @Test
+    func resetAliasFormBindingRemovesOverrideAndLine() throws {
+        let tempUrl = try makeTemporaryConfigFile(initialContent: """
+        # User Config
+        keybind = ctrl+shift+tab=previous_tab
+        keybind = ctrl+tab=next_tab
+        keybind = cmd+c=copy
+        """)
+        defer { try? FileManager.default.removeItem(at: tempUrl) }
+
+        let configFile = KeybindConfigFile(configPath: tempUrl.path)
+        #expect(configFile.customOverrides["goto_tab:previous"] == "ctrl+shift+tab")
+        #expect(configFile.customOverrides["goto_tab:next"] == "ctrl+tab")
+        #expect(configFile.customOverrides["copy_to_clipboard"] == "cmd+c")
+
+        let resetSuccess = configFile.removeKeybind(action: "goto_tab:previous")
+        #expect(resetSuccess == true)
+        #expect(configFile.customOverrides["goto_tab:previous"] == nil)
+
+        let updatedContent = try String(contentsOfFile: tempUrl.path, encoding: .utf8)
+        #expect(!updatedContent.contains("previous_tab"))
+        #expect(updatedContent.contains("keybind = ctrl+tab=next_tab"))
+        #expect(updatedContent.contains("keybind = cmd+c=copy"))
+
+        let resetAliasSuccess = configFile.removeKeybind(action: "next_tab")
+        #expect(resetAliasSuccess == true)
+        #expect(configFile.customOverrides["goto_tab:next"] == nil)
+
+        let finalContent = try String(contentsOfFile: tempUrl.path, encoding: .utf8)
+        #expect(!finalContent.contains("next_tab"))
+        #expect(finalContent.contains("keybind = cmd+c=copy"))
+    }
 }

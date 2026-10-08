@@ -47,6 +47,11 @@ public final class KeybindConfigFile: ObservableObject {
         Tako.Config.triggerSeparator(in: line)
     }
 
+    /// Normalizes alias action names to their canonical forms (e.g. "previous_tab" -> "goto_tab:previous").
+    public static func canonicalActionName(_ action: String) -> String {
+        Tako.Config.canonicalActionName(action)
+    }
+
     /// Parses a line into trigger and action if it is a valid `keybind = <trigger>=<action>` line.
     public static func parseLineAction(_ line: String) -> (trigger: String, action: String)? {
         guard line.hasPrefix("keybind"), let firstEq = line.firstIndex(of: "=") else { return nil }
@@ -71,7 +76,8 @@ public final class KeybindConfigFile: ObservableObject {
         for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if let parsed = Self.parseLineAction(line) {
-                overrides[parsed.action] = parsed.trigger
+                let canonical = Self.canonicalActionName(parsed.action)
+                overrides[canonical] = parsed.trigger
             }
         }
         self.customOverrides = overrides
@@ -86,11 +92,12 @@ public final class KeybindConfigFile: ObservableObject {
             let content = try String(contentsOfFile: path, encoding: .utf8)
             var lines = content.components(separatedBy: "\n")
             var replaced = false
+            let canonicalTarget = Self.canonicalActionName(action)
             let newLine = "keybind = \(trigger)=\(action)"
 
             for i in 0..<lines.count {
                 let line = lines[i].trimmingCharacters(in: .whitespaces)
-                if let parsed = Self.parseLineAction(line), parsed.action == action {
+                if let parsed = Self.parseLineAction(line), Self.canonicalActionName(parsed.action) == canonicalTarget {
                     lines[i] = newLine
                     replaced = true
                     break
@@ -115,12 +122,13 @@ public final class KeybindConfigFile: ObservableObject {
     /// Removes a custom keybinding override for an action, reverting it to default.
     @discardableResult
     public func removeKeybind(action: String) -> Bool {
-        guard customOverrides[action] != nil else {
+        let canonicalTarget = Self.canonicalActionName(action)
+        guard customOverrides[canonicalTarget] != nil else {
             return true
         }
         guard let path = configPath else { return true }
         guard FileManager.default.fileExists(atPath: path) else {
-            customOverrides.removeValue(forKey: action)
+            customOverrides.removeValue(forKey: canonicalTarget)
             return true
         }
         do {
@@ -129,7 +137,7 @@ public final class KeybindConfigFile: ObservableObject {
             lines.removeAll { line in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if let parsed = Self.parseLineAction(trimmed) {
-                    return parsed.action == action
+                    return Self.canonicalActionName(parsed.action) == canonicalTarget
                 }
                 return false
             }

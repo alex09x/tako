@@ -20,7 +20,7 @@ extension Tako.Config {
     }
 
     /// Normalizes alias action names to their canonical forms.
-    static func canonicalActionName(_ action: String) -> String {
+    public static func canonicalActionName(_ action: String) -> String {
         switch action {
         case "copy":
             return "copy_to_clipboard"
