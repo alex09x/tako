@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import SwiftUI
 import TakoKit
 import os
@@ -113,8 +123,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             .onChange(of: focusedSurface) { handleFocusedSurfaceChange($0) }
                             .onChange(of: pwdURL) { handlePwdChange($0) }
                             .onChange(of: cellSize) { handleCellSizeChange($0) }
-                            .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
-                                   idealHeight: lastFocusedSurface?.value?.initialSize?.height)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }

@@ -245,9 +245,7 @@ extension Tako {
             guard windows.contains(window) else { return }
             let reflowSurfaces: () -> Void = {
                 if let controller = window.windowController as? TerminalController {
-                    for surface in controller.surfaceTree {
-                        surface.reflowToCurrentBounds(forcePtyResize: true)
-                    }
+                    controller.reflowSurfaces(forcePtyResize: true)
                 }
             }
             guard selectedWindow !== window else {
@@ -325,9 +323,7 @@ extension Tako {
             for sibling in windows where sibling !== window {
                 sibling.setFrame(window.frame, display: false)
                 if let controller = sibling.windowController as? TerminalController {
-                    for surface in controller.surfaceTree {
-                        surface.reflowToCurrentBounds(forcePtyResize: true)
-                    }
+                    controller.reflowSurfaces(forcePtyResize: true)
                 }
             }
         }

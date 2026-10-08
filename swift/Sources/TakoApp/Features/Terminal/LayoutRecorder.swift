@@ -211,6 +211,11 @@ enum LayoutRecorder {
                     if entry.isKey { keyWindow = selected }
                 }
             }
+            for win in restoredWindows {
+                if let controller = win.windowController as? TerminalController {
+                    controller.reflowSurfaces(forcePtyResize: true)
+                }
+            }
         }
         keyWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

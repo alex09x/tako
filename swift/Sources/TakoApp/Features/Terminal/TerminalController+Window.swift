@@ -85,6 +85,9 @@ extension TerminalController {
             }
         }
 
+        focusedSurface?.initialSize = nil
+        container.initialContentSize = nil
+
         // In various situations, macOS automatically tabs new windows. Tako handles
         // its own tabbing so we DONT want this behavior. This detects this scenario and undoes
         // it.
@@ -137,6 +140,8 @@ extension TerminalController {
         }
 
         super.showWindow(sender)
+        focusedSurface?.initialSize = nil
+        terminalViewContainer?.initialContentSize = nil
     }
 
     // Shows the "+" button in the tab bar, responds to that click.
@@ -212,21 +217,65 @@ extension TerminalController {
         LastWindowPosition.shared.save(window)
     }
 
+    func reflowSurfaces(forcePtyResize: Bool = true) {
+        guard let window, let contentView = window.contentView else { return }
+        let contentBounds = contentView.bounds
+        guard contentBounds.width > 0, contentBounds.height > 0 else { return }
+
+        var terminalWidth = contentBounds.width
+        if sessionSidebarIsShowing {
+            terminalWidth = max(terminalWidth - 260, 100)
+        }
+
+        var terminalHeight = contentBounds.height
+        if tako.config.macosTitlebarStyle != .hidden {
+            let topInset = contentView.safeAreaInsets.top
+            if topInset > 0 {
+                terminalHeight = max(terminalHeight - topInset, 50)
+            } else if window.contentLayoutRect.height > 0 && window.contentLayoutRect.height < contentBounds.height {
+                terminalHeight = window.contentLayoutRect.height
+            }
+        }
+        let terminalAreaSize = CGSize(width: terminalWidth, height: terminalHeight)
+
+        let activeRoot = surfaceTree.zoomed ?? surfaceTree.root
+        if surfaceTree.count <= 1 || activeRoot == surfaceTree.zoomed {
+            for surface in surfaceTree {
+                surface.reflow(to: terminalAreaSize, forcePtyResize: forcePtyResize)
+            }
+        } else if let root = surfaceTree.root {
+            let spatial = root.spatial(within: terminalAreaSize)
+            for slot in spatial.slots {
+                if case .leaf(view: let surface) = slot.node {
+                    let slotSize = slot.bounds.size
+                    if slotSize.width > 0 && slotSize.height > 0 {
+                        surface.reflow(to: slotSize, forcePtyResize: forcePtyResize)
+                    }
+                }
+            }
+        }
+    }
+
     override func windowDidResize(_ notification: Notification) {
         super.windowDidResize(notification)
         guard let window else { return }
+        window.contentView?.layoutSubtreeIfNeeded()
         Tako.CustomTabGroup.group(for: window).syncFrame(from: window)
-        for surface in surfaceTree {
-            surface.reflowToCurrentBounds(forcePtyResize: true)
-        }
+        reflowSurfaces(forcePtyResize: true)
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            for surface in self.surfaceTree {
-                surface.reflowToCurrentBounds(forcePtyResize: true)
-            }
+            guard let self, let window = self.window else { return }
+            window.contentView?.layoutSubtreeIfNeeded()
+            self.reflowSurfaces(forcePtyResize: true)
         }
 
         // Whenever we resize save our last position and size for the next start.
+        LastWindowPosition.shared.save(window)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window else { return }
+        window.contentView?.layoutSubtreeIfNeeded()
+        reflowSurfaces(forcePtyResize: true)
         LastWindowPosition.shared.save(window)
     }
 

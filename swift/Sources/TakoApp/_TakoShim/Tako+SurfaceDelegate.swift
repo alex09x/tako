@@ -70,17 +70,12 @@ extension Tako.SurfaceView {
             scheduleSearchHitRefresh()
         }
 
-        /// Reflow the terminal grid to match current view or containing window bounds and notify the PTY.
-        public func reflowToCurrentBounds(forcePtyResize: Bool = false) {
-            let targetSize: CGSize
-            if let superviewSize = superview?.bounds.size, superviewSize.width > 0, superviewSize.height > 0 {
-                targetSize = superviewSize
-            } else if bounds.size.width > 0 && bounds.size.height > 0 {
-                targetSize = bounds.size
-            } else {
-                targetSize = window?.contentView?.bounds.size ?? .zero
+        /// Reflow the terminal grid to match target size and notify the PTY.
+        public func reflow(to targetSize: CGSize, forcePtyResize: Bool = false) {
+            guard targetSize.width > 0, targetSize.height > 0 else { return }
+            if let superview = superview, superview.bounds.size != targetSize {
+                superview.setFrameSize(targetSize)
             }
-            guard targetSize.width > 0 && targetSize.height > 0 else { return }
             if bounds.size != targetSize {
                 setFrameSize(targetSize)
             }
@@ -96,6 +91,23 @@ extension Tako.SurfaceView {
             if fitted.cols != cols || fitted.rows != rows {
                 scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
             }
+        }
+
+        /// Reflow the terminal grid to match current view or containing window bounds and notify the PTY.
+        public func reflowToCurrentBounds(forcePtyResize: Bool = false) {
+            if let controller = window?.windowController as? TerminalController {
+                controller.reflowSurfaces(forcePtyResize: forcePtyResize)
+                return
+            }
+            let targetSize: CGSize
+            if let superviewSize = superview?.bounds.size, superviewSize.width > 0, superviewSize.height > 0 {
+                targetSize = superviewSize
+            } else if bounds.size.width > 0 && bounds.size.height > 0 {
+                targetSize = bounds.size
+            } else {
+                targetSize = window?.contentView?.bounds.size ?? .zero
+            }
+            reflow(to: targetSize, forcePtyResize: forcePtyResize)
         }
 
         /// Checkpoint restored into the engine: ensure terminal reflows to current bounds and updates PTY.
