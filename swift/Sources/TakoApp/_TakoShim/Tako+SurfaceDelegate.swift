@@ -72,10 +72,18 @@ extension Tako.SurfaceView {
 
         /// Reflow the terminal grid to match current view or containing window bounds and notify the PTY.
         public func reflowToCurrentBounds(forcePtyResize: Bool = false) {
-            let targetSize = bounds.size.width > 0 && bounds.size.height > 0
-                ? bounds.size
-                : (window?.contentView?.bounds.size ?? .zero)
+            let targetSize: CGSize
+            if let superviewSize = superview?.bounds.size, superviewSize.width > 0, superviewSize.height > 0 {
+                targetSize = superviewSize
+            } else if bounds.size.width > 0 && bounds.size.height > 0 {
+                targetSize = bounds.size
+            } else {
+                targetSize = window?.contentView?.bounds.size ?? .zero
+            }
             guard targetSize.width > 0 && targetSize.height > 0 else { return }
+            if bounds.size != targetSize {
+                setFrameSize(targetSize)
+            }
             let fitted = TerminalGridLayout(
                 viewSize: targetSize,
                 cellSize: CGSize(width: cellWidth, height: cellHeight),

@@ -27,6 +27,11 @@ extension Tako {
         var isSplit: Bool = false
 
         func makeNSView(context: Context) -> SurfaceView {
+            surfaceView.autoresizingMask = [.width, .height]
+            surfaceView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            surfaceView.setContentHuggingPriority(.defaultLow, for: .vertical)
+            surfaceView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            surfaceView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
             DispatchQueue.main.async { [weak surfaceView] in
                 guard let surfaceView, let window = surfaceView.window else { return }
                 if window.firstResponder == nil || window.firstResponder === window.contentView {
@@ -35,7 +40,16 @@ extension Tako {
             }
             return surfaceView
         }
-        func updateNSView(_ nsView: SurfaceView, context: Context) {}
+
+        func sizeThatFits(_ proposal: ProposedViewSize, nsView: SurfaceView, context: Context) -> CGSize? {
+            let width = proposal.width ?? nsView.bounds.width
+            let height = proposal.height ?? nsView.bounds.height
+            return CGSize(width: max(width, 1), height: max(height, 1))
+        }
+
+        func updateNSView(_ nsView: SurfaceView, context: Context) {
+            nsView.reflowToCurrentBounds()
+        }
     }
 
     /// The surface plus whatever debugging chrome the inspector adds. With the
@@ -74,6 +88,7 @@ extension Tako {
         var body: some View {
             ZStack(alignment: .top) {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 VStack(spacing: 4) {
                     BroadcastInputBannerView(paneId: surfaceView.id)
                     InputOwnershipHeaderView(

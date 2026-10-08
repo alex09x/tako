@@ -214,6 +214,11 @@ extension TerminalController {
 
     override func windowDidResize(_ notification: Notification) {
         super.windowDidResize(notification)
+        guard let window else { return }
+        Tako.CustomTabGroup.group(for: window).syncFrame(from: window)
+        for surface in surfaceTree {
+            surface.reflowToCurrentBounds(forcePtyResize: true)
+        }
 
         // Whenever we resize save our last position and size for the next start.
         LastWindowPosition.shared.save(window)

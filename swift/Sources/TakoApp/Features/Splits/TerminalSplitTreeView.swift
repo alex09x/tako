@@ -97,6 +97,7 @@ private struct TerminalSplitLeaf: View {
             Tako.InspectableSurface(
                 surfaceView: surfaceView,
                 isSplit: isSplit)
+            .frame(width: geometry.size.width, height: geometry.size.height)
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly

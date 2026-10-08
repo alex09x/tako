@@ -135,6 +135,12 @@ extension TakoTerminalNSView {
         scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
     }
 
+    override open func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        pendingResizeWorkItem?.cancel()
+        applyPendingGridResize()
+    }
+
     func scheduleGridResize(cols newCols: Int, rows newRows: Int) {
         if newCols == cols, newRows == rows {
             pendingResizeWorkItem?.cancel()

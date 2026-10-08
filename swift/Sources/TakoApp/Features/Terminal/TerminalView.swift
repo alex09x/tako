@@ -115,6 +115,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             .onChange(of: cellSize) { handleCellSizeChange($0) }
                             .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
                                    idealHeight: lastFocusedSurface?.value?.initialSize?.height)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style

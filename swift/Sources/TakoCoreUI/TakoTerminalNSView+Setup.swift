@@ -17,6 +17,7 @@ import QuartzCore
 extension TakoTerminalNSView {
     func setupView() {
         wantsLayer = true
+        autoresizingMask = [.width, .height]
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         layer?.addSublayer(linkUnderlineLayer)
         if NSApp != nil {
