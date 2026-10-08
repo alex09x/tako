@@ -62,7 +62,13 @@ extension Tako.SurfaceView {
             case .record(let r):
                 record = r
             case .none:
-                sessionNotice("This terminal had a session, but its record is gone. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")
+                sessionRetry = { [weak self] in
+                    guard let self else { return }
+                    self.sessionRetry = nil
+                    self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: false,
+                                                 hadPersistentSession: false)
+                }
+                sessionNotice("This terminal had a session, but its record is gone. Press Return to start a new session.")
                 return
             case .unreadable:
                 sessionNotice("This terminal's session record cannot be read. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")

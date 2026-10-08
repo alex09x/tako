@@ -1,0 +1,20 @@
+--- a/src/util.zig
++++ b/src/util.zig
+@@ -806,7 +806,7 @@ pub fn serializeTerminalState(alloc: std.mem.Allocator, term: *ghostty_vt.Termin
+             var sb_bottom = sb_bottom_row;
+             sb_bottom.x = @intCast(pages.cols - 1);
+ 
+-            var scroll_fmt = ghostty_vt.formatter.TerminalFormatter.init(term, .vt);
++            var scroll_fmt = ghostty_vt.formatter.TerminalFormatter.init(term, .{ .emit = .vt, .unwrap = true });
+             scroll_fmt.content = .{
+                 .selection = ghostty_vt.Selection.init(
+                     screen_top,
+@@ -827,7 +827,7 @@ pub fn serializeTerminalState(alloc: std.mem.Allocator, term: *ghostty_vt.Termin
+     }
+ 
+     // Phase 2: visible screen with full extras (modes, cursor, keyboard, etc.)
+-    var vis_fmt = ghostty_vt.formatter.TerminalFormatter.init(term, .vt);
++    var vis_fmt = ghostty_vt.formatter.TerminalFormatter.init(term, .{ .emit = .vt, .unwrap = true });
+ 
+     // Restrict content to the active viewport only
+     const active_tl = pages.pin(.{ .active = .{ .x = 0, .y = 0 } });
