@@ -89,4 +89,29 @@ struct KeybindConfigFileTests {
             #expect(configFile.resetAllKeybinds() == false)
         }
     }
+
+    @Test
+    func resetWithoutConfigOrOverrideIsSuccessfulNoOp() throws {
+        let nonExistentPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("config")
+            .path
+
+        let nonExistentConfigFile = KeybindConfigFile(configPath: nonExistentPath)
+        // Non-existent file (e.g. clean install) should treat reset as a successful no-op
+        #expect(nonExistentConfigFile.removeKeybind(action: "new_tab") == true)
+        #expect(nonExistentConfigFile.resetAllKeybinds() == true)
+
+        // Existing file without custom overrides should also treat reset as a successful no-op
+        let tempUrl = try makeTemporaryConfigFile(initialContent: "# Only comments\n")
+        defer { try? FileManager.default.removeItem(at: tempUrl) }
+
+        let configFile = KeybindConfigFile(configPath: tempUrl.path)
+        #expect(configFile.customOverrides.isEmpty)
+        #expect(configFile.removeKeybind(action: "new_tab") == true)
+        #expect(configFile.resetAllKeybinds() == true)
+
+        let content = try String(contentsOfFile: tempUrl.path, encoding: .utf8)
+        #expect(content == "# Only comments\n")
+    }
 }

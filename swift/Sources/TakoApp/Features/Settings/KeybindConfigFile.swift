@@ -115,7 +115,10 @@ public final class KeybindConfigFile: ObservableObject {
     /// Removes a custom keybinding override for an action, reverting it to default.
     @discardableResult
     public func removeKeybind(action: String) -> Bool {
-        guard let path = configPath, FileManager.default.fileExists(atPath: path) else { return false }
+        guard let path = configPath else { return false }
+        guard FileManager.default.fileExists(atPath: path) && customOverrides[action] != nil else {
+            return true
+        }
         do {
             let content = try String(contentsOfFile: path, encoding: .utf8)
             var lines = content.components(separatedBy: "\n")
@@ -137,7 +140,10 @@ public final class KeybindConfigFile: ObservableObject {
     /// Resets all custom keybinding overrides back to application defaults.
     @discardableResult
     public func resetAllKeybinds() -> Bool {
-        guard let path = configPath, FileManager.default.fileExists(atPath: path) else { return false }
+        guard let path = configPath else { return false }
+        guard FileManager.default.fileExists(atPath: path) && !customOverrides.isEmpty else {
+            return true
+        }
         do {
             let content = try String(contentsOfFile: path, encoding: .utf8)
             var lines = content.components(separatedBy: "\n")

@@ -220,8 +220,13 @@ extension TerminalSettingsDialog {
     func resetSelected() {
         guard selectedIndex < filteredItems.count else { return }
         let item = filteredItems[selectedIndex]
+        let wasCustom = configFile.customOverrides[item.id] != nil
         if configFile.removeKeybind(action: item.id) {
-            statusMessage = "Reset '\(item.title)' to default."
+            if wasCustom {
+                statusMessage = "Reset '\(item.title)' to default."
+            } else {
+                statusMessage = "'\(item.title)' is already at default."
+            }
         } else {
             statusMessage = "Error: Failed to reset config file."
         }
