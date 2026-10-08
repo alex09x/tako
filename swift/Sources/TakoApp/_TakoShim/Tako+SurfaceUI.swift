@@ -41,12 +41,6 @@ extension Tako {
             return surfaceView
         }
 
-        func sizeThatFits(_ proposal: ProposedViewSize, nsView: SurfaceView, context: Context) -> CGSize? {
-            let width = proposal.width ?? nsView.bounds.width
-            let height = proposal.height ?? nsView.bounds.height
-            return CGSize(width: max(width, 1), height: max(height, 1))
-        }
-
         func updateNSView(_ nsView: SurfaceView, context: Context) {
             nsView.reflowToCurrentBounds()
         }

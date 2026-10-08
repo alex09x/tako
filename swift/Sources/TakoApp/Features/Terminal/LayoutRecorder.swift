@@ -152,7 +152,7 @@ enum LayoutRecorder {
             guard !tabs.isEmpty, let first = controllers.first?.window else { continue }
             let selected = group.selectedWindow.flatMap { s in controllers.firstIndex { $0.window === s } } ?? 0
             windows.append(LayoutJournal.Window(
-                frame: first.frame,
+                frame: (group.selectedWindow ?? first).frame,
                 isKey: group.windows.contains { $0.isKeyWindow },
                 selectedTab: selected,
                 tabs: tabs))

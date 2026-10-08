@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 
 // Replaces NSWindowTabGroup for windows with tabbingMode = .disallowed.
@@ -314,6 +324,11 @@ extension Tako {
             guard selectedWindow === window else { return }
             for sibling in windows where sibling !== window {
                 sibling.setFrame(window.frame, display: false)
+                if let controller = sibling.windowController as? TerminalController {
+                    for surface in controller.surfaceTree {
+                        surface.reflowToCurrentBounds(forcePtyResize: true)
+                    }
+                }
             }
         }
     }

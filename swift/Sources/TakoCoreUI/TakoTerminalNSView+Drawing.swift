@@ -135,9 +135,47 @@ extension TakoTerminalNSView {
         scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
     }
 
+    override open func layout() {
+        super.layout()
+        if metalRenderer != nil, effectiveContentScale != metalContentScale {
+            rebuildMetalRenderer()
+        } else {
+            applyMetalLayerGeometry()
+        }
+
+        let availableSize = bounds.size
+        if availableSize.width > 0 && availableSize.height > 0 {
+            let fitted = TerminalGridLayout(
+                viewSize: availableSize,
+                cellSize: CGSize(width: cellWidth, height: cellHeight),
+                theme: theme
+            )
+            if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
+                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+            }
+        }
+        updateScroller()
+    }
+
     override open func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         pendingResizeWorkItem?.cancel()
+        let availableSize = bounds.size
+        if availableSize.width > 0 && availableSize.height > 0 {
+            let fitted = TerminalGridLayout(
+                viewSize: availableSize,
+                cellSize: CGSize(width: cellWidth, height: cellHeight),
+                theme: theme
+            )
+            if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
+                pendingGridSize = nil
+                TakoLog.resize.info("resize \(cols)×\(rows) → \(fitted.cols)×\(fitted.rows)")
+                cols = fitted.cols
+                rows = fitted.rows
+                parserCoordinator.resize(cols: cols, rows: rows)
+                return
+            }
+        }
         applyPendingGridResize()
     }
 

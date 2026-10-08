@@ -219,6 +219,12 @@ extension TerminalController {
         for surface in surfaceTree {
             surface.reflowToCurrentBounds(forcePtyResize: true)
         }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for surface in self.surfaceTree {
+                surface.reflowToCurrentBounds(forcePtyResize: true)
+            }
+        }
 
         // Whenever we resize save our last position and size for the next start.
         LastWindowPosition.shared.save(window)
