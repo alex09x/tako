@@ -35,6 +35,7 @@ extension Tako.SurfaceView {
             }
             core.feed(bytes: Data(SessionSnapshot.separator(
                 savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+            reflowToCurrentBounds(forcePtyResize: true)
         }
 
         /// The process ended. A persistent session's client may end on

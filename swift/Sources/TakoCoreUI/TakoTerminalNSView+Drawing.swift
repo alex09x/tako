@@ -93,6 +93,19 @@ extension TakoTerminalNSView {
             } else {
                 applyMetalLayerGeometry()
             }
+            let availableSize = bounds.size.width > 0 && bounds.size.height > 0
+                ? bounds.size
+                : (window?.contentView?.bounds.size ?? .zero)
+            if availableSize.width > 0 && availableSize.height > 0 {
+                let fitted = TerminalGridLayout(
+                    viewSize: availableSize,
+                    cellSize: CGSize(width: cellWidth, height: cellHeight),
+                    theme: theme
+                )
+                if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
+                    scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+                }
+            }
             scheduleRedraw()
         }
     }

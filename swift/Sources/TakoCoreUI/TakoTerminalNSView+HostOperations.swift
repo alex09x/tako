@@ -98,6 +98,16 @@ extension TakoTerminalNSView {
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
+        if bounds.size.width > 0 && bounds.size.height > 0 {
+            let fitted = TerminalGridLayout(
+                viewSize: bounds.size,
+                cellSize: CGSize(width: cellWidth, height: cellHeight),
+                theme: theme
+            )
+            if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != restore.cols || fitted.rows != restore.rows) {
+                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+            }
+        }
 
         delegate?.terminalViewDidChangeContent(self)
         scheduleRedraw()

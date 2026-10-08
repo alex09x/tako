@@ -233,7 +233,18 @@ extension Tako {
 
         func select(_ window: NSWindow) {
             guard windows.contains(window) else { return }
-            guard selectedWindow !== window else { window.makeKeyAndOrderFront(nil); return }
+            let reflowSurfaces: () -> Void = {
+                if let controller = window.windowController as? TerminalController {
+                    for surface in controller.surfaceTree {
+                        surface.reflowToCurrentBounds(forcePtyResize: true)
+                    }
+                }
+            }
+            guard selectedWindow !== window else {
+                window.makeKeyAndOrderFront(nil)
+                reflowSurfaces()
+                return
+            }
             let previous = selectedWindow
             selectedWindow = window
             window.setFrame(previous?.frame ?? window.frame, display: false)
@@ -244,6 +255,10 @@ extension Tako {
                 WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: ws.id)
             }
 
+            reflowSurfaces()
+            DispatchQueue.main.async {
+                reflowSurfaces()
+            }
             Tako.TabBarController.refreshAll()
         }
 
@@ -262,6 +277,13 @@ extension Tako {
             }
 
             if let target = targetWindow {
+                let reflowTarget: () -> Void = {
+                    if let controller = target.windowController as? TerminalController {
+                        for surface in controller.surfaceTree {
+                            surface.reflowToCurrentBounds(forcePtyResize: true)
+                        }
+                    }
+                }
                 if selectedWindow !== target {
                     let prev = selectedWindow
                     selectedWindow = target
@@ -272,6 +294,10 @@ extension Tako {
                     }
                 } else {
                     target.makeKeyAndOrderFront(nil)
+                }
+                reflowTarget()
+                DispatchQueue.main.async {
+                    reflowTarget()
                 }
             }
 

@@ -129,6 +129,7 @@ extension Tako.SurfaceView {
             if focused {
                 crab.focused()
                 NotificationStore.shared.markRead(surfaceId: self.id)
+                reflowToCurrentBounds(forcePtyResize: true)
             } else {
                 crab.unfocused()
             }

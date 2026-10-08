@@ -86,7 +86,28 @@ extension Tako.SurfaceView {
             // from, or owned by, another copy of Tako.
             environment["TAKO_SOCKET"] = ControlCommands.socketPath
             environment["TAKO_CONTROL_TOKEN"] = ControlGrantStore.shared.primaryToken
-            pty = PTY(cols: UInt16(cols), rows: UInt16(rows), workingDirectory: workingDir, config: owningApp?.config,
+            var initialCols = cols
+            var initialRows = rows
+            let candidateSize = bounds.size.width > 0 && bounds.size.height > 0
+                ? bounds.size
+                : (window?.contentView?.bounds.size ?? .zero)
+            if candidateSize.width > 0 && candidateSize.height > 0 {
+                let fitted = TerminalGridLayout(
+                    viewSize: candidateSize,
+                    cellSize: CGSize(width: cellWidth, height: cellHeight),
+                    theme: theme
+                )
+                if fitted.cols > 0 && fitted.rows > 0 {
+                    initialCols = fitted.cols
+                    initialRows = fitted.rows
+                    if fitted.cols != cols || fitted.rows != rows {
+                        cols = fitted.cols
+                        rows = fitted.rows
+                        parserCoordinator.resize(cols: fitted.cols, rows: fitted.rows)
+                    }
+                }
+            }
+            pty = PTY(cols: UInt16(initialCols), rows: UInt16(initialRows), workingDirectory: workingDir, config: owningApp?.config,
                       program: program, environment: environment, removing: removing)
             let started = pty
             currentProcess = started

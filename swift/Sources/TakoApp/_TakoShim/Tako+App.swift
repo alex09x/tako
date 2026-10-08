@@ -33,14 +33,28 @@ extension Tako {
 
         @Published public var readiness: Readiness = .ready {
             didSet {
-                let args = CommandLine.arguments
-                guard readiness == .ready,
-                      args.contains("--selftest-keys")
-                        || args.contains("--selftest-input")
-                        || args.contains("--selftest-scroll")
-                        || args.contains("--selftest-frame") else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if readiness == .ready {
+                    scheduleSelfTestIfNeeded()
+                }
+            }
+        }
+
+        public func scheduleSelfTestIfNeeded() {
+            let args = CommandLine.arguments
+            guard readiness == .ready,
+                  args.contains("--selftest-keys")
+                    || args.contains("--selftest-input")
+                    || args.contains("--selftest-scroll")
+                    || args.contains("--selftest-frame") else { return }
+            func tryRun(attemptsLeft: Int) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     MainActor.assumeIsolated {
+                        guard let _ = Tako.selfTestTarget() else {
+                            if attemptsLeft > 0 {
+                                tryRun(attemptsLeft: attemptsLeft - 1)
+                            }
+                            return
+                        }
                         if args.contains("--selftest-input") {
                             Tako.runInputSelfTest()
                         } else if args.contains("--selftest-scroll") {
@@ -53,6 +67,7 @@ extension Tako {
                     }
                 }
             }
+            tryRun(attemptsLeft: 12)
         }
         @Published public private(set) var config: Tako.Config
         public weak var delegate: Tako.Delegate?
@@ -84,6 +99,7 @@ extension Tako {
             self.configPath = configPath
             self.config = Tako.Config(at: configPath)
             self.readiness = .ready
+            scheduleSelfTestIfNeeded()
         }
 
         public func appTick() {

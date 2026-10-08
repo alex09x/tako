@@ -26,8 +26,10 @@ extension TakoTerminalNSView: NSTextInputClient {
     }
 
     public func selectedRange() -> NSRange {
-        guard let text = core.selectedText() else { return NSRange(location: 0, length: 0) }
-        return NSRange(location: 0, length: (text as NSString).length)
+        if let markedText {
+            return NSRange(location: (markedText as NSString).length, length: 0)
+        }
+        return NSRange(location: NSNotFound, length: 0)
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -46,10 +48,18 @@ extension TakoTerminalNSView: NSTextInputClient {
     }
 
     public func validAttributesForMarkedText() -> [NSAttributedString.Key] {
-        []
+        [.underlineStyle, .markedClauseSegment]
     }
 
     public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        if let marked = markedText {
+            let ns = marked as NSString
+            guard range.location != NSNotFound, range.location < ns.length else { return nil }
+            let len = min(range.length, ns.length - range.location)
+            let safeRange = NSRange(location: range.location, length: len)
+            actualRange?.pointee = safeRange
+            return NSAttributedString(string: ns.substring(with: safeRange))
+        }
         guard range.length > 0, let text = core.selectedText() else { return nil }
         return NSAttributedString(string: text)
     }
@@ -130,6 +140,10 @@ extension TakoTerminalNSView: NSTextInputClient {
         return window.convertToScreen(winRect)
     }
 
+    @objc override open func insertText(_ string: Any) {
+        insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
     public func insertText(_ string: Any, replacementRange: NSRange) {
         let chars: String
         switch string {
@@ -168,7 +182,9 @@ extension TakoTerminalNSView: NSTextInputClient {
                 press: true, repeat: false, composing: false
             ))
         } else {
-            bytes = core.encodePaste(text: chars)
+            let normalized = chars.replacingOccurrences(of: "\r\n", with: "\r")
+                .replacingOccurrences(of: "\n", with: "\r")
+            bytes = Data(normalized.utf8)
         }
 
         if !bytes.isEmpty {

@@ -70,6 +70,32 @@ extension Tako.SurfaceView {
             scheduleSearchHitRefresh()
         }
 
+        /// Reflow the terminal grid to match current view or containing window bounds and notify the PTY.
+        public func reflowToCurrentBounds(forcePtyResize: Bool = false) {
+            let targetSize = bounds.size.width > 0 && bounds.size.height > 0
+                ? bounds.size
+                : (window?.contentView?.bounds.size ?? .zero)
+            guard targetSize.width > 0 && targetSize.height > 0 else { return }
+            let fitted = TerminalGridLayout(
+                viewSize: targetSize,
+                cellSize: CGSize(width: cellWidth, height: cellHeight),
+                theme: theme
+            )
+            guard fitted.cols > 0, fitted.rows > 0 else { return }
+            if forcePtyResize {
+                pty?.resize(cols: UInt16(max(fitted.cols, 1)), rows: UInt16(max(fitted.rows, 1)))
+            }
+            if fitted.cols != cols || fitted.rows != rows {
+                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+            }
+        }
+
+        /// Checkpoint restored into the engine: ensure terminal reflows to current bounds and updates PTY.
+        public func terminalView(_ view: TakoTerminalNSView, didRestoreCheckpoint restore: TerminalCheckpointRestore) {
+            reflowToCurrentBounds(forcePtyResize: true)
+            scheduleSearchHitRefresh()
+        }
+
         /// Screen content changed or checkpoint restored: refresh search hit marks if active (debounced).
         public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
             scheduleSearchHitRefresh()

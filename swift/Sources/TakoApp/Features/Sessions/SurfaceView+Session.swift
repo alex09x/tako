@@ -137,6 +137,7 @@ extension Tako.SurfaceView {
             environment: session.environment,
             removing: SessionNamespace.inheritedVariablesToDrop,
             sessionPreamble: session.name)
+        reflowToCurrentBounds(forcePtyResize: true)
         guard let client = pty else {
             sessionNotice("The session client could not be started. Nothing is running.")
             return
@@ -255,6 +256,7 @@ extension Tako.SurfaceView {
             } catch {
                 sessionNotice("Reattached, but the session record could not be updated (\(error)).")
             }
+            reflowToCurrentBounds(forcePtyResize: true)
         case .absent:
             // The shell did not survive (the Mac restarted, it exited): the
             // saved screen, then a new session in its place. The old client's

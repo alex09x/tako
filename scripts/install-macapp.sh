@@ -22,6 +22,11 @@ if [ -n "$running" ]; then
         echo "close them, or re-run with FORCE=1 to end them." >&2
         exit 1
     fi
+    if [ "${FORCE:-0}" = "1" ]; then
+        pkill -f "$DEST/Contents/MacOS/" || true
+        sleep 2
+        running=""
+    fi
 fi
 
 echo "==> building"

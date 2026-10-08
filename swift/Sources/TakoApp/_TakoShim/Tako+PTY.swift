@@ -36,12 +36,13 @@ final class PTY {
     /// the program's.
     private(set) var startError: Int32?
 
-    /// Whether the process has turned off terminal echo (e.g. during a password prompt).
+    /// Whether the process has turned off terminal echo in canonical mode (e.g. sudo password prompt).
     var isPasswordMode: Bool {
         guard master >= 0 else { return false }
         var attr = termios()
         guard tcgetattr(master, &attr) == 0 else { return false }
-        return (attr.c_lflag & tcflag_t(ECHO)) == 0
+        let flags = attr.c_lflag
+        return (flags & tcflag_t(ICANON)) != 0 && (flags & tcflag_t(ECHO)) == 0
     }
 
     private var exitSource: DispatchSourceProcess?

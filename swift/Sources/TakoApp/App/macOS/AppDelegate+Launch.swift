@@ -236,8 +236,13 @@ extension AppDelegate {
 
         switch Tako.launchSource {
         case .app:
-            // Don't have to do anything.
-            break
+            if CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }) {
+                applicationDidBecomeActive(.init(name: NSApplication.didBecomeActiveNotification))
+                DispatchQueue.main.async {
+                    NSApp.setActivationPolicy(.regular)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
 
         case .zig_run, .cli:
             // Part of launch services (clicking an app, using `open`, etc.) activates
