@@ -104,4 +104,5 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
         clearStatusCount += 1
     }
 }
+#endif
 

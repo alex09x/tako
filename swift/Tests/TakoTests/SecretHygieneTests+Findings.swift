@@ -174,6 +174,3 @@ extension SecretHygieneTests {
         #expect(hugeRedacted.contains("[REDACTED]"))
     }
 }
-
-
-}

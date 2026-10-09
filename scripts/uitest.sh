@@ -41,13 +41,18 @@ done
 echo "==> the screen will be driven for the next few minutes"
 echo
 
+RESULT_BUNDLE="target/uitest.xcresult"
+rm -rf "$RESULT_BUNDLE"
+
 set +e
 xcodebuild test \
     -project "$PROJECT" \
     -scheme TakoUITests-Run \
     -destination platform=macOS \
+    -resultBundlePath "$RESULT_BUNDLE" \
     ${only[@]+"${only[@]}"} 2>&1 | tee "$LOG" \
-    | grep -E "^Test Case .*(passed|failed)|error: -\[" || true
+    | grep -E "^Test Case .*(passed|failed)|error: -\["
+STATUS=${PIPESTATUS[0]}
 set -e
 
 echo
@@ -55,3 +60,10 @@ passed=$(grep -cE "^Test Case .* passed" "$LOG" || true)
 failed=$(grep -cE "^Test Case .* failed" "$LOG" || true)
 echo "passed=${passed:-0} failed=${failed:-0}"
 echo "Full log: $LOG"
+echo "Result bundle: $RESULT_BUNDLE"
+
+if [ $STATUS -ne 0 ] || [ "${failed:-0}" -gt 0 ] || [ "${passed:-0}" -eq 0 ]; then
+    echo "FAIL: UI test run failed (exit=$STATUS, passed=${passed:-0}, failed=${failed:-0})" >&2
+    exit 1
+fi
+

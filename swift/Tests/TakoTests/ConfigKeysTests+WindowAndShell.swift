@@ -218,5 +218,3 @@ extension ConfigKeysTests {
         #expect(config.macosIconScreenColor == nil)
     }
 }
-
-}

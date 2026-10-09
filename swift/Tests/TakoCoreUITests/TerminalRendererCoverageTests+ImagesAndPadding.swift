@@ -298,5 +298,3 @@ extension TerminalRendererCoverageTests {
         assertColorApprox(render(.extendAlways, row: mixed).pixel(atX: top.x, logicalY: top.y), red)
     }
 }
-
-}

@@ -213,5 +213,3 @@ extension TerminalCheckpointOrderingTests {
         XCTAssertEqual(recorder.restores.map { [$0.cols, $0.rows] }, [[33, 7]])
     }
 }
-
-}

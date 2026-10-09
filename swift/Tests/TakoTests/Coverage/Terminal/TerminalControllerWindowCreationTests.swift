@@ -183,5 +183,3 @@ struct TerminalControllerNewTabSchedulingTests {
         }
     }
 }
-
-@MainActor

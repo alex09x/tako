@@ -19,23 +19,12 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     let mut args = Map::new();
     let mut json = false;
     let mut socket = None;
+    let mut bundle_id_explicit = false;
     let mut bundle_id =
         std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
-    let mut client = std::env::var("TAKO_CLIENT_ID")
-        .or_else(|_| std::env::var("TAKO_CLIENT"))
-        .ok();
-    let mut token = std::env::var("TAKO_CONTROL_TOKEN")
-        .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
-        .ok();
-    let mut scopes = std::env::var("TAKO_CONTROL_SCOPES")
-        .or_else(|_| std::env::var("TAKO_SCOPES"))
-        .ok()
-        .map(|s| {
-            s.split(',')
-                .map(|p| p.trim().to_lowercase())
-                .filter(|p| !p.is_empty())
-                .collect::<Vec<_>>()
-        });
+    let mut client = None;
+    let mut token = None;
+    let mut scopes = None;
     let mut description: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
@@ -52,7 +41,10 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
                 args.insert("target".into(), Value::String(value("--target")?));
             }
             "--socket" => socket = Some(value("--socket")?),
-            "--bundle-id" => bundle_id = value("--bundle-id")?,
+            "--bundle-id" => {
+                bundle_id = value("--bundle-id")?;
+                bundle_id_explicit = true;
+            }
             "--no-enter" => {
                 args.insert("enter".into(), Value::Bool(false));
             }
@@ -351,6 +343,25 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     }
     let cmd = cmd.ok_or_else(String::new)?;
 
+    if !bundle_id_explicit && socket.is_none() {
+        if client.is_none() {
+            client = std::env::var("TAKO_CLIENT_ID")
+                .or_else(|_| std::env::var("TAKO_CLIENT"))
+                .ok();
+        }
+        if scopes.is_none() {
+            scopes = std::env::var("TAKO_CONTROL_SCOPES")
+                .or_else(|_| std::env::var("TAKO_SCOPES"))
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_lowercase())
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()
+                });
+        }
+    }
+
     dispatch_and_validate(
         &cmd,
         &mut args,
@@ -367,24 +378,13 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     if token.is_none() {
         token = args.get("token").and_then(Value::as_str).map(String::from);
     }
-    if token.is_none() {
-        let sock_path = socket.clone().or_else(|| crate::socket::default_path(&bundle_id).ok());
-        if let Some(sp) = sock_path {
-            let token_path = format!("{sp}.token");
-            if let Ok(content) = std::fs::read_to_string(&token_path) {
-                let trimmed = content.trim().to_string();
-                if !trimmed.is_empty() {
-                    token = Some(trimmed);
-                }
-            }
-        }
-    }
     Ok(Options {
         cmd,
         args,
         json,
         socket,
         bundle_id,
+        bundle_id_explicit,
         client,
         token,
         scopes,

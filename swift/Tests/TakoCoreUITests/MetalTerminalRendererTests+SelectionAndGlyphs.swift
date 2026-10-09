@@ -16,7 +16,7 @@ import XCTest
 extension MetalTerminalRendererTests {
     // MARK: - Selection
 
-    private func selection(
+    func selection(
         _ startRow: UInt32,
         _ startCol: UInt32,
         _ endRow: UInt32,

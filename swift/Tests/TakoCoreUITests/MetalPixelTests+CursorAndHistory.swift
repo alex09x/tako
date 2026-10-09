@@ -311,5 +311,3 @@ extension MetalPixelTests {
         }
     }
 }
-
-}

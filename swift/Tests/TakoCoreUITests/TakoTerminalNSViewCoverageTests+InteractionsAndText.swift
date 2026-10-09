@@ -13,6 +13,7 @@ import Carbon
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 extension TakoTerminalNSViewCoverageTests {
 
     func testCopyPasteAndSelectAll() {
@@ -333,5 +334,3 @@ extension TakoTerminalNSViewCoverageTests {
     }
 }
 #endif
-
-}

@@ -82,7 +82,7 @@ final class TerminalRendererCoverageTests: XCTestCase {
     /// Count of pixels that differ between two same-sized renders -- the
     /// building block for "render the cell with and without the attribute
     /// and assert the region actually changed" checks.
-    private func differingPixelCount(_ a: BitmapContext, _ b: BitmapContext) -> Int {
+    func differingPixelCount(_ a: BitmapContext, _ b: BitmapContext) -> Int {
         guard a.width == b.width, a.height == b.height else {
             return max(a.width * a.height, b.width * b.height)
         }
@@ -97,11 +97,11 @@ final class TerminalRendererCoverageTests: XCTestCase {
         return count
     }
 
-    private func isInk(_ ctx: BitmapContext, x: Int, logicalY: Int) -> Bool {
+    func isInk(_ ctx: BitmapContext, x: Int, logicalY: Int) -> Bool {
         ctx.pixel(atX: x, logicalY: logicalY).a != 0
     }
 
-    private func inkCount(_ ctx: BitmapContext, xRange: Range<Int>, logicalYRange: Range<Int>) -> Int {
+    func inkCount(_ ctx: BitmapContext, xRange: Range<Int>, logicalYRange: Range<Int>) -> Int {
         var count = 0
         for y in logicalYRange {
             for x in xRange {
@@ -114,13 +114,13 @@ final class TerminalRendererCoverageTests: XCTestCase {
     /// Number of distinct rows within `logicalYRange` that carry any ink in
     /// `xRange` -- a glyph's vertical extent, without assuming exactly
     /// where in the cell that extent sits.
-    private func inkRowSpan(_ ctx: BitmapContext, xRange: Range<Int>, logicalYRange: Range<Int>) -> Int {
+    func inkRowSpan(_ ctx: BitmapContext, xRange: Range<Int>, logicalYRange: Range<Int>) -> Int {
         logicalYRange.reduce(0) { count, y in
             count + (xRange.contains { ctx.pixel(atX: $0, logicalY: y).a != 0 } ? 1 : 0)
         }
     }
 
-    private func approx(_ a: UInt8, _ b: UInt8, tolerance: Int = 20) -> Bool {
+    func approx(_ a: UInt8, _ b: UInt8, tolerance: Int = 20) -> Bool {
         abs(Int(a) - Int(b)) <= tolerance
     }
 
@@ -221,7 +221,7 @@ final class TerminalRendererCoverageTests: XCTestCase {
         return TerminalCell(ffi)
     }
 
-    private func makeTestPNGData() -> Data {
+    func makeTestPNGData() -> Data {
         let width = 2
         let height = 2
         let colorSpace = CGColorSpaceCreateDeviceRGB()

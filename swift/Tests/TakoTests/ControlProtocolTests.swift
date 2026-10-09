@@ -255,6 +255,3 @@ struct ControlProtocolTests {
         }
     }
 }
-
-@Suite(.serialized)
-@MainActor

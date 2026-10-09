@@ -47,9 +47,26 @@ final class AppUpdater: @unchecked Sendable {
     /// the keystrokes the test types; and not for an unversioned local build
     /// (0.0.0), which every release is newer than, so it asked to be
     /// replaced on every start.
-    static func checksAtLaunch(arguments: [String], version: String?, enabled: Bool) -> Bool {
+    static func checksAtLaunch(
+        arguments: [String],
+        version: String?,
+        enabled: Bool,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
         guard enabled else { return false }
-        if arguments.contains(where: { $0.hasPrefix("--selftest") }) { return false }
+        if arguments.contains(where: {
+            $0.hasPrefix("--selftest") ||
+            $0 == "--no-update" ||
+            $0 == "--no-update-check" ||
+            $0 == "--disable-update-check"
+        }) {
+            return false
+        }
+        if environment["TAKO_NO_UPDATE"] == "1" ||
+           environment["TAKO_NO_UPDATE_CHECK"] == "1" ||
+           environment["TAKO_DISABLE_UPDATE_CHECK"] == "1" {
+            return false
+        }
         guard let version, !version.isEmpty, version != "0.0.0" else { return false }
         return true
     }

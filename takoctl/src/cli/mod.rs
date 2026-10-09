@@ -19,7 +19,7 @@ mod session;
 mod types;
 mod usage;
 
-pub use helpers::{answer_limit, parse_duration, request};
+pub use helpers::{answer_limit, parse_duration, request, resolve_token};
 pub use inspect::resolve;
 pub use parser::parse;
 pub use types::Options;

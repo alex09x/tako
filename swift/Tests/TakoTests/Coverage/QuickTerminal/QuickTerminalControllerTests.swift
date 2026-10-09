@@ -249,5 +249,3 @@ struct QuickTerminalControllerKeyStateTests {
         #expect(controller.terminalViewContainer != nil)
     }
 }
-
-@MainActor

@@ -18,6 +18,7 @@ import XCTest
 
 @MainActor
 extension TakoTerminalViewTests {
+    func testTakoTerminalViewPanGestureInPrimaryScreenWithClaudeModeSequenceSendsMouseWheel() {
         let view = TakoTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         let delegate = MockTerminalViewDelegate()
         view.delegate = delegate

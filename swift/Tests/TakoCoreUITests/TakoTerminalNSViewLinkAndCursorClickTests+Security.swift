@@ -12,8 +12,10 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 @MainActor
 extension TakoTerminalNSViewLinkAndCursorClickTests {
+    func testUnsafeSchemesRequireConfirmationPrompt() {
         let view = makeView()
         let unsafeURLs = [
             "mailto:user@example.com",
@@ -172,3 +174,4 @@ extension TakoTerminalNSViewLinkAndCursorClickTests {
     // MARK: - cursor-click-to-move
 
 }
+#endif

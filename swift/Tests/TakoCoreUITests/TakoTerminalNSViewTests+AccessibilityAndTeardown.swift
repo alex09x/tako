@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 extension TakoTerminalNSViewTests {
 
     func testAccessibilityProperties() {
@@ -135,5 +136,3 @@ extension TakoTerminalNSViewTests {
     }
 }
 #endif
-
-}

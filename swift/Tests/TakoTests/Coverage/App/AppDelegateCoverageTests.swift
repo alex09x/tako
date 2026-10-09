@@ -13,6 +13,7 @@ import AppKit
 import UserNotifications
 @testable import Tako
 
+@MainActor
 struct AppDelegateTerminateTests {
     @Test func terminateResolvesImmediatelyWhenNoSurfaceNeedsConfirmation() {
         let delegate = quietDelegate()

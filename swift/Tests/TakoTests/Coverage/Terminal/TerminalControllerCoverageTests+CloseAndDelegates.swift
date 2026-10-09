@@ -14,6 +14,7 @@ import AppKit
 @testable import TakoKit
 
 @MainActor
+struct TerminalControllerCloseTests {
     @Test func closeSurfaceOnANonRootNodeDelegatesToSuper() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }
@@ -225,6 +226,3 @@ struct TerminalControllerFirstResponderTests {
         #expect(true)
     }
 }
-
-@MainActor
-struct TerminalControllerMoveTabAndGotoTabTests {

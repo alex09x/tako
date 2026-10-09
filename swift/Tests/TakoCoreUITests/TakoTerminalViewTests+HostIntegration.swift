@@ -27,8 +27,6 @@ extension TakoTerminalViewTests {
 // and the part you can see is neither what you are copying nor where you
 // were.
 
-extension TakoTerminalViewTests {
-
     func testBufferTextCarriesScrollbackNotJustTheVisibleRows() {
         let view = TakoTerminalView(core: TakoCore(cols: 40, rows: 6))
         for i in 0..<50 {
@@ -303,8 +301,5 @@ extension TakoTerminalViewTests {
 
         XCTAssertTrue(delegate.inputDataReceived.isEmpty, "Returning to primary screen without mouse tracking must not send input data")
     }
-
-    func testTakoTerminalViewPanGestureInPrimaryScreenWithClaudeModeSequenceSendsMouseWheel() {
-
 }
 #endif

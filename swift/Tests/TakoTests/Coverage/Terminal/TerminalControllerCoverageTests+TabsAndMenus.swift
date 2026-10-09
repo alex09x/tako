@@ -14,6 +14,7 @@ import AppKit
 @testable import TakoKit
 
 @MainActor
+struct TerminalControllerMoveTabAndGotoTabTests {
     @Test func onMoveTabIgnoresNonFocusedSurfaces() {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { TerminalTestSupport.tearDown(controller, window) }

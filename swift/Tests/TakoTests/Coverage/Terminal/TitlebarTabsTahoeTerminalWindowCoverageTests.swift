@@ -12,17 +12,9 @@ import Testing
 import AppKit
 @testable import Tako
 
-@MainActor
-private func withAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
-    let appDelegate = AppDelegate()
-    let originalDelegate = NSApplication.shared.delegate
-    NSApplication.shared.delegate = appDelegate
-    defer { NSApplication.shared.delegate = originalDelegate }
-    return try body(appDelegate)
-}
 
 @MainActor
-private func makeWindow() -> TitlebarTabsTahoeTerminalWindow {
+private func makeTahoeWindow() -> TitlebarTabsTahoeTerminalWindow {
     TitlebarTabsTahoeTerminalWindow(
         contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -34,7 +26,7 @@ private func makeWindow() -> TitlebarTabsTahoeTerminalWindow {
 struct TitlebarTabsTahoeTerminalWindowCoverageTests {
     @Test func awakeFromNibHidesTitleAndAddsAToolbar() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             #expect(window.titleVisibility == .hidden)
@@ -44,7 +36,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func becomeMainAndResignMainDoNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.becomeMain()
@@ -55,7 +47,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func syncAppearanceSchedulesTabBarSetupWithoutCrashing() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.makeKeyAndOrderFront(nil)
@@ -66,7 +58,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func titleAndTitlebarFontUpdateTheViewModel() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.title = "Hi"
@@ -77,7 +69,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func setupTabBarIsANoOpWithoutARealTabBarView() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.setupTabBar()
@@ -87,7 +79,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func removeTabBarClearsState() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.removeTabBar()
@@ -97,7 +89,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func toolbarAllowedAndDefaultItemIdentifiers() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let toolbar = try! #require(window.toolbar)
@@ -108,7 +100,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func toolbarItemForTitleBuildsAnItem() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let toolbar = try! #require(window.toolbar)
@@ -119,7 +111,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func toolbarItemForAnUnknownIdentifierFallsBackToADefaultItem() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let toolbar = try! #require(window.toolbar)
@@ -132,7 +124,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
         let appDelegate = AppDelegate()
         let originalDelegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = appDelegate
-        let window = makeWindow()
+        let window = makeTahoeWindow()
         window.awakeFromNib()
         window.title = "Async Title"
         window.titlebarFont = NSFont.systemFont(ofSize: 14)
@@ -144,7 +136,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func addTitlebarAccessoryViewControllerForwardsNonTabBarAccessories() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let vc = NSTitlebarAccessoryViewController()
@@ -157,7 +149,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func removeTitlebarAccessoryViewControllerForwardsNonTabBarAccessories() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let vc = NSTitlebarAccessoryViewController()
@@ -171,7 +163,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func addTitlebarAccessoryViewControllerRecognizesAFakeTabBarAndSchedulesSetup() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             // Matches `TerminalWindow.isTabBar`'s fallback heuristic for an
@@ -204,7 +196,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
 
     @Test func titleToolbarItemViewIsClickThrough() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTahoeWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let toolbar = try! #require(window.toolbar)
@@ -227,7 +219,7 @@ struct TitlebarTabsTahoeTerminalWindowCoverageTests {
         let appDelegate = AppDelegate()
         let originalDelegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = appDelegate
-        let window = makeWindow()
+        let window = makeTahoeWindow()
         window.awakeFromNib()
         window.makeKeyAndOrderFront(nil)
         defer {

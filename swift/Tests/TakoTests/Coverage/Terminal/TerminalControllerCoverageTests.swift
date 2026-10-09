@@ -258,6 +258,3 @@ struct TerminalControllerAppearanceTests {
         #expect(result == frame)
     }
 }
-
-@MainActor
-struct TerminalControllerCloseTests {

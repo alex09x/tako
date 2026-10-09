@@ -131,7 +131,10 @@ def swift_test_count(out):
 
 
 def app_build():
-    secs, code, _ = run(["python3", "scripts/build-macapp.py"])
+    env = dict(os.environ)
+    if "TAKO_BUNDLE_ID" not in env:
+        env["TAKO_BUNDLE_ID"] = "com.tako-core.terminal.e2e"
+    secs, code, _ = run(["python3", "scripts/build-macapp.py"], env=env)
     return secs if code == 0 else None
 
 
@@ -146,16 +149,39 @@ def compile_time(out):
 
 
 def check_e2e(names):
-    build = app_build()
-    if build is None:
-        return note(f"e2e:{names}", False, "app build failed")
-    secs, code, out = run(["scripts/e2e-macapp.sh"] + names.split(","))
-    ran = len(re.findall(r"^(ok|FAIL)\s", out, re.M))
-    ok = code == 0 and ran == len(names.split(","))
-    wait = lock_wait(out)
-    runner = compile_time(out)
-    note(f"e2e:{names}", ok, f"{ran} scenarios" if ran else "no scenarios ran", build + runner, wait,
-         secs - (wait or 0) - runner)
+    scenario_list = [s for s in names.split(",") if s]
+    persist_scenarios = [s for s in scenario_list if s.startswith("persist-")]
+    normal_scenarios = [s for s in scenario_list if not s.startswith("persist-")]
+
+    total_secs = 0.0
+    total_out = ""
+    total_code = 0
+    total_build = 0.0
+
+    if normal_scenarios:
+        build = app_build()
+        if build is None:
+            return note(f"e2e:{names}", False, "app build failed")
+        total_build += build
+        secs, code, out = run(["scripts/e2e-macapp.sh"] + normal_scenarios)
+        total_secs += secs
+        total_out += out
+        if code != 0:
+            total_code = code
+
+    if persist_scenarios:
+        secs, code, out = run(["scripts/e2e-persist.sh"] + persist_scenarios)
+        total_secs += secs
+        total_out += out
+        if code != 0:
+            total_code = code
+
+    ran = len(re.findall(r"^(ok|FAIL)\s", total_out, re.M))
+    ok = total_code == 0 and ran == len(scenario_list)
+    wait = lock_wait(total_out)
+    runner = compile_time(total_out)
+    note(f"e2e:{names}", ok, f"{ran} scenarios" if ran else "no scenarios ran", total_build + runner, wait,
+         total_secs - (wait or 0) - runner)
 
 
 def check_selftest():

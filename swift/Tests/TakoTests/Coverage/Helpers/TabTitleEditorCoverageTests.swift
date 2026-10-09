@@ -71,7 +71,7 @@ private func waitTabTitle(timeout: TimeInterval = 4, _ condition: () -> Bool) {
 /// jobs on the main queue, so work the code under test schedules with
 /// `DispatchQueue.main.async` only runs once the test yields the thread.
 @MainActor
-private func waitAsync(timeout: TimeInterval = 4, _ condition: () -> Bool) async {
+func waitAsync(timeout: TimeInterval = 4, _ condition: () -> Bool) async {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() && Date() < deadline {
         try? await Task.sleep(nanoseconds: 20_000_000)
@@ -81,7 +81,7 @@ private func waitAsync(timeout: TimeInterval = 4, _ condition: () -> Bool) async
 /// Locates the NSTextField this specific `TabTitleEditor` instance injected into `tabButton`
 /// (as opposed to AppKit's own private title label), by identity of the delegate it assigned.
 @MainActor
-private func findInjectedEditor(in tabButton: NSView, owner: TabTitleEditor) -> NSTextField? {
+func findInjectedEditor(in tabButton: NSView, owner: TabTitleEditor) -> NSTextField? {
     tabButton.descendants(withClassName: "NSTextField")
         .compactMap { $0 as? NSTextField }
         .first { ($0.delegate as AnyObject?) === owner }

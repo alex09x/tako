@@ -53,7 +53,7 @@ final class GraphemeClusterRenderingTests: XCTestCase {
     }
 
     /// Row 0 holds `cells`, padded with spaces to `cols`.
-    private func frame(
+    func frame(
         cols: Int = 4,
         cells: [Cell],
         graphemes: [FfiGrapheme] = [],
@@ -92,7 +92,7 @@ final class GraphemeClusterRenderingTests: XCTestCase {
     }
 
     /// A cluster at column 0, wide when it is an emoji.
-    private func clusterFrame(_ text: String, wide: Bool, withCluster: Bool) -> FfiRenderFrame {
+    func clusterFrame(_ text: String, wide: Bool, withCluster: Bool) -> FfiRenderFrame {
         let first = text.unicodeScalars.first!.value
         var cells = [Cell(ch: first, bits: Self.graphemeBit | (wide ? Self.wideBit : 0))]
         if wide { cells.append(Cell(ch: 0)) }
@@ -102,11 +102,11 @@ final class GraphemeClusterRenderingTests: XCTestCase {
         )
     }
 
-    private func font() -> CTFont {
+    func font() -> CTFont {
         CTFontCreateWithName("Menlo" as CFString, 24, nil)
     }
 
-    private func metalMetrics() -> TerminalMetalCellMetrics {
+    func metalMetrics() -> TerminalMetalCellMetrics {
         TerminalMetalCellMetrics(
             font: font(),
             cellWidth: CGFloat(Self.cellWidth),

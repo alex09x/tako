@@ -68,7 +68,8 @@ struct VisualReadBackTests {
         #expect(Array(pngData.prefix(pngHeader.count)) == pngHeader)
 
         // Control command execution
-        let req = ControlRequest(cmd: "screenshot", args: [:], from: nil)
+        let grant = ControlGrantStore.shared.issueGrant(client: "visual-test", scopes: [.read])
+        let req = ControlRequest(cmd: "screenshot", args: [:], from: nil, token: grant.token)
         let res = ControlCommands.handle(req, all: [pane])
         guard case .ok(let dict) = res else {
             Issue.record("screenshot command failed: \(res)")
@@ -100,8 +101,10 @@ struct VisualReadBackTests {
         defer { surface.isSecureInputMode = false }
         #expect(surface.isSecureInput)
 
+        let grant = ControlGrantStore.shared.issueGrant(client: "visual-test", scopes: [.read])
+
         // 1. Screenshot refusal
-        let reqScreenshot = ControlRequest(cmd: "screenshot", args: [:], from: nil)
+        let reqScreenshot = ControlRequest(cmd: "screenshot", args: [:], from: nil, token: grant.token)
         let resScreenshot = ControlCommands.handle(reqScreenshot, all: [pane])
         guard case .failure(let errScreenshot) = resScreenshot else {
             Issue.record("screenshot should be refused for secure-input pane")
@@ -111,7 +114,7 @@ struct VisualReadBackTests {
         #expect(errScreenshot.message.contains("secure-input panes cannot be read"))
 
         // 2. Text read refusal
-        let reqText = ControlRequest(cmd: "text", args: ["styled": .bool(true)], from: nil)
+        let reqText = ControlRequest(cmd: "text", args: ["styled": .bool(true)], from: nil, token: grant.token)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             ControlCommands.handle(reqText, all: [pane]) { resText in
                 guard case .failure(let errText) = resText else {
@@ -150,5 +153,27 @@ struct VisualReadBackTests {
         let (png, w, h) = try ControlCommands.captureScreenshot(surface)
         #expect(w > 0 && h > 0)
         #expect(Array(png.prefix(pngHeader.count)) == pngHeader)
+
+        // Decode returned PNG and assert non-blank rendered pixels
+        guard let rep = NSBitmapImageRep(data: png) else {
+            Issue.record("Failed to decode PNG image data")
+            return
+        }
+        #expect(rep.pixelsWide == w)
+        #expect(rep.pixelsHigh == h)
+        var hasNonUniformPixel = false
+        if let firstPixel = rep.colorAt(x: 0, y: 0) {
+            for y in stride(from: 0, to: h, by: max(1, h / 20)) {
+                for x in stride(from: 0, to: w, by: max(1, w / 20)) {
+                    if let color = rep.colorAt(x: x, y: y), color != firstPixel {
+                        hasNonUniformPixel = true
+                        break
+                    }
+                }
+                if hasNonUniformPixel { break }
+            }
+        }
+        #expect(hasNonUniformPixel, "Screenshot produced a blank / uniform single-color image")
     }
 }
+

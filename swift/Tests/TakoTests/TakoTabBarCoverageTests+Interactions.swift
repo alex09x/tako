@@ -230,9 +230,6 @@ extension TabBarViewCoverageTests {
     }
 }
 
-
-}
-
 // MARK: - CrabPainter
 
 @Suite

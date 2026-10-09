@@ -29,6 +29,18 @@ struct AppUpdaterLaunchTests {
         }
     }
 
+    @Test func noUpdateFlagDoesNot() {
+        for flag in ["--no-update", "--no-update-check", "--disable-update-check"] {
+            #expect(!AppUpdater.checksAtLaunch(arguments: ["Tako", flag], version: "0.1.2", enabled: true, environment: [:]), "\(flag)")
+        }
+    }
+
+    @Test func noUpdateEnvDoesNot() {
+        for envKey in ["TAKO_NO_UPDATE", "TAKO_NO_UPDATE_CHECK", "TAKO_DISABLE_UPDATE_CHECK"] {
+            #expect(!AppUpdater.checksAtLaunch(arguments: ["Tako"], version: "0.1.2", enabled: true, environment: [envKey: "1"]), "\(envKey)")
+        }
+    }
+
     @Test func anUnversionedLocalBuildDoesNot() {
         #expect(!AppUpdater.checksAtLaunch(arguments: ["Tako"], version: "0.0.0", enabled: true))
         #expect(!AppUpdater.checksAtLaunch(arguments: ["Tako"], version: nil, enabled: true))

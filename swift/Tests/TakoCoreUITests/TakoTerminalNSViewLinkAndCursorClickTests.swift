@@ -220,7 +220,5 @@ final class TakoTerminalNSViewLinkAndCursorClickTests: XCTestCase {
         }
         XCTAssertEqual(opened, [URL(string: urlString)!])
     }
-
-    func testUnsafeSchemesRequireConfirmationPrompt() {
-
 }
+#endif

@@ -365,6 +365,4 @@ extension TakoTerminalViewTests {
         XCTAssertFalse(view.isKineticScrolling, "App backgrounding must cancel kinetic momentum")
     }
 }
-
-}
 #endif

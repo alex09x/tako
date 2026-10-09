@@ -12,17 +12,9 @@ import Testing
 import AppKit
 @testable import Tako
 
-@MainActor
-private func withAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
-    let appDelegate = AppDelegate()
-    let originalDelegate = NSApplication.shared.delegate
-    NSApplication.shared.delegate = appDelegate
-    defer { NSApplication.shared.delegate = originalDelegate }
-    return try body(appDelegate)
-}
 
 @MainActor
-private func makeWindow() -> TransparentTitlebarTerminalWindow {
+private func makeTransparentWindow() -> TransparentTitlebarTerminalWindow {
     TransparentTitlebarTerminalWindow(
         contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -34,7 +26,7 @@ private func makeWindow() -> TransparentTitlebarTerminalWindow {
 struct TransparentTitlebarTerminalWindowCoverageTests {
     @Test func awakeFromNibSetsUpKVOWithoutCrashing() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             #expect(true)
@@ -43,7 +35,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
 
     @Test func becomeMainIsSafeWithoutAPriorSurfaceConfig() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.becomeMain()
@@ -53,7 +45,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
 
     @Test func updateDoesNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.update()
@@ -63,7 +55,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
 
     @Test func syncAppearanceSetsAppearanceFromTheSurfaceConfig() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.makeKeyAndOrderFront(nil)
@@ -74,7 +66,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
 
     @Test func becomeMainResyncsAppearanceWhenThereIsAPriorSurfaceConfig() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.makeKeyAndOrderFront(nil)
@@ -94,7 +86,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
     // "other" branch to exercise both regardless of the host OS.
     @Test func updateAndSyncAppearanceTakeTheLegacyBranchWhenForcedToPretendItIsPreTahoe() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeTransparentWindow()
             defer { window.orderOut(nil) }
             let originalSystem = TransparentTitlebarTerminalWindow.appearanceSystem
             TransparentTitlebarTerminalWindow.appearanceSystem = .init(isMacOS26OrLater: { false })
@@ -115,7 +107,7 @@ struct TransparentTitlebarTerminalWindowCoverageTests {
         let appDelegate = AppDelegate()
         let originalDelegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = appDelegate
-        let window = makeWindow()
+        let window = makeTransparentWindow()
         window.awakeFromNib()
         window.makeKeyAndOrderFront(nil)
         window.syncAppearance(.init())

@@ -240,5 +240,3 @@ extension MetalTerminalRendererTests {
         XCTAssertEqual(planner.glyphInstances, freshPlanner.glyphInstances)
     }
 }
-
-}

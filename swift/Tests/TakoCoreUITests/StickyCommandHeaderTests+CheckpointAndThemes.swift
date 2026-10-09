@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 extension StickyCommandHeaderTests {
     func testStickyCommandHeaderPrunedWhenOutputLeavesScrollback() {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -278,7 +279,3 @@ extension StickyCommandHeaderTests {
     }
 }
 #endif
-
-
-
-}

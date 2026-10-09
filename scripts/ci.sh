@@ -11,20 +11,23 @@
 # full run, kept for releases and wide changes.
 #
 # Stages, in order:
-#   rust   clippy over every target, then the engine suite with pty and ssh
-#          under the per-file line-coverage gate (every src/ file >= 80%)
-#   swift  build the xcframework, then the Swift package under its gate
-#          (TakoCoreUI, TakoKit, the shim and the app directories covered
-#          so far, every file >= 80%)
-#   apps   build Tako.app, run its self-test and drive it with real input
-#          (scripts/e2e-macapp.sh), the terminal view's tests
-#          on the iOS simulator, the iOS scenarios and walkthrough, and the
-#          iOS app under its gate
+#   rust     clippy over every target, then the engine suite with pty and ssh
+#            under the per-file line-coverage gate (every src/ file >= 80%)
+#   cli      clippy and tests for takoctl (CLI/MCP/hooks)
+#   swift    build the xcframework, then the Swift package under its gate
+#            (TakoCoreUI, TakoKit, the shim and the app directories covered
+#            so far, every file >= 80%)
+#   apps     build Tako.app, run its self-test and drive it with real input
+#            (scripts/e2e-macapp.sh), the terminal view's tests
+#            on the iOS simulator, the iOS scenarios and walkthrough, and the
+#            iOS app under its gate
+#   persist  run the complete session persistence suite (scripts/e2e-persist.sh)
+#   uitest   run the XCUITest accessibility and UI test suite (scripts/uitest.sh)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 stages=("$@")
-[ ${#stages[@]} -gt 0 ] || stages=(rust swift apps)
+[ ${#stages[@]} -gt 0 ] || stages=(rust cli swift apps persist uitest)
 
 script="set -e"
 for stage in "${stages[@]}"; do
@@ -33,6 +36,10 @@ for stage in "${stages[@]}"; do
 echo '== rust'
 cargo clippy --all-targets --features pty,ssh -- -D warnings
 python3 scripts/coverage-gate.py --features pty,ssh" ;;
+        cli) script+="
+echo '== cli'
+cargo clippy --manifest-path takoctl/Cargo.toml -- -D warnings
+cargo test --manifest-path takoctl/Cargo.toml" ;;
         swift) script+="
 echo '== swift'
 ./scripts/build-xcframework.sh
@@ -52,7 +59,13 @@ python3 scripts/build-macapp.py
 ./scripts/test-ios-surface.sh
 python3 scripts/simtest.py
 python3 scripts/ios-coverage-gate.py" ;;
-        *) echo "unknown stage: $stage (rust, swift, apps)" >&2; exit 2 ;;
+        persist) script+="
+echo '== persist'
+./scripts/e2e-persist.sh" ;;
+        uitest) script+="
+echo '== uitest'
+./scripts/uitest.sh" ;;
+        *) echo "unknown stage: $stage (rust, cli, swift, apps, persist, uitest)" >&2; exit 2 ;;
     esac
 done
 

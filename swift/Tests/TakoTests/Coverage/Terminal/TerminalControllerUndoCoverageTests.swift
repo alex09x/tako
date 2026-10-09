@@ -264,5 +264,3 @@ struct TerminalControllerCloseWindowUndoTests {
         }
     }
 }
-
-@MainActor

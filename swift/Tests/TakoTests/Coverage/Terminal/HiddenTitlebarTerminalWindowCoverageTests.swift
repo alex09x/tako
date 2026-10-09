@@ -13,16 +13,7 @@ import AppKit
 @testable import Tako
 
 @MainActor
-private func withAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
-    let appDelegate = AppDelegate()
-    let originalDelegate = NSApplication.shared.delegate
-    NSApplication.shared.delegate = appDelegate
-    defer { NSApplication.shared.delegate = originalDelegate }
-    return try body(appDelegate)
-}
-
-@MainActor
-private func makeWindow() -> HiddenTitlebarTerminalWindow {
+private func makeHiddenTitlebarWindow() -> HiddenTitlebarTerminalWindow {
     HiddenTitlebarTerminalWindow(
         contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -34,7 +25,7 @@ private func makeWindow() -> HiddenTitlebarTerminalWindow {
 struct HiddenTitlebarTerminalWindowCoverageTests {
     @Test func awakeFromNibHidesTitlebarChrome() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeHiddenTitlebarWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             #expect(window.titleVisibility == .hidden)
@@ -45,7 +36,7 @@ struct HiddenTitlebarTerminalWindowCoverageTests {
 
     @Test func settingTitleReappliesTheHiddenStyle() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeHiddenTitlebarWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.title = "New Title"
@@ -54,7 +45,7 @@ struct HiddenTitlebarTerminalWindowCoverageTests {
     }
 
     @Test func contentLayoutRectFillsTheFullFrame() {
-        let window = makeWindow()
+        let window = makeHiddenTitlebarWindow()
         defer { window.orderOut(nil) }
         let rect = window.contentLayoutRect
         #expect(rect.origin.y == 0)
@@ -63,7 +54,7 @@ struct HiddenTitlebarTerminalWindowCoverageTests {
 
     @Test func fullscreenDidExitIgnoresUnrelatedNotifications() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeHiddenTitlebarWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             NotificationCenter.default.post(name: .fullscreenDidExit, object: NSObject())
@@ -73,7 +64,7 @@ struct HiddenTitlebarTerminalWindowCoverageTests {
 
     @Test func fullscreenDidExitIgnoresNotificationsWithoutAFullscreenObject() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeHiddenTitlebarWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             NotificationCenter.default.post(name: .fullscreenDidExit, object: nil)

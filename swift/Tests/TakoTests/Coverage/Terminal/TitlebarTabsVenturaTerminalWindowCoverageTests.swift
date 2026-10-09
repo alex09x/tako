@@ -12,17 +12,9 @@ import Testing
 import AppKit
 @testable import Tako
 
-@MainActor
-private func withAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
-    let appDelegate = AppDelegate()
-    let originalDelegate = NSApplication.shared.delegate
-    NSApplication.shared.delegate = appDelegate
-    defer { NSApplication.shared.delegate = originalDelegate }
-    return try body(appDelegate)
-}
 
 @MainActor
-private func makeWindow() -> TitlebarTabsVenturaTerminalWindow {
+private func makeVenturaWindow() -> TitlebarTabsVenturaTerminalWindow {
     TitlebarTabsVenturaTerminalWindow(
         contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -34,7 +26,7 @@ private func makeWindow() -> TitlebarTabsVenturaTerminalWindow {
 struct TitlebarTabsVenturaTerminalWindowCoverageTests {
     @Test func awakeFromNibEnablesTitlebarTabs() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             #expect(window.titlebarTabs)
@@ -43,7 +35,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func becomeKeyAndResignKeyDoNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.becomeKey()
@@ -54,7 +46,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func updateDoesNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.update()
@@ -64,7 +56,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func layoutIfNeededDoesNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.layoutIfNeeded()
@@ -74,7 +66,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func updateConstraintsIfNeededDoesNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.updateConstraintsIfNeeded()
@@ -84,7 +76,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func syncAppearanceUpdatesTheTitlebarColor() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.makeKeyAndOrderFront(nil)
@@ -95,7 +87,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func titlebarTabsFalseClearsTheToolbar() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.titlebarTabs = false
@@ -105,7 +97,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func hasVeryDarkBackgroundReflectsLuminance() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.backgroundColor = .black
@@ -117,7 +109,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func titlebarFontUpdatesTheToolbarTitleFont() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.titlebarFont = NSFont.systemFont(ofSize: 13)
@@ -127,7 +119,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func titleUpdatesTheToolbarTitleText() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.title = "Hello"
@@ -137,7 +129,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func mergeAllWindowsDoesNotCrash() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             window.mergeAllWindows(nil)
@@ -151,7 +143,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
         NSApplication.shared.delegate = appDelegate
         let app = Tako.App()
         let controller = TerminalController(app, withBaseConfig: nil, withSurfaceTree: nil)
-        let window = makeWindow()
+        let window = makeVenturaWindow()
         controller.window = window
         window.awakeFromNib()
         window.mergeAllWindows(nil)
@@ -165,7 +157,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
         let appDelegate = AppDelegate()
         let originalDelegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = appDelegate
-        let window = makeWindow()
+        let window = makeVenturaWindow()
         window.awakeFromNib()
         window.makeKeyAndOrderFront(nil)
         window.contentView?.layoutSubtreeIfNeeded()
@@ -198,7 +190,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func windowDragViewForwardsASingleLeftClickToPerformDragAndPassesOthersToSuper() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let view = WindowDragView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
@@ -223,7 +215,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func windowButtonsBackdropViewUpdatesItsLayerForLightAndDarkThemes() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             window.awakeFromNib()
             let backdrop = WindowButtonsBackdropView(window: window)
@@ -259,7 +251,7 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
 
     @Test func centeredDynamicLabelIsClickThroughAndConfiguresItselfOnceInAWindow() {
         withAppDelegate { _ in
-            let window = makeWindow()
+            let window = makeVenturaWindow()
             defer { window.orderOut(nil) }
             let label = CenteredDynamicLabel(labelWithString: "Hi")
             window.contentView?.addSubview(label)

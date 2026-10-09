@@ -16,8 +16,6 @@ import TakoKit
 @testable import Tako
 
 @MainActor
-
-@MainActor
 struct NSMenuExtensionTests {
     @Test func insertItemAfterActionInsertsAtCorrectIndex() {
         let menu = NSMenu()

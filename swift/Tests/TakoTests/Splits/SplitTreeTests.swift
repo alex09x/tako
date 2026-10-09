@@ -47,7 +47,7 @@ struct SplitTreeTests {
     }
 
     /// Creates a two-view horizontal split tree (view1 | view2).
-    private func makeHorizontalSplit() throws -> (SplitTree<MockView>, MockView, MockView) {
+    func makeHorizontalSplit() throws -> (SplitTree<MockView>, MockView, MockView) {
         try Self.makeHorizontalSplit()
     }
 

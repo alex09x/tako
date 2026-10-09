@@ -174,7 +174,3 @@ struct PTYCoverageTests {
         #expect(pty != nil)
     }
 }
-
-// MARK: - Tako.App
-
-@MainActor

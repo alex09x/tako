@@ -99,14 +99,14 @@ extension GraphemeClusterRenderingTests {
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
         let entry = atlas.clusterEntry(for: family, font: font())
         XCTAssertTrue(entry.isRasterized)
-        XCTAssertEqual(entry.pixelFormat, .bgra8Premultiplied)
+        XCTAssertEqual(entry.pixelFormat, GlyphAtlasPixelFormat.bgra8Premultiplied)
         XCTAssertEqual(entry.key.cluster, family)
         XCTAssertEqual(atlas.cachedCount, 1)
         XCTAssertEqual(atlas.clusterEntry(for: family, font: font()), entry)
         XCTAssertEqual(atlas.cachedCount, 1)
 
         let marked = atlas.clusterEntry(for: "x\u{0301}", font: font(), emboldened: true)
-        XCTAssertEqual(marked.pixelFormat, .grayscale8)
+        XCTAssertEqual(marked.pixelFormat, GlyphAtlasPixelFormat.grayscale8)
         XCTAssertTrue(marked.key.emboldened)
         XCTAssertNotEqual(atlas.clusterEntry(for: "x\u{0301}", font: font()), marked)
         XCTAssertEqual(atlas.cachedCount, 3)
@@ -147,9 +147,6 @@ extension GraphemeClusterRenderingTests {
         XCTAssertEqual(core.cursorCol(), 2)
         XCTAssertGreaterThan(legacyWidth, 2)
     }
-}
-
-
 }
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit

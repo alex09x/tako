@@ -297,6 +297,3 @@ extension SessionSidebarTests {
         #expect(items[1].gitBranch == "repo2-feature")
     }
 }
-
-
-}

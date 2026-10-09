@@ -122,5 +122,3 @@ struct QuickTerminalControllerSurfaceTreeTests {
         #expect(!controller.visible)
     }
 }
-
-@MainActor

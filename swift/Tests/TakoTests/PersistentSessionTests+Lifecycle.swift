@@ -13,7 +13,7 @@ import Foundation
 import Testing
 @testable import Tako
 
-extension PersistentSessionTests {
+extension RuntimeCommandTests {
     @Test func aHelperThatIgnoresSIGTERMIsEndedWithinBounds() throws {
         let h = try helper("trap '' TERM\nwhile :; do sleep 1; done")
         defer { try? FileManager.default.removeItem(at: h) }
@@ -227,6 +227,4 @@ extension SessionPersistenceScopeTests {
         #expect(made.workingDirectory == "/tmp")
         #expect(made.environmentVariables["TAKO_QUICK_TERMINAL"] == "1")
     }
-}
-
 }

@@ -36,24 +36,6 @@ private func host<V: View>(_ view: V, in window: NSWindow) -> NSHostingView<V> {
     return hosting
 }
 
-/// Builds a real `TerminalController` (a real `Tako.SurfaceView` with a real
-/// PTY -- there is no lighter-weight construction path, `BaseTerminalController.init`
-/// always creates one) with its window assigned directly rather than through
-/// nib loading, mirroring `QTTestSupport.makeController` for `QuickTerminalController`:
-/// `Terminal.xib` is excluded from this SwiftPM target, so letting `.window`
-/// load lazily here would fail to find a nib.
-@MainActor
-private func makeTerminalController(_ tako: Tako.App) -> (TerminalController, NSWindow) {
-    let controller = TerminalController(tako)
-    let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-        styleMask: [.titled, .closable, .resizable],
-        backing: .buffered,
-        defer: false)
-    window.isReleasedWhenClosed = false
-    controller.window = window
-    return (controller, window)
-}
 
 @MainActor
 struct TerminalCommandPaletteViewTests {

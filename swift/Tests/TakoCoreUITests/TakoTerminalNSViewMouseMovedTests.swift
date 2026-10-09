@@ -232,3 +232,4 @@ final class TakoTerminalNSViewMouseMovedTests: XCTestCase {
     // MARK: - (d) Movement Outside Grid and Movement with Modifiers
 
 }
+#endif

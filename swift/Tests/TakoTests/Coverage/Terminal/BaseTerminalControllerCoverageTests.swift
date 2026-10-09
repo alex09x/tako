@@ -224,12 +224,6 @@ struct BaseTerminalControllerTitleTests {
 
 @MainActor
 struct BaseTerminalControllerAppearanceTests {
-    @Test func toggleBackgroundOpacityIsANoOpWhenAlreadyOpaque() {
-        let controller = makeController()
-        controller.toggleBackgroundOpacity()
-        #expect(true)
-    }
-
     @Test func syncAppearanceDefaultIsANoOp() {
         let controller = makeController()
         controller.syncAppearance()
@@ -257,5 +251,3 @@ struct BaseTerminalControllerFullscreenTests {
         #expect(true)
     }
 }
-
-@MainActor

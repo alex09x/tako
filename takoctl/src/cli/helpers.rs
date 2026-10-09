@@ -32,6 +32,28 @@ pub fn request(opts: &Options, from: Option<String>) -> Value {
     req
 }
 
+/// Resolves an authentication token for the target control socket: explicit CLI token,
+/// target token file ({path}.token), or ambient environment variables.
+pub fn resolve_token(opts: &Options, path: &str) -> Option<String> {
+    if let Some(tok) = &opts.token {
+        return Some(tok.clone());
+    }
+    let token_from_file = std::fs::read_to_string(format!("{path}.token"))
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let token_from_env = std::env::var("TAKO_CONTROL_TOKEN")
+        .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    if opts.bundle_id_explicit || opts.socket.is_some() {
+        token_from_file.or(token_from_env)
+    } else {
+        token_from_env.or(token_from_file)
+    }
+}
+
 pub fn answer_limit(opts: &Options) -> std::time::Duration {
     let waits = opts.cmd == "wait"
         || opts.cmd == "ask"

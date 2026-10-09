@@ -298,6 +298,5 @@ final class CommandActionsTests: XCTestCase {
             XCTAssertFalse(view.validateUserInterfaceItem(openDirItem), "validateUserInterfaceItem must return false when cmd.cwd is nil")
         }
     }
-
-
 }
+#endif

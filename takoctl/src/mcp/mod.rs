@@ -23,6 +23,7 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
+#[allow(unused_imports)]
 pub use capabilities::{Capabilities, CapabilityScope};
 pub use server::McpServer;
 #[allow(unused_imports)]

@@ -13,15 +13,6 @@ import Foundation
 import Testing
 @testable import Tako
 
-@MainActor
-private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline { return condition() }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-    }
-    return true
-}
 
 @MainActor
 private func app(_ config: String) throws -> (Tako.App, URL) {

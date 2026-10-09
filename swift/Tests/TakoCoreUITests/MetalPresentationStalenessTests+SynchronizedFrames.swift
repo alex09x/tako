@@ -265,8 +265,5 @@ extension MetalPresentationStalenessTests {
             settled.pixels, originalTail.pixels,
             "the restored tail did not commit the same pixels the original tail did")
     }
-
-    #endif
-
 }
 #endif

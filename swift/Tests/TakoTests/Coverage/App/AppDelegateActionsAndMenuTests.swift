@@ -13,6 +13,7 @@ import AppKit
 import UserNotifications
 @testable import Tako
 
+@MainActor
 struct AppDelegateSecureInputTests {
     @Test func setSecureInputOnOffAndToggleAllUpdateTheGlobalFlag() {
         let delegate = AppDelegate()
@@ -210,5 +211,3 @@ struct AppDelegateFloatOnTopMenuSyncTests {
         delegate.syncFloatOnTopMenu(window)
     }
 }
-
-@MainActor

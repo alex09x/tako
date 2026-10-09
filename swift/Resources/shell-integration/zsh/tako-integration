@@ -282,7 +282,7 @@ _tako_deferred_init() {
     # Add Tako binary to PATH if the path feature is enabled
     if [[ "$TAKO_SHELL_FEATURES" == *"path"* ]] && [[ -n "$TAKO_BIN_DIR" ]]; then
       if [[ ":$PATH:" != *":$TAKO_BIN_DIR:"* ]]; then
-        builtin export PATH="$PATH:$TAKO_BIN_DIR"
+        builtin export PATH="$TAKO_BIN_DIR:$PATH"
       fi
     fi
 

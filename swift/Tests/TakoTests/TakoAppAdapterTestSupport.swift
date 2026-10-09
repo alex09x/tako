@@ -35,6 +35,7 @@ import Testing
 /// it, and the shim's own self-tests (`runKeySelfTest` etc.) are written
 /// the same way. Waits on shell output poll a condition with a deadline
 /// instead of sleeping a fixed amount.
+@discardableResult
 func waitUntil(
     timeout: TimeInterval = 5,
     _ condition: () -> Bool

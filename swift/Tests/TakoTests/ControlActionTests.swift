@@ -13,6 +13,7 @@ import Foundation
 import Testing
 @testable import Tako
 
+@MainActor
 struct ControlInputTests {
     @Test func keyChordsParse() throws {
         let c = try ControlInput.keyEvent("ctrl+c")

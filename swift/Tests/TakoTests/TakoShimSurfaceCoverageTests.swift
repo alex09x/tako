@@ -22,15 +22,6 @@ import Testing
 // CrabView-drawing tests) and Tako+SurfaceUI.swift's SwiftUI plumbing
 // (`SurfaceWrapper`, `InspectableSurface`, and the FocusedValues round trip).
 
-@MainActor
-private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline { return condition() }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-    }
-    return true
-}
 
 /// Recursively searches a hosted SwiftUI view tree for `target`, the way
 /// `NSHostingView` buries an `NSViewRepresentable`'s represented view a few

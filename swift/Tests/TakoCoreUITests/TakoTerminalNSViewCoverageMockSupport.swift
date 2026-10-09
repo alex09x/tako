@@ -138,5 +138,4 @@ class SubclassedTerminalView: TakoTerminalNSView {
         titleChangedNotifications += 1
     }
 }
-
-@MainActor
+#endif

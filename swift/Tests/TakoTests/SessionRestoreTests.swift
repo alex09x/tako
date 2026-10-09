@@ -13,15 +13,6 @@ import Foundation
 import Testing
 @testable import Tako
 
-@MainActor
-private func waitUntil(timeout: TimeInterval = 3, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline { return condition() }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-    }
-    return true
-}
 
 /// A store in a directory of its own, installed as the shared one for the
 /// test's lifetime so nothing reaches the user's Application Support.

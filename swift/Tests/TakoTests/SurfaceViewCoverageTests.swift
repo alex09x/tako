@@ -16,6 +16,7 @@ import TakoKit
 import Testing
 @testable import Tako
 
+@MainActor
 struct SurfaceViewCoverageTests {
     /// Saves and restores `NSPasteboard.general` around a test, since
     /// `copy`/`paste` are hardwired to the real system pasteboard.

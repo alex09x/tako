@@ -25,6 +25,8 @@ final class DialogButton: NSButton {
         self.kind = choice.kind
         super.init(frame: .zero)
         self.title = choice.title
+        setAccessibilityTitle(choice.title)
+        setAccessibilityLabel(choice.title)
         isBordered = false
         setButtonType(.momentaryChange)
         focusRingType = .none

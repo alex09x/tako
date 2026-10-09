@@ -202,7 +202,7 @@ struct PersistentSessionTests {
 /// RuntimeCommand against stand-in helpers: harmless scripts, no runtime.
 @Suite
 struct RuntimeCommandTests {
-    private func helper(_ body: String) throws -> URL {
+    func helper(_ body: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("tako-helper-\(UUID().uuidString).sh")
         try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
         chmod(url.path, 0o755)

@@ -149,5 +149,3 @@ extension TerminalTouchScrollTests {
         XCTAssertNil(dec.step(deltaTime: 1.0 / 60.0, cellHeight: 20.0))
     }
 }
-
-}

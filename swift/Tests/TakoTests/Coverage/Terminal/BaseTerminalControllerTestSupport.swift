@@ -44,5 +44,3 @@ func makeControllerWithWindow(view: Tako.SurfaceView? = nil) -> (BaseTerminalCon
     controller.window = window
     return (controller, window)
 }
-
-@MainActor

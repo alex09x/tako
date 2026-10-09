@@ -13,6 +13,7 @@ import Foundation
 import Testing
 @testable import Tako
 
+@MainActor
 extension ControlServerTests {
     @Test func aDirectoryOthersCanReachIsRefused() throws {
         let dir = try privateDir()
@@ -185,10 +186,4 @@ extension ControlServerTests {
         #expect(try mode("remote-control = off\n") == .off)
         #expect(try mode(nil) == .local)
     }
-}
-
-
-@Suite
-@MainActor
-
 }

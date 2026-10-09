@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 @MainActor
 extension TakoTerminalNSViewScrollTests {
     func testMouseOwnedWheelBatchesNormalStepsInOrderAndCapsBurst() throws {
@@ -190,5 +191,3 @@ extension TakoTerminalNSViewScrollTests {
 
 }
 #endif
-
-}

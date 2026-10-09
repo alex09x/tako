@@ -126,5 +126,3 @@ final class MockTerminalViewDelegate: TakoTerminalViewDelegate {
     }
 }
 #endif
-
-#endif

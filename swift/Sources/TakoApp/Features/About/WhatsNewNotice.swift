@@ -41,8 +41,16 @@ enum WhatsNewNotice {
 
     /// Offers the What's New announcement at launch if this version hasn't been announced yet.
     static func offerAtLaunch(theme: TerminalTheme?) {
+        let env = ProcessInfo.processInfo.environment
+        let args = CommandLine.arguments
         guard NSClassFromString("XCTestCase") == nil,
-              !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }),
+              !args.contains(where: {
+                  $0.hasPrefix("--selftest") ||
+                  $0 == "--no-update" ||
+                  $0 == "--no-launch-notices"
+              }),
+              env["TAKO_NO_UPDATE"] != "1",
+              env["TAKO_NO_LAUNCH_NOTICES"] != "1",
               Tako.launchSource == .app || Tako.launchSource == .cli else { return }
 
         let version = currentVersion

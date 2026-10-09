@@ -61,16 +61,29 @@ struct DiagnosticsTests {
     @Test("DiagnosticsExporter collects report without terminal contents by default")
     @MainActor
     func testCollectReportExcludesTerminalByDefault() {
-        let report = DiagnosticsExporter.collectReport(allPanes: [], includeTerminal: false)
+        let app = Tako.App()
+        let surface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
+        surface.currentProcess = nil
+        let marker = "SECRET_TERMINAL_CONTENT_FOR_DIAGNOSTICS_12345"
+        surface.core.feed(bytes: Data("\(marker)\r\n".utf8))
+        let controller = TerminalController(app)
+        let pane = ControlCommands.Pane(surface: surface, windowID: "w1", tabID: "t1", controller: controller)
+
+        // Default: terminalText is excluded
+        let report = DiagnosticsExporter.collectReport(allPanes: [pane], includeTerminal: false)
         #expect(!report.versions.appVersion.isEmpty)
         #expect(!report.versions.osVersion.isEmpty)
         #expect(!report.versions.arch.isEmpty)
         #expect(report.system.uptimeSeconds > 0)
+        #expect(report.panes.count == 1)
+        #expect(report.panes[0].terminalText == nil)
 
-        for pane in report.panes {
-            #expect(pane.terminalText == nil)
-        }
+        // Positive control: when includeTerminal: true, terminalText is included
+        let optInReport = DiagnosticsExporter.collectReport(allPanes: [pane], includeTerminal: true)
+        #expect(optInReport.panes.count == 1)
+        #expect(optInReport.panes[0].terminalText?.contains(marker) == true)
     }
+
 
     @Test("ControlCommands diagnose handles request correctly")
     @MainActor

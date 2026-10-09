@@ -77,7 +77,7 @@ final class TerminalFontConfigTests: XCTestCase {
         )
     }
 
-    private func metrics(_ config: String) -> TerminalRenderer.Metrics {
+    func metrics(_ config: String) -> TerminalRenderer.Metrics {
         TerminalRenderer.Metrics(theme: TerminalTheme.parse(config: config, honourTheme: false))
     }
 
@@ -162,9 +162,9 @@ final class TerminalFontConfigTests: XCTestCase {
         return Bitmap(pixels: pixels, width: width, height: height)
     }
 
-    private func name(_ font: CTFont) -> String { CTFontCopyPostScriptName(font) as String }
+    func name(_ font: CTFont) -> String { CTFontCopyPostScriptName(font) as String }
 
-    private func requireFamily(_ family: String) throws {
+    func requireFamily(_ family: String) throws {
         let font = CTFontCreateWithName(family as CFString, 13, nil)
         guard CTFontCopyFamilyName(font) as String == family else {
             throw XCTSkip("\(family) is not installed here")

@@ -134,12 +134,17 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
     };
 
     let inherited = std::env::var("TAKO_SOCKET").ok();
-    if opts.socket.is_none() && inherited.as_deref() == Some("") {
+    if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
         return Err("remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)".into());
     }
-    let socket_path = match opts.socket.clone().or(inherited) {
-        Some(p) => p,
-        None => socket::default_path(&opts.bundle_id)?,
+    let socket_path = if let Some(s) = opts.socket.clone() {
+        s
+    } else if opts.bundle_id_explicit {
+        socket::default_path(&opts.bundle_id)?
+    } else if let Some(p) = inherited {
+        p
+    } else {
+        socket::default_path(&opts.bundle_id)?
     };
 
     let surface_id = opts
@@ -149,8 +154,9 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .map(String::from)
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
+    let token = resolve_token(opts, &socket_path);
     let server =
-        mcp::McpServer::new(socket_path, capabilities, surface_id).with_token(opts.token.clone());
+        mcp::McpServer::new(socket_path, capabilities, surface_id).with_token(token);
     server
         .run_stdio()
         .map_err(|e| format!("MCP stdio server error: {e}"))
@@ -201,14 +207,20 @@ fn main() -> ExitCode {
     if opts.cmd == "diagnose" {
         let app_result = (|| {
             let inherited = std::env::var("TAKO_SOCKET").ok();
-            if opts.socket.is_none() && inherited.as_deref() == Some("") {
+            if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
                 return None;
             }
-            let path = opts
-                .socket
-                .clone()
-                .or(inherited)
-                .or_else(|| socket::default_path(&opts.bundle_id).ok())?;
+            let path = if let Some(s) = opts.socket.clone() {
+                Some(s)
+            } else if opts.bundle_id_explicit {
+                socket::default_path(&opts.bundle_id).ok()
+            } else if let Some(p) = inherited {
+                Some(p)
+            } else {
+                socket::default_path(&opts.bundle_id).ok()
+            }?;
+            let mut opts = opts.clone();
+            opts.token = resolve_token(&opts, &path);
             let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
             let ans = socket::exchange_within(
                 &path,
@@ -241,33 +253,35 @@ fn main() -> ExitCode {
     // empty when it serves none. Empty means stop -- never go looking for
     // another copy's socket instead.
     let inherited = std::env::var("TAKO_SOCKET").ok();
-    if opts.socket.is_none() && inherited.as_deref() == Some("") {
+    if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
         eprintln!(
             "takoctl: remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)"
         );
         return ExitCode::from(3);
     }
-    let path = match opts.socket.clone().or(inherited) {
-        Some(p) => p,
-        None => match socket::default_path(&opts.bundle_id) {
+    let path = if let Some(s) = opts.socket.clone() {
+        s
+    } else if opts.bundle_id_explicit {
+        match socket::default_path(&opts.bundle_id) {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("takoctl: {e}");
                 return ExitCode::from(3);
             }
-        },
-    };
-    let mut opts = opts;
-    if opts.token.is_none() {
-        if let Ok(tok) =
-            std::env::var("TAKO_CONTROL_TOKEN").or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
-        {
-            let t = tok.trim().to_string();
-            if !t.is_empty() {
-                opts.token = Some(t);
+        }
+    } else if let Some(p) = inherited {
+        p
+    } else {
+        match socket::default_path(&opts.bundle_id) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("takoctl: {e}");
+                return ExitCode::from(3);
             }
         }
-    }
+    };
+    let mut opts = opts;
+    opts.token = resolve_token(&opts, &path);
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     if opts.cmd == "events" {
         let res = socket::stream_events(&path, &req, |line| {

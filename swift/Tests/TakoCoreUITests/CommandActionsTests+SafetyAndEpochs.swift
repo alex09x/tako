@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 @MainActor
 extension CommandActionsTests {
     func testSurfacesPartialOutputInContextMenuAndMarkdownAndSave() {
@@ -280,5 +281,3 @@ extension CommandActionsTests {
     }
 }
 #endif
-
-}

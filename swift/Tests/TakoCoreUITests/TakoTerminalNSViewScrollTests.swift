@@ -232,6 +232,5 @@ final class TakoTerminalNSViewScrollTests: XCTestCase {
         view.scrollWheel(with: try XCTUnwrap(scrollEvent(deltaY: 1, precise: true)))
         XCTAssertEqual(reportCount(delegate), baseline + 1)
     }
-
-
 }
+#endif

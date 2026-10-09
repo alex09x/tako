@@ -13,14 +13,9 @@ import Foundation
 import Testing
 @testable import Tako
 
-import Darwin
-import Foundation
-import Testing
-@testable import Tako
-
 let a = UUID(uuidString: "aaaaaaaa-0000-0000-0000-000000000001")!
 let a2 = UUID(uuidString: "aaaaaaaa-0000-0000-0000-000000000002")!
-private let b = UUID(uuidString: "bbbbbbbb-0000-0000-0000-000000000001")!
+let b = UUID(uuidString: "bbbbbbbb-0000-0000-0000-000000000001")!
 
 /// A private directory like the per-user temporary one: 0700, ours.
 func privateDir() throws -> String {

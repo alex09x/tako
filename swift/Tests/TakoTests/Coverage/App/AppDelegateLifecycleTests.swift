@@ -13,6 +13,7 @@ import AppKit
 import UserNotifications
 @testable import Tako
 
+@MainActor
 struct AppDelegateLifecycleTests {
     @Test func willFinishLaunchingRegistersDefaultsWithoutCrashing() {
         let delegate = AppDelegate()
@@ -302,5 +303,3 @@ struct AppDelegateLifecycleTests {
         #expect(delegate.quickControllerInitialized)
     }
 }
-
-@MainActor

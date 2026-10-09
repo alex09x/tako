@@ -104,7 +104,7 @@ final class MetalTerminalRendererTests: XCTestCase {
         )
     }
 
-    private func frame(
+    func frame(
         cols: UInt32,
         rows: UInt32,
         cells: [CellSpec]? = nil,
@@ -143,7 +143,7 @@ final class MetalTerminalRendererTests: XCTestCase {
 
     /// Fixed metrics so every geometry assertion is exact: 10x20 pixel cells,
     /// baseline 15 pixels down, no backing scale.
-    private func metrics(scale: CGFloat = 1) -> TerminalMetalCellMetrics {
+    func metrics(scale: CGFloat = 1) -> TerminalMetalCellMetrics {
         TerminalMetalCellMetrics(
             font: CTFontCreateWithName("Menlo" as CFString, 12, nil),
             cellWidth: 10,
@@ -153,11 +153,12 @@ final class MetalTerminalRendererTests: XCTestCase {
         )
     }
 
-    private func planner(scale: CGFloat = 1) -> TerminalMetalFramePlanner {
+    func planner(scale: CGFloat = 1) -> TerminalMetalFramePlanner {
         TerminalMetalFramePlanner(metrics: metrics(scale: scale))
     }
 
-    private let viewport = TerminalMetalViewport(drawableWidth: 200, drawableHeight: 200)
+    let viewport = TerminalMetalViewport(drawableWidth: 200, drawableHeight: 200)
+
 
     // MARK: - Validation
 

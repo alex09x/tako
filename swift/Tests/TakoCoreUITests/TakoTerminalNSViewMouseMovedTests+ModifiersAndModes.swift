@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 @testable import TakoCoreUI
 
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 extension TakoTerminalNSViewMouseMovedTests {
 
     /// Movement outside the view bounds clamps the resolved cell to the grid edge,
@@ -219,5 +220,3 @@ extension TakoTerminalNSViewMouseMovedTests {
     }
 }
 #endif
-
-}

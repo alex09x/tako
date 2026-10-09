@@ -273,5 +273,3 @@ extension PTYBackpressureTests {
         #expect(lock.withLock { delivered } == Array("firstprompt$ ".utf8))
     }
 }
-
-}

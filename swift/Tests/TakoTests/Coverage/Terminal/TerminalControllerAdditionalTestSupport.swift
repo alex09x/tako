@@ -63,5 +63,3 @@ func withRealAppDelegate<T>(_ body: (AppDelegate) async throws -> T) async rethr
     defer { NSApplication.shared.delegate = originalDelegate }
     return try await body(appDelegate)
 }
-
-@MainActor

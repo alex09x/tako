@@ -183,30 +183,66 @@ import AppKit
 
     // MARK: - Untrusted Import Security Invariants
 
-    @Test func testImportedSessionNeverRunsAutomatically() {
-        let defaultsSuite = "test.tako.session_export.trust.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: defaultsSuite)!
-        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
-
-        let trustStore = ResumeTrustStore(defaults: defaults)
+    @Test func testImportedSessionNeverRunsAutomatically() throws {
         let cwd = "/Users/alex/safe-dir"
 
-        // Pre-approve prefix "claude" in this cwd
-        trustStore.approve(prefix: "claude", cwd: cwd)
-        #expect(trustStore.isApproved(argv: ["claude", "--resume", "123"], cwd: cwd))
+        // Pre-approve prefix "claude" in ResumeTrustStore for cwd
+        ResumeTrustStore.shared.approve(prefix: "claude", cwd: cwd)
+        #expect(ResumeTrustStore.shared.isApproved(argv: ["claude", "--resume", "123"], cwd: cwd))
 
-        // Create an imported record
-        let imported = ResumeSessionRecord(
-            argv: ["claude", "--resume", "123"],
-            cwd: cwd,
-            isImported: true
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileUrl = tempDir.appendingPathComponent("imported_session.json")
+        let paneId = UUID()
+        let pane = ExportedPane(
+            id: paneId,
+            pwd: cwd,
+            title: "Imported Claude",
+            scrollback: "previous session\n",
+            resume: ExportedResume(argv: ["claude", "--resume", "123"], cwd: cwd)
         )
-        #expect(imported.isImported == true)
+        let window = ExportedWindow(
+            id: UUID(),
+            titleOverride: "Imported Window",
+            tabColor: nil,
+            layout: .leaf(paneId: paneId),
+            panes: [pane]
+        )
+        let sessionFile = SessionExportFile(
+            formatVersion: SessionExportFile.currentFormatVersion,
+            exportedAt: Date(),
+            takoVersion: "0.1.7",
+            windows: [window]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(sessionFile)
+        try data.write(to: fileUrl)
 
-        // Invariant: An imported session must NEVER satisfy the auto-run condition
-        let autoRunAllowed = !imported.isImported && trustStore.isApproved(argv: imported.argv, cwd: cwd)
-        #expect(!autoRunAllowed)
+        let app = Tako.App()
+        let controllers = try SessionExportManager.shared.importSession(from: fileUrl, in: app)
+        defer { for c in controllers { c.close() } }
+
+        #expect(!controllers.isEmpty)
+        guard let importedSurface = controllers.first?.surfaceTree.first else {
+            Issue.record("missing imported surface")
+            return
+        }
+
+        // Verify the production importer registered the record with isImported = true
+        guard let record = ResumeSessionStore.shared.record(for: importedSurface.id) else {
+            Issue.record("missing resume record for imported surface")
+            return
+        }
+        #expect(record.isImported == true)
+
+        // Verify that checkAndApplyResumeOnRestore respected isImported:
+        // Even though prefix was approved, command was NOT auto-executed and banner was shown
+        #expect(importedSurface.resumeBannerHostingView != nil)
     }
+
 
     // MARK: - Control Commands Inspection
 

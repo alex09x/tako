@@ -16,6 +16,7 @@ import TakoKit
 import Testing
 @testable import Tako
 
+@MainActor
 struct TakoAppCoverageTests {
     @Test func defaultAppIsReady() {
         let app = Tako.App()
@@ -290,7 +291,3 @@ struct TakoSurfaceModelCoverageTests {
         #expect(model.unsafeCValue == nil)
     }
 }
-
-// MARK: - Tako.SurfaceView
-
-@MainActor

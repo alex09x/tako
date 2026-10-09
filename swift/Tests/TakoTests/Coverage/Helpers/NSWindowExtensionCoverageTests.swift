@@ -26,13 +26,6 @@ private func makeTitledWindow(at offset: CGFloat = 0) -> NSWindow {
     return window
 }
 
-@MainActor
-private func waitUntil(timeout: TimeInterval = 3, _ condition: () -> Bool) {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() && Date() < deadline {
-        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-    }
-}
 
 @MainActor
 struct NSWindowExtensionTests {

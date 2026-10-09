@@ -82,5 +82,3 @@ func makeTerminalController(_ tako: Tako.App) -> (TerminalController, NSWindow) 
     controller.window = window
     return (controller, window)
 }
-
-@MainActor

@@ -234,5 +234,3 @@ extension SurfaceViewCoverageTests {
         #expect(!view.isUserSetTitle)
     }
 }
-
-}

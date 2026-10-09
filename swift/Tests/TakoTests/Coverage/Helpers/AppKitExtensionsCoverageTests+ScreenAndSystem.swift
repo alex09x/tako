@@ -16,8 +16,6 @@ import TakoKit
 @testable import Tako
 
 @MainActor
-
-@MainActor
 struct NSScreenExtensionAdditionalTests {
     private final class MockScreen: NSScreen {
         let mockFrame: NSRect

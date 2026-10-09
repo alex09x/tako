@@ -212,14 +212,13 @@ import AppKit
 /// The macOS view builds its grid and both renderers from the theme's font
 /// keys, and a theme change rebuilds them.
 @MainActor
-
-}
 final class TerminalFontConfigNSViewTests: XCTestCase {
     /// Grid resizes settle on the main queue.
     private func settle() async throws {
         try await Task.sleep(nanoseconds: 200_000_000)
     }
 
+    @MainActor
     func testTheViewsGridFollowsTheAdjustedCell() async throws {
         let plain = TerminalTheme.parse(config: "font-family = Menlo\nwindow-padding-x = 0")
         let wider = TerminalTheme.parse(config: "font-family = Menlo\nwindow-padding-x = 0\nadjust-cell-width = 50%")
@@ -241,7 +240,9 @@ final class TerminalFontConfigNSViewTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testTheViewDrawsBoldWithTheConfiguredFamily() throws {
+
         let theme = TerminalTheme.parse(config: "font-family = Menlo\nfont-family-bold = Courier New")
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 400, height: 200), theme: theme)
         XCTAssertEqual(CTFontCopyPostScriptName(view.renderer.metrics.boldFont) as String, "CourierNewPS-BoldMT")

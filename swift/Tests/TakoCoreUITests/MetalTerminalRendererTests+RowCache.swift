@@ -209,7 +209,7 @@ extension MetalTerminalRendererTests {
         XCTAssertEqual(cachedStats.visitedCells, freshStats.visitedCells)
     }
 
-    private func makeCells(lines: [String]) -> [CellSpec] {
+    func makeCells(lines: [String]) -> [CellSpec] {
         var cells: [CellSpec] = []
         for line in lines {
             for scalar in line.unicodeScalars {

@@ -118,9 +118,9 @@ final class TerminalCheckpointResizeOrderingTests: XCTestCase {
 
     /// An OSC title is a cheap, exactly-ordered marker: one event per write,
     /// carrying the text that says where in the stream it came from.
-    private func title(_ text: String) -> Data { Data("\u{1B}]0;\(text)\u{07}".utf8) }
+    func title(_ text: String) -> Data { Data("\u{1B}]0;\(text)\u{07}".utf8) }
 
-    private func drainFully(_ coordinator: TerminalParserCoordinator, _ main: ResizeMainQueue) {
+    func drainFully(_ coordinator: TerminalParserCoordinator, _ main: ResizeMainQueue) {
         for _ in 0..<16 {
             coordinator.waitForParserQuiescence()
             if main.drain() == 0 { break }
@@ -291,7 +291,7 @@ final class TerminalCheckpointResizeOrderingTests: XCTestCase {
     /// Spin until `condition` holds. Every condition used below is one the
     /// coordinator reaches on its own; the deadline only keeps a broken build
     /// from hanging the suite.
-    private func waitUntil(
+    func waitUntil(
         _ description: String,
         timeout: TimeInterval = 5,
         _ condition: () -> Bool

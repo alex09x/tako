@@ -62,7 +62,7 @@ done
 if [ ${#SCENARIOS[@]} -gt 0 ]; then
     KNOWN_SCENARIOS=$(grep -E '^\s*\("[a-zA-Z0-9_-]+",\s*"' scripts/e2e/tako-e2e.swift | sed -E 's/^[[:space:]]*\("([^"]+)",.*/\1/')
     for s in "${SCENARIOS[@]}"; do
-        if ! echo "$KNOWN_SCENARIOS" | grep -qx "$s"; then
+        if ! echo "$KNOWN_SCENARIOS" | grep -Fqx -- "$s"; then
             echo "FAIL: unknown scenario '$s'" >&2
             echo "Use --list to see available scenarios." >&2
             exit 2
@@ -81,9 +81,7 @@ if [ $RUN_LOCAL -eq 1 ]; then
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/e2e-persist.sh "${SCENARIOS[@]}"
     else
-        if [ ! -d target/macapp/Tako.app ]; then
-            python3 scripts/build-macapp.py
-        fi
+        python3 scripts/build-macapp.py
         exec ./scripts/e2e-macapp.sh "${SCENARIOS[@]}"
     fi
 else
@@ -93,7 +91,7 @@ else
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/mac-remote.sh "./scripts/e2e-persist.sh$SCENARIO_ARGS"
     else
-        exec ./scripts/mac-remote.sh "if [ ! -d target/macapp/Tako.app ]; then python3 scripts/build-macapp.py; fi; ./scripts/e2e-macapp.sh$SCENARIO_ARGS"
+        exec ./scripts/mac-remote.sh "python3 scripts/build-macapp.py && ./scripts/e2e-macapp.sh$SCENARIO_ARGS"
     fi
 fi
 

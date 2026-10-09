@@ -13,7 +13,9 @@ import Carbon
 import XCTest
 @testable import TakoCoreUI
 
+@MainActor
 final class TakoTerminalNSViewCoverageTests: XCTestCase {
+
 
     override func setUp() {
         super.setUp()

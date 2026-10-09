@@ -19,17 +19,6 @@ import Testing
 /// look like, so a regression that drops an override or the inherited
 /// environment would show up here rather than only in a unit test of the
 /// pure helper functions (see `AppReloadTests`).
-private func waitUntil(
-    timeout: TimeInterval = 8,
-    _ condition: () -> Bool
-) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline { return condition() }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-    }
-    return true
-}
 
 struct PTYSpawnEnvTests {
     @Test func childSeesIdentityRemovedVarAndRequestedWorkingDirectory() throws {

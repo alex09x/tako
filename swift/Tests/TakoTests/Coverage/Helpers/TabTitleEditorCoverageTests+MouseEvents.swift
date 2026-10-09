@@ -169,6 +169,3 @@ extension TabTitleEditorTests {
         #expect(harness.delegate.finishedWindows.isEmpty)
     }
 }
-
-
-}

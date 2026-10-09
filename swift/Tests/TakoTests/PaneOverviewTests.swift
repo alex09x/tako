@@ -281,9 +281,9 @@ struct PaneOverviewTests {
         #expect(presentedSurface === surface)
     }
 
-    // MARK: - Latency Benchmark (< 150 ms with 30 panes)
+    // MARK: - Store Refresh Benchmark (Data layer budget for 30 panes)
 
-    @Test func openLatencyBenchmarkWith30PanesMeets150msBudget() {
+    @Test func storeRefreshBenchmarkWith30PanesMeetsDataBudget() {
         let store = PaneOverviewStore()
 
         // Construct 30 simulated surfaces across multiple controllers and split trees
@@ -311,13 +311,14 @@ struct PaneOverviewTests {
         let totalPanes = controllers.reduce(0) { $0 + $1.surfaceTree.count }
         #expect(totalPanes == 30)
 
-        // Measure open/refresh time for 30 panes
+        // Measure store refresh time for 30 panes (data preparation budget for Roadmap B6)
         let startTime = CFAbsoluteTimeGetCurrent()
         store.refresh(fromControllers: controllers)
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
 
         #expect(store.items.count == 30)
-        // Roadmap B6 Done criteria: "Done when the overview opens in under 150 ms with 30 panes and reflects status changes live."
-        #expect(elapsed < 0.150, "Opening 30 panes took \(elapsed * 1000) ms, which exceeds the 150 ms budget")
+        // Store preparation must complete well within 50 ms of the 150 ms total overview budget
+        #expect(elapsed < 0.050, "Refreshing 30 panes in store took \(elapsed * 1000) ms, which exceeds the 50 ms data layer budget")
     }
+
 }

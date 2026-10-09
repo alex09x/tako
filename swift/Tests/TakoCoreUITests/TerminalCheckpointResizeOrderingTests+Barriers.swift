@@ -284,5 +284,3 @@ final class Injector: @unchecked Sendable {
 
     var applicationsAfterBarrier: Int { lock.withLock { appliedAfterBarrier } }
 }
-
-}

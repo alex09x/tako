@@ -101,10 +101,14 @@ final class Driver {
     private let source = CGEventSource(stateID: .hidSystemState)
 
     init(app: URL) throws {
-        appURL = app
+        appURL = app.standardizedFileURL.absoluteURL
         work = URL(fileURLWithPath: "/tmp")
             .appendingPathComponent("tako-e2e-\(UUID().uuidString.prefix(8).lowercased())")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+    }
+
+    var bundleID: String {
+        Bundle(url: appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
     }
 
     // A path the shell can be told to write to. Lowercase and short, so it
@@ -113,7 +117,7 @@ final class Driver {
 
     /// Scenarios start from a fresh window: none restored from an earlier
     /// run, none saved for the next. The restore scenario turns it back on.
-    static let defaultConfig = "window-save-state = never\n"
+    static let defaultConfig = "window-save-state = never\nauto-update = off\n"
 
     /// Extra environment for the next launch.
     var environment: [String: String] = [:]
@@ -128,8 +132,11 @@ final class Driver {
         // The isolated persistence profile moves the session namespace.
         var env = environment
         if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
+        env["TAKO_NO_UPDATE"] = "1"
+        env["TAKO_NO_LAUNCH_NOTICES"] = "1"
         open.arguments = ["-n", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
-            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
+            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] }
+            + [appURL.path, "--args", "--no-update", "--no-launch-notices"]
         try open.run()
         open.waitUntilExit()
         let deadline = Date().addingTimeInterval(15)
@@ -170,10 +177,13 @@ final class Driver {
         let before = Set(running().map(\.processIdentifier))
         var env = environment
         if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
+        env["TAKO_NO_UPDATE"] = "1"
+        env["TAKO_NO_LAUNCH_NOTICES"] = "1"
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = ["-n", "-g", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
-            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] } + [appURL.path]
+            + env.flatMap { ["--env", "\($0.key)=\($0.value)"] }
+            + [appURL.path, "--args", "--no-update", "--no-launch-notices"]
         try open.run()
         open.waitUntilExit()
         let deadline = Date().addingTimeInterval(15)
@@ -210,15 +220,12 @@ final class Driver {
 
     func closeTab() {
         key(Key.w, .maskCommand)
-        usleep(150_000)
-        _ = pressMenuItem(titledPrefix: "Close Tab")
     }
 
     func newTab() {
         key(Key.t, .maskCommand)
-        usleep(150_000)
-        _ = pressMenuItem(titledPrefix: "New Tab")
     }
+
 
     func interrupt() {
         key(Key.c, .maskControl)
@@ -318,11 +325,11 @@ final class Driver {
 
     /// Type a command line and press Return.
     func run(_ command: String) throws {
-        focus()
         try type(command)
         usleep(20_000)
         key(Key.returnKey)
     }
+
 
     // MARK: witnesses
 
@@ -400,9 +407,13 @@ final class Driver {
     /// A button with this title anywhere in Tako's windows or sheets.
     func button(titled title: String) -> AXUIElement? {
         for window in windows() {
-            for button in descendants(of: window, role: kAXButtonRole as String)
-            where (attribute(button, kAXTitleAttribute) as String?) == title {
-                return button
+            for btn in descendants(of: window, role: kAXButtonRole as String) {
+                let axTitle: String? = attribute(btn, kAXTitleAttribute)
+                let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
+                let axLabel: String? = attribute(btn, "AXLabel")
+                if axTitle == title || axDesc == title || axLabel == title {
+                    return btn
+                }
             }
         }
         return nil
@@ -498,8 +509,8 @@ final class Driver {
             AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, axValue)
         }
         usleep(100_000)
-        focus()
     }
+
 
     func setPosition(_ position: CGPoint) {
         guard let window = windows().first else { return }
@@ -956,9 +967,16 @@ let scenarios: [Scenario] = [
         d.quit()
         let config = "session-persistence = true\nconfirm-close-surface = false\n"
         try d.launch(config: config)
-        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
-        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid1"))")
+        guard let kept = Int32(try d.file("pid1").trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw Failure("no shell pid")
+        }
+        d.newTab()
+        usleep(1_200_000)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        guard let shell = Int32(try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines)),
+              shell != kept else {
+            throw Failure("no second shell")
         }
         d.closeTab()
         // Undo keeps a closed tab for 5 s; then it is released and its
@@ -966,17 +984,32 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { kill(shell, 0) != 0 }, timeout: 15) else {
             throw Failure("the shell \(shell) of the closed tab is still running")
         }
+        guard kill(kept, 0) == 0 else { throw Failure("the open tab's session was killed") }
     }),
     ("persist-close-asks", "closing a persistent tab asks first, and Cancel keeps its session", { d in
         d.quit()
         try d.launch(config: "session-persistence = true\n")
-        try d.run("sh -c 'echo $PPID' > \(d.path("pid"))")
-        guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid1"))")
+        guard let kept = Int32(try d.file("pid1").trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw Failure("no shell pid")
         }
-        d.key(Key.w, .maskCommand)
-        usleep(1_500_000)
-        d.key(Key.escape)
+        d.newTab()
+        usleep(1_200_000)
+        try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
+        guard let shell = Int32(try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines)),
+              shell != kept else {
+            throw Failure("no second shell")
+        }
+        d.closeTab()
+        var cancel: AXUIElement?
+        guard d.wait(for: { cancel = d.button(titled: "Cancel"); return cancel != nil }, timeout: 5),
+              let cancel else {
+            throw Failure("cmd+w on persistent tab did not show confirmation dialog with Cancel button")
+        }
+        d.press(cancel)
+        guard d.wait(for: { d.button(titled: "Cancel") == nil }, timeout: 5) else {
+            throw Failure("confirmation dialog remained open after Cancel")
+        }
         usleep(7_000_000)          // past the undo window
         guard kill(shell, 0) == 0 else { throw Failure("closing ended the session without asking") }
         try d.run("echo still > \(d.path("still"))")
@@ -1051,9 +1084,15 @@ let scenarios: [Scenario] = [
         try d.run("sleep 300")
         usleep(800_000)
         d.key(Key.q, .maskCommand)
-        usleep(1_500_000)
-        d.key(Key.escape)          // Cancel in the quit confirmation
-        usleep(1_000_000)
+        var cancel: AXUIElement?
+        guard d.wait(for: { cancel = d.button(titled: "Cancel"); return cancel != nil }, timeout: 5),
+              let cancel else {
+            throw Failure("cmd+q did not show confirmation dialog with Cancel button")
+        }
+        d.press(cancel)
+        guard d.wait(for: { d.button(titled: "Cancel") == nil }, timeout: 5) else {
+            throw Failure("quit confirmation dialog remained open after Cancel")
+        }
         guard d.pid != 0, NSRunningApplication(processIdentifier: d.pid) != nil else {
             throw Failure("Tako quit although the quit was cancelled")
         }
@@ -1069,15 +1108,28 @@ let scenarios: [Scenario] = [
         try d.launch(config: config)
         d.setPosition(CGPoint(x: 20, y: 50))
         d.setSize(CGSize(width: 650, height: 500))
+        d.focus()
         usleep(1_000_000)
         try d.run("tput cols > \(d.path("cols_narrow"))")
         let narrow = Int(try d.file("cols_narrow").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        guard narrow > 0 else { throw Failure("no narrow cols recorded") }
+        guard narrow > 0 && narrow < 100 else { throw Failure("narrow cols precondition failed: \(narrow)") }
 
-        let marker = "REFLOW_MARKER_" + String(repeating: "Z", count: 120)
-        try d.run("echo \(marker)")
-        guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
-            throw Failure("marker not seen on screen: [\(d.screenText().suffix(300))]")
+        // Output marker via python without typing it verbatim in the command
+        let marker = "REFLOW_MARKER_" + String(repeating: "Z", count: 106)
+        try d.run("python3 -c \"import sys; sys.stdout.write('\(marker)\\n')\"")
+        usleep(1_000_000)
+
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        // Precondition: In narrow terminal, the 120-char marker wraps and does NOT appear on a single line in styled physical rows
+        try d.run("\(ctl) text --styled --lines 10 > \(d.path("narrow_text")) 2>&1")
+        let narrowRows = (try? d.file("narrow_text"))?.components(separatedBy: "\n").map {
+            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+        } ?? []
+        guard !narrowRows.isEmpty && !narrowRows.allSatisfy({ $0.isEmpty }) else {
+            throw Failure("precondition failed: narrowRows was empty! Content: \(try d.file("narrow_text"))")
+        }
+        guard !narrowRows.contains(where: { $0.contains(marker) }) else {
+            throw Failure("precondition failed: marker was not wrapped across physical rows in narrow \(narrow) columns. Rows were: \(narrowRows)")
         }
 
         try d.quitNormally()
@@ -1085,17 +1137,23 @@ let scenarios: [Scenario] = [
         try d.launch(config: config)
         d.setPosition(CGPoint(x: 20, y: 50))
         d.setSize(CGSize(width: 1250, height: 700))
+        d.focus()
         usleep(1_500_000)
 
         try d.run("tput cols > \(d.path("cols_wide"))")
         let wide = Int(try d.file("cols_wide").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        guard wide > narrow + 30 else {
+        guard wide > 120 && wide > narrow + 30 else {
             throw Failure("columns did not widen: was \(narrow), now \(wide)")
         }
 
-        let screen = d.screenText()
-        guard screen.contains(marker) else {
-            throw Failure("marker broken or not unwrapped: [\(screen.suffix(300))]")
+        // Postcondition: Widening unwrapped the wrapped rows so the full 120-character marker
+        // now fits onto a single physical terminal row
+        try d.run("\(ctl) text --styled --lines 50 > \(d.path("wide_text")) 2>&1")
+        let wideRows = (try? d.file("wide_text"))?.components(separatedBy: "\n").map {
+            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+        } ?? []
+        guard wideRows.contains(where: { $0.contains(marker) }) else {
+            throw Failure("physical reflow failed: marker was not unwrapped into a single line in wide \(wide) columns. Rows were: \(wideRows)")
         }
 
         try d.run("exit")

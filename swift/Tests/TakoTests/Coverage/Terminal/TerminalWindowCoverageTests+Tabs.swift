@@ -223,5 +223,3 @@ extension TerminalWindowCoverageTests {
         #expect(window.tabTitleEditor(window.tabTitleEditor, titleFor: other) == other.title)
     }
 }
-
-}

@@ -338,7 +338,5 @@ extension TakoTerminalViewTests {
         drainMainQueue()
         XCTAssertNil(weakView, "queued parser work must not keep the view alive")
     }
-#endif
-
 }
 #endif

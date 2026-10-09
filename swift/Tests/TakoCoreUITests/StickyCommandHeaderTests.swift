@@ -265,6 +265,5 @@ final class StickyCommandHeaderTests: XCTestCase {
         XCTAssertNil(view.currentStickyCommandHeader(), "sticky header must be nil after checkpoint restore")
         XCTAssertEqual(view.trackedCommandsCountForTesting, 0, "tracked commands must be empty after checkpoint restore")
     }
-
-
 }
+#endif

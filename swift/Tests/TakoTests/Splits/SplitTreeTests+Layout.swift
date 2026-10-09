@@ -231,5 +231,3 @@ extension SplitTreeTests {
         #expect(nodeIds.count == 2)
     }
 }
-
-}

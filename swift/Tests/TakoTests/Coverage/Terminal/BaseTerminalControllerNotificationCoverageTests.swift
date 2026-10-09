@@ -196,5 +196,3 @@ struct BaseTerminalControllerNotificationTests {
         #expect(!controller.surfaceTree.contains(created))
     }
 }
-
-@MainActor

@@ -13,6 +13,7 @@ import Foundation
 import Testing
 @testable import Tako
 
+@MainActor
 struct ControlServerTests {
     @Test func aRequestIsAnsweredOverTheSocket() async throws {
         let dir = try privateDir()

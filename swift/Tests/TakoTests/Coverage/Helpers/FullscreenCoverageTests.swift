@@ -40,16 +40,6 @@ private func waitFullscreen(timeout: TimeInterval = 3, _ condition: () -> Bool) 
     }
 }
 
-/// Waits by suspending rather than spinning the run loop: these tests run as
-/// jobs on the main queue, so work the code under test schedules with
-/// `DispatchQueue.main.async` only runs once the test yields the thread.
-@MainActor
-private func waitAsync(timeout: TimeInterval = 4, _ condition: () -> Bool) async {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() && Date() < deadline {
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 // MARK: FullscreenMode dispatch
 

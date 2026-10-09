@@ -18,14 +18,14 @@ import Testing
 @Suite
 @MainActor
 struct TabBarViewCoverageTests {
-    private func draw(_ bar: Tako.TabBarView) {
+    func draw(_ bar: Tako.TabBarView) {
         let image = NSImage(size: bar.bounds.size)
         image.lockFocus()
         bar.draw(bar.bounds)
         image.unlockFocus()
     }
 
-    private func mount(_ bar: Tako.TabBarView, in window: NSWindow) {
+    func mount(_ bar: Tako.TabBarView, in window: NSWindow) {
         bar.frame = NSRect(x: 0, y: 0, width: 400, height: 38)
         window.contentView?.addSubview(bar)
     }
@@ -218,7 +218,7 @@ struct TabBarViewCoverageTests {
         #expect(bar.trackingAreas.count == 1)
     }
 
-    private func click(_ bar: Tako.TabBarView, at point: NSPoint, in window: NSWindow, clickCount: Int = 1) {
+    func click(_ bar: Tako.TabBarView, at point: NSPoint, in window: NSWindow, clickCount: Int = 1) {
         let event = NSEvent.mouseEvent(
             with: .leftMouseDown,
             location: point,

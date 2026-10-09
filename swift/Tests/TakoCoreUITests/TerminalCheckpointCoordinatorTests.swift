@@ -81,7 +81,7 @@ final class CheckpointRecorder: @unchecked Sendable {
 /// Every suite name here carries "Checkpoint" so `swift-test.sh --filter
 /// Checkpoint` actually gates it.
 final class TerminalCheckpointOrderingTests: XCTestCase {
-    private func makeCoordinator(
+    func makeCoordinator(
         core: TakoCore,
         main: CheckpointMainQueue,
         recorder: CheckpointRecorder
@@ -93,13 +93,13 @@ final class TerminalCheckpointOrderingTests: XCTestCase {
     }
 
     /// A checkpoint of a terminal that has `text` on screen, at `cols`x`rows`.
-    private func checkpoint(of text: String, cols: UInt32 = 40, rows: UInt32 = 10) -> Data {
+    func checkpoint(of text: String, cols: UInt32 = 40, rows: UInt32 = 10) -> Data {
         let source = TakoCore(cols: cols, rows: rows)
         source.feed(bytes: Data(text.utf8))
         return source.checkpoint()
     }
 
-    private func drainFully(_ coordinator: TerminalParserCoordinator, _ main: CheckpointMainQueue) {
+    func drainFully(_ coordinator: TerminalParserCoordinator, _ main: CheckpointMainQueue) {
         for _ in 0..<16 {
             coordinator.waitForParserQuiescence()
             if main.drain() == 0 { break }
