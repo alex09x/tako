@@ -124,8 +124,14 @@ final class PaneOverviewStore: ObservableObject {
     /// Optional fixture controllers for benchmarks and tests when running in test hosts
     static var fixtureControllers: [BaseTerminalController]?
 
+    /// Optional injected delay in controller discovery / data refresh pipeline for negative control benchmarks.
+    static var discoveryDelay: TimeInterval = 0
+
     /// Discovers all active terminal window controllers in the application.
     private func discoverControllers() -> [BaseTerminalController] {
+        if Self.discoveryDelay > 0 {
+            Thread.sleep(forTimeInterval: Self.discoveryDelay)
+        }
         if let fixture = Self.fixtureControllers {
             return fixture
         }
