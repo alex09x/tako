@@ -385,5 +385,21 @@ extension Tako {
         @objc override public func insertInputText(_ text: String) {
             insertInputText(text, isBroadcastRecipient: false)
         }
+
+        override open func keyDown(with event: NSEvent) {
+            let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if event.keyCode == 53 && mods.isEmpty {
+                // Escape key with no modifiers: if an overlay or diff review is open on this pane, dismiss it
+                if OverlayStore.shared.overlay(for: id) != nil {
+                    OverlayStore.shared.closeOverlay(paneId: id)
+                    return
+                }
+                if DiffReviewStore.shared.session(for: id) != nil {
+                    DiffReviewStore.shared.closeReview(paneId: id)
+                    return
+                }
+            }
+            super.keyDown(with: event)
+        }
     }
 }

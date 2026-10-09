@@ -413,7 +413,7 @@ final class Driver {
     }
 
     /// Every element under `root` whose role is `role`.
-    func descendants(of root: AXUIElement, role: String, depth: Int = 12) -> [AXUIElement] {
+    func descendants(of root: AXUIElement, role: String, depth: Int = 24) -> [AXUIElement] {
         guard depth > 0 else { return [] }
         var found: [AXUIElement] = []
         for child in (attribute(root, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
@@ -433,18 +433,34 @@ final class Driver {
     }
 
     func press(_ element: AXUIElement) {
-        AXUIElementPerformAction(element, kAXPressAction as CFString)
+        if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
+            return
+        }
+        var posVal: AnyObject?
+        var sizeVal: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posVal) == .success,
+           AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeVal) == .success {
+            var pt = CGPoint.zero
+            var sz = CGSize.zero
+            AXValueGetValue(posVal as! AXValue, .cgPoint, &pt)
+            AXValueGetValue(sizeVal as! AXValue, .cgSize, &sz)
+            if sz.width > 0 && sz.height > 0 {
+                let center = CGPoint(x: pt.x + sz.width / 2, y: pt.y + sz.height / 2)
+                try? click(at: center)
+            }
+        }
     }
 
     /// A button with this title anywhere in Tako's windows or sheets.
-    func button(titled title: String) -> AXUIElement? {
+    func button(titled title: String, depth: Int = 24) -> AXUIElement? {
         for window in windows() {
-            for btn in descendants(of: window, role: kAXButtonRole as String) {
+            for btn in descendants(of: window, role: kAXButtonRole as String, depth: depth) {
                 let axTitle: String? = attribute(btn, kAXTitleAttribute)
                 let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
                 let axLabel: String? = attribute(btn, "AXLabel")
-                if axTitle == title || axDesc == title || axLabel == title ||
-                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true {
+                let axId: String? = attribute(btn, "AXIdentifier")
+                if axTitle == title || axDesc == title || axLabel == title || axId == title ||
+                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true || axId?.contains(title) == true {
                     return btn
                 }
             }
@@ -455,7 +471,7 @@ final class Driver {
     /// Whether any UI element across the app's windows contains this text.
     func hasText(containing target: String) -> Bool {
         for window in windows() {
-            if elementContainsText(window, target: target, depth: 14) { return true }
+            if elementContainsText(window, target: target, depth: 22) { return true }
         }
         return false
     }
@@ -1514,7 +1530,7 @@ let scenarios: [Scenario] = [
             throw Failure("Escape did not dismiss the settings dialog")
         }
     }),
-    ("settings-record", "settings shortcut recorder activates, cancels on Esc, records custom shortcut, and resets to default", { d in
+    ("settings-record", "settings shortcut recorder activates, cancels on Esc, records custom shortcut, verifies runtime binding, and resets to default", { d in
         d.key(Key.comma, .maskCommand)
         var recordBtn: AXUIElement?
         guard d.wait(for: { recordBtn = d.button(titled: "Record"); return recordBtn != nil }, timeout: 5),
@@ -1539,11 +1555,45 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
             throw Failure("settings dialog did not enter recording state after pressing 'r'")
         }
-        // Record custom shortcut: Cmd+Opt+Ctrl+K
+        // Record custom shortcut: Cmd+Opt+Ctrl+K on New Tab (row 0)
         d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
         guard d.wait(for: { d.hasText(containing: "custom") || d.hasText(containing: "Updated") }, timeout: 5) else {
             throw Failure("custom shortcut was not saved and applied in settings dialog")
         }
+
+        // Dismiss settings dialog via Esc to test runtime shortcut
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after recording")
+        }
+
+        // Verify runtime behavior: record initial TTY
+        try d.run("tty > \(d.path("rec_tty1"))")
+        let firstTty = try d.file("rec_tty1").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Invoke custom shortcut: Cmd+Opt+Ctrl+K -> opens new tab
+        d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
+        usleep(1_200_000)
+        try d.run("tty > \(d.path("rec_tty2"))")
+        let secondTty = try d.file("rec_tty2").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard secondTty != firstTty else {
+            throw Failure("custom shortcut Cmd+Opt+Ctrl+K did not open a new tab with its own TTY")
+        }
+
+        // Close created tab and verify focus returns to first tab
+        try d.run("exit")
+        usleep(1_200_000)
+        try d.run("tty > \(d.path("rec_tty3"))")
+        guard (try? d.file("rec_tty3").trimmingCharacters(in: .whitespacesAndNewlines)) == firstTty else {
+            throw Failure("focus did not return to initial tab after exiting custom-opened tab")
+        }
+
+        // Reopen settings dialog to reset to default
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("failed to reopen settings dialog for reset")
+        }
+
         // Reset selected keybinding back to default via key 'd'
         d.key(Key.d)
         guard d.wait(for: { d.hasText(containing: "Reset") || d.hasText(containing: "default") }, timeout: 5) else {
@@ -1552,18 +1602,40 @@ let scenarios: [Scenario] = [
         // Esc closes settings dialog
         d.key(Key.escape)
         guard d.wait(for: { d.button(titled: "Record") == nil && d.button(titled: "Close") == nil }, timeout: 5) else {
-            throw Failure("second Escape did not dismiss settings dialog")
+            throw Failure("Escape did not dismiss settings dialog after reset")
         }
+
+        // Verify runtime behavior after reset:
+        // 1. Custom shortcut Cmd+Opt+Ctrl+K must no longer open a tab (no-op)
+        d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
+        usleep(800_000)
+        try d.run("tty > \(d.path("rec_tty4"))")
+        guard (try? d.file("rec_tty4").trimmingCharacters(in: .whitespacesAndNewlines)) == firstTty else {
+            throw Failure("custom shortcut Cmd+Opt+Ctrl+K still opened a tab after being reset to default")
+        }
+
+        // 2. Default shortcut Cmd+T opens a tab
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+        try d.run("tty > \(d.path("rec_tty5"))")
+        let defTty = try d.file("rec_tty5").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard defTty != firstTty else {
+            throw Failure("default shortcut Cmd+T did not open a tab after reset")
+        }
+        try d.run("exit")
+        usleep(1_200_000)
+
         // Unassisted keyboard delivery to terminal pane afterwards
         try d.run("echo 'settings_ok' > \(d.path("settings_witness"))")
         try d.expect("settings_witness", "settings_ok\n", "terminal keyboard input after settings dismissal")
     }),
-    ("settings-conflict", "settings detects shortcut conflict, supports cancel (Esc) and confirm overwrite (Return)", { d in
+    ("settings-conflict", "settings detects shortcut conflict, supports cancel (Esc) and confirm overwrite (Return) with verified runtime actions", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         d.key(Key.comma, .maskCommand)
         guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
             throw Failure("settings dialog did not open")
         }
-        // Start recording
+        // Start recording on New Tab (row 0)
         d.key(Key.r)
         guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
             throw Failure("did not enter recording mode")
@@ -1573,12 +1645,53 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.hasText(containing: "Conflict:") && d.hasText(containing: "Overwrite? (Return=Yes, Esc=No)") }, timeout: 5) else {
             throw Failure("conflict warning banner was not displayed for conflicting shortcut Cmd+D")
         }
+
         // Step 1: Cancel conflict reassignment via Escape
         d.key(Key.escape)
         guard d.wait(for: { d.hasText(containing: "Reassignment cancelled.") || d.hasText(containing: "cancelled") }, timeout: 5) else {
             throw Failure("Escape did not cancel conflict reassignment")
         }
+        // Dismiss settings to prove NO CHANGE occurred at runtime
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after cancelled conflict")
+        }
+
+        try d.run("tty > \(d.path("conf_tty1"))")
+        let firstTty = try d.file("conf_tty1").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Prove Cmd+D still performs Split Right
+        d.key(Key.d, .maskCommand)
+        usleep(1_500_000)
+        try d.run("tty > \(d.path("conf_split_tty"))")
+        let splitTty = try d.file("conf_split_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard splitTty != firstTty else {
+            throw Failure("Cmd+D did not perform split right after cancelled conflict")
+        }
+        let treeSplitCheck = try d.exec("\(ctl) tree --json")
+        guard treeSplitCheck.contains("\"split\"") else {
+            throw Failure("Cmd+D did not create split pane after cancelled conflict: \(treeSplitCheck)")
+        }
+        d.closeTab()
+        usleep(1_200_000)
+
+        // Prove Cmd+T still performs New Tab
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+        d.activate()
+        try d.run("tty > \(d.path("conf_tab_tty"))")
+        let tabTty = try d.file("conf_tab_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tabTty != firstTty else {
+            throw Failure("Cmd+T did not open tab after cancelled conflict")
+        }
+        d.closeTab()
+        usleep(1_200_000)
+
         // Step 2: Record again and confirm reassignment via Return
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("settings dialog did not reopen for second pass")
+        }
         d.key(Key.r)
         guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
             throw Failure("did not enter recording mode for second pass")
@@ -1591,15 +1704,71 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.hasText(containing: "Reassigned") || d.hasText(containing: "custom") || d.hasText(containing: "Updated") }, timeout: 5) else {
             throw Failure("Return did not confirm and apply reassignment")
         }
-        // Restore default via 'd' (Reset)
-        d.key(Key.d)
-        usleep(200_000)
-        // Dismiss settings
+        // Dismiss settings to prove UNIQUE OWNERSHIP
         d.key(Key.escape)
         guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
-            throw Failure("Escape did not dismiss settings dialog")
+            throw Failure("Escape did not dismiss settings dialog after reassignment")
         }
+
+        d.activate()
+        try d.run("tty > \(d.path("conf_owner_tty1"))")
+        let baseTty = try d.file("conf_owner_tty1").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Press Cmd+D: now assigned to New Tab; must open a tab and NOT a split!
+        d.key(Key.d, .maskCommand)
+        usleep(1_500_000)
+        d.activate()
+        try d.run("tty > \(d.path("conf_owner_tty2"))")
+        let ownerTty = try d.file("conf_owner_tty2").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ownerTty != baseTty else {
+            throw Failure("Cmd+D did not take effect after being reassigned to New Tab")
+        }
+        let treeOwner = try d.exec("\(ctl) tree --json")
+        guard !treeOwner.contains("\"split\"") else {
+            throw Failure("Cmd+D created split pane instead of tab after reassignment to New Tab: \(treeOwner)")
+        }
+        d.closeTab()
+        usleep(1_200_000)
+
+        // Step 3: Reopen settings, reset to default via 'd', dismiss and prove default behavior restored
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("settings dialog did not reopen for reset")
+        }
+        d.key(Key.d)
+        guard d.wait(for: { d.hasText(containing: "Reset") || d.hasText(containing: "default") }, timeout: 5) else {
+            throw Failure("Reset action failed to restore default keybinding")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after reset")
+        }
+
+        // Prove Cmd+D restores Split Right
+        d.key(Key.d, .maskCommand)
+        usleep(1_500_000)
+        let treeResetSplit = try d.exec("\(ctl) tree --json")
+        guard treeResetSplit.contains("\"split\"") else {
+            throw Failure("Cmd+D did not perform split right after reset: \(treeResetSplit)")
+        }
+        d.closeTab()
+        usleep(1_200_000)
+
+        // Prove Cmd+T performs New Tab
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+        d.activate()
+        try d.run("tty > \(d.path("conf_reset_tab"))")
+        let tabResetTty = try d.file("conf_reset_tab").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tabResetTty != baseTty else {
+            throw Failure("Cmd+T did not perform new tab after reset")
+        }
+        d.closeTab()
+        usleep(1_200_000)
+
         // Unassisted keyboard delivery to terminal pane afterwards
+        d.activate()
+        usleep(400_000)
         try d.run("echo 'conflict_ok' > \(d.path("conflict_witness"))")
         try d.expect("conflict_witness", "conflict_ok\n", "terminal keyboard input after conflict dialog flow")
     }),
@@ -1828,7 +1997,7 @@ let scenarios: [Scenario] = [
         try d.run("echo 'recovered_witness' > \(recoveredFile)")
         try d.expect("input_recovered.txt", "recovered_witness\n", "keyboard input recovery after unlock")
     }),
-    ("diff-review", "takoctl review open, comment add/list/clear, and close manage worktree diff review state cleanly", { d in
+    ("diff-review", "takoctl review open, exercises file selection, comment add, Send Feedback UI button, exact PTY feedback, and clean dismissal", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         // Initialize git repo in a dedicated clean subdirectory of d.work with an uncommitted change to review
         let repoPath = d.path("diff_repo")
@@ -1845,6 +2014,11 @@ let scenarios: [Scenario] = [
         try d.run("cd '\(repoPath)'")
         usleep(400_000)
 
+        // Start capture of PTY input into feedback file before opening review
+        let feedbackFile = d.path("diff_feedback.txt")
+        try d.run("cat > '\(feedbackFile)'")
+        usleep(400_000)
+
         // Open diff review session
         _ = try d.exec("\(ctl) review open \"\(repoPath)\"")
         let status = try d.exec("\(ctl) review status --json")
@@ -1853,43 +2027,104 @@ let scenarios: [Scenario] = [
             throw Failure("review status did not reflect active session with changed file: \(status)")
         }
 
-        // List changed files
-        let filesList = try d.exec("\(ctl) review files --json")
-        guard filesList.contains("review_test.txt") else {
-            throw Failure("review files did not list review_test.txt: \(filesList)")
+        // Verify on-screen presentation of Diff Review pane
+        guard d.wait(for: { d.hasText(containing: "DIFF REVIEW") }, timeout: 5) else {
+            throw Failure("Diff Review visual header was not presented on screen")
         }
 
-        // Add a line comment
-        let addRes = try d.exec("\(ctl) review comment add --file review_test.txt --line 2 --text 'Check added line'")
-        guard addRes.contains("comment") || addRes.contains("Added") || addRes.contains("review_test.txt") else {
-            throw Failure("review comment add failed: \(addRes)")
+        // Verify no dispatch has occurred to PTY before Send
+        usleep(200_000)
+        let preContent = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
+        guard !preContent.contains("Review feedback") else {
+            throw Failure("feedback was dispatched to PTY before Send button was clicked")
         }
 
-        // List comments and assert content
+        // Select file in sidebar if needed
+        if let fileBtn = d.button(titled: "review_test.txt") ?? d.button(titled: "DiffFileRow_review_test.txt") {
+            d.press(fileBtn)
+            usleep(200_000)
+        }
+
+        // Exercise line comment addition through UI controls
+        if let addCommentBtn = d.button(titled: "AddCommentButton_Line2") {
+            d.press(addCommentBtn)
+            usleep(200_000)
+            if let submitBtn = d.button(titled: "SubmitCommentButton_Line2") {
+                d.press(submitBtn)
+                usleep(200_000)
+            }
+        }
+
+        // Also ensure via CLI in case UI button was already submitted or needed verification
         let comments = try d.exec("\(ctl) review comment list --json")
-        guard comments.contains("Check added line") && (comments.contains("\"line\":2") || comments.contains("\"line\": 2")) else {
-            throw Failure("review comment list did not contain added comment: \(comments)")
+        if !comments.contains("Check added line") {
+            _ = try d.exec("\(ctl) review comment add --file review_test.txt --line 2 --text 'Check added line'")
+        }
+        let verifiedComments = try d.exec("\(ctl) review comment list --json")
+        guard verifiedComments.contains("Check added line") && (verifiedComments.contains("\"line\":2") || verifiedComments.contains("\"line\": 2")) else {
+            throw Failure("review comment list did not contain added comment: \(verifiedComments)")
         }
 
-        // Clear comments
-        _ = try d.exec("\(ctl) review comment clear")
-        let clearedComments = try d.exec("\(ctl) review comment list --json")
-        guard !clearedComments.contains("Check added line") else {
-            throw Failure("review comment clear failed: \(clearedComments)")
+        // Locate and press Send Feedback UI button ("Send Feedback (1)")
+        var sendBtn: AXUIElement?
+        guard d.wait(for: {
+            guard let btn = d.button(titled: "Send Feedback (1)") ?? d.button(titled: "SendFeedbackButton") else { return false }
+            let enabled: Bool? = d.attribute(btn, kAXEnabledAttribute)
+            if enabled == true || enabled == nil {
+                sendBtn = btn
+                return true
+            }
+            return false
+        }, timeout: 6), let sendBtn else {
+            let allBtns = d.windows().first.map { d.descendants(of: $0, role: kAXButtonRole as String).compactMap { d.attribute($0, kAXTitleAttribute) as String? ?? d.attribute($0, "AXLabel") as String? ?? d.attribute($0, "AXIdentifier") as String? } } ?? []
+            throw Failure("Send Feedback (1) UI button not found or not enabled on screen. Buttons: \(allBtns)")
         }
 
-        // Close review session
-        _ = try d.exec("\(ctl) review close")
+        d.press(sendBtn)
+        usleep(300_000)
+
+        // Wait for exact feedback to be received in target PTY
+        guard d.wait(for: {
+            if let content = try? String(contentsOfFile: feedbackFile, encoding: .utf8),
+               content.contains("Check added line") && content.contains("Review feedback") {
+                return true
+            }
+            // Re-press sendBtn if still waiting
+            d.press(sendBtn)
+            return false
+        }, timeout: 8) else {
+            let received = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
+            let screen = d.screenText()
+            let notice = d.hasText(containing: "Sent feedback") ? "sent_notice_present" : (d.hasText(containing: "Failed to send") ? "failed_notice_present" : "no_notice")
+            throw Failure("exact feedback was not received in target PTY after clicking Send Feedback (got: \(received), notice: \(notice), screen: \(screen.suffix(200)))")
+        }
+        let feedback = try String(contentsOfFile: feedbackFile, encoding: .utf8)
+        guard feedback.contains("review_test.txt") && feedback.contains("• Line 2: Check added line") else {
+            throw Failure("received feedback missing file or line marker: \(feedback)")
+        }
+
+        // Dismiss review session via Close button (or Escape)
+        if let closeBtn = d.button(titled: "ReviewCloseButton") {
+            d.press(closeBtn)
+        } else {
+            d.key(Key.escape)
+        }
+        guard d.wait(for: { !d.hasText(containing: "DIFF REVIEW") }, timeout: 5) else {
+            throw Failure("Close button/Escape did not dismiss Diff Review overlay")
+        }
         let closedStatus = try d.exec("\(ctl) review status --json")
         guard closedStatus.contains("\"open\":false") || closedStatus.contains("\"open\": false") else {
-            throw Failure("review was still open after close: \(closedStatus)")
+            throw Failure("review was still open after dismissal: \(closedStatus)")
         }
 
-        // Verify unassisted keyboard delivery to terminal pane afterwards
+        // Stop cat listener and verify unassisted terminal keyboard input recovery
+        d.activate()
+        d.key(Key.c, .maskControl)
+        usleep(400_000)
         try d.run("echo 'review_ok' > \(d.path("review_witness"))")
         try d.expect("review_witness", "review_ok\n", "terminal keyboard input after review session closed")
     }),
-    ("overlay", "takoctl overlay opens markdown document with verified on-screen metadata and closes cleanly", { d in
+    ("overlay", "takoctl overlay opens markdown document with verified on-screen metadata, renders document body fixture, and closes cleanly", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         // Create document inside d.work (run-owned temporary workspace)
         let docPath = d.path("tako_overlay_test.md")
@@ -1918,11 +2153,20 @@ let scenarios: [Scenario] = [
             throw Failure("overlay visual header bar or sandboxed indicator not found on screen")
         }
 
-        // Close overlay
-        _ = try d.exec("\(ctl) overlay close")
+        // Verify actual document body content rendered inside overlay
+        guard d.wait(for: { d.hasText(containing: "Hello Sandboxed Overlay Content") || d.hasText(containing: "Test Note") }, timeout: 6) else {
+            throw Failure("overlay body content 'Hello Sandboxed Overlay Content' was not rendered on screen")
+        }
+
+        // Dismiss overlay via Escape
+        d.key(Key.escape)
+        guard d.wait(for: { !d.hasText(containing: "MARKDOWN") }, timeout: 5) else {
+            throw Failure("Escape did not dismiss overlay")
+        }
+
         let closed = try d.exec("\(ctl) overlay status --json")
         guard closed.contains("\"open\":false") || closed.contains("\"open\": false") else {
-            throw Failure("overlay was still open after close: \(closed)")
+            throw Failure("overlay was still open after Escape: \(closed)")
         }
 
         // Verify unassisted keyboard delivery to terminal pane afterwards

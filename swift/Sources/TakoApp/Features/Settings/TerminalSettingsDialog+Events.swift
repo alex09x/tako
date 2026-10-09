@@ -305,10 +305,11 @@ extension TerminalSettingsDialog {
             } else {
                 statusMessage = "'\(item.title)' is already at default."
             }
+            setAccessibilityValue("reset_success: \(statusMessage ?? "")")
         } else {
             statusMessage = "Error: Failed to reset config file."
+            setAccessibilityValue("reset_error: \(statusMessage ?? "")")
         }
-        setAccessibilityValue("reset: \(statusMessage ?? "")")
         needsDisplay = true
     }
 

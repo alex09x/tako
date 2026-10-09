@@ -127,6 +127,7 @@ public final class DiffReviewStore: ObservableObject {
 
         let comment = DiffReviewComment(file: file, line: line, text: trimmedText)
         session.comments.append(comment)
+        objectWillChange.send()
         sessions[paneId] = session
         return comment
     }
@@ -138,6 +139,7 @@ public final class DiffReviewStore: ObservableObject {
         let countBefore = session.comments.count
         session.comments.removeAll { $0.id == commentId }
         if session.comments.count != countBefore {
+            objectWillChange.send()
             sessions[paneId] = session
             return true
         }
@@ -148,6 +150,7 @@ public final class DiffReviewStore: ObservableObject {
     public func clearComments(paneId: UUID) {
         guard var session = sessions[paneId] else { return }
         session.comments.removeAll()
+        objectWillChange.send()
         sessions[paneId] = session
     }
 
@@ -186,6 +189,7 @@ public final class DiffReviewStore: ObservableObject {
 
         // Clear sent comments from the review session
         session.comments.removeAll()
+        objectWillChange.send()
         sessions[paneId] = session
 
         return (feedbackMessage, targetId)

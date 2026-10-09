@@ -72,6 +72,8 @@ struct DiffReviewLineRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("AddCommentButton_Line\(lineNum)")
+                    .accessibilityLabel("Add comment line \(lineNum)")
                     .padding(.trailing, 8)
                 }
             }
@@ -97,6 +99,8 @@ struct DiffReviewLineRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("RemoveCommentButton")
+                    .accessibilityLabel("Remove comment")
                 }
                 .padding(6)
                 .background(Color.orange.opacity(0.15))
@@ -112,6 +116,7 @@ struct DiffReviewLineRow: View {
                     TextField("Add review comment for line \(lineNum)...", text: $commentInputText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11))
+                        .accessibilityIdentifier("CommentTextField_Line\(lineNum)")
                         .onSubmit {
                             onSubmitComment(file, lineNum)
                         }
@@ -120,6 +125,10 @@ struct DiffReviewLineRow: View {
                         onSubmitComment(file, lineNum)
                     }
                     .font(.system(size: 10, weight: .semibold))
+                    .accessibilityIdentifier("SubmitCommentButton_Line\(lineNum)")
+                    .accessibilityAction {
+                        onSubmitComment(file, lineNum)
+                    }
 
                     Button("Cancel") {
                         commentInputLine = nil
@@ -128,6 +137,7 @@ struct DiffReviewLineRow: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
+                    .accessibilityIdentifier("CancelCommentButton_Line\(lineNum)")
                 }
                 .padding(.leading, 74)
                 .padding(.trailing, 8)

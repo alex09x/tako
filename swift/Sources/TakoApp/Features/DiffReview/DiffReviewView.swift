@@ -30,6 +30,7 @@ struct DiffReviewView: View {
         self.session = session
         self.surfaceView = surfaceView
         self.theme = theme ?? (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        self._store = ObservedObject(wrappedValue: DiffReviewStore.shared)
     }
 
     private var currentSession: DiffReviewSession {
@@ -176,6 +177,11 @@ struct DiffReviewView: View {
             }
             .buttonStyle(.plain)
             .disabled(commentCount == 0)
+            .accessibilityIdentifier("SendFeedbackButton")
+            .accessibilityLabel("Send Feedback (\(commentCount))")
+            .accessibilityAction {
+                sendFeedback()
+            }
             .help("Send batched comments to agent pane")
 
             // Close button
@@ -187,6 +193,11 @@ struct DiffReviewView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("ReviewCloseButton")
+            .accessibilityLabel("Close Review")
+            .accessibilityAction {
+                dismiss()
+            }
             .help("Close Review (Esc)")
         }
         .padding(.horizontal, 10)
@@ -251,6 +262,8 @@ struct DiffReviewView: View {
                         .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("DiffFileRow_\(file.path)")
+                    .accessibilityLabel(file.path)
                 }
             }
             .padding(6)
@@ -307,8 +320,9 @@ struct DiffReviewView: View {
     // MARK: - Actions
 
     private func submitComment(file: String, line: Int) {
-        guard !commentInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        _ = try? store.addComment(paneId: currentSession.paneId, file: file, line: line, text: commentInputText)
+        let text = commentInputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedText = text.isEmpty ? "Check added line" : text
+        _ = try? store.addComment(paneId: currentSession.paneId, file: file, line: line, text: resolvedText)
         commentInputLine = nil
         commentInputText = ""
     }

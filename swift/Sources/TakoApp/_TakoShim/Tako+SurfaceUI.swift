@@ -111,6 +111,7 @@ extension Tako {
                 }
                 if let reviewSession = diffReviewStore.session(for: surfaceView.id) {
                     DiffReviewView(session: reviewSession, surfaceView: surfaceView)
+                        .id("diff_review_\(surfaceView.id)_\(reviewSession.comments.count)_\(reviewSession.selectedFile ?? "")")
                         .transition(.opacity)
                 }
             }

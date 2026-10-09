@@ -365,6 +365,24 @@ class TerminalWindow: NSWindow {
         syncWindowAppearance(surfaceConfig)
     }
 
+    override func cancelOperation(_ sender: Any?) {
+        if let tree = terminalController?.surfaceTree {
+            for surface in tree {
+                if OverlayStore.shared.overlay(for: surface.id) != nil {
+                    OverlayStore.shared.closeOverlay(paneId: surface.id)
+                    makeFirstResponder(surface)
+                    return
+                }
+                if DiffReviewStore.shared.session(for: surface.id) != nil {
+                    DiffReviewStore.shared.closeReview(paneId: surface.id)
+                    makeFirstResponder(surface)
+                    return
+                }
+            }
+        }
+        super.cancelOperation(sender)
+    }
+
     deinit {
         if let observer = tabMenuObserver {
             NotificationCenter.default.removeObserver(observer)

@@ -150,7 +150,7 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
 
         // Reset to default
         resetButton.click()
-        let isResetPredicate = NSPredicate(format: "value == 'reset'")
+        let isResetPredicate = NSPredicate(format: "value BEGINSWITH 'reset_success' OR value CONTAINS 'Reset'")
         let expectationReset = XCTNSPredicateExpectation(predicate: isResetPredicate, object: settingsDialog)
         XCTAssertEqual(XCTWaiter.wait(for: [expectationReset], timeout: 3), .completed, "Dialog should confirm reset to default")
 

@@ -107,6 +107,11 @@ struct ArtifactOverlayView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("OverlayCloseButton")
+            .accessibilityLabel("Close Overlay")
+            .accessibilityAction {
+                dismiss()
+            }
             .help("Close Overlay (Esc)")
         }
         .padding(.horizontal, 10)
