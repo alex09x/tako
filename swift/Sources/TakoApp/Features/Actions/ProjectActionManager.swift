@@ -93,6 +93,58 @@ final class ProjectActionManager {
         }
     }
 
+    /// Resolves the executable binary path for an argv-based command without invoking a shell.
+    ///
+    /// - Parameters:
+    ///   - executable: The program name or path (e.g. "printf", "cargo", "./build.sh", "/bin/ls").
+    ///   - cwd: The working directory for relative paths containing '/'.
+    ///   - pathEnv: Optional explicit PATH string; falls back to ProcessInfo PATH or standard system paths.
+    /// - Returns: Absolute path to the executable if found, or nil if not found.
+    static func resolveExecutable(_ executable: String, cwd: String, pathEnv: String?) -> String? {
+        if executable.hasPrefix("/") {
+            return FileManager.default.isExecutableFile(atPath: executable) ? executable : nil
+        }
+        if executable.contains("/") {
+            let path = (cwd as NSString).appendingPathComponent(executable)
+            return FileManager.default.isExecutableFile(atPath: path) ? path : nil
+        }
+        let searchPath = pathEnv ?? ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
+        for dir in searchPath.split(separator: ":").map(String.init) {
+            let candidate = (dir as NSString).appendingPathComponent(executable)
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    /// Prepares the program argv for execution in a new split or tab.
+    ///
+    /// Preserves exact argv boundaries and literal arguments unless `action.shell == true` is explicitly requested.
+    static func resolveProgram(action: ProjectAction, effectiveCwd: String) -> [String] {
+        let cmd = action.effectiveCommand
+        guard !cmd.isEmpty else { return [] }
+
+        if action.shell == true {
+            return ["/bin/sh", "-c", cmd.joined(separator: " ")]
+        }
+
+        // Literal argv execution: resolve executable while strictly preserving all argument tokens
+        guard let exe = cmd.first, !exe.isEmpty else { return cmd }
+        if let resolvedPath = resolveExecutable(exe, cwd: effectiveCwd, pathEnv: action.env?["PATH"]) {
+            var resolved = cmd
+            resolved[0] = resolvedPath
+            return resolved
+        }
+
+        // If not found directly and not absolute, use /usr/bin/env to resolve via PATH without shell expansion
+        if !exe.hasPrefix("/") && !exe.contains("/") {
+            return ["/usr/bin/env"] + cmd
+        }
+
+        return cmd
+    }
+
     /// Executes a project action against a source surface.
     ///
     /// - Parameters:
@@ -140,18 +192,19 @@ final class ProjectActionManager {
 
         let cmd = action.effectiveCommand
         if !cmd.isEmpty {
-            if action.shell == true || (action.shell == nil && !(cmd.first?.hasPrefix("/") ?? false)) {
-                config.program = ["/bin/sh", "-c", cmd.joined(separator: " ")]
-            } else {
-                config.program = cmd
-            }
+            config.program = Self.resolveProgram(action: action, effectiveCwd: effectiveCwd)
         }
 
         switch action.effectiveTarget {
         case .pane:
             // Send command into current pane
             if !cmd.isEmpty {
-                let cmdString = cmd.joined(separator: " ")
+                let cmdString: String
+                if action.shell == true {
+                    cmdString = cmd.joined(separator: " ")
+                } else {
+                    cmdString = cmd.map { ResumeSessionStore.shellQuote($0) }.joined(separator: " ")
+                }
                 try? ControlInput.send(surface, text: cmdString, enter: true)
             }
 

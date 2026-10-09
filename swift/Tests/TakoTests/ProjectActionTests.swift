@@ -306,4 +306,40 @@ import TakoKit
         #expect(runApprovedResp["trusted"]?.bool == true)
         #expect(runApprovedResp["id"]?.string == "test-act")
     }
+
+    @Test func testProjectActionArgvPreservesLiteralMetacharactersAndDollarExpressions() throws {
+        // 1. Literal argv action (shell: false / omitted):
+        // Tokens with spaces, literal $HOME, semicolons, quotes, and globs must NOT be shell-expanded or split.
+        let rawTokens = ["printf", "%s\n", "$HOME", "hello world", "foo; rm -rf /", "*.txt", "\"quoted\""]
+        let argvAction = ProjectAction(
+            id: "print-literal",
+            title: "Print Literal Tokens",
+            command: rawTokens,
+            shell: false,
+            target: .split
+        )
+        let resolvedArgv = ProjectActionManager.resolveProgram(action: argvAction, effectiveCwd: "/tmp")
+        #expect(resolvedArgv.count == rawTokens.count)
+        #expect(resolvedArgv[0].hasSuffix("printf")) // resolved executable path without shell
+        #expect(resolvedArgv[1] == "%s\n")
+        #expect(resolvedArgv[2] == "$HOME") // literal dollar variable preserved
+        #expect(resolvedArgv[3] == "hello world") // space preserved in single token
+        #expect(resolvedArgv[4] == "foo; rm -rf /") // semicolon preserved without command execution
+        #expect(resolvedArgv[5] == "*.txt") // glob preserved literally
+        #expect(resolvedArgv[6] == "\"quoted\"") // quotes preserved literally
+        #expect(!resolvedArgv.contains("/bin/sh"))
+
+        // 2. Explicit shell action (shell: true):
+        // When shell: true is explicitly selected, program routes through /bin/sh -c
+        let shellAction = ProjectAction(
+            id: "run-shell",
+            title: "Run Shell Script",
+            command: ["echo $HOME && ls"],
+            shell: true,
+            target: .split
+        )
+        let resolvedShell = ProjectActionManager.resolveProgram(action: shellAction, effectiveCwd: "/tmp")
+        #expect(resolvedShell.first == "/bin/sh")
+        #expect(resolvedShell == ["/bin/sh", "-c", "echo $HOME && ls"])
+    }
 }

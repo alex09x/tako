@@ -2907,7 +2907,7 @@ let scenarios: [Scenario] = [
             throw Failure("recovered focused pane does not match root tab 1 pane: expected \(tab1PaneId), got \(try d.focusedPaneId() ?? "nil")")
         }
     }),
-    ("project-action", "takoctl action discovers repo actions, refuses unapproved execution, approves via trust store, runs action in target split, and recovers unassisted keyboard focus", { d in
+    ("project-action", "takoctl action discovers repo actions, refuses unapproved execution, approves via trust store, runs action in target split with verified tree geometry, and recovers unassisted original pane/TTY focus", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         let projDir = d.work.appendingPathComponent("project_action_repo")
         let takoDir = projDir.appendingPathComponent(".tako")
@@ -2927,19 +2927,54 @@ let scenarios: [Scenario] = [
               "title": "Build Project In Pane",
               "description": "Compiles e2e artifact in current pane",
               "command": ["echo 'action_pane_ok' > '\(paneWitnessFile.path)'"],
+              "shell": true,
               "target": "pane"
             },
             {
               "id": "build-split",
               "title": "Build Project Split",
               "description": "Compiles e2e artifact in split",
-              "command": ["/bin/sh", "-c", "echo 'action_split_ok' > '\(witnessFile.path)'"],
+              "command": ["/bin/sh", "-c", "echo 'action_split_ok' > '\(witnessFile.path)' && sleep 60"],
               "target": "split"
             }
           ]
         }
         """
         try actionsJson.write(to: takoDir.appendingPathComponent("actions.json"), atomically: true, encoding: .utf8)
+
+        // Baseline recording: original TTY and original pane ID
+        try d.run("tty > \(d.path("cli_orig_tty"))")
+        let originalTty = try d.file("cli_orig_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover root focused pane ID")
+        }
+
+        func parseTreePanes() throws -> [String] {
+            let tree = try d.exec("\(ctl) tree --json")
+            guard let data = tree.data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = (root["result"] as? [String: Any]) ?? Optional(root),
+                  let windows = result["windows"] as? [[String: Any]] else {
+                throw Failure("failed to parse tree JSON: \(tree)")
+            }
+            var ids: [String] = []
+            for w in windows {
+                for t in w["tabs"] as? [[String: Any]] ?? [] {
+                    for p in t["panes"] as? [[String: Any]] ?? [] {
+                        if let id = p["id"] as? String {
+                            ids.append(id)
+                        }
+                    }
+                }
+            }
+            return ids
+        }
+
+        let initialPanes = try parseTreePanes()
+        guard !initialPanes.isEmpty && initialPanes.contains(originalPaneId) else {
+            throw Failure("baseline tree is invalid or missing original pane: \(initialPanes)")
+        }
+        let initialPaneCount = initialPanes.count
 
         // Step 1: Discover actions and verify initial untrusted status
         let listOutput = try d.exec("\(ctl) action list --path '\(projDir.path)' --json")
@@ -2964,31 +2999,19 @@ let scenarios: [Scenario] = [
             throw Failure("unapproved project action executed without approval")
         }
 
-        // Step 3: Test Command Palette presentation and dismissal
-        d.activate()
-        usleep(200_000)
-        _ = d.pressMenuItem(titledPrefix: "Command Palette")
-        guard d.wait(for: { d.hasText(containing: "Commands") || d.button(titled: "Clear Screen") != nil }, timeout: 5) else {
-            throw Failure("Command Palette was not presented via menu action")
-        }
-        d.key(Key.escape)
-        guard d.wait(for: { !d.hasText(containing: "Commands") && d.button(titled: "Clear Screen") == nil }, timeout: 5) else {
-            throw Failure("Command Palette was not dismissed after Escape")
-        }
-
-        // Step 4: Approve project actions via CLI
+        // Step 3: Approve project actions via CLI
         let approveOutput = try d.exec("\(ctl) action approve --path '\(projDir.path)' --json")
         guard approveOutput.contains("\"approved\":true") || approveOutput.contains("\"approved\": true") else {
             throw Failure("action approve did not report approved: true: \(approveOutput)")
         }
 
-        // Step 5: Verify status command reports trusted
+        // Step 4: Verify status command reports trusted
         let statusOutput = try d.exec("\(ctl) action status --path '\(projDir.path)' --json")
         guard statusOutput.contains("\"trusted\":true") || statusOutput.contains("\"trusted\": true") else {
             throw Failure("action status did not report trusted status after approval: \(statusOutput)")
         }
 
-        // Step 6: Execute approved action with target .pane
+        // Step 5: Execute approved action with target .pane
         let runPaneOutput = try d.exec("\(ctl) action run build-pane --path '\(projDir.path)' --json")
         guard runPaneOutput.contains("\"ran\":true") || runPaneOutput.contains("\"ran\": true") else {
             throw Failure("approved action targeting pane did not execute: \(runPaneOutput)")
@@ -3001,29 +3024,7 @@ let scenarios: [Scenario] = [
             throw Failure("witness file was not written with expected content by executed pane action")
         }
 
-        // Step 7: Execute approved action with target .split
-        func allPaneIDs() -> [String] {
-            guard let tree = try? d.exec("\(ctl) tree --json"),
-                  let data = tree.data(using: .utf8),
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let result = root["result"] as? [String: Any],
-                  let windows = result["windows"] as? [[String: Any]] else { return [] }
-            var ids: [String] = []
-            for w in windows {
-                for t in w["tabs"] as? [[String: Any]] ?? [] {
-                    for p in t["panes"] as? [[String: Any]] ?? [] {
-                        if let id = p["id"] as? String {
-                            ids.append(id)
-                        }
-                    }
-                }
-            }
-            return ids
-        }
-
-        let initialPanes = allPaneIDs()
-        let initialPaneCount = initialPanes.count
-
+        // Step 6: Execute approved action with target .split
         let runSplitOutput = try d.exec("\(ctl) action run build-split --path '\(projDir.path)' --json")
         guard runSplitOutput.contains("\"ran\":true") || runSplitOutput.contains("\"ran\": true") else {
             throw Failure("approved action targeting split did not execute: \(runSplitOutput)")
@@ -3037,33 +3038,198 @@ let scenarios: [Scenario] = [
             throw Failure("witness file was not written with expected content by executed split action")
         }
 
-        // Verify that target split resulted in an additional pane in tree
+        // Assert exact new pane in tree (fail if query fails, and require exactly 1 new pane)
         var splitPaneId: String?
         guard d.wait(for: {
-            let currentPanes = allPaneIDs()
-            if currentPanes.count > initialPaneCount {
-                splitPaneId = currentPanes.first(where: { !initialPanes.contains($0) })
+            guard let currentPanes = try? parseTreePanes() else { return false }
+            let diff = Set(currentPanes).subtracting(Set(initialPanes))
+            if diff.count == 1, let id = diff.first {
+                splitPaneId = id
                 return true
             }
             return false
+        }, timeout: 6), let newPaneId = splitPaneId else {
+            throw Failure("project action with target split did not create exactly one new pane in tree")
+        }
+
+        // Cleanly close split pane via takoctl close and assert successful cleanup
+        let closeOutput = try d.exec("\(ctl) close --target \(newPaneId) --json")
+        guard closeOutput.contains("\"state\":\"closed\"") || closeOutput.contains("\"state\": \"closed\"") else {
+            throw Failure("takoctl close returned non-closed state: \(closeOutput)")
+        }
+        guard d.wait(for: {
+            guard let currentPanes = try? parseTreePanes() else { return false }
+            return currentPanes.count == initialPaneCount &&
+                   currentPanes.contains(originalPaneId) &&
+                   !currentPanes.contains(newPaneId)
         }, timeout: 6) else {
-            throw Failure("project action with target split did not create additional pane in tree")
+            let remainingTree = (try? d.exec("\(ctl) tree --json")) ?? ""
+            throw Failure("split pane was not cleanly removed from tree: \(remainingTree)")
         }
 
-        // Cleanly close split pane via takoctl close
-        if let id = splitPaneId {
-            _ = try? d.exec("\(ctl) close --target \(id) --json")
-            _ = d.wait(for: { allPaneIDs().count == initialPaneCount }, timeout: 5)
-        }
-
-        // Step 8: Verify unassisted terminal keyboard focus recovery in active pane
+        // Step 7: Verify unassisted terminal keyboard focus recovery in original pane and matching TTY
         d.activate()
         usleep(500_000)
-        try d.run("echo 'keyboard_ok' > '\(kbWitnessFile.path)'")
+        try d.run("tty > \(d.path("cli_recovered_tty")) && echo 'keyboard_ok' > '\(kbWitnessFile.path)'")
         guard d.wait(for: {
             (try? String(contentsOf: kbWitnessFile, encoding: .utf8)) == "keyboard_ok\n"
         }, timeout: 6) else {
             throw Failure("terminal keyboard input was not functional after project action execution")
+        }
+        let recoveredTty = try d.file("cli_recovered_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == originalTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match original TTY (\(originalTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")
+        }
+    }),
+    ("project-action-ui", "shell-reported project cwd populates Command Palette with project actions, cancel refuses execution, Approve & Run executes approved action in UI and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        let projDir = d.work.appendingPathComponent("ui_project_repo")
+        let takoDir = projDir.appendingPathComponent(".tako")
+        try FileManager.default.createDirectory(at: takoDir, withIntermediateDirectories: true)
+
+        let uiPaneWitness = projDir.appendingPathComponent("ui_pane_witness.txt")
+        let uiKbWitness = projDir.appendingPathComponent("ui_kb_witness.txt")
+
+        let actionsJson = """
+        {
+          "version": 1,
+          "name": "UIProject",
+          "actions": [
+            {
+              "id": "ui-pane-act",
+              "title": "Build UI In Pane",
+              "description": "Compiles UI artifact in current pane",
+              "command": ["echo 'ui_pane_ok' > '\(uiPaneWitness.path)'"],
+              "shell": true,
+              "target": "pane"
+            }
+          ]
+        }
+        """
+        try actionsJson.write(to: takoDir.appendingPathComponent("actions.json"), atomically: true, encoding: .utf8)
+
+        // Step 1: Record original pane ID and TTY
+        try d.run("tty > \(d.path("ui_orig_tty"))")
+        let origTty = try d.file("ui_orig_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover root focused pane ID in UI journey")
+        }
+
+        // Step 2: Change directory in active shell to project fixture and emit OSC 7 cwd report
+        try d.run("cd '\(projDir.path)' && printf '\\033]7;file://localhost%s\\007' \"$PWD\"")
+        guard d.wait(for: {
+            guard let tree = try? d.exec("\(ctl) tree --json"),
+                  tree.contains(projDir.path) else { return false }
+            return true
+        }, timeout: 6) else {
+            throw Failure("surface cwd in tree did not update to project dir \(projDir.path)")
+        }
+
+        // Step 3: Open Command Palette via menu item
+        d.activate()
+        usleep(200_000)
+        guard d.pressMenuItem(titledPrefix: "Command Palette") else {
+            throw Failure("failed to press Command Palette menu item")
+        }
+        guard d.wait(for: { d.hasText(containing: "Commands") }, timeout: 5) else {
+            throw Failure("Command Palette was not presented via menu action")
+        }
+
+        // Step 4: Verify project action discovery in Command Palette
+        try d.type("Build UI In Pane")
+        usleep(400_000)
+        guard d.wait(for: {
+            d.hasText(containing: "UIProject: Build UI In Pane") || d.hasText(containing: "Project Action") || d.button(titled: "Build UI In Pane") != nil
+        }, timeout: 5) else {
+            throw Failure("Command Palette did not discover or display project action for current directory")
+        }
+
+        // Step 5: Submit action while untrusted -> presents Approve Project Action dialog
+        d.key(Key.returnKey)
+        var cancelBtn: AXUIElement?
+        var approveBtn: AXUIElement?
+        guard d.wait(for: {
+            cancelBtn = d.button(titled: "Cancel")
+            approveBtn = d.button(titled: "Approve & Run")
+            return cancelBtn != nil && approveBtn != nil
+        }, timeout: 5), let cancelBtn else {
+            throw Failure("Approve Project Action confirmation dialog did not appear for untrusted action")
+        }
+        guard d.hasText(containing: "Approve Project Action?") else {
+            throw Failure("dialog does not present expected title text")
+        }
+
+        // Step 6: Test Cancel path -> dismisses dialog with NO execution
+        d.press(cancelBtn)
+        guard d.wait(for: { d.button(titled: "Approve & Run") == nil && d.button(titled: "Cancel") == nil }, timeout: 5) else {
+            throw Failure("Approve Project Action dialog was not dismissed after Cancel")
+        }
+        guard !FileManager.default.fileExists(atPath: uiPaneWitness.path) else {
+            throw Failure("project action executed despite Cancel being pressed")
+        }
+        let untrustedStatus = try d.exec("\(ctl) action status --path '\(projDir.path)' --json")
+        guard untrustedStatus.contains("\"trusted\":false") || untrustedStatus.contains("\"trusted\": false") else {
+            throw Failure("action status was marked trusted despite Cancel: \(untrustedStatus)")
+        }
+
+        // Step 7: Re-open Command Palette and invoke action to Approve & Run
+        d.activate()
+        usleep(200_000)
+        guard d.pressMenuItem(titledPrefix: "Command Palette") else {
+            throw Failure("failed to reopen Command Palette")
+        }
+        guard d.wait(for: { d.hasText(containing: "Commands") }, timeout: 5) else {
+            throw Failure("Command Palette did not reopen")
+        }
+        try d.type("Build UI In Pane")
+        usleep(400_000)
+        d.key(Key.returnKey)
+
+        var approveBtn2: AXUIElement?
+        guard d.wait(for: {
+            approveBtn2 = d.button(titled: "Approve & Run")
+            return approveBtn2 != nil
+        }, timeout: 5), let approveBtn2 else {
+            throw Failure("Approve Project Action dialog did not appear on second invocation")
+        }
+
+        // Press Approve & Run
+        d.press(approveBtn2)
+        guard d.wait(for: { d.button(titled: "Approve & Run") == nil }, timeout: 5) else {
+            throw Failure("Approve Project Action dialog was not dismissed after Approve & Run")
+        }
+
+        // Verify action executed in pane and wrote expected witness
+        guard d.wait(for: {
+            (try? String(contentsOf: uiPaneWitness, encoding: .utf8)) == "ui_pane_ok\n"
+        }, timeout: 6) else {
+            throw Failure("witness file was not written by action executed via Approve & Run")
+        }
+
+        // Verify action status is now trusted
+        let trustedStatus = try d.exec("\(ctl) action status --path '\(projDir.path)' --json")
+        guard trustedStatus.contains("\"trusted\":true") || trustedStatus.contains("\"trusted\": true") else {
+            throw Failure("action status was not marked trusted after Approve & Run: \(trustedStatus)")
+        }
+
+        // Step 8: Verify unassisted terminal keyboard focus recovery in original pane and matching TTY
+        d.activate()
+        usleep(500_000)
+        try d.run("tty > \(d.path("ui_rec_tty")) && echo 'ui_kb_ok' > '\(uiKbWitness.path)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: uiKbWitness, encoding: .utf8)) == "ui_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after UI action execution")
+        }
+        let recoveredTty = try d.file("ui_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == origTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match original TTY (\(origTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")
         }
     }),
 ]
