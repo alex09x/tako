@@ -120,4 +120,103 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         app.typeKey("n", modifierFlags: [.command, .option])
         XCTAssertTrue(notificationsHeader.waitForNonExistence(timeout: 5), "Notification Center should disappear after second toggle")
     }
+
+    @MainActor
+    func testSettingsKeybindingRecorderSaveAndReset() async throws {
+        let app = try takoApplication()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
+
+        // Open Settings via shortcut Cmd+,
+        app.typeKey(",", modifierFlags: .command)
+
+        let settingsDialog = app.groups["TerminalSettingsDialog"]
+        XCTAssertTrue(settingsDialog.waitForExistence(timeout: 5), "Settings dialog should appear")
+
+        let recordButton = app.buttons["SettingsRecordButton"]
+        XCTAssertTrue(recordButton.waitForExistence(timeout: 5), "Record button should appear")
+
+        let resetButton = app.buttons["SettingsResetButton"]
+        XCTAssertTrue(resetButton.waitForExistence(timeout: 5), "Reset button should appear")
+
+        // Activate recording mode
+        recordButton.click()
+        let isRecordingPredicate = NSPredicate(format: "value == 'recording'")
+        let expectationRecording = XCTNSPredicateExpectation(predicate: isRecordingPredicate, object: settingsDialog)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectationRecording], timeout: 3), .completed, "Dialog should enter recording state")
+
+        // Press custom shortcut keys Cmd+Opt+Ctrl+K
+        app.typeKey("k", modifierFlags: [.command, .option, .control])
+
+        // Reset to default
+        resetButton.click()
+        let isResetPredicate = NSPredicate(format: "value == 'reset'")
+        let expectationReset = XCTNSPredicateExpectation(predicate: isResetPredicate, object: settingsDialog)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectationReset], timeout: 3), .completed, "Dialog should confirm reset to default")
+
+        // Close Settings via Escape
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
+    }
+
+    @MainActor
+    func testSettingsConflictModalCancelAndReassign() async throws {
+        let app = try takoApplication()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
+
+        // Open Settings via shortcut Cmd+,
+        app.typeKey(",", modifierFlags: .command)
+
+        let settingsDialog = app.groups["TerminalSettingsDialog"]
+        XCTAssertTrue(settingsDialog.waitForExistence(timeout: 5), "Settings dialog should appear")
+
+        let recordButton = app.buttons["SettingsRecordButton"]
+        XCTAssertTrue(recordButton.waitForExistence(timeout: 5), "Record button should appear")
+
+        let resetButton = app.buttons["SettingsResetButton"]
+        XCTAssertTrue(resetButton.waitForExistence(timeout: 5), "Reset button should appear")
+
+        // Step 1: Record and detect conflict with default shortcut Cmd+D (Split Right)
+        recordButton.click()
+        app.typeKey("d", modifierFlags: .command)
+
+        // Conflict prompt displayed: Cancel via Escape
+        app.typeKey(.escape, modifierFlags: [])
+
+        // Step 2: Record again, re-enter Cmd+D, and confirm reassignment via Return
+        recordButton.click()
+        app.typeKey("d", modifierFlags: .command)
+        app.typeKey(.return, modifierFlags: [])
+
+        // Restore default
+        resetButton.click()
+
+        // Close Settings
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
+    }
+
+    @MainActor
+    func testModalEventContainment() async throws {
+        let app = try takoApplication()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
+
+        // Open Settings modal
+        app.typeKey(",", modifierFlags: .command)
+
+        let settingsDialog = app.groups["TerminalSettingsDialog"]
+        XCTAssertTrue(settingsDialog.waitForExistence(timeout: 5), "Settings dialog should appear")
+
+        // Attempt split shortcut Cmd+D while modal is active: should be consumed by performKeyEquivalent
+        app.typeKey("d", modifierFlags: .command)
+
+        // Verify settings dialog remains visible and undisturbed
+        XCTAssertTrue(settingsDialog.exists, "Settings dialog should retain first responder containment")
+
+        // Dismiss settings
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
+    }
 }

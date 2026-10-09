@@ -92,6 +92,8 @@ enum Key {
     static let rightBracket: CGKeyCode = 30
     static let s: CGKeyCode = 1
     static let o: CGKeyCode = 31
+    static let r: CGKeyCode = 15
+    static let k: CGKeyCode = 40
 }
 
 // MARK: - Driver
@@ -1512,7 +1514,7 @@ let scenarios: [Scenario] = [
             throw Failure("Escape did not dismiss the settings dialog")
         }
     }),
-    ("settings-record", "settings shortcut recorder activates on Record button and cancels on Esc", { d in
+    ("settings-record", "settings shortcut recorder activates, cancels on Esc, records custom shortcut, and resets to default", { d in
         d.key(Key.comma, .maskCommand)
         var recordBtn: AXUIElement?
         guard d.wait(for: { recordBtn = d.button(titled: "Record"); return recordBtn != nil }, timeout: 5),
@@ -1522,6 +1524,7 @@ let scenarios: [Scenario] = [
         guard d.button(titled: "Close") != nil else {
             throw Failure("settings dialog Close button not found")
         }
+        // Test recording mode activation via Record button
         d.press(recordBtn)
         guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") || d.hasText(containing: "cancel") }, timeout: 5) else {
             throw Failure("settings dialog did not enter recording state after pressing Record")
@@ -1531,12 +1534,22 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.button(titled: "Close") != nil && (d.hasText(containing: "cancelled") || !d.hasText(containing: "recording")) }, timeout: 5) else {
             throw Failure("first Escape did not cancel recording while leaving Settings dialog open")
         }
-        // Test Reset button interaction while Settings remains open
-        if let resetBtn = d.button(titled: "Reset") {
-            d.press(resetBtn)
-            usleep(200_000)
+        // Activate recording again via key 'r'
+        d.key(Key.r)
+        guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
+            throw Failure("settings dialog did not enter recording state after pressing 'r'")
         }
-        // Second Esc closes settings dialog
+        // Record custom shortcut: Cmd+Opt+Ctrl+K
+        d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
+        guard d.wait(for: { d.hasText(containing: "custom") || d.hasText(containing: "Updated") }, timeout: 5) else {
+            throw Failure("custom shortcut was not saved and applied in settings dialog")
+        }
+        // Reset selected keybinding back to default via key 'd'
+        d.key(Key.d)
+        guard d.wait(for: { d.hasText(containing: "Reset") || d.hasText(containing: "default") }, timeout: 5) else {
+            throw Failure("Reset action failed to restore default keybinding")
+        }
+        // Esc closes settings dialog
         d.key(Key.escape)
         guard d.wait(for: { d.button(titled: "Record") == nil && d.button(titled: "Close") == nil }, timeout: 5) else {
             throw Failure("second Escape did not dismiss settings dialog")
@@ -1544,6 +1557,84 @@ let scenarios: [Scenario] = [
         // Unassisted keyboard delivery to terminal pane afterwards
         try d.run("echo 'settings_ok' > \(d.path("settings_witness"))")
         try d.expect("settings_witness", "settings_ok\n", "terminal keyboard input after settings dismissal")
+    }),
+    ("settings-conflict", "settings detects shortcut conflict, supports cancel (Esc) and confirm overwrite (Return)", { d in
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("settings dialog did not open")
+        }
+        // Start recording
+        d.key(Key.r)
+        guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
+            throw Failure("did not enter recording mode")
+        }
+        // Enter a shortcut known to conflict with another default action: Cmd+D (Split Right)
+        d.key(Key.d, .maskCommand)
+        guard d.wait(for: { d.hasText(containing: "Conflict:") && d.hasText(containing: "Overwrite? (Return=Yes, Esc=No)") }, timeout: 5) else {
+            throw Failure("conflict warning banner was not displayed for conflicting shortcut Cmd+D")
+        }
+        // Step 1: Cancel conflict reassignment via Escape
+        d.key(Key.escape)
+        guard d.wait(for: { d.hasText(containing: "Reassignment cancelled.") || d.hasText(containing: "cancelled") }, timeout: 5) else {
+            throw Failure("Escape did not cancel conflict reassignment")
+        }
+        // Step 2: Record again and confirm reassignment via Return
+        d.key(Key.r)
+        guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") }, timeout: 5) else {
+            throw Failure("did not enter recording mode for second pass")
+        }
+        d.key(Key.d, .maskCommand)
+        guard d.wait(for: { d.hasText(containing: "Conflict:") }, timeout: 5) else {
+            throw Failure("conflict warning banner was not displayed on second pass")
+        }
+        d.key(Key.returnKey)
+        guard d.wait(for: { d.hasText(containing: "Reassigned") || d.hasText(containing: "custom") || d.hasText(containing: "Updated") }, timeout: 5) else {
+            throw Failure("Return did not confirm and apply reassignment")
+        }
+        // Restore default via 'd' (Reset)
+        d.key(Key.d)
+        usleep(200_000)
+        // Dismiss settings
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog")
+        }
+        // Unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'conflict_ok' > \(d.path("conflict_witness"))")
+        try d.expect("conflict_witness", "conflict_ok\n", "terminal keyboard input after conflict dialog flow")
+    }),
+    ("modal-containment", "modal settings dialog blocks keystrokes and shortcuts from leaking to underlying terminal PTY", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("settings dialog did not open for modal containment test")
+        }
+        // Attempt typing command into terminal while modal is active
+        let leakFile = d.path("containment_leak.txt")
+        try d.run("echo 'leaked_to_pty' > \(leakFile)")
+        // Attempt split shortcut (Cmd+D) while modal is active: must be blocked by performKeyEquivalent
+        d.key(Key.d, .maskCommand)
+        usleep(400_000)
+
+        // Verify no split pane was created
+        let tree = try d.exec("\(ctl) tree --json")
+        guard !tree.contains("\"split\"") else {
+            throw Failure("Cmd+D leaked through modal dialog and created a split pane: \(tree)")
+        }
+        // Verify terminal PTY received no leaked keystrokes
+        guard !FileManager.default.fileExists(atPath: leakFile) else {
+            throw Failure("keystrokes leaked through modal dialog to terminal PTY")
+        }
+
+        // Dismiss settings dialog
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog")
+        }
+        // Verify terminal PTY input recovers cleanly
+        let recoveredFile = d.path("containment_recovered.txt")
+        try d.run("echo 'containment_ok' > \(recoveredFile)")
+        try d.expect("containment_recovered.txt", "containment_ok\n", "terminal keyboard input recovery after modal dismissal")
     }),
     ("sidebar", "cmd+opt+s toggles the session sidebar open and closed", { d in
         d.key(Key.s, [.maskCommand, .maskAlternate])
@@ -1591,10 +1682,54 @@ let scenarios: [Scenario] = [
         }
         _ = try d.exec("\(ctl) workspace delete E2EWS")
     }),
-    ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes", { d in
+    ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes with verified non-target execution barrier", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        _ = try d.exec("\(ctl) split right")
-        usleep(1_000_000)
+        // Record leader pane TTY and ID before splitting
+        let leaderTtyPath = d.path("leader_tty.txt")
+        d.activate()
+        try d.run("tty > \(leaderTtyPath)")
+        guard d.wait(for: { (try? d.file("leader_tty.txt").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) == false }, timeout: 5) else {
+            throw Failure("failed to read initial leader pane TTY")
+        }
+        let leaderTty = try d.file("leader_tty.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        func extractPanes(from json: String) -> [String] {
+            if let data = json.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let root = (obj["result"] as? [String: Any]) ?? obj
+                if let windows = root["windows"] as? [[String: Any]] {
+                    var ids: [String] = []
+                    for w in windows {
+                        for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                            for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                                if let id = p["id"] as? String { ids.append(id) }
+                            }
+                        }
+                    }
+                    if !ids.isEmpty { return ids }
+                }
+            }
+            if let regex = try? NSRegularExpression(pattern: "\"id\"\\s*:\\s*\"([a-f0-9\\-]+)\"") {
+                let nsStr = json as NSString
+                let matches = regex.matches(in: json, range: NSRange(location: 0, length: nsStr.length))
+                return matches.map { nsStr.substring(with: $0.range(at: 1)) }
+            }
+            return []
+        }
+        let treeBefore = try d.exec("\(ctl) tree --json")
+        let initialIds = extractPanes(from: treeBefore)
+        guard let leaderId = initialIds.first else {
+            throw Failure("could not identify initial leader pane ID from tree: \(treeBefore)")
+        }
+
+        let splitOutput = try d.exec("\(ctl) split right")
+        let nonTargetId = splitOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        usleep(600_000)
+
+        // Refocus the leader pane so post-stop keyboard delivery is deterministically directed to leader
+        _ = try d.exec("\(ctl) focus --target \(leaderId)")
+        usleep(400_000)
+
         let witnessPath = d.path("bcast_witness.txt")
         _ = try d.exec("\(ctl) broadcast start")
         let status = try d.exec("\(ctl) broadcast status --json")
@@ -1621,7 +1756,7 @@ let scenarios: [Scenario] = [
         guard stopped.contains("\"active\":false") || stopped.contains("\"active\": false") else {
             throw Failure("broadcast was still active after stop: \(stopped)")
         }
-        // Post-stop isolation: typing now reaches only the focused leader pane
+        // Post-stop isolation: typing reaches focused leader pane
         let soloWitness = d.path("solo_witness.txt")
         d.activate()
         try d.run("tty >> \(soloWitness)")
@@ -1633,12 +1768,22 @@ let scenarios: [Scenario] = [
             let content = (try? String(contentsOfFile: soloWitness, encoding: .utf8)) ?? ""
             throw Failure("post-stop isolation failed: solo_witness occurrences != 1: \(content)")
         }
-        // Execution barrier on non-targets: wait 600ms to guarantee no delayed second write occurs
-        usleep(600_000)
+
+        // Ordered execution completion barrier through non-target pane's PTY queue with controlled delayed recipient
+        let barrierFile = d.path("non_target_barrier.txt")
+        _ = try d.exec("\(ctl) send \"sh -c 'sleep 0.2; echo non_target_barrier_done > \(barrierFile)'\" --target \(nonTargetId)")
+        guard d.wait(for: {
+            guard let text = try? String(contentsOfFile: barrierFile, encoding: .utf8) else { return false }
+            return text.contains("non_target_barrier_done")
+        }, timeout: 10) else {
+            throw Failure("non-target execution barrier did not complete via PTY queue")
+        }
+
+        // Verify all witnesses: exactly one target TTY and zero non-target deliveries
         let finalContent = (try? String(contentsOfFile: soloWitness, encoding: .utf8)) ?? ""
         let finalLines = finalContent.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        guard finalLines.count == 1 else {
-            throw Failure("delayed delivery leaked to second pane after broadcast stop: \(finalContent)")
+        guard finalLines.count == 1 && finalLines.first == leaderTty else {
+            throw Failure("post-stop barrier check failed: expected exactly 1 leader delivery (\(leaderTty)), got: \(finalContent)")
         }
     }),
     ("input-ownership", "takoctl input lock and unlock control input ownership without error", { d in
@@ -1683,18 +1828,72 @@ let scenarios: [Scenario] = [
         try d.run("echo 'recovered_witness' > \(recoveredFile)")
         try d.expect("input_recovered.txt", "recovered_witness\n", "keyboard input recovery after unlock")
     }),
-    ("diff-review", "takoctl review status queries worktree review state cleanly", { d in
+    ("diff-review", "takoctl review open, comment add/list/clear, and close manage worktree diff review state cleanly", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        let res = try d.exec("\(ctl) review status --json")
-        guard res.contains("\"open\"") || res.contains("\"active\"") || res.contains("\"comments\"") || res.contains("\"worktree\"") else {
-            throw Failure("review status did not return structured review fields: \(res)")
+        // Initialize git repo in a dedicated clean subdirectory of d.work with an uncommitted change to review
+        let repoPath = d.path("diff_repo")
+        try FileManager.default.createDirectory(atPath: repoPath, withIntermediateDirectories: true)
+        let initScript = """
+        cd '\(repoPath)' && git init -b main && git config user.name 'Alex' && git config user.email 'alex@prod.codes' && \
+        echo 'line 1' > review_test.txt && git add review_test.txt && git commit -m 'initial' && \
+        echo 'line 2 added' >> review_test.txt
+        """
+        _ = try d.exec("sh -c \"\(initScript)\"")
+
+        // Set pane cwd into repoPath
+        d.activate()
+        try d.run("cd '\(repoPath)'")
+        usleep(400_000)
+
+        // Open diff review session
+        _ = try d.exec("\(ctl) review open \"\(repoPath)\"")
+        let status = try d.exec("\(ctl) review status --json")
+        guard (status.contains("\"open\":true") || status.contains("\"open\": true")) &&
+              (status.contains("\"files_count\":1") || status.contains("\"files_count\": 1") || (status.contains("\"files_count\":") && !status.contains("\"files_count\":0"))) else {
+            throw Failure("review status did not reflect active session with changed file: \(status)")
         }
+
+        // List changed files
+        let filesList = try d.exec("\(ctl) review files --json")
+        guard filesList.contains("review_test.txt") else {
+            throw Failure("review files did not list review_test.txt: \(filesList)")
+        }
+
+        // Add a line comment
+        let addRes = try d.exec("\(ctl) review comment add --file review_test.txt --line 2 --text 'Check added line'")
+        guard addRes.contains("comment") || addRes.contains("Added") || addRes.contains("review_test.txt") else {
+            throw Failure("review comment add failed: \(addRes)")
+        }
+
+        // List comments and assert content
+        let comments = try d.exec("\(ctl) review comment list --json")
+        guard comments.contains("Check added line") && (comments.contains("\"line\":2") || comments.contains("\"line\": 2")) else {
+            throw Failure("review comment list did not contain added comment: \(comments)")
+        }
+
+        // Clear comments
+        _ = try d.exec("\(ctl) review comment clear")
+        let clearedComments = try d.exec("\(ctl) review comment list --json")
+        guard !clearedComments.contains("Check added line") else {
+            throw Failure("review comment clear failed: \(clearedComments)")
+        }
+
+        // Close review session
+        _ = try d.exec("\(ctl) review close")
+        let closedStatus = try d.exec("\(ctl) review status --json")
+        guard closedStatus.contains("\"open\":false") || closedStatus.contains("\"open\": false") else {
+            throw Failure("review was still open after close: \(closedStatus)")
+        }
+
+        // Verify unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'review_ok' > \(d.path("review_witness"))")
+        try d.expect("review_witness", "review_ok\n", "terminal keyboard input after review session closed")
     }),
-    ("overlay", "takoctl overlay opens and closes terminal overlay cards", { d in
+    ("overlay", "takoctl overlay opens markdown document with verified on-screen metadata and closes cleanly", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         // Create document inside d.work (run-owned temporary workspace)
         let docPath = d.path("tako_overlay_test.md")
-        try "# Test Note\nHello Sandboxed Overlay\n".write(toFile: docPath, atomically: true, encoding: .utf8)
+        try "# Test Note\nHello Sandboxed Overlay Content\n".write(toFile: docPath, atomically: true, encoding: .utf8)
 
         // Move the pane cwd into d.work and verify cwd updated
         d.activate()
@@ -1708,14 +1907,27 @@ let scenarios: [Scenario] = [
 
         let openRes = try d.exec("\(ctl) overlay open \"\(docPath)\"")
         let status = try d.exec("\(ctl) overlay status --json")
-        guard status.contains("\"open\":true") || status.contains("\"open\": true") else {
-            throw Failure("overlay status was not open (open result: \(openRes)): \(status)")
+        guard (status.contains("\"open\":true") || status.contains("\"open\": true")) &&
+              status.contains("tako_overlay_test.md") &&
+              status.contains("markdown") else {
+            throw Failure("overlay status did not return open markdown document (open result: \(openRes)): \(status)")
         }
+
+        // Verify on-screen overlay presentation and sandboxed indicator
+        guard d.wait(for: { d.hasText(containing: "MARKDOWN") && d.hasText(containing: "sandboxed:") }, timeout: 5) else {
+            throw Failure("overlay visual header bar or sandboxed indicator not found on screen")
+        }
+
+        // Close overlay
         _ = try d.exec("\(ctl) overlay close")
         let closed = try d.exec("\(ctl) overlay status --json")
         guard closed.contains("\"open\":false") || closed.contains("\"open\": false") else {
             throw Failure("overlay was still open after close: \(closed)")
         }
+
+        // Verify unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'overlay_ok' > \(d.path("overlay_witness"))")
+        try d.expect("overlay_witness", "overlay_ok\n", "terminal keyboard input after overlay closed")
     }),
 ]
 

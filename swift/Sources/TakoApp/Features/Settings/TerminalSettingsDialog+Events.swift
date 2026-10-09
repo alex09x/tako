@@ -164,7 +164,9 @@ extension TerminalSettingsDialog {
             let formatted = KeybindRegistry.format(trigger: trigger)
             let shortConflict = String(conflict.title.prefix(18))
             pendingConflict = ConflictInfo(targetItem: item, conflictingItem: conflict, trigger: trigger)
-            statusMessage = "Conflict: \(formatted) used by '\(shortConflict)'. Overwrite? (Return=Yes, Esc=No)"
+            let msg = "Conflict: \(formatted) used by '\(shortConflict)'. Overwrite? (Return=Yes, Esc=No)"
+            statusMessage = msg
+            setAccessibilityValue("conflict: \(msg)")
             isRecording = false
             recordingHeldModifiers = []
             needsDisplay = true
@@ -191,6 +193,7 @@ extension TerminalSettingsDialog {
         if event.keyCode == 53 || chars == "n" {
             pendingConflict = nil
             statusMessage = "Reassignment cancelled."
+            setAccessibilityValue("cancelled: Reassignment cancelled.")
             needsDisplay = true
             return
         }
@@ -211,6 +214,7 @@ extension TerminalSettingsDialog {
         } else {
             statusMessage = "Error: Failed to write to config file."
         }
+        setAccessibilityValue(statusMessage ?? "updated")
         isRecording = false
         recordingHeldModifiers = []
         needsDisplay = true
@@ -304,7 +308,7 @@ extension TerminalSettingsDialog {
         } else {
             statusMessage = "Error: Failed to reset config file."
         }
-        setAccessibilityValue("reset")
+        setAccessibilityValue("reset: \(statusMessage ?? "")")
         needsDisplay = true
     }
 
