@@ -97,6 +97,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C24B5AF2D010161A7D1DEFB9 /* Build configuration list for PBXNativeTarget "TakoUITests" */;
 			buildPhases = (
+				0084C631400FD37517E30675 /* Stage real host app bundle */,
 				C80897328580DD3CEAA493A5 /* Sources */,
 			);
 			buildRules = (
@@ -170,6 +171,25 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0084C631400FD37517E30675 /* Stage real host app bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stage real host app bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -uo pipefail\nDEST=\"${BUILT_PRODUCTS_DIR}/TakoCore.app\"\nSRC=\"${SRCROOT}/../target/macapp-uitest/Tako.app\"\nif [ -d \"${DEST}\" ] && [ -d \"${SRC}\" ]; then\n  cp -f \"${SRC}/Contents/Info.plist\" \"${DEST}/Contents/Info.plist\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleExecutable TakoCore\" \"${DEST}/Contents/Info.plist\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Add :CFBundleExecutable string TakoCore\" \"${DEST}/Contents/Info.plist\"\n  rm -f \"${DEST}/Contents/MacOS/TakoCore\"\n  cp -f \"${SRC}/Contents/MacOS/Tako\" \"${DEST}/Contents/MacOS/TakoCore\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nfi\n";
+		};
 		1CAB32935CCC4E971F267FC7 /* Build the real app bundle */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

@@ -158,7 +158,7 @@ extension AppDelegate {
                 keyEquivalent: "n"
             )
             centerItem.keyEquivalentModifierMask = [.command, .option]
-            centerItem.target = nil
+            centerItem.target = self
             centerItem.setImageIfDesired(systemSymbolName: "bell")
             windowMenu.addItem(centerItem)
 
@@ -168,7 +168,7 @@ extension AppDelegate {
                 keyEquivalent: "N"
             )
             jumpItem.keyEquivalentModifierMask = [.command, .shift]
-            jumpItem.target = nil
+            jumpItem.target = self
             jumpItem.setImageIfDesired(systemSymbolName: "arrow.right.circle")
             windowMenu.addItem(jumpItem)
 
@@ -177,7 +177,7 @@ extension AppDelegate {
                 action: #selector(BaseTerminalController.markFocusedPaneRead(_:)),
                 keyEquivalent: ""
             )
-            markReadItem.target = nil
+            markReadItem.target = self
             markReadItem.setImageIfDesired(systemSymbolName: "checkmark")
             windowMenu.addItem(markReadItem)
 
@@ -187,7 +187,7 @@ extension AppDelegate {
                 keyEquivalent: "U"
             )
             markAllReadItem.keyEquivalentModifierMask = [.command, .shift]
-            markAllReadItem.target = nil
+            markAllReadItem.target = self
             markAllReadItem.setImageIfDesired(systemSymbolName: "checkmark.circle")
             windowMenu.addItem(markAllReadItem)
         }
@@ -205,7 +205,7 @@ extension AppDelegate {
                 keyEquivalent: "s"
             )
             sidebarItem.keyEquivalentModifierMask = [.command, .option]
-            sidebarItem.target = nil
+            sidebarItem.target = self
             sidebarItem.setImageIfDesired(systemSymbolName: "sidebar.left")
             viewMenu.addItem(sidebarItem)
         }
@@ -221,7 +221,7 @@ extension AppDelegate {
                 keyEquivalent: "O"
             )
             overviewItem.keyEquivalentModifierMask = [.command, .shift]
-            overviewItem.target = nil
+            overviewItem.target = self
             overviewItem.setImageIfDesired(systemSymbolName: "square.grid.2x2")
             viewMenu.addItem(overviewItem)
         }
@@ -239,7 +239,7 @@ extension AppDelegate {
                 keyEquivalent: "]"
             )
             nextAttentionItem.keyEquivalentModifierMask = [.command, .option]
-            nextAttentionItem.target = nil
+            nextAttentionItem.target = self
             nextAttentionItem.setImageIfDesired(systemSymbolName: "arrow.down.right.circle")
             windowMenu.addItem(nextAttentionItem)
 
@@ -249,7 +249,7 @@ extension AppDelegate {
                 keyEquivalent: "["
             )
             prevAttentionItem.keyEquivalentModifierMask = [.command, .option]
-            prevAttentionItem.target = nil
+            prevAttentionItem.target = self
             prevAttentionItem.setImageIfDesired(systemSymbolName: "arrow.up.left.circle")
             windowMenu.addItem(prevAttentionItem)
 
@@ -259,7 +259,7 @@ extension AppDelegate {
                 keyEquivalent: "b"
             )
             goBackItem.keyEquivalentModifierMask = [.command, .option]
-            goBackItem.target = nil
+            goBackItem.target = self
             goBackItem.setImageIfDesired(systemSymbolName: "arrow.uturn.backward.circle")
             windowMenu.addItem(goBackItem)
 
@@ -269,7 +269,7 @@ extension AppDelegate {
                 keyEquivalent: "m"
             )
             muteItem.keyEquivalentModifierMask = [.command, .option]
-            muteItem.target = nil
+            muteItem.target = self
             muteItem.setImageIfDesired(systemSymbolName: "bell.slash")
             windowMenu.addItem(muteItem)
         }

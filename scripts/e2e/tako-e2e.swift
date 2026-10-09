@@ -123,7 +123,7 @@ final class Driver {
 
     /// Scenarios start from a fresh window: none restored from an earlier
     /// run, none saved for the next. The restore scenario turns it back on.
-    static let defaultConfig = "window-save-state = never\nauto-update = off\n"
+    static let defaultConfig = "window-save-state = never\nauto-update = off\nremote-control = on\n"
 
     /// Extra environment for the next launch.
     var environment: [String: String] = [:]
@@ -165,6 +165,16 @@ final class Driver {
         }
         try run("true")
         usleep(300_000)
+    }
+
+    func activate() {
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            app.activate()
+        }
+        if let window = self.windows().first {
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        }
+        usleep(100_000)
     }
 
     func quit() {
@@ -336,6 +346,20 @@ final class Driver {
         key(Key.returnKey)
     }
 
+    /// Run a command via host process outside the driven terminal.
+    @discardableResult
+    func exec(_ command: String) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
 
     // MARK: witnesses
 
@@ -424,6 +448,30 @@ final class Driver {
             }
         }
         return nil
+    }
+
+    /// Whether any UI element across the app's windows contains this text.
+    func hasText(containing target: String) -> Bool {
+        for window in windows() {
+            if elementContainsText(window, target: target, depth: 14) { return true }
+        }
+        return false
+    }
+
+    private func elementContainsText(_ element: AXUIElement, target: String, depth: Int) -> Bool {
+        let val: String? = attribute(element, kAXValueAttribute)
+        let title: String? = attribute(element, kAXTitleAttribute)
+        let desc: String? = attribute(element, kAXDescriptionAttribute)
+        let label: String? = attribute(element, "AXLabel")
+        if val?.contains(target) == true || title?.contains(target) == true ||
+           desc?.contains(target) == true || label?.contains(target) == true {
+            return true
+        }
+        guard depth > 0 else { return false }
+        for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            if elementContainsText(child, target: target, depth: depth - 1) { return true }
+        }
+        return false
     }
 
     var isRunning: Bool {
@@ -688,6 +736,8 @@ let scenarios: [Scenario] = [
         try d.run("exit")
     }),
     ("ctl-tree", "takoctl inside a pane sees that pane, and refuses what it must", { d in
+        d.quit()
+        try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = local\n")
         // On PATH through the shell integration's `path` feature.
         try d.run("takoctl tree --json > \(d.path("tree")); echo $TAKO_SURFACE_ID > \(d.path("self")); cd \(d.work.path)")
         let tree = try d.file("tree")
@@ -1469,103 +1519,184 @@ let scenarios: [Scenario] = [
               let recordBtn else {
             throw Failure("settings dialog Record button not found")
         }
-        d.press(recordBtn)
-        usleep(500_000)
-        // In recording mode, Esc cancels recording without modifying keybindings
-        d.key(Key.escape)
-        usleep(500_000)
-        // Second Esc closes settings
-        d.key(Key.escape)
-        guard d.wait(for: { d.button(titled: "Record") == nil }, timeout: 5) else {
-            throw Failure("settings dialog remained open after closing")
+        guard d.button(titled: "Close") != nil else {
+            throw Failure("settings dialog Close button not found")
         }
+        d.press(recordBtn)
+        guard d.wait(for: { d.hasText(containing: "recording") || d.hasText(containing: "RECORDING") || d.hasText(containing: "cancel") }, timeout: 5) else {
+            throw Failure("settings dialog did not enter recording state after pressing Record")
+        }
+        // In recording mode, first Esc cancels recording without modifying keybindings or closing settings
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") != nil && (d.hasText(containing: "cancelled") || !d.hasText(containing: "recording")) }, timeout: 5) else {
+            throw Failure("first Escape did not cancel recording while leaving Settings dialog open")
+        }
+        // Test Reset button interaction while Settings remains open
+        if let resetBtn = d.button(titled: "Reset") {
+            d.press(resetBtn)
+            usleep(200_000)
+        }
+        // Second Esc closes settings dialog
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Record") == nil && d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("second Escape did not dismiss settings dialog")
+        }
+        // Unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'settings_ok' > \(d.path("settings_witness"))")
+        try d.expect("settings_witness", "settings_ok\n", "terminal keyboard input after settings dismissal")
     }),
     ("sidebar", "cmd+opt+s toggles the session sidebar open and closed", { d in
         d.key(Key.s, [.maskCommand, .maskAlternate])
-        usleep(800_000)
+        guard d.wait(for: { d.hasText(containing: "Sessions") }, timeout: 5) else {
+            throw Failure("session sidebar 'Sessions' header was not visible after Cmd+Opt+S")
+        }
         // Toggle again to return to normal
         d.key(Key.s, [.maskCommand, .maskAlternate])
-        usleep(800_000)
+        guard d.wait(for: { !d.hasText(containing: "Sessions") }, timeout: 5) else {
+            throw Failure("session sidebar was still visible after second Cmd+Opt+S")
+        }
+        // Unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'sidebar_ok' > \(d.path("sidebar_witness"))")
+        try d.expect("sidebar_witness", "sidebar_ok\n", "terminal keyboard input after sidebar toggle")
     }),
     ("overview", "cmd+shift+o toggles pane overview on, and Esc dismisses it", { d in
         d.key(Key.o, [.maskCommand, .maskShift])
-        usleep(800_000)
+        guard d.wait(for: { d.hasText(containing: "Pane Overview") }, timeout: 5) else {
+            throw Failure("pane overview header was not visible after Cmd+Shift+O")
+        }
         d.key(Key.escape)
-        usleep(800_000)
+        guard d.wait(for: { !d.hasText(containing: "Pane Overview") }, timeout: 5) else {
+            throw Failure("pane overview was still visible after Escape")
+        }
+        // Unassisted keyboard delivery to terminal pane afterwards
+        try d.run("echo 'overview_ok' > \(d.path("overview_witness"))")
+        try d.expect("overview_witness", "overview_ok\n", "terminal keyboard input after overview dismissal")
     }),
     ("workspace-switch", "takoctl workspace commands create, list, and switch project workspaces", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        try d.run("\(ctl) workspace create E2EWS > /dev/null")
-        try d.run("\(ctl) workspace list > \(d.path("ws_list"))")
-        let list = try d.file("ws_list")
+        _ = try d.exec("\(ctl) workspace create E2EWS")
+        let list = try d.exec("\(ctl) workspace list")
         guard list.contains("E2EWS") else {
             throw Failure("workspace list did not contain newly created workspace: \(list)")
         }
-        try d.run("\(ctl) workspace switch Default > /dev/null")
+        _ = try d.exec("\(ctl) workspace switch E2EWS")
+        let currE2E = try d.exec("\(ctl) workspace current")
+        guard currE2E.contains("E2EWS") else {
+            throw Failure("workspace current was not E2EWS after switch: \(currE2E)")
+        }
+        _ = try d.exec("\(ctl) workspace switch Default")
+        let currDef = try d.exec("\(ctl) workspace current")
+        guard currDef.contains("Default") else {
+            throw Failure("workspace current was not Default after switch back: \(currDef)")
+        }
+        _ = try d.exec("\(ctl) workspace delete E2EWS")
     }),
     ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        try d.run("\(ctl) split right > /dev/null")
-        usleep(800_000)
-        try d.run("\(ctl) broadcast start > \(d.path("bcast_start"))")
-        try d.run("\(ctl) broadcast status --json > \(d.path("bcast_status"))")
-        let status = try d.file("bcast_status")
+        _ = try d.exec("\(ctl) split right")
+        usleep(1_000_000)
+        let witnessPath = d.path("bcast_witness.txt")
+        _ = try d.exec("\(ctl) broadcast start")
+        let status = try d.exec("\(ctl) broadcast status --json")
         guard status.contains("\"active\":true") || status.contains("\"active\": true") else {
             throw Failure("broadcast status was not active after start: \(status)")
         }
-        try d.run("\(ctl) broadcast stop > /dev/null")
-        try d.run("\(ctl) broadcast status --json > \(d.path("bcast_stopped"))")
-        let stopped = try d.file("bcast_stopped")
+        // Send typing payload via keyboard while broadcast is active
+        d.activate()
+        try d.run("echo 'bcast_witness' >> \(witnessPath)")
+        _ = try d.file("bcast_witness.txt")
+        // Both panes must have received the keystrokes and written the line
+        guard d.wait(for: {
+            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
+            let occurrences = content.components(separatedBy: "\n").filter { $0 == "bcast_witness" }.count
+            return occurrences >= 2
+        }, timeout: 5) else {
+            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
+            throw Failure("broadcast typing was not delivered to both panes: \(content)")
+        }
+        // Stop broadcast
+        _ = try d.exec("\(ctl) broadcast stop")
+        let stopped = try d.exec("\(ctl) broadcast status --json")
         guard stopped.contains("\"active\":false") || stopped.contains("\"active\": false") else {
             throw Failure("broadcast was still active after stop: \(stopped)")
+        }
+        // Post-stop isolation: typing now reaches only the focused leader pane
+        d.activate()
+        try d.run("echo 'solo_witness' >> \(witnessPath)")
+        guard d.wait(for: {
+            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
+            let occurrences = content.components(separatedBy: "\n").filter { $0 == "solo_witness" }.count
+            return occurrences == 1
+        }, timeout: 5) else {
+            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
+            throw Failure("post-stop isolation failed: solo_witness occurrences != 1: \(content)")
         }
     }),
     ("input-ownership", "takoctl input lock and unlock control input ownership without error", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        let scriptPath = d.path("input_test.sh")
-        let scriptBody = """
-        #!/bin/sh
-        \(ctl) input lock --owner e2e-agent > \(d.path("lock_res"))
-        \(ctl) input status --json > \(d.path("lock_status"))
-        \(ctl) input unlock > /dev/null
-        \(ctl) input status --json > \(d.path("unlock_status"))
-        """
-        try scriptBody.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-        try d.run("sh \(scriptPath)")
-        let status = try d.file("lock_status")
+        let leakFile = d.path("input_leak.txt")
+        let recoveredFile = d.path("input_recovered.txt")
+
+        _ = try d.exec("\(ctl) input lock --owner e2e-agent")
+        let status = try d.exec("\(ctl) input status --json")
         guard (status.contains("\"locked\":true") || status.contains("\"locked\": true")) && status.contains("e2e-agent") else {
             throw Failure("input status was not locked to agent: \(status)")
         }
-        let unlocked = try d.file("unlock_status")
+
+        // While locked, attempt physical human keyboard input: must be blocked by surface input gate
+        d.activate()
+        try d.run("echo 'leak_witness' > \(leakFile)")
+        usleep(400_000)
+        guard !FileManager.default.fileExists(atPath: leakFile) else {
+            throw Failure("input lock failed: physical keyboard input leaked through while pane was locked")
+        }
+
+        // Verify approved automation command executes without error
+        let autoStatus = try d.exec("\(ctl) input allow-automation")
+        guard autoStatus.contains("allowed") || autoStatus.contains("true") else {
+            throw Failure("allow-automation failed: \(autoStatus)")
+        }
+
+        // Unlock
+        _ = try d.exec("\(ctl) input unlock")
+        let unlocked = try d.exec("\(ctl) input status --json")
         guard unlocked.contains("\"locked\":false") || unlocked.contains("\"locked\": false") else {
             throw Failure("input status was still locked after unlock: \(unlocked)")
         }
+
+        // Verify physical keyboard input recovery after unlock
+        d.activate()
+        try d.run("echo 'recovered_witness' > \(recoveredFile)")
+        try d.expect("input_recovered.txt", "recovered_witness\n", "keyboard input recovery after unlock")
     }),
     ("diff-review", "takoctl review status queries worktree review state cleanly", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        try d.run("\(ctl) review status > \(d.path("review_res"))")
-        let res = try d.file("review_res")
-        guard !res.isEmpty else {
-            throw Failure("review status returned empty output")
+        let res = try d.exec("\(ctl) review status --json")
+        guard res.contains("\"open\"") || res.contains("\"active\"") || res.contains("\"comments\"") || res.contains("\"worktree\"") else {
+            throw Failure("review status did not return structured review fields: \(res)")
         }
     }),
     ("overlay", "takoctl overlay opens and closes terminal overlay cards", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        try d.run("echo '# Test Note' > ./tako_e2e_overlay_test.md")
-        defer { _ = try? d.run("rm -f ./tako_e2e_overlay_test.md") }
-        try d.run("\(ctl) overlay open ./tako_e2e_overlay_test.md > \(d.path("ov_open"))")
-        try d.run("\(ctl) overlay status --json > \(d.path("ov_status"))")
-        let status = try d.file("ov_status")
+        d.activate()
+        try d.run("pwd > \(d.path("overlay_pwd.txt"))")
+        let pwd = try d.file("overlay_pwd.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        let docPath = "\(pwd)/tako_overlay_test.md"
+        try d.run("echo '# Test Note\\nHello Overlay Card' > \"\(docPath)\"")
+        usleep(400_000)
+
+        let openRes = try d.exec("\(ctl) overlay open \"\(docPath)\"")
+        let status = try d.exec("\(ctl) overlay status --json")
         guard status.contains("\"open\":true") || status.contains("\"open\": true") else {
-            let ovOpen = (try? d.file("ov_open")) ?? "nil"
-            throw Failure("overlay status was not open: \(status). ov_open: \(ovOpen)")
+            throw Failure("overlay status was not open (open result: \(openRes)): \(status)")
         }
-        try d.run("\(ctl) overlay close > /dev/null")
-        try d.run("\(ctl) overlay status --json > \(d.path("ov_closed"))")
-        let closed = try d.file("ov_closed")
+        _ = try d.exec("\(ctl) overlay close")
+        let closed = try d.exec("\(ctl) overlay status --json")
         guard closed.contains("\"open\":false") || closed.contains("\"open\": false") else {
             throw Failure("overlay was still open after close: \(closed)")
         }
+        d.activate()
+        try? d.run("rm -f \"\(docPath)\"")
     }),
 ]
 
@@ -1641,16 +1772,19 @@ func crashLayoutSetup(_ d: Driver) throws {
     d.quit()
     forgetLayout(d)
     try d.launch(config: "window-save-state = always\n")
+    usleep(500_000)
     // Start from one window, whatever an earlier run left.
     // Right after launch fish can still be starting and drop what is typed:
     // ask again until it answers, so the scenario starts from a shell that
     // is listening.
     var listening = false
-    for _ in 0..<3 where !listening {
+    for _ in 0..<5 where !listening {
         try d.run("takoctl tree --json > \(d.path("start"))")
         listening = (try? d.file("start", timeout: 5)) != nil
+        if !listening { usleep(300_000) }
     }
     guard listening else { throw Failure("the shell never took input: [\(d.screenText().suffix(400))]") }
+    usleep(500_000)
     let out = d.work.path
     try """
     takoctl split right > /dev/null || exit 1

@@ -163,44 +163,58 @@ struct VisualReadBackTests {
         #expect(rep.pixelsHigh == h)
 
         // 1. Positive assertion: verify stable expected pixel regions in the returned capture.
-        // Row 0 has reverse video attribute ("\u{1b}[7m"), which renders foreground text color
-        // as background across the cell width.
-        let cellHeight = max(1, h / 24)
-        var hasExpectedHeaderHighlight = false
-        for testY in stride(from: 2, to: h - 2, by: max(1, cellHeight / 2)) {
-            for x in stride(from: 10, to: min(w - 10, 150), by: 10) {
-                if let color = rep.colorAt(x: x, y: testY) {
-                    let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
-                    if brightness > 0.3 {
-                        hasExpectedHeaderHighlight = true
-                        break
-                    }
+        // Row 3 contains the reverse video TUI header ("\u{1b}[7m [TUI Header: Main Menu] \u{1b}[0m"),
+        // which renders foreground text color as background across the cell width.
+        let rows = max(1, Int(surface.core.rows()))
+        let cellHeight = max(1, h / rows)
+        let highlightThreshold: CGFloat = 0.35
+        let headerRowY = 3 * cellHeight + cellHeight / 2 // Row 3 of rendered raster (y=56)
+
+        var headerHighlightCount = 0
+        for x in stride(from: 10, to: min(w - 10, 150), by: 5) {
+            if let color = rep.colorAt(x: x, y: headerRowY) {
+                let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
+                if brightness > highlightThreshold {
+                    headerHighlightCount += 1
                 }
             }
-            if hasExpectedHeaderHighlight { break }
         }
-        #expect(hasExpectedHeaderHighlight, "Expected bright highlighted reverse-video header pixels")
+        #expect(headerHighlightCount >= 15, "Expected bright highlighted reverse-video header pixels in row 3 (got \(headerHighlightCount))")
 
-        // 2. Negative control: an empty surface without reverse header must NOT contain bright highlight in row 0
+        // Non-header region (row 15, y=248) must remain dark background under the same threshold
+        let nonHeaderY = cellHeight * 15 + cellHeight / 2
+        var nonHeaderHighlightCount = 0
+        for x in stride(from: 10, to: min(w - 10, 150), by: 5) {
+            if let color = rep.colorAt(x: x, y: nonHeaderY) {
+                let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
+                if brightness > highlightThreshold {
+                    nonHeaderHighlightCount += 1
+                }
+            }
+        }
+        #expect(nonHeaderHighlightCount == 0, "Non-header rows must remain dark background")
+
+        // 2. Negative control: an empty surface without reverse header must NOT contain bright highlight
+        // under the exact same coordinate window (row 3, y=56) and threshold (0.35).
         let emptySurface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
         let (emptyPng, ew, eh) = try ControlCommands.captureScreenshot(emptySurface)
         guard let emptyRep = NSBitmapImageRep(data: emptyPng) else {
             Issue.record("Failed to decode empty PNG image data")
             return
         }
-        let emptyCellHeight = max(1, eh / 24)
-        let emptySampleY = emptyCellHeight / 2
-        var hasHighlightInNegativeControl = false
+        let emptyRows = max(1, Int(emptySurface.core.rows()))
+        let emptyCellHeight = max(1, eh / emptyRows)
+        let emptyHeaderRowY = 3 * emptyCellHeight + emptyCellHeight / 2
+        var emptyHeaderHighlightCount = 0
         for x in stride(from: 10, to: min(ew - 10, 150), by: 5) {
-            if let color = emptyRep.colorAt(x: x, y: emptySampleY) {
+            if let color = emptyRep.colorAt(x: x, y: emptyHeaderRowY) {
                 let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
-                if brightness > 0.4 {
-                    hasHighlightInNegativeControl = true
-                    break
+                if brightness > highlightThreshold {
+                    emptyHeaderHighlightCount += 1
                 }
             }
         }
-        #expect(!hasHighlightInNegativeControl, "Negative control failed: unstyled surface unexpectedly contained highlight pixels in row 0")
+        #expect(emptyHeaderHighlightCount == 0, "Negative control failed: unstyled surface unexpectedly contained highlight pixels in row 3")
     }
 }
 

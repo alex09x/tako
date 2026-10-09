@@ -354,7 +354,19 @@ struct PaneOverviewTests {
         warmupView.frame = NSRect(x: 0, y: 0, width: 200, height: 200)
         warmupView.layoutSubtreeIfNeeded()
 
-        // Measure actual UI opening time: from trigger to first presented frame (layout + render pass)
+        // Create an actual buffered window for live UI presentation measurement
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            window.orderOut(nil)
+            window.close()
+        }
+
+        // Measure actual UI opening time: from trigger to first presented frame (layout + render pass in window)
         let t0 = CFAbsoluteTimeGetCurrent()
         store.refresh(fromControllers: controllers)
         let tRefresh = CFAbsoluteTimeGetCurrent() - t0
@@ -363,15 +375,17 @@ struct PaneOverviewTests {
         let overviewView = PaneOverviewView(isPresented: .constant(true))
         let hostingView = NSHostingView(rootView: overviewView)
         hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        window.contentView = hostingView
+        window.orderFrontRegardless()
         hostingView.layoutSubtreeIfNeeded()
         let tLayout = CFAbsoluteTimeGetCurrent() - t1
 
         let t2 = CFAbsoluteTimeGetCurrent()
-        hostingView.displayIfNeeded()
+        window.displayIfNeeded()
         let tDisplay = CFAbsoluteTimeGetCurrent() - t2
 
         let elapsed = tRefresh + tLayout + tDisplay
-        #expect(elapsed < 0.150, "Full presentation to first frame with 30 panes took \(elapsed * 1000) ms, exceeding 150 ms budget")
+        #expect(elapsed < 0.150, "Full presentation to first frame with 30 panes in window took \(elapsed * 1000) ms, exceeding 150 ms budget")
     }
 
 }

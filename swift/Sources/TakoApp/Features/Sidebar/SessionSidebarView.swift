@@ -144,6 +144,7 @@ struct SessionSidebarView: View {
             Text("Sessions")
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundColor(Color(nsColor: Palette.activeText))
+                .accessibilityIdentifier("SessionSidebarHeader")
 
             Spacer()
 

@@ -117,6 +117,7 @@ struct PaneOverviewView: View {
             Text("Pane Overview")
                 .font(.system(size: 15, weight: .bold, design: .monospaced))
                 .foregroundColor(Color(nsColor: Palette.activeText))
+                .accessibilityIdentifier("PaneOverviewHeader")
 
             Spacer()
 

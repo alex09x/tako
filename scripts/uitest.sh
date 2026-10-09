@@ -1,30 +1,54 @@
 #!/usr/bin/env bash
+#
+# tako — Terminal emulator
+# Copyright (c) 2026 Alexander Panasenko
+#
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Run the macOS UI tests against the real app.
 #
-# These are upstream's XCUITest suite, ported verbatim. They drive a running
-# app through the accessibility tree: windows, tabs, menu items, the command
-# palette, titlebar pixels.
+# By default, runs against the remote test Mac (Alexs-MacBook-Pro.local)
+# via scripts/mac-remote.sh so your local screen and mouse are NOT disturbed.
+# Pass --local to run on this machine instead.
 #
-# They are OFF by default, and deliberately. TakoCustomConfigCase returns
-# an empty suite unless IDE_DISABLED_OS_ACTIVITY_DT_MODE is set -- a variable
-# Xcode's IDE sets and xcodebuild does not -- which is upstream's own way of
-# keeping a slow, click-driven suite out of unattended builds. This script
-# uses the TakoUITests-Run scheme, which sets it.
+# Usage:
+#   ./scripts/uitest.sh                              # everything on remote Mac
+#   ./scripts/uitest.sh TakoFeatureJourneysUITests   # one class on remote Mac
+#   ./scripts/uitest.sh --local TakoTitleUITests     # run locally (takes screen focus)
 #
-#   ./scripts/uitest.sh                              # everything
-#   ./scripts/uitest.sh TakoTitleUITests          # one class
-#   ./scripts/uitest.sh TakoThemeTests/testIssue8282
-#
-# Running them TAKES OVER THE SCREEN: they type keystrokes, drag tabs and
-# move windows. It needs a logged-in, unlocked session on a real display, with
-# Accessibility and Automation permission granted, and nothing else stealing
-# focus. Do not start a run and then walk off with the machine mid-task.
-#
-# The host app is rebuilt from scratch/build-macapp.py by a post-build script
-# phase, so this always tests the current working tree.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+REMOTE="${TAKO_MAC:-alex09x@Alexs-MacBook-Pro.local}"
+RUN_LOCAL=0
+TEST_ARGS=()
+
+for arg in "$@"; do
+    case "$arg" in
+        --local)
+            RUN_LOCAL=1
+            ;;
+        *)
+            TEST_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+if [ $RUN_LOCAL -eq 0 ]; then
+    echo "==> Running XCUITest remotely on $REMOTE (local screen stays untouched)..."
+    export TAKO_MAC="$REMOTE"
+    export TAKO_REMOTE_TIMEOUT="${TAKO_REMOTE_TIMEOUT:-600}"
+    CMD="./scripts/uitest.sh --local"
+    if [ ${#TEST_ARGS[@]} -gt 0 ]; then
+        CMD="$CMD $(printf '%q ' "${TEST_ARGS[@]}")"
+        CMD="${CMD% }"
+    fi
+    exec ./scripts/mac-remote.sh "$CMD"
+fi
 
 export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.uitest}"
 export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-uitest}"
@@ -34,12 +58,9 @@ LOG=target/uitest.log
 mkdir -p target
 
 only=()
-for t in "$@"; do
+for t in "${TEST_ARGS[@]}"; do
     only+=("-only-testing:TakoUITests/$t")
 done
-# `${only[@]}` on an empty array is an unbound variable under `set -u` in
-# bash 3.2, which is the bash macOS ships. Expanding it guarded is what lets
-# this run with no arguments at all -- which, until now, it never had.
 
 echo "==> the screen will be driven for the next few minutes"
 echo

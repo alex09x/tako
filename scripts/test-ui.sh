@@ -90,7 +90,7 @@ if [ $RUN_LOCAL -eq 1 ]; then
 else
     echo "==> Running UI tests remotely on $REMOTE (local screen stays untouched)..."
     export TAKO_MAC="$REMOTE"
-    export TAKO_REMOTE_TIMEOUT="${TAKO_REMOTE_TIMEOUT:-300}"
+    export TAKO_REMOTE_TIMEOUT="${TAKO_REMOTE_TIMEOUT:-600}"
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/mac-remote.sh "./scripts/e2e-persist.sh$SCENARIO_ARGS"
     else

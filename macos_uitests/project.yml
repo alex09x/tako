@@ -91,6 +91,20 @@ targets:
       - path: TakoUITests
     dependencies:
       - target: TakoCore
+    preBuildScripts:
+      - name: Stage real host app bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          set -uo pipefail
+          DEST="${BUILT_PRODUCTS_DIR}/TakoCore.app"
+          SRC="${SRCROOT}/../target/macapp-uitest/Tako.app"
+          if [ -d "${DEST}" ] && [ -d "${SRC}" ]; then
+            cp -f "${SRC}/Contents/Info.plist" "${DEST}/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable TakoCore" "${DEST}/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string TakoCore" "${DEST}/Contents/Info.plist"
+            rm -f "${DEST}/Contents/MacOS/TakoCore"
+            cp -f "${SRC}/Contents/MacOS/Tako" "${DEST}/Contents/MacOS/TakoCore"
+            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests

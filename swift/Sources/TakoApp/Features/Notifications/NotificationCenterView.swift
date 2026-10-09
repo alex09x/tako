@@ -42,6 +42,8 @@ public struct NotificationCenterView: View {
             // Hidden buttons for keyboard navigation
             ZStack {
                 Group {
+                    Button { isPresented = false } label: { Color.clear }
+                        .keyboardShortcut(.escape, modifiers: [])
                     Button { moveSelection(-1) } label: { Color.clear }
                         .keyboardShortcut(.upArrow, modifiers: [])
                     Button { moveSelection(1) } label: { Color.clear }
@@ -60,6 +62,7 @@ public struct NotificationCenterView: View {
 
                     Text("Notifications")
                         .font(.headline)
+                        .accessibilityIdentifier("NotificationCenterHeader")
 
                     let unreadCount = store.totalUnreadCount()
                     if unreadCount > 0 {

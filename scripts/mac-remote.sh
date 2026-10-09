@@ -72,7 +72,7 @@ def forward(signum, _frame):
         pass
 for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
     signal.signal(sig, forward)
-timeout_sec = float(sys.argv[4]) if len(sys.argv) > 4 else float(os.environ.get("TAKO_REMOTE_TIMEOUT", "60"))
+timeout_sec = float(sys.argv[4]) if len(sys.argv) > 4 else float(os.environ.get("TAKO_REMOTE_TIMEOUT", "300"))
 try:
     code = child.wait(timeout=timeout_sec)
 except subprocess.TimeoutExpired:
@@ -95,4 +95,4 @@ OUTER
 git ls-files -z --cached --others --exclude-standard \
     | perl -0ne 'chomp; print "$_\0" if -e $_ || -l $_' \
     | tar --null -T - -cf - \
-    | ssh -o BatchMode=yes "$HOST" "mkdir -p $(dirname "$DIR") && python3 $RUN.lock.py $DIR.lock $RUN.sync $RUN ${TAKO_REMOTE_TIMEOUT:-60}"
+    | ssh -o BatchMode=yes "$HOST" "mkdir -p $(dirname "$DIR") && python3 $RUN.lock.py $DIR.lock $RUN.sync $RUN ${TAKO_REMOTE_TIMEOUT:-300}"

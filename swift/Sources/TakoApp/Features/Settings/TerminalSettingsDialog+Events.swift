@@ -20,6 +20,18 @@ extension TerminalSettingsDialog {
         }
     }
 
+    override func cancelOperation(_ sender: Any?) {
+        if isRecording {
+            isRecording = false
+            statusMessage = "Recording cancelled."
+            recordingHeldModifiers = []
+            setAccessibilityValue("cancelled")
+            needsDisplay = true
+        } else {
+            withdraw()
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if isRecording {
             handleRecordingKey(event)
@@ -83,6 +95,10 @@ extension TerminalSettingsDialog {
             }
         default:
             guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { break }
+            if chars == "\u{1b}" {
+                withdraw()
+                return
+            }
             switch chars {
             case "r": startRecording()
             case "d": resetSelected()
@@ -104,10 +120,11 @@ extension TerminalSettingsDialog {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
 
         // Escape cancels recording
-        if event.keyCode == 53 && flags.isEmpty {
+        if (event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}") && flags.isEmpty {
             isRecording = false
             statusMessage = "Recording cancelled."
             recordingHeldModifiers = []
+            setAccessibilityValue("cancelled")
             needsDisplay = true
             return
         }
@@ -266,8 +283,9 @@ extension TerminalSettingsDialog {
         pendingConflict = nil
         isRecording = true
         recordingHeldModifiers = []
-        statusMessage = nil
+        statusMessage = "Press shortcut to record. Esc cancels, Backspace clears."
         window?.makeFirstResponder(self)
+        setAccessibilityValue("recording")
         needsDisplay = true
     }
 
@@ -286,6 +304,7 @@ extension TerminalSettingsDialog {
         } else {
             statusMessage = "Error: Failed to reset config file."
         }
+        setAccessibilityValue("reset")
         needsDisplay = true
     }
 

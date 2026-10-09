@@ -97,12 +97,21 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
         filteredItems = allItems
 
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityIdentifier("TerminalSettingsDialog")
+        setAccessibilityLabel("Tako Keybindings & Settings")
+        setAccessibilityTitle("Tako Keybindings & Settings")
+        setAccessibilityValue("idle")
+
         setupSearchField()
         setupButtons()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var acceptsFirstResponder: Bool { true }
 
     private var isWithdrawing: Bool = false
 
@@ -136,6 +145,12 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             btn.target = self
             btn.action = #selector(buttonPressed(_:))
             btn.tag = index
+            switch index {
+            case 0: btn.setAccessibilityIdentifier("SettingsRecordButton")
+            case 1: btn.setAccessibilityIdentifier("SettingsResetButton")
+            case 2: btn.setAccessibilityIdentifier("SettingsCloseButton")
+            default: break
+            }
             addSubview(btn)
             return btn
         }
@@ -153,6 +168,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     func withdraw() {
         guard !isWithdrawing else { return }
         isWithdrawing = true
+        setAccessibilityValue("closed")
         if let previous = previousResponder {
             window?.makeFirstResponder(previous)
         }
@@ -168,7 +184,6 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
 
     func cell(_ col: Int, _ row: Int) -> NSPoint {
         let left = floor((bounds.width / cellWidth - CGFloat(columns)) / 2) * cellWidth
