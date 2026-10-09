@@ -219,4 +219,47 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
     }
+
+    @MainActor
+    func testScreenObservationCapabilityAndTiming() async throws {
+        // 1. Negative control / baseline capture before application launch
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let baselineScreenshot = XCUIScreen.main.screenshot()
+        let baselineLatencyMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
+        let baselineSize = baselineScreenshot.image.size
+        print("[SCREEN_OBSERVATION] Baseline screenshot captured in \(String(format: "%.1f", baselineLatencyMs))ms, size=\(baselineSize)")
+        XCTAssertGreaterThan(baselineSize.width, 0, "Baseline screen width should be non-zero")
+        XCTAssertGreaterThan(baselineSize.height, 0, "Baseline screen height should be non-zero")
+
+        // 2. Launch application and wait for window appearance
+        let app = try takoApplication()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
+
+        // 3. Measure consecutive XCUIScreen.main.screenshot() capture latencies
+        var latencies: [Double] = []
+        for i in 1...5 {
+            let start = CFAbsoluteTimeGetCurrent()
+            let shot = XCUIScreen.main.screenshot()
+            let latencyMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+            latencies.append(latencyMs)
+            print("[SCREEN_OBSERVATION] Capture \(i): \(String(format: "%.1f", latencyMs))ms, size=\(shot.image.size)")
+        }
+        let avgLatencyMs = latencies.reduce(0.0, +) / Double(latencies.count)
+        let minLatencyMs = latencies.min() ?? 0.0
+        let maxLatencyMs = latencies.max() ?? 0.0
+        print("[SCREEN_OBSERVATION] Latency stats: min=\(String(format: "%.1f", minLatencyMs))ms, avg=\(String(format: "%.1f", avgLatencyMs))ms, max=\(String(format: "%.1f", maxLatencyMs))ms")
+
+        // 4. Verify expected content visibility: application window exists within the captured screen
+        let appWindow = app.windows.firstMatch
+        let windowFrame = appWindow.frame
+        print("[SCREEN_OBSERVATION] App window frame on screen: \(windowFrame)")
+        XCTAssertGreaterThan(windowFrame.width, 0)
+        XCTAssertGreaterThan(windowFrame.height, 0)
+
+        // 5. Evaluate measurement limitations for <150ms presentation budget:
+        let canSampleSub150ms = minLatencyMs < 150.0
+        print("[SCREEN_OBSERVATION] Single capture sub-150ms: \(canSampleSub150ms) (min latency: \(String(format: "%.1f", minLatencyMs))ms)")
+    }
 }
+
