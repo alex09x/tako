@@ -9,6 +9,7 @@
  */
 
 import XCTest
+import AppKit
 
 final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
 
@@ -231,18 +232,27 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         XCTAssertGreaterThan(baselineSize.width, 0, "Baseline screen width should be non-zero")
         XCTAssertGreaterThan(baselineSize.height, 0, "Baseline screen height should be non-zero")
 
+        // Retain baseline screenshot as persistent test attachment
+        let baselineAttachment = XCTAttachment(screenshot: baselineScreenshot)
+        baselineAttachment.name = "Baseline-Prelaunch"
+        baselineAttachment.lifetime = .keepAlways
+        self.add(baselineAttachment)
+
         // 2. Launch application and wait for window appearance
         let app = try takoApplication()
         app.activate()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
+        let appWindow = app.windows.firstMatch
+        XCTAssertTrue(appWindow.waitForExistence(timeout: 5), "Terminal window should appear")
 
         // 3. Measure consecutive XCUIScreen.main.screenshot() capture latencies
+        var captures: [XCUIScreenshot] = []
         var latencies: [Double] = []
         for i in 1...5 {
             let start = CFAbsoluteTimeGetCurrent()
             let shot = XCUIScreen.main.screenshot()
             let latencyMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
             latencies.append(latencyMs)
+            captures.append(shot)
             print("[SCREEN_OBSERVATION] Capture \(i): \(String(format: "%.1f", latencyMs))ms, size=\(shot.image.size)")
         }
         let avgLatencyMs = latencies.reduce(0.0, +) / Double(latencies.count)
@@ -250,16 +260,86 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         let maxLatencyMs = latencies.max() ?? 0.0
         print("[SCREEN_OBSERVATION] Latency stats: min=\(String(format: "%.1f", minLatencyMs))ms, avg=\(String(format: "%.1f", avgLatencyMs))ms, max=\(String(format: "%.1f", maxLatencyMs))ms")
 
-        // 4. Verify expected content visibility: application window exists within the captured screen
-        let appWindow = app.windows.firstMatch
-        let windowFrame = appWindow.frame
-        print("[SCREEN_OBSERVATION] App window frame on screen: \(windowFrame)")
-        XCTAssertGreaterThan(windowFrame.width, 0)
-        XCTAssertGreaterThan(windowFrame.height, 0)
+        // Retain representative post-launch screenshot as test attachment
+        guard let postLaunchScreenshot = captures.last else {
+            XCTFail("No screenshot captures recorded")
+            return
+        }
+        let postLaunchAttachment = XCTAttachment(screenshot: postLaunchScreenshot)
+        postLaunchAttachment.name = "PostLaunch-AppContent"
+        postLaunchAttachment.lifetime = .keepAlways
+        self.add(postLaunchAttachment)
 
-        // 5. Evaluate measurement limitations for <150ms presentation budget:
-        let canSampleSub150ms = minLatencyMs < 150.0
-        print("[SCREEN_OBSERVATION] Single capture sub-150ms: \(canSampleSub150ms) (min latency: \(String(format: "%.1f", minLatencyMs))ms)")
+        // 4. Verify rendered screen content via pixel inspection (negative control + visible app content matcher)
+        // Note: AX geometry (windowFrame) defines only the spatial Region of Interest (ROI) on screen;
+        // it is NOT accepted as proof of rendered compositor content. Proof requires pixel-level inspection.
+        let windowFrame = appWindow.frame
+        XCTAssertGreaterThan(windowFrame.width, 0, "Window frame width must be positive")
+        XCTAssertGreaterThan(windowFrame.height, 0, "Window frame height must be positive")
+
+        guard let baseRep = NSBitmapImageRep(data: baselineScreenshot.pngRepresentation),
+              let postRep = NSBitmapImageRep(data: postLaunchScreenshot.pngRepresentation) else {
+            XCTFail("Failed to decode PNG representation of captured screenshots")
+            return
+        }
+
+        // Calculate scaling factor between points (AX frame) and backing pixels (screenshot rep)
+        let scaleX = Double(postRep.pixelsWide) / Double(baselineSize.width)
+        let scaleY = Double(postRep.pixelsHigh) / Double(baselineSize.height)
+
+        let pixelMinX = Int(Double(windowFrame.minX) * scaleX)
+        let pixelMaxX = Int(Double(windowFrame.maxX) * scaleX)
+        let pixelMinY = Int(Double(windowFrame.minY) * scaleY)
+        let pixelMaxY = Int(Double(windowFrame.maxY) * scaleY)
+
+        let clampedMinX = max(0, min(pixelMinX, postRep.pixelsWide - 1))
+        let clampedMaxX = max(0, min(pixelMaxX, postRep.pixelsWide - 1))
+        let clampedMinY = max(0, min(pixelMinY, postRep.pixelsHigh - 1))
+        let clampedMaxY = max(0, min(pixelMaxY, postRep.pixelsHigh - 1))
+
+        guard clampedMaxX > clampedMinX + 20, clampedMaxY > clampedMinY + 20 else {
+            XCTFail("Window pixel ROI too small for content inspection: (\(clampedMinX)..\(clampedMaxX), \(clampedMinY)..\(clampedMaxY))")
+            return
+        }
+
+        let midY = (clampedMinY + clampedMaxY) / 2
+        var pixelDifferences: [Double] = []
+        var distinctColors = Set<Int>()
+
+        let stepX = max(1, (clampedMaxX - clampedMinX) / 20)
+        for px in stride(from: clampedMinX + stepX, to: clampedMaxX - stepX, by: stepX) {
+            guard let postColor = postRep.colorAt(x: px, y: midY),
+                  let baseColor = baseRep.colorAt(x: px, y: midY) else {
+                continue
+            }
+
+            // Negative control: calculate absolute pixel delta against prelaunch baseline
+            let delta = abs(postColor.redComponent - baseColor.redComponent)
+                      + abs(postColor.greenComponent - baseColor.greenComponent)
+                      + abs(postColor.blueComponent - baseColor.blueComponent)
+            pixelDifferences.append(delta)
+
+            // Content inspection: check opacity and track distinct rendered colors
+            XCTAssertGreaterThan(postColor.alphaComponent, 0.8, "Rendered terminal surface in window ROI must be opaque")
+
+            let r = Int((postColor.redComponent * 255.0).rounded())
+            let g = Int((postColor.greenComponent * 255.0).rounded())
+            let b = Int((postColor.blueComponent * 255.0).rounded())
+            distinctColors.insert((r << 16) | (g << 8) | b)
+        }
+
+        // Negative control verification: post-launch pixels must differ from prelaunch desktop background
+        let maxDelta = pixelDifferences.max() ?? 0.0
+        let avgDelta = pixelDifferences.isEmpty ? 0.0 : (pixelDifferences.reduce(0.0, +) / Double(pixelDifferences.count))
+        print("[SCREEN_OBSERVATION] Pixel difference vs baseline negative control: avgDelta=\(String(format: "%.3f", avgDelta)), maxDelta=\(String(format: "%.3f", maxDelta))")
+        XCTAssertGreaterThan(maxDelta, 0.01, "Captured screen pixels in window region must visibly change from prelaunch baseline")
+
+        // Rendered content verification: window interior must contain rendered contrast (e.g. background, chrome, text/cursor)
+        print("[SCREEN_OBSERVATION] Distinct rendered colors in window ROI: \(distinctColors.count)")
+        XCTAssertGreaterThanOrEqual(distinctColors.count, 2, "Captured screen in window region must contain rendered terminal content, not blank/uniform wash")
+
+        // 5. Evaluate budget feasibility based on empirical timing:
+        print("[SCREEN_OBSERVATION] Budget evaluation: min=\(String(format: "%.1f", minLatencyMs))ms, avg=\(String(format: "%.1f", avgLatencyMs))ms vs 150ms budget")
     }
 }
 
