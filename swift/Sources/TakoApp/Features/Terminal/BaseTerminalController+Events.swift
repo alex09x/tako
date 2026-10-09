@@ -81,11 +81,6 @@ extension BaseTerminalController {
             selector: #selector(takoSurfaceDragEndedNoTarget(_:)),
             name: .takoSurfaceDragEndedNoTarget,
             object: nil)
-        center.addObserver(
-            self,
-            selector: #selector(paneOverviewDidPresentFirstFrameNotification(_:)),
-            name: PaneOverviewView.firstFramePresentedNotification,
-            object: nil)
 
         self.eventMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.flagsChanged]
@@ -93,14 +88,6 @@ extension BaseTerminalController {
     }
 
     // MARK: Notifications
-
-    @objc func paneOverviewDidPresentFirstFrameNotification(_ notification: Notification) {
-        guard paneOverviewIsShowing, paneOverviewOpenStartTime > 0 else { return }
-        let elapsed = CFAbsoluteTimeGetCurrent() - paneOverviewOpenStartTime
-        let count = (notification.userInfo?["itemCount"] as? Int) ?? 0
-        paneOverviewOpenStartTime = 0
-        onPaneOverviewPresented?(elapsed, count)
-    }
 
     @objc func didChangeScreenParametersNotification(_ notification: Notification) {
         // If we have a window that is visible and it is outside the bounds of the

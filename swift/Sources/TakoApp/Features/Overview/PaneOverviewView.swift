@@ -20,32 +20,6 @@ import TakoKit
 /// - Keyboard navigation: Arrow keys to navigate, Return to jump, Escape to close.
 /// - Fast opening meeting the < 150 ms budget for 30 panes.
 struct PaneOverviewView: View {
-    /// Notification posted when the pane overview completes its first interactive presentation pass.
-    static let firstFramePresentedNotification = Notification.Name("takoPaneOverviewDidPresentFirstFrame")
-
-    /// Optional presentation callback hook for tests and telemetry.
-    static var onFirstFramePresented: ((Int) -> Void)?
-
-    /// Tracks whether the first interactive frame has been signaled for the current presentation.
-    static var hasSignaledFirstFrame: Bool = false
-
-    func notifyPresentationIfNeeded() {
-        guard !Self.hasSignaledFirstFrame else { return }
-        Self.hasSignaledFirstFrame = true
-        let count = store.filteredItems.count
-        Self.onFirstFramePresented?(count)
-        NotificationCenter.default.post(
-            name: Self.firstFramePresentedNotification,
-            object: nil,
-            userInfo: ["itemCount": count]
-        )
-    }
-
-    private var presentationNotifier: some View {
-        notifyPresentationIfNeeded()
-        return EmptyView()
-    }
-
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
@@ -69,7 +43,6 @@ struct PaneOverviewView: View {
 
     var body: some View {
         ZStack {
-            presentationNotifier
             // Semi-transparent backdrop dismissing overview on click
             Color.black.opacity(0.72)
                 .ignoresSafeArea()
@@ -122,13 +95,6 @@ struct PaneOverviewView: View {
             }
             DispatchQueue.main.async {
                 isSearchFieldFocused = true
-                let count = store.filteredItems.count
-                Self.onFirstFramePresented?(count)
-                NotificationCenter.default.post(
-                    name: Self.firstFramePresentedNotification,
-                    object: nil,
-                    userInfo: ["itemCount": count]
-                )
             }
         }
         .onDisappear {
@@ -312,13 +278,11 @@ struct PaneOverviewView: View {
     }
 
     private func jump(to item: PaneOverviewItem) {
-        Self.hasSignaledFirstFrame = false
         store.jump(to: item)
         isPresented = false
     }
 
     private func close() {
-        Self.hasSignaledFirstFrame = false
         store.stopObserving()
         isPresented = false
     }

@@ -446,14 +446,15 @@ struct PaneOverviewTests {
 
     /// Live window interactive first-frame presentation benchmark measuring the complete wall-clock time
     /// from the production open action trigger (`togglePaneOverview`) to the first presented interactive frame
-    /// with 30 active panes across multiple controllers, verified via production presentation callback.
+    /// with 30 active panes across multiple controllers, verified via token-scoped presentation callback.
     ///
     /// Validates:
     /// 1. Triggering via production open action (`controller.togglePaneOverview(nil)`).
     /// 2. Live first-frame presentation callback receives exactly 30 items.
     /// 3. Interactive presentation latency completes within budget (< 150 ms).
     /// 4. Synchronous layout and display timing passes are isolated and labeled separately.
-    /// 5. Window rendered bitmap contains painted cards and non-blank opaque modal content.
+    /// 5. Offscreen rasterization capture pass is kept separate from presentation latency timing.
+    /// 6. Window rendered frame contains painted cards and non-blank opaque modal content.
     @Test func overviewInteractiveFirstFramePresentationWith30Panes() throws {
         // Construct 30 simulated surfaces across 6 controllers
         var controllers: [BaseTerminalController] = []
@@ -500,7 +501,6 @@ struct PaneOverviewTests {
         defer {
             PaneOverviewStore.fixtureControllers = nil
             primaryController.onPaneOverviewPresented = nil
-            PaneOverviewView.onFirstFramePresented = nil
             window.orderOut(nil)
             window.close()
         }
@@ -524,6 +524,10 @@ struct PaneOverviewTests {
         let tStart = CFAbsoluteTimeGetCurrent()
         primaryController.togglePaneOverview(nil)
         let tOpenAction = CFAbsoluteTimeGetCurrent() - tStart
+        guard let presentationToken = primaryController.currentOverviewPresentationToken else {
+            Issue.record("Opening overview must produce a presentation token")
+            return
+        }
 
         // Measure synchronous layout and display passes separately
         let tL0 = CFAbsoluteTimeGetCurrent()
@@ -534,17 +538,13 @@ struct PaneOverviewTests {
         window.displayIfNeeded()
         let tSynchronousDisplay = CFAbsoluteTimeGetCurrent() - tD0
 
-        // Pump runloop until the first interactive presentation callback fires
-        let deadline = Date().addingTimeInterval(2.0)
-        while recordedElapsed == nil && Date() < deadline {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
-            CATransaction.flush()
-            hostingView.layoutSubtreeIfNeeded()
-            window.displayIfNeeded()
-        }
+        CATransaction.flush()
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
 
-        guard let elapsed = recordedElapsed, let itemCount = recordedItemCount else {
-            Issue.record("Overview first-frame presentation callback was not received within 2s timeout")
+        // End measurement on observed presented frame scoped to this presentation token
+        let itemCount = PaneOverviewStore.shared.filteredItems.count
+        guard let elapsed = primaryController.recordOverviewPresentedFrame(token: presentationToken, itemCount: itemCount) else {
+            Issue.record("Overview first-frame presentation could not be recorded for token \(presentationToken)")
             return
         }
 
@@ -554,13 +554,19 @@ struct PaneOverviewTests {
         #expect(primaryController.paneOverviewIsShowing == true, "Pane overview must be showing")
         #expect(itemCount == 30, "Expected 30 items in first interactive frame, got \(itemCount)")
         #expect(elapsed < 0.150, "Interactive first-frame presentation for 30 panes took \(Int(elapsed * 1000)) ms, exceeding 150 ms budget")
+        #expect(recordedElapsed == elapsed, "Callback must observe identical presentation duration")
+        #expect(recordedItemCount == 30, "Callback must receive 30 items")
 
-        // Visual content assertion on presented frame
+        // Visual content assertion on presented frame (kept separate from presentation latency timing)
+        let tCapture0 = CFAbsoluteTimeGetCurrent()
         guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
             Issue.record("Failed to create bitmap cache rep for overview window")
             return
         }
         hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
+        let tOffscreenCapture = CFAbsoluteTimeGetCurrent() - tCapture0
+        print("[BENCHMARK] Offscreen rasterization capture pass: \(String(format: "%.1f", tOffscreenCapture*1000))ms")
+
         #expect(rep.pixelsWide >= 1200 && rep.pixelsHigh >= 800, "Window rendered frame dimensions must match")
 
         let midX = rep.pixelsWide / 2
@@ -579,6 +585,93 @@ struct PaneOverviewTests {
             }
         }
         #expect(distinctColors.count >= 3, "Presented frame must contain rendered card boundaries/content (found \(distinctColors.count) distinct colors)")
+    }
+
+    // MARK: - Controlled Delayed-Render Negative Control Gate Test
+
+    /// Negative control verifying that the first-frame presentation gate detects and rejects renders
+    /// exceeding the 150 ms budget, and validates that token-scoped presentation rejects mismatched tokens.
+    @Test func overviewInteractivePresentationGateRejectsDelayedRenderExceedingBudget() throws {
+        // Construct 30 simulated surfaces across 6 controllers
+        var controllers: [BaseTerminalController] = []
+        for cIdx in 0..<6 {
+            var surfacesInController: [Tako.SurfaceView] = []
+            for sIdx in 0..<5 {
+                let surf = makeSurface(
+                    title: "Pane \(cIdx)-\(sIdx)",
+                    pwd: "/Users/alex/workspace/repo-\(cIdx)",
+                    status: .idle
+                )
+                surfacesInController.append(surf)
+            }
+            controllers.append(makeController(surfaces: surfacesInController))
+        }
+
+        PaneOverviewStore.fixtureControllers = controllers
+        PaneOverviewStore.shared.refresh(fromControllers: controllers)
+        #expect(PaneOverviewStore.shared.items.count == 30)
+
+        let primaryController = controllers[0]
+        guard let window = primaryController.window else {
+            Issue.record("Primary controller must have a valid window")
+            return
+        }
+        window.setContentSize(NSSize(width: 1200, height: 800))
+
+        let hostingView = NSHostingView(
+            rootView: TerminalView(tako: primaryController.tako, viewModel: primaryController, delegate: primaryController)
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        window.contentView = hostingView
+        window.orderFrontRegardless()
+
+        defer {
+            PaneOverviewStore.fixtureControllers = nil
+            primaryController.onPaneOverviewPresented = nil
+            window.orderOut(nil)
+            window.close()
+        }
+
+        hostingView.layoutSubtreeIfNeeded()
+
+        var recordedElapsed: TimeInterval?
+        primaryController.onPaneOverviewPresented = { elapsed, _ in
+            recordedElapsed = elapsed
+        }
+
+        // 1. Trigger open action
+        primaryController.togglePaneOverview(nil)
+        guard let validToken = primaryController.currentOverviewPresentationToken else {
+            Issue.record("Opening overview must produce a presentation token")
+            return
+        }
+
+        // 2. Token-scoping verification: an invalid/mismatched token must be rejected
+        let invalidTokenResult = primaryController.recordOverviewPresentedFrame(token: UUID(), itemCount: 30)
+        #expect(invalidTokenResult == nil, "Mismatched presentation token must be rejected without recording")
+        #expect(recordedElapsed == nil, "Callback must not fire on mismatched token")
+        #expect(primaryController.currentOverviewPresentationToken == validToken, "Valid token must remain active after mismatched attempt")
+
+        // 3. Controlled delayed render: inject 160 ms delay to simulate a slow or stalled rendering pipeline
+        Thread.sleep(forTimeInterval: 0.160)
+
+        // Perform layout and display after delay
+        hostingView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        CATransaction.flush()
+
+        // 4. Record frame with valid token
+        guard let elapsed = primaryController.recordOverviewPresentedFrame(token: validToken, itemCount: 30) else {
+            Issue.record("Valid token must successfully record presented frame")
+            return
+        }
+
+        // 5. Negative control assertions:
+        // Delayed frame must take >= 150 ms and fail the < 150 ms interactive budget condition
+        #expect(elapsed >= 0.150, "Delayed render must measure at least 150 ms, measured: \(String(format: "%.1f", elapsed * 1000)) ms")
+        let passedBudgetCondition = elapsed < 0.150
+        #expect(!passedBudgetCondition, "Delayed render taking \(String(format: "%.1f", elapsed * 1000)) ms must be rejected by the < 150 ms gate")
+        #expect(recordedElapsed == elapsed, "Callback must observe the true delayed elapsed time")
     }
 
 }

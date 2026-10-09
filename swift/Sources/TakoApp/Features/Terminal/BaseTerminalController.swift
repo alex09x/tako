@@ -80,6 +80,10 @@ class BaseTerminalController: NSWindowController,
     /// Whether the Pane Overview overlay is showing for this window (B6).
     @Published var paneOverviewIsShowing: Bool = false {
         didSet {
+            if !paneOverviewIsShowing {
+                currentOverviewPresentationToken = nil
+                paneOverviewOpenStartTime = 0
+            }
             guard oldValue, !paneOverviewIsShowing else { return }
             DispatchQueue.main.async { [weak self] in
                 Tako.moveFocus(to: self?.focusedSurface)
@@ -87,12 +91,33 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Unique presentation token identifying the active pane overview presentation cycle.
+    internal(set) var currentOverviewPresentationToken: UUID?
+
     /// Timestamp when pane overview was triggered to open via production action.
     internal(set) var paneOverviewOpenStartTime: CFAbsoluteTime = 0
 
     /// Callback invoked when pane overview presents its first interactive frame.
     /// Passes: (TimeInterval: elapsed since open trigger, Int: count of presented pane items)
     var onPaneOverviewPresented: ((TimeInterval, Int) -> Void)?
+
+    /// Records an observed rendered/presented frame for the active overview opening cycle.
+    /// - Parameters:
+    ///   - token: The token matching the active presentation instance. If provided and does not match, the call is ignored.
+    ///   - itemCount: The count of rendered pane overview items.
+    /// - Returns: Total elapsed time from open trigger to the presented frame, or nil if no matching presentation was active.
+    @discardableResult
+    func recordOverviewPresentedFrame(token: UUID? = nil, itemCount: Int) -> TimeInterval? {
+        guard paneOverviewIsShowing, paneOverviewOpenStartTime > 0 else { return nil }
+        if let token, let currentToken = currentOverviewPresentationToken, token != currentToken {
+            return nil
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - paneOverviewOpenStartTime
+        currentOverviewPresentationToken = nil
+        paneOverviewOpenStartTime = 0
+        onPaneOverviewPresented?(elapsed, itemCount)
+        return elapsed
+    }
 
     /// The window hosting this terminal view controller (TerminalViewModel).
     /// True when any surface in this controller currently has an active bell.

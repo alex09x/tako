@@ -197,8 +197,11 @@ extension BaseTerminalController {
     @IBAction func togglePaneOverview(_ sender: Any?) {
         let willShow = !paneOverviewIsShowing
         if willShow {
-            PaneOverviewView.hasSignaledFirstFrame = false
+            currentOverviewPresentationToken = UUID()
             paneOverviewOpenStartTime = CFAbsoluteTimeGetCurrent()
+        } else {
+            currentOverviewPresentationToken = nil
+            paneOverviewOpenStartTime = 0
         }
         paneOverviewIsShowing.toggle()
         if paneOverviewIsShowing {
