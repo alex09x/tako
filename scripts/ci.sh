@@ -64,7 +64,7 @@ echo '== persist'
 ./scripts/e2e-persist.sh" ;;
         uitest) script+="
 echo '== uitest'
-./scripts/uitest.sh" ;;
+./scripts/uitest.sh --local" ;;
         *) echo "unknown stage: $stage (rust, cli, swift, apps, persist, uitest)" >&2; exit 2 ;;
     esac
 done

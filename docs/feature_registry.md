@@ -46,8 +46,8 @@ This registry provides a complete behavioral mapping of all shipped Tako feature
 | **Settings Dialog Presentation** | `Cmd+,` | Opens in-terminal TUI settings card with search field and buttons | `tako-e2e: settings`, `TakoFeatureJourneysUITests.testSettingsDialogPresentationAndDismissal` | E2E / XCUITest | `scripts/e2e-macapp.sh` | PASS |
 | **Keybinding Recorder & Cancel** | Click "Record" in Settings | Enters live recording; first Esc cancels recording while Settings stays open; second Esc closes | `tako-e2e: settings-record`, `TakoFeatureJourneysUITests.testSettingsKeybindingRecorderCancel` | E2E / XCUITest | `scripts/e2e-macapp.sh` | PASS |
 | **Settings Dismissal** | Press `Escape` in Settings | Dismisses settings dialog and returns first responder to terminal | `tako-e2e: settings`, `TakoFeatureJourneysUITests.testSettingsDialogPresentationAndDismissal` | E2E / XCUITest | `scripts/e2e-macapp.sh` | PASS |
-| **Keybinding Uniqueness** | Register shortcut | Checks for conflict against menu, default, and custom overrides | `KeybindingValidatorTests` | Unit / Validation | `scripts/swift-coverage-gate.py` | PASS |
-| **Conflict Reassignment** | Override existing shortcut | Shows confirmation modal; updates keybinding map atomically | `KeybindConflictTests` | Unit / UI Modal | `scripts/swift-coverage-gate.py` | PASS |
+| **Keybinding Conflict Detection** | Check existing shortcut | Detects conflicts against defaults and custom overrides; returns conflicting action metadata | `KeybindConflictTests` (`findConflictWithDefaultShortcut`, `findConflictWithCustomOverride`) | Unit / Logic | `scripts/swift-coverage-gate.py` | PASS |
+| **Interactive Keybinding Conflict Reassignment Modal** | Click Conflict button in Settings | Presents conflict reassignment modal; updates or cancels keybinding reassignment | Open (Conflict detection covered; modal interaction journey pending) | E2E / Modal | Future Gate | OPEN |
 
 ---
 
@@ -69,10 +69,11 @@ This registry provides a complete behavioral mapping of all shipped Tako feature
 
 | Feature | User Action | Observable Result | Exact Test / Assertion | Verification Level | Required Gate | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Broadcast Input Across Splits** | `takoctl broadcast start/stop` | Replicates typed keystrokes across all split panes; post-stop isolates typing to focused pane | `tako-e2e: broadcast` (dual delivery >= 2 witness lines; post-stop isolated delivery == 1) | Integration (CLI + PTY) | `scripts/e2e-macapp.sh` | PASS |
-| **Input Ownership Locking** | `takoctl input lock/unlock` | Locks pane keyboard input (proves human input blocked); verified approved automation works; verifies typing recovery | `tako-e2e: input-ownership` | Integration (CLI) | `scripts/e2e-macapp.sh` | PASS |
-| **Terminal Overlay Presentation** | `takoctl overlay open/close` | Displays markdown card overlay from run-owned temp file; verifies `open: true` and `open: false` | `tako-e2e: overlay` | Integration (CLI) | `scripts/e2e-macapp.sh` | PASS |
+| **Broadcast Input Across Splits** | `takoctl broadcast start/stop` | Replicates typed keystrokes across all split panes; post-stop isolates typing to focused pane | `tako-e2e: broadcast` (dual delivery lines == 2 && uniqueTtys == 2; post-stop isolated delivery == 1; settling barrier) | Integration (CLI + PTY) | `scripts/e2e-macapp.sh` | PASS |
+| **Input Ownership Locking** | `takoctl input lock/unlock` | Locks pane keyboard input (proves human input blocked); sends authorized automated command and asserts PTY witness; verifies typing recovery | `tako-e2e: input-ownership` | Integration (CLI) | `scripts/e2e-macapp.sh` | PASS |
+| **Terminal Overlay Presentation** | `takoctl overlay open/close` | Displays markdown card overlay from run-owned sandboxed temp directory in `d.work`; verifies `open: true` and `open: false` | `tako-e2e: overlay` | Integration (CLI) | `scripts/e2e-macapp.sh` | PASS |
 | **Diff Review Status** | `takoctl review status` | Queries worktree review state; verifies structured JSON response | `tako-e2e: diff-review` | Integration (CLI) | `scripts/e2e-macapp.sh` | PASS |
+| **Diff Review Interactive Comments** | Post review comments via UI | Attaches inline comment to review session | Open | Integration | Future Gate | OPEN |
 
 ---
 
@@ -141,8 +142,8 @@ All UI test suites have been verified on the remote Mac host (`alex09x@Alexs-Mac
 
 | Test Suite / Entry Point | Scenarios / Methods | Result | Evidence / Log Location |
 | :--- | :--- | :--- | :--- |
-| `./scripts/test-ui.sh` | 39 default E2E journeys (window, tab, split, settings, recorder, sidebar, overview, workspaces, broadcast, input-ownership, diff-review, overlay, etc.) | **39 PASSED, 0 FAILED** | Remote execution log, exit status 0 |
+| `./scripts/test-ui.sh` | 40 default E2E journeys (`restore`, `typing`, `option-space`, `editing`, `control-keys`, `find-all`, `find-commands`, `ctl-tree`, `ctl-quick`, `ctl-layout`, `ctl-close-wait`, `crash-layout`, `crash-again`, `crash-corrupt`, `quit-layout`, `upgrade-crash`, `find-stale`, `new-tab`, `split`, `zoom`, `resize`, `paste`, `paste-utf8`, `close-busy`, `copy`, `quit-busy`, `config`, `padding`, `split-focus`, `quit-idle`, `new-window`, `settings`, `settings-record`, `sidebar`, `overview`, `workspace-switch`, `broadcast`, `input-ownership`, `diff-review`, `overlay`) | **40 PASSED, 0 FAILED** | Remote execution log, exit status 0 |
 | `./scripts/test-ui.sh --persist` | 8 session persistence & crash recovery scenarios (`persist-live`, `persist-gone`, `persist-close`, `persist-cancel`, `persist-close-asks`, `persist-close-quit`, `persist-second`, `persist-reflow`) | **8 PASSED, 0 FAILED** | Remote execution log, exit status 0 |
 | `./scripts/uitest.sh TakoFeatureJourneysUITests` | 5 XCUITest journeys (`testNotificationCenterToggle`, `testPaneOverviewToggle`, `testSessionSidebarToggle`, `testSettingsDialogPresentationAndDismissal`, `testSettingsKeybindingRecorderCancel`) | **5 PASSED, 0 FAILED** | `target/uitest.xcresult`, `target/uitest.log`, exit status 0 |
-| **Combined UI Execution** | **52 automated macOS UI scenarios** | **52 PASSED, 0 FAILED** | All gates clean, isolated test bundles |
+| **Combined UI Execution** | **53 automated macOS UI scenarios** | **53 PASSED, 0 FAILED** | All gates clean, isolated test bundles |
 

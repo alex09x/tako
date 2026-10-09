@@ -27,6 +27,10 @@ REMOTE="${TAKO_MAC:-alex09x@Alexs-MacBook-Pro.local}"
 RUN_LOCAL=0
 TEST_ARGS=()
 
+if [ -n "${TAKO_REMOTE_EXEC:-}" ] || [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_CONNECTION:-}" ]; then
+    RUN_LOCAL=1
+fi
+
 for arg in "$@"; do
     case "$arg" in
         --local)
@@ -58,9 +62,11 @@ LOG=target/uitest.log
 mkdir -p target
 
 only=()
-for t in "${TEST_ARGS[@]}"; do
-    only+=("-only-testing:TakoUITests/$t")
-done
+if [ ${#TEST_ARGS[@]} -gt 0 ]; then
+    for t in "${TEST_ARGS[@]}"; do
+        only+=("-only-testing:TakoUITests/$t")
+    done
+fi
 
 echo "==> the screen will be driven for the next few minutes"
 echo

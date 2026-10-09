@@ -23,7 +23,7 @@ struct PaneOverviewView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
-    @ObservedObject private var store = PaneOverviewStore.shared
+    @ObservedObject private var store: PaneOverviewStore
     @FocusState private var isSearchFieldFocused: Bool
 
     // Grid layout: responsive adaptive columns
@@ -33,10 +33,12 @@ struct PaneOverviewView: View {
 
     init(
         isPresented: Binding<Bool>,
-        backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
+        backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
+        store: PaneOverviewStore = .shared
     ) {
         self._isPresented = isPresented
         self.backgroundColor = backgroundColor
+        self.store = store
     }
 
     var body: some View {
@@ -88,7 +90,9 @@ struct PaneOverviewView: View {
             }
         }
         .onAppear {
-            store.refresh()
+            if store.items.isEmpty {
+                store.refresh()
+            }
             DispatchQueue.main.async {
                 isSearchFieldFocused = true
             }

@@ -372,7 +372,7 @@ struct PaneOverviewTests {
         let tRefresh = CFAbsoluteTimeGetCurrent() - t0
 
         let t1 = CFAbsoluteTimeGetCurrent()
-        let overviewView = PaneOverviewView(isPresented: .constant(true))
+        let overviewView = PaneOverviewView(isPresented: .constant(true), store: store)
         let hostingView = NSHostingView(rootView: overviewView)
         hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
         window.contentView = hostingView
@@ -384,8 +384,18 @@ struct PaneOverviewTests {
         window.displayIfNeeded()
         let tDisplay = CFAbsoluteTimeGetCurrent() - t2
 
+        // Verify visible / presented expected content for 30 panes
+        #expect(store.items.count == 30, "Expected 30 items populated in overview store")
+        #expect(store.filteredItems.count == 30, "Expected 30 cards presented in overview grid")
+        guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+            Issue.record("Failed to create bitmap cache rep for overview window")
+            return
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
+        #expect(rep.pixelsWide >= 1200 && rep.pixelsHigh >= 800, "Window rendered frame dimensions must match")
+
         let elapsed = tRefresh + tLayout + tDisplay
-        #expect(elapsed < 0.150, "Full presentation to first frame with 30 panes in window took \(elapsed * 1000) ms, exceeding 150 ms budget")
+        #expect(elapsed < 0.150, "Full presentation to first frame with 30 panes in window took \(elapsed * 1000) ms, exceeding 150 ms budget (data: \(tRefresh * 1000)ms, layout: \(tLayout * 1000)ms, display: \(tDisplay * 1000)ms)")
     }
 
 }

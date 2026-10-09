@@ -1601,18 +1601,19 @@ let scenarios: [Scenario] = [
         guard status.contains("\"active\":true") || status.contains("\"active\": true") else {
             throw Failure("broadcast status was not active after start: \(status)")
         }
-        // Send typing payload via keyboard while broadcast is active
+        // Send typing payload via keyboard while broadcast is active: record per-pane TTY identity
         d.activate()
-        try d.run("echo 'bcast_witness' >> \(witnessPath)")
+        try d.run("tty >> \(witnessPath)")
         _ = try d.file("bcast_witness.txt")
-        // Both panes must have received the keystrokes and written the line
+        // Both panes must have received the keystrokes and written their distinct TTY path
         guard d.wait(for: {
-            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
-            let occurrences = content.components(separatedBy: "\n").filter { $0 == "bcast_witness" }.count
-            return occurrences >= 2
+            guard let content = try? String(contentsOfFile: witnessPath, encoding: .utf8) else { return false }
+            let lines = content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let uniqueTtys = Set(lines)
+            return lines.count == 2 && uniqueTtys.count == 2
         }, timeout: 5) else {
             let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
-            throw Failure("broadcast typing was not delivered to both panes: \(content)")
+            throw Failure("broadcast typing was not delivered to both distinct panes: \(content)")
         }
         // Stop broadcast
         _ = try d.exec("\(ctl) broadcast stop")
@@ -1621,20 +1622,29 @@ let scenarios: [Scenario] = [
             throw Failure("broadcast was still active after stop: \(stopped)")
         }
         // Post-stop isolation: typing now reaches only the focused leader pane
+        let soloWitness = d.path("solo_witness.txt")
         d.activate()
-        try d.run("echo 'solo_witness' >> \(witnessPath)")
+        try d.run("tty >> \(soloWitness)")
         guard d.wait(for: {
-            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
-            let occurrences = content.components(separatedBy: "\n").filter { $0 == "solo_witness" }.count
-            return occurrences == 1
+            guard let content = try? String(contentsOfFile: soloWitness, encoding: .utf8) else { return false }
+            let lines = content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            return lines.count == 1
         }, timeout: 5) else {
-            let content = (try? String(contentsOfFile: witnessPath, encoding: .utf8)) ?? ""
+            let content = (try? String(contentsOfFile: soloWitness, encoding: .utf8)) ?? ""
             throw Failure("post-stop isolation failed: solo_witness occurrences != 1: \(content)")
+        }
+        // Execution barrier on non-targets: wait 600ms to guarantee no delayed second write occurs
+        usleep(600_000)
+        let finalContent = (try? String(contentsOfFile: soloWitness, encoding: .utf8)) ?? ""
+        let finalLines = finalContent.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard finalLines.count == 1 else {
+            throw Failure("delayed delivery leaked to second pane after broadcast stop: \(finalContent)")
         }
     }),
     ("input-ownership", "takoctl input lock and unlock control input ownership without error", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         let leakFile = d.path("input_leak.txt")
+        let autoFile = d.path("input_auto.txt")
         let recoveredFile = d.path("input_recovered.txt")
 
         _ = try d.exec("\(ctl) input lock --owner e2e-agent")
@@ -1657,6 +1667,10 @@ let scenarios: [Scenario] = [
             throw Failure("allow-automation failed: \(autoStatus)")
         }
 
+        // Send an authorized automated command and require its unique PTY witness during lock
+        _ = try d.exec("\(ctl) send \"echo auto_witness > \(autoFile)\"")
+        try d.expect("input_auto.txt", "auto_witness\n", "authorized automated input delivered while pane locked")
+
         // Unlock
         _ = try d.exec("\(ctl) input unlock")
         let unlocked = try d.exec("\(ctl) input status --json")
@@ -1678,12 +1692,19 @@ let scenarios: [Scenario] = [
     }),
     ("overlay", "takoctl overlay opens and closes terminal overlay cards", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        // Create document inside d.work (run-owned temporary workspace)
+        let docPath = d.path("tako_overlay_test.md")
+        try "# Test Note\nHello Sandboxed Overlay\n".write(toFile: docPath, atomically: true, encoding: .utf8)
+
+        // Move the pane cwd into d.work and verify cwd updated
         d.activate()
-        try d.run("pwd > \(d.path("overlay_pwd.txt"))")
-        let pwd = try d.file("overlay_pwd.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        let docPath = "\(pwd)/tako_overlay_test.md"
-        try d.run("echo '# Test Note\\nHello Overlay Card' > \"\(docPath)\"")
-        usleep(400_000)
+        try d.run("cd '\(d.work.path)' && pwd > \(d.path("overlay_cwd.txt"))")
+        guard d.wait(for: {
+            let current = (try? d.file("overlay_cwd.txt").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+            return current == d.work.path
+        }, timeout: 5) else {
+            throw Failure("failed to change pane cwd to owned temporary directory \(d.work.path)")
+        }
 
         let openRes = try d.exec("\(ctl) overlay open \"\(docPath)\"")
         let status = try d.exec("\(ctl) overlay status --json")
@@ -1695,8 +1716,6 @@ let scenarios: [Scenario] = [
         guard closed.contains("\"open\":false") || closed.contains("\"open\": false") else {
             throw Failure("overlay was still open after close: \(closed)")
         }
-        d.activate()
-        try? d.run("rm -f \"\(docPath)\"")
     }),
 ]
 
