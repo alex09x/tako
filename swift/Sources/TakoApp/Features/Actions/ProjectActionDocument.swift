@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import TakoKit
 
@@ -101,7 +111,13 @@ struct ProjectAction: Codable, Equatable, Sendable, Identifiable {
         self.id = try container.decode(String.self, forKey: .id)
         self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? id
         self.description = try container.decodeIfPresent(String.self, forKey: .description)
-        self.command = try container.decodeIfPresent([String].self, forKey: .command)
+        if let cmdList = try? container.decodeIfPresent([String].self, forKey: .command) {
+            self.command = cmdList
+        } else if let single = try? container.decodeIfPresent(String.self, forKey: .command) {
+            self.command = [single]
+        } else {
+            self.command = nil
+        }
         self.argv = try container.decodeIfPresent([String].self, forKey: .argv)
         self.shell = try container.decodeIfPresent(Bool.self, forKey: .shell)
         self.cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
@@ -194,6 +210,11 @@ enum ProjectActionDiscovery {
     /// Discovers project actions for a surface based on its working directory or active workspace.
     @MainActor
     static func find(for surface: Tako.SurfaceView) -> DiscoveredProject? {
+        if let pwd = surface.pwd, !pwd.isEmpty {
+            if let discovered = find(at: pwd) {
+                return discovered
+            }
+        }
         if let cwd = surface.workingDirectory, !cwd.isEmpty {
             if let discovered = find(at: cwd) {
                 return discovered

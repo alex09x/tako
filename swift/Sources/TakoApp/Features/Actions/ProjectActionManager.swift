@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Foundation
 import AppKit
 import TakoKit
@@ -130,7 +140,7 @@ final class ProjectActionManager {
 
         let cmd = action.effectiveCommand
         if !cmd.isEmpty {
-            if action.shell == true {
+            if action.shell == true || (action.shell == nil && !(cmd.first?.hasPrefix("/") ?? false)) {
                 config.program = ["/bin/sh", "-c", cmd.joined(separator: " ")]
             } else {
                 config.program = cmd

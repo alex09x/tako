@@ -94,6 +94,7 @@ enum Key {
     static let o: CGKeyCode = 31
     static let r: CGKeyCode = 15
     static let k: CGKeyCode = 40
+    static let p: CGKeyCode = 35
 }
 
 // MARK: - Driver
@@ -2872,6 +2873,165 @@ let scenarios: [Scenario] = [
         d.activate()
         try d.run("echo 'subagent_ok' > \(witness)")
         try d.expect("subagent_witness", "subagent_ok\n", "terminal keyboard input in tab 1 after recursive subagent close")
+    }),
+    ("project-action", "takoctl action discovers repo actions, refuses unapproved execution, approves via trust store, runs action in target split, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        let projDir = d.work.appendingPathComponent("project_action_repo")
+        let takoDir = projDir.appendingPathComponent(".tako")
+        try FileManager.default.createDirectory(at: takoDir, withIntermediateDirectories: true)
+
+        let witnessFile = projDir.appendingPathComponent("action_split_witness.txt")
+        let paneWitnessFile = projDir.appendingPathComponent("action_pane_witness.txt")
+        let kbWitnessFile = projDir.appendingPathComponent("action_kb_witness.txt")
+
+        let actionsJson = """
+        {
+          "version": 1,
+          "name": "E2EProject",
+          "actions": [
+            {
+              "id": "build-pane",
+              "title": "Build Project In Pane",
+              "description": "Compiles e2e artifact in current pane",
+              "command": ["echo 'action_pane_ok' > '\(paneWitnessFile.path)'"],
+              "target": "pane"
+            },
+            {
+              "id": "build-split",
+              "title": "Build Project Split",
+              "description": "Compiles e2e artifact in split",
+              "command": ["/bin/sh", "-c", "echo 'action_split_ok' > '\(witnessFile.path)'"],
+              "target": "split"
+            }
+          ]
+        }
+        """
+        try actionsJson.write(to: takoDir.appendingPathComponent("actions.json"), atomically: true, encoding: .utf8)
+
+        // Step 1: Discover actions and verify initial untrusted status
+        let listOutput = try d.exec("\(ctl) action list --path '\(projDir.path)' --json")
+        guard listOutput.contains("\"trusted\":false") || listOutput.contains("\"trusted\": false") else {
+            throw Failure("action list did not report untrusted status for new action: \(listOutput)")
+        }
+        guard listOutput.contains("E2EProject") && listOutput.contains("build-split") && listOutput.contains("build-pane") else {
+            throw Failure("action list did not report project name or actions: \(listOutput)")
+        }
+
+        // Step 2: Verify unapproved execution refusal via CLI trust barrier
+        var runRefused = false
+        do {
+            _ = try d.exec("\(ctl) action run build-pane --path '\(projDir.path)' --json")
+        } catch {
+            runRefused = true
+        }
+        guard runRefused else {
+            throw Failure("takoctl action run unapproved action did not fail closed")
+        }
+        guard !FileManager.default.fileExists(atPath: paneWitnessFile.path) else {
+            throw Failure("unapproved project action executed without approval")
+        }
+
+        // Step 3: Test Command Palette presentation and dismissal
+        d.activate()
+        usleep(200_000)
+        _ = d.pressMenuItem(titledPrefix: "Command Palette")
+        guard d.wait(for: { d.hasText(containing: "Commands") || d.button(titled: "Clear Screen") != nil }, timeout: 5) else {
+            throw Failure("Command Palette was not presented via menu action")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: { !d.hasText(containing: "Commands") && d.button(titled: "Clear Screen") == nil }, timeout: 5) else {
+            throw Failure("Command Palette was not dismissed after Escape")
+        }
+
+        // Step 4: Approve project actions via CLI
+        let approveOutput = try d.exec("\(ctl) action approve --path '\(projDir.path)' --json")
+        guard approveOutput.contains("\"approved\":true") || approveOutput.contains("\"approved\": true") else {
+            throw Failure("action approve did not report approved: true: \(approveOutput)")
+        }
+
+        // Step 5: Verify status command reports trusted
+        let statusOutput = try d.exec("\(ctl) action status --path '\(projDir.path)' --json")
+        guard statusOutput.contains("\"trusted\":true") || statusOutput.contains("\"trusted\": true") else {
+            throw Failure("action status did not report trusted status after approval: \(statusOutput)")
+        }
+
+        // Step 6: Execute approved action with target .pane
+        let runPaneOutput = try d.exec("\(ctl) action run build-pane --path '\(projDir.path)' --json")
+        guard runPaneOutput.contains("\"ran\":true") || runPaneOutput.contains("\"ran\": true") else {
+            throw Failure("approved action targeting pane did not execute: \(runPaneOutput)")
+        }
+
+        guard d.wait(for: {
+            guard let content = try? String(contentsOf: paneWitnessFile, encoding: .utf8) else { return false }
+            return content == "action_pane_ok\n"
+        }, timeout: 6) else {
+            throw Failure("witness file was not written with expected content by executed pane action")
+        }
+
+        // Step 7: Execute approved action with target .split
+        func allPaneIDs() -> [String] {
+            guard let tree = try? d.exec("\(ctl) tree --json"),
+                  let data = tree.data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = root["result"] as? [String: Any],
+                  let windows = result["windows"] as? [[String: Any]] else { return [] }
+            var ids: [String] = []
+            for w in windows {
+                for t in w["tabs"] as? [[String: Any]] ?? [] {
+                    for p in t["panes"] as? [[String: Any]] ?? [] {
+                        if let id = p["id"] as? String {
+                            ids.append(id)
+                        }
+                    }
+                }
+            }
+            return ids
+        }
+
+        let initialPanes = allPaneIDs()
+        let initialPaneCount = initialPanes.count
+
+        let runSplitOutput = try d.exec("\(ctl) action run build-split --path '\(projDir.path)' --json")
+        guard runSplitOutput.contains("\"ran\":true") || runSplitOutput.contains("\"ran\": true") else {
+            throw Failure("approved action targeting split did not execute: \(runSplitOutput)")
+        }
+
+        // Wait for split witness file written by action
+        guard d.wait(for: {
+            guard let content = try? String(contentsOf: witnessFile, encoding: .utf8) else { return false }
+            return content == "action_split_ok\n"
+        }, timeout: 6) else {
+            throw Failure("witness file was not written with expected content by executed split action")
+        }
+
+        // Verify that target split resulted in an additional pane in tree
+        var splitPaneId: String?
+        guard d.wait(for: {
+            let currentPanes = allPaneIDs()
+            if currentPanes.count > initialPaneCount {
+                splitPaneId = currentPanes.first(where: { !initialPanes.contains($0) })
+                return true
+            }
+            return false
+        }, timeout: 6) else {
+            throw Failure("project action with target split did not create additional pane in tree")
+        }
+
+        // Cleanly close split pane via takoctl close
+        if let id = splitPaneId {
+            _ = try? d.exec("\(ctl) close --target \(id) --json")
+            _ = d.wait(for: { allPaneIDs().count == initialPaneCount }, timeout: 5)
+        }
+
+        // Step 8: Verify unassisted terminal keyboard focus recovery in active pane
+        d.activate()
+        usleep(500_000)
+        try d.run("echo 'keyboard_ok' > '\(kbWitnessFile.path)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: kbWitnessFile, encoding: .utf8)) == "keyboard_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after project action execution")
+        }
     }),
 ]
 

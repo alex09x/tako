@@ -44,6 +44,12 @@ import TakoKit
               "command": ["cargo", "clean"],
               "shell": true,
               "target": "pane"
+            },
+            {
+              "id": "fmt",
+              "title": "Format",
+              "command": "cargo fmt",
+              "target": "pane"
             }
           ]
         }
@@ -52,7 +58,7 @@ import TakoKit
         let file = try JSONDecoder().decode(ProjectActionFile.self, from: Data(json.utf8))
         #expect(file.version == 1)
         #expect(file.name == "MyProject")
-        #expect(file.actions.count == 3)
+        #expect(file.actions.count == 4)
 
         let build = file.actions[0]
         #expect(build.id == "build")
@@ -73,6 +79,11 @@ import TakoKit
         #expect(clean.id == "clean")
         #expect(clean.effectiveTarget == .pane)
         #expect(clean.shell == true)
+
+        let fmt = file.actions[3]
+        #expect(fmt.id == "fmt")
+        #expect(fmt.effectiveCommand == ["cargo fmt"])
+        #expect(fmt.effectiveTarget == .pane)
 
         let reencoded = try JSONEncoder().encode(file)
         let redecoded = try JSONDecoder().decode(ProjectActionFile.self, from: reencoded)
