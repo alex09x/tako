@@ -2714,6 +2714,165 @@ let scenarios: [Scenario] = [
         try d.run("echo 'ask_all_ok' > \(witness)")
         try d.expect("ask_witness", "ask_all_ok\n", "terminal keyboard input after prompt modal interaction")
     }),
+    ("subagent-close", "takoctl split --child-of creates subagent hierarchy, Cmd+W prompts confirmation for closing parent and subagents, Cancel preserves panes, Close recursively closes hierarchy, and terminal retains focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        let witness = d.path("subagent_witness")
+
+        // Step 1: Open a new tab (Tab 2) so closing the subagent hierarchy does not close the whole window
+        try d.run("tty > \(d.path("subagent_tab1_tty"))")
+        let rootTty = try d.file("subagent_tab1_tty")
+
+        d.key(Key.t, .maskCommand)
+        usleep(1_200_000)
+
+        try d.run("tty > \(d.path("subagent_tab2_tty"))")
+        let parentTty = try d.file("subagent_tab2_tty")
+        guard rootTty != parentTty else {
+            throw Failure("Cmd+T did not switch focus to newly created tab")
+        }
+
+        // Discover focused parent pane ID in Tab 2
+        guard let parentId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused parent pane ID in tab 2")
+        }
+
+        // Step 2: Split to create child subagent 1 under parent
+        _ = try d.exec("\(ctl) split --target \(parentId) --child-of \(parentId) --label worker-1 --json")
+        usleep(800_000)
+
+        // Verify child 1 in tree
+        let tree1Json = try d.exec("\(ctl) tree --json")
+        guard let tree1Data = tree1Json.data(using: .utf8),
+              let tree1Obj = try? JSONSerialization.jsonObject(with: tree1Data) as? [String: Any],
+              let tree1Result = (tree1Obj["result"] as? [String: Any]) ?? Optional(tree1Obj),
+              let windows1 = tree1Result["windows"] as? [[String: Any]] else {
+            throw Failure("failed to parse tree JSON after first split: \(tree1Json)")
+        }
+
+        var child1Id: String?
+        for w in windows1 {
+            for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                    if p["parent"] as? String == parentId {
+                        child1Id = p["id"] as? String
+                    }
+                }
+            }
+        }
+        guard let child1Id, !child1Id.isEmpty else {
+            throw Failure("tree does not show child subagent with parent \(parentId): \(tree1Json)")
+        }
+
+        // Step 3: Split child 1 to create grandChild (recursive subagent hierarchy)
+        _ = try d.exec("\(ctl) split --target \(child1Id) --child-of \(child1Id) --label grandchild-worker --json")
+        usleep(800_000)
+
+        // Verify recursive subagent in tree
+        let tree2Json = try d.exec("\(ctl) tree --json")
+        guard let tree2Data = tree2Json.data(using: .utf8),
+              let tree2Obj = try? JSONSerialization.jsonObject(with: tree2Data) as? [String: Any],
+              let tree2Result = (tree2Obj["result"] as? [String: Any]) ?? Optional(tree2Obj),
+              let windows2 = tree2Result["windows"] as? [[String: Any]] else {
+            throw Failure("failed to parse tree JSON after second split: \(tree2Json)")
+        }
+
+        var grandChildId: String?
+        for w in windows2 {
+            for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                    if p["parent"] as? String == child1Id {
+                        grandChildId = p["id"] as? String
+                    }
+                }
+            }
+        }
+        guard let grandChildId, !grandChildId.isEmpty else {
+            throw Failure("tree does not show grandchild subagent with parent \(child1Id): \(tree2Json)")
+        }
+
+        // Step 4: Test hierarchy collapse and expand
+        _ = try d.exec("\(ctl) collapse \(parentId)")
+        let collapseTree = try d.exec("\(ctl) tree --json")
+        guard collapseTree.contains("\"collapsed\":true") || collapseTree.contains("\"collapsed\": true") else {
+            throw Failure("tree does not reflect collapsed parent state: \(collapseTree)")
+        }
+
+        _ = try d.exec("\(ctl) expand \(parentId)")
+        let expandTree = try d.exec("\(ctl) tree --json")
+        guard expandTree.contains("\"collapsed\":false") || expandTree.contains("\"collapsed\": false") else {
+            throw Failure("tree does not reflect expanded parent state: \(expandTree)")
+        }
+
+        // Step 5: Focus parent pane and trigger close via Cmd+W
+        _ = try d.exec("\(ctl) focus --target \(parentId)")
+        usleep(400_000)
+        d.activate()
+        usleep(200_000)
+
+        d.key(Key.w, .maskCommand)
+
+        // Step 6: Verify confirmation modal presentation and accessible text
+        var cancelBtn: AXUIElement?
+        var closeBtn: AXUIElement?
+        guard d.wait(for: {
+            cancelBtn = d.button(titled: "Cancel")
+            closeBtn = d.button(titled: "Close")
+            return cancelBtn != nil && closeBtn != nil
+        }, timeout: 5), let cancelBtn else {
+            throw Failure("Cmd+W on parent pane with subagents did not present confirmation dialog")
+        }
+
+        guard d.hasText(containing: "Close Parent Pane and Subagents?") &&
+              (d.hasText(containing: "child subagent") || d.hasText(containing: "Closing it will also close its child panes")) else {
+            throw Failure("subagent close dialog does not expose title or warning text to accessibility")
+        }
+
+        // Step 7: Test Cancel path
+        d.press(cancelBtn)
+        guard d.wait(for: { d.button(titled: "Cancel") == nil }, timeout: 5) else {
+            throw Failure("subagent close dialog was not dismissed after Cancel")
+        }
+
+        // Verify in tree that neither parent nor children were removed
+        let treeAfterCancel = try d.exec("\(ctl) tree --json")
+        guard treeAfterCancel.contains(parentId) &&
+              treeAfterCancel.contains(child1Id) &&
+              treeAfterCancel.contains(grandChildId) else {
+            throw Failure("Cancel mistakenly closed panes from hierarchy: \(treeAfterCancel)")
+        }
+
+        // Step 8: Trigger Cmd+W again and confirm Close
+        d.activate()
+        usleep(200_000)
+        d.key(Key.w, .maskCommand)
+
+        var closeBtn2: AXUIElement?
+        guard d.wait(for: {
+            closeBtn2 = d.button(titled: "Close")
+            return closeBtn2 != nil
+        }, timeout: 5), let closeBtn2 else {
+            throw Failure("confirmation dialog did not appear on second Cmd+W")
+        }
+
+        d.press(closeBtn2)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("subagent close dialog was not dismissed after Close")
+        }
+
+        // Step 9: Verify parent and all recursive descendants are completely removed
+        guard d.wait(for: {
+            let curTree = (try? d.exec("\(ctl) tree --json")) ?? ""
+            return !curTree.contains(parentId) && !curTree.contains(child1Id) && !curTree.contains(grandChildId)
+        }, timeout: 6) else {
+            let remainingTree = (try? d.exec("\(ctl) tree --json")) ?? ""
+            throw Failure("parent or child subagent panes were not recursively removed after confirmation: \(remainingTree)")
+        }
+
+        // Step 10: Verify unassisted terminal keyboard input recovery in Tab 1
+        d.activate()
+        try d.run("echo 'subagent_ok' > \(witness)")
+        try d.expect("subagent_witness", "subagent_ok\n", "terminal keyboard input in tab 1 after recursive subagent close")
+    }),
 ]
 
 // MARK: - Main

@@ -295,22 +295,28 @@ class BaseTerminalController: NSWindowController,
         // Check if closing a parent pane that has subagent children (C5)
         let parentSurfaces = node.filter { SubagentHierarchyStore.shared.hasChildren($0.id) }
         if !parentSurfaces.isEmpty {
-            let totalChildren = parentSurfaces.reduce(0) { $0 + SubagentHierarchyStore.shared.children(of: $1.id).count }
+            let totalChildren = parentSurfaces.reduce(0) { $0 + SubagentHierarchyStore.shared.descendants(of: $1.id).count }
             confirmClose(
                 messageText: "Close Parent Pane and Subagents?",
                 informativeText: "This pane has \(totalChildren) child subagent\(totalChildren == 1 ? "" : "s"). Closing it will also close its child panes."
             ) { [weak self] in
                 guard let self else { return }
                 for parent in parentSurfaces {
-                    let childIds = SubagentHierarchyStore.shared.children(of: parent.id)
-                    for cid in childIds {
+                    let descendantIds = SubagentHierarchyStore.shared.descendants(of: parent.id)
+                    for cid in descendantIds.reversed() {
                         if let childSurface = self.surfaceTree.first(where: { $0.id == cid }),
                            let childNode = self.surfaceTree.root?.node(view: childSurface) {
                             self.removeSurfaceNode(childNode)
                         }
                     }
+                    if let parentSurface = self.surfaceTree.first(where: { $0.id == parent.id }),
+                       let pNode = self.surfaceTree.root?.node(view: parentSurface) {
+                        self.removeSurfaceNode(pNode)
+                    }
                 }
-                self.removeSurfaceNode(node)
+                if self.surfaceTree.contains(node) {
+                    self.removeSurfaceNode(node)
+                }
             }
             return
         }

@@ -19,7 +19,7 @@ extension BaseTerminalController {
     // AppleScript `close` command uses.
     @IBAction func close(_ sender: Any) {
         guard let surface = focusedSurface else { return }
-        closeSurface(surface, withConfirmation: surface.needsConfirmClose)
+        closeSurface(surface, withConfirmation: surface.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(surface.id))
     }
 
     @IBAction func closeWindow(_ sender: Any) {

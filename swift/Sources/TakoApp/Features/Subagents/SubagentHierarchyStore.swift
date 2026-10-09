@@ -105,6 +105,20 @@ public final class SubagentHierarchyStore: ObservableObject {
         childrenByParent[parentId] ?? []
     }
 
+    /// Recursively returns all descendant child pane UUIDs under `parentId`.
+    public func descendants(of parentId: UUID) -> [UUID] {
+        var result: [UUID] = []
+        var queue = children(of: parentId)
+        while !queue.isEmpty {
+            let next = queue.removeFirst()
+            if !result.contains(next) {
+                result.append(next)
+                queue.append(contentsOf: children(of: next))
+            }
+        }
+        return result
+    }
+
     public func hasChildren(_ parentId: UUID) -> Bool {
         !(childrenByParent[parentId]?.isEmpty ?? true)
     }

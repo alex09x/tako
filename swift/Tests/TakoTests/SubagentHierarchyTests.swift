@@ -167,4 +167,25 @@ import Testing
         store.unregister(paneId: childId)
         #expect(notificationCount == 4)
     }
+
+    @Test func testRecursiveDescendants() {
+        let store = SubagentHierarchyStore()
+        let root = UUID()
+        let c1 = UUID()
+        let c2 = UUID()
+        let grandChild = UUID()
+
+        store.registerChild(childId: c1, parentId: root, label: "child-1")
+        store.registerChild(childId: c2, parentId: root, label: "child-2")
+        store.registerChild(childId: grandChild, parentId: c1, label: "grandchild")
+
+        #expect(store.children(of: root).count == 2)
+        #expect(store.children(of: c1) == [grandChild])
+
+        let desc = store.descendants(of: root)
+        #expect(desc.count == 3)
+        #expect(desc.contains(c1))
+        #expect(desc.contains(c2))
+        #expect(desc.contains(grandChild))
+    }
 }
