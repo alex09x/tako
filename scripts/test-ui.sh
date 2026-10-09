@@ -48,18 +48,42 @@ for arg in "$@"; do
             fi
             exit 0
             ;;
+        -*)
+            echo "Unknown option: $arg" >&2
+            echo "Usage: $0 [--local] [--persist] [--list] [scenario ...]" >&2
+            exit 2
+            ;;
         *)
             SCENARIOS+=("$arg")
             ;;
     esac
 done
 
+if [ ${#SCENARIOS[@]} -gt 0 ]; then
+    KNOWN_SCENARIOS=$(grep -E '^\s*\("[a-zA-Z0-9_-]+",\s*"' scripts/e2e/tako-e2e.swift | sed -E 's/^[[:space:]]*\("([^"]+)",.*/\1/')
+    for s in "${SCENARIOS[@]}"; do
+        if ! echo "$KNOWN_SCENARIOS" | grep -qx "$s"; then
+            echo "FAIL: unknown scenario '$s'" >&2
+            echo "Use --list to see available scenarios." >&2
+            exit 2
+        fi
+    done
+fi
+
+SCENARIO_ARGS=""
+if [ ${#SCENARIOS[@]} -gt 0 ]; then
+    SCENARIO_ARGS=" $(printf '%q ' "${SCENARIOS[@]}")"
+    SCENARIO_ARGS="${SCENARIO_ARGS% }"
+fi
+
 if [ $RUN_LOCAL -eq 1 ]; then
     echo "==> Running UI tests locally..."
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/e2e-persist.sh "${SCENARIOS[@]}"
     else
-        [ -d target/macapp/Tako.app ] || python3 scripts/build-macapp.py
+        if [ ! -d target/macapp/Tako.app ]; then
+            python3 scripts/build-macapp.py
+        fi
         exec ./scripts/e2e-macapp.sh "${SCENARIOS[@]}"
     fi
 else
@@ -67,8 +91,9 @@ else
     export TAKO_MAC="$REMOTE"
     export TAKO_REMOTE_TIMEOUT="${TAKO_REMOTE_TIMEOUT:-300}"
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
-        exec ./scripts/mac-remote.sh "./scripts/e2e-persist.sh ${SCENARIOS[*]:-}"
+        exec ./scripts/mac-remote.sh "./scripts/e2e-persist.sh$SCENARIO_ARGS"
     else
-        exec ./scripts/mac-remote.sh "[ -d target/macapp/Tako.app ] || python3 scripts/build-macapp.py && ./scripts/e2e-macapp.sh ${SCENARIOS[*]:-}"
+        exec ./scripts/mac-remote.sh "if [ ! -d target/macapp/Tako.app ]; then python3 scripts/build-macapp.py; fi; ./scripts/e2e-macapp.sh$SCENARIO_ARGS"
     fi
 fi
+
