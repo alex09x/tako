@@ -87,6 +87,13 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Timestamp when pane overview was triggered to open via production action.
+    internal(set) var paneOverviewOpenStartTime: CFAbsoluteTime = 0
+
+    /// Callback invoked when pane overview presents its first interactive frame.
+    /// Passes: (TimeInterval: elapsed since open trigger, Int: count of presented pane items)
+    var onPaneOverviewPresented: ((TimeInterval, Int) -> Void)?
+
     /// The window hosting this terminal view controller (TerminalViewModel).
     /// True when any surface in this controller currently has an active bell.
     @Published internal(set) var bell: Bool = false

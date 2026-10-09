@@ -439,8 +439,146 @@ struct PaneOverviewTests {
 
         // Documented contract:
         // Offscreen software rasterization capture to CPU bitmap rep must complete within 3.5 s on unaccelerated CI runner.
-        // (Note: Interactive first-frame presentation within 150ms via production open action/callback is tracked separately).
         #expect(elapsed < 3.500, "Full offscreen capture and rasterization for 30 panes took \(Int(elapsed * 1000)) ms, exceeding 3.5s budget")
+    }
+
+    // MARK: - Production Overview Interactive First-Frame Presentation Benchmark (Roadmap B6 < 150 ms)
+
+    /// Live window interactive first-frame presentation benchmark measuring the complete wall-clock time
+    /// from the production open action trigger (`togglePaneOverview`) to the first presented interactive frame
+    /// with 30 active panes across multiple controllers, verified via production presentation callback.
+    ///
+    /// Validates:
+    /// 1. Triggering via production open action (`controller.togglePaneOverview(nil)`).
+    /// 2. Live first-frame presentation callback receives exactly 30 items.
+    /// 3. Interactive presentation latency completes within budget (< 150 ms).
+    /// 4. Synchronous layout and display timing passes are isolated and labeled separately.
+    /// 5. Window rendered bitmap contains painted cards and non-blank opaque modal content.
+    @Test func overviewInteractiveFirstFramePresentationWith30Panes() throws {
+        // Construct 30 simulated surfaces across 6 controllers
+        var controllers: [BaseTerminalController] = []
+        for cIdx in 0..<6 {
+            var surfacesInController: [Tako.SurfaceView] = []
+            for sIdx in 0..<5 {
+                let status: Tako.PaneStatus = switch (cIdx * 5 + sIdx) % 5 {
+                case 0: .running
+                case 1: .error
+                case 2: .done
+                case 3: .waitingForInput
+                default: .idle
+                }
+                let surf = makeSurface(
+                    title: "Pane \(cIdx)-\(sIdx)",
+                    pwd: "/Users/alex/workspace/repo-\(cIdx)",
+                    status: status
+                )
+                surfacesInController.append(surf)
+            }
+            controllers.append(makeController(surfaces: surfacesInController))
+        }
+
+        // Register fixture controllers in store so refresh discovers the 30-pane set
+        PaneOverviewStore.fixtureControllers = controllers
+        PaneOverviewStore.shared.refresh(fromControllers: controllers)
+        #expect(PaneOverviewStore.shared.items.count == 30, "Fixture must populate 30 items")
+
+        // Build the primary test controller and window hosting TerminalView
+        let primaryController = controllers[0]
+        guard let window = primaryController.window else {
+            Issue.record("Primary controller must have a valid window")
+            return
+        }
+        window.setContentSize(NSSize(width: 1200, height: 800))
+
+        let hostingView = NSHostingView(
+            rootView: TerminalView(tako: primaryController.tako, viewModel: primaryController, delegate: primaryController)
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        window.contentView = hostingView
+        window.orderFrontRegardless()
+
+        defer {
+            PaneOverviewStore.fixtureControllers = nil
+            primaryController.onPaneOverviewPresented = nil
+            PaneOverviewView.onFirstFramePresented = nil
+            window.orderOut(nil)
+            window.close()
+        }
+
+        // Warm up SwiftUI runtime, SF Symbols, and AppKit rasterizer
+        hostingView.layoutSubtreeIfNeeded()
+        if let warmupRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) {
+            hostingView.cacheDisplay(in: hostingView.bounds, to: warmupRep)
+        }
+
+        // Wire presentation callback measurement
+        var recordedElapsed: TimeInterval?
+        var recordedItemCount: Int?
+
+        primaryController.onPaneOverviewPresented = { elapsed, count in
+            recordedElapsed = elapsed
+            recordedItemCount = count
+        }
+
+        // Measure live opening time: from production trigger to first presented interactive frame
+        let tStart = CFAbsoluteTimeGetCurrent()
+        primaryController.togglePaneOverview(nil)
+        let tOpenAction = CFAbsoluteTimeGetCurrent() - tStart
+
+        // Measure synchronous layout and display passes separately
+        let tL0 = CFAbsoluteTimeGetCurrent()
+        hostingView.layoutSubtreeIfNeeded()
+        let tSynchronousLayout = CFAbsoluteTimeGetCurrent() - tL0
+
+        let tD0 = CFAbsoluteTimeGetCurrent()
+        window.displayIfNeeded()
+        let tSynchronousDisplay = CFAbsoluteTimeGetCurrent() - tD0
+
+        // Pump runloop until the first interactive presentation callback fires
+        let deadline = Date().addingTimeInterval(2.0)
+        while recordedElapsed == nil && Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+            CATransaction.flush()
+            hostingView.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
+
+        guard let elapsed = recordedElapsed, let itemCount = recordedItemCount else {
+            Issue.record("Overview first-frame presentation callback was not received within 2s timeout")
+            return
+        }
+
+        print("[BENCHMARK] 30-pane interactive overview presentation breakdown: openAction=\(String(format: "%.1f", tOpenAction*1000))ms, syncLayout=\(String(format: "%.1f", tSynchronousLayout*1000))ms, syncDisplay=\(String(format: "%.1f", tSynchronousDisplay*1000))ms -> interactiveFirstFrame=\(String(format: "%.1f", elapsed*1000))ms (items=\(itemCount))")
+
+        // Assertions
+        #expect(primaryController.paneOverviewIsShowing == true, "Pane overview must be showing")
+        #expect(itemCount == 30, "Expected 30 items in first interactive frame, got \(itemCount)")
+        #expect(elapsed < 0.150, "Interactive first-frame presentation for 30 panes took \(Int(elapsed * 1000)) ms, exceeding 150 ms budget")
+
+        // Visual content assertion on presented frame
+        guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+            Issue.record("Failed to create bitmap cache rep for overview window")
+            return
+        }
+        hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
+        #expect(rep.pixelsWide >= 1200 && rep.pixelsHigh >= 800, "Window rendered frame dimensions must match")
+
+        let midX = rep.pixelsWide / 2
+        let midY = rep.pixelsHigh / 2
+        let centerPixel = rep.colorAt(x: midX, y: midY)
+        #expect(centerPixel != nil, "Center modal pixel must exist")
+        #expect((centerPixel?.alphaComponent ?? 0) > 0.8, "Modal card content must be fully opaque")
+
+        var distinctColors = Set<Int>()
+        for x in stride(from: 100, to: rep.pixelsWide - 100, by: 20) {
+            if let c = rep.colorAt(x: x, y: midY) {
+                let r = Int((c.redComponent * 255).rounded())
+                let g = Int((c.greenComponent * 255).rounded())
+                let b = Int((c.blueComponent * 255).rounded())
+                distinctColors.insert((r << 16) | (g << 8) | b)
+            }
+        }
+        #expect(distinctColors.count >= 3, "Presented frame must contain rendered card boundaries/content (found \(distinctColors.count) distinct colors)")
     }
 
 }

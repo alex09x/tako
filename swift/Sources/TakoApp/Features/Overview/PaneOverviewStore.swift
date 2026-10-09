@@ -121,8 +121,14 @@ final class PaneOverviewStore: ObservableObject {
         bindLiveObservers()
     }
 
+    /// Optional fixture controllers for benchmarks and tests when running in test hosts
+    static var fixtureControllers: [BaseTerminalController]?
+
     /// Discovers all active terminal window controllers in the application.
     private func discoverControllers() -> [BaseTerminalController] {
+        if let fixture = Self.fixtureControllers {
+            return fixture
+        }
         var seen = Set<ObjectIdentifier>()
         var controllers: [BaseTerminalController] = []
 
