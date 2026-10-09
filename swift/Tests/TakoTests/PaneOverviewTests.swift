@@ -405,7 +405,7 @@ struct PaneOverviewTests {
 
         let elapsed = CFAbsoluteTimeGetCurrent() - tStart
         let tPresentation = tRefresh + tLayout + tDisplay
-        print("[BENCHMARK] 30-pane overview presentation breakdown: refresh=\(Int(tRefresh*1000))ms, layout=\(Int(tLayout*1000))ms, display=\(Int(tDisplay*1000))ms, cacheDisplay=\(Int(tCache*1000))ms -> presentation=\(Int(tPresentation*1000))ms, total=\(Int(elapsed*1000))ms")
+        print("[OFFSCREEN CAPTURE] 30-pane overview offscreen rasterization breakdown: refresh=\(Int(tRefresh*1000))ms, layout=\(Int(tLayout*1000))ms, display=\(Int(tDisplay*1000))ms, cacheDisplay=\(Int(tCache*1000))ms -> offscreenCapture=\(Int(elapsed*1000))ms")
 
         // Verify visible / presented expected content for 30 panes
         #expect(store.items.count == 30, "Expected 30 items populated in overview store")
@@ -447,6 +447,71 @@ struct PaneOverviewTests {
     /// Independent observer of a target window that samples the presentation pipeline
     /// and terminates measurement only when the expected rendered content has reached the window.
     @MainActor final class WindowPresentationObserver {
+
+        /// Baseline state of the window before overview presentation, used to reject opaque terminal surfaces.
+        struct TerminalBaseline {
+            let centerColor: NSColor
+            let headerColor: NSColor
+            let cardColor: NSColor
+        }
+
+        /// Normalizes NSColor to sRGB color space for stable component comparisons.
+        static func normalizeColor(_ color: NSColor?) -> NSColor? {
+            guard let c = color else { return nil }
+            return c.usingColorSpace(.sRGB) ?? c
+        }
+
+        /// Samples a small rect and returns the normalized sRGB color at its center.
+        private static func sampleColor(in rect: NSRect, hostingView: NSView) -> NSColor? {
+            guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: rect) else { return nil }
+            hostingView.cacheDisplay(in: rect, to: rep)
+            guard let raw = rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2) else { return nil }
+            return normalizeColor(raw)
+        }
+
+        /// Verifies whether the header area contains expected contrast (title text or ember icon) diverging from baseline.
+        private static func verifyHeader(in rect: NSRect, baselineColor: NSColor, hostingView: NSView) -> Bool {
+            guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: rect) else { return false }
+            hostingView.cacheDisplay(in: rect, to: rep)
+            let step = max(1, rep.pixelsWide / 10)
+            for x in stride(from: 0, to: rep.pixelsWide, by: step) {
+                if let raw = rep.colorAt(x: x, y: rep.pixelsHigh / 2),
+                   let c = normalizeColor(raw) {
+                    let dR = abs(c.redComponent - baselineColor.redComponent)
+                    let dG = abs(c.greenComponent - baselineColor.greenComponent)
+                    let dB = abs(c.blueComponent - baselineColor.blueComponent)
+                    if dR > 0.08 || dG > 0.08 || dB > 0.08 {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        /// Captures the baseline state of the target window before opening the overview overlay.
+        static func captureBaseline(hostingView: NSView) -> TerminalBaseline? {
+            let bounds = hostingView.bounds
+            guard bounds.width >= 100 && bounds.height >= 100 else { return nil }
+
+            let midX = bounds.midX
+            let midY = bounds.midY
+
+            // 1. Center sample (6x6 rect)
+            let centerRect = NSRect(x: midX - 3, y: midY - 3, width: 6, height: 6)
+            guard let centerColor = sampleColor(in: centerRect, hostingView: hostingView) else { return nil }
+
+            // 2. Header sample (near top of window where overview modal header will appear: y ≈ bounds.height - 65)
+            let headerY = max(bounds.height - 65, midY)
+            let headerRect = NSRect(x: 100, y: headerY, width: 80, height: 16)
+            guard let headerColor = sampleColor(in: headerRect, hostingView: hostingView) else { return nil }
+
+            // 3. Card sample (in first column of overview grid: x ≈ 230, y ≈ midY)
+            let cardRect = NSRect(x: min(bounds.width - 200, 230), y: midY - 3, width: 6, height: 6)
+            guard let cardColor = sampleColor(in: cardRect, hostingView: hostingView) else { return nil }
+
+            return TerminalBaseline(centerColor: centerColor, headerColor: headerColor, cardColor: cardColor)
+        }
+
         /// Observes the target window until the expected rendered overview content is presented.
         /// Terminates the measurement only when the expected content is verified in the rendered window.
         ///
@@ -454,6 +519,7 @@ struct PaneOverviewTests {
         ///   - controller: The terminal controller hosting the overview presentation.
         ///   - window: The target window containing the terminal and overview hierarchy.
         ///   - hostingView: The NSHostingView hosting TerminalView.
+        ///   - baseline: Baseline captured before open action, used to reject unchanged terminal surfaces.
         ///   - expectedItemCount: The expected count of rendered pane cards.
         ///   - timeout: Maximum wait time before failing observation.
         /// - Returns: A tuple of (elapsed, itemCount) if observation succeeded, or nil on timeout.
@@ -461,6 +527,7 @@ struct PaneOverviewTests {
             controller: BaseTerminalController,
             window: NSWindow,
             hostingView: NSView,
+            baseline: TerminalBaseline? = nil,
             expectedItemCount: Int,
             timeout: TimeInterval = 2.0
         ) -> (elapsed: TimeInterval, itemCount: Int)? {
@@ -473,7 +540,12 @@ struct PaneOverviewTests {
                 hostingView.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
 
-                guard isExpectedContentRendered(window: window, hostingView: hostingView, expectedCount: expectedItemCount) else {
+                guard isExpectedContentRendered(
+                    window: window,
+                    hostingView: hostingView,
+                    expectedCount: expectedItemCount,
+                    baseline: baseline
+                ) else {
                     continue
                 }
 
@@ -489,7 +561,8 @@ struct PaneOverviewTests {
         private static func isExpectedContentRendered(
             window: NSWindow,
             hostingView: NSView,
-            expectedCount: Int
+            expectedCount: Int,
+            baseline: TerminalBaseline?
         ) -> Bool {
             guard window.isVisible else { return false }
             let bounds = hostingView.bounds
@@ -499,21 +572,47 @@ struct PaneOverviewTests {
             let items = PaneOverviewStore.shared.filteredItems
             guard items.count == expectedCount else { return false }
 
-            // 2. Window rendered content: sample center modal area (10x10 rect) to verify modal background is painted and opaque
             let midX = bounds.midX
             let midY = bounds.midY
-            let sampleRect = NSRect(x: midX - 5, y: midY - 5, width: 10, height: 10)
-            guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: sampleRect) else {
-                return false
-            }
-            hostingView.cacheDisplay(in: sampleRect, to: rep)
 
-            guard let centerColor = rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2) else {
+            // 2. Window rendered content: sample center modal area (6x6 rect)
+            let centerRect = NSRect(x: midX - 3, y: midY - 3, width: 6, height: 6)
+            guard let centerColor = sampleColor(in: centerRect, hostingView: hostingView) else {
                 return false
             }
             // Modal background is opaque dark fill (alpha > 0.8)
             guard centerColor.alphaComponent > 0.8 else {
                 return false
+            }
+
+            // 3. Baseline Rejection & Visual Content Verification:
+            // When baseline is provided, reject opaque non-overview content (such as flat terminal background)
+            if let baseline = baseline {
+                let diffR = abs(centerColor.redComponent - baseline.centerColor.redComponent)
+                let diffG = abs(centerColor.greenComponent - baseline.centerColor.greenComponent)
+                let diffB = abs(centerColor.blueComponent - baseline.centerColor.blueComponent)
+                let centerDiverged = diffR > 0.02 || diffG > 0.02 || diffB > 0.02
+
+                // Header Area Verification: verify overview header area (title / ember icon)
+                let headerY = max(bounds.height - 65, midY)
+                let headerRect = NSRect(x: 100, y: headerY, width: 80, height: 16)
+                let headerVerified = verifyHeader(in: headerRect, baselineColor: baseline.headerColor, hostingView: hostingView)
+
+                // Card Area Verification: sample card area in first column
+                let cardRect = NSRect(x: min(bounds.width - 200, 230), y: midY - 3, width: 6, height: 6)
+                var cardDiverged = false
+                if let cardColor = sampleColor(in: cardRect, hostingView: hostingView) {
+                    let cDiffR = abs(cardColor.redComponent - baseline.cardColor.redComponent)
+                    let cDiffG = abs(cardColor.greenComponent - baseline.cardColor.greenComponent)
+                    let cDiffB = abs(cardColor.blueComponent - baseline.cardColor.blueComponent)
+                    cardDiverged = cDiffR > 0.02 || cDiffG > 0.02 || cDiffB > 0.02
+                }
+
+                // Both visual presence (center divergence or header verification) AND
+                // card content (card divergence or header verification) must be confirmed to reject non-overview placeholders
+                guard (centerDiverged || headerVerified) && (cardDiverged || headerVerified) else {
+                    return false
+                }
             }
 
             return true
@@ -585,8 +684,15 @@ struct PaneOverviewTests {
 
         // Warm up SwiftUI runtime, SF Symbols, and AppKit rasterizer
         hostingView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
         if let warmupRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) {
             hostingView.cacheDisplay(in: hostingView.bounds, to: warmupRep)
+        }
+
+        // Capture terminal baseline before opening action to enable rejection of underlying terminal
+        guard let baseline = WindowPresentationObserver.captureBaseline(hostingView: hostingView) else {
+            Issue.record("Baseline capture must succeed")
+            return
         }
 
         // Wire presentation callback measurement
@@ -608,6 +714,7 @@ struct PaneOverviewTests {
             controller: primaryController,
             window: window,
             hostingView: hostingView,
+            baseline: baseline,
             expectedItemCount: 30,
             timeout: 2.0
         ) else {
@@ -635,7 +742,7 @@ struct PaneOverviewTests {
         }
         hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
         let tOffscreenCapture = CFAbsoluteTimeGetCurrent() - tCapture0
-        print("[BENCHMARK] Offscreen rasterization capture pass: \(String(format: "%.1f", tOffscreenCapture*1000))ms")
+        print("[OFFSCREEN CAPTURE] Offscreen rasterization capture pass: \(String(format: "%.1f", tOffscreenCapture*1000))ms")
 
         #expect(rep.pixelsWide >= 1200 && rep.pixelsHigh >= 800, "Window rendered frame dimensions must match")
 
@@ -657,6 +764,90 @@ struct PaneOverviewTests {
         #expect(distinctColors.count >= 3, "Presented frame must contain rendered card boundaries/content (found \(distinctColors.count) distinct colors)")
     }
 
+    // MARK: - Render-Suppressed Negative Control Test
+
+    /// Negative control verifying that the independent presentation observer rejects
+    /// an opaque terminal background or blank placeholder even when the store is fully populated
+    /// with 30 items and the controller reports `paneOverviewIsShowing == true`.
+    @Test func overviewPresentationObserverRejectsRenderSuppressedPlaceholder() throws {
+        // Construct 30 simulated surfaces across 6 controllers
+        var controllers: [BaseTerminalController] = []
+        for cIdx in 0..<6 {
+            var surfacesInController: [Tako.SurfaceView] = []
+            for sIdx in 0..<5 {
+                let surf = makeSurface(
+                    title: "Pane \(cIdx)-\(sIdx)",
+                    pwd: "/Users/alex/workspace/repo-\(cIdx)",
+                    status: .idle
+                )
+                surfacesInController.append(surf)
+            }
+            controllers.append(makeController(surfaces: surfacesInController))
+        }
+
+        PaneOverviewStore.fixtureControllers = controllers
+        PaneOverviewStore.shared.refresh(fromControllers: controllers)
+        #expect(PaneOverviewStore.shared.items.count == 30, "Fixture must populate 30 items")
+
+        let primaryController = controllers[0]
+        guard let window = primaryController.window else {
+            Issue.record("Primary controller must have a valid window")
+            return
+        }
+        window.setContentSize(NSSize(width: 1200, height: 800))
+
+        let hostingView = NSHostingView(
+            rootView: TerminalView(tako: primaryController.tako, viewModel: primaryController, delegate: primaryController)
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        window.contentView = hostingView
+        window.orderFrontRegardless()
+
+        defer {
+            primaryController.paneOverviewRenderSuppressed = false
+            PaneOverviewStore.fixtureControllers = nil
+            primaryController.onPaneOverviewPresented = nil
+            window.orderOut(nil)
+            window.close()
+        }
+
+        hostingView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+
+        // Capture terminal baseline before opening
+        guard let baseline = WindowPresentationObserver.captureBaseline(hostingView: hostingView) else {
+            Issue.record("Baseline capture must succeed")
+            return
+        }
+
+        // Suppress rendering of the overview view: store has 30 items, paneOverviewIsShowing will be true,
+        // but TerminalView will NOT render PaneOverviewView (leaving the opaque terminal view / background).
+        primaryController.paneOverviewRenderSuppressed = true
+
+        var recordedElapsed: TimeInterval?
+        primaryController.onPaneOverviewPresented = { elapsed, _ in
+            recordedElapsed = elapsed
+        }
+
+        // Initiate opening action
+        primaryController.togglePaneOverview(nil)
+        #expect(primaryController.paneOverviewIsShowing == true, "Overview state must report showing")
+        #expect(PaneOverviewStore.shared.items.count == 30, "Store has 30 items")
+
+        // The observer must reject the render-suppressed opaque placeholder and timeout
+        let observation = WindowPresentationObserver.waitForObservedPresentation(
+            controller: primaryController,
+            window: window,
+            hostingView: hostingView,
+            baseline: baseline,
+            expectedItemCount: 30,
+            timeout: 0.3
+        )
+
+        #expect(observation == nil, "Observer must NOT report presentation for render-suppressed placeholder")
+        #expect(recordedElapsed == nil, "Presentation callback must NOT fire when overview content is suppressed")
+    }
+
     // MARK: - Controlled Delayed-Render Negative Control Gate Test
 
     /// Negative control verifying that the first-frame presentation gate detects and rejects renders
@@ -667,10 +858,17 @@ struct PaneOverviewTests {
         for cIdx in 0..<6 {
             var surfacesInController: [Tako.SurfaceView] = []
             for sIdx in 0..<5 {
+                let status: Tako.PaneStatus = switch (cIdx * 5 + sIdx) % 5 {
+                case 0: .running
+                case 1: .error
+                case 2: .done
+                case 3: .waitingForInput
+                default: .idle
+                }
                 let surf = makeSurface(
                     title: "Pane \(cIdx)-\(sIdx)",
                     pwd: "/Users/alex/workspace/repo-\(cIdx)",
-                    status: .idle
+                    status: status
                 )
                 surfacesInController.append(surf)
             }
@@ -708,6 +906,8 @@ struct PaneOverviewTests {
         }
 
         hostingView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let baseline = WindowPresentationObserver.captureBaseline(hostingView: hostingView)
 
         var recordedElapsed: TimeInterval?
         primaryController.onPaneOverviewPresented = { elapsed, _ in
@@ -732,6 +932,7 @@ struct PaneOverviewTests {
             controller: primaryController,
             window: window,
             hostingView: hostingView,
+            baseline: baseline,
             expectedItemCount: 30,
             timeout: 2.0
         ) else {

@@ -55,12 +55,19 @@ protocol TerminalViewModel: ObservableObject {
     /// Whether the Pane Overview overlay shows (B6).
     var paneOverviewIsShowing: Bool { get set }
 
+    /// Whether pane overview rendering is suppressed for negative control tests.
+    var paneOverviewRenderSuppressed: Bool { get set }
+
     /// The window hosting this terminal view, if any.
     var containingWindow: NSWindow? { get }
 }
 
 extension TerminalViewModel {
     var containingWindow: NSWindow? { nil }
+    var paneOverviewRenderSuppressed: Bool {
+        get { false }
+        set {}
+    }
 }
 
 /// The main terminal view. This terminal view supports splits.
@@ -151,7 +158,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         backgroundColor: tako.config.backgroundColor)
                 }
 
-                if viewModel.paneOverviewIsShowing {
+                if viewModel.paneOverviewIsShowing && !viewModel.paneOverviewRenderSuppressed {
                     PaneOverviewView(
                         isPresented: $viewModel.paneOverviewIsShowing,
                         backgroundColor: tako.config.backgroundColor)

@@ -91,6 +91,10 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// When true, suppresses rendering of the pane overview view even when paneOverviewIsShowing is true.
+    /// Used for negative-control verification of presentation observation gates.
+    @Published var paneOverviewRenderSuppressed: Bool = false
+
     /// Unique presentation token identifying the active pane overview presentation cycle.
     internal(set) var currentOverviewPresentationToken: UUID?
 
