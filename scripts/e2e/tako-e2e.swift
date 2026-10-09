@@ -433,22 +433,7 @@ final class Driver {
     }
 
     func press(_ element: AXUIElement) {
-        if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
-            return
-        }
-        var posVal: AnyObject?
-        var sizeVal: AnyObject?
-        if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posVal) == .success,
-           AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeVal) == .success {
-            var pt = CGPoint.zero
-            var sz = CGSize.zero
-            AXValueGetValue(posVal as! AXValue, .cgPoint, &pt)
-            AXValueGetValue(sizeVal as! AXValue, .cgSize, &sz)
-            if sz.width > 0 && sz.height > 0 {
-                let center = CGPoint(x: pt.x + sz.width / 2, y: pt.y + sz.height / 2)
-                try? click(at: center)
-            }
-        }
+        AXUIElementPerformAction(element, kAXPressAction as CFString)
     }
 
     /// A button with this title anywhere in Tako's windows or sheets.
@@ -466,6 +451,50 @@ final class Driver {
             }
         }
         return nil
+    }
+
+    /// A text field with this identifier or description anywhere in Tako's windows.
+    func textField(identifier: String, depth: Int = 24) -> AXUIElement? {
+        for window in windows() {
+            for tf in descendants(of: window, role: kAXTextFieldRole as String, depth: depth) {
+                let axId: String? = attribute(tf, "AXIdentifier")
+                let axDesc: String? = attribute(tf, kAXDescriptionAttribute)
+                let axTitle: String? = attribute(tf, kAXTitleAttribute)
+                let axLabel: String? = attribute(tf, "AXLabel")
+                if axId == identifier || axDesc == identifier || axTitle == identifier || axLabel == identifier ||
+                   axId?.contains(identifier) == true || axDesc?.contains(identifier) == true {
+                    return tf
+                }
+            }
+        }
+        return nil
+    }
+
+    /// List all pane IDs discovered in the app tree via takoctl.
+    func paneIds() throws -> [String] {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let treeJson = try exec("\(ctl) tree --json")
+        if let data = treeJson.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let root = (obj["result"] as? [String: Any]) ?? obj
+            if let windows = root["windows"] as? [[String: Any]] {
+                var ids: [String] = []
+                for w in windows {
+                    for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                        for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                            if let id = p["id"] as? String { ids.append(id) }
+                        }
+                    }
+                }
+                if !ids.isEmpty { return ids }
+            }
+        }
+        if let regex = try? NSRegularExpression(pattern: "\"id\"\\s*:\\s*\"([a-f0-9\\-]+)\"") {
+            let nsStr = treeJson as NSString
+            let matches = regex.matches(in: treeJson, range: NSRange(location: 0, length: nsStr.length))
+            return matches.map { nsStr.substring(with: $0.range(at: 1)) }
+        }
+        return []
     }
 
     /// Whether any UI element across the app's windows contains this text.
@@ -2009,18 +2038,30 @@ let scenarios: [Scenario] = [
         """
         _ = try d.exec("sh -c \"\(initScript)\"")
 
-        // Set pane cwd into repoPath
+        // Discover initial target pane ID before creating split
+        let initialPanes = try d.paneIds()
+        guard let targetPaneId = initialPanes.first else {
+            throw Failure("could not identify initial target pane ID from tree")
+        }
+
+        // Create a non-target split pane to verify input isolation
+        let splitOutput = try d.exec("\(ctl) split right")
+        let nonTargetPaneId = splitOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        usleep(400_000)
+
+        // Refocus target pane, change directory to repoPath, and start capturing PTY input
+        _ = try d.exec("\(ctl) focus --target \(targetPaneId)")
+        usleep(300_000)
         d.activate()
         try d.run("cd '\(repoPath)'")
-        usleep(400_000)
+        usleep(300_000)
 
-        // Start capture of PTY input into feedback file before opening review
         let feedbackFile = d.path("diff_feedback.txt")
         try d.run("cat > '\(feedbackFile)'")
-        usleep(400_000)
+        usleep(300_000)
 
-        // Open diff review session
-        _ = try d.exec("\(ctl) review open \"\(repoPath)\"")
+        // Open diff review session targeting targetPaneId
+        _ = try d.exec("\(ctl) review open \"\(repoPath)\" --target-pane \(targetPaneId)")
         let status = try d.exec("\(ctl) review status --json")
         guard (status.contains("\"open\":true") || status.contains("\"open\": true")) &&
               (status.contains("\"files_count\":1") || status.contains("\"files_count\": 1") || (status.contains("\"files_count\":") && !status.contains("\"files_count\":0"))) else {
@@ -2032,40 +2073,69 @@ let scenarios: [Scenario] = [
             throw Failure("Diff Review visual header was not presented on screen")
         }
 
-        // Verify no dispatch has occurred to PTY before Send
+        // Require file row in sidebar (mandatory UI interaction)
+        guard let fileBtn = d.button(titled: "review_test.txt") ?? d.button(titled: "DiffFileRow_review_test.txt") else {
+            throw Failure("review_test.txt file row not found in Diff Review sidebar")
+        }
+        d.press(fileBtn)
         usleep(200_000)
-        let preContent = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
-        guard !preContent.contains("Review feedback") else {
-            throw Failure("feedback was dispatched to PTY before Send button was clicked")
+
+        // Require Add comment button for line 2 (mandatory UI interaction)
+        guard let addCommentBtn = d.button(titled: "AddCommentButton_Line2") else {
+            throw Failure("AddCommentButton_Line2 not found for line 2")
+        }
+        d.press(addCommentBtn)
+        usleep(300_000)
+
+        // Require composer controls: text field and submit button
+        guard let commentField = d.textField(identifier: "CommentTextField_Line2") else {
+            let tfs = d.textFields()
+            throw Failure("CommentTextField_Line2 composer not found after clicking Add. TextFields: \(tfs)")
+        }
+        guard let submitCommentBtn = d.button(titled: "SubmitCommentButton_Line2") else {
+            throw Failure("SubmitCommentButton_Line2 not found in composer")
         }
 
-        // Select file in sidebar if needed
-        if let fileBtn = d.button(titled: "review_test.txt") ?? d.button(titled: "DiffFileRow_review_test.txt") {
-            d.press(fileBtn)
-            usleep(200_000)
-        }
+        // Focus text field and type unique comment via real keyboard events
+        let uniqueComment = "E2E unique review comment on line 2"
+        d.activate()
+        _ = AXUIElementSetAttributeValue(commentField, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        usleep(150_000)
+        try d.type(uniqueComment)
+        usleep(200_000)
 
-        // Exercise line comment addition through UI controls
-        if let addCommentBtn = d.button(titled: "AddCommentButton_Line2") {
-            d.press(addCommentBtn)
-            usleep(200_000)
-            if let submitBtn = d.button(titled: "SubmitCommentButton_Line2") {
-                d.press(submitBtn)
-                usleep(200_000)
-            }
-        }
+        // Submit comment via UI button (one submission)
+        d.press(submitCommentBtn)
+        usleep(300_000)
 
-        // Also ensure via CLI in case UI button was already submitted or needed verification
-        let comments = try d.exec("\(ctl) review comment list --json")
-        if !comments.contains("Check added line") {
-            _ = try d.exec("\(ctl) review comment add --file review_test.txt --line 2 --text 'Check added line'")
-        }
+        // Verify via independent read-only CLI witness that UI submission created the comment (NO CLI fallback mutation!)
         let verifiedComments = try d.exec("\(ctl) review comment list --json")
-        guard verifiedComments.contains("Check added line") && (verifiedComments.contains("\"line\":2") || verifiedComments.contains("\"line\": 2")) else {
-            throw Failure("review comment list did not contain added comment: \(verifiedComments)")
+        guard verifiedComments.contains(uniqueComment) && (verifiedComments.contains("\"line\":2") || verifiedComments.contains("\"line\": 2")) && verifiedComments.contains("review_test.txt") else {
+            throw Failure("review comment list did not contain UI-added comment '\(uniqueComment)': \(verifiedComments)")
         }
 
-        // Locate and press Send Feedback UI button ("Send Feedback (1)")
+        // Ordered execution completion barrier through non-target pane to prove all previous event dispatches completed
+        let preBarrierFile = d.path("diff_pre_send_barrier.txt")
+        _ = try d.exec("\(ctl) send \"echo pre_send_barrier_done > '\(preBarrierFile)'\" --target \(nonTargetPaneId)")
+        guard d.wait(for: {
+            guard let text = try? String(contentsOfFile: preBarrierFile, encoding: .utf8) else { return false }
+            return text.contains("pre_send_barrier_done")
+        }, timeout: 5) else {
+            throw Failure("pre-send execution barrier did not complete via non-target PTY queue")
+        }
+
+        // Assert target PTY is completely unchanged (no feedback was dispatched prior to Send)
+        let preContent = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
+        guard preContent.isEmpty else {
+            throw Failure("feedback was prematurely dispatched to target PTY before Send button was clicked (got: \(preContent))")
+        }
+
+        // In non-target pane, start capturing PTY input into nonTargetFile to verify it receives nothing on Send
+        let nonTargetFile = d.path("diff_non_target_feedback.txt")
+        _ = try d.exec("\(ctl) send \"cat > '\(nonTargetFile)'\" --target \(nonTargetPaneId)")
+        usleep(300_000)
+
+        // Locate Send Feedback UI button ("Send Feedback (1)")
         var sendBtn: AXUIElement?
         guard d.wait(for: {
             guard let btn = d.button(titled: "Send Feedback (1)") ?? d.button(titled: "SendFeedbackButton") else { return false }
@@ -2080,27 +2150,38 @@ let scenarios: [Scenario] = [
             throw Failure("Send Feedback (1) UI button not found or not enabled on screen. Buttons: \(allBtns)")
         }
 
+        // Press Send ONCE (do not repress inside wait)
         d.press(sendBtn)
-        usleep(300_000)
 
-        // Wait for exact feedback to be received in target PTY
+        // Wait passively without actions for complete expected feedback in target PTY
+        let expectedHeader = "Review feedback for worktree 'diff_repo' (base: main):"
+        let expectedFile = "## review_test.txt"
+        let expectedLine = "• Line 2: \(uniqueComment)"
         guard d.wait(for: {
-            if let content = try? String(contentsOfFile: feedbackFile, encoding: .utf8),
-               content.contains("Check added line") && content.contains("Review feedback") {
-                return true
-            }
-            // Re-press sendBtn if still waiting
-            d.press(sendBtn)
-            return false
+            guard let content = try? String(contentsOfFile: feedbackFile, encoding: .utf8) else { return false }
+            return content.contains(expectedHeader) && content.contains(expectedFile) && content.contains(expectedLine)
         }, timeout: 8) else {
             let received = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
-            let screen = d.screenText()
-            let notice = d.hasText(containing: "Sent feedback") ? "sent_notice_present" : (d.hasText(containing: "Failed to send") ? "failed_notice_present" : "no_notice")
-            throw Failure("exact feedback was not received in target PTY after clicking Send Feedback (got: \(received), notice: \(notice), screen: \(screen.suffix(200)))")
+            throw Failure("expected feedback was not received in target PTY after clicking Send Feedback once (got: \(received))")
         }
-        let feedback = try String(contentsOfFile: feedbackFile, encoding: .utf8)
-        guard feedback.contains("review_test.txt") && feedback.contains("• Line 2: Check added line") else {
-            throw Failure("received feedback missing file or line marker: \(feedback)")
+
+        // Compare complete expected feedback message to verify exact-once delivery
+        let rawFeedback = try String(contentsOfFile: feedbackFile, encoding: .utf8)
+        let trimmedReceived = rawFeedback.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedMessage = """
+        \(expectedHeader)
+
+        \(expectedFile)
+        \(expectedLine)
+        """
+        guard trimmedReceived == expectedMessage.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure("feedback message did not match expected exact-once format.\nExpected:\n\(expectedMessage)\n\nGot:\n\(trimmedReceived)")
+        }
+
+        // Verify non-target pane received nothing
+        let nonTargetReceived = (try? String(contentsOfFile: nonTargetFile, encoding: .utf8)) ?? ""
+        guard nonTargetReceived.isEmpty else {
+            throw Failure("non-target pane received feedback intended exclusively for target pane (got: \(nonTargetReceived))")
         }
 
         // Dismiss review session via Close button (or Escape)
@@ -2117,10 +2198,15 @@ let scenarios: [Scenario] = [
             throw Failure("review was still open after dismissal: \(closedStatus)")
         }
 
-        // Stop cat listener and verify unassisted terminal keyboard input recovery
+        // Refocus target pane and interrupt cat listener
+        _ = try d.exec("\(ctl) focus --target \(targetPaneId)")
+        usleep(300_000)
         d.activate()
-        d.key(Key.c, .maskControl)
-        usleep(400_000)
+        d.interrupt()
+        usleep(800_000)
+
+        // Verify unassisted terminal keyboard input recovery
+        d.activate()
         try d.run("echo 'review_ok' > \(d.path("review_witness"))")
         try d.expect("review_witness", "review_ok\n", "terminal keyboard input after review session closed")
     }),

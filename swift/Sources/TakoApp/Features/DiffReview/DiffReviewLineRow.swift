@@ -125,6 +125,7 @@ struct DiffReviewLineRow: View {
                         onSubmitComment(file, lineNum)
                     }
                     .font(.system(size: 10, weight: .semibold))
+                    .disabled(commentInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("SubmitCommentButton_Line\(lineNum)")
                     .accessibilityAction {
                         onSubmitComment(file, lineNum)

@@ -321,8 +321,8 @@ struct DiffReviewView: View {
 
     private func submitComment(file: String, line: Int) {
         let text = commentInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedText = text.isEmpty ? "Check added line" : text
-        _ = try? store.addComment(paneId: currentSession.paneId, file: file, line: line, text: resolvedText)
+        guard !text.isEmpty else { return }
+        _ = try? store.addComment(paneId: currentSession.paneId, file: file, line: line, text: text)
         commentInputLine = nil
         commentInputText = ""
     }
