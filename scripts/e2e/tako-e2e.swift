@@ -475,6 +475,51 @@ final class Driver {
         return nil
     }
 
+    /// Find element with exact or matching identifier under root (or windows).
+    func element(withIdentifier identifier: String, root: AXUIElement? = nil, depth: Int = 24) -> AXUIElement? {
+        let roots = root.map { [$0] } ?? windows()
+        for r in roots {
+            if let found = findElementById(r, identifier: identifier, depth: depth) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func findElementById(_ element: AXUIElement, identifier: String, depth: Int) -> AXUIElement? {
+        let axId: String? = attribute(element, "AXIdentifier")
+        if axId == identifier || axId?.contains(identifier) == true { return element }
+        guard depth > 0 else { return nil }
+        for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            if let match = findElementById(child, identifier: identifier, depth: depth - 1) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    /// Extract all distinct text values within an element's subtree.
+    func textValues(under root: AXUIElement, depth: Int = 12) -> [String] {
+        var texts: [String] = []
+        let val: String? = attribute(root, kAXValueAttribute)
+        let title: String? = attribute(root, kAXTitleAttribute)
+        let desc: String? = attribute(root, kAXDescriptionAttribute)
+        let label: String? = attribute(root, "AXLabel")
+        for s in [val, title, desc, label].compactMap({ $0 }) {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !texts.contains(trimmed) {
+                texts.append(trimmed)
+            }
+        }
+        guard depth > 0 else { return texts }
+        for child in (attribute(root, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            for t in textValues(under: child, depth: depth - 1) {
+                if !texts.contains(t) { texts.append(t) }
+            }
+        }
+        return texts
+    }
+
     /// List all pane IDs discovered in the app tree via takoctl.
     func paneIds() throws -> [String] {
         let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
@@ -3233,7 +3278,7 @@ let scenarios: [Scenario] = [
             throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")
         }
     }),
-    ("notification-center", "emits structured OSC 99 notification, opens Notification Center via Cmd+Option+N, asserts displayed notification row, clears/dismisses, and recovers unassisted keyboard focus", { d in
+    ("notification-center", "emits base64-encoded structured OSC 99 notification, opens Notification Center, locates row in panel AX subtree, asserts exact title/body with negative control, clears row, dismisses, and recovers unassisted keyboard focus", { d in
         // Step 1: Record initial terminal environment (focused pane ID and TTY)
         try d.run("tty > \(d.path("notif_init_tty"))")
         let initTty = try d.file("notif_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3263,45 +3308,80 @@ let scenarios: [Scenario] = [
             throw Failure("Notification Center was still visible after Cmd+Opt+N toggle dismissal on empty state")
         }
 
-        // Step 3: Emit structured notification via OSC 99 from active terminal shell
+        // Step 3: Emit structured notification via OSC 99 using base64 payload encoding (:e=1)
+        // This guarantees the human-readable title and body NEVER appear in the typed command or terminal screen buffer.
         d.activate()
         usleep(300_000)
+        let notifId = "e2e-notif-1"
         let notifTitle = "Automated E2E Notification"
         let notifBody = "Structured notification payload delivered via OSC 99"
-        try d.run("printf '\\e]99;i=e2e-notif-1:d=0;\(notifTitle)\\e\\\\'; printf '\\e]99;i=e2e-notif-1:d=1:p=body;\(notifBody)\\e\\\\';")
+        let b64Title = Data(notifTitle.utf8).base64EncodedString()
+        let b64Body = Data(notifBody.utf8).base64EncodedString()
+        try d.run("printf '\\e]99;i=\(notifId):d=0:e=1;\(b64Title)\\e\\\\'; printf '\\e]99;i=\(notifId):d=1:p=body:e=1;\(b64Body)\\e\\\\';")
         usleep(500_000)
 
-        // Step 4: Open Notification Center via Cmd+Option+N and assert populated content
+        // Step 4: Open Notification Center via Cmd+Option+N and locate NotificationCenterPanel
         d.activate()
         usleep(200_000)
         d.key(Key.n, [.maskCommand, .maskAlternate])
-        guard d.wait(for: { d.hasText(containing: "Notifications") }, timeout: 5) else {
-            throw Failure("notification center 'Notifications' header was not visible after Cmd+Opt+N")
+        guard d.wait(for: { d.element(withIdentifier: "NotificationCenterPanel") != nil }, timeout: 5),
+              let panel = d.element(withIdentifier: "NotificationCenterPanel") else {
+            throw Failure("Notification Center panel was not found in accessibility hierarchy after Cmd+Opt+N")
         }
-        guard d.wait(for: { d.hasText(containing: notifTitle) }, timeout: 5) else {
-            throw Failure("notification title '\(notifTitle)' was not found in Notification Center")
+
+        // Locate the uniquely identified emitted record row exclusively within the panel AX subtree
+        var rowElement: AXUIElement?
+        guard d.wait(for: {
+            rowElement = d.element(withIdentifier: "NotificationRow_\(notifId)", root: panel)
+            return rowElement != nil
+        }, timeout: 5), let row = rowElement else {
+            throw Failure("notification row 'NotificationRow_\(notifId)' was not found in Notification Center panel")
         }
-        guard d.wait(for: { d.hasText(containing: notifBody) }, timeout: 5) else {
-            throw Failure("notification body '\(notifBody)' was not found in Notification Center")
+
+        // Assert exact title and body within that specific row's AX subtree
+        let rowTexts = d.textValues(under: row)
+        guard rowTexts.contains(notifTitle) else {
+            throw Failure("expected notification title '\(notifTitle)' was not found in row AX subtree. Row texts: \(rowTexts)")
         }
-        guard d.wait(for: { d.hasText(containing: "All caught up") || d.hasText(containing: "unread") }, timeout: 5) else {
-            throw Failure("status badge ('All caught up' or unread count) was not found in Notification Center")
+        guard rowTexts.contains(notifBody) else {
+            throw Failure("expected notification body '\(notifBody)' was not found in row AX subtree. Row texts: \(rowTexts)")
+        }
+
+        // Negative control: verify that an un-emitted wrong body is absent from the row's AX subtree
+        let wrongBody = "Negative Control: Wrong Notification Body"
+        guard !rowTexts.contains(wrongBody) else {
+            throw Failure("negative control failed: row AX subtree unexpectedly contained wrong body '\(wrongBody)'")
+        }
+
+        // Assert unread/caught-up status badge within the notification center panel
+        let panelTexts = d.textValues(under: panel)
+        guard panelTexts.contains("All caught up") || panelTexts.contains(where: { $0.contains("unread") }) else {
+            throw Failure("status badge ('All caught up' or unread count) was not found in Notification Center panel: \(panelTexts)")
         }
 
         // Step 5: Interact with Clear button in the Notification Center header
         var clearBtn: AXUIElement?
-        guard d.wait(for: { clearBtn = d.button(titled: "Clear") ?? d.button(titled: "NotificationCenterClearButton"); return clearBtn != nil }, timeout: 5),
-              let btn = clearBtn else {
-            throw Failure("Clear button was not found in Notification Center")
+        guard d.wait(for: {
+            clearBtn = d.button(titled: "Clear") ?? d.element(withIdentifier: "NotificationCenterClearButton", root: panel)
+            return clearBtn != nil
+        }, timeout: 5), let btn = clearBtn else {
+            throw Failure("Clear button was not found in Notification Center panel")
         }
         d.press(btn)
+
+        // Assert that the uniquely identified row disappears from the AX tree after Clear
+        guard d.wait(for: {
+            d.element(withIdentifier: "NotificationRow_\(notifId)", root: panel) == nil
+        }, timeout: 5) else {
+            throw Failure("notification row 'NotificationRow_\(notifId)' was still present in Notification Center after Clear")
+        }
         guard d.wait(for: { d.hasText(containing: "No Notifications") }, timeout: 5) else {
             throw Failure("'No Notifications' text did not appear after clicking Clear button")
         }
 
         // Step 6: Dismiss Notification Center via Cmd+Option+N toggle
         d.key(Key.n, [.maskCommand, .maskAlternate])
-        guard d.wait(for: { !d.hasText(containing: "Notifications") }, timeout: 5) else {
+        guard d.wait(for: { d.element(withIdentifier: "NotificationCenterPanel") == nil }, timeout: 5) else {
             throw Failure("Notification Center was still visible after Cmd+Opt+N dismissal")
         }
 

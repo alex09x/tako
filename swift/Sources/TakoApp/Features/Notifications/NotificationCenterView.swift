@@ -144,6 +144,8 @@ public struct NotificationCenterView: View {
                             ForEach(Array(store.records.enumerated()), id: \.element.id) { index, record in
                                 notificationRow(record, isSelected: index == selectedIndex)
                                     .id(index)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("NotificationRow_\(record.id)")
                                     .onTapGesture {
                                         selectedIndex = index
                                         jumpToRecord(record)
@@ -177,6 +179,8 @@ public struct NotificationCenterView: View {
             .background(Color.black.opacity(0.1))
         }
         .frame(maxWidth: 580)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("NotificationCenterPanel")
         .background(
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
@@ -235,6 +239,7 @@ public struct NotificationCenterView: View {
                     Text(record.title)
                         .font(.subheadline.weight(record.unread ? .bold : .medium))
                         .foregroundColor(record.unread ? .primary : .secondary)
+                        .accessibilityIdentifier("NotificationRowTitle_\(record.id)")
                 }
 
                 if !record.body.isEmpty {
@@ -242,6 +247,7 @@ public struct NotificationCenterView: View {
                         .font(.callout)
                         .foregroundStyle(record.unread ? .primary : .secondary)
                         .lineLimit(3)
+                        .accessibilityIdentifier("NotificationRowBody_\(record.id)")
                 }
             }
             .padding(.trailing, 4)
