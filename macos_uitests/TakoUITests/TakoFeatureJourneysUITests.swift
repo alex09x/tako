@@ -222,15 +222,37 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
     }
 
-    // MARK: - Screen Content Observation & Presentation Timing (Row 63)
+    // MARK: - Screen Content Observation & Header Visibility Probe (Row 63 Scope)
 
-    /// Extracts recognized text candidates and their bounding boxes from an NSImage via Vision framework.
-    private func extractRecognizedText(from image: NSImage) -> [(text: String, box: CGRect)] {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return []
+    enum ScreenObservationError: LocalizedError {
+        case imageConversionFailed
+        case visionRecognitionFailed(String)
+        case windowROICropFailed(CGRect)
+
+        var errorDescription: String? {
+            switch self {
+            case .imageConversionFailed:
+                return "Failed to convert NSImage to CGImage representation"
+            case .visionRecognitionFailed(let reason):
+                return "Vision text recognition request failed: \(reason)"
+            case .windowROICropFailed(let rect):
+                return "Failed to crop screenshot CGImage to window ROI rect \(rect)"
+            }
         }
+    }
+
+    /// Extracts recognized text candidates and their bounding boxes from a CGImage via Vision framework.
+    /// Throws explicit errors if Vision processing fails or if the callback receives an error,
+    /// ensuring OCR failure is never misinterpreted as absent content in negative controls.
+    private func extractRecognizedText(from cgImage: CGImage) throws -> [(text: String, box: CGRect)] {
         var results: [(text: String, box: CGRect)] = []
-        let request = VNRecognizeTextRequest { req, _ in
+        var callbackError: Error?
+
+        let request = VNRecognizeTextRequest { req, error in
+            if let error = error {
+                callbackError = error
+                return
+            }
             guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
             for obs in observations {
                 if let candidate = obs.topCandidates(1).first {
@@ -240,11 +262,62 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         }
         request.recognitionLevel = .fast
         request.usesLanguageCorrection = false
+
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
+        do {
+            try handler.perform([request])
+        } catch {
+            throw ScreenObservationError.visionRecognitionFailed(error.localizedDescription)
+        }
+
+        if let callbackError = callbackError {
+            throw ScreenObservationError.visionRecognitionFailed(callbackError.localizedDescription)
+        }
+
         return results
     }
 
+    /// Crops a full-screen screenshot CGImage to the bounding ROI of the target window in screen coordinates.
+    /// Throws explicit errors if conversion or cropping fails.
+    private func cropToWindowROI(screenshot: XCUIScreenshot, window: XCUIElement) throws -> CGImage {
+        guard let fullCGImage = screenshot.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw ScreenObservationError.imageConversionFailed
+        }
+
+        let windowFrame = window.frame
+        let screenWidthPts = screenshot.image.size.width
+        let screenHeightPts = screenshot.image.size.height
+        guard screenWidthPts > 0, screenHeightPts > 0 else {
+            throw ScreenObservationError.windowROICropFailed(windowFrame)
+        }
+
+        let scaleX = CGFloat(fullCGImage.width) / screenWidthPts
+        let scaleY = CGFloat(fullCGImage.height) / screenHeightPts
+
+        // XCUIElement.frame coordinates are top-left screen points (Quartz display coordinates).
+        // CGImage pixel coordinates also place (0, 0) at the top-left row/column.
+        let cropPixelRect = CGRect(
+            x: max(0, windowFrame.origin.x * scaleX),
+            y: max(0, windowFrame.origin.y * scaleY),
+            width: min(CGFloat(fullCGImage.width), windowFrame.size.width * scaleX),
+            height: min(CGFloat(fullCGImage.height), windowFrame.size.height * scaleY)
+        ).integral
+
+        guard cropPixelRect.width > 0, cropPixelRect.height > 0,
+              let cropped = fullCGImage.cropping(to: cropPixelRect) else {
+            throw ScreenObservationError.windowROICropFailed(cropPixelRect)
+        }
+
+        return cropped
+    }
+
+    /// Header visibility and screen observation capability probe.
+    /// Evaluates window ROI image extraction, Vision text recognition, and capture latency upper bounds.
+    /// Note: This test serves as a window-scoped header visibility and screen observation probe.
+    /// Capture completion elapsed time represents a conservative capture roundtrip upper bound,
+    /// not an exact hardware first-frame presentation timestamp.
+    /// Full Row 63 acceptance (30-pane fixture preparation, card-grid structure verification,
+    /// and presentation token callback <150ms) remains catalogued as OPEN in docs/feature_registry.md.
     @MainActor
     func testScreenObservationCapabilityAndTiming() async throws {
         // 1. Baseline screen capture before application launch
@@ -268,43 +341,46 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         let appWindow = app.windows.firstMatch
         XCTAssertTrue(appWindow.waitForExistence(timeout: 5), "Terminal window should appear")
 
-        // 3. Pre-Open Baseline Capture (Absent-Content Negative Control for Pane Overview)
+        // 3. Pre-Open Baseline Capture (Absent-Content Negative Control for Pane Overview within Window ROI)
         let preOpenScreenshot = XCUIScreen.main.screenshot()
         let preOpenAttachment = XCTAttachment(screenshot: preOpenScreenshot)
         preOpenAttachment.name = "PreOpen-NegativeControl"
         preOpenAttachment.lifetime = .keepAlways
         self.add(preOpenAttachment)
 
-        // Negative Control: Verify that before triggering Pane Overview, "Pane Overview" text is absent
-        let preOpenTexts = extractRecognizedText(from: preOpenScreenshot.image)
+        // Negative Control: Verify that before triggering Pane Overview, "Pane Overview" text is absent within window ROI.
+        // Conversion and Vision failures throw explicit errors so failures are never counted as successful absence.
+        let preOpenWindowCGImage = try cropToWindowROI(screenshot: preOpenScreenshot, window: appWindow)
+        let preOpenTexts = try extractRecognizedText(from: preOpenWindowCGImage)
         let preOpenHasOverview = preOpenTexts.contains { $0.text.localizedCaseInsensitiveContains("Pane Overview") }
-        XCTAssertFalse(preOpenHasOverview, "Pane Overview header text must be absent before open action")
+        XCTAssertFalse(preOpenHasOverview, "Pane Overview header text must be absent within the window ROI before open action")
 
-        // 4. Trigger Production Open Action (`Cmd+Shift+O` for Row 63) & Measure Presentation Latency
+        // 4. Trigger Production Open Action (`Cmd+Shift+O` for Row 63) & Measure Capture Latency Upper Bound
         let tTrigger = CFAbsoluteTimeGetCurrent()
         app.typeKey("o", modifierFlags: [.command, .shift])
 
         // Capture post-trigger compositor frame
         let overviewScreenshot = XCUIScreen.main.screenshot()
         let captureElapsedMs = (CFAbsoluteTimeGetCurrent() - tTrigger) * 1000.0
-        print("[SCREEN_OBSERVATION] Post-trigger capture completed in \(String(format: "%.1f", captureElapsedMs))ms")
+        print("[SCREEN_OBSERVATION] Post-trigger capture completed in \(String(format: "%.1f", captureElapsedMs))ms (conservative upper bound)")
 
         let postTriggerAttachment = XCTAttachment(screenshot: overviewScreenshot)
         postTriggerAttachment.name = "PostTrigger-PaneOverview"
         postTriggerAttachment.lifetime = .keepAlways
         self.add(postTriggerAttachment)
 
-        // 5. Expected-Content Recognition & Spatial Verification:
-        // Use Apple Vision text recognition to prove the rendered frame contains the expected "Pane Overview" header
-        let postOpenTexts = extractRecognizedText(from: overviewScreenshot.image)
+        // 5. Expected-Content Recognition & Spatial Verification within Window ROI:
+        // Use Apple Vision text recognition on window ROI to prove the rendered frame contains the expected "Pane Overview" header
+        let postOpenWindowCGImage = try cropToWindowROI(screenshot: overviewScreenshot, window: appWindow)
+        let postOpenTexts = try extractRecognizedText(from: postOpenWindowCGImage)
         let matchedOverview = postOpenTexts.first { $0.text.localizedCaseInsensitiveContains("Pane Overview") }
-        XCTAssertNotNil(matchedOverview, "Expected content 'Pane Overview' must be recognized in the captured frame after open action")
+        XCTAssertNotNil(matchedOverview, "Expected content 'Pane Overview' must be recognized within the window ROI after open action")
 
         if let match = matchedOverview {
-            print("[SCREEN_OBSERVATION] Recognized expected content: '\(match.text)' at bounding box \(match.box)")
+            print("[SCREEN_OBSERVATION] Recognized expected content in window ROI: '\(match.text)' at bounding box \(match.box)")
             // Verify spatial location: Vision bounding boxes have origin at bottom-left in normalized coordinates (0..1)
-            // The overview header is located in the upper region of the screen/window
-            XCTAssertGreaterThan(match.box.origin.y, 0.2, "Recognized header must be located in upper window region")
+            // The overview header is located in the upper region of the window
+            XCTAssertGreaterThan(match.box.origin.y, 0.5, "Recognized header must be located in upper window region")
         }
 
         // 6. Dismiss via Escape and verify recovery
@@ -312,9 +388,11 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         let overviewHeaderAX = app.descendants(matching: .any)["PaneOverviewHeader"]
         XCTAssertTrue(overviewHeaderAX.waitForNonExistence(timeout: 5), "Pane Overview should dismiss on Escape")
 
-        // 7. Budget Feasibility Evaluation (< 150 ms):
-        print("[SCREEN_OBSERVATION] Row 63 Presentation Timing: elapsed=\(String(format: "%.1f", captureElapsedMs))ms vs 150.0ms budget")
-        XCTAssertLessThan(captureElapsedMs, 150.0, "Overview interactive presentation must complete within 150ms budget")
+        // 7. Header Visibility Timing Probe & Budget Feasibility Evaluation (< 150 ms):
+        // Note: Capture elapsed time is evaluated as a conservative capture roundtrip upper bound.
+        // Full Row 63 acceptance remains catalogued as OPEN in docs/feature_registry.md.
+        print("[SCREEN_OBSERVATION] Header visibility capture roundtrip: elapsed=\(String(format: "%.1f", captureElapsedMs))ms (conservative upper bound) vs 150.0ms budget")
+        XCTAssertLessThan(captureElapsedMs, 150.0, "Overview header visibility capture roundtrip must complete within 150ms budget")
     }
 }
 
