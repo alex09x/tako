@@ -2720,14 +2720,17 @@ let scenarios: [Scenario] = [
         let witness = d.path("subagent_witness")
 
         // Step 1: Open a new tab (Tab 2) so closing the subagent hierarchy does not close the whole window
+        guard let tab1PaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover root pane ID in tab 1")
+        }
         try d.run("tty > \(d.path("subagent_tab1_tty"))")
-        let rootTty = try d.file("subagent_tab1_tty")
+        let rootTty = try d.file("subagent_tab1_tty").trimmingCharacters(in: .whitespacesAndNewlines)
 
         d.key(Key.t, .maskCommand)
         usleep(1_200_000)
 
         try d.run("tty > \(d.path("subagent_tab2_tty"))")
-        let parentTty = try d.file("subagent_tab2_tty")
+        let parentTty = try d.file("subagent_tab2_tty").trimmingCharacters(in: .whitespacesAndNewlines)
         guard rootTty != parentTty else {
             throw Failure("Cmd+T did not switch focus to newly created tab")
         }
@@ -2735,6 +2738,9 @@ let scenarios: [Scenario] = [
         // Discover focused parent pane ID in Tab 2
         guard let parentId = try d.focusedPaneId() else {
             throw Failure("failed to discover focused parent pane ID in tab 2")
+        }
+        guard parentId != tab1PaneId else {
+            throw Failure("tab 2 parent pane ID equals tab 1 pane ID")
         }
 
         // Step 2: Split to create child subagent 1 under parent
@@ -2860,19 +2866,46 @@ let scenarios: [Scenario] = [
             throw Failure("subagent close dialog was not dismissed after Close")
         }
 
-        // Step 9: Verify parent and all recursive descendants are completely removed
+        // Step 9: Verify parent and all recursive descendants are completely removed, and Tab 1 remains
         guard d.wait(for: {
-            let curTree = (try? d.exec("\(ctl) tree --json")) ?? ""
-            return !curTree.contains(parentId) && !curTree.contains(child1Id) && !curTree.contains(grandChildId)
+            guard let curTree = try? d.exec("\(ctl) tree --json"),
+                  let data = curTree.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let result = (obj["result"] as? [String: Any]) ?? Optional(obj),
+                  let windows = result["windows"] as? [[String: Any]] else {
+                return false
+            }
+            var panes: [String] = []
+            for w in windows {
+                for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                    for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                        if let pid = p["id"] as? String {
+                            panes.append(pid)
+                        }
+                    }
+                }
+            }
+            return !panes.contains(parentId) &&
+                   !panes.contains(child1Id) &&
+                   !panes.contains(grandChildId) &&
+                   panes.contains(tab1PaneId)
         }, timeout: 6) else {
             let remainingTree = (try? d.exec("\(ctl) tree --json")) ?? ""
             throw Failure("parent or child subagent panes were not recursively removed after confirmation: \(remainingTree)")
         }
 
-        // Step 10: Verify unassisted terminal keyboard input recovery in Tab 1
+        // Step 10: Verify unassisted terminal keyboard input recovery in Tab 1 matches original rootTty
         d.activate()
-        try d.run("echo 'subagent_ok' > \(witness)")
+        usleep(400_000)
+        try d.run("tty > \(d.path("subagent_recovered_tty")) && echo 'subagent_ok' > \(witness)")
         try d.expect("subagent_witness", "subagent_ok\n", "terminal keyboard input in tab 1 after recursive subagent close")
+        let recoveredTty = try d.file("subagent_recovered_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == rootTty else {
+            throw Failure("recovered tty does not match root tab 1 tty: expected \(rootTty), got \(recoveredTty)")
+        }
+        guard let finalFocusedId = try d.focusedPaneId(), finalFocusedId == tab1PaneId else {
+            throw Failure("recovered focused pane does not match root tab 1 pane: expected \(tab1PaneId), got \(try d.focusedPaneId() ?? "nil")")
+        }
     }),
     ("project-action", "takoctl action discovers repo actions, refuses unapproved execution, approves via trust store, runs action in target split, and recovers unassisted keyboard focus", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
