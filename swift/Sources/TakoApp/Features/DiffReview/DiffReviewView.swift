@@ -345,6 +345,7 @@ struct DiffReviewView: View {
         store.closeReview(paneId: currentSession.paneId)
         DispatchQueue.main.async {
             self.surfaceView.window?.makeFirstResponder(self.surfaceView)
+            (self.surfaceView.window?.windowController as? BaseTerminalController)?.focusedSurface = self.surfaceView
         }
     }
 

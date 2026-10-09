@@ -348,7 +348,6 @@ final class Driver {
         key(Key.returnKey)
     }
 
-    /// Run a command via host process outside the driven terminal.
     @discardableResult
     func exec(_ command: String) throws -> String {
         let process = Process()
@@ -360,7 +359,11 @@ final class Driver {
         try process.run()
         process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let out = String(data: data, encoding: .utf8) ?? ""
+        if process.terminationStatus != 0 {
+            throw Failure("command failed (exit \(process.terminationStatus)): \(command)\nOutput: \(out)")
+        }
+        return out
     }
 
     // MARK: witnesses
@@ -495,6 +498,28 @@ final class Driver {
             return matches.map { nsStr.substring(with: $0.range(at: 1)) }
         }
         return []
+    }
+
+    /// Discover currently focused pane ID from tree via takoctl.
+    func focusedPaneId() throws -> String? {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let treeJson = try exec("\(ctl) tree --json")
+        if let data = treeJson.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let root = (obj["result"] as? [String: Any]) ?? obj
+            if let windows = root["windows"] as? [[String: Any]] {
+                for w in windows {
+                    for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                        for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                            if p["focused"] as? Bool == true, let id = p["id"] as? String {
+                                return id
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return nil
     }
 
     /// Whether any UI element across the app's windows contains this text.
@@ -2049,16 +2074,131 @@ let scenarios: [Scenario] = [
         let nonTargetPaneId = splitOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         usleep(400_000)
 
-        // Refocus target pane, change directory to repoPath, and start capturing PTY input
+        // Refocus target pane and change directory to repoPath
         _ = try d.exec("\(ctl) focus --target \(targetPaneId)")
         usleep(300_000)
         d.activate()
         try d.run("cd '\(repoPath)'")
         usleep(300_000)
 
-        let feedbackFile = d.path("diff_feedback.txt")
-        try d.run("cat > '\(feedbackFile)'")
-        usleep(300_000)
+        // Allow automation on both panes so takoctl send is permitted
+        _ = try d.exec("\(ctl) input allow-automation --target \(targetPaneId)")
+        _ = try d.exec("\(ctl) input allow-automation --target \(nonTargetPaneId)")
+        usleep(500_000)
+
+        // Establish readiness of both capture processes with self-contained scripts
+        let targetReady = d.path("target_ready.txt")
+        let targetPreStart = "SENTINEL_TARGET_PRE_START_\(UUID().uuidString.prefix(6))"
+        let targetPreStartAck = d.path("target_pre_start_ack.txt")
+        let targetPreEnd = "SENTINEL_TARGET_PRE_END_\(UUID().uuidString.prefix(6))"
+        let targetPreCaptured = d.path("target_pre_captured.txt")
+        let targetPreEndAck = d.path("target_pre_end_ack.txt")
+        let targetPost = "SENTINEL_TARGET_POST_\(UUID().uuidString.prefix(6))"
+        let targetPostCaptured = d.path("target_post_captured.txt")
+        let targetPostAck = d.path("target_post_ack.txt")
+
+        let nonTargetReady = d.path("nontarget_ready.txt")
+        let nonTargetPreStart = "SENTINEL_NONTARGET_PRE_START_\(UUID().uuidString.prefix(6))"
+        let nonTargetPreStartAck = d.path("nontarget_pre_start_ack.txt")
+        let nonTargetPreEnd = "SENTINEL_NONTARGET_PRE_END_\(UUID().uuidString.prefix(6))"
+        let nonTargetPreCaptured = d.path("nontarget_pre_captured.txt")
+        let nonTargetPreEndAck = d.path("nontarget_pre_end_ack.txt")
+        let nonTargetPost = "SENTINEL_NONTARGET_POST_\(UUID().uuidString.prefix(6))"
+        let nonTargetPostCaptured = d.path("nontarget_post_captured.txt")
+        let nonTargetPostAck = d.path("nontarget_post_ack.txt")
+
+        func makeCaptureScript(ready: String, preStart: String, preStartAck: String, preEnd: String, preCaptured: String, preEndAck: String, post: String, postCaptured: String, postAck: String) -> String {
+            """
+            #!/usr/bin/env python3
+            import sys
+
+            ready_file = "\(ready)"
+            pre_start_sentinel = "\(preStart)"
+            pre_start_ack_file = "\(preStartAck)"
+            pre_end_sentinel = "\(preEnd)"
+            pre_captured_file = "\(preCaptured)"
+            pre_end_ack_file = "\(preEndAck)"
+            post_sentinel = "\(post)"
+            post_captured_file = "\(postCaptured)"
+            post_ack_file = "\(postAck)"
+
+            with open(ready_file, "w") as f:
+                f.write("ready\\n")
+                f.flush()
+
+            state = 0
+            pre_captured = []
+            post_captured = []
+
+            while True:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                if state == 0:
+                    if pre_start_sentinel in line:
+                        with open(pre_start_ack_file, "w") as f:
+                            f.write("pre_start_ack\\n")
+                            f.flush()
+                        state = 1
+                elif state == 1:
+                    if pre_end_sentinel in line:
+                        with open(pre_captured_file, "w") as f:
+                            f.write("".join(pre_captured))
+                            f.flush()
+                        with open(pre_end_ack_file, "w") as f:
+                            f.write("pre_end_ack\\n")
+                            f.flush()
+                        state = 2
+                    else:
+                        pre_captured.append(line)
+                elif state == 2:
+                    if post_sentinel in line:
+                        with open(post_captured_file, "w") as f:
+                            f.write("".join(post_captured))
+                            f.flush()
+                        with open(post_ack_file, "w") as f:
+                            f.write("post_ack\\n")
+                            f.flush()
+                        sys.exit(0)
+                    else:
+                        post_captured.append(line)
+            """
+        }
+
+        let targetScript = d.path("target_capture.py")
+        try makeCaptureScript(
+            ready: targetReady, preStart: targetPreStart, preStartAck: targetPreStartAck,
+            preEnd: targetPreEnd, preCaptured: targetPreCaptured, preEndAck: targetPreEndAck,
+            post: targetPost, postCaptured: targetPostCaptured, postAck: targetPostAck
+        ).write(toFile: targetScript, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: targetScript)
+
+        let nonTargetScript = d.path("nontarget_capture.py")
+        try makeCaptureScript(
+            ready: nonTargetReady, preStart: nonTargetPreStart, preStartAck: nonTargetPreStartAck,
+            preEnd: nonTargetPreEnd, preCaptured: nonTargetPreCaptured, preEndAck: nonTargetPreEndAck,
+            post: nonTargetPost, postCaptured: nonTargetPostCaptured, postAck: nonTargetPostAck
+        ).write(toFile: nonTargetScript, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nonTargetScript)
+
+        // Start capture processes in both panes
+        _ = try d.exec("\(ctl) send '\(targetScript)' --target \(targetPaneId)")
+        _ = try d.exec("\(ctl) send '\(nonTargetScript)' --target \(nonTargetPaneId)")
+
+        guard d.wait(for: {
+            FileManager.default.fileExists(atPath: targetReady) && FileManager.default.fileExists(atPath: nonTargetReady)
+        }, timeout: 8) else {
+            throw Failure("stream capture processes did not become ready in both target and non-target panes")
+        }
+
+        // Send pre-start sentinels to both panes to begin capturing the pre-send interval
+        _ = try d.exec("\(ctl) send '\(targetPreStart)' --target \(targetPaneId)")
+        _ = try d.exec("\(ctl) send '\(nonTargetPreStart)' --target \(nonTargetPaneId)")
+        guard d.wait(for: {
+            FileManager.default.fileExists(atPath: targetPreStartAck) && FileManager.default.fileExists(atPath: nonTargetPreStartAck)
+        }, timeout: 8) else {
+            throw Failure("stream capture processes did not acknowledge pre-start sentinels in both panes")
+        }
 
         // Open diff review session targeting targetPaneId
         _ = try d.exec("\(ctl) review open \"\(repoPath)\" --target-pane \(targetPaneId)")
@@ -2114,26 +2254,31 @@ let scenarios: [Scenario] = [
             throw Failure("review comment list did not contain UI-added comment '\(uniqueComment)': \(verifiedComments)")
         }
 
-        // Ordered execution completion barrier through non-target pane to prove all previous event dispatches completed
-        let preBarrierFile = d.path("diff_pre_send_barrier.txt")
-        _ = try d.exec("\(ctl) send \"echo pre_send_barrier_done > '\(preBarrierFile)'\" --target \(nonTargetPaneId)")
+        // Ordered execution completion barrier through each pane's own PTY stream before Send
+        _ = try d.exec("\(ctl) send '\(targetPreEnd)' --target \(targetPaneId)")
+        _ = try d.exec("\(ctl) send '\(nonTargetPreEnd)' --target \(nonTargetPaneId)")
         guard d.wait(for: {
-            guard let text = try? String(contentsOfFile: preBarrierFile, encoding: .utf8) else { return false }
-            return text.contains("pre_send_barrier_done")
-        }, timeout: 5) else {
-            throw Failure("pre-send execution barrier did not complete via non-target PTY queue")
+            FileManager.default.fileExists(atPath: targetPreEndAck) && FileManager.default.fileExists(atPath: nonTargetPreEndAck)
+        }, timeout: 8) else {
+            throw Failure("stream capture processes did not acknowledge pre-end sentinels before send")
         }
 
-        // Assert target PTY is completely unchanged (no feedback was dispatched prior to Send)
-        let preContent = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
-        guard preContent.isEmpty else {
-            throw Failure("feedback was prematurely dispatched to target PTY before Send button was clicked (got: \(preContent))")
+        // Assert zero feedback was prematurely dispatched to target PTY and zero input leaked to non-target PTY
+        guard FileManager.default.fileExists(atPath: targetPreCaptured),
+              let targetPreContent = try? String(contentsOfFile: targetPreCaptured, encoding: .utf8) else {
+            throw Failure("target pre-send capture file is missing or unreadable: \(targetPreCaptured)")
+        }
+        guard targetPreContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Failure("feedback was prematurely dispatched to target PTY before Send button was clicked (got: \(targetPreContent))")
         }
 
-        // In non-target pane, start capturing PTY input into nonTargetFile to verify it receives nothing on Send
-        let nonTargetFile = d.path("diff_non_target_feedback.txt")
-        _ = try d.exec("\(ctl) send \"cat > '\(nonTargetFile)'\" --target \(nonTargetPaneId)")
-        usleep(300_000)
+        guard FileManager.default.fileExists(atPath: nonTargetPreCaptured),
+              let nonTargetPreContent = try? String(contentsOfFile: nonTargetPreCaptured, encoding: .utf8) else {
+            throw Failure("non-target pre-send capture file is missing or unreadable: \(nonTargetPreCaptured)")
+        }
+        guard nonTargetPreContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Failure("premature input leaked to non-target PTY before Send button was clicked (got: \(nonTargetPreContent))")
+        }
 
         // Locate Send Feedback UI button ("Send Feedback (1)")
         var sendBtn: AXUIElement?
@@ -2152,36 +2297,43 @@ let scenarios: [Scenario] = [
 
         // Press Send ONCE (do not repress inside wait)
         d.press(sendBtn)
+        usleep(300_000)
 
-        // Wait passively without actions for complete expected feedback in target PTY
+        // Require ordered post-send sentinel acknowledgment through each observed pane's own input stream
+        _ = try d.exec("\(ctl) send '\(targetPost)' --target \(targetPaneId)")
+        _ = try d.exec("\(ctl) send '\(nonTargetPost)' --target \(nonTargetPaneId)")
+        guard d.wait(for: {
+            FileManager.default.fileExists(atPath: targetPostAck) && FileManager.default.fileExists(atPath: nonTargetPostAck)
+        }, timeout: 10) else {
+            throw Failure("stream capture processes did not acknowledge post sentinels after send")
+        }
+
+        // Compare complete expected feedback message to verify exact-once delivery in target pane
+        guard FileManager.default.fileExists(atPath: targetPostCaptured),
+              let rawTargetFeedback = try? String(contentsOfFile: targetPostCaptured, encoding: .utf8) else {
+            throw Failure("target post-send capture file is missing or unreadable: \(targetPostCaptured)")
+        }
+        let trimmedTargetFeedback = rawTargetFeedback.trimmingCharacters(in: .whitespacesAndNewlines)
         let expectedHeader = "Review feedback for worktree 'diff_repo' (base: main):"
         let expectedFile = "## review_test.txt"
         let expectedLine = "• Line 2: \(uniqueComment)"
-        guard d.wait(for: {
-            guard let content = try? String(contentsOfFile: feedbackFile, encoding: .utf8) else { return false }
-            return content.contains(expectedHeader) && content.contains(expectedFile) && content.contains(expectedLine)
-        }, timeout: 8) else {
-            let received = (try? String(contentsOfFile: feedbackFile, encoding: .utf8)) ?? ""
-            throw Failure("expected feedback was not received in target PTY after clicking Send Feedback once (got: \(received))")
-        }
-
-        // Compare complete expected feedback message to verify exact-once delivery
-        let rawFeedback = try String(contentsOfFile: feedbackFile, encoding: .utf8)
-        let trimmedReceived = rawFeedback.trimmingCharacters(in: .whitespacesAndNewlines)
         let expectedMessage = """
         \(expectedHeader)
 
         \(expectedFile)
         \(expectedLine)
         """
-        guard trimmedReceived == expectedMessage.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            throw Failure("feedback message did not match expected exact-once format.\nExpected:\n\(expectedMessage)\n\nGot:\n\(trimmedReceived)")
+        guard trimmedTargetFeedback == expectedMessage.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure("feedback message did not match expected exact-once format.\nExpected:\n\(expectedMessage)\n\nGot:\n\(trimmedTargetFeedback)")
         }
 
-        // Verify non-target pane received nothing
-        let nonTargetReceived = (try? String(contentsOfFile: nonTargetFile, encoding: .utf8)) ?? ""
-        guard nonTargetReceived.isEmpty else {
-            throw Failure("non-target pane received feedback intended exclusively for target pane (got: \(nonTargetReceived))")
+        // Verify non-target pane received zero feedback bytes
+        guard FileManager.default.fileExists(atPath: nonTargetPostCaptured),
+              let rawNonTargetFeedback = try? String(contentsOfFile: nonTargetPostCaptured, encoding: .utf8) else {
+            throw Failure("non-target post-send capture file is missing or unreadable: \(nonTargetPostCaptured)")
+        }
+        guard rawNonTargetFeedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Failure("non-target pane received feedback intended exclusively for target pane (got: \(rawNonTargetFeedback))")
         }
 
         // Dismiss review session via Close button (or Escape)
@@ -2198,12 +2350,13 @@ let scenarios: [Scenario] = [
             throw Failure("review was still open after dismissal: \(closedStatus)")
         }
 
-        // Refocus target pane and interrupt cat listener
-        _ = try d.exec("\(ctl) focus --target \(targetPaneId)")
-        usleep(300_000)
-        d.activate()
-        d.interrupt()
-        usleep(800_000)
+        // Assert that dismissal returned focus to the target pane without any CLI or AX focus repair
+        guard let focusedId = try d.focusedPaneId() else {
+            throw Failure("could not determine focused pane ID after review dismissal")
+        }
+        guard focusedId.lowercased() == targetPaneId.lowercased() else {
+            throw Failure("review dismissal left focus on pane '\(focusedId)', expected target pane '\(targetPaneId)'")
+        }
 
         // Verify unassisted terminal keyboard input recovery
         d.activate()

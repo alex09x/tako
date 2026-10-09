@@ -371,11 +371,13 @@ class TerminalWindow: NSWindow {
                 if OverlayStore.shared.overlay(for: surface.id) != nil {
                     OverlayStore.shared.closeOverlay(paneId: surface.id)
                     makeFirstResponder(surface)
+                    terminalController?.focusedSurface = surface
                     return
                 }
                 if DiffReviewStore.shared.session(for: surface.id) != nil {
                     DiffReviewStore.shared.closeReview(paneId: surface.id)
                     makeFirstResponder(surface)
+                    terminalController?.focusedSurface = surface
                     return
                 }
             }
