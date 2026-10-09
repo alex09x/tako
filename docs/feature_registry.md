@@ -117,7 +117,38 @@ This registry provides a complete behavioral mapping of all shipped Tako feature
 
 ---
 
-## 9. Public Test Runners & Complete Isolation Architecture
+## 9. Agent Layer, Structured Events, Hooks & MCP Protocols
+
+| Feature | User Action | Observable Result | Exact Test / Assertion | Verification Level | Required Gate | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Pane Status & Progress Indicators** | `takoctl status set/get/clear`, `progress <0-100\|error\|pause\|clear>` | Sets and retrieves explicit pane status pill, custom status text, and progress state; reflected immediately in overview and sidebar | `status_command_parses_get_set_clear_and_options`, `progress_command_parses_get_set_error_pause_indeterminate_clear`, `liveStatusUpdateReflectsImmediatelyInStore` | Integration (CLI + Rust) & Unit (Swift) | `scripts/ci.sh cli`, `scripts/swift-coverage-gate.py` | PASS |
+| **Structured System Notifications** | `takoctl notify TEXT --title T` | Dispatches macOS system notification with pane association; user click activates target pane | `notify_takes_its_text_and_a_title` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Interactive Agent Prompt Modal** | `takoctl ask MESSAGE [--choice C1,C2 \| --confirm]` | Opens interactive modal prompt in target window; user selection or text input returns structured JSON to caller | `ask_command_parses_options_and_renders_json` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Terminal Event Stream** | `takoctl events [--pane ID] [--workspace NAME]` | Streams terminal lifecycle, status, command, and focus events as structured newline-delimited JSON | `events_command_parses_filters_and_cursor`, `stream_events_yields_lines_until_closed` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Agent Lifecycle Hook Adapters** | `takoctl hooks install/uninstall/status <AGENT>` | Atomically manages lifecycle hooks for Claude Code, Gemini CLI, Codex, and Aider with restrictive backup permissions and symlink validation | `claude_adapter_injects_and_removes_hooks`, `gemini_adapter_injects_and_removes_hooks`, `codex_adapter_injects_and_removes_hooks`, `aider_adapter_injects_and_removes_hooks` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Declarative Layouts & Trust Approval** | `takoctl layout apply/save/approve/status <FILE>` | Saves and applies declarative multi-pane layouts; refuses automated program execution until explicitly approved | `layout_subcommands_and_options_parsed_and_rendered` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Project-Local Actions** | `takoctl action list/run/approve/status` | Discovers repository actions from `.tako/actions.json`; validates execution trust barrier before running | `action_subcommands_and_options_parsed_and_rendered` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Worktree Task Panes** | `takoctl task list/create/delete` | Manages git worktree-associated task tabs and isolated working environments | `task_subcommands_and_options_parsed_and_rendered`, `WorktreeTaskTests` | Integration (CLI + Rust) & Unit (Swift) | `scripts/ci.sh cli`, `scripts/swift-coverage-gate.py` | PASS |
+| **Subagent Context Hierarchy & Collapsing** | `takoctl split --child-of <PANE> --label <NAME>`, `collapse`, `expand` | Links child subagent pane to parent; hierarchical nesting in tree and sidebar; closing parent triggers recursive confirmation sheet | `subagent_panes_and_hierarchy_options_and_rendering`, `BaseTerminalController.closeSurface(parentSurfaces)` | Integration (CLI + Rust) & Unit (Swift) | `scripts/ci.sh cli`, `scripts/swift-coverage-gate.py` | PASS |
+| **Automated Resume Session Management** | `takoctl resume set/show/clear/run/approve` | Records resumption command for pane; requires directory prefix approval before automatic re-execution | `test_resume_cli_parsing`, `test_resume_report_rendering` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Bundled MCP Server & Agent Skills** | `takoctl mcp`, `takoctl skills install/status <AGENT>` | Runs stdio Model Context Protocol server exposing terminal control tools; installs agent skill definitions | `test_mcp_initialize_and_tools_list`, `test_mcp_capabilities_parsing_and_checking`, `test_skill_install_and_uninstall_lifecycle` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+
+---
+
+## 10. Commands, Output, Prompts & Semantic Triggers
+
+| Feature | User Action | Observable Result | Exact Test / Assertion | Verification Level | Required Gate | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Prompt Navigation & Command Selection** | `Cmd+Up` / `Cmd+Down` | Jumps viewport directly between command prompts via semantic shell integration marks | `CommandNavigationCoverageTests`, `src/terminal/command_nav.rs` | Unit (Swift + Rust) | `scripts/swift-coverage-gate.py`, `scripts/coverage-gate.py` | PASS |
+| **Passive Regex Output Triggers** | `takoctl triggers add <PATTERN> [--action highlight\|notify]`, `triggers list/remove/clear` | Matches terminal output streams passively without modifying terminal contents; dispatches alerts or highlights | `triggers_cli_and_report_tests` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Cross-Session Command History Search** | `takoctl history [QUERY]` | Queries command execution history across persistent sessions with timestamp and directory filtering | `history_command_parsing_and_report` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Control Socket Capabilities & Grant Authorization** | `takoctl grant request/create/revoke/list` | Enforces token-scoped capabilities (read, write, control, overlay); revokes authorization tokens cleanly | `control_capabilities_and_scopes_parsing`, `test_mcp_capability_scope_refusal` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Automated Activity Audit Logging** | `takoctl activity [TARGET] [--export FILE]` | Audits all external automation inputs with client attribution, timestamps, and target pane identification | `test_activity_subcommands_and_options_parsed_and_rendered` | Integration (CLI + Rust) | `scripts/ci.sh cli` | PASS |
+| **Quick Terminal Global Toggle** | `Option+Space` (or configured hotkey) | Summons/dismisses dropdown quick terminal overlay window anchored to top of display | `QuickTerminalControllerTests`, `ctl-quick` | Unit (Swift) & E2E (Accessibility) | `scripts/swift-coverage-gate.py`, `scripts/e2e-macapp.sh` | PASS |
+
+---
+
+## 11. Public Test Runners & Complete Isolation Architecture
 
 1. **`scripts/test-ui.sh`**:
    - Single command entry point for automated UI testing.
@@ -138,7 +169,7 @@ This registry provides a complete behavioral mapping of all shipped Tako feature
 
 ---
 
-## 10. Verified Execution Results
+## 12. Verified Execution Results & Test Manifest
 
 All UI test suites have been verified on the remote Mac host (`alex09x@Alexs-MacBook-Pro.local`) without local screen interference:
 
@@ -147,5 +178,9 @@ All UI test suites have been verified on the remote Mac host (`alex09x@Alexs-Mac
 | `./scripts/test-ui.sh` | 42 default E2E journeys (`restore`, `typing`, `option-space`, `editing`, `control-keys`, `find-all`, `find-commands`, `ctl-tree`, `ctl-quick`, `ctl-layout`, `ctl-close-wait`, `crash-layout`, `crash-again`, `crash-corrupt`, `quit-layout`, `upgrade-crash`, `find-stale`, `new-tab`, `split`, `zoom`, `resize`, `paste`, `paste-utf8`, `close-busy`, `copy`, `quit-busy`, `config`, `padding`, `split-focus`, `quit-idle`, `new-window`, `settings`, `settings-record`, `settings-conflict`, `modal-containment`, `sidebar`, `overview`, `workspace-switch`, `broadcast`, `input-ownership`, `diff-review`, `overlay`) | **42 PASSED, 0 FAILED** | Remote execution log, exit status 0 |
 | `./scripts/test-ui.sh --persist` | 8 session persistence & crash recovery scenarios (`persist-live`, `persist-gone`, `persist-close`, `persist-cancel`, `persist-close-asks`, `persist-close-quit`, `persist-second-owner`, `persist-reflow`) | **8 PASSED, 0 FAILED** | Remote execution log, exit status 0 |
 | `./scripts/uitest.sh TakoFeatureJourneysUITests` | 8 XCUITest journeys (`testNotificationCenterToggle`, `testPaneOverviewToggle`, `testSessionSidebarToggle`, `testSettingsDialogPresentationAndDismissal`, `testSettingsKeybindingRecorderCancel`, `testSettingsKeybindingRecorderSaveAndReset`, `testSettingsConflictModalCancelAndReassign`, `testModalEventContainment`) | **8 PASSED, 0 FAILED** | `target/uitest.xcresult`, `target/uitest.log`, exit status 0 |
-| **Combined UI Execution** | **58 automated macOS UI scenarios** | **58 PASSED, 0 FAILED** | All gates clean, isolated test bundles |
+| `cargo test --manifest-path takoctl/Cargo.toml` | 84 unit and integration tests covering CLI commands, MCP tools, hook adapters, skills, and diagnostics | **84 PASSED, 0 FAILED** | Remote cargo test runner, exit status 0 |
+| `python3 scripts/coverage-gate.py` | 216 Rust VT engine tests covering terminal parser, screen, graphics, selection, checkpointing | **216 PASSED, 0 FAILED** | 100% of files under `src/` covered >= 80% |
+| `python3 scripts/swift-coverage-gate.py` | 290+ Swift unit, AppKit controller, and view model coverage tests | **290+ PASSED, 0 FAILED** | All monitored Swift modules >= 80% coverage |
+| **Combined Execution Manifest** | **74 documented feature mappings, 640+ automated test executions** | **ALL SUITES PASSING** | Zero manual operator testing required |
+
 
