@@ -48,8 +48,11 @@ public final class NotificationStore: ObservableObject {
     /// Maximum notification history to retain.
     public var maxRecords: Int = 500
 
+    private var isInitializing = false
+
     @Published public private(set) var records: [NotificationRecord] = [] {
         didSet {
+            guard !isInitializing else { return }
             saveToDefaults()
             updateDockBadge()
             NotificationCenter.default.post(name: .takoNotificationStoreDidChange, object: self)
@@ -61,7 +64,9 @@ public final class NotificationStore: ObservableObject {
 
     public init(defaults: UserDefaults = .tako) {
         self.defaults = defaults
+        self.isInitializing = true
         loadFromDefaults()
+        self.isInitializing = false
     }
 
     /// Loads persisted notification records from UserDefaults.
@@ -211,7 +216,7 @@ public final class NotificationStore: ObservableObject {
         let label = unread > 0 ? (unread > 99 ? "99+" : "\(unread)") : nil
         onDockBadgeUpdate?(label)
         if let appDelegate = NSApp?.delegate as? AppDelegate {
-            appDelegate.setDockBadge()
+            appDelegate.setDockBadge(notificationUnreadCount: unread)
         }
     }
 }

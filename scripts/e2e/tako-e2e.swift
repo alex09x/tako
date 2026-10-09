@@ -2434,6 +2434,123 @@ let scenarios: [Scenario] = [
         try d.run("echo 'overlay_ok' > \(d.path("overlay_witness"))")
         try d.expect("overlay_witness", "overlay_ok\n", "terminal keyboard input after overlay closed")
     }),
+    ("ask-prompt", "takoctl ask opens interactive modal dialog in window, button click returns structured confirmation, and terminal retains focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl"
+        let witness = d.path("ask_witness")
+
+        // Phase 1: Test interactive cancellation path (Abort button)
+        let abortProc = Process()
+        abortProc.executableURL = URL(fileURLWithPath: ctl)
+        abortProc.arguments = [
+            "--bundle-id", d.bundleID,
+            "ask", "Discard uncommitted changes?",
+            "--confirm",
+            "--confirm-text", "Discard",
+            "--cancel-text", "Abort",
+            "--title", "Agent Prompt",
+            "--json"
+        ]
+        let abortPipe = Pipe()
+        abortProc.standardOutput = abortPipe
+        abortProc.standardError = abortPipe
+        try abortProc.run()
+
+        var abortBtn: AXUIElement?
+        guard d.wait(for: {
+            abortBtn = d.button(titled: "Abort")
+            return abortBtn != nil && d.button(titled: "Discard") != nil
+        }, timeout: 5), let abortBtn else {
+            abortProc.terminate()
+            throw Failure("takoctl ask did not present dialog with Abort and Discard buttons")
+        }
+
+        guard d.hasText(containing: "Agent Prompt") || d.hasText(containing: "Discard uncommitted changes?") else {
+            abortProc.terminate()
+            throw Failure("prompt dialog does not expose title or message to accessibility")
+        }
+
+        // Click Abort to cancel
+        d.press(abortBtn)
+        guard d.wait(for: { d.button(titled: "Abort") == nil }, timeout: 5) else {
+            abortProc.terminate()
+            throw Failure("prompt dialog was not dismissed after pressing Abort")
+        }
+
+        let abortData = abortPipe.fileHandleForReading.readDataToEndOfFile()
+        abortProc.waitUntilExit()
+        guard abortProc.terminationStatus != 0 else {
+            throw Failure("takoctl ask should exit with error when prompt is aborted")
+        }
+        let abortJson = (try? JSONSerialization.jsonObject(with: abortData) as? [String: Any]) ?? [:]
+        guard abortJson["ok"] as? Bool == false else {
+            throw Failure("expected ok: false on aborted prompt, got \(String(data: abortData, encoding: .utf8) ?? "")")
+        }
+
+        // Phase 2: Test interactive confirmation path (Deploy button)
+        let confirmProc = Process()
+        confirmProc.executableURL = URL(fileURLWithPath: ctl)
+        confirmProc.arguments = [
+            "--bundle-id", d.bundleID,
+            "ask", "Deploy changes to production?",
+            "--confirm",
+            "--confirm-text", "Deploy",
+            "--cancel-text", "Cancel",
+            "--title", "Deployment Confirmation",
+            "--json"
+        ]
+        let confirmPipe = Pipe()
+        confirmProc.standardOutput = confirmPipe
+        confirmProc.standardError = confirmPipe
+        try confirmProc.run()
+
+        var deployBtn: AXUIElement?
+        guard d.wait(for: {
+            deployBtn = d.button(titled: "Deploy")
+            return deployBtn != nil && d.button(titled: "Cancel") != nil
+        }, timeout: 5), let deployBtn else {
+            confirmProc.terminate()
+            throw Failure("takoctl ask did not present dialog with Deploy and Cancel buttons")
+        }
+
+        guard d.hasText(containing: "Deployment Confirmation") || d.hasText(containing: "Deploy changes to production?") else {
+            confirmProc.terminate()
+            throw Failure("prompt dialog does not expose confirmation title or message to accessibility")
+        }
+
+        // Click Deploy to confirm
+        d.press(deployBtn)
+        guard d.wait(for: { d.button(titled: "Deploy") == nil }, timeout: 5) else {
+            confirmProc.terminate()
+            throw Failure("prompt dialog was not dismissed after pressing Deploy")
+        }
+
+        let confirmData = confirmPipe.fileHandleForReading.readDataToEndOfFile()
+        confirmProc.waitUntilExit()
+        guard confirmProc.terminationStatus == 0 else {
+            let errText = String(data: confirmData, encoding: .utf8) ?? ""
+            throw Failure("takoctl ask confirm exited with code \(confirmProc.terminationStatus): \(errText)")
+        }
+
+        guard let confirmJson = try? JSONSerialization.jsonObject(with: confirmData) as? [String: Any],
+              confirmJson["ok"] as? Bool == true,
+              let result = confirmJson["result"] as? [String: Any] else {
+            throw Failure("invalid JSON response from takoctl ask: \(String(data: confirmData, encoding: .utf8) ?? "")")
+        }
+        guard result["confirmed"] as? Bool == true else {
+            throw Failure("expected result.confirmed == true, got \(result)")
+        }
+        guard result["answer"] as? String == "Deploy" else {
+            throw Failure("expected result.answer == 'Deploy', got \(result)")
+        }
+        guard result["type"] as? String == "confirm" else {
+            throw Failure("expected result.type == 'confirm', got \(result)")
+        }
+
+        // Phase 3: Verify unassisted terminal keyboard input recovery
+        d.activate()
+        try d.run("echo 'ask_prompt_ok' > \(witness)")
+        try d.expect("ask_witness", "ask_prompt_ok\n", "terminal keyboard input after prompt modal interaction")
+    }),
 ]
 
 // MARK: - Main

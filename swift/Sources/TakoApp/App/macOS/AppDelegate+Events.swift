@@ -220,9 +220,9 @@ extension AppDelegate {
     }
 
     @MainActor
-    func setDockBadge() {
+    func setDockBadge(notificationUnreadCount: Int? = nil) {
         guard let app = NSApp else { return }
-        let unreadCount = NotificationStore.shared.totalUnreadCount()
+        let unreadCount = notificationUnreadCount ?? NotificationStore.shared.totalUnreadCount()
         var label: String? = unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil
 
         if label == nil {

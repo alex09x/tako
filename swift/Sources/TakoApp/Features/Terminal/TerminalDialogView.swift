@@ -124,6 +124,25 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.62).cgColor
         setAccessibilityRole(.group)
         setAccessibilityLabel(title)
+        setAccessibilityTitle(title)
+        let bodyText = lines.map { line in
+            String(repeating: " ", count: line.indent) + line.runs.map(\.text).joined()
+        }.joined(separator: "\n")
+        setAccessibilityValue(bodyText)
+
+        let promptText = title.isEmpty ? bodyText : "\(title)\n\(bodyText)"
+        let textElement = NSTextField(labelWithString: promptText)
+        textElement.textColor = .clear
+        textElement.drawsBackground = false
+        textElement.isBordered = false
+        textElement.isEditable = false
+        textElement.isSelectable = false
+        textElement.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+        textElement.setAccessibilityRole(.staticText)
+        textElement.setAccessibilityLabel(title)
+        textElement.setAccessibilityValue(promptText)
+        addSubview(textElement)
+
         buttons = choices.enumerated().map { index, choice in
             let button = DialogButton(choice: choice, style: style)
             button.target = self
@@ -133,6 +152,10 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         }
         buttons.forEach(addSubview)
         updateSelection()
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        subviews
     }
 
     @available(*, unavailable)
