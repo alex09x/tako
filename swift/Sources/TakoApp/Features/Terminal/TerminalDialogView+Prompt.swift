@@ -52,6 +52,8 @@ extension TerminalDialogView {
         field.cell?.isScrollable = true
         field.delegate = view
         field.setAccessibilityLabel(label)
+        field.setAccessibilityTitle(label)
+        field.setAccessibilityIdentifier("tako_dialog_text_field")
         view.field = field
         view.fieldRow = 1
         view.addSubview(field)

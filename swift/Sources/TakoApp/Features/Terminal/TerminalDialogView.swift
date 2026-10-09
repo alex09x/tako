@@ -412,6 +412,12 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     func answer(_ index: Int) {
         guard let finish else { return }
         self.finish = nil
+        if let field {
+            _ = field.validateEditing()
+            if let editor = field.currentEditor() as? NSTextView {
+                field.stringValue = editor.string
+            }
+        }
         let window = self.window
         removeFromSuperview()
         if let previousResponder, window?.firstResponder == nil || window?.firstResponder === window {
