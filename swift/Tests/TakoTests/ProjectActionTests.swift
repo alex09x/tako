@@ -318,7 +318,7 @@ import TakoKit
             shell: false,
             target: .split
         )
-        let resolvedArgv = ProjectActionManager.resolveProgram(action: argvAction, effectiveCwd: "/tmp")
+        let resolvedArgv = try ProjectActionManager.resolveProgram(action: argvAction, effectiveCwd: "/tmp")
         #expect(resolvedArgv.count == rawTokens.count)
         #expect(resolvedArgv[0].hasSuffix("printf")) // resolved executable path without shell
         #expect(resolvedArgv[1] == "%s\n")
@@ -338,8 +338,82 @@ import TakoKit
             shell: true,
             target: .split
         )
-        let resolvedShell = ProjectActionManager.resolveProgram(action: shellAction, effectiveCwd: "/tmp")
+        let resolvedShell = try ProjectActionManager.resolveProgram(action: shellAction, effectiveCwd: "/tmp")
         #expect(resolvedShell.first == "/bin/sh")
         #expect(resolvedShell == ["/bin/sh", "-c", "echo $HOME && ls"])
+    }
+
+    @Test func testProjectActionUnresolvedExecutableRejectsOptionAndAssignmentTokensFailingClosed() throws {
+        // 1. Option-like token "-S" (must NOT be passed to env or any launcher where it could be parsed as an option)
+        let optionAction = ProjectAction(
+            id: "opt-action",
+            title: "Option-like command",
+            command: ["-S", "printf ENV_FALLBACK_INTERPRETED"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: optionAction, effectiveCwd: "/tmp")
+        }
+
+        // 2. Assignment-like token "NAME=value" (must NOT be treated as an environment variable assignment)
+        let assignmentAction = ProjectAction(
+            id: "assign-action",
+            title: "Assignment-like command",
+            command: ["NAME=value", "echo hi"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: assignmentAction, effectiveCwd: "/tmp")
+        }
+
+        // 3. Option-like flag "--verbose"
+        let flagAction = ProjectAction(
+            id: "flag-action",
+            title: "Flag command",
+            command: ["--verbose", "run"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: flagAction, effectiveCwd: "/tmp")
+        }
+
+        // 4. Bare nonexistent binary
+        let nonExistentAction = ProjectAction(
+            id: "missing-action",
+            title: "Missing command",
+            command: ["nonexistent_binary_xyz_12345", "--arg"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: nonExistentAction, effectiveCwd: "/tmp")
+        }
+
+        // 5. Nonexistent absolute path
+        let nonExistentAbsolute = ProjectAction(
+            id: "missing-abs",
+            title: "Missing absolute",
+            command: ["/usr/bin/nonexistent_fake_tool"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: nonExistentAbsolute, effectiveCwd: "/tmp")
+        }
+
+        // 6. Nonexistent relative path
+        let nonExistentRelative = ProjectAction(
+            id: "missing-rel",
+            title: "Missing relative",
+            command: ["./nonexistent_script.sh"],
+            shell: false,
+            target: .split
+        )
+        #expect(throws: ControlError.self) {
+            _ = try ProjectActionManager.resolveProgram(action: nonExistentRelative, effectiveCwd: "/tmp")
+        }
     }
 }

@@ -101,16 +101,17 @@ final class ProjectActionManager {
     ///   - pathEnv: Optional explicit PATH string; falls back to ProcessInfo PATH or standard system paths.
     /// - Returns: Absolute path to the executable if found, or nil if not found.
     static func resolveExecutable(_ executable: String, cwd: String, pathEnv: String?) -> String? {
-        if executable.hasPrefix("/") {
-            return FileManager.default.isExecutableFile(atPath: executable) ? executable : nil
+        let expanded = (executable as NSString).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return FileManager.default.isExecutableFile(atPath: expanded) ? expanded : nil
         }
-        if executable.contains("/") {
-            let path = (cwd as NSString).appendingPathComponent(executable)
+        if expanded.contains("/") {
+            let path = (cwd as NSString).appendingPathComponent(expanded)
             return FileManager.default.isExecutableFile(atPath: path) ? path : nil
         }
         let searchPath = pathEnv ?? ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
         for dir in searchPath.split(separator: ":").map(String.init) {
-            let candidate = (dir as NSString).appendingPathComponent(executable)
+            let candidate = (dir as NSString).appendingPathComponent(expanded)
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }
@@ -121,7 +122,8 @@ final class ProjectActionManager {
     /// Prepares the program argv for execution in a new split or tab.
     ///
     /// Preserves exact argv boundaries and literal arguments unless `action.shell == true` is explicitly requested.
-    static func resolveProgram(action: ProjectAction, effectiveCwd: String) -> [String] {
+    /// Fails closed when an executable cannot be resolved; never passes unvalidated executables to a launcher.
+    static func resolveProgram(action: ProjectAction, effectiveCwd: String) throws -> [String] {
         let cmd = action.effectiveCommand
         guard !cmd.isEmpty else { return [] }
 
@@ -137,12 +139,7 @@ final class ProjectActionManager {
             return resolved
         }
 
-        // If not found directly and not absolute, use /usr/bin/env to resolve via PATH without shell expansion
-        if !exe.hasPrefix("/") && !exe.contains("/") {
-            return ["/usr/bin/env"] + cmd
-        }
-
-        return cmd
+        throw ControlError(.notFound, "Executable not found: '\(exe)'")
     }
 
     /// Executes a project action against a source surface.
@@ -191,8 +188,8 @@ final class ProjectActionManager {
         }
 
         let cmd = action.effectiveCommand
-        if !cmd.isEmpty {
-            config.program = Self.resolveProgram(action: action, effectiveCwd: effectiveCwd)
+        if (action.effectiveTarget == .split || action.effectiveTarget == .newTab) && !cmd.isEmpty {
+            config.program = try Self.resolveProgram(action: action, effectiveCwd: effectiveCwd)
         }
 
         switch action.effectiveTarget {
