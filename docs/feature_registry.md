@@ -216,9 +216,13 @@ The operator assignment remains active. In accordance with reviewer directives, 
      a) *In-App UI*: Automated UI journey (`notification-center` in `scripts/e2e/tako-e2e.swift`) is verified via `test-ui.sh` with base64 payload (`:e=1`), scoped `NotificationCenterPanel` and `NotificationRow_\(id)` AX subtree matching, negative control, Clear deletion, and unassisted keyboard/TTY recovery (approved in commit `20a551b`).
      b) *Platform Contract*: Verified at system boundary via `Tako.onNotificationPosted` test hook in `swift/Tests/TakoTests/NotificationTests.swift`, confirming that `UNNotificationRequest` contains exact sanitized title, body, urgency, category, and userInfo passed to `UNUserNotificationCenter.current().add(request)`.
      c) *OS-Level Banner Presentation*: Kept explicitly OPEN / UNVERIFIED due to the measured disabled notification authorization state for the test bundle on this host, without editing TCC.db, disabling SIP, or imposing manual testing burdens on the operator.
-3. **Project-Local Actions**: **AUTOMATED VERIFICATION COMPLETE**
+3. **Engine & Swift Line-Coverage Floors**: **NOT VERIFIED (Separate from GUI Environment Prerequisites)**
+   - *Scope & Independence*: Line-coverage floors (80% floor for Rust VT engine via `scripts/coverage-gate.py --features pty,ssh` and Swift via `scripts/swift-coverage-gate.py`) are tracked independently from desktop GUI prerequisites. They have no architectural dependency on macOS Automation Mode, WindowServer, or notification alert authorization.
+   - *Status Reason*: While engine unit tests and Swift unit test suites pass, per-file line coverage JSON reports and gate execution run artifacts have not been generated or preserved in `target/runs/` to substantiate the 80% coverage floors.
+   - *Status & Boundary*: Line-coverage floors remain catalogued as NOT VERIFIED pending generation and preservation of per-file coverage run artifacts, separate from host GUI environment blockers.
+4. **Project-Local Actions**: **AUTOMATED VERIFICATION COMPLETE**
    - *Status*: Automated UI and CLI journeys (`project-action` and `project-action-ui`) verified via `test-ui.sh`, covering shell-reported cwd via OSC 7, Command Palette action discovery, modal confirmation, Cancel zero-execution refusal, Approve & Run execution with witness check, tree geometry assertion, pane cleanup, unassisted keyboard focus recovery, and fail-closed resolution rejecting unresolved option/assignment tokens. Verified without manual operator testing burden.
-4. **Overall Assignment**: **ACTIVE**
+5. **Overall Assignment**: **ACTIVE**
    - Full coverage is not declared from test counts alone; open gates and verified permissions are explicitly catalogued with empirical host evidence and zero manual testing burden on the operator.
 
 

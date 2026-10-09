@@ -10,6 +10,7 @@
 
 import XCTest
 import AppKit
+import Vision
 
 final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
 
@@ -221,6 +222,29 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         XCTAssertTrue(settingsDialog.waitForNonExistence(timeout: 5), "Settings dialog should close after Escape")
     }
 
+    // MARK: - Screen Content Observation & Presentation Timing (Row 63)
+
+    /// Extracts recognized text candidates and their bounding boxes from an NSImage via Vision framework.
+    private func extractRecognizedText(from image: NSImage) -> [(text: String, box: CGRect)] {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return []
+        }
+        var results: [(text: String, box: CGRect)] = []
+        let request = VNRecognizeTextRequest { req, _ in
+            guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
+            for obs in observations {
+                if let candidate = obs.topCandidates(1).first {
+                    results.append((candidate.string, obs.boundingBox))
+                }
+            }
+        }
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
+        return results
+    }
+
     @MainActor
     func testScreenObservationCapabilityAndTiming() async throws {
         // 1. Baseline screen capture before application launch
@@ -233,7 +257,6 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         XCTAssertGreaterThan(baselineSize.height, 0, "Baseline screen height should be non-zero")
         XCTAssertGreaterThan(baselineScreenshot.pngRepresentation.count, 0, "Baseline PNG representation must be non-empty")
 
-        // Retain baseline screenshot as persistent test attachment
         let baselineAttachment = XCTAttachment(screenshot: baselineScreenshot)
         baselineAttachment.name = "Baseline-Prelaunch"
         baselineAttachment.lifetime = .keepAlways
@@ -245,46 +268,53 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         let appWindow = app.windows.firstMatch
         XCTAssertTrue(appWindow.waitForExistence(timeout: 5), "Terminal window should appear")
 
-        // 3. Measure consecutive XCUIScreen.main.screenshot() capture latencies
-        var captures: [XCUIScreenshot] = []
-        var latencies: [Double] = []
-        for i in 1...5 {
-            let start = CFAbsoluteTimeGetCurrent()
-            let shot = XCUIScreen.main.screenshot()
-            let latencyMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
-            latencies.append(latencyMs)
-            captures.append(shot)
-            print("[SCREEN_OBSERVATION] Capture \(i): \(String(format: "%.1f", latencyMs))ms, size=\(shot.image.size)")
+        // 3. Pre-Open Baseline Capture (Absent-Content Negative Control for Pane Overview)
+        let preOpenScreenshot = XCUIScreen.main.screenshot()
+        let preOpenAttachment = XCTAttachment(screenshot: preOpenScreenshot)
+        preOpenAttachment.name = "PreOpen-NegativeControl"
+        preOpenAttachment.lifetime = .keepAlways
+        self.add(preOpenAttachment)
+
+        // Negative Control: Verify that before triggering Pane Overview, "Pane Overview" text is absent
+        let preOpenTexts = extractRecognizedText(from: preOpenScreenshot.image)
+        let preOpenHasOverview = preOpenTexts.contains { $0.text.localizedCaseInsensitiveContains("Pane Overview") }
+        XCTAssertFalse(preOpenHasOverview, "Pane Overview header text must be absent before open action")
+
+        // 4. Trigger Production Open Action (`Cmd+Shift+O` for Row 63) & Measure Presentation Latency
+        let tTrigger = CFAbsoluteTimeGetCurrent()
+        app.typeKey("o", modifierFlags: [.command, .shift])
+
+        // Capture post-trigger compositor frame
+        let overviewScreenshot = XCUIScreen.main.screenshot()
+        let captureElapsedMs = (CFAbsoluteTimeGetCurrent() - tTrigger) * 1000.0
+        print("[SCREEN_OBSERVATION] Post-trigger capture completed in \(String(format: "%.1f", captureElapsedMs))ms")
+
+        let postTriggerAttachment = XCTAttachment(screenshot: overviewScreenshot)
+        postTriggerAttachment.name = "PostTrigger-PaneOverview"
+        postTriggerAttachment.lifetime = .keepAlways
+        self.add(postTriggerAttachment)
+
+        // 5. Expected-Content Recognition & Spatial Verification:
+        // Use Apple Vision text recognition to prove the rendered frame contains the expected "Pane Overview" header
+        let postOpenTexts = extractRecognizedText(from: overviewScreenshot.image)
+        let matchedOverview = postOpenTexts.first { $0.text.localizedCaseInsensitiveContains("Pane Overview") }
+        XCTAssertNotNil(matchedOverview, "Expected content 'Pane Overview' must be recognized in the captured frame after open action")
+
+        if let match = matchedOverview {
+            print("[SCREEN_OBSERVATION] Recognized expected content: '\(match.text)' at bounding box \(match.box)")
+            // Verify spatial location: Vision bounding boxes have origin at bottom-left in normalized coordinates (0..1)
+            // The overview header is located in the upper region of the screen/window
+            XCTAssertGreaterThan(match.box.origin.y, 0.2, "Recognized header must be located in upper window region")
         }
-        let avgLatencyMs = latencies.reduce(0.0, +) / Double(latencies.count)
-        let minLatencyMs = latencies.min() ?? 0.0
-        let maxLatencyMs = latencies.max() ?? 0.0
-        print("[SCREEN_OBSERVATION] Latency stats: min=\(String(format: "%.1f", minLatencyMs))ms, avg=\(String(format: "%.1f", avgLatencyMs))ms, max=\(String(format: "%.1f", maxLatencyMs))ms")
 
-        // Retain representative post-launch screenshot as test attachment
-        guard let postLaunchScreenshot = captures.last else {
-            XCTFail("No screenshot captures recorded")
-            return
-        }
-        XCTAssertGreaterThan(postLaunchScreenshot.image.size.width, 0, "Post-launch screen width should be non-zero")
-        XCTAssertGreaterThan(postLaunchScreenshot.image.size.height, 0, "Post-launch screen height should be non-zero")
-        XCTAssertGreaterThan(postLaunchScreenshot.pngRepresentation.count, 0, "Post-launch PNG representation must be non-empty")
+        // 6. Dismiss via Escape and verify recovery
+        app.typeKey(.escape, modifierFlags: [])
+        let overviewHeaderAX = app.descendants(matching: .any)["PaneOverviewHeader"]
+        XCTAssertTrue(overviewHeaderAX.waitForNonExistence(timeout: 5), "Pane Overview should dismiss on Escape")
 
-        let postLaunchAttachment = XCTAttachment(screenshot: postLaunchScreenshot)
-        postLaunchAttachment.name = "PostLaunch-ScreenCapture"
-        postLaunchAttachment.lifetime = .keepAlways
-        self.add(postLaunchAttachment)
-
-        // 4. Content Verification Boundary:
-        // Expected-content verification of compositor-visible frames (matching deterministic rendered terminal
-        // text, prompt glyphs, or overview card structures against an absent-content control) requires
-        // execution under an authenticated test runner. Because Automation Mode is disabled on this host
-        // (`automationmodetool status`: disabled), live compositor content verification is explicitly left
-        // PENDING / OPEN per docs/feature_registry.md Section 13.
-        print("[SCREEN_OBSERVATION] Content verification status: PENDING authenticated runner execution")
-
-        // 5. Evaluate budget feasibility based on empirical timing:
-        print("[SCREEN_OBSERVATION] Budget evaluation: min=\(String(format: "%.1f", minLatencyMs))ms, avg=\(String(format: "%.1f", avgLatencyMs))ms vs 150ms budget (feasibility unverified pending execution)")
+        // 7. Budget Feasibility Evaluation (< 150 ms):
+        print("[SCREEN_OBSERVATION] Row 63 Presentation Timing: elapsed=\(String(format: "%.1f", captureElapsedMs))ms vs 150.0ms budget")
+        XCTAssertLessThan(captureElapsedMs, 150.0, "Overview interactive presentation must complete within 150ms budget")
     }
 }
 
