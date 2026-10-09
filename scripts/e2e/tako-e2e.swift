@@ -449,7 +449,8 @@ final class Driver {
                 let axLabel: String? = attribute(btn, "AXLabel")
                 let axId: String? = attribute(btn, "AXIdentifier")
                 if axTitle == title || axDesc == title || axLabel == title || axId == title ||
-                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true || axId?.contains(title) == true {
+                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true || axId?.contains(title) == true ||
+                   elementContainsText(btn, target: title, depth: 3) {
                     return btn
                 }
             }
@@ -3227,6 +3228,96 @@ let scenarios: [Scenario] = [
         let recoveredTty = try d.file("ui_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
         guard recoveredTty == origTty else {
             throw Failure("recovered TTY (\(recoveredTty)) does not match original TTY (\(origTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")
+        }
+    }),
+    ("notification-center", "emits structured OSC 99 notification, opens Notification Center via Cmd+Option+N, asserts displayed notification row, clears/dismisses, and recovers unassisted keyboard focus", { d in
+        // Step 1: Record initial terminal environment (focused pane ID and TTY)
+        try d.run("tty > \(d.path("notif_init_tty"))")
+        let initTty = try d.file("notif_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover root focused pane ID for notification center journey")
+        }
+
+        // Step 2: First toggle Notification Center on empty state to verify clean initial view
+        d.activate()
+        usleep(200_000)
+        d.key(Key.n, [.maskCommand, .maskAlternate])
+        guard d.wait(for: { d.hasText(containing: "Notifications") }, timeout: 5) else {
+            throw Failure("notification center 'Notifications' header was not visible after initial Cmd+Opt+N")
+        }
+        // If there are persisted records from earlier runs, clear them to verify empty state transition
+        if let existingClear = d.button(titled: "Clear") ?? d.button(titled: "NotificationCenterClearButton") {
+            d.press(existingClear)
+            usleep(200_000)
+        }
+        guard d.wait(for: { d.hasText(containing: "No Notifications") }, timeout: 5) else {
+            throw Failure("empty state 'No Notifications' was not visible in initial Notification Center")
+        }
+
+        // Dismiss empty panel via Cmd+Option+N toggle
+        d.key(Key.n, [.maskCommand, .maskAlternate])
+        guard d.wait(for: { !d.hasText(containing: "Notifications") }, timeout: 5) else {
+            throw Failure("Notification Center was still visible after Cmd+Opt+N toggle dismissal on empty state")
+        }
+
+        // Step 3: Emit structured notification via OSC 99 from active terminal shell
+        d.activate()
+        usleep(300_000)
+        let notifTitle = "Automated E2E Notification"
+        let notifBody = "Structured notification payload delivered via OSC 99"
+        try d.run("printf '\\e]99;i=e2e-notif-1:d=0;\(notifTitle)\\e\\\\'; printf '\\e]99;i=e2e-notif-1:d=1:p=body;\(notifBody)\\e\\\\';")
+        usleep(500_000)
+
+        // Step 4: Open Notification Center via Cmd+Option+N and assert populated content
+        d.activate()
+        usleep(200_000)
+        d.key(Key.n, [.maskCommand, .maskAlternate])
+        guard d.wait(for: { d.hasText(containing: "Notifications") }, timeout: 5) else {
+            throw Failure("notification center 'Notifications' header was not visible after Cmd+Opt+N")
+        }
+        guard d.wait(for: { d.hasText(containing: notifTitle) }, timeout: 5) else {
+            throw Failure("notification title '\(notifTitle)' was not found in Notification Center")
+        }
+        guard d.wait(for: { d.hasText(containing: notifBody) }, timeout: 5) else {
+            throw Failure("notification body '\(notifBody)' was not found in Notification Center")
+        }
+        guard d.wait(for: { d.hasText(containing: "All caught up") || d.hasText(containing: "unread") }, timeout: 5) else {
+            throw Failure("status badge ('All caught up' or unread count) was not found in Notification Center")
+        }
+
+        // Step 5: Interact with Clear button in the Notification Center header
+        var clearBtn: AXUIElement?
+        guard d.wait(for: { clearBtn = d.button(titled: "Clear") ?? d.button(titled: "NotificationCenterClearButton"); return clearBtn != nil }, timeout: 5),
+              let btn = clearBtn else {
+            throw Failure("Clear button was not found in Notification Center")
+        }
+        d.press(btn)
+        guard d.wait(for: { d.hasText(containing: "No Notifications") }, timeout: 5) else {
+            throw Failure("'No Notifications' text did not appear after clicking Clear button")
+        }
+
+        // Step 6: Dismiss Notification Center via Cmd+Option+N toggle
+        d.key(Key.n, [.maskCommand, .maskAlternate])
+        guard d.wait(for: { !d.hasText(containing: "Notifications") }, timeout: 5) else {
+            throw Failure("Notification Center was still visible after Cmd+Opt+N dismissal")
+        }
+
+        // Step 7: Verify unassisted terminal keyboard focus recovery in original pane and matching TTY
+        d.activate()
+        usleep(500_000)
+        let witnessFile = d.path("notif_kb_witness.txt")
+        try d.run("tty > \(d.path("notif_rec_tty")) && echo 'notif_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "notif_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after notification center dismissal")
+        }
+        let recoveredTty = try d.file("notif_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match original TTY (\(initTty))")
         }
         guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
             throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")

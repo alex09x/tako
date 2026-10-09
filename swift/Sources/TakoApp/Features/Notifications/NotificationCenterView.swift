@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import SwiftUI
 
@@ -96,6 +106,8 @@ public struct NotificationCenterView: View {
                         }
                         .buttonStyle(.borderless)
                         .font(.caption)
+                        .accessibilityIdentifier("NotificationCenterClearButton")
+                        .accessibilityLabel("Clear")
                     }
 
                     Button {
@@ -105,6 +117,8 @@ public struct NotificationCenterView: View {
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityIdentifier("NotificationCenterCloseButton")
+                    .accessibilityLabel("Close")
                     .help("Close (Esc)")
                 }
                 .padding(.horizontal, 16)
