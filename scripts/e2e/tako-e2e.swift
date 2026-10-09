@@ -2136,12 +2136,27 @@ let scenarios: [Scenario] = [
                     break
                 if state == 0:
                     if pre_start_sentinel in line:
+                        idx = line.find(pre_start_sentinel)
+                        prefix = line[:idx]
+                        suffix = line[idx + len(pre_start_sentinel):]
+                        if prefix or suffix not in ("", "\\n", "\\r\\n", "\\r"):
+                            with open(pre_start_ack_file, "w") as f:
+                                f.write("pre_start_corrupted:" + prefix + suffix + "\\n")
+                                f.flush()
+                            sys.exit(1)
                         with open(pre_start_ack_file, "w") as f:
                             f.write("pre_start_ack\\n")
                             f.flush()
                         state = 1
                 elif state == 1:
                     if pre_end_sentinel in line:
+                        idx = line.find(pre_end_sentinel)
+                        prefix = line[:idx]
+                        suffix = line[idx + len(pre_end_sentinel):]
+                        if prefix:
+                            pre_captured.append(prefix)
+                        if suffix not in ("", "\\n", "\\r\\n", "\\r"):
+                            pre_captured.append(suffix)
                         with open(pre_captured_file, "w") as f:
                             f.write("".join(pre_captured))
                             f.flush()
@@ -2153,6 +2168,13 @@ let scenarios: [Scenario] = [
                         pre_captured.append(line)
                 elif state == 2:
                     if post_sentinel in line:
+                        idx = line.find(post_sentinel)
+                        prefix = line[:idx]
+                        suffix = line[idx + len(post_sentinel):]
+                        if prefix:
+                            post_captured.append(prefix)
+                        if suffix not in ("", "\\n", "\\r\\n", "\\r"):
+                            post_captured.append(suffix)
                         with open(post_captured_file, "w") as f:
                             f.write("".join(post_captured))
                             f.flush()
@@ -2195,9 +2217,11 @@ let scenarios: [Scenario] = [
         _ = try d.exec("\(ctl) send '\(targetPreStart)' --target \(targetPaneId)")
         _ = try d.exec("\(ctl) send '\(nonTargetPreStart)' --target \(nonTargetPaneId)")
         guard d.wait(for: {
-            FileManager.default.fileExists(atPath: targetPreStartAck) && FileManager.default.fileExists(atPath: nonTargetPreStartAck)
+            guard let tAck = try? String(contentsOfFile: targetPreStartAck, encoding: .utf8),
+                  let ntAck = try? String(contentsOfFile: nonTargetPreStartAck, encoding: .utf8) else { return false }
+            return tAck == "pre_start_ack\n" && ntAck == "pre_start_ack\n"
         }, timeout: 8) else {
-            throw Failure("stream capture processes did not acknowledge pre-start sentinels in both panes")
+            throw Failure("stream capture processes did not acknowledge pre-start sentinels with exact framing")
         }
 
         // Open diff review session targeting targetPaneId
@@ -2258,9 +2282,11 @@ let scenarios: [Scenario] = [
         _ = try d.exec("\(ctl) send '\(targetPreEnd)' --target \(targetPaneId)")
         _ = try d.exec("\(ctl) send '\(nonTargetPreEnd)' --target \(nonTargetPaneId)")
         guard d.wait(for: {
-            FileManager.default.fileExists(atPath: targetPreEndAck) && FileManager.default.fileExists(atPath: nonTargetPreEndAck)
+            guard let tAck = try? String(contentsOfFile: targetPreEndAck, encoding: .utf8),
+                  let ntAck = try? String(contentsOfFile: nonTargetPreEndAck, encoding: .utf8) else { return false }
+            return tAck == "pre_end_ack\n" && ntAck == "pre_end_ack\n"
         }, timeout: 8) else {
-            throw Failure("stream capture processes did not acknowledge pre-end sentinels before send")
+            throw Failure("stream capture processes did not acknowledge pre-end sentinels with exact framing")
         }
 
         // Assert zero feedback was prematurely dispatched to target PTY and zero input leaked to non-target PTY
@@ -2268,16 +2294,16 @@ let scenarios: [Scenario] = [
               let targetPreContent = try? String(contentsOfFile: targetPreCaptured, encoding: .utf8) else {
             throw Failure("target pre-send capture file is missing or unreadable: \(targetPreCaptured)")
         }
-        guard targetPreContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw Failure("feedback was prematurely dispatched to target PTY before Send button was clicked (got: \(targetPreContent))")
+        guard targetPreContent.isEmpty else {
+            throw Failure("feedback was prematurely dispatched to target PTY before Send button was clicked (got \(targetPreContent.count) bytes: \(targetPreContent.debugDescription))")
         }
 
         guard FileManager.default.fileExists(atPath: nonTargetPreCaptured),
               let nonTargetPreContent = try? String(contentsOfFile: nonTargetPreCaptured, encoding: .utf8) else {
             throw Failure("non-target pre-send capture file is missing or unreadable: \(nonTargetPreCaptured)")
         }
-        guard nonTargetPreContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw Failure("premature input leaked to non-target PTY before Send button was clicked (got: \(nonTargetPreContent))")
+        guard nonTargetPreContent.isEmpty else {
+            throw Failure("premature input leaked to non-target PTY before Send button was clicked (got \(nonTargetPreContent.count) bytes: \(nonTargetPreContent.debugDescription))")
         }
 
         // Locate Send Feedback UI button ("Send Feedback (1)")
@@ -2303,9 +2329,11 @@ let scenarios: [Scenario] = [
         _ = try d.exec("\(ctl) send '\(targetPost)' --target \(targetPaneId)")
         _ = try d.exec("\(ctl) send '\(nonTargetPost)' --target \(nonTargetPaneId)")
         guard d.wait(for: {
-            FileManager.default.fileExists(atPath: targetPostAck) && FileManager.default.fileExists(atPath: nonTargetPostAck)
+            guard let tAck = try? String(contentsOfFile: targetPostAck, encoding: .utf8),
+                  let ntAck = try? String(contentsOfFile: nonTargetPostAck, encoding: .utf8) else { return false }
+            return tAck == "post_ack\n" && ntAck == "post_ack\n"
         }, timeout: 10) else {
-            throw Failure("stream capture processes did not acknowledge post sentinels after send")
+            throw Failure("stream capture processes did not acknowledge post sentinels with exact framing")
         }
 
         // Compare complete expected feedback message to verify exact-once delivery in target pane
@@ -2313,18 +2341,12 @@ let scenarios: [Scenario] = [
               let rawTargetFeedback = try? String(contentsOfFile: targetPostCaptured, encoding: .utf8) else {
             throw Failure("target post-send capture file is missing or unreadable: \(targetPostCaptured)")
         }
-        let trimmedTargetFeedback = rawTargetFeedback.trimmingCharacters(in: .whitespacesAndNewlines)
         let expectedHeader = "Review feedback for worktree 'diff_repo' (base: main):"
         let expectedFile = "## review_test.txt"
         let expectedLine = "• Line 2: \(uniqueComment)"
-        let expectedMessage = """
-        \(expectedHeader)
-
-        \(expectedFile)
-        \(expectedLine)
-        """
-        guard trimmedTargetFeedback == expectedMessage.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            throw Failure("feedback message did not match expected exact-once format.\nExpected:\n\(expectedMessage)\n\nGot:\n\(trimmedTargetFeedback)")
+        let expectedMessage = "\(expectedHeader)\n\n\(expectedFile)\n\(expectedLine)\n"
+        guard rawTargetFeedback == expectedMessage else {
+            throw Failure("feedback message did not match expected exact-once format.\nExpected:\n\(expectedMessage.debugDescription)\n\nGot:\n\(rawTargetFeedback.debugDescription)")
         }
 
         // Verify non-target pane received zero feedback bytes
@@ -2332,8 +2354,8 @@ let scenarios: [Scenario] = [
               let rawNonTargetFeedback = try? String(contentsOfFile: nonTargetPostCaptured, encoding: .utf8) else {
             throw Failure("non-target post-send capture file is missing or unreadable: \(nonTargetPostCaptured)")
         }
-        guard rawNonTargetFeedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw Failure("non-target pane received feedback intended exclusively for target pane (got: \(rawNonTargetFeedback))")
+        guard rawNonTargetFeedback.isEmpty else {
+            throw Failure("non-target pane received feedback intended exclusively for target pane (got \(rawNonTargetFeedback.count) bytes: \(rawNonTargetFeedback.debugDescription))")
         }
 
         // Dismiss review session via Close button (or Escape)
