@@ -39,14 +39,17 @@ struct AboutControllerCoverageTests {
         #expect(String(describing: type(of: window.contentView!)).contains("NSHostingView"))
     }
 
-    @Test func showOrdersFrontAndHideCloses() {
+    @Test func showOrdersOutLegacyWindowAndPresentsNotice() {
         let controller = AboutController()
         let window = makePanelWindow()
         controller.window = window
         controller.windowDidLoad()
+        window.makeKeyAndOrderFront(nil)
 
         controller.show()
-        #expect(window.isVisible)
+        // AboutController routes presentation through in-terminal AboutNotice
+        // and explicitly orders out the legacy Cocoa window.
+        #expect(!window.isVisible)
 
         controller.hide()
         #expect(!window.isVisible)

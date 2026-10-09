@@ -19,7 +19,7 @@ struct SecureInputOverlayTests {
         let hosting = NSHostingView(rootView: SecureInputOverlay())
         hosting.frame = NSRect(x: 0, y: 0, width: 60, height: 60)
 
-        let screenOrigin = NSScreen.main?.visibleFrame.origin ?? .zero
+        let screenOrigin = NSPoint(x: -20000, y: -20000)
         let window = NSWindow(
             contentRect: NSRect(origin: screenOrigin, size: hosting.frame.size),
             styleMask: [.borderless], backing: .buffered, defer: false)

@@ -3403,6 +3403,442 @@ let scenarios: [Scenario] = [
             throw Failure("recovered focused pane does not match original pane: expected \(originalPaneId), got \(try d.focusedPaneId() ?? "nil")")
         }
     }),
+    ("ctl-status-progress", "exercises takoctl status set/get/clear and progress percentage/pause/error/clear indicators with JSON assertions, negative controls, and unassisted keyboard recovery", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("stat_init_tty"))")
+        let initTty = try d.file("stat_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for status-progress journey")
+        }
+
+        // 1. Status set
+        let setJson = try d.exec("\(ctl) status set working --text compiling --target \(originalPaneId) --json")
+        guard setJson.contains("\"status\":\"working\"") || setJson.contains("\"status\": \"working\"") else {
+            throw Failure("status set did not report working status: \(setJson)")
+        }
+        guard setJson.contains("\"text\":\"compiling\"") || setJson.contains("\"text\": \"compiling\"") else {
+            throw Failure("status set did not report status text 'compiling': \(setJson)")
+        }
+
+        // 2. Status get
+        let getJson = try d.exec("\(ctl) status get --target \(originalPaneId) --json")
+        guard getJson.contains("\"status\":\"working\"") || getJson.contains("\"status\": \"working\"") else {
+            throw Failure("status get did not report working status: \(getJson)")
+        }
+        guard getJson.contains("\"text\":\"compiling\"") || getJson.contains("\"text\": \"compiling\"") else {
+            throw Failure("status get did not report status text 'compiling': \(getJson)")
+        }
+
+        // Negative control: un-set text is absent
+        let wrongText = "unexpected_compilation_failure_error"
+        guard !getJson.contains(wrongText) else {
+            throw Failure("negative control failed: status unexpectedly contained '\(wrongText)': \(getJson)")
+        }
+
+        // 3. Progress set, pause, error, clear
+        let progSet = try d.exec("\(ctl) progress 45 --target \(originalPaneId) --json")
+        guard progSet.contains("\"ok\":true") || progSet.contains("\"ok\": true") else {
+            throw Failure("progress set 45 failed: \(progSet)")
+        }
+
+        let progPause = try d.exec("\(ctl) progress pause 60 --target \(originalPaneId) --json")
+        guard progPause.contains("\"ok\":true") || progPause.contains("\"ok\": true") else {
+            throw Failure("progress pause 60 failed: \(progPause)")
+        }
+
+        let progError = try d.exec("\(ctl) progress error --target \(originalPaneId) --json")
+        guard progError.contains("\"ok\":true") || progError.contains("\"ok\": true") else {
+            throw Failure("progress error failed: \(progError)")
+        }
+
+        let progClear = try d.exec("\(ctl) progress clear --target \(originalPaneId) --json")
+        guard progClear.contains("\"ok\":true") || progClear.contains("\"ok\": true") else {
+            throw Failure("progress clear failed: \(progClear)")
+        }
+
+        // 4. Status clear
+        let clearJson = try d.exec("\(ctl) status clear --target \(originalPaneId) --json")
+        guard clearJson.contains("\"ok\":true") || clearJson.contains("\"ok\": true") else {
+            throw Failure("status clear failed: \(clearJson)")
+        }
+
+        let getAfterClear = try d.exec("\(ctl) status get --target \(originalPaneId) --json")
+        guard !getAfterClear.contains("\"status\":\"working\"") && !getAfterClear.contains("\"text\":\"compiling\"") else {
+            throw Failure("status get still contained cleared status or text: \(getAfterClear)")
+        }
+
+        // 5. Unassisted keyboard recovery
+        d.activate()
+        usleep(300_000)
+        let witnessFile = d.path("status_kb_witness.txt")
+        try d.run("tty > \(d.path("stat_rec_tty")) && echo 'status_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "status_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after status-progress commands")
+        }
+        let recoveredTty = try d.file("stat_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("ctl-activity", "records automated input activity attribution, verifies activity entries via JSON, exports log to file, clears log, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("act_init_tty"))")
+        let initTty = try d.file("act_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for activity journey")
+        }
+
+        // 1. Clear any prior activity and permit external automation on this pane
+        _ = try? d.exec("\(ctl) activity clear \(originalPaneId) --json")
+        _ = try d.exec("\(ctl) input allow-automation --target \(originalPaneId)")
+
+        // 2. Perform automated input with client attribution
+        let agentClient = "e2e-test-agent"
+        try d.exec("\(ctl) type 'echo act_witness_ok' --target \(originalPaneId) --client \(agentClient)")
+        _ = try? d.exec("\(ctl) key Return --target \(originalPaneId)")
+        usleep(400_000)
+
+        // 3. Inspect activity log
+        var activityJson = ""
+        guard d.wait(for: {
+            guard let out = try? d.exec("\(ctl) activity \(originalPaneId) --json"),
+                  out.contains(agentClient),
+                  out.contains("\"action\":\"type\"") || out.contains("\"action\": \"type\"") else {
+                return false
+            }
+            activityJson = out
+            return true
+        }, timeout: 5) else {
+            throw Failure("activity log did not record attributed client '\(agentClient)': \(activityJson)")
+        }
+
+        // 4. Export activity log to file
+        let exportPath = d.path("activity_export.json")
+        let expResult = try d.exec("\(ctl) activity --export '\(exportPath)' \(originalPaneId) --json")
+        guard expResult.contains("\"exported\"") || expResult.contains("exported") else {
+            throw Failure("exporting activity log failed: \(expResult)")
+        }
+        let exportedContent = try d.file("activity_export.json")
+        guard exportedContent.contains(agentClient), exportedContent.contains("type") else {
+            throw Failure("exported activity log file missing expected entries: \(exportedContent)")
+        }
+
+        // 5. Clear activity log
+        let clearResult = try d.exec("\(ctl) activity clear \(originalPaneId) --json")
+        guard clearResult.contains("\"cleared\":true") || clearResult.contains("\"cleared\": true") else {
+            throw Failure("activity clear failed: \(clearResult)")
+        }
+
+        // 6. Negative control: verify entries are cleared
+        let afterClear = try d.exec("\(ctl) activity \(originalPaneId) --json")
+        guard !afterClear.contains(agentClient) else {
+            throw Failure("negative control failed: activity log still contained '\(agentClient)' after clear: \(afterClear)")
+        }
+
+        // 7. Unassisted keyboard recovery
+        d.activate()
+        usleep(300_000)
+        let witnessFile = d.path("act_kb_witness.txt")
+        try d.run("tty > \(d.path("act_rec_tty")) && echo 'activity_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "activity_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after activity commands")
+        }
+        let recoveredTty = try d.file("act_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("ctl-triggers", "registers passive regex triggers via takoctl, verifies active triggers in JSON list, removes specific trigger, clears all dynamic triggers, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("trig_init_tty"))")
+        let initTty = try d.file("trig_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for triggers journey")
+        }
+
+        // 1. Clear any prior dynamic triggers
+        _ = try? d.exec("\(ctl) triggers clear --json")
+
+        // 2. Add dynamic passive regex trigger
+        let triggerPattern = "FATAL_ERROR_[0-9]+"
+        let addJson = try d.exec("\(ctl) triggers add '\(triggerPattern)' --action highlight --color red --style box --all-focus --json")
+        guard addJson.contains("FATAL_ERROR_"),
+              addJson.contains("\"action\":\"highlight\"") || addJson.contains("\"action\": \"highlight\"") else {
+            throw Failure("triggers add did not return expected trigger definition: \(addJson)")
+        }
+
+        // Extract trigger id
+        guard let idMatch = addJson.range(of: "\"id\"\\s*:\\s*\"([a-f0-9\\-]+)\"", options: .regularExpression) else {
+            throw Failure("failed to extract trigger ID from add response: \(addJson)")
+        }
+        let idSubstr = String(addJson[idMatch])
+        let triggerId = idSubstr.components(separatedBy: "\"")[3]
+
+        // 3. List triggers and verify
+        let listJson = try d.exec("\(ctl) triggers list --json")
+        guard listJson.contains(triggerId), listJson.contains("FATAL_ERROR_") else {
+            throw Failure("triggers list missing newly added trigger: \(listJson)")
+        }
+
+        // 4. Negative control: adding invalid regex pattern fails
+        let invalidRes = try? d.exec("\(ctl) triggers add '[unclosed-regex' --json")
+        guard invalidRes == nil || invalidRes?.contains("\"ok\":false") == true || invalidRes?.contains("\"ok\": false") == true else {
+            throw Failure("negative control failed: invalid regex pattern was accepted")
+        }
+
+        // 5. Remove the specific trigger by ID
+        let rmJson = try d.exec("\(ctl) triggers remove \(triggerId) --json")
+        guard rmJson.contains("\"removed\"") else {
+            throw Failure("triggers remove failed: \(rmJson)")
+        }
+        let listAfterRm = try d.exec("\(ctl) triggers list --json")
+        guard !listAfterRm.contains(triggerId) else {
+            throw Failure("triggers list still contained removed trigger ID \(triggerId): \(listAfterRm)")
+        }
+
+        // 6. Add another temporary trigger, then clear all
+        _ = try d.exec("\(ctl) triggers add 'TEMP_TRIG' --action notify --title 'Temp Notice' --json")
+        let clearJson = try d.exec("\(ctl) triggers clear --json")
+        guard clearJson.contains("\"cleared\":true") || clearJson.contains("\"cleared\": true") else {
+            throw Failure("triggers clear failed: \(clearJson)")
+        }
+        let listAfterClear = try d.exec("\(ctl) triggers list --json")
+        guard !listAfterClear.contains("TEMP_TRIG") else {
+            throw Failure("triggers list still contained dynamic trigger after clear: \(listAfterClear)")
+        }
+
+        // 7. Unassisted keyboard recovery
+        d.activate()
+        usleep(300_000)
+        let witnessFile = d.path("trig_kb_witness.txt")
+        try d.run("tty > \(d.path("trig_rec_tty")) && echo 'triggers_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "triggers_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after triggers commands")
+        }
+        let recoveredTty = try d.file("trig_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("ctl-resume", "binds session resume command and directory to pane, inspects state, verifies approval flag, clears resume binding, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("res_init_tty"))")
+        let initTty = try d.file("res_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for resume journey")
+        }
+
+        let resumeProj = d.work.appendingPathComponent("resume_target_repo")
+        try FileManager.default.createDirectory(at: resumeProj, withIntermediateDirectories: true)
+
+        // 1. Set resume binding on current pane
+        let setRes = try d.exec("\(ctl) resume set --cwd '\(resumeProj.path)' --target \(originalPaneId) -- e2e-worker --session s-42")
+        guard setRes.contains("\"ok\":true") || setRes.contains("\"ok\": true") || setRes.contains("e2e-worker") else {
+            throw Failure("resume set command failed: \(setRes)")
+        }
+
+        // 2. Show resume state via JSON
+        let showJson = try d.exec("\(ctl) resume show \(originalPaneId) --json")
+        guard showJson.contains("\"has_resume\":true") || showJson.contains("\"has_resume\": true") else {
+            throw Failure("resume show did not indicate has_resume: true: \(showJson)")
+        }
+        guard showJson.contains("e2e-worker"), showJson.contains("s-42"), showJson.contains(resumeProj.path) else {
+            throw Failure("resume show missing expected command vector or cwd: \(showJson)")
+        }
+
+        // 3. Approve resume
+        let approveRes = try d.exec("\(ctl) resume approve --prefix e2e-worker \(originalPaneId) --json")
+        guard approveRes.contains("\"ok\":true") || approveRes.contains("\"ok\": true") || approveRes.contains("approved") else {
+            throw Failure("resume approve failed: \(approveRes)")
+        }
+        let showApproved = try d.exec("\(ctl) resume show \(originalPaneId) --json")
+        guard showApproved.contains("\"approved\":true") || showApproved.contains("\"approved\": true") else {
+            throw Failure("resume show did not reflect approved state: \(showApproved)")
+        }
+
+        // 4. Clear resume binding
+        let clearRes = try d.exec("\(ctl) resume clear \(originalPaneId) --json")
+        guard clearRes.contains("\"cleared\":true") || clearRes.contains("\"cleared\": true") || clearRes.contains("Resume session cleared") else {
+            throw Failure("resume clear failed: \(clearRes)")
+        }
+
+        // 5. Negative control: resume show after clear reflects has_resume: false
+        let showCleared = try d.exec("\(ctl) resume show \(originalPaneId) --json")
+        guard showCleared.contains("\"has_resume\":false") || showCleared.contains("\"has_resume\": false") else {
+            throw Failure("negative control failed: resume show still reported has_resume: true after clear: \(showCleared)")
+        }
+
+        // 6. Unassisted keyboard recovery
+        d.activate()
+        usleep(300_000)
+        let witnessFile = d.path("res_kb_witness.txt")
+        try d.run("tty > \(d.path("res_rec_tty")) && echo 'resume_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "resume_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after resume commands")
+        }
+        let recoveredTty = try d.file("res_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("ctl-grants", "creates scoped authorization grants via takoctl, verifies active grant list with scopes, revokes grant token, tests negative controls, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("grant_init_tty"))")
+        let initTty = try d.file("grant_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for grants journey")
+        }
+
+        // 0. Negative control: attempting to create a grant when attenuating away approval scope fails
+        let unauthRes = try? d.exec("\(ctl) grant create --client rogue --scope read,input --json")
+        guard unauthRes == nil || unauthRes?.contains("missingScope") == true || unauthRes?.contains("\"ok\":false") == true || unauthRes?.contains("\"ok\": false") == true else {
+            throw Failure("negative control failed: grant create without approval scope unexpectedly succeeded: \(String(describing: unauthRes))")
+        }
+
+        // 1. Create a scoped authorization grant with approval authority
+        let clientName = "e2e-grant-client"
+        let createJson = try d.exec("\(ctl) grant create --client \(clientName) --scope approval,read,input --desc 'e2e scoped test grant' --json")
+        guard createJson.contains(clientName),
+              createJson.contains("read"),
+              createJson.contains("input") else {
+            throw Failure("grant create failed or missing expected client/scopes: \(createJson)")
+        }
+
+        // Extract grant token
+        guard let tokenMatch = createJson.range(of: "\"token\"\\s*:\\s*\"([^\"]+)\"", options: .regularExpression) else {
+            throw Failure("failed to extract token from grant create response: \(createJson)")
+        }
+        let tokenSubstr = String(createJson[tokenMatch])
+        let grantToken = tokenSubstr.components(separatedBy: "\"")[3]
+
+        // 2. List grants and assert presence
+        let listJson = try d.exec("\(ctl) grant list --json")
+        guard listJson.contains(clientName), listJson.contains("read"), listJson.contains("input") else {
+            throw Failure("grant list does not contain newly created grant: \(listJson)")
+        }
+
+        // 3. Revoke the grant token
+        let revokeJson = try d.exec("\(ctl) grant revoke \(grantToken) --json")
+        guard revokeJson.contains("\"revoked\":true") || revokeJson.contains("\"revoked\": true") else {
+            throw Failure("grant revoke failed to report revoked: true: \(revokeJson)")
+        }
+
+        // 4. Negative control: revoking already revoked token returns revoked: false
+        let reRevokeJson = try d.exec("\(ctl) grant revoke \(grantToken) --json")
+        guard reRevokeJson.contains("\"revoked\":false") || reRevokeJson.contains("\"revoked\": false") else {
+            throw Failure("negative control failed: re-revoking token unexpectedly returned true: \(reRevokeJson)")
+        }
+
+        // 5. Negative control: grant list no longer contains the revoked token
+        let listAfterRevoke = try d.exec("\(ctl) grant list --json")
+        guard !listAfterRevoke.contains(grantToken) else {
+            throw Failure("grant list still contains revoked token: \(listAfterRevoke)")
+        }
+
+        // 6. Unassisted keyboard recovery
+        d.activate()
+        usleep(300_000)
+        let witnessFile = d.path("grant_kb_witness.txt")
+        try d.run("tty > \(d.path("grant_rec_tty")) && echo 'grants_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "grants_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after grant commands")
+        }
+        let recoveredTty = try d.file("grant_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("ctl-tasks", "creates git worktree task on repo, queries task list and status via takoctl, finishes task, and recovers unassisted keyboard focus", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("tty > \(d.path("task_init_tty"))")
+        let initTty = try d.file("task_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let originalPaneId = try d.focusedPaneId() else {
+            throw Failure("failed to discover focused pane ID for tasks journey")
+        }
+
+        // 1. Set up an isolated git repository fixture
+        let taskRepo = d.work.appendingPathComponent("task_fixture_repo")
+        try FileManager.default.createDirectory(at: taskRepo, withIntermediateDirectories: true)
+        _ = try d.exec("git init -b main '\(taskRepo.path)' && cd '\(taskRepo.path)' && git config user.email 'alex@prod.codes' && git config user.name 'Alex' && echo 'base repo' > README.md && git add README.md && git commit -m 'Initial base commit'")
+
+        // 2. Create git worktree task
+        let taskName = "e2e-task-branch"
+        let createRes = try d.exec("\(ctl) task create \(taskName) --branch feat/e2e-task --base main --path '\(taskRepo.path)' --json")
+        guard createRes.contains("\"created\":true") || createRes.contains("\"created\": true"),
+              createRes.contains(taskName) else {
+            throw Failure("task create failed or did not report creation: \(createRes)")
+        }
+        let taskPaneId = try d.focusedPaneId()
+
+        // 3. List tasks and verify
+        let listRes = try d.exec("\(ctl) task list '\(taskRepo.path)' --json")
+        guard listRes.contains(taskName), listRes.contains("feat/e2e-task") else {
+            throw Failure("task list does not contain newly created task: \(listRes)")
+        }
+
+        // 4. Query task status
+        let statusRes = try d.exec("\(ctl) task status \(taskName) --path '\(taskRepo.path)' --json")
+        guard statusRes.contains(taskName), statusRes.contains("feat/e2e-task") else {
+            throw Failure("task status query failed: \(statusRes)")
+        }
+
+        // 5. Negative control: status on non-existent task fails
+        let nonExistentRes = try? d.exec("\(ctl) task status non_existent_task_xyz --path '\(taskRepo.path)' --json")
+        guard nonExistentRes == nil || nonExistentRes?.contains("\"ok\":false") == true || nonExistentRes?.contains("\"ok\": false") == true else {
+            throw Failure("negative control failed: non-existent task status succeeded unexpectedly")
+        }
+
+        // 6. Finish task and cleanly close task tab
+        _ = try? d.exec("\(ctl) task finish \(taskName) --path '\(taskRepo.path)' --json")
+        if let tid = taskPaneId, tid != originalPaneId {
+            _ = try? d.exec("\(ctl) close --target \(tid) --json")
+        }
+        _ = try? d.exec("\(ctl) focus \(originalPaneId)")
+
+        // 7. Unassisted keyboard recovery
+        d.activate()
+        _ = try? d.exec("\(ctl) focus \(originalPaneId)")
+        usleep(400_000)
+        let witnessFile = d.path("task_kb_witness.txt")
+        try d.run("tty > \(d.path("task_rec_tty")) && echo 'task_kb_ok' > '\(witnessFile)'")
+        guard d.wait(for: {
+            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "task_kb_ok\n"
+        }, timeout: 6) else {
+            throw Failure("terminal keyboard input was not functional after task commands")
+        }
+        let recoveredTty = try d.file("task_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard recoveredTty == initTty else {
+            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
+        }
+        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
+            throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
 ]
 
 // MARK: - Main

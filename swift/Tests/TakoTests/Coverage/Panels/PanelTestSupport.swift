@@ -27,18 +27,26 @@ import SwiftUI
 // way a live app would; that is the only interaction technique used below.
 
 @MainActor
+final class OffscreenPanelWindow: NSWindow {
+    override func center() {
+        setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    }
+}
+
+@MainActor
 func makePanelWindow(size: NSSize = NSSize(width: 480, height: 320)) -> NSWindow {
     // A test host is a background app whose windows come and go; left to
     // automatic termination, macOS sends it a quit once none is open, and
     // the run ends midway with exit status 0.
     ProcessInfo.processInfo.disableAutomaticTermination("windows under test")
-    let origin = NSScreen.main.map { NSPoint(x: $0.visibleFrame.minX + 40, y: $0.visibleFrame.minY + 40) } ?? .zero
-    let window = NSWindow(
+    let origin = NSPoint(x: -20000, y: -20000)
+    let window = OffscreenPanelWindow(
         contentRect: NSRect(origin: origin, size: size),
         styleMask: [.titled, .closable, .resizable],
         backing: .buffered,
         defer: false)
     window.isReleasedWhenClosed = false
+    window.alphaValue = 0.0
     return window
 }
 

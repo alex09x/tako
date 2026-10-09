@@ -375,7 +375,7 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     if client.is_none() {
         client = args.get("client").and_then(Value::as_str).map(String::from);
     }
-    if token.is_none() {
+    if token.is_none() && cmd != "grant" {
         token = args.get("token").and_then(Value::as_str).map(String::from);
     }
     Ok(Options {
