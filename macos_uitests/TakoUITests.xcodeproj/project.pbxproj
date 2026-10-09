@@ -7,82 +7,85 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0BBA17CB23C4C4F651F671F8 /* AppKitExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44EAA1F821BF07A504272EA /* AppKitExtensions.swift */; };
-		18DDF87BF692802DF2659959 /* TakoCustomConfigCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0657BBF40913CA219453DD64 /* TakoCustomConfigCase.swift */; };
-		4AEECF4013DD25A534D149B8 /* TakoCoreTabBarStressUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40FF59005196F6FFDD3F2D0 /* TakoCoreTabBarStressUITests.swift */; };
-		5F282A10E5F3DE6AE672B090 /* TakoMouseStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8CF4BE12A9877FEF05F328 /* TakoMouseStateTests.swift */; };
-		90D3876F66DECF60E3D2B10F /* TakoTitlebarTabsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67627649795E6621B1A84F00 /* TakoTitlebarTabsUITests.swift */; };
-		9B1E0303894D4A3CB9BA5147 /* TakoCommandPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F285CAF3FB747C613BCDEA50 /* TakoCommandPaletteTests.swift */; };
-		A7AED4F1B9FB3483D818090E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD6A5C4A6D6AFF0CE7B573F /* main.swift */; };
-		C3BA05BF4212EFACF075F6D6 /* TakoTitleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F72B6AC18AE4D41960F7E6A /* TakoTitleUITests.swift */; };
-		DFFEFF257209CD7D23EED7AD /* TakoThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DDEFCDCB13A58EE33F4B12 /* TakoThemeTests.swift */; };
-		E5AAB4659789FA9D208A1CD3 /* TakoWindowPositionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5D436852D2CDD22F8E4B11 /* TakoWindowPositionUITests.swift */; };
+		2F319223547403BB972822BD /* TakoWindowPositionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECE1E2BC399427B17935D37 /* TakoWindowPositionUITests.swift */; };
+		59B855A1A247FA31E198C7EA /* TakoCoreTabBarStressUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90D128AECA5FF70F30C56F4 /* TakoCoreTabBarStressUITests.swift */; };
+		637C0279CE23670AA6966F2F /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF1565C2F53CAF3C63DA187 /* main.swift */; };
+		728BB8164DE52889B9703EB9 /* TakoFeatureJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE74F556D662039A0D5E772 /* TakoFeatureJourneysUITests.swift */; };
+		791B6078427C8A66EFA0C103 /* TakoCustomConfigCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5BAB39F3B7E573BC26B6F2 /* TakoCustomConfigCase.swift */; };
+		89FC442308EAB82CA55ADBD4 /* AppKitExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB47830164C65595824C6153 /* AppKitExtensions.swift */; };
+		92CA200F7A2A92F893136077 /* TakoCommandPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99FB293B04462CE7E8BF1F47 /* TakoCommandPaletteTests.swift */; };
+		B1EF81C3B4BB34C47EEBABCE /* TakoThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD06307D9D6E2C656AF861C /* TakoThemeTests.swift */; };
+		B63021D6D1E559461014C776 /* TakoTitlebarTabsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3883A3FC59C602F620A73A1C /* TakoTitlebarTabsUITests.swift */; };
+		D7716E59A7BB64B2080F94F7 /* TakoMouseStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFB519D6DD8E0B0553CB4F3C /* TakoMouseStateTests.swift */; };
+		ED37FD03D25D01D2CBC03D50 /* TakoTitleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA2A95F1CAD009E446A60B0 /* TakoTitleUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		AEA61B2FA2C1DD259AE3EC2C /* PBXContainerItemProxy */ = {
+		F6B3444BA0C66DE07A255991 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 06BE006310C191D6E71E4C74 /* Project object */;
+			containerPortal = CA9E5A631288996FFE035B06 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = D350CED4A8902A93F5732DAA;
+			remoteGlobalIDString = 8D8B1E70199ED5DF172B547E;
 			remoteInfo = TakoCore;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0657BBF40913CA219453DD64 /* TakoCustomConfigCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCustomConfigCase.swift; sourceTree = "<group>"; };
-		22DDEFCDCB13A58EE33F4B12 /* TakoThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoThemeTests.swift; sourceTree = "<group>"; };
-		5B6D160B2588FE0788DED601 /* TakoCore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TakoCore.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		67627649795E6621B1A84F00 /* TakoTitlebarTabsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoTitlebarTabsUITests.swift; sourceTree = "<group>"; };
-		8DD6A5C4A6D6AFF0CE7B573F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		8F72B6AC18AE4D41960F7E6A /* TakoTitleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoTitleUITests.swift; sourceTree = "<group>"; };
-		9F5D436852D2CDD22F8E4B11 /* TakoWindowPositionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoWindowPositionUITests.swift; sourceTree = "<group>"; };
-		C44EAA1F821BF07A504272EA /* AppKitExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppKitExtensions.swift; sourceTree = "<group>"; };
-		D2DF36E1BDD11171B8F9AE4A /* TakoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TakoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F285CAF3FB747C613BCDEA50 /* TakoCommandPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCommandPaletteTests.swift; sourceTree = "<group>"; };
-		F40FF59005196F6FFDD3F2D0 /* TakoCoreTabBarStressUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCoreTabBarStressUITests.swift; sourceTree = "<group>"; };
-		FC8CF4BE12A9877FEF05F328 /* TakoMouseStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoMouseStateTests.swift; sourceTree = "<group>"; };
+		0FA2A95F1CAD009E446A60B0 /* TakoTitleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoTitleUITests.swift; sourceTree = "<group>"; };
+		1DD06307D9D6E2C656AF861C /* TakoThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoThemeTests.swift; sourceTree = "<group>"; };
+		2CE74F556D662039A0D5E772 /* TakoFeatureJourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoFeatureJourneysUITests.swift; sourceTree = "<group>"; };
+		3883A3FC59C602F620A73A1C /* TakoTitlebarTabsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoTitlebarTabsUITests.swift; sourceTree = "<group>"; };
+		4A5BAB39F3B7E573BC26B6F2 /* TakoCustomConfigCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCustomConfigCase.swift; sourceTree = "<group>"; };
+		4ECE1E2BC399427B17935D37 /* TakoWindowPositionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoWindowPositionUITests.swift; sourceTree = "<group>"; };
+		8CF1565C2F53CAF3C63DA187 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		99FB293B04462CE7E8BF1F47 /* TakoCommandPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCommandPaletteTests.swift; sourceTree = "<group>"; };
+		9C6B2B7A7856C43105BA714C /* TakoCore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TakoCore.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB47830164C65595824C6153 /* AppKitExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppKitExtensions.swift; sourceTree = "<group>"; };
+		B9A4F0BD0BE757A56B7A58C5 /* TakoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TakoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C90D128AECA5FF70F30C56F4 /* TakoCoreTabBarStressUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCoreTabBarStressUITests.swift; sourceTree = "<group>"; };
+		DFB519D6DD8E0B0553CB4F3C /* TakoMouseStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoMouseStateTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		48E2B121FACE2105C7C8CBEF /* AppHost */ = {
+		1E98BF188680D514EEB3AECF /* AppHost */ = {
 			isa = PBXGroup;
 			children = (
-				8DD6A5C4A6D6AFF0CE7B573F /* main.swift */,
+				8CF1565C2F53CAF3C63DA187 /* main.swift */,
 			);
 			path = AppHost;
 			sourceTree = "<group>";
 		};
-		50CFC068AEE9839B0F4EA443 /* TakoUITests */ = {
+		2349F0F0073CFF30A63F7546 /* TakoUITests */ = {
 			isa = PBXGroup;
 			children = (
-				C44EAA1F821BF07A504272EA /* AppKitExtensions.swift */,
-				F285CAF3FB747C613BCDEA50 /* TakoCommandPaletteTests.swift */,
-				0657BBF40913CA219453DD64 /* TakoCustomConfigCase.swift */,
-				FC8CF4BE12A9877FEF05F328 /* TakoMouseStateTests.swift */,
-				22DDEFCDCB13A58EE33F4B12 /* TakoThemeTests.swift */,
-				67627649795E6621B1A84F00 /* TakoTitlebarTabsUITests.swift */,
-				8F72B6AC18AE4D41960F7E6A /* TakoTitleUITests.swift */,
-				9F5D436852D2CDD22F8E4B11 /* TakoWindowPositionUITests.swift */,
-				F40FF59005196F6FFDD3F2D0 /* TakoCoreTabBarStressUITests.swift */,
+				AB47830164C65595824C6153 /* AppKitExtensions.swift */,
+				99FB293B04462CE7E8BF1F47 /* TakoCommandPaletteTests.swift */,
+				C90D128AECA5FF70F30C56F4 /* TakoCoreTabBarStressUITests.swift */,
+				4A5BAB39F3B7E573BC26B6F2 /* TakoCustomConfigCase.swift */,
+				2CE74F556D662039A0D5E772 /* TakoFeatureJourneysUITests.swift */,
+				DFB519D6DD8E0B0553CB4F3C /* TakoMouseStateTests.swift */,
+				1DD06307D9D6E2C656AF861C /* TakoThemeTests.swift */,
+				3883A3FC59C602F620A73A1C /* TakoTitlebarTabsUITests.swift */,
+				0FA2A95F1CAD009E446A60B0 /* TakoTitleUITests.swift */,
+				4ECE1E2BC399427B17935D37 /* TakoWindowPositionUITests.swift */,
 			);
 			path = TakoUITests;
 			sourceTree = "<group>";
 		};
-		A7694E2E3696D4FAE9B36EAC = {
+		3CCF61FB75CC32EF05DB89FC = {
 			isa = PBXGroup;
 			children = (
-				48E2B121FACE2105C7C8CBEF /* AppHost */,
-				50CFC068AEE9839B0F4EA443 /* TakoUITests */,
-				FC5909F0359594F386473A91 /* Products */,
+				1E98BF188680D514EEB3AECF /* AppHost */,
+				2349F0F0073CFF30A63F7546 /* TakoUITests */,
+				D081758BA1D54A735965363E /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		FC5909F0359594F386473A91 /* Products */ = {
+		D081758BA1D54A735965363E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D2DF36E1BDD11171B8F9AE4A /* TakoUITests.xctest */,
-				5B6D160B2588FE0788DED601 /* TakoCore.app */,
+				9C6B2B7A7856C43105BA714C /* TakoCore.app */,
+				B9A4F0BD0BE757A56B7A58C5 /* TakoUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,30 +93,30 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		18E54233A31500076993018D /* TakoUITests */ = {
+		11F958AC2868B63E2380FA73 /* TakoUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9C2D0789310927CB5854A21F /* Build configuration list for PBXNativeTarget "TakoUITests" */;
+			buildConfigurationList = C24B5AF2D010161A7D1DEFB9 /* Build configuration list for PBXNativeTarget "TakoUITests" */;
 			buildPhases = (
-				A001A93BE843A806EE45AE86 /* Sources */,
+				C80897328580DD3CEAA493A5 /* Sources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				44896477DB26BDE756D84176 /* PBXTargetDependency */,
+				D2327F7DC0C59F79CE8A3143 /* PBXTargetDependency */,
 			);
 			name = TakoUITests;
 			packageProductDependencies = (
 			);
 			productName = TakoUITests;
-			productReference = D2DF36E1BDD11171B8F9AE4A /* TakoUITests.xctest */;
+			productReference = B9A4F0BD0BE757A56B7A58C5 /* TakoUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		D350CED4A8902A93F5732DAA /* TakoCore */ = {
+		8D8B1E70199ED5DF172B547E /* TakoCore */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D1DAADC614E323143ABB7E99 /* Build configuration list for PBXNativeTarget "TakoCore" */;
+			buildConfigurationList = 34B5626BC6B15CF7F296A11D /* Build configuration list for PBXNativeTarget "TakoCore" */;
 			buildPhases = (
-				1BD6E0E7ACDED2B14FDE7C09 /* Sources */,
-				649F7A0E4268E60CD94FD003 /* Build the real app bundle */,
+				479A953A1003FCD607F37FDE /* Sources */,
+				1CAB32935CCC4E971F267FC7 /* Build the real app bundle */,
 			);
 			buildRules = (
 			);
@@ -123,51 +126,51 @@
 			packageProductDependencies = (
 			);
 			productName = TakoCore;
-			productReference = 5B6D160B2588FE0788DED601 /* TakoCore.app */;
+			productReference = 9C6B2B7A7856C43105BA714C /* TakoCore.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		06BE006310C191D6E71E4C74 /* Project object */ = {
+		CA9E5A631288996FFE035B06 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					18E54233A31500076993018D = {
+					11F958AC2868B63E2380FA73 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
-						TestTargetID = D350CED4A8902A93F5732DAA;
+						TestTargetID = 8D8B1E70199ED5DF172B547E;
 					};
-					D350CED4A8902A93F5732DAA = {
+					8D8B1E70199ED5DF172B547E = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
 					};
 				};
 			};
-			buildConfigurationList = 8F6F297AB823B45A0D899ADB /* Build configuration list for PBXProject "TakoUITests" */;
+			buildConfigurationList = 65EE5A34A7A901C8325850CB /* Build configuration list for PBXProject "TakoUITests" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
 				en,
 			);
-			mainGroup = A7694E2E3696D4FAE9B36EAC;
+			mainGroup = 3CCF61FB75CC32EF05DB89FC;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = FC5909F0359594F386473A91 /* Products */;
+			productRefGroup = D081758BA1D54A735965363E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				18E54233A31500076993018D /* TakoUITests */,
-				D350CED4A8902A93F5732DAA /* TakoCore */,
+				8D8B1E70199ED5DF172B547E /* TakoCore */,
+				11F958AC2868B63E2380FA73 /* TakoUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		649F7A0E4268E60CD94FD003 /* Build the real app bundle */ = {
+		1CAB32935CCC4E971F267FC7 /* Build the real app bundle */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -184,102 +187,48 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\nif python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nelse\n  # Compiling the UI tests is deliberately not held hostage to the\n  # app build: the tests are what this project exists to build, and\n  # they skip themselves outside a manual Xcode IDE run anyway. Fail\n  # loudly in the build log instead, and leave the placeholder\n  # product so the test bundle still has a Target Application.\n  # It still needs signing itself, since CODE_SIGNING_ALLOWED is\n  # off for this whole target (see the setting's own comment above).\n  echo \"warning: scripts/build-macapp.py did not produce target/macapp/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md.\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nfi\n";
+			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\nif TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp-uitest/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp-uitest/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nelse\n  # Compiling the UI tests is deliberately not held hostage to the\n  # app build: the tests are what this project exists to build, and\n  # they skip themselves outside a manual Xcode IDE run anyway. Fail\n  # loudly in the build log instead, and leave the placeholder\n  # product so the test bundle still has a Target Application.\n  # It still needs signing itself, since CODE_SIGNING_ALLOWED is\n  # off for this whole target (see the setting's own comment above).\n  echo \"warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md.\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		1BD6E0E7ACDED2B14FDE7C09 /* Sources */ = {
+		479A953A1003FCD607F37FDE /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A7AED4F1B9FB3483D818090E /* main.swift in Sources */,
+				637C0279CE23670AA6966F2F /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A001A93BE843A806EE45AE86 /* Sources */ = {
+		C80897328580DD3CEAA493A5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0BBA17CB23C4C4F651F671F8 /* AppKitExtensions.swift in Sources */,
-				9B1E0303894D4A3CB9BA5147 /* TakoCommandPaletteTests.swift in Sources */,
-				18DDF87BF692802DF2659959 /* TakoCustomConfigCase.swift in Sources */,
-				5F282A10E5F3DE6AE672B090 /* TakoMouseStateTests.swift in Sources */,
-				DFFEFF257209CD7D23EED7AD /* TakoThemeTests.swift in Sources */,
-				C3BA05BF4212EFACF075F6D6 /* TakoTitleUITests.swift in Sources */,
-				90D3876F66DECF60E3D2B10F /* TakoTitlebarTabsUITests.swift in Sources */,
-				E5AAB4659789FA9D208A1CD3 /* TakoWindowPositionUITests.swift in Sources */,
-				4AEECF4013DD25A534D149B8 /* TakoCoreTabBarStressUITests.swift in Sources */,
+				89FC442308EAB82CA55ADBD4 /* AppKitExtensions.swift in Sources */,
+				92CA200F7A2A92F893136077 /* TakoCommandPaletteTests.swift in Sources */,
+				59B855A1A247FA31E198C7EA /* TakoCoreTabBarStressUITests.swift in Sources */,
+				791B6078427C8A66EFA0C103 /* TakoCustomConfigCase.swift in Sources */,
+				728BB8164DE52889B9703EB9 /* TakoFeatureJourneysUITests.swift in Sources */,
+				D7716E59A7BB64B2080F94F7 /* TakoMouseStateTests.swift in Sources */,
+				B1EF81C3B4BB34C47EEBABCE /* TakoThemeTests.swift in Sources */,
+				ED37FD03D25D01D2CBC03D50 /* TakoTitleUITests.swift in Sources */,
+				B63021D6D1E559461014C776 /* TakoTitlebarTabsUITests.swift in Sources */,
+				2F319223547403BB972822BD /* TakoWindowPositionUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		44896477DB26BDE756D84176 /* PBXTargetDependency */ = {
+		D2327F7DC0C59F79CE8A3143 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D350CED4A8902A93F5732DAA /* TakoCore */;
-			targetProxy = AEA61B2FA2C1DD259AE3EC2C /* PBXContainerItemProxy */;
+			target = 8D8B1E70199ED5DF172B547E /* TakoCore */;
+			targetProxy = F6B3444BA0C66DE07A255991 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		0AFB8A56049156E439979327 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGNING_ALLOWED = NO;
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = TakoCore;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.terminal";
-				PRODUCT_NAME = TakoCore;
-				SDKROOT = macosx;
-				SKIP_INSTALL = NO;
-			};
-			name = Debug;
-		};
-		0BC7A8068241F5B2EE7CF11E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.TakoUITests";
-				SDKROOT = macosx;
-				TEST_TARGET_NAME = TakoCore;
-			};
-			name = Debug;
-		};
-		2ACC3824CFDECD35600CE087 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.TakoUITests";
-				SDKROOT = macosx;
-				TEST_TARGET_NAME = TakoCore;
-			};
-			name = Release;
-		};
-		D976D218A3A2DFEA86691898 /* Debug */ = {
+		10AF26DB0B8239B3511F719B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -346,7 +295,7 @@
 			};
 			name = Debug;
 		};
-		E3F185239A065C2F7DF9C9AF /* Release */ = {
+		94315FB26EA18EB92DE35202 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -406,7 +355,7 @@
 			};
 			name = Release;
 		};
-		EC56FBABBC633FA391906F0B /* Release */ = {
+		9A38BDCCDE848C10A60BC3D5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -420,44 +369,99 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.terminal";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.terminal.uitest";
 				PRODUCT_NAME = TakoCore;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
 			};
 			name = Release;
 		};
+		B467709F3B7C45882319F3D0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.TakoUITests";
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = TakoCore;
+			};
+			name = Debug;
+		};
+		BD9138D1DF89D802066B86A8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = TakoCore;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.terminal.uitest";
+				PRODUCT_NAME = TakoCore;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+			};
+			name = Debug;
+		};
+		EAFBF78F4AAC0C08AAA881E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.tako-core.TakoUITests";
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = TakoCore;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8F6F297AB823B45A0D899ADB /* Build configuration list for PBXProject "TakoUITests" */ = {
+		34B5626BC6B15CF7F296A11D /* Build configuration list for PBXNativeTarget "TakoCore" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D976D218A3A2DFEA86691898 /* Debug */,
-				E3F185239A065C2F7DF9C9AF /* Release */,
+				BD9138D1DF89D802066B86A8 /* Debug */,
+				9A38BDCCDE848C10A60BC3D5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		9C2D0789310927CB5854A21F /* Build configuration list for PBXNativeTarget "TakoUITests" */ = {
+		65EE5A34A7A901C8325850CB /* Build configuration list for PBXProject "TakoUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0BC7A8068241F5B2EE7CF11E /* Debug */,
-				2ACC3824CFDECD35600CE087 /* Release */,
+				10AF26DB0B8239B3511F719B /* Debug */,
+				94315FB26EA18EB92DE35202 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		D1DAADC614E323143ABB7E99 /* Build configuration list for PBXNativeTarget "TakoCore" */ = {
+		C24B5AF2D010161A7D1DEFB9 /* Build configuration list for PBXNativeTarget "TakoUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0AFB8A56049156E439979327 /* Debug */,
-				EC56FBABBC633FA391906F0B /* Release */,
+				B467709F3B7C45882319F3D0 /* Debug */,
+				EAFBF78F4AAC0C08AAA881E1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 06BE006310C191D6E71E4C74 /* Project object */;
+	rootObject = CA9E5A631288996FFE035B06 /* Project object */;
 }

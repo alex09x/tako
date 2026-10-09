@@ -11,7 +11,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="${APP:-target/macapp/Tako.app}"
+APP="${APP:-${TAKO_APP_DIR:-target/macapp-e2e}/Tako.app}"
+if [ ! -d "$APP" ] && [ -d "target/macapp/Tako.app" ]; then
+    APP="target/macapp/Tako.app"
+fi
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
 
 mkdir -p target

@@ -76,13 +76,16 @@ if [ ${#SCENARIOS[@]} -gt 0 ]; then
     SCENARIO_ARGS="${SCENARIO_ARGS% }"
 fi
 
+export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.e2e}"
+export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-e2e}"
+
 if [ $RUN_LOCAL -eq 1 ]; then
     echo "==> Running UI tests locally..."
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/e2e-persist.sh "${SCENARIOS[@]}"
     else
-        python3 scripts/build-macapp.py
-        exec ./scripts/e2e-macapp.sh "${SCENARIOS[@]}"
+        TAKO_BUNDLE_ID="$TAKO_BUNDLE_ID" TAKO_APP_DIR="$TAKO_APP_DIR" python3 scripts/build-macapp.py
+        APP="$TAKO_APP_DIR/Tako.app" exec ./scripts/e2e-macapp.sh "${SCENARIOS[@]}"
     fi
 else
     echo "==> Running UI tests remotely on $REMOTE (local screen stays untouched)..."
@@ -91,7 +94,7 @@ else
     if [ $IS_PERSIST -eq 1 ] || [[ "${SCENARIOS[*]:-}" =~ persist- ]]; then
         exec ./scripts/mac-remote.sh "./scripts/e2e-persist.sh$SCENARIO_ARGS"
     else
-        exec ./scripts/mac-remote.sh "python3 scripts/build-macapp.py && ./scripts/e2e-macapp.sh$SCENARIO_ARGS"
+        exec ./scripts/mac-remote.sh "TAKO_BUNDLE_ID=com.tako-core.terminal.e2e TAKO_APP_DIR=target/macapp-e2e python3 scripts/build-macapp.py && APP=target/macapp-e2e/Tako.app ./scripts/e2e-macapp.sh$SCENARIO_ARGS"
     fi
 fi
 

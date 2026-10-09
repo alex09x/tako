@@ -161,19 +161,46 @@ struct VisualReadBackTests {
         }
         #expect(rep.pixelsWide == w)
         #expect(rep.pixelsHigh == h)
-        var hasNonUniformPixel = false
-        if let firstPixel = rep.colorAt(x: 0, y: 0) {
-            for y in stride(from: 0, to: h, by: max(1, h / 20)) {
-                for x in stride(from: 0, to: w, by: max(1, w / 20)) {
-                    if let color = rep.colorAt(x: x, y: y), color != firstPixel {
-                        hasNonUniformPixel = true
+
+        // 1. Positive assertion: verify stable expected pixel regions in the returned capture.
+        // Row 0 has reverse video attribute ("\u{1b}[7m"), which renders foreground text color
+        // as background across the cell width.
+        let cellHeight = max(1, h / 24)
+        var hasExpectedHeaderHighlight = false
+        for testY in stride(from: 2, to: h - 2, by: max(1, cellHeight / 2)) {
+            for x in stride(from: 10, to: min(w - 10, 150), by: 10) {
+                if let color = rep.colorAt(x: x, y: testY) {
+                    let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
+                    if brightness > 0.3 {
+                        hasExpectedHeaderHighlight = true
                         break
                     }
                 }
-                if hasNonUniformPixel { break }
+            }
+            if hasExpectedHeaderHighlight { break }
+        }
+        #expect(hasExpectedHeaderHighlight, "Expected bright highlighted reverse-video header pixels")
+
+        // 2. Negative control: an empty surface without reverse header must NOT contain bright highlight in row 0
+        let emptySurface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
+        let (emptyPng, ew, eh) = try ControlCommands.captureScreenshot(emptySurface)
+        guard let emptyRep = NSBitmapImageRep(data: emptyPng) else {
+            Issue.record("Failed to decode empty PNG image data")
+            return
+        }
+        let emptyCellHeight = max(1, eh / 24)
+        let emptySampleY = emptyCellHeight / 2
+        var hasHighlightInNegativeControl = false
+        for x in stride(from: 10, to: min(ew - 10, 150), by: 5) {
+            if let color = emptyRep.colorAt(x: x, y: emptySampleY) {
+                let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3.0
+                if brightness > 0.4 {
+                    hasHighlightInNegativeControl = true
+                    break
+                }
             }
         }
-        #expect(hasNonUniformPixel, "Screenshot produced a blank / uniform single-color image")
+        #expect(!hasHighlightInNegativeControl, "Negative control failed: unstyled surface unexpectedly contained highlight pixels in row 0")
     }
 }
 

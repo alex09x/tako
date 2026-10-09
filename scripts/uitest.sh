@@ -26,6 +26,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.uitest}"
+export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-uitest}"
+
 PROJECT=macos_uitests/TakoUITests.xcodeproj
 LOG=target/uitest.log
 mkdir -p target

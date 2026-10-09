@@ -10,6 +10,7 @@
 
 import Testing
 import AppKit
+import SwiftUI
 import Foundation
 @testable import Tako
 
@@ -319,6 +320,58 @@ struct PaneOverviewTests {
         #expect(store.items.count == 30)
         // Store preparation must complete well within 50 ms of the 150 ms total overview budget
         #expect(elapsed < 0.050, "Refreshing 30 panes in store took \(elapsed * 1000) ms, which exceeds the 50 ms data layer budget")
+    }
+
+    // MARK: - Actual UI Presentation Latency Benchmark (Roadmap B6 < 150 ms)
+
+    @Test func overviewActualOpenPresentationLatencyWith30PanesMeetsBudget() throws {
+        let store = PaneOverviewStore.shared
+
+        // Construct 30 simulated surfaces across multiple controllers
+        var controllers: [BaseTerminalController] = []
+        for cIdx in 0..<6 {
+            var surfacesInController: [Tako.SurfaceView] = []
+            for sIdx in 0..<5 {
+                let status: Tako.PaneStatus = switch (cIdx * 5 + sIdx) % 5 {
+                case 0: .running
+                case 1: .error
+                case 2: .done
+                case 3: .waitingForInput
+                default: .idle
+                }
+                let surf = makeSurface(
+                    title: "Pane \(cIdx)-\(sIdx)",
+                    pwd: "/Users/alex/workspace/repo-\(cIdx)",
+                    status: status
+                )
+                surfacesInController.append(surf)
+            }
+            controllers.append(makeController(surfaces: surfacesInController))
+        }
+
+        // Warm up SwiftUI runtime so we measure UI open presentation latency rather than one-time process framework loading
+        let warmupView = NSHostingView(rootView: PaneOverviewView(isPresented: .constant(true)))
+        warmupView.frame = NSRect(x: 0, y: 0, width: 200, height: 200)
+        warmupView.layoutSubtreeIfNeeded()
+
+        // Measure actual UI opening time: from trigger to first presented frame (layout + render pass)
+        let t0 = CFAbsoluteTimeGetCurrent()
+        store.refresh(fromControllers: controllers)
+        let tRefresh = CFAbsoluteTimeGetCurrent() - t0
+
+        let t1 = CFAbsoluteTimeGetCurrent()
+        let overviewView = PaneOverviewView(isPresented: .constant(true))
+        let hostingView = NSHostingView(rootView: overviewView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        hostingView.layoutSubtreeIfNeeded()
+        let tLayout = CFAbsoluteTimeGetCurrent() - t1
+
+        let t2 = CFAbsoluteTimeGetCurrent()
+        hostingView.displayIfNeeded()
+        let tDisplay = CFAbsoluteTimeGetCurrent() - t2
+
+        let elapsed = tRefresh + tLayout + tDisplay
+        #expect(elapsed < 0.150, "Full presentation to first frame with 30 panes took \(elapsed * 1000) ms, exceeding 150 ms budget")
     }
 
 }

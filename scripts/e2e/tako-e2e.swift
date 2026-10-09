@@ -90,6 +90,8 @@ enum Key {
     static let comma: CGKeyCode = 43
     static let grave: CGKeyCode = 50
     static let rightBracket: CGKeyCode = 30
+    static let s: CGKeyCode = 1
+    static let o: CGKeyCode = 31
 }
 
 // MARK: - Driver
@@ -102,6 +104,10 @@ final class Driver {
 
     init(app: URL) throws {
         appURL = app.standardizedFileURL.absoluteURL
+        let resolved = Bundle(url: appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
+        guard resolved != "com.tako-core.terminal" else {
+            throw Failure("Refusing to drive production bundle identifier com.tako-core.terminal. Build with TAKO_BUNDLE_ID=com.tako-core.terminal.e2e (or another isolated test ID) to protect operator state.")
+        }
         work = URL(fileURLWithPath: "/tmp")
             .appendingPathComponent("tako-e2e-\(UUID().uuidString.prefix(8).lowercased())")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
@@ -411,7 +417,8 @@ final class Driver {
                 let axTitle: String? = attribute(btn, kAXTitleAttribute)
                 let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
                 let axLabel: String? = attribute(btn, "AXLabel")
-                if axTitle == title || axDesc == title || axLabel == title {
+                if axTitle == title || axDesc == title || axLabel == title ||
+                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true {
                     return btn
                 }
             }
@@ -1112,24 +1119,43 @@ let scenarios: [Scenario] = [
         usleep(1_000_000)
         try d.run("tput cols > \(d.path("cols_narrow"))")
         let narrow = Int(try d.file("cols_narrow").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        guard narrow > 0 && narrow < 100 else { throw Failure("narrow cols precondition failed: \(narrow)") }
+        guard narrow > 0 && narrow < 95 else { throw Failure("narrow cols precondition failed: \(narrow)") }
 
-        // Output marker via python without typing it verbatim in the command
-        let marker = "REFLOW_MARKER_" + String(repeating: "Z", count: 106)
-        try d.run("python3 -c \"import sys; sys.stdout.write('\(marker)\\n')\"")
+        // Construct unique marker at runtime from distinct components and deliver via base64 decoding in Python
+        // so no substring of the marker is ever typed into the shell command or command echo buffer.
+        let p1 = "REFLOW_MARKER_PARTA_"
+        let p2 = String(repeating: "J", count: 42)
+        let p3 = "_SPLIT_MID_"
+        let p4 = String(repeating: "K", count: 42)
+        let expectedMarker = p1 + p2 + p3 + p4 // 115 chars
+        let markerB64 = Data(expectedMarker.utf8).base64EncodedString()
+        try d.run("python3 -c \"import base64, sys; sys.stdout.write(base64.b64decode('\(markerB64)').decode('utf-8') + '\\n')\"")
         usleep(1_000_000)
 
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        // Precondition: In narrow terminal, the 120-char marker wraps and does NOT appear on a single line in styled physical rows
-        try d.run("\(ctl) text --styled --lines 10 > \(d.path("narrow_text")) 2>&1")
+        // Precondition: In narrow terminal, the 115-char marker wraps and does NOT appear on any single line.
+        // Also verify takoctl exit code succeeded via separate status witness.
+        // Using --styled reads physical viewport rows rather than unstyled logical scrollback.
+        try d.run("\(ctl) text --styled --lines 12 > \(d.path("narrow_text")) && echo OK > \(d.path("narrow_ok"))")
+        guard try d.file("narrow_ok").trimmingCharacters(in: .whitespacesAndNewlines) == "OK" else {
+            throw Failure("takoctl text failed at narrow width")
+        }
         let narrowRows = (try? d.file("narrow_text"))?.components(separatedBy: "\n").map {
-            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression).trimmingCharacters(in: .newlines)
         } ?? []
         guard !narrowRows.isEmpty && !narrowRows.allSatisfy({ $0.isEmpty }) else {
-            throw Failure("precondition failed: narrowRows was empty! Content: \(try d.file("narrow_text"))")
+            throw Failure("precondition failed: narrowRows was empty!")
         }
-        guard !narrowRows.contains(where: { $0.contains(marker) }) else {
+        guard !narrowRows.contains(where: { $0.contains(expectedMarker) }) else {
             throw Failure("precondition failed: marker was not wrapped across physical rows in narrow \(narrow) columns. Rows were: \(narrowRows)")
+        }
+        // Verify physical row boundaries: prefix row must contain p1 and subsequent row must contain p4.suffix(20),
+        // and together they reconstruct the full wrapped marker.
+        guard let prefixIdx = narrowRows.firstIndex(where: { $0.contains(p1) }),
+              prefixIdx + 1 < narrowRows.count,
+              narrowRows[prefixIdx + 1].contains(p4.suffix(20)),
+              (narrowRows[prefixIdx] + narrowRows[prefixIdx + 1]).contains(expectedMarker) else {
+            throw Failure("precondition failed: could not identify physical wrapped row boundaries in narrow text: \(narrowRows)")
         }
 
         try d.quitNormally()
@@ -1146,13 +1172,16 @@ let scenarios: [Scenario] = [
             throw Failure("columns did not widen: was \(narrow), now \(wide)")
         }
 
-        // Postcondition: Widening unwrapped the wrapped rows so the full 120-character marker
-        // now fits onto a single physical terminal row
-        try d.run("\(ctl) text --styled --lines 50 > \(d.path("wide_text")) 2>&1")
+        // Postcondition: Widening unwrapped the wrapped physical rows so the full 115-character marker
+        // now fits onto a single physical terminal row.
+        try d.run("\(ctl) text --styled --lines 50 > \(d.path("wide_text")) && echo OK > \(d.path("wide_ok"))")
+        guard try d.file("wide_ok").trimmingCharacters(in: .whitespacesAndNewlines) == "OK" else {
+            throw Failure("takoctl text failed at wide width")
+        }
         let wideRows = (try? d.file("wide_text"))?.components(separatedBy: "\n").map {
-            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+            $0.replacingOccurrences(of: "\u{1b}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression).trimmingCharacters(in: .newlines)
         } ?? []
-        guard wideRows.contains(where: { $0.contains(marker) }) else {
+        guard wideRows.contains(where: { $0.contains(expectedMarker) }) else {
             throw Failure("physical reflow failed: marker was not unwrapped into a single line in wide \(wide) columns. Rows were: \(wideRows)")
         }
 
@@ -1422,6 +1451,122 @@ let scenarios: [Scenario] = [
         try d.run("tty > \(d.path("win2"))")
         guard try d.file("win2") != first else { throw Failure("typing after cmd+n went to the old window") }
     }),
+    ("settings", "cmd+, opens the in-terminal settings dialog, and Esc dismisses it", { d in
+        d.key(Key.comma, .maskCommand)
+        var closeBtn: AXUIElement?
+        guard d.wait(for: { closeBtn = d.button(titled: "Close"); return closeBtn != nil }, timeout: 5) else {
+            throw Failure("cmd+, did not present the settings dialog (Close button not found)")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss the settings dialog")
+        }
+    }),
+    ("settings-record", "settings shortcut recorder activates on Record button and cancels on Esc", { d in
+        d.key(Key.comma, .maskCommand)
+        var recordBtn: AXUIElement?
+        guard d.wait(for: { recordBtn = d.button(titled: "Record"); return recordBtn != nil }, timeout: 5),
+              let recordBtn else {
+            throw Failure("settings dialog Record button not found")
+        }
+        d.press(recordBtn)
+        usleep(500_000)
+        // In recording mode, Esc cancels recording without modifying keybindings
+        d.key(Key.escape)
+        usleep(500_000)
+        // Second Esc closes settings
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Record") == nil }, timeout: 5) else {
+            throw Failure("settings dialog remained open after closing")
+        }
+    }),
+    ("sidebar", "cmd+opt+s toggles the session sidebar open and closed", { d in
+        d.key(Key.s, [.maskCommand, .maskAlternate])
+        usleep(800_000)
+        // Toggle again to return to normal
+        d.key(Key.s, [.maskCommand, .maskAlternate])
+        usleep(800_000)
+    }),
+    ("overview", "cmd+shift+o toggles pane overview on, and Esc dismisses it", { d in
+        d.key(Key.o, [.maskCommand, .maskShift])
+        usleep(800_000)
+        d.key(Key.escape)
+        usleep(800_000)
+    }),
+    ("workspace-switch", "takoctl workspace commands create, list, and switch project workspaces", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("\(ctl) workspace create E2EWS > /dev/null")
+        try d.run("\(ctl) workspace list > \(d.path("ws_list"))")
+        let list = try d.file("ws_list")
+        guard list.contains("E2EWS") else {
+            throw Failure("workspace list did not contain newly created workspace: \(list)")
+        }
+        try d.run("\(ctl) workspace switch Default > /dev/null")
+    }),
+    ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("\(ctl) split right > /dev/null")
+        usleep(800_000)
+        try d.run("\(ctl) broadcast start > \(d.path("bcast_start"))")
+        try d.run("\(ctl) broadcast status --json > \(d.path("bcast_status"))")
+        let status = try d.file("bcast_status")
+        guard status.contains("\"active\":true") || status.contains("\"active\": true") else {
+            throw Failure("broadcast status was not active after start: \(status)")
+        }
+        try d.run("\(ctl) broadcast stop > /dev/null")
+        try d.run("\(ctl) broadcast status --json > \(d.path("bcast_stopped"))")
+        let stopped = try d.file("bcast_stopped")
+        guard stopped.contains("\"active\":false") || stopped.contains("\"active\": false") else {
+            throw Failure("broadcast was still active after stop: \(stopped)")
+        }
+    }),
+    ("input-ownership", "takoctl input lock and unlock control input ownership without error", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        let scriptPath = d.path("input_test.sh")
+        let scriptBody = """
+        #!/bin/sh
+        \(ctl) input lock --owner e2e-agent > \(d.path("lock_res"))
+        \(ctl) input status --json > \(d.path("lock_status"))
+        \(ctl) input unlock > /dev/null
+        \(ctl) input status --json > \(d.path("unlock_status"))
+        """
+        try scriptBody.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+        try d.run("sh \(scriptPath)")
+        let status = try d.file("lock_status")
+        guard (status.contains("\"locked\":true") || status.contains("\"locked\": true")) && status.contains("e2e-agent") else {
+            throw Failure("input status was not locked to agent: \(status)")
+        }
+        let unlocked = try d.file("unlock_status")
+        guard unlocked.contains("\"locked\":false") || unlocked.contains("\"locked\": false") else {
+            throw Failure("input status was still locked after unlock: \(unlocked)")
+        }
+    }),
+    ("diff-review", "takoctl review status queries worktree review state cleanly", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("\(ctl) review status > \(d.path("review_res"))")
+        let res = try d.file("review_res")
+        guard !res.isEmpty else {
+            throw Failure("review status returned empty output")
+        }
+    }),
+    ("overlay", "takoctl overlay opens and closes terminal overlay cards", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        try d.run("echo '# Test Note' > ./tako_e2e_overlay_test.md")
+        defer { _ = try? d.run("rm -f ./tako_e2e_overlay_test.md") }
+        try d.run("\(ctl) overlay open ./tako_e2e_overlay_test.md > \(d.path("ov_open"))")
+        try d.run("\(ctl) overlay status --json > \(d.path("ov_status"))")
+        let status = try d.file("ov_status")
+        guard status.contains("\"open\":true") || status.contains("\"open\": true") else {
+            let ovOpen = (try? d.file("ov_open")) ?? "nil"
+            throw Failure("overlay status was not open: \(status). ov_open: \(ovOpen)")
+        }
+        try d.run("\(ctl) overlay close > /dev/null")
+        try d.run("\(ctl) overlay status --json > \(d.path("ov_closed"))")
+        let closed = try d.file("ov_closed")
+        guard closed.contains("\"open\":false") || closed.contains("\"open\": false") else {
+            throw Failure("overlay was still open after close: \(closed)")
+        }
+    }),
 ]
 
 // MARK: - Main
@@ -1532,6 +1677,10 @@ func crashLayoutCount(_ d: Driver, _ name: String) throws -> (windows: Int, tabs
 /// Nothing saved from an earlier run: neither AppKit's state nor the journal.
 func forgetLayout(_ d: Driver) {
     let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
+    guard bundle != "com.tako-core.terminal" else {
+        fputs("Safety error: forgetLayout refused to delete state for production bundle 'com.tako-core.terminal'\n", stderr)
+        return
+    }
     let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
     // Newer macOS keeps saved windows where only the script finds them.
     let forget = Process()

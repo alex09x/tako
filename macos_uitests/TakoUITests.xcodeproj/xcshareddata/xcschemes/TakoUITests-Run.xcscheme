@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "18E54233A31500076993018D"
+               BlueprintIdentifier = "11F958AC2868B63E2380FA73"
                BuildableName = "TakoUITests.xctest"
                BlueprintName = "TakoUITests"
                ReferencedContainer = "container:TakoUITests.xcodeproj">
@@ -32,7 +32,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "18E54233A31500076993018D"
+            BlueprintIdentifier = "11F958AC2868B63E2380FA73"
             BuildableName = "TakoUITests.xctest"
             BlueprintName = "TakoUITests"
             ReferencedContainer = "container:TakoUITests.xcodeproj">
@@ -44,7 +44,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "18E54233A31500076993018D"
+               BlueprintIdentifier = "11F958AC2868B63E2380FA73"
                BuildableName = "TakoUITests.xctest"
                BlueprintName = "TakoUITests"
                ReferencedContainer = "container:TakoUITests.xcodeproj">
@@ -74,7 +74,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "18E54233A31500076993018D"
+            BlueprintIdentifier = "11F958AC2868B63E2380FA73"
             BuildableName = "TakoUITests.xctest"
             BlueprintName = "TakoUITests"
             ReferencedContainer = "container:TakoUITests.xcodeproj">
@@ -92,7 +92,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "18E54233A31500076993018D"
+            BlueprintIdentifier = "11F958AC2868B63E2380FA73"
             BuildableName = "TakoUITests.xctest"
             BlueprintName = "TakoUITests"
             ReferencedContainer = "container:TakoUITests.xcodeproj">

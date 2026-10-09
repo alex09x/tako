@@ -52,9 +52,11 @@ class TakoCustomConfigCase: XCTestCase {
 
     func takoApplication(defaultsSuite: String = TakoCustomConfigCase.defaultsSuiteName) throws -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES"])
+        app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES", "--no-update", "--no-launch-notices"])
         app.launchEnvironment["TAKO_CONFIG_PATH"] = configFile.path
         app.launchEnvironment["TAKO_USER_DEFAULTS_SUITE"] = defaultsSuite
+        app.launchEnvironment["TAKO_NO_UPDATE"] = "1"
+        app.launchEnvironment["TAKO_NO_LAUNCH_NOTICES"] = "1"
         return app
     }
 }

@@ -53,9 +53,9 @@ python3 scripts/swift-coverage-gate.py --module TakoCoreUI --module TakoKit --mo
     --module TakoApp/App --module TakoApp/Features/Terminal" ;;
         apps) script+="
 echo '== apps'
-python3 scripts/build-macapp.py
-./scripts/selftest-macapp.sh
-./scripts/e2e-macapp.sh
+TAKO_BUNDLE_ID=com.tako-core.terminal.e2e TAKO_APP_DIR=target/macapp-e2e python3 scripts/build-macapp.py
+APP=target/macapp-e2e/Tako.app ./scripts/selftest-macapp.sh
+APP=target/macapp-e2e/Tako.app ./scripts/e2e-macapp.sh
 ./scripts/test-ios-surface.sh
 python3 scripts/simtest.py
 python3 scripts/ios-coverage-gate.py" ;;

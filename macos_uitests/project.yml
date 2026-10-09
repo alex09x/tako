@@ -38,7 +38,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: TakoCore
-        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.terminal
+        PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.terminal.uitest
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_CFBundleDisplayName: TakoCore
@@ -68,9 +68,9 @@ targets:
           # through verbatim: Xcode's log parser turns any bare "error:" line
           # into a build failure, and whether the app build failed is decided
           # below by its exit status, not by grepping its prose.
-          if python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp/Tako.app" ]; then
+          if TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp-uitest/Tako.app" ]; then
             rm -rf "${DEST}"
-            /usr/bin/ditto "target/macapp/Tako.app" "${DEST}"
+            /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
             /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
           else
             # Compiling the UI tests is deliberately not held hostage to the
@@ -80,7 +80,7 @@ targets:
             # product so the test bundle still has a Target Application.
             # It still needs signing itself, since CODE_SIGNING_ALLOWED is
             # off for this whole target (see the setting's own comment above).
-            echo "warning: scripts/build-macapp.py did not produce target/macapp/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
+            echo "warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
             /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
           fi
 
