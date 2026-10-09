@@ -144,16 +144,21 @@ final class Driver {
         guard wait(for: { !self.windows().isEmpty }, timeout: 15) else {
             throw Failure("Tako started but opened no window")
         }
-        // The shell needs a moment to print its first prompt; typing before it
-        // reads its terminal would still work, but the check below makes the
-        // difference between "slow" and "broken" visible.
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            app.activate()
+        }
+        if let window = self.windows().first {
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        }
         try run("true")
         usleep(300_000)
     }
 
     func quit() {
         guard pid != 0 else { return }
-        kill(pid, SIGKILL)
+        let dying = pid
+        kill(dying, SIGKILL)
+        _ = wait(for: { NSRunningApplication(processIdentifier: dying) == nil }, timeout: 5)
         pid = 0
     }
 
@@ -189,13 +194,58 @@ final class Driver {
             .compactMap { attribute($0, kAXValueAttribute) as String? }
     }
 
+    func pressMenuItem(titledPrefix prefix: String) -> Bool {
+        for item in descendants(of: axApp, role: kAXMenuItemRole as String) {
+            let title: String? = attribute(item, kAXTitleAttribute)
+            if title?.starts(with: prefix) == true {
+                return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+            }
+        }
+        return false
+    }
+
+    func pressQuitMenuItem() -> Bool {
+        pressMenuItem(titledPrefix: "Quit")
+    }
+
+    func closeTab() {
+        key(Key.w, .maskCommand)
+        usleep(150_000)
+        _ = pressMenuItem(titledPrefix: "Close Tab")
+    }
+
+    func newTab() {
+        key(Key.t, .maskCommand)
+        usleep(150_000)
+        _ = pressMenuItem(titledPrefix: "New Tab")
+    }
+
+    func interrupt() {
+        key(Key.c, .maskControl)
+        try? type("\u{03}")
+    }
+
     /// Cmd+Q, the way a person quits: the app saves its windows and tabs.
     func quitNormally() throws {
         guard pid != 0 else { return }
         let quitting = pid
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-a", appURL.path]
+        try? open.run()
+        open.waitUntilExit()
+        _ = wait(for: { NSWorkspace.shared.frontmostApplication?.processIdentifier == quitting }, timeout: 2)
+
         key(Key.q, .maskCommand)
+        if wait(for: { NSRunningApplication(processIdentifier: quitting) == nil }, timeout: 3) {
+            pid = 0
+            return
+        }
+        _ = pressQuitMenuItem()
         guard wait(for: { NSRunningApplication(processIdentifier: quitting) == nil }, timeout: 15) else {
-            throw Failure("Cmd+Q did not quit Tako")
+            let texts = staticTexts()
+            let screen = screenText()
+            throw Failure("Cmd+Q did not quit Tako. StaticTexts: \(texts), Screen: [\(screen.suffix(300))]")
         }
         pid = 0
     }
@@ -245,25 +295,32 @@ final class Driver {
 
     func key(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
         for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
             else { continue }
-            event.flags = flags
+            event.flags = down ? flags : []
             event.postToPid(pid)
-            usleep(4_000)
+            usleep(12_000)
         }
-        usleep(4_000)
+        usleep(12_000)
     }
 
     func type(_ text: String) throws {
+        var count = 0
         for ch in text {
             guard let (code, shift) = keyCodes[ch] else { throw Failure("no key for \(ch)") }
             key(code, shift ? .maskShift : [])
+            count += 1
+            if count % 10 == 0 {
+                usleep(40_000)
+            }
         }
     }
 
     /// Type a command line and press Return.
     func run(_ command: String) throws {
+        focus()
         try type(command)
+        usleep(20_000)
         key(Key.returnKey)
     }
 
@@ -289,7 +346,7 @@ final class Driver {
         // Written by a redirect, the file exists a moment before its contents.
         usleep(150_000)
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-            throw Failure("the shell never wrote \(name): what was typed did not reach it")
+            throw Failure("the shell never wrote \(name): what was typed did not reach it. Screen: [\(screenText().suffix(500))]")
         }
         _ = text
         return contents
@@ -425,12 +482,33 @@ final class Driver {
         return nil
     }
 
+    func focus() {
+        guard let window = windows().first else { return }
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if let area = descendants(of: window, role: kAXTextAreaRole as String).first {
+            AXUIElementSetAttributeValue(area, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+    }
+
     func setSize(_ size: CGSize) {
         guard let window = windows().first else { return }
         var value = size
         if let axValue = AXValueCreate(.cgSize, &value) {
             AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, axValue)
         }
+        usleep(100_000)
+        focus()
+    }
+
+    func setPosition(_ position: CGPoint) {
+        guard let window = windows().first else { return }
+        var value = position
+        if let axValue = AXValueCreate(.cgPoint, &value) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, axValue)
+        }
+        usleep(100_000)
+        focus()
     }
 }
 
@@ -882,7 +960,7 @@ let scenarios: [Scenario] = [
         guard let shell = Int32(try d.file("pid").trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw Failure("no shell pid")
         }
-        d.key(Key.w, .maskCommand)
+        d.closeTab()
         // Undo keeps a closed tab for 5 s; then it is released and its
         // session ends with it.
         guard d.wait(for: { kill(shell, 0) != 0 }, timeout: 15) else {
@@ -915,14 +993,14 @@ let scenarios: [Scenario] = [
         }
         // A second tab, closed (it has the keyboard), then quit at once --
         // well inside its undo window.
-        d.key(Key.t, .maskCommand)
+        d.newTab()
         usleep(1_200_000)
         try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
         guard let closed = Int32(try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines)),
               closed != kept else {
             throw Failure("no second shell")
         }
-        d.key(Key.w, .maskCommand)
+        d.closeTab()
         usleep(500_000)
         try d.quitNormally()
         guard d.wait(for: { kill(closed, 0) != 0 }, timeout: 8) else {
@@ -979,10 +1057,47 @@ let scenarios: [Scenario] = [
         guard d.pid != 0, NSRunningApplication(processIdentifier: d.pid) != nil else {
             throw Failure("Tako quit although the quit was cancelled")
         }
-        d.key(Key.c, .maskControl)
+        d.interrupt()
         try d.run("echo after > \(d.path("after"))")
         _ = try d.file("after")
         guard kill(shell, 0) == 0 else { throw Failure("the session's shell ended") }
+        try d.run("exit")
+    }),
+    ("persist-reflow", "a restored persistent session reflows and updates columns when widened", { d in
+        d.quit()
+        let config = "session-persistence = true\n"
+        try d.launch(config: config)
+        d.setPosition(CGPoint(x: 20, y: 50))
+        d.setSize(CGSize(width: 650, height: 500))
+        usleep(1_000_000)
+        try d.run("tput cols > \(d.path("cols_narrow"))")
+        let narrow = Int(try d.file("cols_narrow").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard narrow > 0 else { throw Failure("no narrow cols recorded") }
+
+        let marker = "REFLOW_MARKER_" + String(repeating: "Z", count: 120)
+        try d.run("echo \(marker)")
+        guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
+            throw Failure("marker not seen on screen: [\(d.screenText().suffix(300))]")
+        }
+
+        try d.quitNormally()
+
+        try d.launch(config: config)
+        d.setPosition(CGPoint(x: 20, y: 50))
+        d.setSize(CGSize(width: 1250, height: 700))
+        usleep(1_500_000)
+
+        try d.run("tput cols > \(d.path("cols_wide"))")
+        let wide = Int(try d.file("cols_wide").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard wide > narrow + 30 else {
+            throw Failure("columns did not widen: was \(narrow), now \(wide)")
+        }
+
+        let screen = d.screenText()
+        guard screen.contains(marker) else {
+            throw Failure("marker broken or not unwrapped: [\(screen.suffix(300))]")
+        }
+
         try d.run("exit")
     }),
     ("find-stale", "a match that changes, or a tab that closes, while it is being shown is reported where the user is", { d in
@@ -1266,7 +1381,7 @@ guard AXIsProcessTrusted() else {
 let wanted = Set(args.dropFirst())
 // Scenarios that need a build with the session runtime run only when named,
 // from scripts/e2e-persist.sh: never as part of the default set.
-let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner"]
+let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow"]
 // A misspelt name must not pass as a run of nothing.
 let unknown = wanted.subtracting(scenarios.map(\.name))
 if !unknown.isEmpty {

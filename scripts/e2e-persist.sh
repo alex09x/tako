@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-[ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner
+[ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner persist-reflow
 export TAKO_APP_DIR=target/macapp-persist TAKO_WITH_ZMX=1
 APP="$TAKO_APP_DIR/Tako.app"
 
