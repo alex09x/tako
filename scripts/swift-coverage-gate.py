@@ -43,42 +43,106 @@ def should_filter_coreui(effective_modules: set[str]) -> bool:
 
 class TestCompletionTracker:
     ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-    TOP_LEVEL_SUITE_RE = re.compile(
-        r"^Test Suite ['\"](Selected tests|All tests|.*\.xctest)['\"] (passed|failed)",
+
+    # Root XCTest suite starts: 'Selected tests' or 'All tests'
+    XCTEST_ROOT_START_RE = re.compile(
+        r"^Test Suite ['\"](Selected tests|All tests)['\"] started at",
         re.IGNORECASE,
     )
-    SWIFT_TESTING_SUMMARY_RE = re.compile(
-        r"^Test run with \d+ test(s)? (passed|failed)",
+    # Standalone bundle suite start: fallback only if no enclosing All/Selected suite
+    XCTEST_BUNDLE_START_RE = re.compile(
+        r"^Test Suite ['\"](.*\.xctest)['\"] started at",
         re.IGNORECASE,
     )
+    # XCTest suite completion: captures suite name and status (passed/failed)
+    XCTEST_SUITE_END_RE = re.compile(
+        r"^Test Suite ['\"](.*)['\"] (passed|failed) at",
+        re.IGNORECASE,
+    )
+    # XCTest Executed summary line
     XCTEST_EXECUTED_RE = re.compile(
         r"^\s*Executed \d+ test",
         re.IGNORECASE,
     )
 
+    # Swift Testing phase start
+    SWIFT_TESTING_START_RE = re.compile(
+        r"^(?:[◇◆●\*\-]\s+)?Test run started\.",
+        re.IGNORECASE,
+    )
+    # Swift Testing phase completion (supports status glyphs like ✔ / ✘ and optional suite count)
+    SWIFT_TESTING_SUMMARY_RE = re.compile(
+        r"^(?:[✔✘✖✕\u2713\u2714\u2717\u2718\*\-]\s+)?Test run with \d+ test(?:s)?(?:\s+in\s+\d+\s+suite(?:s)?)?\s+(passed|failed)\s+after\s+",
+        re.IGNORECASE,
+    )
+
     def __init__(self):
-        self.finished = False
-        self._top_level_suite_seen = False
+        self.xctest_started = False
+        self.xctest_root_suite: str | None = None
+        self._xctest_root_status_seen = False
+        self.xctest_completed = False
+
+        self.swift_testing_started = False
+        self.swift_testing_completed = False
+
+    @property
+    def finished(self) -> bool:
+        if not self.xctest_started and not self.swift_testing_started:
+            return False
+        if self.xctest_started and not self.xctest_completed:
+            return False
+        if self.swift_testing_started and not self.swift_testing_completed:
+            return False
+        return True
 
     def feed_line(self, line: str) -> None:
         clean = self.ANSI_ESCAPE.sub("", line).strip()
         if not clean:
             return
 
+        # 1. Swift Testing phase start
+        if self.SWIFT_TESTING_START_RE.search(clean):
+            self.swift_testing_started = True
+            self.swift_testing_completed = False
+            return
+
+        # 2. Swift Testing summary line
         if self.SWIFT_TESTING_SUMMARY_RE.search(clean):
-            self.finished = True
+            self.swift_testing_started = True
+            self.swift_testing_completed = True
             return
 
-        if clean.startswith("Test Suite "):
-            if self.TOP_LEVEL_SUITE_RE.match(clean):
-                self._top_level_suite_seen = True
-                self.finished = True
+        # 3. XCTest root suite start detection
+        root_start = self.XCTEST_ROOT_START_RE.match(clean)
+        if root_start:
+            self.xctest_started = True
+            self.xctest_root_suite = root_start.group(1)
+            self._xctest_root_status_seen = False
+            self.xctest_completed = False
+            return
+
+        bundle_start = self.XCTEST_BUNDLE_START_RE.match(clean)
+        if bundle_start:
+            self.xctest_started = True
+            if self.xctest_root_suite is None:
+                self.xctest_root_suite = bundle_start.group(1)
+                self._xctest_root_status_seen = False
+                self.xctest_completed = False
+            return
+
+        # 4. XCTest suite passed/failed lines
+        suite_end = self.XCTEST_SUITE_END_RE.match(clean)
+        if suite_end:
+            if self.xctest_root_suite and suite_end.group(1) == self.xctest_root_suite:
+                self._xctest_root_status_seen = True
             else:
-                self._top_level_suite_seen = False
+                self._xctest_root_status_seen = False
             return
 
-        if self._top_level_suite_seen and self.XCTEST_EXECUTED_RE.match(clean):
-            self.finished = True
+        # 5. XCTest Executed summary line
+        if self._xctest_root_status_seen and self.XCTEST_EXECUTED_RE.match(clean):
+            self.xctest_completed = True
+            self._xctest_root_status_seen = False
             return
 
 
@@ -95,6 +159,73 @@ class TestSwiftCoverageGate(unittest.TestCase):
         for l in lines:
             tracker.feed_line(l)
         self.assertFalse(tracker.finished)
+
+    def test_nested_bundle_completion_does_not_substitute_for_enclosing_run(self):
+        lines = [
+            "Test Suite 'All tests' started at 2026-08-19 15:18:45.735.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' started at 2026-08-19 15:18:45.737.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' passed at 2026-08-19 15:18:47.495.",
+            "\t Executed 104 tests, with 0 failures (0 unexpected) in 1.739 (1.758) seconds",
+        ]
+        tracker = TestCompletionTracker()
+        for l in lines:
+            tracker.feed_line(l)
+        self.assertFalse(tracker.finished)
+
+    def test_xctest_completed_followed_by_truncated_swift_testing_rejected(self):
+        lines = [
+            "Test Suite 'All tests' started at 2026-08-19 15:18:45.735.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' started at 2026-08-19 15:18:45.737.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' passed at 2026-08-19 15:18:47.495.",
+            "\t Executed 104 tests, with 0 failures (0 unexpected) in 1.739 (1.758) seconds",
+            "Test Suite 'All tests' passed at 2026-08-19 15:18:47.495.",
+            "\t Executed 104 tests, with 0 failures (0 unexpected) in 1.739 (1.760) seconds",
+            "◇ Test run started.",
+            "↳ Testing Library Version: 1501",
+            "◇ Suite SplitTreeTests started.",
+        ]
+        tracker = TestCompletionTracker()
+        for l in lines:
+            tracker.feed_line(l)
+        self.assertFalse(tracker.finished)
+
+    def test_real_swift_testing_summary_from_log_passed(self):
+        lines = [
+            "◇ Test run started.",
+            "✔ Test run with 282 tests in 24 suites passed after 1.947 seconds.",
+        ]
+        tracker = TestCompletionTracker()
+        for l in lines:
+            tracker.feed_line(l)
+        self.assertTrue(tracker.finished)
+
+    def test_real_swift_testing_summary_from_log_failed(self):
+        lines = [
+            "◇ Test run started.",
+            "✘ Test run with 282 tests in 24 suites failed after 1.947 seconds.",
+        ]
+        tracker = TestCompletionTracker()
+        for l in lines:
+            tracker.feed_line(l)
+        self.assertTrue(tracker.finished)
+
+    def test_mixed_framework_full_run_accepted(self):
+        lines = [
+            "Test Suite 'All tests' started at 2026-08-19 15:18:45.735.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' started at 2026-08-19 15:18:45.737.",
+            "Test Suite 'TakoCoreUIPackageTests.xctest' passed at 2026-08-19 15:18:47.495.",
+            "\t Executed 104 tests, with 0 failures (0 unexpected) in 1.739 (1.758) seconds",
+            "Test Suite 'All tests' passed at 2026-08-19 15:18:47.495.",
+            "\t Executed 104 tests, with 0 failures (0 unexpected) in 1.739 (1.760) seconds",
+            "◇ Test run started.",
+            "↳ Testing Library Version: 1501",
+            "✔ Suite SplitTreeTests passed after 0.123 seconds.",
+            "✔ Test run with 282 tests in 24 suites passed after 1.947 seconds.",
+        ]
+        tracker = TestCompletionTracker()
+        for l in lines:
+            tracker.feed_line(l)
+        self.assertTrue(tracker.finished)
 
     def test_xctest_selected_tests_full_summary(self):
         lines = [
@@ -120,7 +251,7 @@ class TestSwiftCoverageGate(unittest.TestCase):
             tracker.feed_line(l)
         self.assertTrue(tracker.finished)
 
-    def test_xctest_bundle_summary(self):
+    def test_xctest_standalone_bundle_summary(self):
         lines = [
             "Test Suite 'TakoCoreUITests.xctest' started at 2026-10-09 10:00:00.000.",
             "Test Suite 'TakoCoreUITests.xctest' passed at 2026-10-09 10:00:00.010.",
@@ -131,28 +262,9 @@ class TestSwiftCoverageGate(unittest.TestCase):
             tracker.feed_line(l)
         self.assertTrue(tracker.finished)
 
-    def test_swift_testing_summary_passed(self):
-        lines = [
-            "Building for debugging...",
-            "Test run with 150 tests passed after 0.456 seconds.",
-        ]
-        tracker = TestCompletionTracker()
-        for l in lines:
-            tracker.feed_line(l)
-        self.assertTrue(tracker.finished)
-
-    def test_swift_testing_summary_failed(self):
-        lines = [
-            "Building for debugging...",
-            "Test run with 150 tests failed after 0.456 seconds.",
-        ]
-        tracker = TestCompletionTracker()
-        for l in lines:
-            tracker.feed_line(l)
-        self.assertTrue(tracker.finished)
-
     def test_ansi_escaped_top_level_summary(self):
         lines = [
+            "\x1b[1mTest Suite 'Selected tests' started at 2026-10-09 10:00:00.000.\x1b[0m\n",
             "\x1b[1mTest Suite 'Selected tests' passed at 2026-10-09 10:00:00.010.\x1b[0m\n",
             "\t Executed 1 test, with 0 failures\n",
         ]
@@ -174,6 +286,33 @@ class TestSwiftCoverageGate(unittest.TestCase):
         self.assertFalse(should_filter_coreui(compute_effective_modules(["TakoApp/AppDelegate.swift"], None)))
         self.assertFalse(should_filter_coreui(compute_effective_modules([], ["TakoKit"])))
         self.assertFalse(should_filter_coreui(compute_effective_modules(["TakoCoreUI/Foo.swift", "TakoApp/Bar.swift"], None)))
+
+    def test_actual_log_file_full_completion(self):
+        log_path = os.path.join(ROOT, "target/swift-final-recheck.log")
+        if not os.path.exists(log_path):
+            return
+        tracker = TestCompletionTracker()
+        with open(log_path, "r", errors="replace") as f:
+            for line in f:
+                tracker.feed_line(line)
+        self.assertTrue(tracker.finished)
+        self.assertTrue(tracker.xctest_completed)
+        self.assertTrue(tracker.swift_testing_completed)
+
+    def test_actual_log_file_truncated_rejection(self):
+        log_path = os.path.join(ROOT, "target/swift-final-recheck.log")
+        if not os.path.exists(log_path):
+            return
+        tracker = TestCompletionTracker()
+        with open(log_path, "r", errors="replace") as f:
+            for idx, line in enumerate(f, 1):
+                if idx > 270:
+                    break
+                tracker.feed_line(line)
+        self.assertFalse(tracker.finished)
+        self.assertTrue(tracker.xctest_completed)
+        self.assertFalse(tracker.swift_testing_completed)
+
 
 
 def main():
