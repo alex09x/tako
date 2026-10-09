@@ -59,7 +59,9 @@ fn prompt_start_emits_no_command_event() {
     let mut term = Terminal::new(20, 5);
     term.feed(b"\x1b]133;A\x07");
     term.feed(b"\x1b]133;B\x07");
-    assert!(term.take_events().is_empty());
+    let events = term.take_events();
+    assert_eq!(events, vec![TerminalEvent::PromptMark]);
+    assert!(!events.iter().any(|e| matches!(e, TerminalEvent::CommandStart { .. } | TerminalEvent::CommandEnd { .. })));
 }
 
 /// Events drain, so a host that polls every frame sees each command once.
@@ -87,6 +89,9 @@ fn prompt_start_after_running_command_emits_command_end() {
     term.feed(b"\x1b]133;A\x07");
     assert_eq!(
         term.take_events(),
-        vec![TerminalEvent::CommandEnd { exit_code: None }]
+        vec![
+            TerminalEvent::CommandEnd { exit_code: None },
+            TerminalEvent::PromptMark,
+        ]
     );
 }

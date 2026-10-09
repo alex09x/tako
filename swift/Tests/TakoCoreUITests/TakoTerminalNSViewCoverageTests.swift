@@ -41,7 +41,6 @@ final class TakoTerminalNSViewCoverageTests: XCTestCase {
         )
         let view = TakoTerminalNSView(frame: frame)
         window.contentView = view
-        window.makeKeyAndOrderFront(nil)
         view.layoutSubtreeIfNeeded()
         return (view, window)
     }

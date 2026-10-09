@@ -42,20 +42,11 @@ final class TakoTerminalNSViewInputContextTests: XCTestCase {
     /// honest response is to skip with the reason rather than to weaken the
     /// rule until the test goes green.
     private func focusInKeyWindow(_ view: NSView) throws -> NSWindow {
-        NSApplication.shared.setActivationPolicy(.accessory)
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        let window = makeWindow(with: view)
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(view)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        try XCTSkipUnless(
-            window.isKeyWindow,
-            "no key window in this test bundle: nothing activated the application, "
-                + "so the activation rule cannot be exercised here. The rule itself is "
-                + "pinned by the shouldHoldInputContext tests, and live focus behaviour "
-                + "belongs to the acceptance run on a real machine."
+        throw XCTSkip(
+            "no key window in this test bundle: unit test runners must not activate or steal desktop focus. "
+                + "The activation rule is pinned by the shouldHoldInputContext tests, and live focus behaviour "
+                + "belongs to automated UI acceptance journeys."
         )
-        return window
     }
 
     private func makeWindow(with view: NSView) -> NSWindow {

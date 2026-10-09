@@ -25,22 +25,25 @@ parser.add_argument("files", nargs="*", help="paths relative to swift/Sources to
 args = parser.parse_args()
 modules = args.module or ["TakoCoreUI"]
 
-# A Swift Testing run whose main run loop is stopped by something under test
+# A Swift Testing or XCTest run whose main run loop is stopped by something under test
 # ends early with exit status 0, so the exit status alone would pass a run
-# that skipped half its tests. Its closing "Test run with N tests" line is
-# the proof that it finished.
+# that skipped half its tests. Its closing summary line is the proof that it finished.
+test_cmd = [os.path.join(ROOT, "scripts/swift-test.sh"), "--enable-code-coverage"]
+if modules == ["TakoCoreUI"] and not args.files:
+    test_cmd += ["--filter", "TakoCoreUITests"]
+
 proc = subprocess.Popen(
-    [os.path.join(ROOT, "scripts/swift-test.sh"), "--enable-code-coverage"],
+    test_cmd,
     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
 finished = False
 for line in proc.stdout:
     sys.stdout.write(line)
-    if "Test run with" in line:
+    if "Test run with" in line or "Executed " in line:
         finished = True
 if proc.wait() != 0:
     sys.exit(f"swift-coverage-gate: the Swift suite failed (exit {proc.returncode})")
 if not finished:
-    sys.exit("swift-coverage-gate: the Swift Testing run ended without its summary; it stopped early")
+    sys.exit("swift-coverage-gate: the test run ended without its summary; it stopped early")
 path = subprocess.run(
     ["swift", "test", "--show-codecov-path"],
     cwd=os.path.join(ROOT, "swift"),

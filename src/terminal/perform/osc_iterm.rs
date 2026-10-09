@@ -150,7 +150,14 @@ impl Terminal {
             }
         } else if let Some(first) = params.get(1) {
             let rest = String::from_utf8_lossy(first);
-            if let Some(b64) = rest.strip_prefix("CopyToClipboard=") {
+            let copy_b64 = if let Some(b64) = rest.strip_prefix("CopyToClipboard=") {
+                Some(b64)
+            } else if let Some(payload) = rest.strip_prefix("Copy=") {
+                Some(payload.split_once(':').map(|(_, b)| b).unwrap_or(payload))
+            } else {
+                None
+            };
+            if let Some(b64) = copy_b64 {
                 if self.clipboard_policy != ClipboardPolicy::Disabled {
                     const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
                     let non_ws_count = b64.chars().filter(|c| !c.is_ascii_whitespace()).count();
