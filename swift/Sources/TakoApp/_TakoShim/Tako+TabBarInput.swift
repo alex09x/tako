@@ -87,6 +87,12 @@ extension Tako.TabBarView {
         // No close button is drawn on a tab this narrow, so none is hit.
         guard tab.frame.width >= Metrics.compactTabWidth else { return .null }
         let inset = (Metrics.closeHitSize - Metrics.closeSize) / 2
+        if effectiveTabStyle == .pill {
+            let rect = pillRect(for: tab)
+            return CGRect(x: rect.maxX - 8 - Metrics.closeSize - inset,
+                          y: rect.midY - Metrics.closeHitSize / 2,
+                          width: Metrics.closeHitSize, height: Metrics.closeHitSize)
+        }
         return CGRect(x: tab.frame.maxX - Metrics.tabPaddingRight - Metrics.closeSize - inset,
                       y: tab.frame.midY - Metrics.closeHitSize / 2,
                       width: Metrics.closeHitSize, height: Metrics.closeHitSize)
@@ -101,6 +107,7 @@ extension Tako.TabBarView {
         }
         if infoRect.contains(point) {
             AboutNotice.show(in: self.window, theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme)
+            NSApp.sendAction(#selector(AppDelegate.showAbout(_:)), to: nil, from: self)
             return
         }
         if plusRect.contains(point) {

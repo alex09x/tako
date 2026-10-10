@@ -168,10 +168,12 @@ extension TabBarViewCoverageTests {
         draw(bar)
 
         // Tab 0 ("a") is active, so its close glyph is drawn; its hit rect
-        // sits near the right edge of the 90...210 frame.
+        // is clicked using closeRect.
         a.orderFront(nil)
         #expect(a.isVisible)
-        click(bar, at: NSPoint(x: 195, y: 14), in: a)
+        let closePoint = CGPoint(x: bar.closeRect(of: bar.tabs[0]).midX,
+                                 y: bar.closeRect(of: bar.tabs[0]).midY)
+        click(bar, at: closePoint, in: a)
         #expect(!a.isVisible)
     }
 

@@ -58,6 +58,13 @@ extension Tako.Config {
         case native, transparent, tabs, hidden
     }
 
+    /// Tab presentation style in the tab bar.
+    enum TabStyle: String, Sendable, CaseIterable {
+        static let `default` = TabStyle.pill
+        case pill
+        case classic
+    }
+
     /// Background blur configuration mapping from C/Rust blur parameters.
     enum BackgroundBlur: Equatable, Sendable {
         case disabled

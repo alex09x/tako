@@ -13,9 +13,11 @@ public final class WorkspaceStore: ObservableObject {
 
     public static let defaultWorkspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
+    private var isLoading: Bool = false
     @Published public private(set) var workspaces: [Workspace] = []
     @Published public var activeWorkspaceId: UUID {
         didSet {
+            guard !isLoading else { return }
             if oldValue != activeWorkspaceId {
                 save()
                 NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
@@ -249,6 +251,9 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func load() {
+        isLoading = true
+        defer { isLoading = false }
+
         if isTesting {
             if workspaces.isEmpty {
                 let def = makeDefaultWorkspace()

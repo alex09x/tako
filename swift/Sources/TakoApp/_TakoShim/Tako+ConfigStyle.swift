@@ -283,4 +283,9 @@ extension Tako.Config {
         }
         return style
     }
+
+    /// Visual style for tabs in the tab bar: `.pill` (default, capsule with circle status dot) or `.classic`.
+    var tabStyle: TabStyle {
+        rawValue("tab-style").flatMap(TabStyle.init(rawValue:)) ?? .default
+    }
 }

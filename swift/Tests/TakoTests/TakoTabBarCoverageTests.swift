@@ -15,7 +15,7 @@ import Testing
 
 // MARK: - TabBarView
 
-@Suite
+@Suite(.serialized)
 @MainActor
 struct TabBarViewCoverageTests {
     func draw(_ bar: Tako.TabBarView) {

@@ -50,7 +50,139 @@ extension Tako.TabBarView {
         }
     }
 
+    func pillRect(for tab: Tab) -> CGRect {
+        CGRect(
+            x: tab.frame.minX + 2,
+            y: Metrics.buttonY,
+            width: max(0, tab.frame.width - 4),
+            height: Metrics.buttonSize
+        )
+    }
+
+    func pillIndicatorColor(for tab: Tab) -> NSColor {
+        let unread = surfaces(in: tab.window).contains(where: {
+            !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
+        })
+        if unread {
+            return Tako.Brand.claw
+        }
+        guard let crab = aggregateCrab(for: tab.window) else {
+            return tab.isActive ? Tako.Brand.ok : Palette.dim
+        }
+        switch crab.paneStatus {
+        case .running, .working:
+            return Tako.Brand.ember
+        case .error:
+            return Tako.Brand.error
+        case .done:
+            return Tako.Brand.ok
+        case .needsApproval, .waitingForInput:
+            return Tako.Brand.claw
+        case .disconnected:
+            return Tako.Brand.dim
+        case .idle, .unknown:
+            switch crab.state {
+            case .running:
+                return Tako.Brand.ember
+            case .failed:
+                return Tako.Brand.error
+            case .succeeded:
+                return Tako.Brand.ok
+            case .attention:
+                return Tako.Brand.claw
+            case .ghost:
+                return Tako.Brand.dim
+            case .reconnecting:
+                return Tako.Brand.ember
+            case .idle:
+                return tab.isActive ? Tako.Brand.ok : Palette.dim
+            }
+        }
+    }
+
+    func drawPillTab(_ tab: Tab, in ctx: CGContext) {
+        let hovering = hovered == tab.index
+        let rect = pillRect(for: tab)
+        guard rect.width > 0 else { return }
+
+        // Background pill
+        let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        ctx.addPath(path)
+        if tab.isActive {
+            ctx.setFillColor(Palette.activeTab.cgColor)
+            ctx.fillPath()
+
+            // Subtle outline for crisp pill separation
+            ctx.setStrokeColor(Palette.hairline.cgColor)
+            ctx.setLineWidth(1)
+            ctx.addPath(path)
+            ctx.strokePath()
+        } else if hovering {
+            ctx.setFillColor(Palette.hoverTab.cgColor)
+            ctx.fillPath()
+        } else {
+            ctx.setFillColor(Palette.badge.cgColor)
+            ctx.fillPath()
+        }
+
+        // Clipped progress bar along the bottom curve of the pill
+        let style = progressStyle(for: tab.window)
+        if style.showsInTab, let prog = aggregateProgress(for: tab.window) {
+            ctx.saveGState()
+            ctx.addPath(path)
+            ctx.clip()
+            drawProgressBar(in: rect, progress: prog, context: ctx)
+            ctx.restoreGState()
+        }
+
+        // Status indicator dot (7×7) matching workspace pill, or numeric badge when Command is held
+        let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
+        if showingBadges && tab.index < 9 {
+            let badgeRect = CGRect(x: rect.minX + 6, y: rect.midY - 7, width: 14, height: 14)
+            ctx.setFillColor(Palette.badge.cgColor)
+            ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
+            ctx.fillPath()
+            let label = "\(tab.index + 1)"
+            let width = Tako.TabText.width(of: label, font: Fonts.badge)
+            Tako.TabText.draw(
+                label,
+                atX: badgeRect.midX - width / 2,
+                centeredAtY: badgeRect.midY,
+                font: Fonts.badge,
+                color: Palette.activeText,
+                context: ctx
+            )
+        } else {
+            let dotColor = pillIndicatorColor(for: tab)
+            ctx.setFillColor(dotColor.cgColor)
+            ctx.fillEllipse(in: dotRect)
+        }
+
+        // Close button and label
+        let showsClose = (hovering || tab.isActive) && rect.width >= Metrics.compactTabWidth
+        let textX = dotRect.maxX + 6
+        let closeWidth = showsClose ? Metrics.closeSize + 6 : 0
+        let textWidth = rect.maxX - 8 - closeWidth - textX
+        if textWidth > 8 {
+            drawLabel(for: tab, x: textX, width: textWidth)
+        }
+        if showsClose {
+            let closeGlyphRect = CGRect(
+                x: rect.maxX - 8 - Metrics.closeSize,
+                y: rect.midY - Metrics.closeSize / 2,
+                width: Metrics.closeSize,
+                height: Metrics.closeSize
+            )
+            drawClose(in: closeGlyphRect, ctx: ctx)
+        }
+    }
+
     func drawTab(_ tab: Tab, in ctx: CGContext) {
+        if effectiveTabStyle == .pill {
+            drawPillTab(tab, in: ctx)
+            return
+        }
+
         let hovering = hovered == tab.index
 
         if tab.isActive || hovering {

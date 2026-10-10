@@ -115,6 +115,14 @@ extension Tako {
             true
         }
 
+        /// Override tab presentation style for tests and dynamic previews.
+        var styleOverride: Tako.Config.TabStyle?
+
+        /// Effective tab presentation style.
+        var effectiveTabStyle: Tako.Config.TabStyle {
+            styleOverride ?? (NSApplication.shared.delegate as? AppDelegate)?.tako.config.tabStyle ?? .default
+        }
+
         var workspacePillRect: CGRect {
             guard showsWorkspacePill else { return .zero }
             let ws = WorkspaceStore.shared.activeWorkspace

@@ -175,7 +175,7 @@ let knownTakoConfigKeys: Set<String> = [
     "quick-terminal-animation-duration", "quick-terminal-autohide", "quick-terminal-space-behavior",
     "unfocused-split-opacity", "unfocused-split-fill", "custom-shader", "custom-shader-animation",
     "link-url", "palette", "safe-paste", "command-marks", "command-durations", "command-timestamps", "progress-style", "sticky-command-header", "editor", "trigger", "passive-regex-triggers", "clipboard-read",
-    "snapshot-redact-pattern", "snapshot-redaction-pattern",
+    "snapshot-redact-pattern", "snapshot-redaction-pattern", "tab-style",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.
