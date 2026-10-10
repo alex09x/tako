@@ -343,5 +343,59 @@ struct CustomTabGroupCoverageTests {
         group.syncFrame(from: a)
         #expect(b.frame == a.frame)
     }
+
+    @Test func workspaceSwitchRestoresAllDestinationWorkspaceWindowsAndFocusesActive() {
+        let (ctrlA1, winA1) = TerminalTestSupport.loaded()
+        let (ctrlA2, winA2) = TerminalTestSupport.loaded()
+        let (ctrlB, winB) = TerminalTestSupport.loaded()
+        defer {
+            for (c, w) in [(ctrlA1, winA1), (ctrlA2, winA2), (ctrlB, winB)] {
+                TerminalTestSupport.tearDown(c, w)
+                Tako.CustomTabGroup.leave(w)
+            }
+            Tako.CustomTabGroup.resetForTesting()
+            WorkspaceStore.shared.resetForTesting()
+        }
+        WorkspaceStore.shared.resetForTesting()
+        Tako.CustomTabGroup.resetForTesting()
+
+        // Two separate window groups in Workspace A (default workspace)
+        let groupA1 = Tako.CustomTabGroup.group(for: winA1)
+        let groupA2 = Tako.CustomTabGroup.group(for: winA2)
+        #expect(groupA1 !== groupA2)
+        WorkspaceStore.shared.assignTab(tabIdentifier: winA1.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+        WorkspaceStore.shared.assignTab(tabIdentifier: winA2.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+
+        // One window group in Workspace B
+        let wsB = WorkspaceStore.shared.createWorkspace(name: "Beta")
+        let groupB = Tako.CustomTabGroup.group(for: winB)
+        #expect(groupB !== groupA1 && groupB !== groupA2)
+        WorkspaceStore.shared.assignTab(tabIdentifier: winB.stableTabIdentifier, to: wsB.id)
+
+        // Initial setup in Workspace A: both A windows visible, A1 active and focused
+        winA1.orderFront(nil)
+        winA2.orderFront(nil)
+        winA1.makeKeyAndOrderFront(nil)
+        WorkspaceStore.shared.setActiveTab(tabIdentifier: winA1.stableTabIdentifier, in: WorkspaceStore.defaultWorkspaceId)
+        #expect(winA1.isVisible)
+        #expect(winA2.isVisible)
+
+        // Switch A -> B: A windows hidden, B visible, focus on B
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
+        #expect(!winA1.isVisible)
+        #expect(!winA2.isVisible)
+        #expect(winB.isVisible)
+        let expectedSurfaceB = ctrlB.focusedSurface ?? ctrlB.surfaceTree.first
+        #expect(winB.firstResponder === expectedSurfaceB)
+
+        // Switch B -> A: both A windows restored visible, B hidden, unassisted focus on remembered A1
+        #expect(WorkspaceStore.shared.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
+        #expect(winA1.isVisible)
+        #expect(winA2.isVisible)
+        #expect(!winB.isVisible)
+        let expectedSurfaceA1 = ctrlA1.focusedSurface ?? ctrlA1.surfaceTree.first
+        #expect(winA1.firstResponder === expectedSurfaceA1)
+        #expect(winA2.firstResponder !== expectedSurfaceA1)
+    }
 }
 

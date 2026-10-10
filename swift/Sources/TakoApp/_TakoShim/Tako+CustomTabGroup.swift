@@ -40,9 +40,13 @@ extension Tako {
         /// or during window resize/selection so a new or returning workspace can inherit it.
         static var lastActiveWindowFrame: NSRect?
 
+        /// Explicit flag to suppress window ordering (makeKeyAndOrderFront / orderFront) during offscreen or model unit tests.
+        static var suppressWindowOrderingForTesting: Bool = false
+
         /// Resets test overrides and cached group state for test isolation.
         static func resetForTesting() {
             lastActiveWindowFrame = nil
+            suppressWindowOrderingForTesting = false
         }
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
@@ -132,8 +136,10 @@ extension Tako {
                             if group.syncWindowFrame, let frame = departingFrame {
                                 win.setFrame(frame, display: false)
                             }
-                            win.makeKeyAndOrderFront(nil)
-                            NSApp.activate(ignoringOtherApps: true)
+                            if !suppressWindowOrderingForTesting {
+                                win.makeKeyAndOrderFront(nil)
+                                NSApp.activate(ignoringOtherApps: true)
+                            }
                             let focused = ctrl.focusedSurface ?? ctrl.surfaceTree.first
                             ctrl.focusedSurface = focused
                             if let focused {
@@ -161,8 +167,12 @@ extension Tako {
 
                     if let activeGroup,
                        let target = activeGroup.selectedWindow {
-                        target.makeKeyAndOrderFront(nil)
-                        NSApp.activate(ignoringOtherApps: true)
+                        if !suppressWindowOrderingForTesting {
+                            if !target.isMiniaturized {
+                                target.makeKeyAndOrderFront(nil)
+                                NSApp.activate(ignoringOtherApps: true)
+                            }
+                        }
                         let controller = (target.windowController as? TerminalController) ??
                             (target.delegate as? TerminalController) ??
                             TerminalController.all.first { $0.window === target }
@@ -463,7 +473,6 @@ extension Tako {
                     }
                 }
                 let prev = selectedWindow
-                let shouldOrderFront = target.isVisible || prev?.isVisible == true
                 if selectedWindow !== target {
                     selectedWindow = target
                     let frameToSync = prev?.frame ?? inheritedFrame ?? Self.lastActiveWindowFrame
@@ -471,8 +480,10 @@ extension Tako {
                         target.setFrame(frame, display: false)
                         Self.lastActiveWindowFrame = frame
                     }
-                    if shouldOrderFront {
-                        target.makeKeyAndOrderFront(nil)
+                    if !Self.suppressWindowOrderingForTesting {
+                        if !target.isMiniaturized {
+                            target.orderFront(nil)
+                        }
                         if prev !== target {
                             prev?.orderOut(nil)
                         }
@@ -482,17 +493,16 @@ extension Tako {
                         target.setFrame(frame, display: false)
                         Self.lastActiveWindowFrame = frame
                     }
-                    if shouldOrderFront {
-                        target.makeKeyAndOrderFront(nil)
+                    if !Self.suppressWindowOrderingForTesting {
+                        if !target.isMiniaturized {
+                            target.orderFront(nil)
+                        }
                     }
                 }
                 for sibling in windows where sibling !== target {
                     if let sheet = sibling.attachedSheet { sheet.orderOut(nil) }
                     for child in sibling.childWindows ?? [] { child.orderOut(nil) }
                     sibling.orderOut(nil)
-                }
-                if shouldOrderFront {
-                    NSApp.activate(ignoringOtherApps: true)
                 }
                 reflowTarget()
                 DispatchQueue.main.async {
