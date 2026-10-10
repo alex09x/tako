@@ -246,5 +246,98 @@ struct TerminalSettingsTests {
         dialog.keyDown(with: keyEvent(code: 36)) // Return
         #expect(dialog.isTabBarFocused == false)
     }
+
+    // MARK: - Persistence Failure & Canonical Alias Precedence
+
+    @Test func dialogPersistenceFailureReportsErrorAndRetainsState() throws {
+        // 1. Invalid path: write failure when attempting to customize
+        let invalidPath = "/dev/null/impossible_dir_\(UUID().uuidString)/config"
+        let invalidConfigFile = KeybindConfigFile(configPath: invalidPath)
+
+        let dialog = TerminalSettingsDialog(style: .from(nil), configFile: invalidConfigFile, initialTab: .terminalSettings)
+        #expect(dialog.activeTab == .terminalSettings)
+        #expect(!dialog.filteredSettingItems.isEmpty)
+
+        dialog.selectedSettingIndex = 0
+        let item = dialog.filteredSettingItems[0]
+
+        dialog.toggleOrCycleSelectedSetting()
+        #expect(dialog.statusMessage?.hasPrefix("Error:") == true)
+        #expect((dialog.accessibilityValue() as? String)?.contains("setting_write_error") == true)
+        #expect(invalidConfigFile.getSettingValue(for: item) == nil)
+
+        // 2. Read-only destination: reset failure when attempting to revert custom setting
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: tempDir.path)
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let configPath = tempDir.appendingPathComponent("config").path
+        try "workspace-sync-window-frame = true\n".write(toFile: configPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: tempDir.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: configPath)
+
+        let readOnlyConfigFile = KeybindConfigFile(configPath: configPath)
+        guard let wsIndex = dialog.filteredSettingItems.firstIndex(where: { $0.id == "workspace-sync-window-frame" }) else {
+            Issue.record("Missing workspace-sync-window-frame setting")
+            return
+        }
+        let readOnlyDialog = TerminalSettingsDialog(style: .from(nil), configFile: readOnlyConfigFile, initialTab: .terminalSettings)
+        readOnlyDialog.selectedSettingIndex = wsIndex
+        let wsItem = readOnlyDialog.filteredSettingItems[wsIndex]
+        #expect(readOnlyConfigFile.getSettingValue(for: wsItem) == "true")
+
+        readOnlyDialog.resetSelectedSetting()
+        #expect(readOnlyDialog.statusMessage?.hasPrefix("Error:") == true)
+        #expect((readOnlyDialog.accessibilityValue() as? String)?.contains("setting_reset_error") == true)
+        #expect(readOnlyConfigFile.getSettingValue(for: wsItem) == "true")
+    }
+
+    @Test func canonicalKeyPrecedenceOverAliasMatchesRuntime() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        guard let wsItem = TerminalSettingRegistry.setting(for: "workspace-sync-window-frame") else {
+            Issue.record("Missing workspace-sync-window-frame setting")
+            return
+        }
+
+        let configPath = tempDir.appendingPathComponent("config").path
+
+        // Case 1: canonical=true followed by alias=false -> canonical wins (true)
+        let content1 = "workspace-sync-window-frame = true\nworkspace-inherit-window-frame = false\n"
+        try content1.write(toFile: configPath, atomically: true, encoding: .utf8)
+        var file = KeybindConfigFile(configPath: configPath)
+        #expect(file.getSettingValue(for: wsItem) == "true")
+        var runtimeConfig = Tako.Config(at: configPath)
+        #expect(runtimeConfig.workspaceSyncWindowFrame == true)
+
+        // Case 2: alias=false followed by canonical=true -> canonical wins (true)
+        let content2 = "workspace-inherit-window-frame = false\nworkspace-sync-window-frame = true\n"
+        try content2.write(toFile: configPath, atomically: true, encoding: .utf8)
+        file = KeybindConfigFile(configPath: configPath)
+        #expect(file.getSettingValue(for: wsItem) == "true")
+        runtimeConfig = Tako.Config(at: configPath)
+        #expect(runtimeConfig.workspaceSyncWindowFrame == true)
+
+        // Case 3: canonical=false followed by alias=true -> canonical wins (false)
+        let content3 = "workspace-sync-window-frame = false\nworkspace-inherit-window-frame = true\n"
+        try content3.write(toFile: configPath, atomically: true, encoding: .utf8)
+        file = KeybindConfigFile(configPath: configPath)
+        #expect(file.getSettingValue(for: wsItem) == "false")
+        runtimeConfig = Tako.Config(at: configPath)
+        #expect(runtimeConfig.workspaceSyncWindowFrame == false)
+
+        // Case 4: only alias present -> alias is resolved
+        let content4 = "workspace-inherit-window-frame = true\n"
+        try content4.write(toFile: configPath, atomically: true, encoding: .utf8)
+        file = KeybindConfigFile(configPath: configPath)
+        #expect(file.getSettingValue(for: wsItem) == "true")
+        runtimeConfig = Tako.Config(at: configPath)
+        #expect(runtimeConfig.workspaceSyncWindowFrame == true)
+    }
 }
 

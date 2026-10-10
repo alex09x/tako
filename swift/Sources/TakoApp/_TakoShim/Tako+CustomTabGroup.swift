@@ -36,6 +36,15 @@ extension Tako {
             syncWindowFrameOverride ?? (NSApp.delegate as? AppDelegate)?.tako.config.workspaceSyncWindowFrame ?? false
         }
 
+        /// The most recent active window frame across all groups, captured before workspace switches
+        /// or during window resize/selection so a new or returning workspace can inherit it.
+        static var lastActiveWindowFrame: NSRect?
+
+        /// Resets test overrides and cached group state for test isolation.
+        static func resetForTesting() {
+            lastActiveWindowFrame = nil
+        }
+
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
         private static var workspaceObserverInstalled = false
 
@@ -90,6 +99,27 @@ extension Tako {
                 queue: nil
             ) { _ in
                 MainActor.assumeIsolated {
+                    // Capture departing active window frame from the departing workspace before selection is cleared or windows hidden.
+                    let departingFrame: NSRect? = {
+                        if let keyWin = NSApp.keyWindow, groupsByWindow[ObjectIdentifier(keyWin)] != nil {
+                            return keyWin.frame
+                        }
+                        for group in allGroups {
+                            if let sel = group.selectedWindow, sel.isVisible {
+                                return sel.frame
+                            }
+                        }
+                        for group in allGroups {
+                            if let sel = group.selectedWindow {
+                                return sel.frame
+                            }
+                        }
+                        return lastActiveWindowFrame
+                    }()
+                    if let departingFrame {
+                        lastActiveWindowFrame = departingFrame
+                    }
+
                     let activeWsId = WorkspaceStore.shared.activeWorkspaceId
                     let assignedTabs = WorkspaceStore.shared.workspace(for: activeWsId)?.tabIdentifiers ?? []
                     let hasWorkspaceWindow = allGroups.contains { group in
@@ -98,7 +128,10 @@ extension Tako {
                     if !hasWorkspaceWindow, let app = (NSApp.delegate as? AppDelegate)?.tako {
                         let ctrl = TerminalController.newWindow(app)
                         if let win = ctrl.window {
-                            _ = CustomTabGroup.group(for: win)
+                            let group = CustomTabGroup.group(for: win)
+                            if group.syncWindowFrame, let frame = departingFrame {
+                                win.setFrame(frame, display: false)
+                            }
                             win.makeKeyAndOrderFront(nil)
                             NSApp.activate(ignoringOtherApps: true)
                             let focused = ctrl.focusedSurface ?? ctrl.surfaceTree.first
@@ -115,9 +148,9 @@ extension Tako {
                         group.hideInactiveWindows()
                     }
 
-                    // Pass 2: Sync active windows for each group.
+                    // Pass 2: Sync active windows for each group with the captured departing frame.
                     for group in allGroups {
-                        group.syncWithActiveWorkspace()
+                        group.syncWithActiveWorkspace(inheritedFrame: departingFrame)
                     }
 
                     // Pass 3: Present and focus the active window of the active workspace.
@@ -366,6 +399,7 @@ extension Tako {
             }
             let previous = selectedWindow
             selectedWindow = window
+            Self.lastActiveWindowFrame = window.frame
             if previous?.isVisible == true || window.isVisible {
                 window.setFrame(previous?.frame ?? window.frame, display: false)
                 window.order(.above, relativeTo: previous?.windowNumber ?? 0)
@@ -392,7 +426,7 @@ extension Tako {
         }
 
         /// Synchronize selected window and orderOut non-visible windows when active workspace changes.
-        func syncWithActiveWorkspace() {
+        func syncWithActiveWorkspace(inheritedFrame: NSRect? = nil) {
             hideInactiveWindows()
 
             focusGeneration += 1
@@ -428,25 +462,38 @@ extension Tako {
                         }
                     }
                 }
+                let prev = selectedWindow
+                let shouldOrderFront = target.isVisible || prev?.isVisible == true
                 if selectedWindow !== target {
-                    let prev = selectedWindow
                     selectedWindow = target
-                    if syncWindowFrame, let prevFrame = prev?.frame {
-                        target.setFrame(prevFrame, display: false)
+                    let frameToSync = prev?.frame ?? inheritedFrame ?? Self.lastActiveWindowFrame
+                    if syncWindowFrame, let frame = frameToSync {
+                        target.setFrame(frame, display: false)
+                        Self.lastActiveWindowFrame = frame
                     }
-                    target.makeKeyAndOrderFront(nil)
-                    if prev !== target {
-                        prev?.orderOut(nil)
+                    if shouldOrderFront {
+                        target.makeKeyAndOrderFront(nil)
+                        if prev !== target {
+                            prev?.orderOut(nil)
+                        }
                     }
                 } else {
-                    target.makeKeyAndOrderFront(nil)
+                    if syncWindowFrame, let frame = inheritedFrame ?? Self.lastActiveWindowFrame {
+                        target.setFrame(frame, display: false)
+                        Self.lastActiveWindowFrame = frame
+                    }
+                    if shouldOrderFront {
+                        target.makeKeyAndOrderFront(nil)
+                    }
                 }
                 for sibling in windows where sibling !== target {
                     if let sheet = sibling.attachedSheet { sheet.orderOut(nil) }
                     for child in sibling.childWindows ?? [] { child.orderOut(nil) }
                     sibling.orderOut(nil)
                 }
-                NSApp.activate(ignoringOtherApps: true)
+                if shouldOrderFront {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 reflowTarget()
                 DispatchQueue.main.async {
                     reflowTarget()
@@ -468,7 +515,14 @@ extension Tako {
         /// whichever window is currently selected.
         func syncFrame(from window: NSWindow) {
             guard selectedWindow === window else { return }
+            Self.lastActiveWindowFrame = window.frame
+            let winWs = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId
             for sibling in windows where sibling !== window {
+                let siblingWs = WorkspaceStore.shared.workspace(forTab: sibling.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId
+                // Preserve independent workspace geometry on resize when disabled
+                if siblingWs != winWs && !syncWindowFrame {
+                    continue
+                }
                 sibling.setFrame(window.frame, display: false)
                 if let controller = sibling.windowController as? TerminalController {
                     controller.reflowSurfaces(forcePtyResize: true)

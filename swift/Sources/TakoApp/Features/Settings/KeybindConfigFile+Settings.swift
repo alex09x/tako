@@ -26,11 +26,19 @@ extension KeybindConfigFile {
     }
 
     public func getSettingValue(for setting: TerminalSettingItem) -> String? {
-        let keysToCheck = [setting.id] + setting.aliases
+        // Runtime precedence: canonical key takes precedence over aliases whenever present.
         for line in rawConfigLines.reversed() {
             guard let parsed = Self.parseConfigKeyValue(line) else { continue }
-            if keysToCheck.contains(parsed.key) {
+            if parsed.key == setting.id {
                 return parsed.value
+            }
+        }
+        for alias in setting.aliases {
+            for line in rawConfigLines.reversed() {
+                guard let parsed = Self.parseConfigKeyValue(line) else { continue }
+                if parsed.key == alias {
+                    return parsed.value
+                }
             }
         }
         return nil
@@ -80,7 +88,7 @@ extension KeybindConfigFile {
 
     @discardableResult
     public func removeSettingValue(for setting: TerminalSettingItem) -> Bool {
-        guard let path = configPath else { return true }
+        guard let path = configPath else { return false }
         guard FileManager.default.fileExists(atPath: path) else { return true }
         do {
             let content = try String(contentsOfFile: path, encoding: .utf8)

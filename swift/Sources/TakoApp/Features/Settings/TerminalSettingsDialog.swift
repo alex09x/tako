@@ -234,11 +234,21 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         let current = configFile.effectiveSettingValue(for: item)
         let next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
         if next == item.type.defaultStringValue {
-            configFile.removeSettingValue(for: item)
-            statusMessage = "Default: \(item.id) = \(next)"
+            if configFile.removeSettingValue(for: item) {
+                statusMessage = "Default: \(item.id) = \(next)"
+                setAccessibilityValue("setting_reset_success: \(item.id)")
+            } else {
+                statusMessage = "Error: Failed to reset \(item.id) in config file."
+                setAccessibilityValue("setting_write_error: \(item.id)")
+            }
         } else {
-            configFile.setSettingValue(next, for: item)
-            statusMessage = "Custom: \(item.id) = \(next)"
+            if configFile.setSettingValue(next, for: item) {
+                statusMessage = "Custom: \(item.id) = \(next)"
+                setAccessibilityValue("setting_custom_success: \(item.id)")
+            } else {
+                statusMessage = "Error: Failed to write \(item.id) to config file."
+                setAccessibilityValue("setting_write_error: \(item.id)")
+            }
         }
         needsDisplay = true
     }
@@ -246,8 +256,18 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     func resetSelectedSetting() {
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
-        configFile.removeSettingValue(for: item)
-        statusMessage = "Reset to default: \(item.id)"
+        let wasCustom = configFile.getSettingValue(for: item) != nil
+        if configFile.removeSettingValue(for: item) {
+            if wasCustom {
+                statusMessage = "Reset to default: \(item.id)"
+            } else {
+                statusMessage = "\(item.id) is already at default."
+            }
+            setAccessibilityValue("setting_reset_success: \(item.id)")
+        } else {
+            statusMessage = "Error: Failed to reset \(item.id) in config file."
+            setAccessibilityValue("setting_reset_error: \(item.id)")
+        }
         needsDisplay = true
     }
 

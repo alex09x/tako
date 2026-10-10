@@ -261,21 +261,26 @@ struct CustomTabGroupCoverageTests {
         #expect(group.selectedWindow === a)
     }
 
-    @Test func syncWithActiveWorkspacePreservesIndependentFramesByDefaultAndSyncsWhenEnabled() {
+    @Test func syncWithActiveWorkspaceTwoGroupWorkflow() {
         let a = makeWindow(title: "wsA")
         let b = makeWindow(title: "wsB")
         defer {
             Tako.CustomTabGroup.leave(a)
             Tako.CustomTabGroup.leave(b)
+            Tako.CustomTabGroup.resetForTesting()
             WorkspaceStore.shared.resetForTesting()
         }
         WorkspaceStore.shared.resetForTesting()
+        Tako.CustomTabGroup.resetForTesting()
+
         let wsB = WorkspaceStore.shared.createWorkspace(name: "Beta")
         WorkspaceStore.shared.assignTab(tabIdentifier: a.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
         WorkspaceStore.shared.assignTab(tabIdentifier: b.stableTabIdentifier, to: wsB.id)
 
-        Tako.CustomTabGroup.join(b, to: a, select: false)
-        let group = Tako.CustomTabGroup.group(for: a)
+        // Separate groups (standard multi-workspace topology)
+        let groupA = Tako.CustomTabGroup.group(for: a)
+        let groupB = Tako.CustomTabGroup.group(for: b)
+        #expect(groupA !== groupB)
 
         let frameA = NSRect(x: 100, y: 200, width: 400, height: 300)
         let frameB = NSRect(x: 200, y: 350, width: 500, height: 350)
@@ -285,25 +290,58 @@ struct CustomTabGroupCoverageTests {
         let actualB = b.frame
         #expect(actualA != actualB)
 
-        // 1. By default, syncWindowFrame is false: switching active workspace to B keeps actualB
-        #expect(group.syncWindowFrame == false)
+        // 1. By default (syncWindowFrame == false), switching to Workspace B retains Window B's frame
+        #expect(groupB.syncWindowFrame == false)
         #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
-        group.syncWithActiveWorkspace()
-        #expect(group.selectedWindow === b)
+        groupA.syncWithActiveWorkspace(inheritedFrame: actualA)
+        groupB.syncWithActiveWorkspace(inheritedFrame: actualA)
+        #expect(groupA.selectedWindow == nil)
+        #expect(groupB.selectedWindow === b)
         #expect(b.frame == actualB)
 
-        // Switch back to Default: a keeps actualA
-        #expect(WorkspaceStore.shared.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
-        group.syncWithActiveWorkspace()
-        #expect(group.selectedWindow === a)
-        #expect(a.frame == actualA)
-
-        // 2. When syncWindowFrame is enabled: switching active workspace copies previous frame
-        group.syncWindowFrameOverride = true
-        #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
-        group.syncWithActiveWorkspace()
-        #expect(group.selectedWindow === b)
+        // 2. When syncWindowFrame is enabled, switching to Workspace B inherits departing frame
+        groupB.syncWindowFrameOverride = true
+        groupB.syncWithActiveWorkspace(inheritedFrame: actualA)
         #expect(b.frame == actualA)
+    }
+
+    @Test func syncFrameMixedGroupPreservesIndependentFramesWhenDisabled() {
+        let a = makeWindow(title: "wsA")
+        let b = makeWindow(title: "wsB")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+            Tako.CustomTabGroup.resetForTesting()
+            WorkspaceStore.shared.resetForTesting()
+        }
+        WorkspaceStore.shared.resetForTesting()
+        Tako.CustomTabGroup.resetForTesting()
+
+        let wsB = WorkspaceStore.shared.createWorkspace(name: "Beta")
+        WorkspaceStore.shared.assignTab(tabIdentifier: a.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+        WorkspaceStore.shared.assignTab(tabIdentifier: b.stableTabIdentifier, to: wsB.id)
+
+        // Join into same group (mixed-workspace group)
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+        let group = Tako.CustomTabGroup.group(for: a)
+
+        let frameA = NSRect(x: 100, y: 200, width: 400, height: 300)
+        let frameB = NSRect(x: 200, y: 350, width: 500, height: 350)
+        a.setFrame(frameA, display: false)
+        b.setFrame(frameB, display: false)
+        let actualB = b.frame
+
+        // 1. When disabled, resizing window A does NOT alter window B's geometry
+        #expect(group.syncWindowFrame == false)
+        let resizedA = NSRect(x: 120, y: 220, width: 450, height: 320)
+        a.setFrame(resizedA, display: false)
+        group.syncFrame(from: a)
+        #expect(b.frame == actualB)
+
+        // 2. When enabled, syncFrame copies window A's frame to window B
+        group.syncWindowFrameOverride = true
+        group.syncFrame(from: a)
+        #expect(b.frame == a.frame)
     }
 }
 
