@@ -30,6 +30,9 @@ extension Tako.TabBarView {
         guard showsStrip else { return nil }
         guard point.x >= effectiveFirstTabX && point.x < bounds.width - buttonsReservedWidth else { return nil }
         guard point.y >= 0 && point.y <= bounds.height else { return nil }
+        if tabs.isEmpty || tabs.count != windows.count {
+            layoutTabs()
+        }
         return tabs.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }
     }
 

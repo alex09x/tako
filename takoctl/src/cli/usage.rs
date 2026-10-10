@@ -59,6 +59,7 @@ commands:
   triggers clear          clear dynamically registered triggers
   workspace [list]        list all workspaces and tab counts
   workspace current       show the active workspace
+  workspace history       show workspace transition history
   workspace switch NAME   switch to workspace NAME (^⌥] / ^⌥[)
   workspace create NAME   create a new workspace (--root DIR, --color C, --icon I)
   workspace delete NAME   delete workspace NAME (tabs move to Default)

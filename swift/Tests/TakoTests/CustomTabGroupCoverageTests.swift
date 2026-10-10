@@ -240,5 +240,25 @@ struct CustomTabGroupCoverageTests {
         group.syncFrame(from: b)
         #expect(a.frame == resized)
     }
+
+    @Test func rapidSelectIncrementsFocusGenerationAndUpdatesSelection() {
+        let a = makeWindow(title: "a")
+        let b = makeWindow(title: "b")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+        let group = Tako.CustomTabGroup.group(for: a)
+        let gen0 = group.focusGeneration
+        group.select(b)
+        let gen1 = group.focusGeneration
+        #expect(gen1 > gen0)
+        #expect(group.selectedWindow === b)
+        group.select(a)
+        let gen2 = group.focusGeneration
+        #expect(gen2 > gen1)
+        #expect(group.selectedWindow === a)
+    }
 }
 

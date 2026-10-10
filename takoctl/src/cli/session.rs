@@ -37,6 +37,12 @@ pub fn parse(
                         return Err(format!("unexpected argument {}", positional[0]));
                     }
                 }
+                "history" => {
+                    args.insert("action".into(), Value::String("history".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
                 "switch" => {
                     args.insert("action".into(), Value::String("switch".into()));
                     if positional.is_empty() {

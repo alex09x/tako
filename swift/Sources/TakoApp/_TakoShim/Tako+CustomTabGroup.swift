@@ -30,7 +30,7 @@ extension Tako {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
         /// Monotonically increasing generation to invalidate stale focus/reflow callbacks.
-        private var focusGeneration: Int = 0
+        private(set) var focusGeneration: Int = 0
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
         private static var workspaceObserverInstalled = false
@@ -364,9 +364,16 @@ extension Tako {
             selectedWindow = window
             if previous?.isVisible == true || window.isVisible {
                 window.setFrame(previous?.frame ?? window.frame, display: false)
+                window.order(.above, relativeTo: previous?.windowNumber ?? 0)
                 window.makeKeyAndOrderFront(nil)
-                previous?.orderOut(nil)
                 NSApp.activate(ignoringOtherApps: true)
+                CATransaction.flush()
+                DispatchQueue.main.async { [weak self, weak previous] in
+                    guard let self, let previous else { return }
+                    if previous !== self.selectedWindow {
+                        previous.orderOut(nil)
+                    }
+                }
             }
 
             if let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {

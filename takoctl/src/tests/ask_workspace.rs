@@ -115,6 +115,10 @@ fn workspace_subcommands_and_options_parsed_and_rendered() {
     let opts = parse(&args(&["workspace", "current"])).unwrap();
     assert_eq!(opts.args["action"], "current");
 
+    // History
+    let opts = parse(&args(&["workspace", "history"])).unwrap();
+    assert_eq!(opts.args["action"], "history");
+
     // Switch
     let opts = parse(&args(&["workspace", "switch", "tako"])).unwrap();
     assert_eq!(opts.args["action"], "switch");

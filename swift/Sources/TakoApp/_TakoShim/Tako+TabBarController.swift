@@ -100,6 +100,7 @@ extension Tako {
         static func refreshAll() {
             for bar in installed.values {
                 if let window = bar.window { clearTitlebarBackground(in: window) }
+                bar.layoutTabs()
                 bar.refresh()
             }
         }

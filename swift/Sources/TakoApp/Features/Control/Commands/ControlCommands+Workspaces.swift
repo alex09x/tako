@@ -48,6 +48,16 @@ extension ControlCommands {
             if let activeTab = ws.activeTabIdentifier { dict["active_tab"] = .string(activeTab) }
             return dict
 
+        case "history":
+            let items: [JSON] = WorkspaceStore.shared.recentTransitions.map { t in
+                .object([
+                    "from_id": .string(t.fromId.uuidString.lowercased()),
+                    "to_id": .string(t.toId.uuidString.lowercased()),
+                    "timestamp": .number(t.timestamp),
+                ])
+            }
+            return ["transitions": .array(items)]
+
         case "switch":
             guard let nameOrId = request.args["name"]?.string, !nameOrId.isEmpty else {
                 throw ControlError(.invalid, "workspace name or ID required")

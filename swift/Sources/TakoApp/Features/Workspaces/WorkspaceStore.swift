@@ -25,12 +25,31 @@ public final class WorkspaceStore: ObservableObject {
 
     public static let defaultWorkspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
+    public struct WorkspaceTransition: Codable, Sendable {
+        public let fromId: UUID
+        public let toId: UUID
+        public let timestamp: TimeInterval
+
+        public init(fromId: UUID, toId: UUID, timestamp: TimeInterval) {
+            self.fromId = fromId
+            self.toId = toId
+            self.timestamp = timestamp
+        }
+    }
+
+    public private(set) var recentTransitions: [WorkspaceTransition] = []
+
     private var isLoading: Bool = false
     @Published public private(set) var workspaces: [Workspace] = []
     @Published public var activeWorkspaceId: UUID {
         didSet {
             guard !isLoading else { return }
             if oldValue != activeWorkspaceId {
+                recentTransitions.append(WorkspaceTransition(
+                    fromId: oldValue,
+                    toId: activeWorkspaceId,
+                    timestamp: ProcessInfo.processInfo.systemUptime
+                ))
                 save()
                 NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
             }

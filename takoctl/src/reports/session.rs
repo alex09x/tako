@@ -346,6 +346,16 @@ pub fn workspace_report(result: &Value) -> String {
         let ws = result["workspace"].as_str().unwrap_or("");
         return format!("assigned {tab} to {ws}\n");
     }
+    if let Some(transitions) = result.get("transitions").and_then(Value::as_array) {
+        let mut out = String::new();
+        for t in transitions {
+            let from = t["from_id"].as_str().unwrap_or("?");
+            let to = t["to_id"].as_str().unwrap_or("?");
+            let ts = t["timestamp"].as_f64().unwrap_or(0.0);
+            out += &format!("{ts:.3}: {from} -> {to}\n");
+        }
+        return out;
+    }
     format!("{result}\n")
 }
 

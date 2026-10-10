@@ -669,6 +669,18 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         return (root["workspaces"] as? [[String: Any]]) ?? []
     }
 
+    /// Get workspace transition history via takoctl.
+    func workspaceTransitions() throws -> [[String: Any]] {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let out = try exec("\(ctl) workspace history --json")
+        guard let data = out.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        let root = (obj["result"] as? [String: Any]) ?? obj
+        return (root["transitions"] as? [[String: Any]]) ?? []
+    }
+
     /// Whether any UI element across the app's windows contains this text.
     func hasText(containing target: String) -> Bool {
         for window in windows() {
@@ -766,6 +778,33 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
             CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
                     mouseCursorPosition: home, mouseButton: .left)?.post(tap: .cghidEventTap)
         }
+    }
+
+    /// Rapid mouse click without helper settling sleeps or cursor restoration.
+    func postClick(at point: CGPoint) throws {
+        guard topmostOwner(at: point) == pid else {
+            let winInfo = topmostWindowInfo(at: point)
+            throw Failure("refusing to click at \(point): the window there is not Tako's (windows: \(winInfo))")
+        }
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(10_000)
+        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                 mouseCursorPosition: point, mouseButton: .left) else {
+            throw Failure("failed to create leftMouseDown CGEvent")
+        }
+        down.setIntegerValueField(.mouseEventClickState, value: 1)
+        down.post(tap: .cghidEventTap)
+
+        usleep(25_000)
+
+        guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                               mouseCursorPosition: point, mouseButton: .left) else {
+            throw Failure("failed to create leftMouseUp CGEvent")
+        }
+        up.setIntegerValueField(.mouseEventClickState, value: 1)
+        up.post(tap: .cghidEventTap)
+        usleep(10_000)
     }
 
     /// Perform a drag from start screen point to end screen point via real CGEvent mouse events.
@@ -883,7 +922,7 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         return nil
     }
 
-    func clickTab(index: Int, in window: AXUIElement? = nil) throws {
+    func tabClickPoint(index: Int, in window: AXUIElement? = nil) throws -> CGPoint {
         guard let tab = tabElement(index: index, in: window) else {
             throw Failure("tab-\(index) accessibility element not found")
         }
@@ -895,7 +934,11 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         var size = CGSize.zero
         AXValueGetValue(tabPos, .cgPoint, &pos)
         AXValueGetValue(tabSize, .cgSize, &size)
-        let clickPoint = CGPoint(x: pos.x + min(25, size.width / 3), y: pos.y + size.height / 2)
+        return CGPoint(x: pos.x + min(25, size.width / 3), y: pos.y + size.height / 2)
+    }
+
+    func clickTab(index: Int, in window: AXUIElement? = nil) throws {
+        let clickPoint = try tabClickPoint(index: index, in: window)
         try click(at: clickPoint)
         usleep(600_000)
     }
@@ -997,6 +1040,17 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
             usleep(25_000)
         }
         usleep(25_000)
+    }
+
+    /// Rapid system key press via .cghidEventTap so menu shortcuts are recognized.
+    func postKey(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+            else { continue }
+            event.flags = down ? flags : []
+            event.post(tap: .cghidEventTap)
+            usleep(8_000)
+        }
     }
 
     func clickButton(titled title: String) throws {
@@ -4202,6 +4256,8 @@ let scenarios: [Scenario] = [
         usleep(1_000_000)
 
         let initialWorkspaces = (try? d.workspaceList()) ?? []
+        let defaultWsIdStr = initialWorkspaces.first(where: { ($0["name"] as? String) == "Default" })?["id"] as? String
+            ?? "00000000-0000-0000-0000-000000000001"
 
         // --- PHASE 1: Default Workspace ---
         // 1. Initial window dragging verification with real CGEvent drag
@@ -4305,6 +4361,7 @@ let scenarios: [Scenario] = [
             return !initialWorkspaces.contains(where: { ($0["id"] as? String) == id }) &&
                    (ws["name"] as? String) != "Default"
         }) ?? workspacesAfterCreate.first(where: { ($0["name"] as? String) != "Default" })
+        let ws2IdStr = (ws2Info?["id"] as? String) ?? ""
         guard let ws2Name = ws2Info?["name"] as? String else {
             throw Failure("new workspace record not found in workspace list")
         }
@@ -4425,19 +4482,46 @@ let scenarios: [Scenario] = [
         }
 
         // --- PHASE 4: Rapid Transitions Within Delay Window (<150ms) ---
-        // 15. Rapidly switch workspaces B -> Default (A) -> B within 80ms (within previous 50ms/150ms delay window)
-        let wsList0 = (try? d.workspaceList()) ?? []
-        let act0 = wsList0.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
-        d.key(Key.leftBracket, [.maskControl, .maskAlternate])
-        usleep(80_000) // 80ms: within the callback window
-        let wsList1 = (try? d.workspaceList()) ?? []
-        let act1 = wsList1.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
-        d.key(Key.rightBracket, [.maskControl, .maskAlternate])
+        // 15. Rapidly switch workspaces B -> Default (A) -> B within bounded race window (<140ms dispatch)
+        // Record baseline transition count so we can verify exact intermediate and final transitions
+        let transitionsBefore = (try? d.workspaceTransitions()) ?? []
+        let baselineTransitionCount = transitionsBefore.count
+
+        let tWs0 = ProcessInfo.processInfo.systemUptime
+        d.postKey(Key.leftBracket, [.maskControl, .maskAlternate])
+        usleep(25_000) // 25ms: within the callback window
+        let tWs1 = ProcessInfo.processInfo.systemUptime
+        d.postKey(Key.rightBracket, [.maskControl, .maskAlternate])
+        let wsDispatchIntervalMs = (tWs1 - tWs0) * 1000.0
+        guard wsDispatchIntervalMs < 140.0 else {
+            throw Failure("rapid workspace switch dispatch interval exceeded race window: \(wsDispatchIntervalMs)ms (expected < 140ms)")
+        }
+
+        // Allow delayed callbacks (50ms and 150ms) to run and settle
         usleep(500_000)
-        let wsList2 = (try? d.workspaceList()) ?? []
-        let act2 = wsList2.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
-        guard act1 == "Default", act2 == ws2Name else {
-            throw Failure("rapid workspace transition did not cycle B -> A -> B (act0=\(act0), act1=\(act1), act2=\(act2), expected A: Default, B: \(ws2Name))")
+
+        // Confirm both intermediate and final transitions via app-side transition history
+        let transitionsAfter = (try? d.workspaceTransitions()) ?? []
+        guard transitionsAfter.count >= baselineTransitionCount + 2 else {
+            throw Failure("expected at least 2 transitions recorded during rapid switch, found \(transitionsAfter.count - baselineTransitionCount) (total: \(transitionsAfter.count), baseline: \(baselineTransitionCount))")
+        }
+        let intermediateTransition = transitionsAfter[baselineTransitionCount]
+        let finalTransition = transitionsAfter[baselineTransitionCount + 1]
+
+        let intermediateTo = intermediateTransition["to_id"] as? String ?? ""
+        guard intermediateTo == defaultWsIdStr.lowercased() else {
+            throw Failure("intermediate rapid transition went to \(intermediateTo), expected Default (\(defaultWsIdStr))")
+        }
+        let finalTo = finalTransition["to_id"] as? String ?? ""
+        guard finalTo == ws2IdStr.lowercased() else {
+            throw Failure("final rapid transition went to \(finalTo), expected Workspace 2 (\(ws2IdStr))")
+        }
+
+        if let ts0 = intermediateTransition["timestamp"] as? Double,
+           let ts1 = finalTransition["timestamp"] as? Double {
+            guard ts1 >= ts0 else {
+                throw Failure("app-side transition timestamp order invalid (ts0=\(ts0), ts1=\(ts1))")
+            }
         }
 
         // Verify inactive Workspace A windows were not re-shown by any stale delayed callbacks
@@ -4456,11 +4540,37 @@ let scenarios: [Scenario] = [
             throw Failure("rapid workspace transition failed to route unassisted input to Workspace B Tab 1 (got: \(rapidWsTTY), expected: \(ws2_tab1))")
         }
 
-        // 16. Rapid tab switching within Workspace B (click Tab 0 then Tab 1 within 80ms)
-        try d.clickTab(index: 0)
-        usleep(80_000) // 80ms: within the callback window
-        try d.clickTab(index: 1)
+        // 16. Rapid tab switching within Workspace B (click Tab 0 then Tab 1 within bounded race window)
+        // Pre-resolve safe target geometry to avoid helper settling delays
+        let tab0Point = try d.tabClickPoint(index: 0)
+        let tab1Point = try d.tabClickPoint(index: 1)
+
+        let tTab0 = ProcessInfo.processInfo.systemUptime
+        try d.postClick(at: tab0Point)
+        usleep(50_000) // 50ms: within the callback window (<150ms)
+        let tTab1 = ProcessInfo.processInfo.systemUptime
+        try d.postClick(at: tab1Point)
+        let tabDispatchIntervalMs = (tTab1 - tTab0) * 1000.0
+        guard tabDispatchIntervalMs < 140.0 else {
+            throw Failure("rapid tab switch dispatch interval exceeded race window: \(tabDispatchIntervalMs)ms (expected < 140ms)")
+        }
+
+        // Allow delayed callbacks (50ms and 150ms) to run and settle
         usleep(500_000)
+
+        // Verify Tab 1 accessibility state indicates selection
+        let selectedTab1 = d.wait(for: {
+            guard let tab1Elem = d.tabElement(index: 1) else { return false }
+            let val = d.attribute(tab1Elem, kAXValueAttribute) as NSNumber?
+            return val?.intValue == 1
+        }, timeout: 2.0)
+        guard selectedTab1 else {
+            let v = (d.tabElement(index: 1).flatMap { d.attribute($0, kAXValueAttribute) as NSNumber? })?.intValue ?? -1
+            let v0 = (d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) as NSNumber? })?.intValue ?? -1
+            let onScreen = d.onScreenWindowNumbers()
+            let focus = d.debugFocusState()
+            throw Failure("tab-1 AX value is \(v), tab-0 AX value is \(v0), onScreen: \(onScreen), focus: \(focus), expected 1 (selected)")
+        }
 
         // Verify unassisted keyboard typing routes to Tab 1
         try d.run("tty > \(d.path("ws2_rapid_tab.txt"))")
