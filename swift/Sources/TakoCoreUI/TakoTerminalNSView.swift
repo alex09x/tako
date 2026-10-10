@@ -318,9 +318,21 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var frameOverscanRows: Int = 0
     var lastReportedScrollPosition: Double = 1
 
-    public init(frame: NSRect = .zero, core: TakoCore? = nil, theme: TerminalTheme = .takoDefault) {
-        let initialCore = core ?? TakoCore(cols: 80, rows: 24)
+    public internal(set) var hasCompletedInitialLayout: Bool = false
+
+    public init(
+        frame: NSRect = .zero,
+        core: TakoCore? = nil,
+        theme: TerminalTheme = .takoDefault,
+        initialCols: Int = 80,
+        initialRows: Int = 24
+    ) {
+        let targetCols = max(initialCols, 1)
+        let targetRows = max(initialRows, 1)
+        let initialCore = core ?? TakoCore(cols: UInt32(targetCols), rows: UInt32(targetRows))
         self.core = initialCore
+        self.cols = targetCols
+        self.rows = targetRows
         self.parserCoordinator = TerminalParserCoordinator(core: initialCore)
         self.theme = theme
         self.renderer = TerminalRenderer(

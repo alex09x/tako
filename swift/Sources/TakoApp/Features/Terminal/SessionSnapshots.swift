@@ -18,6 +18,20 @@ struct SessionSnapshot: Equatable {
     var savedAt: Date
     var checkpoint: Data
 
+    /// The terminal dimensions (columns and rows) stored in the checkpoint header and payload.
+    var checkpointGeometry: (cols: Int, rows: Int)? {
+        guard checkpoint.count >= 28 else { return nil }
+        guard checkpoint[0] == 0x54, checkpoint[1] == 0x4b, checkpoint[2] == 0x43, (checkpoint[3] == 0x4b || checkpoint[3] == 0x50) else {
+            return nil
+        }
+        let cols = checkpoint.subdata(in: 20..<24).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let rows = checkpoint.subdata(in: 24..<28).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let c = Int(UInt32(littleEndian: cols))
+        let r = Int(UInt32(littleEndian: rows))
+        guard c > 0, r > 0, c < 10000, r < 10000 else { return nil }
+        return (c, r)
+    }
+
     /// Bytes fed to a restored engine, never to the shell: put the screen
     /// back in the state a fresh shell expects, below the saved text. No
     /// banner: a restored tab is what the user expects, not news.

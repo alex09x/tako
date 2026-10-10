@@ -151,7 +151,20 @@ extension TakoTerminalNSView {
                 theme: theme
             )
             if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != cols || fitted.rows != rows) {
-                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+                if !hasCompletedInitialLayout {
+                    hasCompletedInitialLayout = true
+                    pendingResizeWorkItem?.cancel()
+                    pendingResizeWorkItem = nil
+                    pendingGridSize = nil
+                    TakoLog.resize.info("initial layout resize \(cols)×\(rows) → \(fitted.cols)×\(fitted.rows)")
+                    cols = fitted.cols
+                    rows = fitted.rows
+                    parserCoordinator.resize(cols: cols, rows: rows)
+                } else {
+                    scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+                }
+            } else if !hasCompletedInitialLayout {
+                hasCompletedInitialLayout = true
             }
         }
         updateScroller()
@@ -179,11 +192,21 @@ extension TakoTerminalNSView {
         applyPendingGridResize()
     }
 
-    func scheduleGridResize(cols newCols: Int, rows newRows: Int) {
+    func scheduleGridResize(cols newCols: Int, rows newRows: Int, immediate: Bool = false) {
         if newCols == cols, newRows == rows {
             pendingResizeWorkItem?.cancel()
             pendingResizeWorkItem = nil
             pendingGridSize = nil
+            return
+        }
+        if immediate {
+            pendingResizeWorkItem?.cancel()
+            pendingResizeWorkItem = nil
+            pendingGridSize = nil
+            TakoLog.resize.info("immediate resize \(cols)×\(rows) → \(newCols)×\(newRows)")
+            cols = newCols
+            rows = newRows
+            parserCoordinator.resize(cols: cols, rows: rows)
             return
         }
         if let pendingGridSize,

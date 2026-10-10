@@ -155,7 +155,19 @@ extension Tako {
             let inheritedFontSize = (app?.config.windowInheritFontSize ?? true) ? Tako.focusedFontSize : nil
             let initialTheme = (explicitFontSize ?? inheritedFontSize)
                 .map { Self.scaledTheme(baseTheme, toFontSize: $0) } ?? baseTheme
-            super.init(frame: .zero, theme: initialTheme)
+            let snapshotGeom = baseConfig?.restoredSnapshot?.checkpointGeometry
+            let defaultCols = baseConfig?.initialCols
+                ?? snapshotGeom?.cols
+                ?? app?.config.windowSizeInCells.map { Int($0.columns) }
+                ?? 80
+            let defaultRows = baseConfig?.initialRows
+                ?? snapshotGeom?.rows
+                ?? app?.config.windowSizeInCells.map { Int($0.rows) }
+                ?? 24
+            super.init(frame: .zero, theme: initialTheme, initialCols: defaultCols, initialRows: defaultRows)
+            if let size = baseConfig?.initialSize {
+                self.initialSize = size
+            }
             // The surface produces input bytes and hands them to its delegate.
             // Without this every keystroke, mouse report and scroll report is
             // computed and then dropped on the floor.

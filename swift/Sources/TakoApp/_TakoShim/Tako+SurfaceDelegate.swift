@@ -89,7 +89,7 @@ extension Tako.SurfaceView {
                 pty?.resize(cols: UInt16(max(fitted.cols, 1)), rows: UInt16(max(fitted.rows, 1)))
             }
             if fitted.cols != cols || fitted.rows != rows {
-                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
+                scheduleGridResize(cols: fitted.cols, rows: fitted.rows, immediate: forcePtyResize)
             }
         }
 

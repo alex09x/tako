@@ -103,6 +103,9 @@ extension Tako {
         /// False for terminals that are never restored (the quick terminal):
         /// their shell is not put in a session that would outlive Tako.
         var allowsSessionPersistence = true
+        public var initialCols: Int?
+        public var initialRows: Int?
+        public var initialSize: CGSize?
 
         public init() {}
 
@@ -111,13 +114,19 @@ extension Tako {
                     command: String? = nil,
                     initialInput: String? = nil,
                     waitAfterCommand: Bool = false,
-                    environmentVariables: [String: String] = [:]) {
+                    environmentVariables: [String: String] = [:],
+                    initialCols: Int? = nil,
+                    initialRows: Int? = nil,
+                    initialSize: CGSize? = nil) {
             self.fontSize = fontSize
             self.workingDirectory = workingDirectory
             self.command = command
             self.initialInput = initialInput
             self.waitAfterCommand = waitAfterCommand
             self.environmentVariables = environmentVariables
+            self.initialCols = initialCols
+            self.initialRows = initialRows
+            self.initialSize = initialSize
         }
     }
 

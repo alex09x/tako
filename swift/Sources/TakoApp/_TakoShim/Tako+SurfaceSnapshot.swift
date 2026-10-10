@@ -27,6 +27,13 @@ extension Tako.SurfaceView {
         /// because Shortcuts and Accessibility can ask for it repeatedly.
         func showSnapshot(_ snapshot: SessionSnapshot) {
             guard (try? core.checkpointImport(blob: snapshot.checkpoint)) != nil else { return }
+            if let geom = snapshot.checkpointGeometry {
+                self.cols = geom.cols
+                self.rows = geom.rows
+            } else if let info = try? core.checkpointInspect(blob: snapshot.checkpoint), info.cols > 0, info.rows > 0 {
+                self.cols = Int(info.cols)
+                self.rows = Int(info.rows)
+            }
             // Painted at the saved size; the first layout resizes it to the
             // window like any other grid. Resizing here, before there is a
             // frame, would squeeze the saved screen into a 1x1 grid.

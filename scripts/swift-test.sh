@@ -33,4 +33,4 @@ stale() {
 if stale TakoCore.xcframework; then ../scripts/build-xcframework.sh --macos-only; fi
 if stale target/macos/libtako_core.a; then ../scripts/build-macos-testlib.sh; fi
 
-exec swift test --no-parallel -Xlinker -L../target/macos -Xlinker -ltako_core -Xcc -I../target/bindings "$@"
+exec swift test -Xlinker -L../target/macos -Xlinker -ltako_core -Xcc -I../target/bindings "$@"

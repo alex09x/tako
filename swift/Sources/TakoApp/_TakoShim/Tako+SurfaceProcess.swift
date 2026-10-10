@@ -90,7 +90,7 @@ extension Tako.SurfaceView {
             var initialRows = rows
             let candidateSize = bounds.size.width > 0 && bounds.size.height > 0
                 ? bounds.size
-                : (window?.contentView?.bounds.size ?? .zero)
+                : (window?.contentView?.bounds.size ?? initialSize ?? .zero)
             if candidateSize.width > 0 && candidateSize.height > 0 {
                 let fitted = TerminalGridLayout(
                     viewSize: candidateSize,

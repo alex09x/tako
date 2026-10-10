@@ -139,7 +139,13 @@ extension Tako.SurfaceView {
     @MainActor public func highlight() {}
 
     public convenience init(frame frameRect: NSRect) {
-        self.init(nil, baseConfig: nil, uuid: UUID(), theme: nil)
+        var base: Tako.SurfaceConfiguration?
+        if frameRect.width > 0 && frameRect.height > 0 {
+            var config = Tako.SurfaceConfiguration()
+            config.initialSize = frameRect.size
+            base = config
+        }
+        self.init(nil, baseConfig: base, uuid: UUID(), theme: nil)
         self.frame = frameRect
     }
 }
