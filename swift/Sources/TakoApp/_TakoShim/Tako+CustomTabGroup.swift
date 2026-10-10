@@ -29,6 +29,8 @@ extension Tako {
     final class CustomTabGroup {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
+        /// Monotonically increasing generation to invalidate stale focus/reflow callbacks.
+        private var focusGeneration: Int = 0
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
         private static var workspaceObserverInstalled = false
@@ -81,7 +83,7 @@ extension Tako {
             NotificationCenter.default.addObserver(
                 forName: .takoWorkspaceDidChange,
                 object: nil,
-                queue: .main
+                queue: nil
             ) { _ in
                 MainActor.assumeIsolated {
                     let activeWsId = WorkspaceStore.shared.activeWorkspaceId
@@ -102,10 +104,25 @@ extension Tako {
                             }
                         }
                     }
+                    // Pass 1: Hide all inactive windows across all groups and the app first,
+                    // so ordering out an inactive window cannot resign a newly activated key window.
+                    CustomTabGroup.hideAllInactiveWindows()
+                    for group in allGroups {
+                        group.hideInactiveWindows()
+                    }
+
+                    // Pass 2: Sync active windows for each group.
                     for group in allGroups {
                         group.syncWithActiveWorkspace()
                     }
-                    if let activeGroup = allGroups.first(where: { !$0.visibleWindows.isEmpty }),
+
+                    // Pass 3: Present and focus the active window of the active workspace.
+                    let activeWs = WorkspaceStore.shared.activeWorkspace
+                    let activeGroup = allGroups.first { group in
+                        group.visibleWindows.contains { $0.stableTabIdentifier == activeWs.activeTabIdentifier }
+                    } ?? allGroups.first { !$0.visibleWindows.isEmpty }
+
+                    if let activeGroup,
                        let target = activeGroup.selectedWindow {
                         target.makeKeyAndOrderFront(nil)
                         NSApp.activate(ignoringOtherApps: true)
@@ -118,13 +135,14 @@ extension Tako {
                             target.makeFirstResponder(focused)
                         }
                     }
+
                     Tako.TabBarController.refreshAll()
                 }
             }
             NotificationCenter.default.addObserver(
                 forName: .takoTabsDidChange,
                 object: nil,
-                queue: .main
+                queue: nil
             ) { _ in
                 MainActor.assumeIsolated {
                     Tako.TabBarController.refreshAll()
@@ -274,9 +292,58 @@ extension Tako {
             self.windows = ordered
         }
 
+        /// Hide any terminal windows across the application that do not belong to the active workspace.
+        static func hideAllInactiveWindows() {
+            let activeWs = WorkspaceStore.shared.activeWorkspace
+            let isDefault = activeWs.id == WorkspaceStore.defaultWorkspaceId
+
+            for win in NSApp.windows {
+                if String(describing: type(of: win)).contains("Menu") {
+                    win.orderOut(nil)
+                    continue
+                }
+                guard (win.windowController as? TerminalController) != nil || (win.delegate as? TerminalController) != nil else {
+                    continue
+                }
+                let tabId = win.stableTabIdentifier
+                let belongsToActive: Bool
+                if let ws = WorkspaceStore.shared.workspace(forTab: tabId) {
+                    belongsToActive = ws.id == activeWs.id
+                } else {
+                    belongsToActive = isDefault
+                }
+                if !belongsToActive {
+                    if let sheet = win.attachedSheet { sheet.orderOut(nil) }
+                    for child in win.childWindows ?? [] { child.orderOut(nil) }
+                    win.orderOut(nil)
+                }
+            }
+        }
+
+        /// Hide any windows in this group that do not belong to the active workspace.
+        func hideInactiveWindows() {
+            let visible = visibleWindows
+            for win in windows where !visible.contains(win) {
+                if let sheet = win.attachedSheet {
+                    sheet.orderOut(nil)
+                }
+                for child in win.childWindows ?? [] {
+                    child.orderOut(nil)
+                }
+                win.orderOut(nil)
+            }
+            for w in NSApp.windows where String(describing: type(of: w)).contains("Menu") {
+                w.orderOut(nil)
+            }
+        }
+
         func select(_ window: NSWindow) {
             guard windows.contains(window) else { return }
-            let reflowSurfaces: () -> Void = {
+            focusGeneration += 1
+            let gen = focusGeneration
+            let reflowSurfaces: () -> Void = { [weak self, weak window] in
+                guard let self, let window, self.focusGeneration == gen else { return }
+                guard window.isVisible, self.selectedWindow === window, self.visibleWindows.contains(window) else { return }
                 if let controller = (window.windowController as? TerminalController) ?? (window.delegate as? TerminalController) {
                     controller.reflowSurfaces(forcePtyResize: true)
                     let focused = controller.focusedSurface ?? controller.surfaceTree.first
@@ -315,6 +382,10 @@ extension Tako {
 
         /// Synchronize selected window and orderOut non-visible windows when active workspace changes.
         func syncWithActiveWorkspace() {
+            hideInactiveWindows()
+
+            focusGeneration += 1
+            let gen = focusGeneration
             let visible = visibleWindows
             let activeWs = WorkspaceStore.shared.activeWorkspace
 
@@ -328,11 +399,10 @@ extension Tako {
             }
 
             if let target = targetWindow {
-                let reflowTarget: () -> Void = {
-                    if target.isVisible {
-                        target.makeKeyAndOrderFront(nil)
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
+                let reflowTarget: () -> Void = { [weak self, weak target] in
+                    guard let self, let target, self.focusGeneration == gen else { return }
+                    guard target.isVisible, self.selectedWindow === target, self.visibleWindows.contains(target) else { return }
+
                     let controller = (target.windowController as? TerminalController) ??
                         (target.delegate as? TerminalController) ??
                         TerminalController.all.first { $0.window === target }
@@ -344,8 +414,6 @@ extension Tako {
                         controller.focusedSurface = focused
                         if let focused {
                             target.makeFirstResponder(focused)
-                            Tako.moveFocus(to: focused, delay: 0.05)
-                            Tako.moveFocus(to: focused, delay: 0.15)
                         }
                     }
                 }
@@ -360,6 +428,11 @@ extension Tako {
                 } else {
                     target.makeKeyAndOrderFront(nil)
                 }
+                for sibling in windows where sibling !== target {
+                    if let sheet = sibling.attachedSheet { sheet.orderOut(nil) }
+                    for child in sibling.childWindows ?? [] { child.orderOut(nil) }
+                    sibling.orderOut(nil)
+                }
                 NSApp.activate(ignoringOtherApps: true)
                 reflowTarget()
                 DispatchQueue.main.async {
@@ -367,21 +440,14 @@ extension Tako {
                 }
             } else {
                 selectedWindow = nil
+                for win in windows {
+                    if let sheet = win.attachedSheet { sheet.orderOut(nil) }
+                    for child in win.childWindows ?? [] { child.orderOut(nil) }
+                    win.orderOut(nil)
+                }
             }
 
-            // Hide any windows not belonging to active workspace
-            for win in windows where !visible.contains(win) {
-                if let sheet = win.attachedSheet {
-                    sheet.orderOut(nil)
-                }
-                for child in win.childWindows ?? [] {
-                    child.orderOut(nil)
-                }
-                win.orderOut(nil)
-            }
-            for w in NSApp.windows where String(describing: type(of: w)).contains("Menu") {
-                w.orderOut(nil)
-            }
+            hideInactiveWindows()
         }
 
         /// Keep every tab's frame in sync so a hidden one is never shown

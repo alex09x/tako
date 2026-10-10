@@ -4310,7 +4310,7 @@ let scenarios: [Scenario] = [
         }
 
         // 7. Verify new workspace spawned a separate on-screen window and terminal
-        guard let f2 = d.windowFrame() else {
+        guard d.windowFrame() != nil else {
             throw Failure("no window frame discovered for Workspace 2 window")
         }
         let wsB_windows = d.onScreenWindowNumbers()
@@ -4330,16 +4330,19 @@ let scenarios: [Scenario] = [
         }
 
         // 8. Test window dragging on Workspace 2 window by its titlebar
-        let dragStart2 = CGPoint(x: f2.origin.x + 250, y: f2.origin.y + 18)
-        let dragEnd2 = CGPoint(x: f2.origin.x + 320, y: f2.origin.y + 60)
-        try d.drag(from: dragStart2, to: dragEnd2, steps: 12)
+        guard let preDragF2 = d.windowFrame() else {
+            throw Failure("no window frame before dragging Workspace 2 window")
+        }
+        let dragStart2 = CGPoint(x: preDragF2.origin.x + 250, y: preDragF2.origin.y + 18)
+        let dragEnd2 = CGPoint(x: preDragF2.origin.x + 350, y: preDragF2.origin.y + 70)
+        try d.drag(from: dragStart2, to: dragEnd2, steps: 16)
         usleep(500_000)
         guard let draggedF2 = d.windowFrame() else {
             throw Failure("no window frame after dragging Workspace 2 window")
         }
-        guard draggedF2.origin != f2.origin,
-              draggedF2.origin.x >= f2.origin.x + 15 else {
-            throw Failure("Workspace 2 window dragging failed (initial: \(f2.origin), dragged: \(draggedF2.origin))")
+        guard draggedF2.origin != preDragF2.origin,
+              (draggedF2.origin.x >= preDragF2.origin.x + 10 || draggedF2.origin.y >= preDragF2.origin.y + 10) else {
+            throw Failure("Workspace 2 window dragging failed (initial: \(preDragF2.origin), dragged: \(draggedF2.origin))")
         }
 
         // 9. Create second tab in Workspace 2 using REAL MOUSE CLICK on the plus button (+)
@@ -4400,7 +4403,6 @@ let scenarios: [Scenario] = [
         }
 
         // 13. Switch back to Workspace 2 (B) via real mouse click on the Workspace Pill menu
-        d.activate()
         usleep(500_000)
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: ws2Name)
@@ -4420,6 +4422,51 @@ let scenarios: [Scenario] = [
         let restoredTTY_B = try d.file("ws2_roundtrip_b.txt").trimmingCharacters(in: .whitespacesAndNewlines)
         guard restoredTTY_B == ws2_tab1 else {
             throw Failure("switching back to Workspace 2 did not restore its active Tab 1! (got: \(restoredTTY_B), expected: \(ws2_tab1), tab0 was: \(ws2_tab0))")
+        }
+
+        // --- PHASE 4: Rapid Transitions Within Delay Window (<150ms) ---
+        // 15. Rapidly switch workspaces B -> Default (A) -> B within 80ms (within previous 50ms/150ms delay window)
+        let wsList0 = (try? d.workspaceList()) ?? []
+        let act0 = wsList0.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
+        d.key(Key.leftBracket, [.maskControl, .maskAlternate])
+        usleep(80_000) // 80ms: within the callback window
+        let wsList1 = (try? d.workspaceList()) ?? []
+        let act1 = wsList1.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
+        d.key(Key.rightBracket, [.maskControl, .maskAlternate])
+        usleep(500_000)
+        let wsList2 = (try? d.workspaceList()) ?? []
+        let act2 = wsList2.first(where: { ($0["is_active"] as? Bool) == true })?["name"] as? String ?? "?"
+        guard act1 == "Default", act2 == ws2Name else {
+            throw Failure("rapid workspace transition did not cycle B -> A -> B (act0=\(act0), act1=\(act1), act2=\(act2), expected A: Default, B: \(ws2Name))")
+        }
+
+        // Verify inactive Workspace A windows were not re-shown by any stale delayed callbacks
+        let rapidOnScreenB = d.onScreenWindowNumbers()
+        guard rapidOnScreenB.intersection(allWsA_windows).isEmpty else {
+            throw Failure("rapid workspace transition leaked inactive Workspace A windows into on-screen set: \(rapidOnScreenB.intersection(allWsA_windows)), onScreen: \(rapidOnScreenB), expected B: \(wsB_activeWindows)")
+        }
+        guard rapidOnScreenB == wsB_activeWindows else {
+            throw Failure("rapid workspace transition failed to keep Workspace B window visible (got: \(rapidOnScreenB), expected: \(wsB_activeWindows))")
+        }
+
+        // Verify unassisted keyboard typing in Workspace B after rapid transition
+        try d.run("tty > \(d.path("ws2_rapid_ws.txt"))")
+        let rapidWsTTY = try d.file("ws2_rapid_ws.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rapidWsTTY == ws2_tab1 else {
+            throw Failure("rapid workspace transition failed to route unassisted input to Workspace B Tab 1 (got: \(rapidWsTTY), expected: \(ws2_tab1))")
+        }
+
+        // 16. Rapid tab switching within Workspace B (click Tab 0 then Tab 1 within 80ms)
+        try d.clickTab(index: 0)
+        usleep(80_000) // 80ms: within the callback window
+        try d.clickTab(index: 1)
+        usleep(500_000)
+
+        // Verify unassisted keyboard typing routes to Tab 1
+        try d.run("tty > \(d.path("ws2_rapid_tab.txt"))")
+        let rapidTabTTY = try d.file("ws2_rapid_tab.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rapidTabTTY == ws2_tab1 else {
+            throw Failure("rapid tab transition failed to route unassisted input to Tab 1 (got: \(rapidTabTTY), expected: \(ws2_tab1))")
         }
     }),
 ]

@@ -69,9 +69,7 @@ extension Tako {
     ) {
         guard let to else { return }
         let move = {
-            guard let window = to.window else { return }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            guard let window = to.window, window.isVisible else { return }
             window.makeFirstResponder(to)
         }
         if let delay {
