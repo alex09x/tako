@@ -4341,10 +4341,29 @@ let scenarios: [Scenario] = [
         guard ws1_tab1_switched == ws1_tab1 else {
             throw Failure("mouse click on Tab 1 did not route unassisted input to Tab 1 (got: \(ws1_tab1_switched), expected: \(ws1_tab1))")
         }
-        // Tab 1 remains the selected tab in Default workspace!
-        let wsA_activeWindows = d.onScreenWindowNumbers()
-        guard !wsA_activeWindows.isEmpty else {
-            throw Failure("no on-screen window numbers detected for Workspace A after selecting Tab 1")
+        // Tab 1 remains the selected tab in Window 1!
+        // 5b. Create second independent window in Workspace A via Cmd+N
+        let winCountBefore = d.windows().count
+        d.key(Key.n, .maskCommand)
+        guard d.wait(for: { d.windows().count == winCountBefore + 1 }, timeout: 5) else {
+            throw Failure("Cmd+N did not open second window in Workspace A")
+        }
+        usleep(1_000_000)
+        let wsA_allWindows = d.onScreenWindowNumbers()
+        guard wsA_allWindows.count >= 2 else {
+            throw Failure("Workspace A does not have 2 on-screen windows (found: \(wsA_allWindows))")
+        }
+        allWsA_windows.formUnion(wsA_allWindows)
+
+        // Record the second window's active ID and unassisted TTY witness
+        guard let win2Element = d.activeOnScreenWindow(),
+              let win2Id = d.windowID(for: win2Element) else {
+            throw Failure("could not identify active on-screen window after Cmd+N in Workspace A")
+        }
+        try d.run("tty > \(d.path("ws1_win2_created.txt"))")
+        let ws1_win2 = try d.file("ws1_win2_created.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ws1_win2.isEmpty, ws1_win2 != ws1_tab0, ws1_win2 != ws1_tab1 else {
+            throw Failure("second window in Workspace A did not spawn a distinct TTY (got: \(ws1_win2))")
         }
 
         // --- PHASE 2: Create and Exercise New Workspace (B) ---
@@ -4464,20 +4483,27 @@ let scenarios: [Scenario] = [
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
 
-        // Verify inactive Workspace B windows are hidden and Workspace A window is visible
+        // Verify inactive Workspace B windows are hidden and all Workspace A windows are restored visible
         let onScreenA = d.onScreenWindowNumbers()
         guard onScreenA.intersection(allWsB_windows).isEmpty else {
             throw Failure("Workspace B windows (\(allWsB_windows)) were not hidden after switching back to Default workspace (on-screen: \(onScreenA))")
         }
-        guard onScreenA == wsA_activeWindows else {
-            throw Failure("Workspace A window was not restored to on-screen set (on-screen: \(onScreenA), expected: \(wsA_activeWindows))")
+        guard onScreenA == wsA_allWindows else {
+            throw Failure("Workspace A windows were not restored to on-screen set (on-screen: \(onScreenA), expected: \(wsA_allWindows))")
         }
 
-        // 12. Verify Default workspace unassisted keyboard routing and remembered Tab 1
+        // 12. Verify Default workspace unassisted keyboard routing and remembered active Window 2
+        guard let restoredActiveWin = d.activeOnScreenWindow(),
+              let restoredActiveWid = d.windowID(for: restoredActiveWin) else {
+            throw Failure("could not identify active on-screen window after returning to Workspace A")
+        }
+        guard restoredActiveWid == win2Id else {
+            throw Failure("switching back to Workspace A did not restore remembered active window! (got wid: \(restoredActiveWid), expected wid: \(win2Id))")
+        }
         try d.run("tty > \(d.path("ws1_roundtrip_a.txt"))")
         let restoredTTY_A = try d.file("ws1_roundtrip_a.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard restoredTTY_A == ws1_tab1 else {
-            throw Failure("switching back to Default workspace did not restore active Tab 1! (got: \(restoredTTY_A), expected: \(ws1_tab1), tab0 was: \(ws1_tab0))")
+        guard restoredTTY_A == ws1_win2 else {
+            throw Failure("switching back to Default workspace did not restore active Window 2! (got: \(restoredTTY_A), expected: \(ws1_win2), tab1 was: \(ws1_tab1), tab0 was: \(ws1_tab0))")
         }
 
         // 13. Switch back to Workspace 2 (B) via real mouse click on the Workspace Pill menu

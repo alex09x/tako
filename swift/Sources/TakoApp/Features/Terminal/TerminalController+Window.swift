@@ -202,6 +202,14 @@ extension TerminalController {
         self.relabelTabs()
         self.fixTabBar()
         terminalViewContainer?.updateGlassTintOverlay(isKeyWindow: true)
+        if let window {
+            let tabId = window.stableTabIdentifier
+            let wsId = WorkspaceStore.shared.workspace(forTab: tabId)?.id ?? WorkspaceStore.shared.activeWorkspaceId
+            WorkspaceStore.shared.setActiveTab(tabIdentifier: tabId, in: wsId)
+            let group = Tako.CustomTabGroup.group(for: window)
+            Tako.CustomTabGroup.lastActiveWindowFrame = window.frame
+            group.recordSelection(window, for: wsId)
+        }
     }
 
     override func windowDidResignKey(_ notification: Notification) {

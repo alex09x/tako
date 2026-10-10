@@ -29,6 +29,7 @@ extension Tako {
     final class CustomTabGroup {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
+        private var lastSelectedWindowByWorkspace: [UUID: NSWindow] = [:]
         private(set) var focusGeneration: Int = 0
         /// Test override for workspace window frame synchronization.
         var syncWindowFrameOverride: Bool?
@@ -36,17 +37,55 @@ extension Tako {
             syncWindowFrameOverride ?? (NSApp.delegate as? AppDelegate)?.tako.config.workspaceSyncWindowFrame ?? false
         }
 
+        func recordSelection(_ window: NSWindow, for workspaceId: UUID) {
+            lastSelectedWindowByWorkspace[workspaceId] = window
+            if visibleWindows.contains(window) {
+                selectedWindow = window
+            }
+        }
+
         /// The most recent active window frame across all groups, captured before workspace switches
         /// or during window resize/selection so a new or returning workspace can inherit it.
         static var lastActiveWindowFrame: NSRect?
 
+        /// Detects whether the process is executing within a test harness (swift-testing or XCTest).
+        private static var isUnitTestEnvironment: Bool {
+            let env = ProcessInfo.processInfo.environment
+            if env["XCTestConfigurationFilePath"] != nil || env["XCTestBundlePath"] != nil {
+                return true
+            }
+            if NSClassFromString("XCTest") != nil {
+                return true
+            }
+            let args = ProcessInfo.processInfo.arguments
+            if args.contains("-TestingLibraryVersion") {
+                return true
+            }
+            let processName = ProcessInfo.processInfo.processName
+            if processName.hasSuffix("PackageTests") || processName.contains("xctest") || processName.hasSuffix("Tests") {
+                return true
+            }
+            return false
+        }
+
         /// Explicit flag to suppress window ordering (makeKeyAndOrderFront / orderFront) during offscreen or model unit tests.
-        static var suppressWindowOrderingForTesting: Bool = false
+        /// In test environments, this defaults to true to isolate unit runs from the desktop window server unless
+        /// explicitly opted in via TAKO_ENABLE_LIVE_WINDOW_TESTS=1.
+        static var suppressWindowOrderingForTesting: Bool = {
+            if ProcessInfo.processInfo.environment["TAKO_ENABLE_LIVE_WINDOW_TESTS"] == "1" {
+                return false
+            }
+            return isUnitTestEnvironment
+        }()
 
         /// Resets test overrides and cached group state for test isolation.
         static func resetForTesting() {
             lastActiveWindowFrame = nil
-            suppressWindowOrderingForTesting = false
+            if ProcessInfo.processInfo.environment["TAKO_ENABLE_LIVE_WINDOW_TESTS"] == "1" {
+                suppressWindowOrderingForTesting = false
+            } else {
+                suppressWindowOrderingForTesting = isUnitTestEnvironment
+            }
         }
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
@@ -195,6 +234,21 @@ extension Tako {
                     Tako.TabBarController.refreshAll()
                 }
             }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: nil
+            ) { notif in
+                MainActor.assumeIsolated {
+                    guard let win = notif.object as? NSWindow,
+                          let group = groupsByWindow[ObjectIdentifier(win)] else { return }
+                    lastActiveWindowFrame = win.frame
+                    let tabId = win.stableTabIdentifier
+                    let wsId = WorkspaceStore.shared.workspace(forTab: tabId)?.id ?? WorkspaceStore.shared.activeWorkspaceId
+                    group.recordSelection(win, for: wsId)
+                    WorkspaceStore.shared.setActiveTab(tabIdentifier: tabId, in: wsId)
+                }
+            }
         }
 
         /// The group a window belongs to, creating a fresh single-window
@@ -210,8 +264,14 @@ extension Tako {
             groupsByWindow[ObjectIdentifier(window)] = group
 
             // Assign window to active workspace if unassigned
+            let wsId = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.shared.activeWorkspaceId
             if WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) == nil {
-                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+                WorkspaceStore.shared.assignTab(tabIdentifier: window.stableTabIdentifier, to: wsId)
+            }
+            group.lastSelectedWindowByWorkspace[wsId] = window
+            if window.isKeyWindow || NSApp.keyWindow === window {
+                WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: wsId)
+                lastActiveWindowFrame = window.frame
             }
 
             return group
@@ -285,6 +345,9 @@ extension Tako {
             let next = index < visible.count ? visible[index] : visible.last
 
             WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+            group.lastSelectedWindowByWorkspace = group.lastSelectedWindowByWorkspace.filter { _, win in
+                win !== window && group.windows.contains(win)
+            }
 
             if isSelected {
                 if let next {
@@ -404,6 +467,10 @@ extension Tako {
                 if window.isVisible {
                     window.makeKeyAndOrderFront(nil)
                 }
+                Self.lastActiveWindowFrame = window.frame
+                let wsId = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.shared.activeWorkspaceId
+                lastSelectedWindowByWorkspace[wsId] = window
+                WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: wsId)
                 reflowSurfaces()
                 return
             }
@@ -424,9 +491,9 @@ extension Tako {
                 }
             }
 
-            if let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {
-                WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: ws.id)
-            }
+            let wsId = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.shared.activeWorkspaceId
+            lastSelectedWindowByWorkspace[wsId] = window
+            WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: wsId)
 
             reflowSurfaces()
             DispatchQueue.main.async {
@@ -449,11 +516,18 @@ extension Tako {
             if let activeTabId = activeWs.activeTabIdentifier {
                 targetWindow = visible.first { $0.stableTabIdentifier == activeTabId }
             }
+            if targetWindow == nil, let remembered = lastSelectedWindowByWorkspace[activeWs.id], visible.contains(remembered) {
+                targetWindow = remembered
+            }
+            if targetWindow == nil, let current = selectedWindow, visible.contains(current) {
+                targetWindow = current
+            }
             if targetWindow == nil {
                 targetWindow = visible.first
             }
 
             if let target = targetWindow {
+                lastSelectedWindowByWorkspace[activeWs.id] = target
                 let reflowTarget: () -> Void = { [weak self, weak target] in
                     guard let self, let target, self.focusGeneration == gen else { return }
                     guard target.isVisible, self.selectedWindow === target, self.visibleWindows.contains(target) else { return }
