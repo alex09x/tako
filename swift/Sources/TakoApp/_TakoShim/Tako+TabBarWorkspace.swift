@@ -56,8 +56,12 @@ extension Tako.TabBarView {
         }
     }
 
+    private static var shouldPresentNewWorkspaceDialog = false
+
     func showWorkspaceMenu(at point: CGPoint) {
+        Self.shouldPresentNewWorkspaceDialog = false
         let menu = NSMenu()
+        menu.autoenablesItems = false
         let store = WorkspaceStore.shared
         for ws in store.workspaces {
             let attention = store.attentionCount(for: ws)
@@ -65,6 +69,7 @@ extension Tako.TabBarView {
             let item = NSMenuItem(title: title, action: #selector(handleWorkspaceSelected(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = ws.id
+            item.isEnabled = true
             if ws.id == store.activeWorkspaceId {
                 item.state = .on
             }
@@ -74,42 +79,44 @@ extension Tako.TabBarView {
         let nextItem = NSMenuItem(title: "Next Workspace", action: #selector(handleNextWorkspace), keyEquivalent: "]")
         nextItem.keyEquivalentModifierMask = [.control, .option]
         nextItem.target = self
+        nextItem.isEnabled = true
         menu.addItem(nextItem)
 
         let prevItem = NSMenuItem(title: "Previous Workspace", action: #selector(handlePreviousWorkspace), keyEquivalent: "[")
         prevItem.keyEquivalentModifierMask = [.control, .option]
         prevItem.target = self
+        prevItem.isEnabled = true
         menu.addItem(prevItem)
 
         menu.addItem(NSMenuItem.separator())
         let newItem = NSMenuItem(title: "New Workspace...", action: #selector(handleNewWorkspace), keyEquivalent: "")
         newItem.target = self
+        newItem.isEnabled = true
         menu.addItem(newItem)
 
         menu.popUp(positioning: nil, at: point, in: self)
-        DispatchQueue.main.async {
-            for group in Tako.CustomTabGroup.allGroups {
-                if let target = group.selectedWindow, target.isVisible {
-                    target.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                    let controller = (target.windowController as? TerminalController) ??
-                        (target.delegate as? TerminalController) ??
-                        TerminalController.all.first { $0.window === target }
-                    let focused = controller?.focusedSurface ?? controller?.surfaceTree.first
-                    controller?.focusedSurface = focused
-                    if let focused {
-                        target.makeFirstResponder(focused)
-                        Tako.moveFocus(to: focused, delay: 0.05)
-                        Tako.moveFocus(to: focused, delay: 0.15)
-                    }
-                }
+        menu.cancelTrackingWithoutAnimation()
+        for w in NSApp.windows where String(describing: type(of: w)).contains("Menu") {
+            w.orderOut(nil)
+        }
+
+        if Self.shouldPresentNewWorkspaceDialog {
+            Self.shouldPresentNewWorkspaceDialog = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.presentNewWorkspaceDialog()
             }
         }
     }
 
     @objc func handleWorkspaceSelected(_ sender: NSMenuItem) {
-        if let id = sender.representedObject as? UUID {
-            WorkspaceStore.shared.switchWorkspace(to: id)
+        let id = sender.representedObject as? UUID
+        let title = sender.title
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let id {
+                WorkspaceStore.shared.switchWorkspace(to: id)
+            } else {
+                _ = WorkspaceStore.shared.switchWorkspace(named: title)
+            }
         }
     }
 
@@ -122,6 +129,11 @@ extension Tako.TabBarView {
     }
 
     @objc func handleNewWorkspace() {
+        Self.shouldPresentNewWorkspaceDialog = true
+    }
+
+    private func presentNewWorkspaceDialog() {
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "New Project Workspace"
         alert.informativeText = "Enter a name for the new workspace:"
@@ -129,17 +141,18 @@ extension Tako.TabBarView {
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
         input.placeholderString = "e.g. backend, docs, tako"
         alert.accessoryView = input
-        let createBtn = alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
-        createBtn.keyEquivalent = "\r"
-        input.target = createBtn
-        input.action = createBtn.action
-        if alert.runModal() == .alertFirstButtonReturn {
+        let response = alert.runModal()
+        alert.window.orderOut(nil)
+        if response == .alertFirstButtonReturn {
             let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
             let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
-            WorkspaceStore.shared.switchWorkspace(to: ws.id)
-            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                WorkspaceStore.shared.switchWorkspace(to: ws.id)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 }

@@ -76,21 +76,57 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         let initialWindow = app.windows.firstMatch
         let initialFrame = initialWindow.frame
 
-        // Switch to Next Workspace via menu shortcut Ctrl+Opt+]
-        app.typeKey("]", modifierFlags: [.control, .option])
+        // 1. Verify initial workspace pill is Default
+        let wsPill = initialWindow.buttons["workspace-pill"]
+        XCTAssertTrue(wsPill.waitForExistence(timeout: 5), "Workspace pill must exist in initial window")
+        XCTAssertEqual(wsPill.value as? String, "Default", "Initial workspace should be Default")
 
-        // An active window for the new workspace should exist
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+        // 2. Create second tab in Default workspace (Tab 1) and select it
+        app.typeKey("t", modifierFlags: .command)
+        let tab0_ws1 = initialWindow.radioButtons["tab-0"]
+        let tab1_ws1 = initialWindow.radioButtons["tab-1"]
+        XCTAssertTrue(tab0_ws1.waitForExistence(timeout: 5), "Tab 0 must exist")
+        XCTAssertTrue(tab1_ws1.waitForExistence(timeout: 5), "Tab 1 must exist")
+        tab1_ws1.click()
+        XCTAssertEqual(tab1_ws1.value as? Int, 1, "Tab 1 in Default workspace must be selected")
+
+        // 3. Open workspace menu from pill and create a new workspace
+        wsPill.click()
+        let newWsItem = app.menuItems["New Workspace..."]
+        XCTAssertTrue(newWsItem.waitForExistence(timeout: 3), "New Workspace... menu item should appear")
+        newWsItem.click()
+
+        let createBtn = app.buttons["Create"]
+        XCTAssertTrue(createBtn.waitForExistence(timeout: 3), "Create button in modal alert should appear")
+        createBtn.click()
+
+        // 4. Verify second workspace window appears with distinct workspace name
         let newWindow = app.windows.firstMatch
+        XCTAssertTrue(newWindow.waitForExistence(timeout: 5), "New workspace window must appear")
+        let newWsPill = newWindow.buttons["workspace-pill"]
+        XCTAssertTrue(newWsPill.waitForExistence(timeout: 5), "New workspace pill must appear")
+        let newWsName = newWsPill.value as? String
+        XCTAssertNotNil(newWsName)
+        XCTAssertNotEqual(newWsName, "Default", "New workspace must have distinct identity from Default")
 
-        // Drag the new workspace window by its titlebar
+        // 5. Verify window dragging in new workspace
         let dragStart = newWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.03))
         let dragEnd = newWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.12))
         dragStart.press(forDuration: 0.1, thenDragTo: dragEnd)
         XCTAssertNotEqual(newWindow.frame.origin, initialFrame.origin, "New workspace window must be draggable")
 
-        // Switch back to original workspace via Ctrl+Opt+[
+        // 6. Switch back to Default workspace via Previous Workspace shortcut (Ctrl+Option+[)
         app.typeKey("[", modifierFlags: [.control, .option])
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(initialWindow.waitForExistence(timeout: 5), "Default workspace window should return")
+        let restoredPill = initialWindow.buttons["workspace-pill"]
+        XCTAssertEqual(restoredPill.value as? String, "Default", "Active workspace should return to Default")
+
+        // 7. Verify remembered tab selection in Default workspace (Tab 1 remains selected)
+        XCTAssertEqual(initialWindow.radioButtons["tab-1"].value as? Int, 1, "Tab 1 in Default workspace should still be selected")
+
+        // 8. Switch back to new workspace via Next Workspace shortcut (Ctrl+Option+])
+        app.typeKey("]", modifierFlags: [.control, .option])
+        XCTAssertTrue(newWindow.waitForExistence(timeout: 5), "New workspace window should return")
+        XCTAssertEqual(newWindow.buttons["workspace-pill"].value as? String, newWsName, "Should return to new workspace")
     }
 }

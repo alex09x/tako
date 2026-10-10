@@ -24,10 +24,13 @@ extension AppDelegate {
     }
 
     @IBAction func newWorkspace(_ sender: Any?) {
-        promptNewWorkspace()
+        DispatchQueue.main.async { [weak self] in
+            self?.promptNewWorkspace()
+        }
     }
 
     func promptNewWorkspace() {
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "New Project Workspace"
         alert.informativeText = "Enter a name for the new workspace:"
@@ -35,11 +38,8 @@ extension AppDelegate {
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
         input.placeholderString = "e.g. backend, docs, tako"
         alert.accessoryView = input
-        let createBtn = alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
-        createBtn.keyEquivalent = "\r"
-        input.target = createBtn
-        input.action = createBtn.action
         if alert.runModal() == .alertFirstButtonReturn {
             let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name

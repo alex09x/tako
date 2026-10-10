@@ -62,6 +62,7 @@ extension Tako.TabBarView {
             wsElem.setAccessibilityRole(.button)
             wsElem.setAccessibilityLabel("Workspace: \(ws.name)")
             wsElem.setAccessibilityTitle(ws.name)
+            wsElem.setAccessibilityValue(ws.name)
             wsElem.setAccessibilityIdentifier("workspace-pill")
             let localRect = workspacePillRect
             let windowRect = convert(localRect, to: nil)

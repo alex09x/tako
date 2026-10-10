@@ -173,7 +173,7 @@ final class Driver {
 
     func activate() {
         if let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate()
+            app.activate(options: [.activateIgnoringOtherApps])
         }
         if let window = self.windows().first {
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -403,6 +403,9 @@ final class Driver {
         }
     }
 
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePointer<CGWindowID>) -> AXError
+
     // MARK: accessibility
 
     private var axApp: AXUIElement { AXUIElementCreateApplication(pid) }
@@ -413,11 +416,46 @@ final class Driver {
         return value as? T
     }
 
+    func windowID(for element: AXUIElement) -> CGWindowID? {
+        var id: CGWindowID = 0
+        if _AXUIElementGetWindow(element, &id) == .success {
+            return id
+        }
+        return nil
+    }
+
     func windows() -> [AXUIElement] {
         (attribute(axApp, kAXWindowsAttribute) as [AXUIElement]?) ?? []
     }
 
+    func activeOnScreenWindow() -> AXUIElement? {
+        let onScreen = onScreenWindowNumbers()
+        guard !onScreen.isEmpty else { return nil }
+        if let focused: AXUIElement = attribute(axApp, kAXFocusedWindowAttribute),
+           let wid = windowID(for: focused), onScreen.contains(wid) {
+            return focused
+        }
+        if let main: AXUIElement = attribute(axApp, kAXMainWindowAttribute),
+           let wid = windowID(for: main), onScreen.contains(wid) {
+            return main
+        }
+        for win in windows().reversed() {
+            if let wid = windowID(for: win), onScreen.contains(wid) {
+                return win
+            }
+        }
+        for win in windows() {
+            if let wid = windowID(for: win), onScreen.contains(wid) {
+                return win
+            }
+        }
+        return nil
+    }
+
     func activeWindow() -> AXUIElement? {
+        if let onScreen = activeOnScreenWindow() {
+            return onScreen
+        }
         if let focused: AXUIElement = attribute(axApp, kAXFocusedWindowAttribute) {
             return focused
         }
@@ -432,6 +470,18 @@ final class Driver {
             }
         }
         return windows().first
+    }
+
+    func debugFocusState() -> String {
+        let focusedWin: AXUIElement? = attribute(axApp, kAXFocusedWindowAttribute)
+        let mainWin: AXUIElement? = attribute(axApp, kAXMainWindowAttribute)
+        let focusedElem: AXUIElement? = attribute(axApp, kAXFocusedUIElementAttribute)
+        let fRole: String = (focusedElem.flatMap { attribute($0, kAXRoleAttribute) }) ?? "nil"
+        let fId: String = (focusedElem.flatMap { attribute($0, "AXIdentifier") }) ?? "nil"
+        let fTitle: String = (focusedElem.flatMap { attribute($0, kAXTitleAttribute) }) ?? "nil"
+        let isAppActive = NSRunningApplication(processIdentifier: pid)?.isActive ?? false
+        let pane = (try? focusedPaneId()) ?? "none"
+        return "appActive: \(isAppActive), focusedWin: \(focusedWin != nil), mainWin: \(mainWin != nil), focusedElem: role=\(fRole), id=\(fId), title=\(fTitle), focusedPane: \(pane)"
     }
 
     /// Every element under `root` whose role is `role`.
@@ -590,6 +640,35 @@ final class Driver {
         return nil
     }
 
+    /// On-screen window numbers belonging to Tako (layer 0).
+    func onScreenWindowNumbers() -> Set<CGWindowID> {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return [] }
+        var result = Set<CGWindowID>()
+        for info in list {
+            guard let ownerPid = info[kCGWindowOwnerPID as String] as? pid_t, ownerPid == pid else { continue }
+            guard (info[kCGWindowLayer as String] as? Int) == 0 else { continue }
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  (bounds["Width"] ?? 0) > 80, (bounds["Height"] ?? 0) > 80 else { continue }
+            if let idNum = info[kCGWindowNumber as String] as? UInt32 {
+                result.insert(CGWindowID(idNum))
+            }
+        }
+        return result
+    }
+
+    /// List all workspaces discovered via takoctl.
+    func workspaceList() throws -> [[String: Any]] {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let out = try exec("\(ctl) workspace list --json")
+        guard let data = out.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        let root = (obj["result"] as? [String: Any]) ?? obj
+        return (root["workspaces"] as? [[String: Any]]) ?? []
+    }
+
     /// Whether any UI element across the app's windows contains this text.
     func hasText(containing target: String) -> Bool {
         for window in windows() {
@@ -639,9 +718,30 @@ final class Driver {
     /// the window server like a real click -- and so only when the topmost
     /// window at that point is Tako's: a click that could land in someone
     /// else's window is refused, not sent. The pointer is put back afterwards.
+    func topmostWindowInfo(at point: CGPoint) -> String {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]] else { return "none" }
+        var parts: [String] = []
+        for info in list {
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
+            let rect = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
+                              width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            if rect.contains(point) {
+                let owner = info[kCGWindowOwnerName as String] as? String ?? "?"
+                let ownerPid = info[kCGWindowOwnerPID as String] as? pid_t ?? 0
+                let layer = info[kCGWindowLayer as String] as? Int ?? 0
+                let num = info[kCGWindowNumber as String] as? Int ?? 0
+                let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+                parts.append("[\(num):\(owner)(\(ownerPid)) L\(layer) a=\(alpha) \(rect)]")
+            }
+        }
+        return parts.joined(separator: ", ")
+    }
+
     func click(at point: CGPoint, count: Int = 1) throws {
         guard topmostOwner(at: point) == pid else {
-            throw Failure("refusing to click at \(point): the window there is not Tako's")
+            let winInfo = topmostWindowInfo(at: point)
+            throw Failure("refusing to click at \(point): the window there is not Tako's (windows: \(winInfo))")
         }
         let home = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
@@ -653,14 +753,14 @@ final class Driver {
             else { continue }
             down.setIntegerValueField(.mouseEventClickState, value: Int64(n))
             down.post(tap: .cghidEventTap)
-            usleep(60_000)
+            usleep(100_000)
 
             guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
                                    mouseCursorPosition: point, mouseButton: .left)
             else { continue }
             up.setIntegerValueField(.mouseEventClickState, value: Int64(n))
             up.post(tap: .cghidEventTap)
-            usleep(80_000)
+            usleep(100_000)
         }
         if let home {
             CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
@@ -722,6 +822,8 @@ final class Driver {
         for info in list {
             guard let ownerPid = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
             let layer = (info[kCGWindowLayer as String] as? Int) ?? 0
+            let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+            guard alpha > 0.05 else { continue }
             // Ordinary windows are layer 0. Also accept Tako's modal panels/alerts/menus (layers 1..120).
             guard layer == 0 || (ownerPid == pid && layer <= 120) else { continue }
             guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
@@ -759,10 +861,18 @@ final class Driver {
         return false
     }
 
+    func onScreenWindows() -> [AXUIElement] {
+        let onScreen = onScreenWindowNumbers()
+        return windows().filter { win in
+            guard let wid = windowID(for: win) else { return false }
+            return onScreen.contains(wid)
+        }
+    }
+
     func tabElement(index: Int, in window: AXUIElement? = nil) -> AXUIElement? {
         let win = window ?? activeWindow()
         let targetId = "tab-\(index)"
-        let roots = win.map { [$0] } ?? windows()
+        let roots = win.map { [$0] } ?? onScreenWindows()
         for root in roots {
             for elem in descendants(of: root, role: kAXRadioButtonRole as String) {
                 if let id: String = attribute(elem, "AXIdentifier"), id == targetId {
@@ -792,7 +902,7 @@ final class Driver {
 
     func clickPlusButton(in window: AXUIElement? = nil) throws {
         let win = window ?? activeWindow()
-        let roots = win.map { [$0] } ?? windows()
+        let roots = win.map { [$0] } ?? onScreenWindows()
         for root in roots {
             for elem in descendants(of: root, role: kAXButtonRole as String) {
                 if let id: String = attribute(elem, "AXIdentifier"), id == "new-tab-button" {
@@ -815,7 +925,7 @@ final class Driver {
 
     func clickWorkspacePill(in window: AXUIElement? = nil) throws {
         let win = window ?? activeWindow()
-        let roots = win.map { [$0] } ?? windows()
+        let roots = win.map { [$0] } ?? onScreenWindows()
         for root in roots {
             for elem in descendants(of: root, role: kAXButtonRole as String) {
                 if let id: String = attribute(elem, "AXIdentifier"), id == "workspace-pill" {
@@ -827,7 +937,7 @@ final class Driver {
                         AXValueGetValue(btnSize, .cgSize, &size)
                         let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
                         try click(at: center)
-                        usleep(400_000)
+                        usleep(600_000)
                         return
                     }
                 }
@@ -836,11 +946,33 @@ final class Driver {
         throw Failure("workspace-pill button not found in window")
     }
 
-    func clickOpenMenuItem(titled title: String) throws {
-        guard let item = descendants(of: axApp, role: kAXMenuItemRole as String).first(where: {
+    func openMenuItem(titled title: String) -> AXUIElement? {
+        let matching = descendants(of: axApp, role: kAXMenuItemRole as String).filter {
             let t: String? = attribute($0, kAXTitleAttribute)
-            return t == title || t?.starts(with: title) == true
-        }) else {
+            guard t == title || t?.starts(with: title) == true else { return false }
+            if let sizeVal: AXValue = attribute($0, kAXSizeAttribute) {
+                var s = CGSize.zero
+                AXValueGetValue(sizeVal, .cgSize, &s)
+                return s.width > 10 && s.height > 10
+            }
+            return true
+        }
+        return matching.first
+    }
+
+    func clickOpenMenuItem(titled title: String) throws {
+        guard wait(for: { self.openMenuItem(titled: title) != nil }, timeout: 5) else {
+            let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).map { (elem: AXUIElement) -> String in
+                let t: String = self.attribute(elem, kAXTitleAttribute) ?? "nil"
+                var s = CGSize.zero
+                if let sizeVal: AXValue = self.attribute(elem, kAXSizeAttribute) {
+                    AXValueGetValue(sizeVal, .cgSize, &s)
+                }
+                return "\(t) (\(s.width)x\(s.height))"
+            }
+            throw Failure("open menu item '\(title)' not found (found menu items: \(allItems))")
+        }
+        guard let item = openMenuItem(titled: title) else {
             throw Failure("open menu item '\(title)' not found")
         }
         guard let itemPos: AXValue = attribute(item, kAXPositionAttribute),
@@ -881,13 +1013,6 @@ final class Driver {
         AXValueGetValue(btnSize, .cgSize, &size)
         let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
         try click(at: center)
-        usleep(300_000)
-        if let currentBtn = button(titled: title) {
-            press(currentBtn)
-        }
-        if button(titled: title) != nil {
-            systemKey(Key.returnKey)
-        }
         usleep(400_000)
     }
 
@@ -4066,11 +4191,17 @@ let scenarios: [Scenario] = [
     ("workspace-journey", "dragging window, creating tabs, mouse-switching tabs, and switching workspaces work end-to-end", { d in
         // Clean start with pill style config
         d.quit()
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let wsDir = appSupport.appendingPathComponent(d.bundleID).appendingPathComponent("Workspaces")
+            try? FileManager.default.removeItem(at: wsDir)
+        }
         try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
         d.setPosition(CGPoint(x: 100, y: 100))
         d.setSize(CGSize(width: 800, height: 500))
         d.focus()
         usleep(1_000_000)
+
+        let initialWorkspaces = (try? d.workspaceList()) ?? []
 
         // --- PHASE 1: Default Workspace ---
         // 1. Initial window dragging verification with real CGEvent drag
@@ -4089,6 +4220,13 @@ let scenarios: [Scenario] = [
             throw Failure("initial window dragging failed (initial: \(f1.origin), dragged: \(draggedF1.origin))")
         }
 
+        // Record on-screen window numbers belonging to Workspace A
+        let wsA_windows = d.onScreenWindowNumbers()
+        guard !wsA_windows.isEmpty else {
+            throw Failure("no on-screen window numbers detected for Workspace A")
+        }
+        var allWsA_windows = wsA_windows
+
         // 2. Read initial Tab 0 TTY
         try d.run("tty > \(d.path("ws1_tab0_init.txt"))")
         let ws1_tab0 = try d.file("ws1_tab0_init.txt").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4100,6 +4238,7 @@ let scenarios: [Scenario] = [
             throw Failure("second tab element tab-1 did not appear in Default workspace")
         }
         usleep(1_000_000)
+        allWsA_windows.formUnion(d.onScreenWindowNumbers())
 
         // Type unassisted into newly created tab
         try d.run("tty > \(d.path("ws1_tab1_created.txt"))")
@@ -4126,26 +4265,63 @@ let scenarios: [Scenario] = [
             throw Failure("mouse click on Tab 1 did not route unassisted input to Tab 1 (got: \(ws1_tab1_switched), expected: \(ws1_tab1))")
         }
         // Tab 1 remains the selected tab in Default workspace!
+        let wsA_activeWindows = d.onScreenWindowNumbers()
+        guard !wsA_activeWindows.isEmpty else {
+            throw Failure("no on-screen window numbers detected for Workspace A after selecting Tab 1")
+        }
 
-        // --- PHASE 2: Create and Exercise New Workspace ---
+        // --- PHASE 2: Create and Exercise New Workspace (B) ---
         // 6. Create Workspace 2 via real mouse click on the Workspace Pill and popup menu
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "New Workspace")
 
-        // Wait for modal alert and click "Create" button with real mouse click
+        // Wait for modal alert and click "Create" button with real mouse click alone (NO fallbacks)
         guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
             throw Failure("New Project Workspace alert dialog did not appear")
         }
+        usleep(300_000)
         try d.clickButton(titled: "Create")
         guard d.wait(for: { d.button(titled: "Create") == nil }, timeout: 5) else {
-            throw Failure("New Project Workspace alert dialog was not dismissed after clicking Create")
+            let wsCount = (try? d.workspaceList().count) ?? -1
+            let wsList = (try? d.workspaceList()) ?? []
+            let onScreen = d.onScreenWindowNumbers()
+            let wins = d.windows().map { win -> String in
+                let title: String = d.attribute(win, kAXTitleAttribute) ?? "none"
+                let role: String = d.attribute(win, kAXRoleAttribute) ?? "none"
+                let subrole: String = d.attribute(win, kAXSubroleAttribute) ?? "none"
+                return "\(role)/\(subrole): \(title)"
+            }
+            throw Failure("New Project Workspace alert dialog was not dismissed after clicking Create (wsCount: \(wsCount), wsList: \(wsList), onScreen: \(onScreen), windows: \(wins))")
         }
         usleep(1_500_000)
 
-        // 7. Verify new workspace spawned a separate window and terminal
+        // Verify exactly one new workspace was created in the model
+        guard d.wait(for: { (try? d.workspaceList().count) == initialWorkspaces.count + 1 }, timeout: 5) else {
+            throw Failure("expected exactly \(initialWorkspaces.count + 1) workspaces after creating new workspace")
+        }
+        let workspacesAfterCreate = try d.workspaceList()
+        let ws2Info = workspacesAfterCreate.first(where: { ws in
+            let id = ws["id"] as? String
+            return !initialWorkspaces.contains(where: { ($0["id"] as? String) == id }) &&
+                   (ws["name"] as? String) != "Default"
+        }) ?? workspacesAfterCreate.first(where: { ($0["name"] as? String) != "Default" })
+        guard let ws2Name = ws2Info?["name"] as? String else {
+            throw Failure("new workspace record not found in workspace list")
+        }
+
+        // 7. Verify new workspace spawned a separate on-screen window and terminal
         guard let f2 = d.windowFrame() else {
             throw Failure("no window frame discovered for Workspace 2 window")
         }
+        let wsB_windows = d.onScreenWindowNumbers()
+        guard !wsB_windows.isEmpty else {
+            throw Failure("no on-screen windows found for Workspace 2")
+        }
+        // Verify inactive Workspace A windows are hidden from the on-screen set
+        guard wsB_windows.isDisjoint(with: allWsA_windows) else {
+            throw Failure("Workspace A windows (\(allWsA_windows)) remained visible after switching to Workspace 2 (\(wsB_windows))")
+        }
+        var allWsB_windows = wsB_windows
 
         try d.run("tty > \(d.path("ws2_tab0_init.txt"))")
         let ws2_tab0 = try d.file("ws2_tab0_init.txt").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4172,6 +4348,7 @@ let scenarios: [Scenario] = [
             throw Failure("second tab element tab-1 did not appear in Workspace 2 after clicking plus button")
         }
         usleep(1_000_000)
+        allWsB_windows.formUnion(d.onScreenWindowNumbers())
 
         // Type unassisted into newly created tab in Workspace 2
         try d.run("tty > \(d.path("ws2_tab1_created.txt"))")
@@ -4194,18 +4371,55 @@ let scenarios: [Scenario] = [
         guard ws2_tab1_switched == ws2_tab1 else {
             throw Failure("mouse click on Workspace 2 Tab 1 failed to route input (got: \(ws2_tab1_switched), expected: \(ws2_tab1))")
         }
+        // Tab 1 remains active in Workspace 2!
+        let wsB_activeWindows = d.onScreenWindowNumbers()
+        guard !wsB_activeWindows.isEmpty else {
+            throw Failure("no on-screen window numbers detected for Workspace B after selecting Tab 1")
+        }
 
-        // --- PHASE 3: Switch back and assert isolation & state retention ---
-        // 11. Switch back to Default workspace via real mouse click on the Workspace Pill menu
+        // --- PHASE 3: Complete Roundtrip Switching & State Retention (A -> B -> A -> B) ---
+        // 11. Switch back to Default workspace (A) via real mouse click on the Workspace Pill menu
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
 
-        // 12. Verify Default workspace is restored, input routes unassisted, and Tab 1 was remembered
-        try d.run("tty > \(d.path("ws1_restored.txt"))")
-        let restoredTTY = try d.file("ws1_restored.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard restoredTTY == ws1_tab1 else {
-            throw Failure("switching back to Default workspace did not restore active Tab 1! (got: \(restoredTTY), expected: \(ws1_tab1), tab0 was: \(ws1_tab0))")
+        // Verify inactive Workspace B windows are hidden and Workspace A window is visible
+        let onScreenA = d.onScreenWindowNumbers()
+        guard onScreenA.intersection(allWsB_windows).isEmpty else {
+            throw Failure("Workspace B windows (\(allWsB_windows)) were not hidden after switching back to Default workspace (on-screen: \(onScreenA))")
+        }
+        guard onScreenA == wsA_activeWindows else {
+            throw Failure("Workspace A window was not restored to on-screen set (on-screen: \(onScreenA), expected: \(wsA_activeWindows))")
+        }
+
+        // 12. Verify Default workspace unassisted keyboard routing and remembered Tab 1
+        try d.run("tty > \(d.path("ws1_roundtrip_a.txt"))")
+        let restoredTTY_A = try d.file("ws1_roundtrip_a.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard restoredTTY_A == ws1_tab1 else {
+            throw Failure("switching back to Default workspace did not restore active Tab 1! (got: \(restoredTTY_A), expected: \(ws1_tab1), tab0 was: \(ws1_tab0))")
+        }
+
+        // 13. Switch back to Workspace 2 (B) via real mouse click on the Workspace Pill menu
+        d.activate()
+        usleep(500_000)
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: ws2Name)
+        usleep(1_500_000)
+
+        // Verify inactive Workspace A windows are hidden and Workspace B window is visible
+        let onScreenB = d.onScreenWindowNumbers()
+        guard onScreenB.intersection(allWsA_windows).isEmpty else {
+            throw Failure("Workspace A windows (\(allWsA_windows)) were not hidden after switching back to Workspace 2 (on-screen: \(onScreenB))")
+        }
+        guard onScreenB == wsB_activeWindows else {
+            throw Failure("Workspace B window was not restored to on-screen set (on-screen: \(onScreenB), expected: \(wsB_activeWindows))")
+        }
+
+        // 14. Verify Workspace 2 unassisted keyboard routing and remembered Tab 1
+        try d.run("tty > \(d.path("ws2_roundtrip_b.txt"))")
+        let restoredTTY_B = try d.file("ws2_roundtrip_b.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard restoredTTY_B == ws2_tab1 else {
+            throw Failure("switching back to Workspace 2 did not restore its active Tab 1! (got: \(restoredTTY_B), expected: \(ws2_tab1), tab0 was: \(ws2_tab0))")
         }
     }),
 ]

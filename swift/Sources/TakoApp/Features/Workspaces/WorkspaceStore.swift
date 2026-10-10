@@ -103,7 +103,7 @@ public final class WorkspaceStore: ObservableObject {
         )
         workspaces.append(newWs)
         save()
-        NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
+        NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
         return newWs
     }
 

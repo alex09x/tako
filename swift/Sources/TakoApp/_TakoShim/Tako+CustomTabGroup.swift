@@ -100,13 +100,6 @@ extension Tako {
                             if let focused {
                                 win.makeFirstResponder(focused)
                             }
-                            DispatchQueue.main.async {
-                                win.makeKeyAndOrderFront(nil)
-                                NSApp.activate(ignoringOtherApps: true)
-                                if let focused = ctrl.focusedSurface ?? ctrl.surfaceTree.first {
-                                    win.makeFirstResponder(focused)
-                                }
-                            }
                         }
                     }
                     for group in allGroups {
@@ -123,25 +116,6 @@ extension Tako {
                         controller?.focusedSurface = focused
                         if let focused {
                             target.makeFirstResponder(focused)
-                            Tako.moveFocus(to: focused, delay: 0.05)
-                            Tako.moveFocus(to: focused, delay: 0.15)
-                        }
-                    }
-                    DispatchQueue.main.async {
-                        if let activeGroup = allGroups.first(where: { !$0.visibleWindows.isEmpty }),
-                           let target = activeGroup.selectedWindow {
-                            target.makeKeyAndOrderFront(nil)
-                            NSApp.activate(ignoringOtherApps: true)
-                            let controller = (target.windowController as? TerminalController) ??
-                                (target.delegate as? TerminalController) ??
-                                TerminalController.all.first { $0.window === target }
-                            let focused = controller?.focusedSurface ?? controller?.surfaceTree.first
-                            controller?.focusedSurface = focused
-                            if let focused {
-                                target.makeFirstResponder(focused)
-                                Tako.moveFocus(to: focused, delay: 0.05)
-                                Tako.moveFocus(to: focused, delay: 0.15)
-                            }
                         }
                     }
                     Tako.TabBarController.refreshAll()
@@ -355,6 +329,10 @@ extension Tako {
 
             if let target = targetWindow {
                 let reflowTarget: () -> Void = {
+                    if target.isVisible {
+                        target.makeKeyAndOrderFront(nil)
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                     let controller = (target.windowController as? TerminalController) ??
                         (target.delegate as? TerminalController) ??
                         TerminalController.all.first { $0.window === target }
@@ -393,7 +371,16 @@ extension Tako {
 
             // Hide any windows not belonging to active workspace
             for win in windows where !visible.contains(win) {
+                if let sheet = win.attachedSheet {
+                    sheet.orderOut(nil)
+                }
+                for child in win.childWindows ?? [] {
+                    child.orderOut(nil)
+                }
                 win.orderOut(nil)
+            }
+            for w in NSApp.windows where String(describing: type(of: w)).contains("Menu") {
+                w.orderOut(nil)
             }
         }
 

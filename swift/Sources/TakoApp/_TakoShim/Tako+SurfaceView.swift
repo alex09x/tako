@@ -267,8 +267,10 @@ extension Tako {
             crabBinding = Tako.CrabTabBinding(surface: self, window: window)
             Tako.TabBarController.install(in: window)
             if window.isVisible {
-                window.makeFirstResponder(self)
-                (window.windowController as? TerminalController)?.focusedSurface = self
+                let controller = window.windowController as? TerminalController
+                if controller?.focusedSurface == nil {
+                    window.makeFirstResponder(self)
+                }
             }
         }
 
@@ -347,6 +349,7 @@ extension Tako {
         override open func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result {
+                (window?.windowController as? TerminalController)?.focusedSurface = self
                 BroadcastInputStore.shared.setLeader(paneId: id)
                 if isSecureInput {
                     SecureInput.shared.setScoped(self, isSecure: true, focused: true)
