@@ -66,8 +66,13 @@ struct PillTabBarUITests {
             let pill = bar.pillRect(for: tab)
             #expect(pill.height == Tako.TabBarView.Metrics.buttonSize)
             #expect(pill.minY == Tako.TabBarView.Metrics.buttonY)
-            #expect(pill.minX == tab.frame.minX + 2)
-            #expect(pill.width == tab.frame.width - 4)
+            #expect(pill.minX == tab.frame.minX)
+            #expect(pill.width == tab.frame.width)
+        }
+        if bar.tabs.count == 2 {
+            let tab0 = bar.tabs[0]
+            let tab1 = bar.tabs[1]
+            #expect(tab1.frame.minX - tab0.frame.maxX == 6)
         }
     }
 

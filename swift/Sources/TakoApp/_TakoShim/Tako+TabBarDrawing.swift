@@ -52,9 +52,9 @@ extension Tako.TabBarView {
 
     func pillRect(for tab: Tab) -> CGRect {
         CGRect(
-            x: tab.frame.minX + 2,
+            x: tab.frame.minX,
             y: Metrics.buttonY,
-            width: max(0, tab.frame.width - 4),
+            width: tab.frame.width,
             height: Metrics.buttonSize
         )
     }
@@ -105,14 +105,14 @@ extension Tako.TabBarView {
         let rect = pillRect(for: tab)
         guard rect.width > 0 else { return }
 
-        // Background pill
+        // Background pill matching workspace pill corner geometry
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
         ctx.addPath(path)
         if tab.isActive {
             ctx.setFillColor(Palette.activeTab.cgColor)
             ctx.fillPath()
 
-            // Subtle outline for crisp pill separation
+            // Crisp hairline outline for the active pill
             ctx.setStrokeColor(Palette.hairline.cgColor)
             ctx.setLineWidth(1)
             ctx.addPath(path)
@@ -138,7 +138,7 @@ extension Tako.TabBarView {
         // Status indicator dot (7×7) matching workspace pill, or numeric badge when Command is held
         let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
         if showingBadges && tab.index < 9 {
-            let badgeRect = CGRect(x: rect.minX + 6, y: rect.midY - 7, width: 14, height: 14)
+            let badgeRect = CGRect(x: rect.minX + 5, y: rect.midY - 7, width: 14, height: 14)
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
@@ -158,20 +158,53 @@ extension Tako.TabBarView {
             ctx.fillEllipse(in: dotRect)
         }
 
-        // Close button and label
-        let showsClose = (hovering || tab.isActive) && rect.width >= Metrics.compactTabWidth
+        // Close button: shows on hover, or when active if there's enough room
+        let showsClose = (hovering || tab.isActive) && rect.width >= 56
+        let closeWidth: CGFloat = showsClose ? 14 : 0
+        let closePaddingRight: CGFloat = 8
+
+        // Title and timer
         let textX = dotRect.maxX + 6
-        let closeWidth = showsClose ? Metrics.closeSize + 6 : 0
-        let textWidth = rect.maxX - 8 - closeWidth - textX
-        if textWidth > 8 {
-            drawLabel(for: tab, x: textX, width: textWidth)
+        let maxTextWidth = rect.maxX - textX - (showsClose ? (closeWidth + 4) : 8)
+        if maxTextWidth > 8 {
+            let rawTitle = titleFor(tab.window)
+            let timer = elapsedFor(tab.window)
+            let timerWidth = timer.map {
+                Tako.TabText.width(of: $0, font: Fonts.timer) + 4
+            } ?? 0
+
+            let title = Tako.TabText.truncate(
+                rawTitle,
+                to: maxTextWidth - timerWidth,
+                font: Fonts.badge
+            )
+            let titleColor = (tab.isActive || hovering) ? Palette.activeText : Palette.inactiveText
+            let drawnWidth = Tako.TabText.draw(
+                title,
+                atX: textX,
+                centeredAtY: rect.midY,
+                font: Fonts.badge,
+                color: titleColor,
+                context: ctx
+            )
+            if let timer {
+                Tako.TabText.draw(
+                    timer,
+                    atX: textX + drawnWidth + 4,
+                    centeredAtY: rect.midY,
+                    font: Fonts.timer,
+                    color: Palette.dim,
+                    context: ctx
+                )
+            }
         }
+
         if showsClose {
             let closeGlyphRect = CGRect(
-                x: rect.maxX - 8 - Metrics.closeSize,
-                y: rect.midY - Metrics.closeSize / 2,
-                width: Metrics.closeSize,
-                height: Metrics.closeSize
+                x: rect.maxX - closePaddingRight - 10,
+                y: rect.midY - 5,
+                width: 10,
+                height: 10
             )
             drawClose(in: closeGlyphRect, ctx: ctx)
         }

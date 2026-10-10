@@ -171,6 +171,16 @@ extension Tako {
         /// space evenly instead, which read as visibly wrong: three short
         /// titles all stretched out with dead air around them.
         private func naturalWidth(for window: NSWindow) -> CGFloat {
+            if effectiveTabStyle == .pill {
+                let title = titleFor(window)
+                let titleWidth = TabText.width(of: title, font: Fonts.badge)
+                let timerWidth = elapsedFor(window).map {
+                    4 + TabText.width(of: $0, font: Fonts.timer)
+                } ?? 0
+                // 8 left padding + 7 dot + 6 gap + titleWidth + timerWidth + 14 (close/margin) + 8 right padding
+                let needed = 8 + 7 + 6 + titleWidth + timerWidth + 16 + 8
+                return min(160, max(54, ceil(needed)))
+            }
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
             width += TabText.width(of: title, font: Fonts.title)
@@ -189,47 +199,52 @@ extension Tako {
             let startX = effectiveFirstTabX
             let available = bounds.width - startX - buttonsReservedWidth
             let natural = all.map(naturalWidth(for:))
+            let isPill = effectiveTabStyle == .pill
 
-            // Only when the natural widths genuinely don't fit do tabs give
-            // up room evenly (down to the 120px floor) rather than each
-            // keeping its own content width -- see "тесно: равномерно
-            // жмутся до 120" in the spec. Past that they keep shrinking to
-            // the icon width (crab only), and when even that doesn't fit the
-            // row scrolls to keep the selected tab in view. Stopping at 120
-            // with no scrolling drew the seventh tab of a 900pt window under
-            // the buttons, as if no more than six could be opened.
-            let totalNatural = natural.reduce(0, +)
+            let preferredGap: CGFloat = isPill ? 6 : 0
+            let availableForGaps = available - CGFloat(all.count) * Metrics.iconTabWidth
+            let gap: CGFloat = (all.count > 1 && preferredGap > 0)
+                ? max(0, min(preferredGap, availableForGaps / CGFloat(all.count - 1)))
+                : 0
+
+            let totalNatural = natural.reduce(0, +) + CGFloat(max(0, all.count - 1)) * gap
             let widths: [CGFloat]
             if totalNatural <= available || all.isEmpty {
                 widths = natural
             } else {
-                let shrunk = max(Metrics.iconTabWidth, available / CGFloat(all.count))
+                let totalGaps = CGFloat(max(0, all.count - 1)) * gap
+                let availableForTabs = max(0, available - totalGaps)
+                let shrunk = max(Metrics.iconTabWidth, availableForTabs / CGFloat(all.count))
                 widths = all.map { _ in shrunk }
             }
 
+            let tabHeight = isPill ? Metrics.buttonSize : Metrics.tabHeight
+            let tabY = isPill ? Metrics.buttonY : 0
             stripRect = CGRect(x: startX, y: 0, width: max(0, available), height: Metrics.tabHeight)
             var x = startX - Self.scrollOffset(
                 widths: widths,
+                gap: gap,
                 selected: all.firstIndex { $0 === selected },
                 available: available)
             for (index, candidate) in all.enumerated() {
                 let width = widths[index]
                 tabs.append(Tab(
                     window: candidate,
-                    frame: CGRect(x: x, y: 0, width: width, height: Metrics.tabHeight),
+                    frame: CGRect(x: x, y: tabY, width: width, height: tabHeight),
                     isActive: candidate === selected,
                     index: index))
-                x += width
+                x += width + gap
             }
         }
 
         /// How far the row scrolls left so the selected tab is in view: none
         /// while everything fits, otherwise just enough to show the selected
         /// tab's right edge, and never past the last tab.
-        static func scrollOffset(widths: [CGFloat], selected: Int?, available: CGFloat) -> CGFloat {
-            let total = widths.reduce(0, +)
+        static func scrollOffset(widths: [CGFloat], gap: CGFloat = 0, selected: Int?, available: CGFloat) -> CGFloat {
+            guard !widths.isEmpty else { return 0 }
+            let total = widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * gap
             guard total > available, let selected else { return 0 }
-            let selectedEnd = widths[...selected].reduce(0, +)
+            let selectedEnd = widths[...selected].reduce(0, +) + CGFloat(selected) * gap
             return min(max(0, selectedEnd - available), total - available)
         }
 

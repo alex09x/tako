@@ -84,15 +84,18 @@ extension Tako.TabBarView {
 
     /// The close button's hit area is larger than the glyph.
     func closeRect(of tab: Tab) -> CGRect {
-        // No close button is drawn on a tab this narrow, so none is hit.
-        guard tab.frame.width >= Metrics.compactTabWidth else { return .null }
-        let inset = (Metrics.closeHitSize - Metrics.closeSize) / 2
         if effectiveTabStyle == .pill {
             let rect = pillRect(for: tab)
-            return CGRect(x: rect.maxX - 8 - Metrics.closeSize - inset,
-                          y: rect.midY - Metrics.closeHitSize / 2,
-                          width: Metrics.closeHitSize, height: Metrics.closeHitSize)
+            guard rect.width >= 48 else { return .null }
+            return CGRect(
+                x: rect.maxX - 8 - 10 - 5,
+                y: rect.midY - 10,
+                width: 20,
+                height: 20
+            )
         }
+        guard tab.frame.width >= Metrics.compactTabWidth else { return .null }
+        let inset = (Metrics.closeHitSize - Metrics.closeSize) / 2
         return CGRect(x: tab.frame.maxX - Metrics.tabPaddingRight - Metrics.closeSize - inset,
                       y: tab.frame.midY - Metrics.closeHitSize / 2,
                       width: Metrics.closeHitSize, height: Metrics.closeHitSize)

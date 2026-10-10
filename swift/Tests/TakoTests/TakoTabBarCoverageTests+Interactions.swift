@@ -149,8 +149,9 @@ extension TabBarViewCoverageTests {
         mount(bar, in: a)
         draw(bar)
 
-        // Tab 1 ("b") sits at x: 210...330 at the clamped minimum width.
-        click(bar, at: NSPoint(x: 250, y: 14), in: a)
+        // Tab 1 ("b") is clicked on its body to select it.
+        let targetX = bar.tabs.indices.contains(1) ? bar.tabs[1].frame.minX + 15 : 250
+        click(bar, at: NSPoint(x: targetX, y: 14), in: a)
         #expect(group.selectedWindow === b)
     }
 
