@@ -231,4 +231,85 @@ struct PillTabBarUITests {
 
         #expect(!bitmapsEqual(normalSnapshot, badgeSnapshot))
     }
+
+    @Test func stripRectEnclosesPillTabsVerticallyWithoutClipping() {
+        let a = makeWindow(title: "tab1")
+        let b = makeWindow(title: "tab2")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: a)
+        draw(bar)
+
+        #expect(bar.stripRect.height >= bar.bounds.height)
+        for tab in bar.tabs {
+            let pill = bar.pillRect(for: tab)
+            #expect(pill.minY >= bar.stripRect.minY)
+            #expect(pill.maxY <= bar.stripRect.maxY)
+        }
+    }
+
+    @Test func pillTabHasSymmetricalLayoutAndCloseGlyph() {
+        let a = makeWindow(title: "tab1")
+        let b = makeWindow(title: "tab2")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: a)
+        draw(bar)
+
+        guard bar.tabs.count == 2 else {
+            Issue.record("Expected 2 tabs laid out")
+            return
+        }
+        for tab in bar.tabs {
+            let pill = bar.pillRect(for: tab)
+            let closeRect = bar.closeRect(of: tab)
+            #expect(closeRect != .null)
+            #expect(closeRect.maxX <= pill.maxX)
+            #expect(closeRect.minX > pill.minX + 20)
+            #expect(abs(closeRect.midY - pill.midY) < 1.0)
+        }
+    }
+
+    @Test func pillTabBitmapRenderIsVerticallySymmetricalAndUnclipped() {
+        let a = makeWindow(title: "test-tab")
+        let b = makeWindow(title: "second-tab")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: a)
+        draw(bar)
+
+        let rep = snapshot(bar)
+        guard bar.tabs.count >= 1 else { return }
+        let pill = bar.pillRect(for: bar.tabs[0])
+        let midX = Int(pill.midX)
+
+        var pillYRows: [Int] = []
+        for y in 0..<rep.pixelsHigh {
+            if let color = rep.colorAt(x: midX, y: y), color.redComponent > 0.19 {
+                pillYRows.append(y)
+            }
+        }
+        #expect(!pillYRows.isEmpty)
+        if let minY = pillYRows.min(), let maxY = pillYRows.max() {
+            let renderedHeight = maxY - minY + 1
+            let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
+            let expectedPixels = Int(Tako.TabBarView.Metrics.buttonSize) * scale
+            #expect(abs(renderedHeight - expectedPixels) <= 1)
+        }
+    }
 }

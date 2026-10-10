@@ -157,6 +157,15 @@ extension AppDelegate {
             selector: #selector(takoNewTab(_:)),
             name: Tako.Notification.takoNewTab,
             object: nil)
+        NotificationCenter.default.addObserver(
+            forName: .takoWorkspaceDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.setupWorkspaceTopLevelMenu()
+            }
+        }
 
         // Configure user notifications
         let actions = [

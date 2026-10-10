@@ -77,6 +77,7 @@ extension AppDelegate {
 
         setupPromptNavigationMenuItems()
         setupTabNavigationMenuItems()
+        setupWorkspaceTopLevelMenu()
 
         menuShortcutManager.reset()
 

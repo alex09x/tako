@@ -109,7 +109,8 @@ extension Tako.TabBarView {
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
         ctx.addPath(path)
         if tab.isActive {
-            ctx.setFillColor(Palette.activeTab.cgColor)
+            let activeBg = NSColor(srgbRed: 0x48 / 255, green: 0x3C / 255, blue: 0x32 / 255, alpha: 1.0)
+            ctx.setFillColor(activeBg.cgColor)
             ctx.fillPath()
 
             // Crisp hairline outline for the active pill
@@ -158,55 +159,40 @@ extension Tako.TabBarView {
             ctx.fillEllipse(in: dotRect)
         }
 
-        // Close button: shows on hover, or when active if there's enough room
-        let showsClose = (hovering || tab.isActive) && rect.width >= 56
-        let closeWidth: CGFloat = showsClose ? 14 : 0
-        let closePaddingRight: CGFloat = 8
-
-        // Title and timer
-        let textX = dotRect.maxX + 6
-        let maxTextWidth = rect.maxX - textX - (showsClose ? (closeWidth + 4) : 8)
-        if maxTextWidth > 8 {
+        // Close button: visible on tabs with enough room, with 8px right margin
+        let showsClose = rect.width >= 54
+        let closeExtra: CGFloat = showsClose ? (6 + 10) : 0
+        let maxTitleWidth = rect.width - 21 - 8 - closeExtra
+        if maxTitleWidth > 8 {
             let rawTitle = titleFor(tab.window)
-            let timer = elapsedFor(tab.window)
-            let timerWidth = timer.map {
-                Tako.TabText.width(of: $0, font: Fonts.timer) + 4
-            } ?? 0
-
-            let title = Tako.TabText.truncate(
-                rawTitle,
-                to: maxTextWidth - timerWidth,
-                font: Fonts.badge
-            )
+            let title = Tako.TabText.truncate(rawTitle, to: maxTitleWidth, font: Fonts.badge)
             let titleColor = (tab.isActive || hovering) ? Palette.activeText : Palette.inactiveText
-            let drawnWidth = Tako.TabText.draw(
+            Tako.TabText.draw(
                 title,
-                atX: textX,
+                atX: dotRect.maxX + 6,
                 centeredAtY: rect.midY,
                 font: Fonts.badge,
                 color: titleColor,
                 context: ctx
             )
-            if let timer {
-                Tako.TabText.draw(
-                    timer,
-                    atX: textX + drawnWidth + 4,
-                    centeredAtY: rect.midY,
-                    font: Fonts.timer,
-                    color: Palette.dim,
-                    context: ctx
-                )
-            }
         }
 
         if showsClose {
             let closeGlyphRect = CGRect(
-                x: rect.maxX - closePaddingRight - 10,
+                x: rect.maxX - 8 - 10,
                 y: rect.midY - 5,
                 width: 10,
                 height: 10
             )
-            drawClose(in: closeGlyphRect, ctx: ctx)
+            let closeColor: NSColor
+            if hoveredClose && hovering {
+                closeColor = Palette.activeText
+            } else if tab.isActive {
+                closeColor = Palette.inactiveText
+            } else {
+                closeColor = Palette.dim
+            }
+            drawClose(in: closeGlyphRect, color: closeColor, ctx: ctx)
         }
     }
 
@@ -324,10 +310,11 @@ extension Tako.TabBarView {
         Tako.CrabPainter.draw(in: rect, color: crabColor(for: tab.window), unread: unread, context: ctx)
     }
 
-    func drawClose(in rect: CGRect, ctx: CGContext) {
-        ctx.setStrokeColor((hoveredClose ? Palette.activeText : Palette.dim).cgColor)
-        ctx.setLineWidth(1.5)
-        let inset: CGFloat = 4
+    func drawClose(in rect: CGRect, color: NSColor? = nil, ctx: CGContext) {
+        let strokeColor = color ?? (hoveredClose ? Palette.activeText : Palette.dim)
+        ctx.setStrokeColor(strokeColor.cgColor)
+        ctx.setLineWidth(1.3)
+        let inset: CGFloat = max(1.5, min(rect.width, rect.height) * 0.2)
         ctx.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + inset))
         ctx.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
         ctx.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))

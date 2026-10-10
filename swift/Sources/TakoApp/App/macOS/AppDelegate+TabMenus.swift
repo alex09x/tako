@@ -131,19 +131,19 @@ extension AppDelegate {
 
         let newWs = NSMenuItem(title: "New Workspace…", action: #selector(newWorkspace(_:)), keyEquivalent: "n")
         newWs.keyEquivalentModifierMask = [.control, .option]
-        newWs.target = nil
+        newWs.target = self
         newWs.setImageIfDesired(systemSymbolName: "plus.rectangle.on.folder")
         wsMenu.addItem(newWs)
 
         let nextWs = NSMenuItem(title: "Next Workspace", action: #selector(nextWorkspace(_:)), keyEquivalent: "]")
         nextWs.keyEquivalentModifierMask = [.control, .option]
-        nextWs.target = nil
+        nextWs.target = self
         nextWs.setImageIfDesired(systemSymbolName: "chevron.right.2")
         wsMenu.addItem(nextWs)
 
         let prevWs = NSMenuItem(title: "Previous Workspace", action: #selector(previousWorkspace(_:)), keyEquivalent: "[")
         prevWs.keyEquivalentModifierMask = [.control, .option]
-        prevWs.target = nil
+        prevWs.target = self
         prevWs.setImageIfDesired(systemSymbolName: "chevron.left.2")
         wsMenu.addItem(prevWs)
 

@@ -87,13 +87,26 @@ extension Tako {
                     for group in allGroups {
                         group.syncWithActiveWorkspace()
                     }
-                    let hasVisible = TerminalController.all.contains { ctrl in
-                        guard let win = ctrl.window, win.isVisible else { return false }
-                        return true
+                    let hasWorkspaceWindow = allGroups.contains { !$0.visibleWindows.isEmpty }
+                    if !hasWorkspaceWindow, let app = (NSApp.delegate as? AppDelegate)?.tako {
+                        let ctrl = TerminalController.newWindow(app)
+                        if let win = ctrl.window {
+                            win.makeKeyAndOrderFront(nil)
+                            NSApp.activate(ignoringOtherApps: true)
+                            if let focused = ctrl.focusedSurface {
+                                win.makeFirstResponder(focused)
+                            }
+                        }
                     }
-                    if !hasVisible, let app = (NSApp.delegate as? AppDelegate)?.tako {
-                        _ = TerminalController.newWindow(app)
-                    }
+                    Tako.TabBarController.refreshAll()
+                }
+            }
+            NotificationCenter.default.addObserver(
+                forName: .takoTabsDidChange,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
                     Tako.TabBarController.refreshAll()
                 }
             }
@@ -244,8 +257,11 @@ extension Tako {
         func select(_ window: NSWindow) {
             guard windows.contains(window) else { return }
             let reflowSurfaces: () -> Void = {
-                if let controller = window.windowController as? TerminalController {
+                if let controller = (window.windowController as? TerminalController) ?? (window.delegate as? TerminalController) {
                     controller.reflowSurfaces(forcePtyResize: true)
+                    if let focused = controller.focusedSurface {
+                        window.makeFirstResponder(focused)
+                    }
                 }
             }
             guard selectedWindow !== window else {
@@ -258,6 +274,7 @@ extension Tako {
             window.setFrame(previous?.frame ?? window.frame, display: false)
             window.makeKeyAndOrderFront(nil)
             previous?.orderOut(nil)
+            NSApp.activate(ignoringOtherApps: true)
 
             if let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {
                 WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: ws.id)
@@ -286,9 +303,12 @@ extension Tako {
 
             if let target = targetWindow {
                 let reflowTarget: () -> Void = {
-                    if let controller = target.windowController as? TerminalController {
+                    if let controller = (target.windowController as? TerminalController) ?? (target.delegate as? TerminalController) {
                         for surface in controller.surfaceTree {
                             surface.reflowToCurrentBounds(forcePtyResize: true)
+                        }
+                        if let focused = controller.focusedSurface {
+                            target.makeFirstResponder(focused)
                         }
                     }
                 }
@@ -303,10 +323,13 @@ extension Tako {
                 } else {
                     target.makeKeyAndOrderFront(nil)
                 }
+                NSApp.activate(ignoringOtherApps: true)
                 reflowTarget()
                 DispatchQueue.main.async {
                     reflowTarget()
                 }
+            } else {
+                selectedWindow = nil
             }
 
             // Hide any windows not belonging to active workspace

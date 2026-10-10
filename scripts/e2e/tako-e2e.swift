@@ -89,6 +89,7 @@ enum Key {
     static let q: CGKeyCode = 12
     static let comma: CGKeyCode = 43
     static let grave: CGKeyCode = 50
+    static let leftBracket: CGKeyCode = 33
     static let rightBracket: CGKeyCode = 30
     static let s: CGKeyCode = 1
     static let o: CGKeyCode = 31
@@ -304,7 +305,7 @@ final class Driver {
     /// What the terminal shows, as its accessibility value: the screen and
     /// scrollback.
     func screenText() -> String {
-        guard let window = windows().first,
+        guard let window = activeWindow(),
               let area = descendants(of: window, role: kAXTextAreaRole as String).first,
               let text: String = attribute(area, kAXValueAttribute)
         else { return "" }
@@ -414,6 +415,23 @@ final class Driver {
 
     func windows() -> [AXUIElement] {
         (attribute(axApp, kAXWindowsAttribute) as [AXUIElement]?) ?? []
+    }
+
+    func activeWindow() -> AXUIElement? {
+        if let focused: AXUIElement = attribute(axApp, kAXFocusedWindowAttribute) {
+            return focused
+        }
+        if let main: AXUIElement = attribute(axApp, kAXMainWindowAttribute) {
+            return main
+        }
+        for win in windows().reversed() {
+            let hidden: Bool? = attribute(win, "AXHidden")
+            let minimized: Bool? = attribute(win, "AXMinimized")
+            if hidden != true && minimized != true {
+                return win
+            }
+        }
+        return windows().first
     }
 
     /// Every element under `root` whose role is `role`.
@@ -639,6 +657,53 @@ final class Driver {
         }
     }
 
+    /// Perform a drag from start screen point to end screen point via real CGEvent mouse events.
+    func drag(from start: CGPoint, to end: CGPoint, steps: Int = 8) throws {
+        guard topmostOwner(at: start) == pid else {
+            throw Failure("refusing to drag from \(start): the window there is not Tako's")
+        }
+        let home = CGEvent(source: nil)?.location
+        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                 mouseCursorPosition: start, mouseButton: .left) else { return }
+        down.setIntegerValueField(.mouseEventClickState, value: 1)
+        down.post(tap: .cghidEventTap)
+        usleep(100_000)
+
+        for i in 1...steps {
+            let progress = CGFloat(i) / CGFloat(steps)
+            let current = CGPoint(x: start.x + (end.x - start.x) * progress,
+                                  y: start.y + (end.y - start.y) * progress)
+            guard let move = CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged,
+                                     mouseCursorPosition: current, mouseButton: .left) else { continue }
+            move.post(tap: .cghidEventTap)
+            usleep(35_000)
+        }
+
+        guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                               mouseCursorPosition: end, mouseButton: .left) else { return }
+        up.setIntegerValueField(.mouseEventClickState, value: 1)
+        up.post(tap: .cghidEventTap)
+        usleep(100_000)
+
+        if let home {
+            CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                    mouseCursorPosition: home, mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// The window's frame in screen coordinates.
+    func windowFrame(_ window: AXUIElement? = nil) -> CGRect? {
+        guard let win = window ?? activeWindow(),
+              let position: AXValue = attribute(win, kAXPositionAttribute),
+              let size: AXValue = attribute(win, kAXSizeAttribute)
+        else { return nil }
+        var origin = CGPoint.zero
+        var extent = CGSize.zero
+        AXValueGetValue(position, .cgPoint, &origin)
+        AXValueGetValue(size, .cgSize, &extent)
+        return CGRect(origin: origin, size: extent)
+    }
+
     /// Which process owns the frontmost ordinary window at a screen point.
     func topmostOwner(at point: CGPoint) -> pid_t? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
@@ -667,8 +732,22 @@ final class Driver {
         return nil
     }
 
+    @discardableResult
+    func pressMenu(title: String) -> Bool {
+        guard let bar: AXUIElement = attribute(axApp, kAXMenuBarAttribute) else { return false }
+        for top in (attribute(bar, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            for menu in (attribute(top, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+                for item in (attribute(menu, kAXChildrenAttribute) as [AXUIElement]?) ?? []
+                where (attribute(item, kAXTitleAttribute) as String?) == title {
+                    return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+                }
+            }
+        }
+        return false
+    }
+
     func focus() {
-        guard let window = windows().first else { return }
+        guard let window = activeWindow() else { return }
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         if let area = descendants(of: window, role: kAXTextAreaRole as String).first {
@@ -3837,6 +3916,148 @@ let scenarios: [Scenario] = [
         }
         guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
             throw Failure("recovered focused pane does not match original pane")
+        }
+    }),
+    ("workspace-journey", "dragging window, creating tabs, mouse-switching tabs, and switching workspaces work end-to-end", { d in
+        // Set up workspaces persistence directory with two workspaces: Default and Secondary
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let wsDir = appSupport.appendingPathComponent(d.bundleID).appendingPathComponent("Workspaces", isDirectory: true)
+        try? FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
+        let wsJsonURL = wsDir.appendingPathComponent("workspaces.json")
+        let seededJson = """
+        {
+          "activeWorkspaceId": "00000000-0000-0000-0000-000000000001",
+          "workspaces": [
+            {
+              "id": "00000000-0000-0000-0000-000000000001",
+              "name": "Default",
+              "color": "blue",
+              "icon": "terminal",
+              "tabIdentifiers": [],
+              "createdAt": 750000000.0
+            },
+            {
+              "id": "00000000-0000-0000-0000-000000000002",
+              "name": "Secondary",
+              "color": "orange",
+              "icon": "folder",
+              "tabIdentifiers": [],
+              "createdAt": 750000000.0
+            }
+          ]
+        }
+        """
+        try seededJson.write(to: wsJsonURL, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: wsJsonURL)
+        }
+
+        // Restart with seeded workspaces and pill style config
+        d.quit()
+        try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
+        d.setPosition(CGPoint(x: 100, y: 100))
+        d.setSize(CGSize(width: 800, height: 500))
+        d.focus()
+        usleep(1_000_000)
+
+        // 1. Window dragging verification with real CGEvent
+        guard let initialFrame = d.windowFrame() else {
+            throw Failure("no window frame discovered for initial window")
+        }
+        let dragStart = CGPoint(x: initialFrame.origin.x + 250, y: initialFrame.origin.y + 18)
+        let dragEnd = CGPoint(x: initialFrame.origin.x + 330, y: initialFrame.origin.y + 58)
+        try d.drag(from: dragStart, to: dragEnd, steps: 12)
+        usleep(500_000)
+        guard let draggedFrame = d.windowFrame() else {
+            throw Failure("no window frame after dragging")
+        }
+        guard draggedFrame.origin != initialFrame.origin,
+              draggedFrame.origin.x >= initialFrame.origin.x + 15 else {
+            throw Failure("window dragging failed: window did not move significantly (initial: \(initialFrame.origin), dragged: \(draggedFrame.origin))")
+        }
+
+        // 2. Tab creation & keyboard routing
+        try d.run("tty > \(d.path("tty_tab1.txt"))")
+        let tty1 = try d.file("tty_tab1.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tty1.isEmpty else { throw Failure("could not read initial tab TTY") }
+
+        d.key(Key.t, .maskCommand)
+        usleep(1_500_000)
+
+        try d.run("tty > \(d.path("tty_tab2.txt"))")
+        let tty2 = try d.file("tty_tab2.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tty2.isEmpty, tty2 != tty1 else {
+            throw Failure("Cmd+T did not create a new tab with a distinct TTY (tab1: \(tty1), tab2: \(tty2))")
+        }
+
+        // 3. Real mouse click switching back to Tab 1
+        guard let frameAfterTabs = d.windowFrame() else {
+            throw Failure("no window frame discovered for tab switching")
+        }
+        // In pill style, Tab 1 body is around frameAfterTabs.origin.x + 180, y + 19 (away from close button)
+        let tab1ClickPoint = CGPoint(x: frameAfterTabs.origin.x + 180, y: frameAfterTabs.origin.y + 19)
+        try d.click(at: tab1ClickPoint)
+        usleep(1_000_000)
+        d.focus()
+
+        try d.run("tty > \(d.path("tty_after_click1.txt"))")
+        let ttyAfterClick1 = try d.file("tty_after_click1.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ttyAfterClick1 == tty1 else {
+            throw Failure("mouse click on Tab 1 did not switch active terminal to Tab 1 (got: \(ttyAfterClick1), expected: \(tty1))")
+        }
+
+        // 4. Real mouse click switching back to Tab 2
+        // Try clicking Tab 2 candidate coordinates depending on Tab 1 title width
+        let tab2Candidates = [
+            CGPoint(x: frameAfterTabs.origin.x + 250, y: frameAfterTabs.origin.y + 19),
+            CGPoint(x: frameAfterTabs.origin.x + 320, y: frameAfterTabs.origin.y + 19),
+            CGPoint(x: frameAfterTabs.origin.x + 380, y: frameAfterTabs.origin.y + 19),
+            CGPoint(x: frameAfterTabs.origin.x + 440, y: frameAfterTabs.origin.y + 19),
+        ]
+        var switchedToTab2 = false
+        for pt in tab2Candidates {
+            try d.click(at: pt)
+            usleep(600_000)
+            d.focus()
+            try d.run("tty > \(d.path("tty_after_click2.txt"))")
+            if let t = try? d.file("tty_after_click2.txt").trimmingCharacters(in: .whitespacesAndNewlines), t == tty2 {
+                switchedToTab2 = true
+                break
+            }
+        }
+        guard switchedToTab2 else {
+            let lastTTY = (try? d.file("tty_after_click2.txt"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw Failure("mouse click on Tab 2 did not switch active terminal to Tab 2 (got: \(lastTTY), expected: \(tty2))")
+        }
+
+        // 5. Workspace switching via Next Workspace in menu
+        guard d.pressMenu(title: "Next Workspace") else {
+            throw Failure("could not press Next Workspace in menu bar")
+        }
+        _ = d.wait(for: { d.windows().count >= 1 }, timeout: 5)
+        usleep(2_000_000)
+        d.focus()
+
+        // The new workspace gets its own terminal window
+        try d.run("tty > \(d.path("tty_ws2.txt"))")
+        let ttyWs2 = try d.file("tty_ws2.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ttyWs2.isEmpty, ttyWs2 != tty1, ttyWs2 != tty2 else {
+            throw Failure("switching to Secondary workspace did not activate a separate terminal (got: \(ttyWs2), tab1: \(tty1), tab2: \(tty2))")
+        }
+
+        // 6. Switch back to original workspace via Previous Workspace in menu
+        guard d.pressMenu(title: "Previous Workspace") else {
+            throw Failure("could not press Previous Workspace in menu bar")
+        }
+        _ = d.wait(for: { d.windows().count >= 1 }, timeout: 5)
+        usleep(2_000_000)
+        d.focus()
+
+        // Verify keyboard input works and active tab responds in Default workspace
+        try d.run("tty > \(d.path("tty_back.txt"))")
+        let ttyBack = try d.file("tty_back.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ttyBack == tty1 || ttyBack == tty2 else {
+            throw Failure("switching back to Default workspace did not restore original terminals (got: \(ttyBack), tab1: \(tty1), tab2: \(tty2))")
         }
     }),
 ]

@@ -1,8 +1,20 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
+
 extension Notification.Name {
     public static let takoWorkspaceDidChange = Notification.Name("TakoWorkspaceDidChange")
+    public static let takoTabsDidChange = Notification.Name("TakoTabsDidChange")
 }
 
 /// Central store for project workspaces (C1).
@@ -181,7 +193,7 @@ public final class WorkspaceStore: ObservableObject {
         }
 
         save()
-        NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
+        NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
     }
 
     public func removeTab(tabIdentifier: String) {
@@ -197,7 +209,7 @@ public final class WorkspaceStore: ObservableObject {
         }
         if changed {
             save()
-            NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
+            NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
         }
     }
 
@@ -215,7 +227,7 @@ public final class WorkspaceStore: ObservableObject {
         }
         workspaces[index].tabIdentifiers = ordered
         save()
-        NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
+        NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
     }
 
     public func setActiveTab(tabIdentifier: String, in workspaceId: UUID) {

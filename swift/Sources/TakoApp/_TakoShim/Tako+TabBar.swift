@@ -1,5 +1,16 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import CoreText
+
 
 // The tab strip, drawn rather than native.
 //
@@ -104,6 +115,14 @@ extension Tako {
 
         override var isFlipped: Bool { false }
 
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            true
+        }
+
+        override var mouseDownCanMoveWindow: Bool {
+            true
+        }
+
         var group: CustomTabGroup? { window.map { Tako.CustomTabGroup.group(for: $0) } }
         var windows: [NSWindow] { group?.visibleWindows ?? [] }
         /// A single window shows no strip -- just its title, centred. There
@@ -129,12 +148,12 @@ extension Tako {
             let title = ws.name
             let titleWidth = TabText.width(of: title, font: Fonts.badge)
             let attention = WorkspaceStore.shared.attentionCount(for: ws)
-            let pillWidth = min(140, max(54, 8 + 8 + 6 + titleWidth + (attention > 0 ? 20 : 0) + 8))
+            let pillWidth = min(140, max(54, 8 + 7 + 6 + titleWidth + (attention > 0 ? 20 : 0) + 8))
             return CGRect(x: 84, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
         }
 
         var effectiveFirstTabX: CGFloat {
-            showsWorkspacePill ? workspacePillRect.maxX + 8 : Metrics.firstTabX
+            showsWorkspacePill ? workspacePillRect.maxX + 6 : Metrics.firstTabX
         }
 
         /// "кнопки справа 28×28, gap 4, отступ 8": + is rightmost (window
@@ -174,12 +193,9 @@ extension Tako {
             if effectiveTabStyle == .pill {
                 let title = titleFor(window)
                 let titleWidth = TabText.width(of: title, font: Fonts.badge)
-                let timerWidth = elapsedFor(window).map {
-                    4 + TabText.width(of: $0, font: Fonts.timer)
-                } ?? 0
-                // 8 left padding + 7 dot + 6 gap + titleWidth + timerWidth + 14 (close/margin) + 8 right padding
-                let needed = 8 + 7 + 6 + titleWidth + timerWidth + 16 + 8
-                return min(160, max(54, ceil(needed)))
+                // Symmetrical pill: 8 (left) + 7 (dot) + 6 (gap) + titleWidth + 6 (gap) + 10 (close) + 8 (right)
+                let needed = 8 + 7 + 6 + titleWidth + 6 + 10 + 8
+                return min(180, max(64, ceil(needed)))
             }
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
@@ -220,7 +236,7 @@ extension Tako {
 
             let tabHeight = isPill ? Metrics.buttonSize : Metrics.tabHeight
             let tabY = isPill ? Metrics.buttonY : 0
-            stripRect = CGRect(x: startX, y: 0, width: max(0, available), height: Metrics.tabHeight)
+            stripRect = CGRect(x: startX, y: 0, width: max(0, available), height: bounds.height)
             var x = startX - Self.scrollOffset(
                 widths: widths,
                 gap: gap,
