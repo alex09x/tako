@@ -260,5 +260,50 @@ struct CustomTabGroupCoverageTests {
         #expect(gen2 > gen1)
         #expect(group.selectedWindow === a)
     }
+
+    @Test func syncWithActiveWorkspacePreservesIndependentFramesByDefaultAndSyncsWhenEnabled() {
+        let a = makeWindow(title: "wsA")
+        let b = makeWindow(title: "wsB")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+            WorkspaceStore.shared.resetForTesting()
+        }
+        WorkspaceStore.shared.resetForTesting()
+        let wsB = WorkspaceStore.shared.createWorkspace(name: "Beta")
+        WorkspaceStore.shared.assignTab(tabIdentifier: a.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+        WorkspaceStore.shared.assignTab(tabIdentifier: b.stableTabIdentifier, to: wsB.id)
+
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+        let group = Tako.CustomTabGroup.group(for: a)
+
+        let frameA = NSRect(x: 100, y: 200, width: 400, height: 300)
+        let frameB = NSRect(x: 200, y: 350, width: 500, height: 350)
+        a.setFrame(frameA, display: false)
+        b.setFrame(frameB, display: false)
+        let actualA = a.frame
+        let actualB = b.frame
+        #expect(actualA != actualB)
+
+        // 1. By default, syncWindowFrame is false: switching active workspace to B keeps actualB
+        #expect(group.syncWindowFrame == false)
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
+        group.syncWithActiveWorkspace()
+        #expect(group.selectedWindow === b)
+        #expect(b.frame == actualB)
+
+        // Switch back to Default: a keeps actualA
+        #expect(WorkspaceStore.shared.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
+        group.syncWithActiveWorkspace()
+        #expect(group.selectedWindow === a)
+        #expect(a.frame == actualA)
+
+        // 2. When syncWindowFrame is enabled: switching active workspace copies previous frame
+        group.syncWindowFrameOverride = true
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
+        group.syncWithActiveWorkspace()
+        #expect(group.selectedWindow === b)
+        #expect(b.frame == actualA)
+    }
 }
 

@@ -29,8 +29,12 @@ extension Tako {
     final class CustomTabGroup {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
-        /// Monotonically increasing generation to invalidate stale focus/reflow callbacks.
         private(set) var focusGeneration: Int = 0
+        /// Test override for workspace window frame synchronization.
+        var syncWindowFrameOverride: Bool?
+        var syncWindowFrame: Bool {
+            syncWindowFrameOverride ?? (NSApp.delegate as? AppDelegate)?.tako.config.workspaceSyncWindowFrame ?? false
+        }
 
         private static var groupsByWindow: [ObjectIdentifier: CustomTabGroup] = [:]
         private static var workspaceObserverInstalled = false
@@ -427,7 +431,9 @@ extension Tako {
                 if selectedWindow !== target {
                     let prev = selectedWindow
                     selectedWindow = target
-                    target.setFrame(prev?.frame ?? target.frame, display: false)
+                    if syncWindowFrame, let prevFrame = prev?.frame {
+                        target.setFrame(prevFrame, display: false)
+                    }
                     target.makeKeyAndOrderFront(nil)
                     if prev !== target {
                         prev?.orderOut(nil)

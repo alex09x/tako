@@ -160,6 +160,14 @@ extension Tako.Config {
         rawBool("window-inherit-font-size", default: true)
     }
 
+    /// Whether switching workspaces synchronizes the window frame (position and size) of the
+    /// previous workspace's window to the target workspace's window.
+    ///
+    /// Reads `workspace-sync-window-frame` (or alias `workspace-inherit-window-frame`), default false.
+    var workspaceSyncWindowFrame: Bool {
+        rawBool("workspace-sync-window-frame", default: rawBool("workspace-inherit-window-frame", default: false))
+    }
+
     /// Whether thin marks appear beside command prompt lines in the gutter
     /// and on the scrollbar track.
     ///

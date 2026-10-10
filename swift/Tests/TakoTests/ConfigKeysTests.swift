@@ -241,5 +241,21 @@ struct ConfigKeysTests {
         #expect(config.secureInputIndication == true)
     }
 
+    // MARK: - workspace-sync-window-frame
 
+    @Test func workspaceSyncWindowFrameDefaultsToFalse() throws {
+        let config = try TemporaryConfig("")
+        #expect(config.workspaceSyncWindowFrame == false)
+    }
+
+    @Test func workspaceSyncWindowFrameParsed() throws {
+        let config = try TemporaryConfig("workspace-sync-window-frame = true")
+        #expect(config.workspaceSyncWindowFrame == true)
+
+        let configAlias = try TemporaryConfig("workspace-inherit-window-frame = true")
+        #expect(configAlias.workspaceSyncWindowFrame == true)
+
+        let configFalse = try TemporaryConfig("workspace-sync-window-frame = false")
+        #expect(configFalse.workspaceSyncWindowFrame == false)
+    }
 }
