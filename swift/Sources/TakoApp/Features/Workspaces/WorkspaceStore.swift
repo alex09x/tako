@@ -26,11 +26,29 @@ public final class WorkspaceStore: ObservableObject {
     public static let defaultWorkspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
     public struct WorkspaceTransition: Codable, Sendable {
+        public let sequence: Int64
         public let fromId: UUID
         public let toId: UUID
         public let timestamp: TimeInterval
 
-        public init(fromId: UUID, toId: UUID, timestamp: TimeInterval) {
+        public init(sequence: Int64, fromId: UUID, toId: UUID, timestamp: TimeInterval) {
+            self.sequence = sequence
+            self.fromId = fromId
+            self.toId = toId
+            self.timestamp = timestamp
+        }
+    }
+
+    public struct TabTransition: Codable, Sendable {
+        public let sequence: Int64
+        public let workspaceId: UUID
+        public let fromId: String
+        public let toId: String
+        public let timestamp: TimeInterval
+
+        public init(sequence: Int64, workspaceId: UUID, fromId: String, toId: String, timestamp: TimeInterval) {
+            self.sequence = sequence
+            self.workspaceId = workspaceId
             self.fromId = fromId
             self.toId = toId
             self.timestamp = timestamp
@@ -38,6 +56,9 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public private(set) var recentTransitions: [WorkspaceTransition] = []
+    public private(set) var recentTabTransitions: [TabTransition] = []
+    private var nextTransitionSequence: Int64 = 0
+    private let maxTransitionHistory = 50
 
     private var isLoading: Bool = false
     @Published public private(set) var workspaces: [Workspace] = []
@@ -45,11 +66,16 @@ public final class WorkspaceStore: ObservableObject {
         didSet {
             guard !isLoading else { return }
             if oldValue != activeWorkspaceId {
+                nextTransitionSequence += 1
                 recentTransitions.append(WorkspaceTransition(
+                    sequence: nextTransitionSequence,
                     fromId: oldValue,
                     toId: activeWorkspaceId,
                     timestamp: ProcessInfo.processInfo.systemUptime
                 ))
+                if recentTransitions.count > maxTransitionHistory {
+                    recentTransitions.removeFirst(recentTransitions.count - maxTransitionHistory)
+                }
                 save()
                 NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
             }
@@ -251,7 +277,21 @@ public final class WorkspaceStore: ObservableObject {
 
     public func setActiveTab(tabIdentifier: String, in workspaceId: UUID) {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
+        let oldTab = workspaces[index].activeTabIdentifier
         workspaces[index].activeTabIdentifier = tabIdentifier
+        if oldTab != tabIdentifier {
+            nextTransitionSequence += 1
+            recentTabTransitions.append(TabTransition(
+                sequence: nextTransitionSequence,
+                workspaceId: workspaceId,
+                fromId: oldTab ?? "",
+                toId: tabIdentifier,
+                timestamp: ProcessInfo.processInfo.systemUptime
+            ))
+            if recentTabTransitions.count > maxTransitionHistory {
+                recentTabTransitions.removeFirst(recentTabTransitions.count - maxTransitionHistory)
+            }
+        }
         save()
     }
 
@@ -329,6 +369,9 @@ public final class WorkspaceStore: ObservableObject {
         let def = makeDefaultWorkspace()
         workspaces = [def]
         activeWorkspaceId = def.id
+        recentTransitions.removeAll()
+        recentTabTransitions.removeAll()
+        nextTransitionSequence = 0
     }
 
     private func makeDefaultWorkspace() -> Workspace {

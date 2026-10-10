@@ -349,10 +349,32 @@ pub fn workspace_report(result: &Value) -> String {
     if let Some(transitions) = result.get("transitions").and_then(Value::as_array) {
         let mut out = String::new();
         for t in transitions {
+            let seq = t["sequence"].as_i64().unwrap_or(0);
             let from = t["from_id"].as_str().unwrap_or("?");
             let to = t["to_id"].as_str().unwrap_or("?");
             let ts = t["timestamp"].as_f64().unwrap_or(0.0);
-            out += &format!("{ts:.3}: {from} -> {to}\n");
+            if seq > 0 {
+                out += &format!("#{seq} {ts:.3}: {from} -> {to}\n");
+            } else {
+                out += &format!("{ts:.3}: {from} -> {to}\n");
+            }
+        }
+        if let Some(tab_transitions) = result.get("tab_transitions").and_then(Value::as_array) {
+            if !tab_transitions.is_empty() {
+                out += "Tab transitions:\n";
+                for t in tab_transitions {
+                    let seq = t["sequence"].as_i64().unwrap_or(0);
+                    let ws = t["workspace_id"].as_str().unwrap_or("?");
+                    let from = t["from_id"].as_str().unwrap_or("?");
+                    let to = t["to_id"].as_str().unwrap_or("?");
+                    let ts = t["timestamp"].as_f64().unwrap_or(0.0);
+                    if seq > 0 {
+                        out += &format!("  #{seq} {ts:.3} [{ws}]: {from} -> {to}\n");
+                    } else {
+                        out += &format!("  {ts:.3} [{ws}]: {from} -> {to}\n");
+                    }
+                }
+            }
         }
         return out;
     }

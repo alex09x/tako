@@ -290,4 +290,65 @@ struct WorkspaceTests {
         #expect(assignByControlResp["workspace"]?.string == "Alpha")
         #expect(WorkspaceStore.shared.workspace(forTab: stableTabId)?.name == "Alpha")
     }
+
+    @Test func testWorkspaceAndTabTransitions() throws {
+        WorkspaceStore.shared.resetForTesting()
+        #expect(WorkspaceStore.shared.recentTransitions.isEmpty)
+        #expect(WorkspaceStore.shared.recentTabTransitions.isEmpty)
+
+        let ws = WorkspaceStore.shared.createWorkspace(name: "TestWs")
+        #expect(WorkspaceStore.shared.switchWorkspace(to: ws.id))
+
+        #expect(WorkspaceStore.shared.recentTransitions.count == 1)
+        let wsTrans = WorkspaceStore.shared.recentTransitions[0]
+        #expect(wsTrans.sequence == 1)
+        #expect(wsTrans.fromId == WorkspaceStore.defaultWorkspaceId)
+        #expect(wsTrans.toId == ws.id)
+        #expect(wsTrans.timestamp > 0)
+
+        WorkspaceStore.shared.assignTab(tabIdentifier: "tab-0", to: ws.id)
+        WorkspaceStore.shared.assignTab(tabIdentifier: "tab-1", to: ws.id)
+        WorkspaceStore.shared.setActiveTab(tabIdentifier: "tab-1", in: ws.id)
+
+        #expect(WorkspaceStore.shared.recentTabTransitions.count == 1)
+        let tabTrans = WorkspaceStore.shared.recentTabTransitions[0]
+        #expect(tabTrans.sequence == 2)
+        #expect(tabTrans.workspaceId == ws.id)
+        #expect(tabTrans.fromId == "tab-0")
+        #expect(tabTrans.toId == "tab-1")
+        #expect(tabTrans.timestamp > 0)
+
+        // Switching to another tab appends another transition with incremented sequence
+        WorkspaceStore.shared.setActiveTab(tabIdentifier: "tab-0", in: ws.id)
+        #expect(WorkspaceStore.shared.recentTabTransitions.count == 2)
+        let tabTrans2 = WorkspaceStore.shared.recentTabTransitions[1]
+        #expect(tabTrans2.sequence == 3)
+        #expect(tabTrans2.fromId == "tab-1")
+        #expect(tabTrans2.toId == "tab-0")
+
+        // Setting the same active tab is a no-op
+        WorkspaceStore.shared.setActiveTab(tabIdentifier: "tab-0", in: ws.id)
+        #expect(WorkspaceStore.shared.recentTabTransitions.count == 2)
+
+        // Control command "history" returns both transitions with sequences
+        let histReq = ControlRequest(cmd: "workspace", args: ["action": .string("history")], from: nil)
+        let histResp = try ControlCommands.workspaceCommand(histReq, all: [])
+        guard case let .array(transitions)? = histResp["transitions"],
+              case let .array(tabTransitions)? = histResp["tab_transitions"] else {
+            Issue.record("history command missing transitions or tab_transitions")
+            return
+        }
+        #expect(transitions.count == 1)
+        #expect(tabTransitions.count == 2)
+        #expect(transitions[0].object?["sequence"]?.number == 1.0)
+        #expect(tabTransitions[0].object?["sequence"]?.number == 2.0)
+        #expect(tabTransitions[1].object?["sequence"]?.number == 3.0)
+
+        // Bounded history test
+        for i in 4...65 {
+            WorkspaceStore.shared.setActiveTab(tabIdentifier: "tab-\(i % 2)", in: ws.id)
+        }
+        #expect(WorkspaceStore.shared.recentTabTransitions.count == 50)
+        #expect(WorkspaceStore.shared.recentTabTransitions.last?.sequence == 64)
+    }
 }

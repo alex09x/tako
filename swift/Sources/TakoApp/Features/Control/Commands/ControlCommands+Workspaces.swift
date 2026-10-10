@@ -51,12 +51,25 @@ extension ControlCommands {
         case "history":
             let items: [JSON] = WorkspaceStore.shared.recentTransitions.map { t in
                 .object([
+                    "sequence": .number(Double(t.sequence)),
                     "from_id": .string(t.fromId.uuidString.lowercased()),
                     "to_id": .string(t.toId.uuidString.lowercased()),
                     "timestamp": .number(t.timestamp),
                 ])
             }
-            return ["transitions": .array(items)]
+            let tabItems: [JSON] = WorkspaceStore.shared.recentTabTransitions.map { t in
+                .object([
+                    "sequence": .number(Double(t.sequence)),
+                    "workspace_id": .string(t.workspaceId.uuidString.lowercased()),
+                    "from_id": .string(t.fromId),
+                    "to_id": .string(t.toId),
+                    "timestamp": .number(t.timestamp),
+                ])
+            }
+            return [
+                "transitions": .array(items),
+                "tab_transitions": .array(tabItems),
+            ]
 
         case "switch":
             guard let nameOrId = request.args["name"]?.string, !nameOrId.isEmpty else {

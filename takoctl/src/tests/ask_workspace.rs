@@ -215,6 +215,31 @@ fn workspace_subcommands_and_options_parsed_and_rendered() {
         "assigned tab-1 to Backend\n"
     );
 
+    // Render history
+    let history_json = json!({
+        "transitions": [
+            {
+                "sequence": 1,
+                "from_id": "00000000-0000-0000-0000-000000000001",
+                "to_id": "00000000-0000-0000-0000-000000000002",
+                "timestamp": 12.345
+            }
+        ],
+        "tab_transitions": [
+            {
+                "sequence": 2,
+                "workspace_id": "00000000-0000-0000-0000-000000000002",
+                "from_id": "tab-1",
+                "to_id": "tab-0",
+                "timestamp": 12.385
+            }
+        ]
+    });
+    let rendered_hist = render("workspace", &history_json);
+    assert!(rendered_hist.contains("#1 12.345: 00000000-0000-0000-0000-000000000001 -> 00000000-0000-0000-0000-000000000002"));
+    assert!(rendered_hist.contains("Tab transitions:"));
+    assert!(rendered_hist.contains("#2 12.385 [00000000-0000-0000-0000-000000000002]: tab-1 -> tab-0"));
+
     // Errors
     assert!(parse(&args(&["workspace", "create"])).is_err());
     assert!(parse(&args(&["workspace", "delete"])).is_err());

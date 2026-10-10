@@ -681,6 +681,18 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         return (root["transitions"] as? [[String: Any]]) ?? []
     }
 
+    /// Get tab transition history via takoctl.
+    func tabTransitions() throws -> [[String: Any]] {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let out = try exec("\(ctl) workspace history --json")
+        guard let data = out.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        let root = (obj["result"] as? [String: Any]) ?? obj
+        return (root["tab_transitions"] as? [[String: Any]]) ?? []
+    }
+
     /// Whether any UI element across the app's windows contains this text.
     func hasText(containing target: String) -> Bool {
         for window in windows() {
@@ -781,7 +793,8 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
     }
 
     /// Rapid mouse click without helper settling sleeps or cursor restoration.
-    func postClick(at point: CGPoint) throws {
+    @discardableResult
+    func postClick(at point: CGPoint) throws -> Double {
         guard topmostOwner(at: point) == pid else {
             let winInfo = topmostWindowInfo(at: point)
             throw Failure("refusing to click at \(point): the window there is not Tako's (windows: \(winInfo))")
@@ -795,6 +808,7 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         }
         down.setIntegerValueField(.mouseEventClickState, value: 1)
         down.post(tap: .cghidEventTap)
+        let dispatchTime = ProcessInfo.processInfo.systemUptime
 
         usleep(25_000)
 
@@ -805,6 +819,7 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         up.setIntegerValueField(.mouseEventClickState, value: 1)
         up.post(tap: .cghidEventTap)
         usleep(10_000)
+        return dispatchTime
     }
 
     /// Perform a drag from start screen point to end screen point via real CGEvent mouse events.
@@ -1043,14 +1058,20 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
     }
 
     /// Rapid system key press via .cghidEventTap so menu shortcuts are recognized.
-    func postKey(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
+    @discardableResult
+    func postKey(_ code: CGKeyCode, _ flags: CGEventFlags = []) -> Double {
+        var dispatchTime: Double = 0
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
             else { continue }
             event.flags = down ? flags : []
             event.post(tap: .cghidEventTap)
+            if down {
+                dispatchTime = ProcessInfo.processInfo.systemUptime
+            }
             usleep(8_000)
         }
+        return dispatchTime
     }
 
     func clickButton(titled title: String) throws {
@@ -4483,15 +4504,13 @@ let scenarios: [Scenario] = [
 
         // --- PHASE 4: Rapid Transitions Within Delay Window (<150ms) ---
         // 15. Rapidly switch workspaces B -> Default (A) -> B within bounded race window (<140ms dispatch)
-        // Record baseline transition count so we can verify exact intermediate and final transitions
+        // Record baseline sequence so we can verify exact intermediate and final transitions
         let transitionsBefore = (try? d.workspaceTransitions()) ?? []
-        let baselineTransitionCount = transitionsBefore.count
+        let baselineWsSeq = transitionsBefore.compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
 
-        let tWs0 = ProcessInfo.processInfo.systemUptime
-        d.postKey(Key.leftBracket, [.maskControl, .maskAlternate])
+        let tWs0 = d.postKey(Key.leftBracket, [.maskControl, .maskAlternate])
         usleep(25_000) // 25ms: within the callback window
-        let tWs1 = ProcessInfo.processInfo.systemUptime
-        d.postKey(Key.rightBracket, [.maskControl, .maskAlternate])
+        let tWs1 = d.postKey(Key.rightBracket, [.maskControl, .maskAlternate])
         let wsDispatchIntervalMs = (tWs1 - tWs0) * 1000.0
         guard wsDispatchIntervalMs < 140.0 else {
             throw Failure("rapid workspace switch dispatch interval exceeded race window: \(wsDispatchIntervalMs)ms (expected < 140ms)")
@@ -4502,11 +4521,12 @@ let scenarios: [Scenario] = [
 
         // Confirm both intermediate and final transitions via app-side transition history
         let transitionsAfter = (try? d.workspaceTransitions()) ?? []
-        guard transitionsAfter.count >= baselineTransitionCount + 2 else {
-            throw Failure("expected at least 2 transitions recorded during rapid switch, found \(transitionsAfter.count - baselineTransitionCount) (total: \(transitionsAfter.count), baseline: \(baselineTransitionCount))")
+        let newWsTransitions = transitionsAfter.filter { (($0["sequence"] as? NSNumber)?.int64Value ?? 0) > baselineWsSeq }
+        guard newWsTransitions.count >= 2 else {
+            throw Failure("expected at least 2 transitions recorded during rapid switch, found \(newWsTransitions.count) (total: \(transitionsAfter.count), baselineSeq: \(baselineWsSeq))")
         }
-        let intermediateTransition = transitionsAfter[baselineTransitionCount]
-        let finalTransition = transitionsAfter[baselineTransitionCount + 1]
+        let intermediateTransition = newWsTransitions[0]
+        let finalTransition = newWsTransitions[1]
 
         let intermediateTo = intermediateTransition["to_id"] as? String ?? ""
         guard intermediateTo == defaultWsIdStr.lowercased() else {
@@ -4517,11 +4537,16 @@ let scenarios: [Scenario] = [
             throw Failure("final rapid transition went to \(finalTo), expected Workspace 2 (\(ws2IdStr))")
         }
 
-        if let ts0 = intermediateTransition["timestamp"] as? Double,
-           let ts1 = finalTransition["timestamp"] as? Double {
-            guard ts1 >= ts0 else {
-                throw Failure("app-side transition timestamp order invalid (ts0=\(ts0), ts1=\(ts1))")
-            }
+        guard let ts0 = intermediateTransition["timestamp"] as? Double,
+              let ts1 = finalTransition["timestamp"] as? Double else {
+            throw Failure("missing timestamps on recorded workspace transitions")
+        }
+        guard ts1 >= ts0 else {
+            throw Failure("app-side transition timestamp order invalid (ts0=\(ts0), ts1=\(ts1))")
+        }
+        let wsTransitionIntervalMs = (ts1 - ts0) * 1000.0
+        guard wsTransitionIntervalMs < 140.0 else {
+            throw Failure("app-side workspace transition interval exceeded race window: \(wsTransitionIntervalMs)ms (expected < 140ms)")
         }
 
         // Verify inactive Workspace A windows were not re-shown by any stale delayed callbacks
@@ -4545,11 +4570,21 @@ let scenarios: [Scenario] = [
         let tab0Point = try d.tabClickPoint(index: 0)
         let tab1Point = try d.tabClickPoint(index: 1)
 
-        let tTab0 = ProcessInfo.processInfo.systemUptime
-        try d.postClick(at: tab0Point)
-        usleep(50_000) // 50ms: within the callback window (<150ms)
-        let tTab1 = ProcessInfo.processInfo.systemUptime
-        try d.postClick(at: tab1Point)
+        // Query tabs for Workspace 2 to determine expected stable tab IDs
+        let wsList = try d.workspaceList()
+        guard let ws2Info = wsList.first(where: { ($0["id"] as? String)?.lowercased() == ws2IdStr.lowercased() }),
+              let ws2Tabs = ws2Info["tabs"] as? [String], ws2Tabs.count >= 2 else {
+            throw Failure("cannot resolve tabs for Workspace 2 before rapid tab switch")
+        }
+        let expectedTab0Id = ws2Tabs[0]
+        let expectedTab1Id = ws2Tabs[1]
+
+        let tabTransitionsBefore = (try? d.tabTransitions()) ?? []
+        let baselineTabSeq = tabTransitionsBefore.compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
+
+        let tTab0 = try d.postClick(at: tab0Point)
+        usleep(40_000) // 40ms: within the callback window (<150ms)
+        let tTab1 = try d.postClick(at: tab1Point)
         let tabDispatchIntervalMs = (tTab1 - tTab0) * 1000.0
         guard tabDispatchIntervalMs < 140.0 else {
             throw Failure("rapid tab switch dispatch interval exceeded race window: \(tabDispatchIntervalMs)ms (expected < 140ms)")
@@ -4557,6 +4592,47 @@ let scenarios: [Scenario] = [
 
         // Allow delayed callbacks (50ms and 150ms) to run and settle
         usleep(500_000)
+
+        // Confirm both intermediate and final transitions via app-side tab transition history
+        let tabTransitionsAfter = (try? d.tabTransitions()) ?? []
+        let newTabTransitions = tabTransitionsAfter.filter { (($0["sequence"] as? NSNumber)?.int64Value ?? 0) > baselineTabSeq }
+        guard newTabTransitions.count >= 2 else {
+            throw Failure("expected at least 2 tab transitions recorded during rapid switch, found \(newTabTransitions.count) (total: \(tabTransitionsAfter.count), baselineSeq: \(baselineTabSeq))")
+        }
+        let intermediateTab = newTabTransitions[0]
+        let finalTab = newTabTransitions[1]
+
+        let intermediateWs = (intermediateTab["workspace_id"] as? String)?.lowercased() ?? ""
+        guard intermediateWs == ws2IdStr.lowercased() else {
+            throw Failure("intermediate tab transition workspace mismatch: got \(intermediateWs), expected \(ws2IdStr)")
+        }
+        let intermediateTabFrom = intermediateTab["from_id"] as? String ?? ""
+        let intermediateTabTo = intermediateTab["to_id"] as? String ?? ""
+        guard intermediateTabFrom == expectedTab1Id, intermediateTabTo == expectedTab0Id else {
+            throw Failure("intermediate tab transition was \(intermediateTabFrom) -> \(intermediateTabTo), expected \(expectedTab1Id) -> \(expectedTab0Id)")
+        }
+
+        let finalWs = (finalTab["workspace_id"] as? String)?.lowercased() ?? ""
+        guard finalWs == ws2IdStr.lowercased() else {
+            throw Failure("final tab transition workspace mismatch: got \(finalWs), expected \(ws2IdStr)")
+        }
+        let finalTabFrom = finalTab["from_id"] as? String ?? ""
+        let finalTabTo = finalTab["to_id"] as? String ?? ""
+        guard finalTabFrom == expectedTab0Id, finalTabTo == expectedTab1Id else {
+            throw Failure("final tab transition was \(finalTabFrom) -> \(finalTabTo), expected \(expectedTab0Id) -> \(expectedTab1Id)")
+        }
+
+        guard let tsTab0 = intermediateTab["timestamp"] as? Double,
+              let tsTab1 = finalTab["timestamp"] as? Double else {
+            throw Failure("missing timestamps on recorded tab transitions")
+        }
+        guard tsTab1 >= tsTab0 else {
+            throw Failure("app-side tab transition timestamp order invalid (ts0=\(tsTab0), ts1=\(tsTab1))")
+        }
+        let tabTransitionIntervalMs = (tsTab1 - tsTab0) * 1000.0
+        guard tabTransitionIntervalMs < 140.0 else {
+            throw Failure("app-side tab transition interval exceeded race window: \(tabTransitionIntervalMs)ms (expected < 140ms)")
+        }
 
         // Verify Tab 1 accessibility state indicates selection
         let selectedTab1 = d.wait(for: {
