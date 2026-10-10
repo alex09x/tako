@@ -35,13 +35,17 @@ extension AppDelegate {
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
         input.placeholderString = "e.g. backend, docs, tako"
         alert.accessoryView = input
-        alert.addButton(withTitle: "Create")
+        let createBtn = alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
+        createBtn.keyEquivalent = "\r"
+        input.target = createBtn
+        input.action = createBtn.action
         if alert.runModal() == .alertFirstButtonReturn {
             let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
             let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
             WorkspaceStore.shared.switchWorkspace(to: ws.id)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 

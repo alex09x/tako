@@ -86,7 +86,7 @@ extension Tako.TabBarView {
     func closeRect(of tab: Tab) -> CGRect {
         if effectiveTabStyle == .pill {
             let rect = pillRect(for: tab)
-            guard rect.width >= 48 else { return .null }
+            guard rect.width >= Metrics.pillCloseMinWidth else { return .null }
             return CGRect(
                 x: rect.maxX - 8 - 10 - 5,
                 y: rect.midY - 10,

@@ -124,7 +124,9 @@ extension TerminalController {
             // All new_window actions force our app to be active, so that the new
             // window is focused and visible.
             NSApp.activate(ignoringOtherApps: true)
-            if let target = c.focusedSurface {
+            let target = c.focusedSurface ?? c.surfaceTree.first
+            if let target {
+                c.focusedSurface = target
                 Tako.moveFocus(to: target)
             }
         }
@@ -199,7 +201,9 @@ extension TerminalController {
                     }
                 }
             }
-            if let target = c.focusedSurface {
+            let target = c.focusedSurface ?? c.surfaceTree.first
+            if let target {
+                c.focusedSurface = target
                 Tako.moveFocus(to: target)
             }
         }

@@ -34,9 +34,10 @@ extension Tako {
             surfaceView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
             DispatchQueue.main.async { [weak surfaceView] in
                 guard let surfaceView, let window = surfaceView.window else { return }
-                if window.firstResponder == nil || window.firstResponder === window.contentView {
+                if window.firstResponder == nil || window.firstResponder === window.contentView || window.firstResponder is NSWindow {
                     window.makeFirstResponder(surfaceView)
                 }
+                (window.windowController as? TerminalController)?.focusedSurface = surfaceView
             }
             return surfaceView
         }

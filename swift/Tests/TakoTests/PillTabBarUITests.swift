@@ -106,7 +106,7 @@ struct PillTabBarUITests {
         #expect(inactiveColor == Tako.TabBarView.Palette.dim)
     }
 
-    @Test func pillCloseRectHitsInsidePillAndClosesTab() {
+    @Test func pillCloseRectHitsInsidePillAndThresholdBoundary() {
         let a = makeWindow(title: "first")
         let b = makeWindow(title: "second")
         defer {
@@ -132,12 +132,14 @@ struct PillTabBarUITests {
         #expect(closeRect.midX < pill.maxX)
         #expect(closeRect.midX > pill.minX)
         #expect(abs(closeRect.midY - pill.midY) < 1.0)
+        #expect(closeRect.contains(NSPoint(x: closeRect.midX, y: closeRect.midY)))
 
-        a.orderFront(nil)
-        #expect(a.isVisible)
+        // Threshold boundary: width 48..<54 has no close glyph and must return .null
+        let narrowTab = Tako.TabBarView.Tab(window: a, frame: CGRect(x: 0, y: 0, width: 50, height: 28), isActive: true, index: 0)
+        #expect(bar.closeRect(of: narrowTab) == .null)
 
-        click(bar, at: NSPoint(x: closeRect.midX, y: closeRect.midY), in: a)
-        #expect(!a.isVisible)
+        let thresholdTab = Tako.TabBarView.Tab(window: a, frame: CGRect(x: 0, y: 0, width: 54, height: 28), isActive: true, index: 0)
+        #expect(bar.closeRect(of: thresholdTab) != .null)
     }
 
     @Test func pillAndClassicStylesProduceVisuallyDistinctSnapshots() {

@@ -84,17 +84,63 @@ extension Tako {
                 queue: .main
             ) { _ in
                 MainActor.assumeIsolated {
-                    for group in allGroups {
-                        group.syncWithActiveWorkspace()
+                    let activeWsId = WorkspaceStore.shared.activeWorkspaceId
+                    let assignedTabs = WorkspaceStore.shared.workspace(for: activeWsId)?.tabIdentifiers ?? []
+                    let hasWorkspaceWindow = allGroups.contains { group in
+                        group.windows.contains { assignedTabs.contains($0.stableTabIdentifier) }
                     }
-                    let hasWorkspaceWindow = allGroups.contains { !$0.visibleWindows.isEmpty }
                     if !hasWorkspaceWindow, let app = (NSApp.delegate as? AppDelegate)?.tako {
                         let ctrl = TerminalController.newWindow(app)
                         if let win = ctrl.window {
+                            _ = CustomTabGroup.group(for: win)
                             win.makeKeyAndOrderFront(nil)
                             NSApp.activate(ignoringOtherApps: true)
-                            if let focused = ctrl.focusedSurface {
+                            let focused = ctrl.focusedSurface ?? ctrl.surfaceTree.first
+                            ctrl.focusedSurface = focused
+                            if let focused {
                                 win.makeFirstResponder(focused)
+                            }
+                            DispatchQueue.main.async {
+                                win.makeKeyAndOrderFront(nil)
+                                NSApp.activate(ignoringOtherApps: true)
+                                if let focused = ctrl.focusedSurface ?? ctrl.surfaceTree.first {
+                                    win.makeFirstResponder(focused)
+                                }
+                            }
+                        }
+                    }
+                    for group in allGroups {
+                        group.syncWithActiveWorkspace()
+                    }
+                    if let activeGroup = allGroups.first(where: { !$0.visibleWindows.isEmpty }),
+                       let target = activeGroup.selectedWindow {
+                        target.makeKeyAndOrderFront(nil)
+                        NSApp.activate(ignoringOtherApps: true)
+                        let controller = (target.windowController as? TerminalController) ??
+                            (target.delegate as? TerminalController) ??
+                            TerminalController.all.first { $0.window === target }
+                        let focused = controller?.focusedSurface ?? controller?.surfaceTree.first
+                        controller?.focusedSurface = focused
+                        if let focused {
+                            target.makeFirstResponder(focused)
+                            Tako.moveFocus(to: focused, delay: 0.05)
+                            Tako.moveFocus(to: focused, delay: 0.15)
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        if let activeGroup = allGroups.first(where: { !$0.visibleWindows.isEmpty }),
+                           let target = activeGroup.selectedWindow {
+                            target.makeKeyAndOrderFront(nil)
+                            NSApp.activate(ignoringOtherApps: true)
+                            let controller = (target.windowController as? TerminalController) ??
+                                (target.delegate as? TerminalController) ??
+                                TerminalController.all.first { $0.window === target }
+                            let focused = controller?.focusedSurface ?? controller?.surfaceTree.first
+                            controller?.focusedSurface = focused
+                            if let focused {
+                                target.makeFirstResponder(focused)
+                                Tako.moveFocus(to: focused, delay: 0.05)
+                                Tako.moveFocus(to: focused, delay: 0.15)
                             }
                         }
                     }
@@ -259,22 +305,28 @@ extension Tako {
             let reflowSurfaces: () -> Void = {
                 if let controller = (window.windowController as? TerminalController) ?? (window.delegate as? TerminalController) {
                     controller.reflowSurfaces(forcePtyResize: true)
-                    if let focused = controller.focusedSurface {
+                    let focused = controller.focusedSurface ?? controller.surfaceTree.first
+                    controller.focusedSurface = focused
+                    if let focused {
                         window.makeFirstResponder(focused)
                     }
                 }
             }
             guard selectedWindow !== window else {
-                window.makeKeyAndOrderFront(nil)
+                if window.isVisible {
+                    window.makeKeyAndOrderFront(nil)
+                }
                 reflowSurfaces()
                 return
             }
             let previous = selectedWindow
             selectedWindow = window
-            window.setFrame(previous?.frame ?? window.frame, display: false)
-            window.makeKeyAndOrderFront(nil)
-            previous?.orderOut(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            if previous?.isVisible == true || window.isVisible {
+                window.setFrame(previous?.frame ?? window.frame, display: false)
+                window.makeKeyAndOrderFront(nil)
+                previous?.orderOut(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             if let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {
                 WorkspaceStore.shared.setActiveTab(tabIdentifier: window.stableTabIdentifier, in: ws.id)
@@ -303,12 +355,19 @@ extension Tako {
 
             if let target = targetWindow {
                 let reflowTarget: () -> Void = {
-                    if let controller = (target.windowController as? TerminalController) ?? (target.delegate as? TerminalController) {
+                    let controller = (target.windowController as? TerminalController) ??
+                        (target.delegate as? TerminalController) ??
+                        TerminalController.all.first { $0.window === target }
+                    if let controller {
                         for surface in controller.surfaceTree {
                             surface.reflowToCurrentBounds(forcePtyResize: true)
                         }
-                        if let focused = controller.focusedSurface {
+                        let focused = controller.focusedSurface ?? controller.surfaceTree.first
+                        controller.focusedSurface = focused
+                        if let focused {
                             target.makeFirstResponder(focused)
+                            Tako.moveFocus(to: focused, delay: 0.05)
+                            Tako.moveFocus(to: focused, delay: 0.15)
                         }
                     }
                 }

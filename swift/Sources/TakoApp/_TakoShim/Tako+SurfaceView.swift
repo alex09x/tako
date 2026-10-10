@@ -266,6 +266,10 @@ extension Tako {
             crabWindow = window
             crabBinding = Tako.CrabTabBinding(surface: self, window: window)
             Tako.TabBarController.install(in: window)
+            if window.isVisible {
+                window.makeFirstResponder(self)
+                (window.windowController as? TerminalController)?.focusedSurface = self
+            }
         }
 
         /// The surface's own background, which the window matches so the

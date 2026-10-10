@@ -458,9 +458,12 @@ final class Driver {
         AXUIElementPerformAction(element, kAXPressAction as CFString)
     }
 
-    /// A button with this title anywhere in Tako's windows or sheets.
+    /// A button with this title anywhere in Tako's visible windows or sheets.
     func button(titled title: String, depth: Int = 24) -> AXUIElement? {
         for window in windows() {
+            let hidden: Bool? = attribute(window, "AXHidden")
+            let minimized: Bool? = attribute(window, "AXMinimized")
+            if hidden == true || minimized == true { continue }
             for btn in descendants(of: window, role: kAXButtonRole as String, depth: depth) {
                 let axTitle: String? = attribute(btn, kAXTitleAttribute)
                 let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
@@ -641,15 +644,23 @@ final class Driver {
             throw Failure("refusing to click at \(point): the window there is not Tako's")
         }
         let home = CGEvent(source: nil)?.location
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(30_000)
         for n in 1...count {
-            for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-                guard let event = CGEvent(mouseEventSource: source, mouseType: type,
-                                          mouseCursorPosition: point, mouseButton: .left)
-                else { continue }
-                event.setIntegerValueField(.mouseEventClickState, value: Int64(n))
-                event.post(tap: .cghidEventTap)
-                usleep(20_000)
-            }
+            guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                     mouseCursorPosition: point, mouseButton: .left)
+            else { continue }
+            down.setIntegerValueField(.mouseEventClickState, value: Int64(n))
+            down.post(tap: .cghidEventTap)
+            usleep(60_000)
+
+            guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                                   mouseCursorPosition: point, mouseButton: .left)
+            else { continue }
+            up.setIntegerValueField(.mouseEventClickState, value: Int64(n))
+            up.post(tap: .cghidEventTap)
+            usleep(80_000)
         }
         if let home {
             CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
@@ -704,17 +715,19 @@ final class Driver {
         return CGRect(origin: origin, size: extent)
     }
 
-    /// Which process owns the frontmost ordinary window at a screen point.
+    /// Which process owns the frontmost window at a screen point.
     func topmostOwner(at point: CGPoint) -> pid_t? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
-        // Front to back; layer 0 is ordinary windows (menus and the Dock sit
-        // above and never overlap a terminal's contents).
-        for info in list where (info[kCGWindowLayer as String] as? Int) == 0 {
+        for info in list {
+            guard let ownerPid = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
+            let layer = (info[kCGWindowLayer as String] as? Int) ?? 0
+            // Ordinary windows are layer 0. Also accept Tako's modal panels/alerts/menus (layers 1..120).
+            guard layer == 0 || (ownerPid == pid && layer <= 120) else { continue }
             guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
             let rect = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0,
                               width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            if rect.contains(point) { return info[kCGWindowOwnerPID as String] as? pid_t }
+            if rect.contains(point) { return ownerPid }
         }
         return nil
     }
@@ -744,6 +757,138 @@ final class Driver {
             }
         }
         return false
+    }
+
+    func tabElement(index: Int, in window: AXUIElement? = nil) -> AXUIElement? {
+        let win = window ?? activeWindow()
+        let targetId = "tab-\(index)"
+        let roots = win.map { [$0] } ?? windows()
+        for root in roots {
+            for elem in descendants(of: root, role: kAXRadioButtonRole as String) {
+                if let id: String = attribute(elem, "AXIdentifier"), id == targetId {
+                    return elem
+                }
+            }
+        }
+        return nil
+    }
+
+    func clickTab(index: Int, in window: AXUIElement? = nil) throws {
+        guard let tab = tabElement(index: index, in: window) else {
+            throw Failure("tab-\(index) accessibility element not found")
+        }
+        guard let tabPos: AXValue = attribute(tab, kAXPositionAttribute),
+              let tabSize: AXValue = attribute(tab, kAXSizeAttribute) else {
+            throw Failure("cannot get frame for tab-\(index)")
+        }
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(tabPos, .cgPoint, &pos)
+        AXValueGetValue(tabSize, .cgSize, &size)
+        let clickPoint = CGPoint(x: pos.x + min(25, size.width / 3), y: pos.y + size.height / 2)
+        try click(at: clickPoint)
+        usleep(600_000)
+    }
+
+    func clickPlusButton(in window: AXUIElement? = nil) throws {
+        let win = window ?? activeWindow()
+        let roots = win.map { [$0] } ?? windows()
+        for root in roots {
+            for elem in descendants(of: root, role: kAXButtonRole as String) {
+                if let id: String = attribute(elem, "AXIdentifier"), id == "new-tab-button" {
+                    if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
+                       let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
+                        var pos = CGPoint.zero
+                        var size = CGSize.zero
+                        AXValueGetValue(btnPos, .cgPoint, &pos)
+                        AXValueGetValue(btnSize, .cgSize, &size)
+                        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+                        try click(at: center)
+                        usleep(1_000_000)
+                        return
+                    }
+                }
+            }
+        }
+        throw Failure("new-tab-button not found in window")
+    }
+
+    func clickWorkspacePill(in window: AXUIElement? = nil) throws {
+        let win = window ?? activeWindow()
+        let roots = win.map { [$0] } ?? windows()
+        for root in roots {
+            for elem in descendants(of: root, role: kAXButtonRole as String) {
+                if let id: String = attribute(elem, "AXIdentifier"), id == "workspace-pill" {
+                    if let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
+                       let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
+                        var pos = CGPoint.zero
+                        var size = CGSize.zero
+                        AXValueGetValue(btnPos, .cgPoint, &pos)
+                        AXValueGetValue(btnSize, .cgSize, &size)
+                        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+                        try click(at: center)
+                        usleep(400_000)
+                        return
+                    }
+                }
+            }
+        }
+        throw Failure("workspace-pill button not found in window")
+    }
+
+    func clickOpenMenuItem(titled title: String) throws {
+        guard let item = descendants(of: axApp, role: kAXMenuItemRole as String).first(where: {
+            let t: String? = attribute($0, kAXTitleAttribute)
+            return t == title || t?.starts(with: title) == true
+        }) else {
+            throw Failure("open menu item '\(title)' not found")
+        }
+        guard let itemPos: AXValue = attribute(item, kAXPositionAttribute),
+              let itemSize: AXValue = attribute(item, kAXSizeAttribute) else {
+            throw Failure("cannot get position/size for menu item '\(title)'")
+        }
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(itemPos, .cgPoint, &pos)
+        AXValueGetValue(itemSize, .cgSize, &size)
+        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+        try click(at: center)
+        usleep(500_000)
+    }
+
+    func systemKey(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+            else { continue }
+            event.flags = down ? flags : []
+            event.post(tap: .cghidEventTap)
+            usleep(25_000)
+        }
+        usleep(25_000)
+    }
+
+    func clickButton(titled title: String) throws {
+        guard let btn = button(titled: title) else {
+            throw Failure("button titled '\(title)' not found")
+        }
+        guard let btnPos: AXValue = attribute(btn, kAXPositionAttribute),
+              let btnSize: AXValue = attribute(btn, kAXSizeAttribute) else {
+            throw Failure("cannot get frame for button '\(title)'")
+        }
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(btnPos, .cgPoint, &pos)
+        AXValueGetValue(btnSize, .cgSize, &size)
+        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+        try click(at: center)
+        usleep(300_000)
+        if let currentBtn = button(titled: title) {
+            press(currentBtn)
+        }
+        if button(titled: title) != nil {
+            systemKey(Key.returnKey)
+        }
+        usleep(400_000)
     }
 
     func focus() {
@@ -3919,40 +4064,7 @@ let scenarios: [Scenario] = [
         }
     }),
     ("workspace-journey", "dragging window, creating tabs, mouse-switching tabs, and switching workspaces work end-to-end", { d in
-        // Set up workspaces persistence directory with two workspaces: Default and Secondary
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let wsDir = appSupport.appendingPathComponent(d.bundleID).appendingPathComponent("Workspaces", isDirectory: true)
-        try? FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
-        let wsJsonURL = wsDir.appendingPathComponent("workspaces.json")
-        let seededJson = """
-        {
-          "activeWorkspaceId": "00000000-0000-0000-0000-000000000001",
-          "workspaces": [
-            {
-              "id": "00000000-0000-0000-0000-000000000001",
-              "name": "Default",
-              "color": "blue",
-              "icon": "terminal",
-              "tabIdentifiers": [],
-              "createdAt": 750000000.0
-            },
-            {
-              "id": "00000000-0000-0000-0000-000000000002",
-              "name": "Secondary",
-              "color": "orange",
-              "icon": "folder",
-              "tabIdentifiers": [],
-              "createdAt": 750000000.0
-            }
-          ]
-        }
-        """
-        try seededJson.write(to: wsJsonURL, atomically: true, encoding: .utf8)
-        defer {
-            try? FileManager.default.removeItem(at: wsJsonURL)
-        }
-
-        // Restart with seeded workspaces and pill style config
+        // Clean start with pill style config
         d.quit()
         try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
         d.setPosition(CGPoint(x: 100, y: 100))
@@ -3960,104 +4072,140 @@ let scenarios: [Scenario] = [
         d.focus()
         usleep(1_000_000)
 
-        // 1. Window dragging verification with real CGEvent
-        guard let initialFrame = d.windowFrame() else {
-            throw Failure("no window frame discovered for initial window")
+        // --- PHASE 1: Default Workspace ---
+        // 1. Initial window dragging verification with real CGEvent drag
+        guard let f1 = d.windowFrame() else {
+            throw Failure("no window frame discovered for initial window in Default workspace")
         }
-        let dragStart = CGPoint(x: initialFrame.origin.x + 250, y: initialFrame.origin.y + 18)
-        let dragEnd = CGPoint(x: initialFrame.origin.x + 330, y: initialFrame.origin.y + 58)
-        try d.drag(from: dragStart, to: dragEnd, steps: 12)
+        let dragStart1 = CGPoint(x: f1.origin.x + 250, y: f1.origin.y + 18)
+        let dragEnd1 = CGPoint(x: f1.origin.x + 330, y: f1.origin.y + 58)
+        try d.drag(from: dragStart1, to: dragEnd1, steps: 12)
         usleep(500_000)
-        guard let draggedFrame = d.windowFrame() else {
-            throw Failure("no window frame after dragging")
+        guard let draggedF1 = d.windowFrame() else {
+            throw Failure("no window frame after dragging initial window")
         }
-        guard draggedFrame.origin != initialFrame.origin,
-              draggedFrame.origin.x >= initialFrame.origin.x + 15 else {
-            throw Failure("window dragging failed: window did not move significantly (initial: \(initialFrame.origin), dragged: \(draggedFrame.origin))")
+        guard draggedF1.origin != f1.origin,
+              draggedF1.origin.x >= f1.origin.x + 15 else {
+            throw Failure("initial window dragging failed (initial: \(f1.origin), dragged: \(draggedF1.origin))")
         }
 
-        // 2. Tab creation & keyboard routing
-        try d.run("tty > \(d.path("tty_tab1.txt"))")
-        let tty1 = try d.file("tty_tab1.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !tty1.isEmpty else { throw Failure("could not read initial tab TTY") }
+        // 2. Read initial Tab 0 TTY
+        try d.run("tty > \(d.path("ws1_tab0_init.txt"))")
+        let ws1_tab0 = try d.file("ws1_tab0_init.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ws1_tab0.isEmpty else { throw Failure("could not read initial tab TTY") }
 
+        // 3. Create second tab in Default workspace via Cmd+T
         d.key(Key.t, .maskCommand)
+        guard d.wait(for: { d.tabElement(index: 1) != nil }, timeout: 5) else {
+            throw Failure("second tab element tab-1 did not appear in Default workspace")
+        }
+        usleep(1_000_000)
+
+        // Type unassisted into newly created tab
+        try d.run("tty > \(d.path("ws1_tab1_created.txt"))")
+        let ws1_tab1 = try d.file("ws1_tab1_created.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ws1_tab1.isEmpty, ws1_tab1 != ws1_tab0 else {
+            throw Failure("second tab in Default workspace did not spawn a distinct TTY (tab0: \(ws1_tab0), tab1: \(ws1_tab1))")
+        }
+
+        // 4. Real mouse click switching back to Tab 0 (located via accessibility)
+        try d.clickTab(index: 0)
+        // Type unassisted without any focus repair
+        try d.run("tty > \(d.path("ws1_tab0_switched.txt"))")
+        let ws1_tab0_switched = try d.file("ws1_tab0_switched.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ws1_tab0_switched == ws1_tab0 else {
+            throw Failure("mouse click on Tab 0 did not route unassisted input to Tab 0 (got: \(ws1_tab0_switched), expected: \(ws1_tab0))")
+        }
+
+        // 5. Real mouse click switching back to Tab 1 (located via accessibility)
+        try d.clickTab(index: 1)
+        // Type unassisted without any focus repair
+        try d.run("tty > \(d.path("ws1_tab1_switched.txt"))")
+        let ws1_tab1_switched = try d.file("ws1_tab1_switched.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ws1_tab1_switched == ws1_tab1 else {
+            throw Failure("mouse click on Tab 1 did not route unassisted input to Tab 1 (got: \(ws1_tab1_switched), expected: \(ws1_tab1))")
+        }
+        // Tab 1 remains the selected tab in Default workspace!
+
+        // --- PHASE 2: Create and Exercise New Workspace ---
+        // 6. Create Workspace 2 via real mouse click on the Workspace Pill and popup menu
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "New Workspace")
+
+        // Wait for modal alert and click "Create" button with real mouse click
+        guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
+            throw Failure("New Project Workspace alert dialog did not appear")
+        }
+        try d.clickButton(titled: "Create")
+        guard d.wait(for: { d.button(titled: "Create") == nil }, timeout: 5) else {
+            throw Failure("New Project Workspace alert dialog was not dismissed after clicking Create")
+        }
         usleep(1_500_000)
 
-        try d.run("tty > \(d.path("tty_tab2.txt"))")
-        let tty2 = try d.file("tty_tab2.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !tty2.isEmpty, tty2 != tty1 else {
-            throw Failure("Cmd+T did not create a new tab with a distinct TTY (tab1: \(tty1), tab2: \(tty2))")
+        // 7. Verify new workspace spawned a separate window and terminal
+        guard let f2 = d.windowFrame() else {
+            throw Failure("no window frame discovered for Workspace 2 window")
         }
 
-        // 3. Real mouse click switching back to Tab 1
-        guard let frameAfterTabs = d.windowFrame() else {
-            throw Failure("no window frame discovered for tab switching")
+        try d.run("tty > \(d.path("ws2_tab0_init.txt"))")
+        let ws2_tab0 = try d.file("ws2_tab0_init.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ws2_tab0.isEmpty, ws2_tab0 != ws1_tab0, ws2_tab0 != ws1_tab1 else {
+            throw Failure("new Workspace 2 did not activate a separate terminal (got: \(ws2_tab0), ws1_tab0: \(ws1_tab0), ws1_tab1: \(ws1_tab1))")
         }
-        // In pill style, Tab 1 body is around frameAfterTabs.origin.x + 180, y + 19 (away from close button)
-        let tab1ClickPoint = CGPoint(x: frameAfterTabs.origin.x + 180, y: frameAfterTabs.origin.y + 19)
-        try d.click(at: tab1ClickPoint)
+
+        // 8. Test window dragging on Workspace 2 window by its titlebar
+        let dragStart2 = CGPoint(x: f2.origin.x + 250, y: f2.origin.y + 18)
+        let dragEnd2 = CGPoint(x: f2.origin.x + 320, y: f2.origin.y + 60)
+        try d.drag(from: dragStart2, to: dragEnd2, steps: 12)
+        usleep(500_000)
+        guard let draggedF2 = d.windowFrame() else {
+            throw Failure("no window frame after dragging Workspace 2 window")
+        }
+        guard draggedF2.origin != f2.origin,
+              draggedF2.origin.x >= f2.origin.x + 15 else {
+            throw Failure("Workspace 2 window dragging failed (initial: \(f2.origin), dragged: \(draggedF2.origin))")
+        }
+
+        // 9. Create second tab in Workspace 2 using REAL MOUSE CLICK on the plus button (+)
+        try d.clickPlusButton()
+        guard d.wait(for: { d.tabElement(index: 1) != nil }, timeout: 5) else {
+            throw Failure("second tab element tab-1 did not appear in Workspace 2 after clicking plus button")
+        }
         usleep(1_000_000)
-        d.focus()
 
-        try d.run("tty > \(d.path("tty_after_click1.txt"))")
-        let ttyAfterClick1 = try d.file("tty_after_click1.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ttyAfterClick1 == tty1 else {
-            throw Failure("mouse click on Tab 1 did not switch active terminal to Tab 1 (got: \(ttyAfterClick1), expected: \(tty1))")
+        // Type unassisted into newly created tab in Workspace 2
+        try d.run("tty > \(d.path("ws2_tab1_created.txt"))")
+        let ws2_tab1 = try d.file("ws2_tab1_created.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ws2_tab1.isEmpty, ws2_tab1 != ws2_tab0, ws2_tab1 != ws1_tab0, ws2_tab1 != ws1_tab1 else {
+            throw Failure("second tab in Workspace 2 did not spawn a distinct TTY (tab0: \(ws2_tab0), tab1: \(ws2_tab1))")
         }
 
-        // 4. Real mouse click switching back to Tab 2
-        // Try clicking Tab 2 candidate coordinates depending on Tab 1 title width
-        let tab2Candidates = [
-            CGPoint(x: frameAfterTabs.origin.x + 250, y: frameAfterTabs.origin.y + 19),
-            CGPoint(x: frameAfterTabs.origin.x + 320, y: frameAfterTabs.origin.y + 19),
-            CGPoint(x: frameAfterTabs.origin.x + 380, y: frameAfterTabs.origin.y + 19),
-            CGPoint(x: frameAfterTabs.origin.x + 440, y: frameAfterTabs.origin.y + 19),
-        ]
-        var switchedToTab2 = false
-        for pt in tab2Candidates {
-            try d.click(at: pt)
-            usleep(600_000)
-            d.focus()
-            try d.run("tty > \(d.path("tty_after_click2.txt"))")
-            if let t = try? d.file("tty_after_click2.txt").trimmingCharacters(in: .whitespacesAndNewlines), t == tty2 {
-                switchedToTab2 = true
-                break
-            }
-        }
-        guard switchedToTab2 else {
-            let lastTTY = (try? d.file("tty_after_click2.txt"))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw Failure("mouse click on Tab 2 did not switch active terminal to Tab 2 (got: \(lastTTY), expected: \(tty2))")
+        // 10. Switch between tabs in Workspace 2 via real mouse clicks
+        try d.clickTab(index: 0)
+        try d.run("tty > \(d.path("ws2_tab0_switched.txt"))")
+        let ws2_tab0_switched = try d.file("ws2_tab0_switched.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ws2_tab0_switched == ws2_tab0 else {
+            throw Failure("mouse click on Workspace 2 Tab 0 failed to route input (got: \(ws2_tab0_switched), expected: \(ws2_tab0))")
         }
 
-        // 5. Workspace switching via Next Workspace in menu
-        guard d.pressMenu(title: "Next Workspace") else {
-            throw Failure("could not press Next Workspace in menu bar")
-        }
-        _ = d.wait(for: { d.windows().count >= 1 }, timeout: 5)
-        usleep(2_000_000)
-        d.focus()
-
-        // The new workspace gets its own terminal window
-        try d.run("tty > \(d.path("tty_ws2.txt"))")
-        let ttyWs2 = try d.file("tty_ws2.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ttyWs2.isEmpty, ttyWs2 != tty1, ttyWs2 != tty2 else {
-            throw Failure("switching to Secondary workspace did not activate a separate terminal (got: \(ttyWs2), tab1: \(tty1), tab2: \(tty2))")
+        try d.clickTab(index: 1)
+        try d.run("tty > \(d.path("ws2_tab1_switched.txt"))")
+        let ws2_tab1_switched = try d.file("ws2_tab1_switched.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ws2_tab1_switched == ws2_tab1 else {
+            throw Failure("mouse click on Workspace 2 Tab 1 failed to route input (got: \(ws2_tab1_switched), expected: \(ws2_tab1))")
         }
 
-        // 6. Switch back to original workspace via Previous Workspace in menu
-        guard d.pressMenu(title: "Previous Workspace") else {
-            throw Failure("could not press Previous Workspace in menu bar")
-        }
-        _ = d.wait(for: { d.windows().count >= 1 }, timeout: 5)
-        usleep(2_000_000)
-        d.focus()
+        // --- PHASE 3: Switch back and assert isolation & state retention ---
+        // 11. Switch back to Default workspace via real mouse click on the Workspace Pill menu
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        usleep(1_500_000)
 
-        // Verify keyboard input works and active tab responds in Default workspace
-        try d.run("tty > \(d.path("tty_back.txt"))")
-        let ttyBack = try d.file("tty_back.txt").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ttyBack == tty1 || ttyBack == tty2 else {
-            throw Failure("switching back to Default workspace did not restore original terminals (got: \(ttyBack), tab1: \(tty1), tab2: \(tty2))")
+        // 12. Verify Default workspace is restored, input routes unassisted, and Tab 1 was remembered
+        try d.run("tty > \(d.path("ws1_restored.txt"))")
+        let restoredTTY = try d.file("ws1_restored.txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard restoredTTY == ws1_tab1 else {
+            throw Failure("switching back to Default workspace did not restore active Tab 1! (got: \(restoredTTY), expected: \(ws1_tab1), tab0 was: \(ws1_tab0))")
         }
     }),
 ]

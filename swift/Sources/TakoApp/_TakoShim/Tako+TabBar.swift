@@ -51,6 +51,8 @@ extension Tako {
             static let activeBarHeight: CGFloat = 2
             static let closeSize: CGFloat = 16
             static let closeHitSize: CGFloat = 24
+            /// Narrowest a pill tab can be and still show and hit-test its close button.
+            static let pillCloseMinWidth: CGFloat = 54
             /// "кнопки справа 28×28, gap 4, отступ 8" -- three buttons (ⓘ
             /// about, ◫ split, + new tab).
             static let buttonCount: CGFloat = 3
@@ -94,6 +96,7 @@ extension Tako {
         }
 
         var tabs: [Tab] = []
+        var cachedAccessibilityChildren: [NSAccessibilityElement] = []
         /// How many tabs the strip last laid out (0 in single-window mode).
         var laidOutTabCount: Int { tabs.count }
         /// Where tabs are drawn and clicked; ones scrolled past it are not.
@@ -207,7 +210,7 @@ extension Tako {
             return min(Metrics.maxTabWidth, max(Metrics.minTabWidth, width))
         }
 
-        private func layoutTabs() {
+        func layoutTabs() {
             tabs = []
             guard showsStrip else { return }
             let all = windows

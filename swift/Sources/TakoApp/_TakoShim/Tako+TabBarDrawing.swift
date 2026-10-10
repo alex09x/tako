@@ -160,7 +160,7 @@ extension Tako.TabBarView {
         }
 
         // Close button: visible on tabs with enough room, with 8px right margin
-        let showsClose = rect.width >= 54
+        let showsClose = rect.width >= Metrics.pillCloseMinWidth
         let closeExtra: CGFloat = showsClose ? (6 + 10) : 0
         let maxTitleWidth = rect.width - 21 - 8 - closeExtra
         if maxTitleWidth > 8 {
