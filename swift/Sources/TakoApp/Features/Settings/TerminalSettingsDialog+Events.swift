@@ -74,8 +74,7 @@ extension TerminalSettingsDialog {
             }
         }
 
-        // Modal containment: block all other key equivalents (split, tab, window actions)
-        // so they never trigger on the underlying terminal while settings is displayed.
+        // Modal containment: block all other key equivalents
         return true
     }
 
@@ -90,8 +89,71 @@ extension TerminalSettingsDialog {
             return
         }
 
+        if isTabBarFocused {
+            handleTabBarKeyDown(event)
+        } else {
+            handleListKeyDown(event)
+        }
+    }
+
+    private func handleTabBarKeyDown(_ event: NSEvent) {
         switch event.keyCode {
-        case 126: moveSelection(-1)            // Up
+        case 123: // Left arrow
+            navigateTab(direction: -1)
+        case 124: // Right arrow
+            navigateTab(direction: 1)
+        case 125: // Down arrow: enter settings list
+            isTabBarFocused = false
+            needsDisplay = true
+        case 126: // Up arrow: stay on tab bar
+            break
+        case 36, 76: // Return / Enter: enter settings list
+            isTabBarFocused = false
+            needsDisplay = true
+        case 53: // Esc: close dialog
+            withdraw()
+        case 48: // Tab: focus search field
+            if let field = searchField {
+                window?.makeFirstResponder(field)
+            }
+        default:
+            guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { break }
+            if chars == "\u{1b}" {
+                withdraw()
+                return
+            }
+            switch chars {
+            case " ":
+                isTabBarFocused = false
+                needsDisplay = true
+            case "1":
+                switchTab(to: .keybindings)
+            case "2":
+                switchTab(to: .terminalSettings)
+            case "/":
+                if let field = searchField {
+                    window?.makeFirstResponder(field)
+                }
+            default:
+                if let field = searchField, let first = chars.first, (first.isLetter || first.isNumber) {
+                    window?.makeFirstResponder(field)
+                    field.stringValue += chars
+                    controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+                }
+            }
+        }
+    }
+
+    private func handleListKeyDown(_ event: NSEvent) {
+        switch event.keyCode {
+        case 126: // Up arrow: move selection or focus tab bar if at top
+            let currentIndex = activeTab == .keybindings ? selectedIndex : selectedSettingIndex
+            if currentIndex <= 0 {
+                isTabBarFocused = true
+                needsDisplay = true
+            } else {
+                moveSelection(-1)
+            }
         case 125: moveSelection(1)             // Down
         case 123:                              // Left
             if activeTab == .terminalSettings {
@@ -159,180 +221,14 @@ extension TerminalSettingsDialog {
         }
     }
 
-    private func handleRecordingKey(_ event: NSEvent) {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-
-        // Escape cancels recording
-        if (event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}") && flags.isEmpty {
-            isRecording = false
-            statusMessage = "Recording cancelled."
-            recordingHeldModifiers = []
-            setAccessibilityValue("cancelled")
-            needsDisplay = true
-            return
-        }
-
-        // Delete/Backspace clears override
-        if (event.keyCode == 51 || event.keyCode == 117) && flags.isEmpty {
-            resetSelected()
-            isRecording = false
-            recordingHeldModifiers = []
-            return
-        }
-
-        guard let key = resolveKey(from: event) else { return }
-
-        let isFnKey = (122 == event.keyCode || 120 == event.keyCode || (96...101).contains(event.keyCode) ||
-                       103 == event.keyCode || 109 == event.keyCode || 111 == event.keyCode || 118 == event.keyCode)
-
-        // Shortcuts must require at least one modifier key unless it is an explicit function key (F1-F12)
-        guard !flags.isEmpty || isFnKey else {
-            statusMessage = "Modifier required (⌘, ⌃, ⌥, ⇧ + key). Esc to cancel."
-            needsDisplay = true
-            return
-        }
-
-        var parts: [String] = []
-        if flags.contains(.control) { parts.append("ctrl") }
-        if flags.contains(.option) { parts.append("opt") }
-        if flags.contains(.shift) { parts.append("shift") }
-        if flags.contains(.command) { parts.append("cmd") }
-        parts.append(key)
-
-        let trigger = parts.joined(separator: "+")
-        guard selectedIndex < filteredItems.count else { return }
-        let item = filteredItems[selectedIndex]
-
-        if let conflict = configFile.findConflict(for: trigger, targetAction: item.id) {
-            let formatted = KeybindRegistry.format(trigger: trigger)
-            let shortConflict = String(conflict.title.prefix(18))
-            pendingConflict = ConflictInfo(targetItem: item, conflictingItem: conflict, trigger: trigger)
-            let msg = "Conflict: \(formatted) used by '\(shortConflict)'. Overwrite? (Return=Yes, Esc=No)"
-            statusMessage = msg
-            setAccessibilityValue("conflict: \(msg)")
-            isRecording = false
-            recordingHeldModifiers = []
-            needsDisplay = true
-            return
-        }
-
-        applyKeybind(action: item.id, trigger: trigger, title: item.title)
-    }
-
-    private func handleConflictConfirmation(_ event: NSEvent, conflict: ConflictInfo) {
-        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        // Return / Enter (36, 76) or 'y' confirms overwrite
-        if event.keyCode == 36 || event.keyCode == 76 || chars == "y" {
-            pendingConflict = nil
-            let conflictCanonical = KeybindConfigFile.canonicalActionName(conflict.conflictingItem.id)
-            if configFile.customOverrides[conflictCanonical] != nil {
-                configFile.removeKeybind(action: conflict.conflictingItem.id)
-            }
-            applyKeybind(action: conflict.targetItem.id, trigger: conflict.trigger, title: conflict.targetItem.title, reassignedFrom: conflict.conflictingItem.title)
-            return
-        }
-
-        // Esc (53) or 'n' cancels overwrite
-        if event.keyCode == 53 || chars == "n" {
-            pendingConflict = nil
-            statusMessage = "Reassignment cancelled."
-            setAccessibilityValue("cancelled: Reassignment cancelled.")
-            needsDisplay = true
-            return
-        }
-
-        // Any other key clears pending conflict and handles the key normally
-        pendingConflict = nil
-        keyDown(with: event)
-    }
-
-    private func applyKeybind(action: String, trigger: String, title: String, reassignedFrom: String? = nil) {
-        if configFile.setKeybind(action: action, trigger: trigger) {
-            let formatted = KeybindRegistry.format(trigger: trigger)
-            if let from = reassignedFrom {
-                statusMessage = "Reassigned \(formatted) from '\(from)' to '\(title)'."
-            } else {
-                statusMessage = "Updated '\(title)' to \(formatted)."
-            }
-        } else {
-            statusMessage = "Error: Failed to write to config file."
-        }
-        setAccessibilityValue(statusMessage ?? "updated")
-        isRecording = false
-        recordingHeldModifiers = []
-        needsDisplay = true
-    }
-
-    private func resolveKey(from event: NSEvent) -> String? {
-        if let name = KeybindRegistry.keyName(for: event.keyCode) {
-            return name
-        }
-        guard let chars = event.charactersIgnoringModifiers?.lowercased(), !chars.isEmpty else { return nil }
-        let c = chars.first!
-        return (c.isASCII && (c.isLetter || c.isNumber)) ? String(c) : nil
-    }
-
-    // MARK: - Mouse Events (Modal containment)
-
-    override func mouseDown(with event: NSEvent) {
-        pendingConflict = nil
-        let pt = convert(event.locationInWindow, from: nil)
-        guard cardRect.contains(pt) else {
-            // Modal: clicks on backdrop do not dismiss and do not pass through to terminal
-            return
-        }
-
-        // Check Row 1 clicks for tab switching: [1] Keybindings, [2] Terminal Settings
-        let tabY = cell(0, 1).y
-        if pt.y >= tabY && pt.y < tabY + cellHeight {
-            let tab1Title = " [1] Keybindings "
-            let tab1Col = 3
-            let tab2Col = tab1Col + tab1Title.count + 2
-            let tab2Title = " [2] Terminal Settings "
-            let relCol = Int((pt.x - cell(0, 0).x) / cellWidth)
-            if relCol >= tab1Col && relCol < tab1Col + tab1Title.count {
-                switchTab(to: .keybindings)
-                return
-            } else if relCol >= tab2Col && relCol < tab2Col + tab2Title.count {
-                switchTab(to: .terminalSettings)
-                return
-            }
-        }
-
-        let startY = cell(0, 5).y
-        let rowHeight = cellHeight
-        if pt.y >= startY && pt.y < startY + CGFloat(visibleRows) * rowHeight {
-            let clickedVisible = Int((pt.y - startY) / rowHeight)
-            if activeTab == .keybindings {
-                let targetIdx = scrollOffset + clickedVisible
-                if targetIdx < filteredItems.count {
-                    selectedIndex = targetIdx
-                    if event.clickCount == 2 {
-                        startRecording()
-                    } else {
-                        needsDisplay = true
-                    }
-                }
-            } else {
-                let targetIdx = scrollSettingOffset + clickedVisible
-                if targetIdx < filteredSettingItems.count {
-                    selectedSettingIndex = targetIdx
-                    if event.clickCount == 2 {
-                        toggleOrCycleSelectedSetting()
-                    } else {
-                        needsDisplay = true
-                    }
-                }
-            }
+    func navigateTab(direction: Int) {
+        let tabs = SettingsTab.allCases
+        guard let currentIndex = tabs.firstIndex(of: activeTab) else { return }
+        let newIndex = min(max(currentIndex + direction, 0), tabs.count - 1)
+        if newIndex != currentIndex {
+            switchTab(to: tabs[newIndex])
         }
     }
-
-    override func mouseUp(with event: NSEvent) {}
-    override func mouseDragged(with event: NSEvent) {}
-    override func rightMouseDown(with event: NSEvent) {}
-    override func rightMouseUp(with event: NSEvent) {}
-    override func otherMouseDown(with event: NSEvent) {}
-    override func otherMouseUp(with event: NSEvent) {}
 
     func moveSelection(_ delta: Int) {
         pendingConflict = nil
@@ -361,60 +257,11 @@ extension TerminalSettingsDialog {
         if activeTab == .keybindings {
             guard !filteredItems.isEmpty else { return }
             selectedIndex = min(max(target, 0), filteredItems.count - 1)
-            scrollOffset = max(0, min(selectedIndex, filteredItems.count - visibleRows))
+            scrollOffset = min(selectedIndex, max(filteredItems.count - visibleRows, 0))
         } else {
             guard !filteredSettingItems.isEmpty else { return }
             selectedSettingIndex = min(max(target, 0), filteredSettingItems.count - 1)
-            scrollSettingOffset = max(0, min(selectedSettingIndex, filteredSettingItems.count - visibleRows))
-        }
-        needsDisplay = true
-    }
-
-    func startRecording() {
-        guard selectedIndex < filteredItems.count else { return }
-        pendingConflict = nil
-        isRecording = true
-        recordingHeldModifiers = []
-        statusMessage = "Press shortcut to record. Esc cancels, Backspace clears."
-        window?.makeFirstResponder(self)
-        setAccessibilityValue("recording")
-        needsDisplay = true
-    }
-
-    func resetSelected() {
-        guard selectedIndex < filteredItems.count else { return }
-        pendingConflict = nil
-        let item = filteredItems[selectedIndex]
-        let canonicalId = KeybindConfigFile.canonicalActionName(item.id)
-        let wasCustom = configFile.customOverrides[canonicalId] != nil
-        if configFile.removeKeybind(action: item.id) {
-            if wasCustom {
-                statusMessage = "Reset '\(item.title)' to default."
-            } else {
-                statusMessage = "'\(item.title)' is already at default."
-            }
-            setAccessibilityValue("reset_success: \(statusMessage ?? "")")
-        } else {
-            statusMessage = "Error: Failed to reset config file."
-            setAccessibilityValue("reset_error: \(statusMessage ?? "")")
-        }
-        needsDisplay = true
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        let delta = event.scrollingDeltaY
-        if activeTab == .keybindings {
-            if delta > 0 {
-                scrollOffset = max(scrollOffset - 1, 0)
-            } else if delta < 0 {
-                scrollOffset = min(scrollOffset + 1, max(filteredItems.count - visibleRows, 0))
-            }
-        } else {
-            if delta > 0 {
-                scrollSettingOffset = max(scrollSettingOffset - 1, 0)
-            } else if delta < 0 {
-                scrollSettingOffset = min(scrollSettingOffset + 1, max(filteredSettingItems.count - visibleRows, 0))
-            }
+            scrollSettingOffset = min(selectedSettingIndex, max(filteredSettingItems.count - visibleRows, 0))
         }
         needsDisplay = true
     }
@@ -430,12 +277,14 @@ extension TerminalSettingsDialog {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(moveDown(_:)) {
             window?.makeFirstResponder(self)
-            moveSelection(1)
+            isTabBarFocused = false
+            needsDisplay = true
             return true
         }
         if commandSelector == #selector(moveUp(_:)) {
             window?.makeFirstResponder(self)
-            moveSelection(-1)
+            isTabBarFocused = true
+            needsDisplay = true
             return true
         }
         if commandSelector == #selector(pageDown(_:)) {

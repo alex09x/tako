@@ -112,8 +112,8 @@ public enum TerminalSettingRegistry {
             id: "tab-style",
             title: "Tab Bar Style",
             category: "Window",
-            type: .options(options: ["modern", "native", "classic"], defaultValue: "modern"),
-            description: "Visual appearance of tabs (modern pills, native tabs, classic)"
+            type: .options(options: ["pill", "classic"], defaultValue: "pill"),
+            description: "Visual appearance of tabs (floating pills vs classic tabs)"
         ),
         TerminalSettingItem(
             id: "window-inherit-font-size",
@@ -149,22 +149,22 @@ public enum TerminalSettingRegistry {
             id: "mouse-hide-while-typing",
             title: "Hide Mouse While Typing",
             category: "Terminal",
-            type: .boolean(defaultValue: true),
+            type: .boolean(defaultValue: false),
             description: "Hide mouse cursor while typing in the terminal"
         ),
         TerminalSettingItem(
             id: "copy-on-select",
             title: "Copy to Clipboard on Select",
             category: "Terminal",
-            type: .boolean(defaultValue: false),
-            description: "Automatically copy highlighted text to system clipboard"
+            type: .options(options: ["true", "clipboard", "false"], defaultValue: "true"),
+            description: "Automatically copy highlighted text (true = selection, clipboard, false = off)"
         ),
         TerminalSettingItem(
             id: "confirm-close-surface",
             title: "Confirm Closing Running Commands",
             category: "Terminal",
-            type: .options(options: ["always", "never"], defaultValue: "always"),
-            description: "Prompt for confirmation before closing tabs with running commands"
+            type: .options(options: ["true", "always", "false"], defaultValue: "true"),
+            description: "Prompt for confirmation before closing tabs (true = when busy, always, false = never)"
         ),
         TerminalSettingItem(
             id: "shell-integration",
@@ -209,8 +209,8 @@ public enum TerminalSettingRegistry {
             id: "background-blur",
             title: "Background Blur",
             category: "Appearance",
-            type: .options(options: ["none", "macos-material"], defaultValue: "none"),
-            description: "Window background blur material"
+            type: .number(defaultValue: 0, min: 0, max: 60, step: 5),
+            description: "Window background blur radius in pixels (0 = disabled)"
         ),
     ]
 

@@ -56,32 +56,36 @@ extension TerminalSettingsDialog {
 
         let tab1Origin = cell(tab1Col, 1)
         if tab1Selected {
+            let tab1Rect = NSRect(x: tab1Origin.x, y: tab1Origin.y, width: CGFloat(tab1Title.count) * cellWidth, height: cellHeight)
             TakoTUI.selection.setFill()
-            NSRect(x: tab1Origin.x, y: tab1Origin.y, width: CGFloat(tab1Title.count) * cellWidth, height: cellHeight).fill()
-            drawText("▌", col: tab1Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+            tab1Rect.fill()
+            if isTabBarFocused {
+                drawText("▌", col: tab1Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+            }
         }
         drawText(tab1Title, col: tab1Col, row: 1, font: tab1Selected ? style.boldFont : style.font,
-                 color: tab1Selected ? TakoTUI.bright : TakoTUI.dim)
+                 color: tab1Selected ? (isTabBarFocused ? TakoTUI.bright : TakoTUI.text) : TakoTUI.dim)
 
         let tab2Origin = cell(tab2Col, 1)
         if tab2Selected {
+            let tab2Rect = NSRect(x: tab2Origin.x, y: tab2Origin.y, width: CGFloat(tab2Title.count) * cellWidth, height: cellHeight)
             TakoTUI.selection.setFill()
-            NSRect(x: tab2Origin.x, y: tab2Origin.y, width: CGFloat(tab2Title.count) * cellWidth, height: cellHeight).fill()
-            drawText("▌", col: tab2Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+            tab2Rect.fill()
+            if isTabBarFocused {
+                drawText("▌", col: tab2Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+            }
         }
         drawText(tab2Title, col: tab2Col, row: 1, font: tab2Selected ? style.boldFont : style.font,
-                 color: tab2Selected ? TakoTUI.bright : TakoTUI.dim)
+                 color: tab2Selected ? (isTabBarFocused ? TakoTUI.bright : TakoTUI.text) : TakoTUI.dim)
 
         // Header columns (Row 4)
         let headerY = 4
         if activeTab == .keybindings {
-            drawText("ACTION", col: 3, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText("SHORTCUT", col: 44, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText("STATUS", col: 58, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("ACTION", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("SHORTCUT", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         } else {
-            drawText("SETTING", col: 3, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText("VALUE", col: 44, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText("STATUS", col: 58, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("SETTING", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("VALUE", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         }
 
         // List Rows (Row 5 to 5 + visibleRows)
@@ -98,34 +102,44 @@ extension TerminalSettingsDialog {
 
                 let rowOrigin = cell(2, r)
                 if isSelected {
-                    TakoTUI.selection.setFill()
-                    NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
-                    drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                    if isTabBarFocused {
+                        TakoTUI.selection.withAlphaComponent(0.4).setFill()
+                        NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                    } else {
+                        TakoTUI.selection.setFill()
+                        NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                        drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                    }
                 }
 
                 // Action Title
-                let titleColor = isSelected ? TakoTUI.bright : TakoTUI.text
-                let titleText = String(item.title.prefix(38))
+                let titleColor = isSelected ? (isTabBarFocused ? TakoTUI.text : TakoTUI.bright) : TakoTUI.text
+                let titleText = String(item.title.prefix(40))
                 drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
 
                 // Current Shortcut
                 let shortcutDisplay: String
-                let isCustom = customOverrides[item.id] != nil
-                if let customTrigger = customOverrides[item.id] {
+                let customTrigger = customOverrides[item.id]
+                let defaultShortcut = KeybindRegistry.defaultShortcut(for: item.id)
+                let isCustom: Bool
+                if let customTrigger = customTrigger {
+                    if let def = defaultShortcut {
+                        let defTrigger = KeybindRegistry.trigger(for: def)
+                        isCustom = KeybindRegistry.normalizeTrigger(customTrigger) != KeybindRegistry.normalizeTrigger(defTrigger)
+                    } else {
+                        isCustom = true
+                    }
                     shortcutDisplay = KeybindRegistry.format(trigger: customTrigger)
-                } else if let def = KeybindRegistry.defaultShortcut(for: item.id) {
+                } else if let def = defaultShortcut {
                     shortcutDisplay = KeybindRegistry.format(shortcut: def)
+                    isCustom = false
                 } else {
                     shortcutDisplay = "—"
+                    isCustom = false
                 }
 
-                let scColor = isCustom ? TakoTUI.ember : (isSelected ? TakoTUI.claw : TakoTUI.soft)
-                drawText(shortcutDisplay, col: 44, row: r, font: style.boldFont, color: scColor)
-
-                // Status Tag
-                let statusText = isCustom ? "[custom]" : "default"
-                let statusColor = isCustom ? TakoTUI.ember : TakoTUI.dim
-                drawText(statusText, col: 58, row: r, font: style.font, color: statusColor)
+                let scColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
+                drawText(shortcutDisplay, col: 46, row: r, font: style.boldFont, color: scColor)
             }
         } else {
             for i in 0..<visibleRows {
@@ -137,28 +151,26 @@ extension TerminalSettingsDialog {
 
                 let rowOrigin = cell(2, r)
                 if isSelected {
-                    TakoTUI.selection.setFill()
-                    NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
-                    drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                    if isTabBarFocused {
+                        TakoTUI.selection.withAlphaComponent(0.4).setFill()
+                        NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                    } else {
+                        TakoTUI.selection.setFill()
+                        NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                        drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                    }
                 }
 
                 // Setting Title
-                let titleColor = isSelected ? TakoTUI.bright : TakoTUI.text
-                let titleText = String(item.title.prefix(38))
+                let titleColor = isSelected ? (isTabBarFocused ? TakoTUI.text : TakoTUI.bright) : TakoTUI.text
+                let titleText = String(item.title.prefix(40))
                 drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
 
                 // Current Value
-                let customVal = configFile.getSettingValue(for: item)
-                let isCustom = customVal != nil
-                let displayVal = customVal ?? item.type.defaultStringValue
-
-                let valColor = isCustom ? TakoTUI.ember : (isSelected ? TakoTUI.claw : TakoTUI.soft)
-                drawText(displayVal, col: 44, row: r, font: style.boldFont, color: valColor)
-
-                // Status Tag
-                let statusText = isCustom ? "[custom]" : "default"
-                let statusColor = isCustom ? TakoTUI.ember : TakoTUI.dim
-                drawText(statusText, col: 58, row: r, font: style.font, color: statusColor)
+                let displayVal = configFile.effectiveSettingValue(for: item)
+                let isCustom = displayVal != item.type.defaultStringValue
+                let valColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
+                drawText(displayVal, col: 46, row: r, font: style.boldFont, color: valColor)
             }
         }
 

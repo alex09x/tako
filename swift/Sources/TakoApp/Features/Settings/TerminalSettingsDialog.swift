@@ -53,6 +53,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     let style: Style
     let configFile: KeybindConfigFile
     var activeTab: SettingsTab = .keybindings
+    var isTabBarFocused: Bool = false
 
     // Keybindings state
     var allItems: [KeybindActionItem] = KeybindRegistry.allActions
@@ -232,8 +233,13 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         let item = filteredSettingItems[selectedSettingIndex]
         let current = configFile.effectiveSettingValue(for: item)
         let next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
-        configFile.setSettingValue(next, for: item)
-        statusMessage = "Saved: \(item.id) = \(next)"
+        if next == item.type.defaultStringValue {
+            configFile.removeSettingValue(for: item)
+            statusMessage = "Default: \(item.id) = \(next)"
+        } else {
+            configFile.setSettingValue(next, for: item)
+            statusMessage = "Custom: \(item.id) = \(next)"
+        }
         needsDisplay = true
     }
 
