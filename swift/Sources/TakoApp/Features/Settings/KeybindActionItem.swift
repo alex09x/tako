@@ -136,15 +136,11 @@ public enum KeybindRegistry {
         let parts = trigger.split(separator: "+").map(String.init)
         guard let keyPart = parts.last else { return trigger }
         var str = ""
-        for mod in parts.dropLast() {
-            switch mod.lowercased() {
-            case "ctrl", "control": str += "⌃"
-            case "opt", "alt", "option": str += "⌥"
-            case "shift": str += "⇧"
-            case "cmd", "command", "super": str += "⌘"
-            default: break
-            }
-        }
+        let mods = Set(parts.dropLast().map { $0.lowercased() })
+        if mods.contains("ctrl") || mods.contains("control") { str += "⌃" }
+        if mods.contains("opt") || mods.contains("alt") || mods.contains("option") { str += "⌥" }
+        if mods.contains("shift") { str += "⇧" }
+        if mods.contains("cmd") || mods.contains("command") || mods.contains("super") { str += "⌘" }
         switch keyPart.lowercased() {
         case "return", "enter": str += "↩"; case "tab": str += "⇥"; case "space": str += "Space"
         case "escape": str += "⎋"; case "backspace": str += "⌫"; case "delete": str += "⌦"

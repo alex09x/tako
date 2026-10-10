@@ -19,21 +19,28 @@ public struct SettingsView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Text("Tako Settings")
                 .font(.headline)
-            Text("Keybindings and configuration are managed via the in-terminal TUI settings card (⌘,).")
+            Text("Keybindings, terminal behavior, and workspace options are managed via the in-terminal TUI settings card (⌘,).")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Open In-Terminal Settings") {
-                if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-                    TerminalSettingsDialog.show(in: window)
+            HStack(spacing: 12) {
+                Button("Terminal Settings") {
+                    if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+                        TerminalSettingsDialog.show(in: window, tab: .terminalSettings)
+                    }
+                }
+                Button("Keybindings") {
+                    if let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
+                        TerminalSettingsDialog.show(in: window, tab: .keybindings)
+                    }
                 }
             }
         }
         .padding(24)
-        .frame(minWidth: 400, minHeight: 180)
+        .frame(minWidth: 440, minHeight: 180)
     }
 }
 

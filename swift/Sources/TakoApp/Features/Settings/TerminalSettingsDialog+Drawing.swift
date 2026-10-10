@@ -33,7 +33,7 @@ extension TerminalSettingsDialog {
         NSGraphicsContext.restoreGraphicsState()
 
         // Title and Hatching
-        let title = "Tako Keybindings & Settings"
+        let title = "Tako Settings"
         let gap = cell(2, 0)
         style.background.setFill()
         NSRect(x: gap.x, y: gap.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
@@ -45,63 +45,133 @@ extension TerminalSettingsDialog {
             }
         }
 
+        // Tabs (Row 1): [1] Keybindings  [2] Terminal Settings
+        let tab1Title = " [1] Keybindings "
+        let tab2Title = " [2] Terminal Settings "
+        let tab1Col = 3
+        let tab2Col = tab1Col + tab1Title.count + 2
+
+        let tab1Selected = activeTab == .keybindings
+        let tab2Selected = activeTab == .terminalSettings
+
+        let tab1Origin = cell(tab1Col, 1)
+        if tab1Selected {
+            TakoTUI.selection.setFill()
+            NSRect(x: tab1Origin.x, y: tab1Origin.y, width: CGFloat(tab1Title.count) * cellWidth, height: cellHeight).fill()
+            drawText("▌", col: tab1Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+        }
+        drawText(tab1Title, col: tab1Col, row: 1, font: tab1Selected ? style.boldFont : style.font,
+                 color: tab1Selected ? TakoTUI.bright : TakoTUI.dim)
+
+        let tab2Origin = cell(tab2Col, 1)
+        if tab2Selected {
+            TakoTUI.selection.setFill()
+            NSRect(x: tab2Origin.x, y: tab2Origin.y, width: CGFloat(tab2Title.count) * cellWidth, height: cellHeight).fill()
+            drawText("▌", col: tab2Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+        }
+        drawText(tab2Title, col: tab2Col, row: 1, font: tab2Selected ? style.boldFont : style.font,
+                 color: tab2Selected ? TakoTUI.bright : TakoTUI.dim)
+
         // Header columns (Row 4)
         let headerY = 4
-        drawText("ACTION", col: 3, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-        drawText("SHORTCUT", col: 44, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-        drawText("STATUS", col: 58, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+        if activeTab == .keybindings {
+            drawText("ACTION", col: 3, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("SHORTCUT", col: 44, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("STATUS", col: 58, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+        } else {
+            drawText("SETTING", col: 3, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("VALUE", col: 44, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText("STATUS", col: 58, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+        }
 
         // List Rows (Row 5 to 5 + visibleRows)
         let startRow = 5
-        let customOverrides = configFile.customOverrides
 
-        for i in 0..<visibleRows {
-            let itemIndex = scrollOffset + i
-            let r = startRow + i
-            guard itemIndex < filteredItems.count else { break }
-            let item = filteredItems[itemIndex]
-            let isSelected = itemIndex == selectedIndex
+        if activeTab == .keybindings {
+            let customOverrides = configFile.customOverrides
+            for i in 0..<visibleRows {
+                let itemIndex = scrollOffset + i
+                let r = startRow + i
+                guard itemIndex < filteredItems.count else { break }
+                let item = filteredItems[itemIndex]
+                let isSelected = itemIndex == selectedIndex
 
-            let rowOrigin = cell(2, r)
-            if isSelected {
-                TakoTUI.selection.setFill()
-                NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
-                drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                let rowOrigin = cell(2, r)
+                if isSelected {
+                    TakoTUI.selection.setFill()
+                    NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                    drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                }
+
+                // Action Title
+                let titleColor = isSelected ? TakoTUI.bright : TakoTUI.text
+                let titleText = String(item.title.prefix(38))
+                drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
+
+                // Current Shortcut
+                let shortcutDisplay: String
+                let isCustom = customOverrides[item.id] != nil
+                if let customTrigger = customOverrides[item.id] {
+                    shortcutDisplay = KeybindRegistry.format(trigger: customTrigger)
+                } else if let def = KeybindRegistry.defaultShortcut(for: item.id) {
+                    shortcutDisplay = KeybindRegistry.format(shortcut: def)
+                } else {
+                    shortcutDisplay = "—"
+                }
+
+                let scColor = isCustom ? TakoTUI.ember : (isSelected ? TakoTUI.claw : TakoTUI.soft)
+                drawText(shortcutDisplay, col: 44, row: r, font: style.boldFont, color: scColor)
+
+                // Status Tag
+                let statusText = isCustom ? "[custom]" : "default"
+                let statusColor = isCustom ? TakoTUI.ember : TakoTUI.dim
+                drawText(statusText, col: 58, row: r, font: style.font, color: statusColor)
             }
+        } else {
+            for i in 0..<visibleRows {
+                let itemIndex = scrollSettingOffset + i
+                let r = startRow + i
+                guard itemIndex < filteredSettingItems.count else { break }
+                let item = filteredSettingItems[itemIndex]
+                let isSelected = itemIndex == selectedSettingIndex
 
-            // Action Title
-            let titleColor = isSelected ? TakoTUI.bright : TakoTUI.text
-            let titleText = String(item.title.prefix(38))
-            drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
+                let rowOrigin = cell(2, r)
+                if isSelected {
+                    TakoTUI.selection.setFill()
+                    NSRect(x: rowOrigin.x, y: rowOrigin.y, width: CGFloat(columns - 4) * cellWidth, height: cellHeight).fill()
+                    drawText("▌", col: 2, row: r, font: style.boldFont, color: TakoTUI.ember)
+                }
 
-            // Current Shortcut
-            let shortcutDisplay: String
-            let isCustom = customOverrides[item.id] != nil
-            if let customTrigger = customOverrides[item.id] {
-                shortcutDisplay = KeybindRegistry.format(trigger: customTrigger)
-            } else if let def = KeybindRegistry.defaultShortcut(for: item.id) {
-                shortcutDisplay = KeybindRegistry.format(shortcut: def)
-            } else {
-                shortcutDisplay = "—"
+                // Setting Title
+                let titleColor = isSelected ? TakoTUI.bright : TakoTUI.text
+                let titleText = String(item.title.prefix(38))
+                drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
+
+                // Current Value
+                let customVal = configFile.getSettingValue(for: item)
+                let isCustom = customVal != nil
+                let displayVal = customVal ?? item.type.defaultStringValue
+
+                let valColor = isCustom ? TakoTUI.ember : (isSelected ? TakoTUI.claw : TakoTUI.soft)
+                drawText(displayVal, col: 44, row: r, font: style.boldFont, color: valColor)
+
+                // Status Tag
+                let statusText = isCustom ? "[custom]" : "default"
+                let statusColor = isCustom ? TakoTUI.ember : TakoTUI.dim
+                drawText(statusText, col: 58, row: r, font: style.font, color: statusColor)
             }
-
-            let scColor = isCustom ? TakoTUI.ember : (isSelected ? TakoTUI.claw : TakoTUI.soft)
-            drawText(shortcutDisplay, col: 44, row: r, font: style.boldFont, color: scColor)
-
-            // Status Tag
-            let statusText = isCustom ? "[custom]" : "default"
-            let statusColor = isCustom ? TakoTUI.ember : TakoTUI.dim
-            drawText(statusText, col: 58, row: r, font: style.font, color: statusColor)
         }
 
         // Scrollbar track
-        if filteredItems.count > visibleRows {
+        let currentItemCount = activeTab == .keybindings ? filteredItems.count : filteredSettingItems.count
+        let currentOffset = activeTab == .keybindings ? scrollOffset : scrollSettingOffset
+        if currentItemCount > visibleRows {
             let trackY = cell(0, startRow).y
             let trackHeight = CGFloat(visibleRows) * cellHeight
             let track = NSRect(x: card.maxX - cellWidth / 2 - 1.5, y: trackY, width: 3, height: trackHeight)
-            let thumbHeight = max(trackHeight * CGFloat(visibleRows) / CGFloat(filteredItems.count), cellHeight)
-            let maxOffset = filteredItems.count - visibleRows
-            let thumbY = track.minY + (trackHeight - thumbHeight) * CGFloat(scrollOffset) / CGFloat(maxOffset)
+            let thumbHeight = max(trackHeight * CGFloat(visibleRows) / CGFloat(currentItemCount), cellHeight)
+            let maxOffset = currentItemCount - visibleRows
+            let thumbY = track.minY + (trackHeight - thumbHeight) * CGFloat(currentOffset) / CGFloat(maxOffset)
             TakoTUI.ember.setFill()
             NSBezierPath(roundedRect: NSRect(x: track.minX, y: thumbY, width: track.width, height: thumbHeight),
                          xRadius: 1.5, yRadius: 1.5).fill()
@@ -122,8 +192,11 @@ extension TerminalSettingsDialog {
             drawText(prompt, col: 3, row: bottomRow, font: style.boldFont, color: TakoTUI.claw)
         } else if let status = statusMessage {
             drawText(status, col: 3, row: bottomRow, font: style.font, color: TakoTUI.claw)
+        } else if activeTab == .keybindings {
+            let hint = "↑↓ navigate · return/R record · D reset · 1/2 tabs · / search · esc close"
+            drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         } else {
-            let hint = "↑↓ navigate · return/R record · D reset · / search · esc close"
+            let hint = "↑↓ navigate · return/space toggle/cycle · D reset · 1/2 tabs · / search · esc close"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         }
     }

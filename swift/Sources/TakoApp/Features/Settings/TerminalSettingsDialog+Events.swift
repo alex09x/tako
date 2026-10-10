@@ -55,6 +55,16 @@ extension TerminalSettingsDialog {
             return true
         }
 
+        // Tab switching shortcuts: Cmd+1 for Keybindings, Cmd+2 for Terminal Settings
+        if flags == .command && event.charactersIgnoringModifiers == "1" {
+            switchTab(to: .keybindings)
+            return true
+        }
+        if flags == .command && event.charactersIgnoringModifiers == "2" {
+            switchTab(to: .terminalSettings)
+            return true
+        }
+
         // Allow standard clipboard and text editing shortcuts while searching
         if let field = searchField, window?.firstResponder == field.currentEditor() {
             if flags == .command, let char = event.charactersIgnoringModifiers?.lowercased() {
@@ -83,11 +93,26 @@ extension TerminalSettingsDialog {
         switch event.keyCode {
         case 126: moveSelection(-1)            // Up
         case 125: moveSelection(1)             // Down
+        case 123:                              // Left
+            if activeTab == .terminalSettings {
+                toggleOrCycleSelectedSetting(reverse: true)
+            }
+        case 124:                              // Right
+            if activeTab == .terminalSettings {
+                toggleOrCycleSelectedSetting(reverse: false)
+            }
         case 116: moveSelection(-visibleRows) // Page Up
         case 121: moveSelection(visibleRows)  // Page Down
         case 115: scrollTo(0)                 // Home
-        case 119: scrollTo(filteredItems.count - 1) // End
-        case 36, 76: startRecording()         // Return / Enter
+        case 119:                             // End
+            let count = activeTab == .keybindings ? filteredItems.count : filteredSettingItems.count
+            scrollTo(max(count - 1, 0))
+        case 36, 76:                          // Return / Enter
+            if activeTab == .keybindings {
+                startRecording()
+            } else {
+                toggleOrCycleSelectedSetting()
+            }
         case 53: withdraw()                    // Esc
         case 48:                               // Tab -> Focus search
             if let field = searchField {
@@ -100,8 +125,26 @@ extension TerminalSettingsDialog {
                 return
             }
             switch chars {
-            case "r": startRecording()
-            case "d": resetSelected()
+            case " ":
+                if activeTab == .terminalSettings {
+                    toggleOrCycleSelectedSetting()
+                }
+            case "1":
+                switchTab(to: .keybindings)
+            case "2":
+                switchTab(to: .terminalSettings)
+            case "r":
+                if activeTab == .keybindings {
+                    startRecording()
+                } else {
+                    toggleOrCycleSelectedSetting()
+                }
+            case "d":
+                if activeTab == .keybindings {
+                    resetSelected()
+                } else {
+                    resetSelectedSetting()
+                }
             case "/":
                 if let field = searchField {
                     window?.makeFirstResponder(field)
@@ -239,17 +282,46 @@ extension TerminalSettingsDialog {
             return
         }
 
+        // Check Row 1 clicks for tab switching: [1] Keybindings, [2] Terminal Settings
+        let tabY = cell(0, 1).y
+        if pt.y >= tabY && pt.y < tabY + cellHeight {
+            let tab1Title = " [1] Keybindings "
+            let tab1Col = 3
+            let tab2Col = tab1Col + tab1Title.count + 2
+            let tab2Title = " [2] Terminal Settings "
+            let relCol = Int((pt.x - cell(0, 0).x) / cellWidth)
+            if relCol >= tab1Col && relCol < tab1Col + tab1Title.count {
+                switchTab(to: .keybindings)
+                return
+            } else if relCol >= tab2Col && relCol < tab2Col + tab2Title.count {
+                switchTab(to: .terminalSettings)
+                return
+            }
+        }
+
         let startY = cell(0, 5).y
         let rowHeight = cellHeight
         if pt.y >= startY && pt.y < startY + CGFloat(visibleRows) * rowHeight {
             let clickedVisible = Int((pt.y - startY) / rowHeight)
-            let targetIdx = scrollOffset + clickedVisible
-            if targetIdx < filteredItems.count {
-                selectedIndex = targetIdx
-                if event.clickCount == 2 {
-                    startRecording()
-                } else {
-                    needsDisplay = true
+            if activeTab == .keybindings {
+                let targetIdx = scrollOffset + clickedVisible
+                if targetIdx < filteredItems.count {
+                    selectedIndex = targetIdx
+                    if event.clickCount == 2 {
+                        startRecording()
+                    } else {
+                        needsDisplay = true
+                    }
+                }
+            } else {
+                let targetIdx = scrollSettingOffset + clickedVisible
+                if targetIdx < filteredSettingItems.count {
+                    selectedSettingIndex = targetIdx
+                    if event.clickCount == 2 {
+                        toggleOrCycleSelectedSetting()
+                    } else {
+                        needsDisplay = true
+                    }
                 }
             }
         }
@@ -263,22 +335,38 @@ extension TerminalSettingsDialog {
     override func otherMouseUp(with event: NSEvent) {}
 
     func moveSelection(_ delta: Int) {
-        guard !filteredItems.isEmpty else { return }
         pendingConflict = nil
-        selectedIndex = min(max(selectedIndex + delta, 0), filteredItems.count - 1)
-        if selectedIndex < scrollOffset {
-            scrollOffset = selectedIndex
-        } else if selectedIndex >= scrollOffset + visibleRows {
-            scrollOffset = selectedIndex - visibleRows + 1
+        if activeTab == .keybindings {
+            guard !filteredItems.isEmpty else { return }
+            selectedIndex = min(max(selectedIndex + delta, 0), filteredItems.count - 1)
+            if selectedIndex < scrollOffset {
+                scrollOffset = selectedIndex
+            } else if selectedIndex >= scrollOffset + visibleRows {
+                scrollOffset = selectedIndex - visibleRows + 1
+            }
+        } else {
+            guard !filteredSettingItems.isEmpty else { return }
+            selectedSettingIndex = min(max(selectedSettingIndex + delta, 0), filteredSettingItems.count - 1)
+            if selectedSettingIndex < scrollSettingOffset {
+                scrollSettingOffset = selectedSettingIndex
+            } else if selectedSettingIndex >= scrollSettingOffset + visibleRows {
+                scrollSettingOffset = selectedSettingIndex - visibleRows + 1
+            }
         }
         needsDisplay = true
     }
 
     func scrollTo(_ target: Int) {
-        guard !filteredItems.isEmpty else { return }
         pendingConflict = nil
-        selectedIndex = min(max(target, 0), filteredItems.count - 1)
-        scrollOffset = max(0, min(selectedIndex, filteredItems.count - visibleRows))
+        if activeTab == .keybindings {
+            guard !filteredItems.isEmpty else { return }
+            selectedIndex = min(max(target, 0), filteredItems.count - 1)
+            scrollOffset = max(0, min(selectedIndex, filteredItems.count - visibleRows))
+        } else {
+            guard !filteredSettingItems.isEmpty else { return }
+            selectedSettingIndex = min(max(target, 0), filteredSettingItems.count - 1)
+            scrollSettingOffset = max(0, min(selectedSettingIndex, filteredSettingItems.count - visibleRows))
+        }
         needsDisplay = true
     }
 
@@ -315,10 +403,18 @@ extension TerminalSettingsDialog {
 
     override func scrollWheel(with event: NSEvent) {
         let delta = event.scrollingDeltaY
-        if delta > 0 {
-            scrollOffset = max(scrollOffset - 1, 0)
-        } else if delta < 0 {
-            scrollOffset = min(scrollOffset + 1, max(filteredItems.count - visibleRows, 0))
+        if activeTab == .keybindings {
+            if delta > 0 {
+                scrollOffset = max(scrollOffset - 1, 0)
+            } else if delta < 0 {
+                scrollOffset = min(scrollOffset + 1, max(filteredItems.count - visibleRows, 0))
+            }
+        } else {
+            if delta > 0 {
+                scrollSettingOffset = max(scrollSettingOffset - 1, 0)
+            } else if delta < 0 {
+                scrollSettingOffset = min(scrollSettingOffset + 1, max(filteredSettingItems.count - visibleRows, 0))
+            }
         }
         needsDisplay = true
     }
@@ -328,19 +424,7 @@ extension TerminalSettingsDialog {
     func controlTextDidChange(_ obj: Notification) {
         pendingConflict = nil
         guard let field = searchField else { return }
-        let query = field.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
-        if query.isEmpty {
-            filteredItems = allItems
-        } else {
-            filteredItems = allItems.filter {
-                $0.title.lowercased().contains(query) ||
-                $0.id.lowercased().contains(query) ||
-                KeybindRegistry.format(shortcut: KeybindRegistry.defaultShortcut(for: $0.id) ?? .init(" ", modifiers: [])).lowercased().contains(query)
-            }
-        }
-        selectedIndex = 0
-        scrollOffset = 0
-        needsDisplay = true
+        filterItems(field.stringValue)
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -375,7 +459,11 @@ extension TerminalSettingsDialog {
         }
         if commandSelector == #selector(insertNewline(_:)) {
             window?.makeFirstResponder(self)
-            startRecording()
+            if activeTab == .keybindings {
+                startRecording()
+            } else {
+                toggleOrCycleSelectedSetting()
+            }
             return true
         }
         if commandSelector == #selector(insertTab(_:)) || commandSelector == #selector(insertBacktab(_:)) {

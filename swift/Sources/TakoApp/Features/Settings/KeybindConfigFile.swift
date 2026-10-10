@@ -32,7 +32,7 @@ public final class KeybindConfigFile: ObservableObject {
         if let explicit = explicitConfigPath {
             return explicit.isEmpty ? nil : (explicit as NSString).expandingTildeInPath
         }
-        if let appDelegate = NSApp.delegate as? AppDelegate {
+        if let appDelegate = (NSApp as NSApplication?)?.delegate as? AppDelegate {
             return appDelegate.tako.activeConfigPath
         }
         if let env = ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"], !env.isEmpty {
@@ -203,9 +203,9 @@ public final class KeybindConfigFile: ObservableObject {
         }
     }
 
-    // MARK: - Private Helpers
+    // MARK: - File Helpers
 
-    private func ensureConfigFileExists(at path: String) throws {
+    func ensureConfigFileExists(at path: String) throws {
         let dir = (path as NSString).deletingLastPathComponent
         if !FileManager.default.fileExists(atPath: dir) {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -216,12 +216,12 @@ public final class KeybindConfigFile: ObservableObject {
         }
     }
 
-    private func saveLinesAndReload(_ lines: [String], to path: String) throws {
+    func saveLinesAndReload(_ lines: [String], to path: String) throws {
         let output = lines.joined(separator: "\n")
         try output.write(toFile: path, atomically: true, encoding: .utf8)
         reload()
 
-        if let appDelegate = NSApp.delegate as? AppDelegate {
+        if let appDelegate = (NSApp as NSApplication?)?.delegate as? AppDelegate {
             appDelegate.tako.reloadConfig()
         }
     }

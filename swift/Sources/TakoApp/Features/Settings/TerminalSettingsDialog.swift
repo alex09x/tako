@@ -38,12 +38,34 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         }
     }
 
+    public enum SettingsTab: Int, CaseIterable, Sendable {
+        case keybindings = 0
+        case terminalSettings = 1
+
+        public var title: String {
+            switch self {
+            case .keybindings: return "Keybindings"
+            case .terminalSettings: return "Terminal Settings"
+            }
+        }
+    }
+
     let style: Style
     let configFile: KeybindConfigFile
+    var activeTab: SettingsTab = .keybindings
+
+    // Keybindings state
     var allItems: [KeybindActionItem] = KeybindRegistry.allActions
     var filteredItems: [KeybindActionItem] = []
     var selectedIndex: Int = 0
     var scrollOffset: Int = 0
+
+    // Terminal Settings state
+    var allSettingItems: [TerminalSettingItem] = TerminalSettingRegistry.allSettings
+    var filteredSettingItems: [TerminalSettingItem] = []
+    var selectedSettingIndex: Int = 0
+    var scrollSettingOffset: Int = 0
+
     var searchField: NSTextField?
     var isRecording: Bool = false
     var recordingHeldModifiers: NSEvent.ModifierFlags = []
@@ -64,9 +86,19 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     let visibleRows: Int = 14
     var totalRows: Int { visibleRows + 9 }
 
-    static func show(in window: NSWindow, theme: TerminalTheme? = nil, configPath: String? = nil) {
+    static func show(
+        in window: NSWindow,
+        theme: TerminalTheme? = nil,
+        configPath: String? = nil,
+        tab: SettingsTab = .keybindings
+    ) {
         if let existing = window.contentView?.subviews.first(where: { $0 is TerminalSettingsDialog }) {
-            (existing as? TerminalSettingsDialog)?.withdraw()
+            let dialog = existing as? TerminalSettingsDialog
+            if dialog?.activeTab != tab {
+                dialog?.switchTab(to: tab)
+            } else {
+                dialog?.withdraw()
+            }
             return
         }
 
@@ -78,7 +110,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         let configFile = KeybindConfigFile(configPath: resolvedPath)
         configFile.reload()
 
-        let dialog = TerminalSettingsDialog(style: .from(theme), configFile: configFile)
+        let dialog = TerminalSettingsDialog(style: .from(theme), configFile: configFile, initialTab: tab)
         dialog.frame = content.bounds
         dialog.autoresizingMask = [.width, .height]
         dialog.previousResponder = window.firstResponder
@@ -88,24 +120,27 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         dialog.needsLayout = true
     }
 
-    init(style: Style, configFile: KeybindConfigFile? = nil) {
+    init(style: Style, configFile: KeybindConfigFile? = nil, initialTab: SettingsTab = .keybindings) {
         self.style = style
         self.configFile = configFile ?? .shared
+        self.activeTab = initialTab
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor
 
         filteredItems = allItems
+        filteredSettingItems = allSettingItems
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("TerminalSettingsDialog")
-        setAccessibilityLabel("Tako Keybindings & Settings")
-        setAccessibilityTitle("Tako Keybindings & Settings")
-        setAccessibilityValue("idle")
+        setAccessibilityLabel("Tako Settings")
+        setAccessibilityTitle("Tako Settings")
+        setAccessibilityValue(initialTab.title)
 
         setupSearchField()
         setupButtons()
+        updateButtonsForActiveTab()
     }
 
     @available(*, unavailable)
@@ -117,7 +152,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     private func setupSearchField() {
         let field = NSTextField()
-        field.placeholderString = "Filter actions or shortcuts (type to search)…"
+        field.placeholderString = "Filter actions, settings, or shortcuts (type to search)…"
         field.isBordered = false
         field.drawsBackground = true
         field.backgroundColor = TakoTUI.field
@@ -133,11 +168,14 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     private func setupButtons() {
-        let recordChoice = TerminalDialogView.Choice(title: "Record (R)", kind: .primary)
+        let primaryChoice = TerminalDialogView.Choice(
+            title: activeTab == .keybindings ? "Record (R)" : "Change (Space)",
+            kind: .primary
+        )
         let resetChoice = TerminalDialogView.Choice(title: "Reset (D)", kind: .normal)
         let closeChoice = TerminalDialogView.Choice(title: "Close (Esc)", kind: .normal)
 
-        buttons = [recordChoice, resetChoice, closeChoice].enumerated().map { index, choice in
+        buttons = [primaryChoice, resetChoice, closeChoice].enumerated().map { index, choice in
             let btn = DialogButton(choice: choice, style: .init(
                 font: style.font, background: style.background, foreground: style.foreground,
                 accent: style.accent, accentEnd: style.accentEnd, muted: style.muted
@@ -146,7 +184,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             btn.action = #selector(buttonPressed(_:))
             btn.tag = index
             switch index {
-            case 0: btn.setAccessibilityIdentifier("SettingsRecordButton")
+            case 0: btn.setAccessibilityIdentifier("SettingsPrimaryActionButton")
             case 1: btn.setAccessibilityIdentifier("SettingsResetButton")
             case 2: btn.setAccessibilityIdentifier("SettingsCloseButton")
             default: break
@@ -156,13 +194,100 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         }
     }
 
+    func updateButtonsForActiveTab() {
+        guard buttons.count >= 3 else { return }
+        if activeTab == .keybindings {
+            buttons[0].title = "Record (R)"
+            buttons[0].setAccessibilityIdentifier("SettingsRecordButton")
+        } else {
+            buttons[0].title = "Change (Space)"
+            buttons[0].setAccessibilityIdentifier("SettingsChangeButton")
+        }
+        needsLayout = true
+        needsDisplay = true
+    }
+
     @objc private func buttonPressed(_ sender: DialogButton) {
         switch sender.tag {
-        case 0: startRecording()
-        case 1: resetSelected()
-        case 2: withdraw()
+        case 0:
+            if activeTab == .keybindings {
+                startRecording()
+            } else {
+                toggleOrCycleSelectedSetting()
+            }
+        case 1:
+            if activeTab == .keybindings {
+                resetSelected()
+            } else {
+                resetSelectedSetting()
+            }
+        case 2:
+            withdraw()
         default: break
         }
+    }
+
+    func toggleOrCycleSelectedSetting(reverse: Bool = false) {
+        guard selectedSettingIndex < filteredSettingItems.count else { return }
+        let item = filteredSettingItems[selectedSettingIndex]
+        let current = configFile.effectiveSettingValue(for: item)
+        let next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
+        configFile.setSettingValue(next, for: item)
+        statusMessage = "Saved: \(item.id) = \(next)"
+        needsDisplay = true
+    }
+
+    func resetSelectedSetting() {
+        guard selectedSettingIndex < filteredSettingItems.count else { return }
+        let item = filteredSettingItems[selectedSettingIndex]
+        configFile.removeSettingValue(for: item)
+        statusMessage = "Reset to default: \(item.id)"
+        needsDisplay = true
+    }
+
+    func switchTab(to tab: SettingsTab) {
+        guard activeTab != tab else { return }
+        activeTab = tab
+        pendingConflict = nil
+        isRecording = false
+        statusMessage = nil
+        updateButtonsForActiveTab()
+        filterItems(searchField?.stringValue ?? "")
+        setAccessibilityValue(activeTab.title)
+        needsDisplay = true
+    }
+
+    func filterItems(_ query: String) {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        if activeTab == .keybindings {
+            if q.isEmpty {
+                filteredItems = allItems
+            } else {
+                filteredItems = allItems.filter { item in
+                    item.title.localizedCaseInsensitiveContains(q)
+                        || item.id.localizedCaseInsensitiveContains(q)
+                        || (configFile.customOverrides[item.id]?.localizedCaseInsensitiveContains(q) ?? false)
+                        || (KeybindRegistry.defaultShortcut(for: item.id).map { KeybindRegistry.format(shortcut: $0) }?.localizedCaseInsensitiveContains(q) ?? false)
+                }
+            }
+            selectedIndex = 0
+            scrollOffset = 0
+        } else {
+            if q.isEmpty {
+                filteredSettingItems = allSettingItems
+            } else {
+                filteredSettingItems = allSettingItems.filter { item in
+                    item.title.localizedCaseInsensitiveContains(q)
+                        || item.id.localizedCaseInsensitiveContains(q)
+                        || item.category.localizedCaseInsensitiveContains(q)
+                        || item.description.localizedCaseInsensitiveContains(q)
+                        || item.aliases.contains { $0.localizedCaseInsensitiveContains(q) }
+                }
+            }
+            selectedSettingIndex = 0
+            scrollSettingOffset = 0
+        }
+        needsDisplay = true
     }
 
     func withdraw() {
