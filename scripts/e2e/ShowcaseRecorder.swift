@@ -85,12 +85,53 @@ final class ShowcaseRecorder {
         cleanup()
     }
 
-    static func preflightCheck(fullDisplay: Bool = false, stage: CGRect = ShowcaseStage.bounds) throws {
+    static func classifyPreflightResult(
+        terminationStatus: Int32,
+        stderr: String,
+        timedOut: Bool = false,
+        outputValid: Bool = true,
+        hasPermission: Bool = CGPreflightScreenCaptureAccess()
+    ) -> Result<Void, RecorderPreflightError> {
+        if timedOut {
+            return .failure(.timeout(duration: 5.0))
+        }
+        if !hasPermission {
+            return .failure(.permissionDenied(detail: "CGPreflightScreenCaptureAccess API returned false (Screen Recording permission not granted)"))
+        }
+        if terminationStatus != 0 {
+            let lower = stderr.lowercased()
+            if lower.contains("kcgerrorcannotcomplete") ||
+               lower.contains("not permitted") ||
+               lower.contains("permission denied") ||
+               lower.contains("authorization denied") ||
+               lower.contains("screen recording") {
+                return .failure(.permissionDenied(detail: "screencapture exit \(terminationStatus): \(stderr)"))
+            }
+            return .failure(.processFailure(exitCode: terminationStatus, stderr: stderr))
+        }
+        if !outputValid {
+            return .failure(.invalidOutput(detail: "Preflight capture file missing or size <= 1000 bytes"))
+        }
+        return .success(())
+    }
+
+    static func preflightCheck(
+        fullDisplay: Bool = false,
+        stage: CGRect = ShowcaseStage.bounds,
+        permissionChecker: () -> Bool = { CGPreflightScreenCaptureAccess() },
+        executableURL: URL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    ) throws {
+        guard permissionChecker() else {
+            throw RecorderPreflightError.permissionDenied(
+                detail: "CGPreflightScreenCaptureAccess API returned false (macOS Screen Recording permission required)"
+            )
+        }
+
         let testOut = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("recorder_preflight_\(UUID().uuidString).mov")
         defer { try? FileManager.default.removeItem(at: testOut) }
 
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.executableURL = executableURL
         if fullDisplay {
             p.arguments = ["-v", "-V", "1", testOut.path]
         } else {
@@ -105,26 +146,38 @@ final class ShowcaseRecorder {
         while p.isRunning && Date() < deadline {
             usleep(100_000)
         }
+        var timedOut = false
         if p.isRunning {
+            timedOut = true
             p.terminate()
             usleep(200_000)
             if p.isRunning {
                 kill(p.processIdentifier, SIGKILL)
             }
             p.waitUntilExit()
-            throw Failure("Screen recording preflight timed out after 5.0s")
+        } else {
+            p.waitUntilExit()
         }
-        p.waitUntilExit()
 
-        guard p.terminationStatus == 0 else {
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw Failure("Screen recording preflight check failed (exit \(p.terminationStatus)): \(errStr). Ensure Screen Recording permission is granted.")
-        }
-        guard FileManager.default.fileExists(atPath: testOut.path),
-              let attrs = try? FileManager.default.attributesOfItem(atPath: testOut.path),
-              (attrs[.size] as? Int64 ?? 0) > 1000 else {
-            throw Failure("Screen recording preflight produced empty or invalid output.")
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let fileAttrs = try? FileManager.default.attributesOfItem(atPath: testOut.path)
+        let fileSize = fileAttrs?[.size] as? Int64 ?? 0
+        let outputValid = FileManager.default.fileExists(atPath: testOut.path) && fileSize > 1000
+
+        let classification = classifyPreflightResult(
+            terminationStatus: p.terminationStatus,
+            stderr: errStr,
+            timedOut: timedOut,
+            outputValid: outputValid,
+            hasPermission: permissionChecker()
+        )
+        switch classification {
+        case .success:
+            break
+        case .failure(let err):
+            throw err
         }
     }
 
@@ -268,3 +321,66 @@ final class ShowcaseRecorder {
         }
     }
 }
+
+// MARK: - Recorder Preflight Fixtures
+
+struct ShowcaseRecorderFixtures {
+    static func verifyFixtures() throws {
+        // Fixture 1: Permission denial via API
+        let apiDenial = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 0,
+            stderr: "",
+            hasPermission: false
+        )
+        guard case .failure(.permissionDenied) = apiDenial else {
+            throw Failure("Fixture error: permission API denial must classify as permissionDenied")
+        }
+
+        // Fixture 2: Permission denial via preserved diagnostic in stderr
+        let diagDenial = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 1,
+            stderr: "screencapture: not permitted to capture display contents",
+            hasPermission: true
+        )
+        guard case .failure(.permissionDenied) = diagDenial else {
+            throw Failure("Fixture error: stderr with permission denial must classify as permissionDenied")
+        }
+
+        // Fixture 3: Unrelated nonzero recorder exit (preserves raw exit code and stderr, permission cause unknown)
+        let unrelatedExit = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 2,
+            stderr: "screencapture: illegal option -- z",
+            hasPermission: true
+        )
+        guard case .failure(.processFailure(exitCode: 2, stderr: let err)) = unrelatedExit,
+              err.contains("illegal option") else {
+            throw Failure("Fixture error: unrelated nonzero exit must classify as processFailure")
+        }
+
+        // Fixture 4: Subprocess fixture with simulated permission denial
+        do {
+            try ShowcaseRecorder.preflightCheck(
+                permissionChecker: { false }
+            )
+            throw Failure("Fixture error: preflightCheck with permissionChecker=false must throw")
+        } catch let err as RecorderPreflightError {
+            guard case .permissionDenied = err else {
+                throw Failure("Fixture error: expected permissionDenied, got: \(err)")
+            }
+        }
+
+        // Fixture 5: Subprocess fixture with unrelated nonzero exit (/usr/bin/false)
+        do {
+            try ShowcaseRecorder.preflightCheck(
+                permissionChecker: { true },
+                executableURL: URL(fileURLWithPath: "/usr/bin/false")
+            )
+            throw Failure("Fixture error: preflightCheck with /usr/bin/false must throw")
+        } catch let err as RecorderPreflightError {
+            guard case .processFailure(exitCode: let code, _) = err, code != 0 else {
+                throw Failure("Fixture error: expected processFailure with nonzero exit, got: \(err)")
+            }
+        }
+    }
+}
+

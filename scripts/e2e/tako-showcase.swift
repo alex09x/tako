@@ -30,6 +30,18 @@ struct TakoShowcaseMain {
             exit(0)
         }
 
+        if rawArgs.contains("--self-test") {
+            do {
+                try ShowcaseRecorderFixtures.verifyFixtures()
+                print("Showcase self-test: OK (recorder preflight fixtures passed)")
+                exit(0)
+            } catch {
+                print("FAIL: Showcase self-test failed: \(error)")
+                exit(1)
+            }
+        }
+
+
         guard !rawArgs.isEmpty, !rawArgs[0].hasPrefix("-") else {
             print("Usage: tako-showcase <path-to-Tako.app> [--pace fast|presentation] [--scene <id>] [--chapter core|optional|all] [--record <file>] [--display] [--output-dir <dir>] [--list]")
             exit(1)
@@ -83,85 +95,22 @@ struct TakoShowcaseMain {
             recState: RecordingState,
             recReason: String?
         ) -> Bool {
-            let passed = scenes.filter { $0.status == "PASS" }.count
-            let failed = scenes.filter { $0.status == "FAIL" }.count
-            let skipped = scenes.filter { $0.status != "PASS" && $0.status != "FAIL" }.count
-
-            let overallStatus = (failed == 0 && errorMsg == nil) ? "OK" : "FAILED"
-
-            let recReport = ShowcaseRecordingReport(
-                state: recState,
-                targetPath: recordPath,
-                reason: recReason,
-                video: video
-            )
-
-            let rep = ShowcaseReport(
-                timestamp: ISO8601DateFormatter().string(from: Date()),
-                gitRevision: gitRev,
+            ShowcaseReport.persist(
+                outputDirURL: outputDirURL,
+                scenes: scenes,
+                video: video,
+                errorMsg: errorMsg,
+                recState: recState,
+                recReason: recReason,
+                recordPath: recordPath,
                 appPath: appPath,
                 bundleId: bundleId,
-                commandOptions: rawArgs,
-                pacing: pacing.rawValue,
-                status: overallStatus,
-                failedCount: failed,
-                passedCount: passed,
-                skippedCount: skipped,
-                scenes: scenes,
-                recording: recReport,
-                video: video,
-                error: errorMsg
+                gitRev: gitRev,
+                rawArgs: rawArgs,
+                pacing: pacing.rawValue
             )
-
-            do {
-                let enc = JSONEncoder()
-                enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let data = try enc.encode(rep)
-                try data.write(to: outputDirURL.appendingPathComponent("showcase_report.json"))
-
-                var lines = [
-                    "Tako Showcase Report",
-                    "Timestamp: \(rep.timestamp)",
-                    "Revision: \(rep.gitRevision)",
-                    "App: \(rep.appPath) (Bundle: \(rep.bundleId))",
-                    "Pacing: \(rep.pacing)",
-                    "Status: \(overallStatus)",
-                    "Passed: \(passed), Failed: \(failed), Skipped/Unrequested: \(skipped)",
-                    "",
-                    "Scenes:",
-                ]
-                for s in scenes {
-                    lines.append("  [\(s.status)] \(s.id) (\(String(format: "%.2f", s.durationSeconds))s) - \(s.feature)")
-                    if !s.evidence.isEmpty {
-                        lines.append("    Evidence: \(s.evidence)")
-                    }
-                }
-                lines.append("")
-                lines.append("Recording:")
-                lines.append("  State: \(recReport.state.rawValue)")
-                if let reason = recReport.reason {
-                    lines.append("  Reason: \(reason)")
-                }
-                if let v = video {
-                    lines.append("  Path: \(v.path)")
-                    lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s (Expected: \(String(format: "%.2f", v.expectedMinDuration))s)")
-                    lines.append("  Resolution: \(Int(v.width))x\(Int(v.height))")
-                    lines.append("  Size: \(v.fileSize) bytes")
-                    lines.append("  Decoded Samples: \(v.decodedSampleCount)")
-                    lines.append("  Status: \(v.status)")
-                }
-                if let err = errorMsg {
-                    lines.append("")
-                    lines.append("Error: \(err)")
-                }
-                try lines.joined(separator: "\n").write(to: outputDirURL.appendingPathComponent("showcase_report.txt"), atomically: true, encoding: .utf8)
-                print("Showcase artifacts written to: \(outputDirURL.path)")
-                return true
-            } catch {
-                print("FAIL: Failed to persist showcase artifacts: \(error)")
-                return false
-            }
         }
+
 
         // Determine target scenes
         let targetScenes: [ShowcaseScene]
@@ -227,24 +176,49 @@ struct TakoShowcaseMain {
                 try ShowcaseRecorder.preflightCheck(fullDisplay: recordFullDisplay)
                 let recURL = URL(fileURLWithPath: recPath)
                 recorder = try ShowcaseRecorder(targetFile: recURL, fullDisplay: recordFullDisplay)
-            } catch {
-                let errStr = "\(error)"
-                let isTcc = errStr.contains("Screen Recording permission") || errStr.contains("preflight check failed")
-                let recState: RecordingState = isTcc ? .tccBlocked : .failed
-                let recReason = isTcc
-                    ? "macOS Screen Recording permission denied or unavailable in this session"
-                    : errStr
+            } catch let preflightErr as RecorderPreflightError {
+                let recState: RecordingState
+                let recReason: String
+                switch preflightErr {
+                case .permissionDenied(let detail):
+                    recState = .tccBlocked
+                    recReason = "macOS Screen Recording permission denied: \(detail)"
+                case .processFailure(let exitCode, let stderr):
+                    recState = .failed
+                    let cleanErr = stderr.isEmpty ? "screencapture process failed" : stderr
+                    recReason = "Recorder process failed (exit \(exitCode)): \(cleanErr) (permission cause unknown)"
+                case .timeout(let duration):
+                    recState = .failed
+                    recReason = "Recorder preflight timed out after \(duration)s"
+                case .invalidOutput(let detail):
+                    recState = .failed
+                    recReason = "Recorder preflight produced invalid output: \(detail)"
+                }
                 let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
                 _ = persistReport(
                     scenes: reports,
                     video: nil,
-                    errorMsg: "Screen recording preflight error: \(error)",
+                    errorMsg: "Screen recording preflight error: \(preflightErr)",
                     recState: recState,
                     recReason: recReason
                 )
-                print("FAIL: Screen recording preflight error: \(error)")
+                print("FAIL: Screen recording preflight error: \(preflightErr)")
+                exit(1)
+            } catch {
+                let recState: RecordingState = .failed
+                let recReason = "Recorder initialization failed: \(error)"
+                let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
+                _ = persistReport(
+                    scenes: reports,
+                    video: nil,
+                    errorMsg: "Screen recording initialization error: \(error)",
+                    recState: recState,
+                    recReason: recReason
+                )
+                print("FAIL: Screen recording initialization error: \(error)")
                 exit(1)
             }
+
         }
 
         let previouslyFront = NSWorkspace.shared.frontmostApplication

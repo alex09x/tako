@@ -60,6 +60,17 @@ while [ $# -gt 0 ]; do
             fi
             exit 0
             ;;
+        --self-test)
+            [ -x target/tako-showcase ] || swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}" 2>/dev/null || true
+            if [ -x target/tako-showcase ]; then
+                ./target/tako-showcase --self-test
+            else
+                swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}"
+                ./target/tako-showcase --self-test
+            fi
+            exit 0
+            ;;
+
         *)
             FORWARD_ARGS+=("$1")
             shift

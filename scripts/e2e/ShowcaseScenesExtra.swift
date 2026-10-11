@@ -222,17 +222,6 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         d.key(Key.grave, [.maskCommand, .maskShift])
         usleep(800_000)
 
-        // Verify failure-path: simulated AX query error must fail-close and NOT satisfy dismissal
-        let simulatedAxFailure: () -> Bool = {
-            let simulatedResult: Result<[(element: AXUIElement, id: CGWindowID)], Error> = .failure(Failure("Simulated AX Error"))
-            guard case .success(let list) = simulatedResult else { return false }
-            let ids = Set(list.map { $0.id })
-            return ids.contains(origWinId) && !ids.contains(qtWinId)
-        }
-        guard !simulatedAxFailure() else {
-            throw Failure("Dismissal predicate improperly satisfied by simulated AX query failure")
-        }
-
         // Step 5: Require throwing window query showing exact QT absence while original window is confirmed present
         guard d.wait(for: {
             guard let queried = try? d.queryWindowIDs() else { return false }
@@ -241,6 +230,7 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         }, timeout: 5) else {
             throw Failure("Quick Terminal window (id: \(qtWinId)) was not confirmed absent or original window (id: \(origWinId)) was missing")
         }
+
 
         // Step 6: Verify unassisted focus return to original pane WITHOUT any activate/focus/AX-main repair
         // NOTE: No d.activate(), no d.focus(), no kAXMainAttribute manipulation!

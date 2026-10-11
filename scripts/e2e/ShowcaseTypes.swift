@@ -161,6 +161,29 @@ enum RecordingState: String, Codable {
     case mediaValidatedContentUnverified = "MEDIA_VALIDATED_CONTENT_UNVERIFIED"
 }
 
+// MARK: - Preflight Errors
+
+enum RecorderPreflightError: Error, Equatable, CustomStringConvertible {
+    case permissionDenied(detail: String)
+    case timeout(duration: Double)
+    case processFailure(exitCode: Int32, stderr: String)
+    case invalidOutput(detail: String)
+
+    var description: String {
+        switch self {
+        case .permissionDenied(let detail):
+            return "Screen Recording permission denied: \(detail)"
+        case .timeout(let duration):
+            return "Screen recording preflight timed out after \(duration)s"
+        case .processFailure(let exitCode, let stderr):
+            let msg = stderr.isEmpty ? "unknown error" : stderr
+            return "Screen recording process failed (exit \(exitCode)): \(msg)"
+        case .invalidOutput(let detail):
+            return "Screen recording produced invalid output: \(detail)"
+        }
+    }
+}
+
 struct ShowcaseRecordingReport: Codable {
     let state: RecordingState
     let targetPath: String?
@@ -183,4 +206,99 @@ struct ShowcaseReport: Codable {
     let recording: ShowcaseRecordingReport
     let video: VideoMetadata?
     let error: String?
+
+    static func persist(
+        outputDirURL: URL,
+        scenes: [ShowcaseSceneReport],
+        video: VideoMetadata?,
+        errorMsg: String?,
+        recState: RecordingState,
+        recReason: String?,
+        recordPath: String?,
+        appPath: String,
+        bundleId: String,
+        gitRev: String,
+        rawArgs: [String],
+        pacing: String
+    ) -> Bool {
+        let passed = scenes.filter { $0.status == "PASS" }.count
+        let failed = scenes.filter { $0.status == "FAIL" }.count
+        let skipped = scenes.filter { $0.status != "PASS" && $0.status != "FAIL" }.count
+        let overallStatus = (failed == 0 && errorMsg == nil) ? "OK" : "FAILED"
+
+        let recReport = ShowcaseRecordingReport(
+            state: recState,
+            targetPath: recordPath,
+            reason: recReason,
+            video: video
+        )
+
+        let rep = ShowcaseReport(
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            gitRevision: gitRev,
+            appPath: appPath,
+            bundleId: bundleId,
+            commandOptions: rawArgs,
+            pacing: pacing,
+            status: overallStatus,
+            failedCount: failed,
+            passedCount: passed,
+            skippedCount: skipped,
+            scenes: scenes,
+            recording: recReport,
+            video: video,
+            error: errorMsg
+        )
+
+        do {
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try enc.encode(rep)
+            try data.write(to: outputDirURL.appendingPathComponent("showcase_report.json"))
+
+            var lines = [
+                "Tako Showcase Report",
+                "Timestamp: \(rep.timestamp)",
+                "Revision: \(rep.gitRevision)",
+                "App: \(rep.appPath) (Bundle: \(rep.bundleId))",
+                "Pacing: \(rep.pacing)",
+                "Status: \(overallStatus)",
+                "Passed: \(passed), Failed: \(failed), Skipped/Unrequested: \(skipped)",
+                "",
+                "Scenes:",
+            ]
+            for s in scenes {
+                lines.append("  [\(s.status)] \(s.id) (\(String(format: "%.2f", s.durationSeconds))s) - \(s.feature)")
+                if !s.evidence.isEmpty {
+                    lines.append("    Evidence: \(s.evidence)")
+                }
+            }
+            lines.append("")
+            lines.append("Recording:")
+            lines.append("  State: \(recReport.state.rawValue)")
+            if let reason = recReport.reason {
+                lines.append("  Reason: \(reason)")
+            }
+            if let v = video {
+                lines.append("  Path: \(v.path)")
+                lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s (Expected: \(String(format: "%.2f", v.expectedMinDuration))s)")
+                lines.append("  Resolution: \(Int(v.width))x\(Int(v.height))")
+                lines.append("  Size: \(v.fileSize) bytes")
+                lines.append("  Decoded Samples: \(v.decodedSampleCount)")
+                lines.append("  Status: \(v.status)")
+            }
+            if let err = errorMsg {
+                lines.append("")
+                lines.append("Error: \(err)")
+            }
+            try lines.joined(separator: "\n").write(to: outputDirURL.appendingPathComponent("showcase_report.txt"), atomically: true, encoding: .utf8)
+            print("Showcase artifacts written to: \(outputDirURL.path)")
+            return true
+        } catch {
+            print("FAIL: Failed to persist showcase artifacts: \(error)")
+            return false
+        }
+    }
 }
+
+
