@@ -59,6 +59,9 @@ extension Tako.TabBarView {
     private static var shouldPresentNewWorkspaceDialog = false
 
     func showWorkspaceMenu(at point: CGPoint) {
+        if let win = self.window {
+            Tako.CustomTabGroup.lastActiveWindowFrame = win.frame
+        }
         Self.shouldPresentNewWorkspaceDialog = false
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -109,6 +112,9 @@ extension Tako.TabBarView {
     }
 
     @objc func handleWorkspaceSelected(_ sender: NSMenuItem) {
+        if let win = self.window {
+            Tako.CustomTabGroup.lastActiveWindowFrame = win.frame
+        }
         let id = sender.representedObject as? UUID
         let title = sender.title
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

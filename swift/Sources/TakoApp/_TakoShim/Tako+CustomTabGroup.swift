@@ -147,40 +147,61 @@ extension Tako {
                     let departingFrame: NSRect? = {
                         let departingWsId = (notification.userInfo?["fromWorkspaceId"] as? UUID)
                             ?? WorkspaceStore.shared.recentTransitions.last?.fromId
-                        if let departingWsId,
-                           let departingTabs = WorkspaceStore.shared.workspace(for: departingWsId)?.tabIdentifiers,
-                           !departingTabs.isEmpty {
-                            if let keyWin = NSApp.keyWindow, departingTabs.contains(keyWin.stableTabIdentifier) {
-                                return keyWin.frame
+
+                        let belongsToDeparting: (NSWindow) -> Bool = { win in
+                            guard let departingWsId else { return true }
+                            let tabId = win.stableTabIdentifier
+                            if let ws = WorkspaceStore.shared.workspace(forTab: tabId) {
+                                return ws.id == departingWsId
                             }
-                            for group in allGroups {
-                                if let sel = group.selectedWindow, sel.isVisible, departingTabs.contains(sel.stableTabIdentifier) {
-                                    return sel.frame
-                                }
-                            }
-                            for group in allGroups {
-                                if let sel = group.selectedWindow, departingTabs.contains(sel.stableTabIdentifier) {
-                                    return sel.frame
-                                }
-                            }
-                            for group in allGroups {
-                                for win in group.windows where departingTabs.contains(win.stableTabIdentifier) {
-                                    return win.frame
-                                }
-                            }
+                            return departingWsId == WorkspaceStore.defaultWorkspaceId
                         }
-                        if let keyWin = NSApp.keyWindow, groupsByWindow[ObjectIdentifier(keyWin)] != nil {
+
+                        // 1. If key window belongs to departing workspace, use its live frame.
+                        if let keyWin = NSApp.keyWindow, belongsToDeparting(keyWin), groupsByWindow[ObjectIdentifier(keyWin)] != nil {
                             return keyWin.frame
                         }
+
+                        // 2. Check group's remembered window for departing workspace if visible.
+                        if let departingWsId {
+                            for group in allGroups {
+                                if let remembered = group.lastSelectedWindowByWorkspace[departingWsId],
+                                   remembered.isVisible,
+                                   belongsToDeparting(remembered) {
+                                    return remembered.frame
+                                }
+                            }
+                        }
+
+                        // 3. Check group's selected visible window belonging to departing workspace.
                         for group in allGroups {
-                            if let sel = group.selectedWindow, sel.isVisible {
+                            if let sel = group.selectedWindow, sel.isVisible, belongsToDeparting(sel) {
+                                return sel.frame
+                            }
+                        }
+
+                        // 4. Check any visible window belonging to departing workspace.
+                        for group in allGroups {
+                            for win in group.windows where win.isVisible && belongsToDeparting(win) {
+                                return win.frame
+                            }
+                        }
+
+                        // 5. Fall back to any departing window even if hidden.
+                        for group in allGroups {
+                            if let sel = group.selectedWindow, belongsToDeparting(sel) {
                                 return sel.frame
                             }
                         }
                         for group in allGroups {
-                            if let sel = group.selectedWindow {
-                                return sel.frame
+                            for win in group.windows where belongsToDeparting(win) {
+                                return win.frame
                             }
+                        }
+
+                        // 6. Fall back to frontmost Tako window or lastActiveWindowFrame.
+                        if let keyWin = NSApp.keyWindow, groupsByWindow[ObjectIdentifier(keyWin)] != nil {
+                            return keyWin.frame
                         }
                         return lastActiveWindowFrame
                     }()
@@ -189,16 +210,23 @@ extension Tako {
                     }
 
                     let activeWsId = WorkspaceStore.shared.activeWorkspaceId
-                    let assignedTabs = WorkspaceStore.shared.workspace(for: activeWsId)?.tabIdentifiers ?? []
                     let hasWorkspaceWindow = allGroups.contains { group in
-                        group.windows.contains { assignedTabs.contains($0.stableTabIdentifier) }
+                        group.windows.contains { win in
+                            let tabId = win.stableTabIdentifier
+                            if let ws = WorkspaceStore.shared.workspace(forTab: tabId) {
+                                return ws.id == activeWsId
+                            }
+                            return activeWsId == WorkspaceStore.defaultWorkspaceId
+                        }
                     }
                     if !hasWorkspaceWindow, let app = (NSApp.delegate as? AppDelegate)?.tako {
                         let ctrl = TerminalController.newWindow(app)
                         if let win = ctrl.window {
                             let group = CustomTabGroup.group(for: win)
                             if group.syncWindowFrame, let frame = departingFrame {
-                                win.setFrame(frame, display: false)
+                                ctrl.cancelPendingInitialPresentation()
+                                win.setFrame(frame, display: true)
+                                Self.lastActiveWindowFrame = frame
                             }
                             if !suppressWindowOrderingForTesting {
                                 win.makeKeyAndOrderFront(nil)
@@ -272,6 +300,39 @@ extension Tako {
                     let wsId = WorkspaceStore.shared.workspace(forTab: tabId)?.id ?? WorkspaceStore.shared.activeWorkspaceId
                     group.recordSelection(win, for: wsId)
                     WorkspaceStore.shared.setActiveTab(tabIdentifier: tabId, in: wsId)
+                }
+            }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didMoveNotification,
+                object: nil,
+                queue: nil
+            ) { notif in
+                MainActor.assumeIsolated {
+                    guard let win = notif.object as? NSWindow,
+                          groupsByWindow[ObjectIdentifier(win)] != nil else { return }
+                    lastActiveWindowFrame = win.frame
+                }
+            }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: nil,
+                queue: nil
+            ) { notif in
+                MainActor.assumeIsolated {
+                    guard let win = notif.object as? NSWindow,
+                          groupsByWindow[ObjectIdentifier(win)] != nil else { return }
+                    lastActiveWindowFrame = win.frame
+                }
+            }
+            NotificationCenter.default.addObserver(
+                forName: .takoConfigDidChange,
+                object: nil,
+                queue: nil
+            ) { _ in
+                MainActor.assumeIsolated {
+                    if let keyWin = NSApp.keyWindow, groupsByWindow[ObjectIdentifier(keyWin)] != nil {
+                        lastActiveWindowFrame = keyWin.frame
+                    }
                 }
             }
         }
@@ -572,11 +633,15 @@ extension Tako {
                     }
                 }
                 let prev = selectedWindow
+                let controller = (target.windowController as? TerminalController) ??
+                    (target.delegate as? TerminalController) ??
+                    TerminalController.all.first { $0.window === target }
                 if selectedWindow !== target {
                     selectedWindow = target
-                    let frameToSync = prev?.frame ?? inheritedFrame ?? Self.lastActiveWindowFrame
+                    let frameToSync = inheritedFrame ?? prev?.frame ?? Self.lastActiveWindowFrame
                     if syncWindowFrame, let frame = frameToSync {
-                        target.setFrame(frame, display: false)
+                        controller?.cancelPendingInitialPresentation()
+                        target.setFrame(frame, display: true)
                         Self.lastActiveWindowFrame = frame
                     }
                     if !Self.suppressWindowOrderingForTesting {
@@ -588,8 +653,10 @@ extension Tako {
                         }
                     }
                 } else {
-                    if syncWindowFrame, let frame = inheritedFrame ?? Self.lastActiveWindowFrame {
-                        target.setFrame(frame, display: false)
+                    let frameToSync = inheritedFrame ?? Self.lastActiveWindowFrame
+                    if syncWindowFrame, let frame = frameToSync {
+                        controller?.cancelPendingInitialPresentation()
+                        target.setFrame(frame, display: true)
                         Self.lastActiveWindowFrame = frame
                     }
                     if !Self.suppressWindowOrderingForTesting {

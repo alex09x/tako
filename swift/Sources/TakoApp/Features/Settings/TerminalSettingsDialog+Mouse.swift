@@ -65,7 +65,10 @@ extension TerminalSettingsDialog {
                 let targetIdx = scrollSettingOffset + clickedVisible
                 if targetIdx < filteredSettingItems.count {
                     selectedSettingIndex = targetIdx
-                    if event.clickCount == 2 {
+                    let relCol = Int((pt.x - cell(0, 0).x) / cellWidth)
+                    let isValueColumn = relCol >= 44
+
+                    if isValueColumn || event.clickCount == 2 {
                         toggleOrCycleSelectedSetting()
                     } else {
                         updateAccessibilityState()

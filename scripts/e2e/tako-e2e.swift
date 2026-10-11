@@ -674,6 +674,17 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         return (root["workspaces"] as? [[String: Any]]) ?? []
     }
 
+    /// Get current active workspace via takoctl.
+    func workspaceCurrent() throws -> [String: Any]? {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        let out = try exec("\(ctl) workspace current --json")
+        guard let data = out.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return (obj["result"] as? [String: Any]) ?? obj
+    }
+
     /// Get workspace transition history via takoctl.
     func workspaceTransitions() throws -> [[String: Any]] {
         let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
@@ -1105,21 +1116,21 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePo
         }
     }
 
-    func setSize(_ size: CGSize) {
-        guard let window = windows().first else { return }
+    func setSize(_ size: CGSize, for window: AXUIElement? = nil) {
+        guard let win = window ?? activeWindow() ?? windows().first else { return }
         var value = size
         if let axValue = AXValueCreate(.cgSize, &value) {
-            AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, axValue)
+            AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, axValue)
         }
         usleep(100_000)
     }
 
 
-    func setPosition(_ position: CGPoint) {
-        guard let window = windows().first else { return }
+    func setPosition(_ position: CGPoint, for window: AXUIElement? = nil) {
+        guard let win = window ?? activeWindow() ?? windows().first else { return }
         var value = position
         if let axValue = AXValueCreate(.cgPoint, &value) {
-            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, axValue)
+            AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, axValue)
         }
         usleep(100_000)
         focus()
@@ -2371,19 +2382,40 @@ let scenarios: [Scenario] = [
         try d.click(at: CGPoint(x: sfOrigin.x + 20, y: sfOrigin.y + sfExtent.height / 2))
         usleep(200_000)
         try d.type("nonexistentqueryxyz")
-        guard d.wait(for: { d.hasText(containing: "No matching") || !d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
-            throw Failure("nonexistent search query did not produce zero results indication")
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
+                  let searchVal: String = d.attribute(searchField, kAXValueAttribute),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return searchVal == "nonexistentqueryxyz" &&
+                   val.contains("Terminal Settings: 0 items") &&
+                   val.contains("No matching settings")
+        }, timeout: 5) else {
+            let val: String = d.element(withIdentifier: "TerminalSettingsDialog").flatMap { d.attribute($0, kAXValueAttribute) } ?? "nil"
+            throw Failure("nonexistent search query did not produce exact zero-result state in dialog (dialog AXValue: '\(val)')")
         }
 
         // 2. Escape in search field clears active query and recovers full list
         d.key(Key.escape)
-        guard d.wait(for: { d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
-            throw Failure("Escape in search field did not clear query and recover settings list")
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
+                  let searchVal: String = d.attribute(searchField, kAXValueAttribute),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return searchVal.isEmpty && val.contains("Terminal Settings: 15 items") && val.contains("Sync Window Frame")
+        }, timeout: 5) else {
+            throw Failure("Escape in search field did not clear search text and recover full 15 settings list")
         }
 
         // 3. Type "sync" to filter to workspace sync setting
         try d.type("sync")
-        guard d.wait(for: { d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
+                  let searchVal: String = d.attribute(searchField, kAXValueAttribute),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return searchVal == "sync" && val.contains("Sync Window Frame")
+        }, timeout: 5) else {
             throw Failure("typing 'sync' did not filter to Sync Window Frame setting")
         }
 
@@ -2395,8 +2427,13 @@ let scenarios: [Scenario] = [
 
         // Now send Space to toggle setting (Space toggles/cycles setting when dialog is focused)
         d.key(Key.space)
-        guard d.wait(for: { d.hasText(containing: "true") || d.hasText(containing: "custom") }, timeout: 5) else {
-            throw Failure("Space key after mouse click did not toggle filtered setting (responder was not transferred from search editor)")
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return val == "setting_custom_success: workspace-sync-window-frame" ||
+                   val.contains("Custom: workspace-sync-window-frame = true")
+        }, timeout: 5) else {
+            throw Failure("Space key after mouse click did not toggle filtered setting to custom=true")
         }
 
         // Verify search field string value remained "sync"
@@ -2411,10 +2448,11 @@ let scenarios: [Scenario] = [
             throw Failure("Escape did not dismiss settings dialog")
         }
 
-        // Verify config file on disk now contains the persisted setting override
+        // Verify config file on disk now contains the persisted setting override (fail-closed read)
         let configPath = d.path("config")
-        let configContent = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
-        guard configContent.contains("workspace-sync-window-frame = true") else {
+        let configContent = try String(contentsOfFile: configPath, encoding: .utf8)
+        let configLines = configContent.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard configLines.contains("workspace-sync-window-frame = true") else {
             throw Failure("config file was not updated with workspace-sync-window-frame = true: \(configContent)")
         }
 
@@ -2428,7 +2466,12 @@ let scenarios: [Scenario] = [
 
         // Press 'd' to reset setting
         d.key(Key.d)
-        guard d.wait(for: { d.hasText(containing: "reset") || d.hasText(containing: "default") || !d.hasText(containing: "custom") }, timeout: 5) else {
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return val == "setting_reset_success: workspace-sync-window-frame" ||
+                   val.contains("Reset to default: workspace-sync-window-frame")
+        }, timeout: 5) else {
             throw Failure("pressing 'd' did not reset setting")
         }
 
@@ -2438,9 +2481,10 @@ let scenarios: [Scenario] = [
             throw Failure("Escape did not dismiss settings dialog after reset")
         }
 
-        // Verify config file no longer contains the custom override
-        let resetConfigContent = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
-        guard !resetConfigContent.contains("workspace-sync-window-frame = true") else {
+        // Verify config file no longer contains the custom override (fail-closed read)
+        let resetConfigContent = try String(contentsOfFile: configPath, encoding: .utf8)
+        let resetLines = resetConfigContent.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !resetLines.contains(where: { $0.hasPrefix("workspace-sync-window-frame") || $0.hasPrefix("workspace-inherit-window-frame") }) else {
             throw Failure("config file still contained override after reset: \(resetConfigContent)")
         }
 
@@ -4807,17 +4851,52 @@ let scenarios: [Scenario] = [
             try? FileManager.default.removeItem(at: wsDir)
         }
         try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
-        d.setPosition(CGPoint(x: 100, y: 100))
-        d.setSize(CGSize(width: 800, height: 500))
+        d.setPosition(CGPoint(x: 50, y: 50))
+        d.setSize(CGSize(width: 600, height: 400))
         d.focus()
         usleep(1_000_000)
 
-        guard let initialFrameA = d.windowFrame() else {
+        // Capture initial Default workspace ID and Window A1
+        let wsListInitial = try d.workspaceList()
+        guard let wsAInfo = wsListInitial.first(where: { ($0["name"] as? String) == "Default" }),
+              let wsAId = wsAInfo["id"] as? String else {
+            throw Failure("Default workspace record not found")
+        }
+        guard (wsListInitial.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased() else {
+            throw Failure("Default workspace is not active initially (list: \(wsListInitial))")
+        }
+        guard let initialFrameA1 = d.windowFrame() else {
             throw Failure("no window frame discovered for initial window in Default workspace")
         }
+        guard let winA1 = d.activeWindow() else {
+            throw Failure("active window A1 not found")
+        }
 
-        // Create Workspace 2 via real mouse click on Workspace Pill
-        try d.clickWorkspacePill()
+        // Create second window A2 in Default workspace via Cmd+N (multiple groups in Workspace A)
+        d.key(Key.n, .maskCommand)
+        guard d.wait(for: { d.onScreenWindowNumbers().count == 2 }, timeout: 5) else {
+            throw Failure("second window A2 failed to appear after Cmd+N")
+        }
+        guard let winA2 = d.windows().first(where: { d.windowID(for: $0) != d.windowID(for: winA1) }) else {
+            throw Failure("second window A2 AXUIElement not found")
+        }
+        d.setPosition(CGPoint(x: 700, y: 50), for: winA2)
+        d.setSize(CGSize(width: 550, height: 380), for: winA2)
+        usleep(500_000)
+
+        // Re-focus Window A1 to establish it as the departing active window
+        try d.click(at: CGPoint(x: 250, y: 150))
+        usleep(600_000)
+        guard let activeFrame = d.windowFrame(), abs(activeFrame.origin.x - 50) < 15 else {
+            throw Failure("Window A1 was not active after click (expected x=50, got: \(String(describing: d.windowFrame())))")
+        }
+        let allWinA = d.onScreenWindowNumbers()
+        guard allWinA.count == 2 else {
+            throw Failure("expected 2 on-screen windows in Workspace A, found \(allWinA.count)")
+        }
+
+        // Create Workspace 2 via real mouse click on Workspace Pill of Window A1
+        try d.clickWorkspacePill(in: winA1)
         try d.clickOpenMenuItem(titled: "New Workspace")
         guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
             throw Failure("New Project Workspace alert dialog did not appear")
@@ -4829,39 +4908,70 @@ let scenarios: [Scenario] = [
         }
         usleep(1_500_000)
 
-        let workspaces = try d.workspaceList()
-        let ws2Info = workspaces.first(where: { ($0["name"] as? String) != "Default" })
-        guard let ws2Name = ws2Info?["name"] as? String else {
-            throw Failure("Workspace 2 record not found")
+        // Verify Workspace 2 transition and identity
+        let wsListAfterCreate = try d.workspaceList()
+        guard let ws2Info = wsListAfterCreate.first(where: { ($0["name"] as? String) != "Default" }),
+              let ws2Name = ws2Info["name"] as? String,
+              let ws2Id = ws2Info["id"] as? String else {
+            throw Failure("Workspace 2 record not found after creation")
+        }
+        guard (wsListAfterCreate.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == ws2Id.lowercased() else {
+            throw Failure("active workspace did not transition to Workspace 2 after creation (list: \(wsListAfterCreate))")
+        }
+
+        // Verify Window B is completely disjoint from Workspace A windows
+        let onScreenB = d.onScreenWindowNumbers()
+        guard onScreenB.count == 1 && onScreenB.intersection(allWinA).isEmpty else {
+            throw Failure("Window B on-screen set is not disjoint from Workspace A windows (B=\(onScreenB), A=\(allWinA))")
         }
 
         // Give Workspace 2 window a distinctly different frame
-        d.setPosition(CGPoint(x: 250, y: 220))
-        d.setSize(CGSize(width: 650, height: 420))
+        d.setPosition(CGPoint(x: 200, y: 150))
+        d.setSize(CGSize(width: 680, height: 440))
         usleep(500_000)
         guard let initialFrameB = d.windowFrame() else {
             throw Failure("no window frame for Workspace 2")
         }
-        guard abs(initialFrameB.origin.x - initialFrameA.origin.x) > 40 ||
-              abs(initialFrameB.size.width - initialFrameA.size.width) > 40 else {
-            throw Failure("Workspace A and B frames are not distinct (A: \(initialFrameA), B: \(initialFrameB))")
+        guard abs(initialFrameB.origin.x - initialFrameA1.origin.x) > 40 ||
+              abs(initialFrameB.size.width - initialFrameA1.size.width) > 40 else {
+            throw Failure("Workspace A and B frames are not distinct (A: \(initialFrameA1), B: \(initialFrameB))")
         }
 
         // 1. With syncWindowFrame == false (default): switching workspaces preserves independent frames
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
+
+        // Destination workspace assertion
+        let wsCheck1 = try d.workspaceList()
+        guard (wsCheck1.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased() else {
+            throw Failure("active workspace did not switch to Default (list: \(wsCheck1))")
+        }
+        // Distinct on-screen window assertion (must match allWinA, disjoint from Window B)
+        guard d.onScreenWindowNumbers() == allWinA else {
+            throw Failure("on-screen windows in Default did not match allWinA: \(d.onScreenWindowNumbers()) vs \(allWinA)")
+        }
         guard let frameAReturned = d.windowFrame() else {
             throw Failure("no window frame after returning to Default workspace")
         }
-        guard abs(frameAReturned.origin.x - initialFrameA.origin.x) < 5 &&
-              abs(frameAReturned.size.width - initialFrameA.size.width) < 5 else {
-            throw Failure("Default workspace frame changed while sync was disabled (expected: \(initialFrameA), got: \(frameAReturned))")
+        guard abs(frameAReturned.origin.x - initialFrameA1.origin.x) < 5 &&
+              abs(frameAReturned.size.width - initialFrameA1.size.width) < 5 else {
+            throw Failure("Default workspace frame changed while sync was disabled (expected: \(initialFrameA1), got: \(frameAReturned))")
         }
 
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: ws2Name)
         usleep(1_500_000)
+
+        // Destination workspace assertion
+        let wsCheck2 = try d.workspaceList()
+        guard (wsCheck2.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == ws2Id.lowercased() else {
+            throw Failure("active workspace did not switch to Workspace 2 (list: \(wsCheck2))")
+        }
+        // Distinct on-screen window assertion (must match onScreenB, disjoint from allWinA)
+        guard d.onScreenWindowNumbers() == onScreenB else {
+            throw Failure("on-screen window in Workspace 2 did not match onScreenB: \(d.onScreenWindowNumbers()) vs \(onScreenB)")
+        }
         guard let frameBReturned = d.windowFrame() else {
             throw Failure("no window frame after returning to Workspace 2")
         }
@@ -4890,13 +5000,31 @@ let scenarios: [Scenario] = [
             usleep(300_000)
         }
         d.key(Key.space)
-        usleep(300_000)
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return val == "setting_custom_success: workspace-sync-window-frame" ||
+                   val.contains("Custom: workspace-sync-window-frame = true")
+        }, timeout: 5) else {
+            throw Failure("Space did not toggle workspace-sync-window-frame")
+        }
+
         d.key(Key.escape)
         guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
             throw Failure("Escape did not dismiss settings dialog after enabling sync")
         }
 
+        // Verify config on disk contains setting (fail-closed read)
+        let syncConfigLines = try String(contentsOfFile: d.path("config"), encoding: .utf8)
+            .components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard syncConfigLines.contains("workspace-sync-window-frame = true") else {
+            throw Failure("config file missing workspace-sync-window-frame = true")
+        }
+
         // Capture departing Workspace B window geometry before switch
+        d.setPosition(CGPoint(x: 180, y: 120))
+        d.setSize(CGSize(width: 720, height: 460))
+        usleep(500_000)
         guard let departingFrameB = d.windowFrame() else {
             throw Failure("could not read departing Workspace B frame")
         }
@@ -4906,7 +5034,17 @@ let scenarios: [Scenario] = [
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
 
-        // Verify Default workspace window inherited departing Workspace B frame!
+        // Assert destination workspace transition to Default
+        let wsCheck3 = try d.workspaceList()
+        guard (wsCheck3.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased() else {
+            throw Failure("active workspace did not transition to Default after switch from B (list: \(wsCheck3))")
+        }
+        // Assert on-screen window set is allWinA (disjoint from Window B)
+        guard d.onScreenWindowNumbers() == allWinA else {
+            throw Failure("on-screen windows in Default did not match allWinA: \(d.onScreenWindowNumbers()) vs \(allWinA)")
+        }
+
+        // Verify active Default workspace window inherited departing Workspace B frame!
         guard let inheritedFrameA = d.windowFrame() else {
             throw Failure("no window frame after switching to Default with sync enabled")
         }
@@ -4917,18 +5055,28 @@ let scenarios: [Scenario] = [
             throw Failure("Default workspace window did not inherit departing frame (departing B: \(departingFrameB), inherited A: \(inheritedFrameA))")
         }
 
-        // Resize Window A to a new distinct frame
-        d.setPosition(CGPoint(x: 180, y: 150))
-        d.setSize(CGSize(width: 820, height: 530))
+        // Resize active Window A1 to a new distinct frame while second Window A2 remains untouched
+        d.setPosition(CGPoint(x: 80, y: 80))
+        d.setSize(CGSize(width: 780, height: 490))
         usleep(500_000)
         guard let departingFrameA = d.windowFrame() else {
             throw Failure("could not read departing Window A frame")
         }
 
-        // Switch back to Workspace 2: verify Window B inherits departingFrameA
+        // Switch back to Workspace 2: verify Window B inherits departing active Window A frame (not arbitrary A2)
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: ws2Name)
         usleep(1_500_000)
+
+        // Assert destination workspace transition to Workspace 2
+        let wsCheck4 = try d.workspaceList()
+        guard (wsCheck4.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == ws2Id.lowercased() else {
+            throw Failure("active workspace did not transition to Workspace 2 after switch from A (list: \(wsCheck4))")
+        }
+        // Assert on-screen window set is onScreenB (disjoint from allWinA)
+        guard d.onScreenWindowNumbers() == onScreenB else {
+            throw Failure("on-screen window in Workspace 2 did not match onScreenB: \(d.onScreenWindowNumbers()) vs \(onScreenB)")
+        }
 
         guard let inheritedFrameB = d.windowFrame() else {
             throw Failure("no window frame after switching to Workspace 2 with sync enabled")
@@ -4948,21 +5096,45 @@ let scenarios: [Scenario] = [
         d.key(Key.two, .maskCommand)
         usleep(300_000)
         d.key(Key.d)
-        usleep(300_000)
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return val == "setting_reset_success: workspace-sync-window-frame" ||
+                   val.contains("Reset to default: workspace-sync-window-frame")
+        }, timeout: 5) else {
+            throw Failure("key 'd' did not reset workspace-sync-window-frame")
+        }
         d.key(Key.escape)
         guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
             throw Failure("Escape did not dismiss settings dialog after reset")
         }
 
+        // Verify config on disk no longer contains setting (fail-closed read)
+        let resetConfigLines = try String(contentsOfFile: d.path("config"), encoding: .utf8)
+            .components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !resetConfigLines.contains(where: { $0.hasPrefix("workspace-sync-window-frame") || $0.hasPrefix("workspace-inherit-window-frame") }) else {
+            throw Failure("config file still contained override after reset")
+        }
+
         // Verify independent frames survive after reset
-        d.setPosition(CGPoint(x: 300, y: 300))
-        d.setSize(CGSize(width: 600, height: 400))
+        d.setPosition(CGPoint(x: 320, y: 220))
+        d.setSize(CGSize(width: 520, height: 360))
         usleep(500_000)
         guard let resetFrameB = d.windowFrame() else { throw Failure("no frame B after reset") }
 
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
+
+        // Assert destination workspace transition to Default
+        let wsCheck5 = try d.workspaceList()
+        guard (wsCheck5.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased() else {
+            throw Failure("active workspace did not transition to Default after reset (list: \(wsCheck5))")
+        }
+        // Assert on-screen windows are allWinA
+        guard d.onScreenWindowNumbers() == allWinA else {
+            throw Failure("on-screen windows did not match allWinA after reset")
+        }
 
         guard let currentFrameA = d.windowFrame() else { throw Failure("no frame A") }
         guard abs(currentFrameA.origin.x - resetFrameB.origin.x) > 20 ||

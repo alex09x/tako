@@ -16,7 +16,23 @@ import Testing
 
 /// Unit tests verifying configuration parsing, persistence, and model resolution
 /// for settings declared in `TerminalSettingRegistry`.
-/// Live UI interaction and end-to-end runtime observer effects are exercised in the remote UI runner (`scripts/e2e/tako-e2e.swift`).
+///
+/// Registry Settings Status & Runtime Consumer Acceptance Matrix:
+/// 1.  workspace-sync-window-frame: [Parser: PASS] [Persistence: PASS] [Live UI Witness: COVERED via workspace-frame-sync & settings-terminal-effects]
+/// 2.  tab-style:                   [Parser: PASS] [Persistence: PASS] [Live UI Witness: COVERED via settings-terminal-effects]
+/// 3.  window-inherit-font-size:    [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - next-surface font size inheritance]
+/// 4.  window-inherit-working-dir:  [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - next-surface cwd inheritance]
+/// 5.  cursor-style:                [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal renderer cursor drawing]
+/// 6.  cursor-style-blink:          [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal cursor timer loop]
+/// 7.  mouse-hide-while-typing:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - AppKit mouse cursor autohide]
+/// 8.  copy-on-select:              [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal selection pasteboard bridge]
+/// 9.  confirm-close-surface:       [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - tab close confirmation modal alert]
+/// 10. shell-integration:          [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - OSC 133 shell prompt mark injection]
+/// 11. quick-terminal-position:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - dropdown quick terminal screen anchor]
+/// 12. quick-terminal-autohide:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - dropdown window resign active autohide]
+/// 13. theme:                       [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - palette propagation to metal/renderer]
+/// 14. font-size:                   [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - live glyph cache reallocation]
+/// 15. background-blur:             [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - NSVisualEffectView material configuration]
 @Suite
 @MainActor
 struct TerminalSettingsEffectTests {

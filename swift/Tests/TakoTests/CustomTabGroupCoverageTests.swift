@@ -15,7 +15,7 @@ import Testing
 
 // MARK: - CustomTabGroup
 
-@Suite
+@Suite(.serialized)
 @MainActor
 struct CustomTabGroupCoverageTests {
     @Test func freshWindowGetsASingleWindowGroup() {

@@ -339,5 +339,80 @@ struct TerminalSettingsTests {
         runtimeConfig = Tako.Config(at: configPath)
         #expect(runtimeConfig.workspaceSyncWindowFrame == true)
     }
+
+    @Test func mouseSingleClickTogglesBooleanSetting() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("config").path
+        try "# Empty config\n".write(toFile: configPath, atomically: true, encoding: .utf8)
+        let configFile = KeybindConfigFile(configPath: configPath)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let dialog = TerminalSettingsDialog(style: .from(nil), configFile: configFile, initialTab: .terminalSettings)
+        dialog.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        window.contentView = dialog
+
+        guard let wsIndex = dialog.filteredSettingItems.firstIndex(where: { $0.id == "workspace-sync-window-frame" }) else {
+            Issue.record("Missing workspace-sync-window-frame setting")
+            return
+        }
+        let wsItem = dialog.filteredSettingItems[wsIndex]
+        #expect(configFile.effectiveSettingValue(for: wsItem) == "false")
+
+        // Target row in visible range
+        dialog.scrollSettingOffset = max(0, wsIndex - 2)
+        let visibleIdx = wsIndex - dialog.scrollSettingOffset
+        let rowFlippedY = dialog.cell(0, 5).y + CGFloat(visibleIdx) * dialog.cellHeight + dialog.cellHeight / 2
+        let rowWindowY = dialog.bounds.height - rowFlippedY
+        let titleX = dialog.cell(10, 5).x
+        let valueX = dialog.cell(46, 5).x
+
+        // 1. Single click on title selects the row without toggling
+        let titleClick = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: titleX, y: rowWindowY),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        dialog.mouseDown(with: titleClick)
+        #expect(dialog.selectedSettingIndex == wsIndex)
+        #expect(configFile.effectiveSettingValue(for: wsItem) == "false")
+
+        // 2. Single click on value column toggles the setting to true immediately
+        let valueClick = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: valueX, y: rowWindowY),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1.0
+        )!
+        dialog.mouseDown(with: valueClick)
+        #expect(configFile.effectiveSettingValue(for: wsItem) == "true")
+        #expect(configFile.getSettingValue(for: wsItem) == "true")
+        #expect(dialog.selectedSettingIndex == wsIndex)
+
+        // 3. Second single click toggles back to default false
+        dialog.mouseDown(with: valueClick)
+        #expect(configFile.effectiveSettingValue(for: wsItem) == "false")
+        #expect(configFile.getSettingValue(for: wsItem) == nil)
+    }
 }
 
