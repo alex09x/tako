@@ -24,9 +24,10 @@ let coreShowcaseScenes: [ShowcaseScene] = [
         d.focus()
         usleep(600_000)
 
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Welcome Window")
+        guard let f = d.windowFrame() else {
+            throw Failure("Could not obtain window frame for welcome scene stage validation")
         }
+        try ShowcaseStage.assertContains(window: f, name: "Welcome Window")
 
         // Banner
         try ctx.typeNaturally("clear\n")
@@ -61,9 +62,10 @@ let coreShowcaseScenes: [ShowcaseScene] = [
             throw Failure("Precondition failed: expected exactly 1 initial pane, got \(initialPanes.count)")
         }
 
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Splits Window")
+        guard let f = d.windowFrame() else {
+            throw Failure("Could not obtain window frame for splits scene stage validation")
         }
+        try ShowcaseStage.assertContains(window: f, name: "Splits Window")
 
         // Initial left pane TTY
         try d.run("tty > \(d.path("tty_left1"))")
@@ -382,7 +384,7 @@ let coreShowcaseScenes: [ShowcaseScene] = [
             usleep(400_000)
         }
 
-        ctx.recordTiming(scene: "workspaces-frame-sync", duration: 0, status: "PASS", evidence: "A1 \(frameA1), A2 \(frameA2), B \(frameB); independent 4D frames when off; live sync matched 4D geometry (departing \(departingB) == arrived \(arrivedA)); reset to independent verified")
+        ctx.recordTiming(scene: "workspaces-frame-sync", duration: 0, status: "PASS", evidence: "A1 \(frameA1), A2 \(frameA2), B \(frameB); independent 4D frames when off; live sync matched 4D geometry (departing \(departingB) == arrived \(arrivedA)); reset to independent verified (non-inheritance check: B frame independent from A)")
         ctx.viewerPause(2.0)
     }),
 ]

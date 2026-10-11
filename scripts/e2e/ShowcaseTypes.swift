@@ -154,6 +154,20 @@ struct ShowcaseSceneReport: Codable {
     let evidence: String
 }
 
+enum RecordingState: String, Codable {
+    case notRequested = "NOT_REQUESTED"
+    case tccBlocked = "UNVERIFIED_TCC_BLOCKED"
+    case failed = "FAILED"
+    case mediaValidatedContentUnverified = "MEDIA_VALIDATED_CONTENT_UNVERIFIED"
+}
+
+struct ShowcaseRecordingReport: Codable {
+    let state: RecordingState
+    let targetPath: String?
+    let reason: String?
+    let video: VideoMetadata?
+}
+
 struct ShowcaseReport: Codable {
     let timestamp: String
     let gitRevision: String
@@ -161,10 +175,12 @@ struct ShowcaseReport: Codable {
     let bundleId: String
     let commandOptions: [String]
     let pacing: String
+    let status: String
     let failedCount: Int
     let passedCount: Int
     let skippedCount: Int
     let scenes: [ShowcaseSceneReport]
+    let recording: ShowcaseRecordingReport
     let video: VideoMetadata?
     let error: String?
 }

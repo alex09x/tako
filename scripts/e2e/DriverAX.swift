@@ -39,6 +39,27 @@ extension Driver {
         (attribute(axApp, kAXWindowsAttribute) as [AXUIElement]?) ?? []
     }
 
+    func queryWindows() throws -> [AXUIElement] {
+        var value: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value)
+        guard err == .success, let list = value as? [AXUIElement] else {
+            throw Failure("AX query for windows failed with error: \(err.rawValue)")
+        }
+        return list
+    }
+
+    func queryWindowIDs() throws -> [(element: AXUIElement, id: CGWindowID)] {
+        let list = try queryWindows()
+        var result: [(element: AXUIElement, id: CGWindowID)] = []
+        for elem in list {
+            guard let id = windowID(for: elem) else {
+                throw Failure("Failed to resolve CGWindowID for accessible window")
+            }
+            result.append((elem, id))
+        }
+        return result
+    }
+
     func onScreenWindowNumbers() -> Set<CGWindowID> {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return [] }

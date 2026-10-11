@@ -25,9 +25,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
             throw Failure("No open windows at start of tabs scene")
         }
 
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Tabs Window")
+        guard let f = d.windowFrame() else {
+            throw Failure("Could not obtain window frame for tabs scene stage validation")
         }
+        try ShowcaseStage.assertContains(window: f, name: "Tabs Window")
 
         // Initial Tab 1 TTY
         try d.run("tty > \(d.path("tab1_tty1"))")
@@ -85,9 +86,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         let d = ctx.driver
         d.activate()
 
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Persistence Initial Window")
+        guard let f = d.windowFrame() else {
+            throw Failure("Could not obtain window frame before persistence restart")
         }
+        try ShowcaseStage.assertContains(window: f, name: "Persistence Initial Window")
 
         let zsPath = d.path("zs")
         let pid1Path = d.path("pid1")
@@ -129,9 +131,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         }
 
         // Verify stage containment for relaunched window
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Persistence Relaunched Window")
+        guard let f2 = d.windowFrame() else {
+            throw Failure("Could not obtain window frame after persistence restart")
         }
+        try ShowcaseStage.assertContains(window: f2, name: "Persistence Relaunched Window")
 
         // Verify same shell survived across app restart
         let pid2Path = d.path("pid2")
@@ -197,9 +200,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         }
 
         // Positively validate Quick Terminal stage containment
-        if let qtFrame = d.windowFrame(qtWindow) {
-            try ShowcaseStage.assertContains(window: qtFrame, name: "Quick Terminal Window")
+        guard let qtFrame = d.windowFrame(qtWindow) else {
+            throw Failure("Could not obtain window frame for Quick Terminal stage validation")
         }
+        try ShowcaseStage.assertContains(window: qtFrame, name: "Quick Terminal Window")
 
         // Positively validate surface ID in takoctl tree
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
@@ -218,11 +222,24 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         d.key(Key.grave, [.maskCommand, .maskShift])
         usleep(800_000)
 
-        // Step 5: Require successful window-state query showing that exact window is hidden
+        // Verify failure-path: simulated AX query error must fail-close and NOT satisfy dismissal
+        let simulatedAxFailure: () -> Bool = {
+            let simulatedResult: Result<[(element: AXUIElement, id: CGWindowID)], Error> = .failure(Failure("Simulated AX Error"))
+            guard case .success(let list) = simulatedResult else { return false }
+            let ids = Set(list.map { $0.id })
+            return ids.contains(origWinId) && !ids.contains(qtWinId)
+        }
+        guard !simulatedAxFailure() else {
+            throw Failure("Dismissal predicate improperly satisfied by simulated AX query failure")
+        }
+
+        // Step 5: Require throwing window query showing exact QT absence while original window is confirmed present
         guard d.wait(for: {
-            !d.windows().contains(where: { d.windowID(for: $0) == qtWinId })
+            guard let queried = try? d.queryWindowIDs() else { return false }
+            let ids = Set(queried.map { $0.id })
+            return ids.contains(origWinId) && !ids.contains(qtWinId)
         }, timeout: 5) else {
-            throw Failure("Quick Terminal window (id: \(qtWinId)) was still present in windows list after dismissal")
+            throw Failure("Quick Terminal window (id: \(qtWinId)) was not confirmed absent or original window (id: \(origWinId)) was missing")
         }
 
         // Step 6: Verify unassisted focus return to original pane WITHOUT any activate/focus/AX-main repair
@@ -240,7 +257,7 @@ let extraShowcaseScenes: [ShowcaseScene] = [
             throw Failure("Input did not return to original pane without focus repair: expected \(origPane), got \(resumedPane)")
         }
 
-        ctx.recordTiming(scene: "quick-terminal", duration: 0, status: "PASS", evidence: "Positively validated QT window (id=\(qtWinId), surface=\(qtSurfaceId)); verified exact window hidden after dismissal; restored unassisted input to orig pane \(origPane) (tty=\(origTty))")
+        ctx.recordTiming(scene: "quick-terminal", duration: 0, status: "PASS", evidence: "Positively validated QT window (id=\(qtWinId), surface=\(qtSurfaceId)); verified exact window hidden via throwing AX query; confirmed original window (id=\(origWinId)) present; restored unassisted input to orig pane \(origPane) (tty=\(origTty))")
         ctx.viewerPause(1.0)
     }),
 
@@ -251,9 +268,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         d.setSize(CGSize(width: 860, height: 540))
         usleep(400_000)
 
-        if let f = d.windowFrame() {
-            try ShowcaseStage.assertContains(window: f, name: "Zoom Window")
+        guard let f = d.windowFrame() else {
+            throw Failure("Could not obtain window frame for zoom scene stage validation")
         }
+        try ShowcaseStage.assertContains(window: f, name: "Zoom Window")
 
         let cols1Path = d.path("cols1")
         try d.run("tput cols > \(cols1Path)")

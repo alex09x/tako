@@ -249,7 +249,7 @@ final class ShowcaseRecorder {
             height: Double(trackSize.height),
             trackCount: videoTracks.count,
             decodedSampleCount: decodedCount,
-            status: "RECORDING_VERIFIED"
+            status: "MEDIA_VALIDATED_CONTENT_UNVERIFIED"
         )
     }
 

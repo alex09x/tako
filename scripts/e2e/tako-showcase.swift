@@ -21,7 +21,9 @@ struct TakoShowcaseMain {
             print("Tako Feature Showcase Matrix:")
             print(String(repeating: "-", count: 70))
             for item in showcaseManifest {
-                print(String(format: "  %-22s [%-8s] %s", item.id, item.chapter, item.feature))
+                let idPad = item.id.padding(toLength: 22, withPad: " ", startingAt: 0)
+                let chPad = item.chapter.padding(toLength: 8, withPad: " ", startingAt: 0)
+                print("  \(idPad) [\(chPad)] \(item.feature)")
                 print("      Witness: \(item.witness)")
             }
             print(String(repeating: "-", count: 70))
@@ -29,15 +31,7 @@ struct TakoShowcaseMain {
         }
 
         guard !rawArgs.isEmpty, !rawArgs[0].hasPrefix("-") else {
-            print("Usage: tako-showcase <path-to-Tako.app> [options]")
-            print("Options:")
-            print("  --pace fast|presentation")
-            print("  --scene <scene-id>")
-            print("  --chapter core|optional|all")
-            print("  --record <output.mov>")
-            print("  --display")
-            print("  --output-dir <path>")
-            print("  --list")
+            print("Usage: tako-showcase <path-to-Tako.app> [--pace fast|presentation] [--scene <id>] [--chapter core|optional|all] [--record <file>] [--display] [--output-dir <dir>] [--list]")
             exit(1)
         }
 
@@ -52,35 +46,13 @@ struct TakoShowcaseMain {
         var i = 1
         while i < rawArgs.count {
             switch rawArgs[i] {
-            case "--pace":
-                if i + 1 < rawArgs.count {
-                    pacing = PacingMode(rawValue: rawArgs[i + 1]) ?? .presentation
-                    i += 1
-                }
-            case "--scene":
-                if i + 1 < rawArgs.count {
-                    scenesWanted.insert(rawArgs[i + 1])
-                    i += 1
-                }
-            case "--chapter":
-                if i + 1 < rawArgs.count {
-                    chapterWanted = rawArgs[i + 1]
-                    i += 1
-                }
-            case "--record":
-                if i + 1 < rawArgs.count {
-                    recordPath = rawArgs[i + 1]
-                    i += 1
-                }
-            case "--display":
-                recordFullDisplay = true
-            case "--output-dir":
-                if i + 1 < rawArgs.count {
-                    outputDirPath = rawArgs[i + 1]
-                    i += 1
-                }
-            default:
-                break
+            case "--pace": if i + 1 < rawArgs.count { pacing = PacingMode(rawValue: rawArgs[i + 1]) ?? .presentation; i += 1 }
+            case "--scene": if i + 1 < rawArgs.count { scenesWanted.insert(rawArgs[i + 1]); i += 1 }
+            case "--chapter": if i + 1 < rawArgs.count { chapterWanted = rawArgs[i + 1]; i += 1 }
+            case "--record": if i + 1 < rawArgs.count { recordPath = rawArgs[i + 1]; i += 1 }
+            case "--display": recordFullDisplay = true
+            case "--output-dir": if i + 1 < rawArgs.count { outputDirPath = rawArgs[i + 1]; i += 1 }
+            default: break
             }
             i += 1
         }
@@ -104,10 +76,25 @@ struct TakoShowcaseMain {
         let bundleId = ProcessInfo.processInfo.environment["TAKO_BUNDLE_ID"] ?? "com.tako-core.terminal.showcase"
         let gitRev = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_REV"] ?? "unknown"
 
-        func persistReport(scenes: [ShowcaseSceneReport], video: VideoMetadata?, errorMsg: String?) -> Bool {
+        func persistReport(
+            scenes: [ShowcaseSceneReport],
+            video: VideoMetadata?,
+            errorMsg: String?,
+            recState: RecordingState,
+            recReason: String?
+        ) -> Bool {
             let passed = scenes.filter { $0.status == "PASS" }.count
             let failed = scenes.filter { $0.status == "FAIL" }.count
             let skipped = scenes.filter { $0.status != "PASS" && $0.status != "FAIL" }.count
+
+            let overallStatus = (failed == 0 && errorMsg == nil) ? "OK" : "FAILED"
+
+            let recReport = ShowcaseRecordingReport(
+                state: recState,
+                targetPath: recordPath,
+                reason: recReason,
+                video: video
+            )
 
             let rep = ShowcaseReport(
                 timestamp: ISO8601DateFormatter().string(from: Date()),
@@ -116,10 +103,12 @@ struct TakoShowcaseMain {
                 bundleId: bundleId,
                 commandOptions: rawArgs,
                 pacing: pacing.rawValue,
+                status: overallStatus,
                 failedCount: failed,
                 passedCount: passed,
                 skippedCount: skipped,
                 scenes: scenes,
+                recording: recReport,
                 video: video,
                 error: errorMsg
             )
@@ -136,7 +125,7 @@ struct TakoShowcaseMain {
                     "Revision: \(rep.gitRevision)",
                     "App: \(rep.appPath) (Bundle: \(rep.bundleId))",
                     "Pacing: \(rep.pacing)",
-                    "Status: \(failed == 0 ? "OK" : "FAILED")",
+                    "Status: \(overallStatus)",
                     "Passed: \(passed), Failed: \(failed), Skipped/Unrequested: \(skipped)",
                     "",
                     "Scenes:",
@@ -147,23 +136,19 @@ struct TakoShowcaseMain {
                         lines.append("    Evidence: \(s.evidence)")
                     }
                 }
+                lines.append("")
+                lines.append("Recording:")
+                lines.append("  State: \(recReport.state.rawValue)")
+                if let reason = recReport.reason {
+                    lines.append("  Reason: \(reason)")
+                }
                 if let v = video {
-                    lines.append("")
-                    lines.append("Video:")
                     lines.append("  Path: \(v.path)")
                     lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s (Expected: \(String(format: "%.2f", v.expectedMinDuration))s)")
                     lines.append("  Resolution: \(Int(v.width))x\(Int(v.height))")
                     lines.append("  Size: \(v.fileSize) bytes")
                     lines.append("  Decoded Samples: \(v.decodedSampleCount)")
                     lines.append("  Status: \(v.status)")
-                } else if recordPath != nil {
-                    lines.append("")
-                    lines.append("Video:")
-                    lines.append("  Status: UNVERIFIED_TCC_BLOCKED")
-                    lines.append("  Detail: macOS Screen Recording permission required for screencapture in non-interactive sessions; recording validation remains OPEN")
-                } else {
-                    lines.append("")
-                    lines.append("Video: NOT_REQUESTED (non-recording run)")
                 }
                 if let err = errorMsg {
                     lines.append("")
@@ -205,16 +190,31 @@ struct TakoShowcaseMain {
             )
         }
 
+        var currentRecordingState: RecordingState = (recordPath == nil) ? .notRequested : .notRequested
+        var currentRecordingReason: String? = (recordPath == nil) ? "Non-recording run" : nil
+
         guard AXIsProcessTrusted() else {
             let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-            _ = persistReport(scenes: reports, video: nil, errorMsg: "Accessibility permission not granted to driver process")
+            _ = persistReport(
+                scenes: reports,
+                video: nil,
+                errorMsg: "Accessibility permission not granted to driver process",
+                recState: (recordPath == nil ? .notRequested : .failed),
+                recReason: "Aborted due to missing Accessibility permission"
+            )
             print("FAIL: this process has no Accessibility permission to drive Tako UI")
             exit(1)
         }
 
         guard !targetScenes.isEmpty else {
             let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-            _ = persistReport(scenes: reports, video: nil, errorMsg: "No matching showcase scenes found")
+            _ = persistReport(
+                scenes: reports,
+                video: nil,
+                errorMsg: "No matching showcase scenes found",
+                recState: (recordPath == nil ? .notRequested : .failed),
+                recReason: "Aborted due to missing scenes"
+            )
             print("FAIL: No matching showcase scenes found")
             exit(2)
         }
@@ -228,8 +228,20 @@ struct TakoShowcaseMain {
                 let recURL = URL(fileURLWithPath: recPath)
                 recorder = try ShowcaseRecorder(targetFile: recURL, fullDisplay: recordFullDisplay)
             } catch {
+                let errStr = "\(error)"
+                let isTcc = errStr.contains("Screen Recording permission") || errStr.contains("preflight check failed")
+                let recState: RecordingState = isTcc ? .tccBlocked : .failed
+                let recReason = isTcc
+                    ? "macOS Screen Recording permission denied or unavailable in this session"
+                    : errStr
                 let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-                _ = persistReport(scenes: reports, video: nil, errorMsg: "Screen recording preflight error: \(error)")
+                _ = persistReport(
+                    scenes: reports,
+                    video: nil,
+                    errorMsg: "Screen recording preflight error: \(error)",
+                    recState: recState,
+                    recReason: recReason
+                )
                 print("FAIL: Screen recording preflight error: \(error)")
                 exit(1)
             }
@@ -251,9 +263,10 @@ struct TakoShowcaseMain {
             driver.setPosition(CGPoint(x: 100, y: 100))
             driver.setSize(CGSize(width: 860, height: 540))
             usleep(300_000)
-            if let initialFrame = driver.windowFrame() {
-                try ShowcaseStage.assertContains(window: initialFrame, name: "Initial Staged Window")
+            guard let initialFrame = driver.windowFrame() else {
+                throw Failure("Could not obtain window frame for initial staged window")
             }
+            try ShowcaseStage.assertContains(window: initialFrame, name: "Initial Staged Window")
 
             let ctx = ShowcaseContext(driver: driver, pacing: pacing, outputDir: outputDirURL)
 
@@ -312,14 +325,22 @@ struct TakoShowcaseMain {
                 do {
                     let totalScenesDuration = sceneReportMap.values.reduce(0.0) { $0 + $1.durationSeconds }
                     videoMeta = try r.stop(expectedMinDuration: totalScenesDuration)
+                    currentRecordingState = .mediaValidatedContentUnverified
+                    currentRecordingReason = "Recorded movie validated (metadata + \(videoMeta?.decodedSampleCount ?? 0) decoded sample frames); semantic content acceptance OPEN"
                     print("Recorded showcase movie saved to: \(r.targetFile.path) (\(String(format: "%.2f", videoMeta?.durationSeconds ?? 0))s, \(videoMeta?.fileSize ?? 0) bytes, \(videoMeta?.decodedSampleCount ?? 0) frames decoded)")
                 } catch {
                     executionError = "Recording finalization failed: \(error)"
+                    currentRecordingState = .failed
+                    currentRecordingReason = "Recording finalization failed: \(error)"
                     print("FAIL: \(executionError!)")
                 }
             }
         } catch {
             executionError = "Initialization error: \(error)"
+            if recordPath != nil && recorder != nil {
+                currentRecordingState = .failed
+                currentRecordingReason = "Initialization error before recording: \(error)"
+            }
             print("FAIL: \(executionError!)")
         }
 
@@ -333,9 +354,15 @@ struct TakoShowcaseMain {
             previouslyFront.activate()
         }
 
-        // Write mandatory artifacts (Finding 4)
+        // Write mandatory artifacts
         let finalReports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-        let writeReportOk = persistReport(scenes: finalReports, video: videoMeta, errorMsg: executionError)
+        let writeReportOk = persistReport(
+            scenes: finalReports,
+            video: videoMeta,
+            errorMsg: executionError,
+            recState: currentRecordingState,
+            recReason: currentRecordingReason
+        )
 
         let overallSuccess = writeReportOk && executionError == nil && !finalReports.contains(where: { $0.status == "FAIL" })
         print(overallSuccess ? "Tako Showcase: OK" : "Tako Showcase: FAILED")
