@@ -155,12 +155,22 @@ extension TabBarViewCoverageTests {
         #expect(group.selectedWindow === b)
     }
 
+    private final class ZoomRecordingWindow: NSWindow {
+        var performZoomCalled = false
+        override func performZoom(_ sender: Any?) {
+            performZoomCalled = true
+            super.performZoom(sender)
+        }
+    }
+
     @Test func clickingTheCloseGlyphClosesThatTab() {
         let a = makeWindow(title: "a")
         let b = makeWindow(title: "b")
         defer {
             Tako.CustomTabGroup.leave(a)
             Tako.CustomTabGroup.leave(b)
+            a.close()
+            b.close()
         }
         Tako.CustomTabGroup.join(b, to: a, select: false)
 
@@ -168,30 +178,44 @@ extension TabBarViewCoverageTests {
         mount(bar, in: a)
         draw(bar)
 
+        var didClose = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: a,
+            queue: nil
+        ) { _ in
+            didClose = true
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
         // Tab 0 ("a") is active, so its close glyph is drawn; its hit rect
         // is clicked using closeRect.
-        a.orderFront(nil)
-        #expect(a.isVisible)
         let closePoint = CGPoint(x: bar.closeRect(of: bar.tabs[0]).midX,
                                  y: bar.closeRect(of: bar.tabs[0]).midY)
         click(bar, at: closePoint, in: a)
-        #expect(!a.isVisible)
+        #expect(didClose)
     }
 
     @Test func emptyBarDoubleClickZoomsTheWindow() {
-        let window = makeWindow(title: "solo")
-        defer { Tako.CustomTabGroup.leave(window) }
+        let window = ZoomRecordingWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 400, height: 200),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer {
+            Tako.CustomTabGroup.leave(window)
+            window.close()
+        }
         let bar = Tako.TabBarView(frame: .zero)
         mount(bar, in: window)
-        window.makeKeyAndOrderFront(nil)
-        #expect(!window.isZoomed)
 
         // Single-window group never shows a strip, so `tabs` stays empty and
         // any click falls into the "empty bar" branch.
         click(bar, at: NSPoint(x: 200, y: 19), in: window, clickCount: 2)
 
-        #expect(window.isZoomed)
-        window.close()
+        #expect(window.performZoomCalled)
     }
 
     @Test func commandKeyHeldEventuallyShowsBadgesThenClearsOnRelease() async throws {

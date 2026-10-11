@@ -293,15 +293,18 @@ struct CustomTabGroupCoverageTests {
         // 1. By default (syncWindowFrame == false), switching to Workspace B retains Window B's frame
         #expect(groupB.syncWindowFrame == false)
         #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
-        groupA.syncWithActiveWorkspace(inheritedFrame: actualA)
-        groupB.syncWithActiveWorkspace(inheritedFrame: actualA)
         #expect(groupA.selectedWindow == nil)
         #expect(groupB.selectedWindow === b)
         #expect(b.frame == actualB)
 
-        // 2. When syncWindowFrame is enabled, switching to Workspace B inherits departing frame
+        // 2. When syncWindowFrame is enabled, the transition coordinator captures departing frame
+        // from departing groupA's selected window and syncs groupB without manual injection.
         groupB.syncWindowFrameOverride = true
-        groupB.syncWithActiveWorkspace(inheritedFrame: actualA)
+        #expect(WorkspaceStore.shared.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
+        #expect(groupA.selectedWindow === a)
+
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
+        #expect(groupB.selectedWindow === b)
         #expect(b.frame == actualA)
     }
 

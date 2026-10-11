@@ -137,11 +137,11 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         setAccessibilityIdentifier("TerminalSettingsDialog")
         setAccessibilityLabel("Tako Settings")
         setAccessibilityTitle("Tako Settings")
-        setAccessibilityValue(initialTab.title)
 
         setupSearchField()
         setupButtons()
         updateButtonsForActiveTab()
+        updateAccessibilityState()
     }
 
     @available(*, unavailable)
@@ -279,8 +279,29 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         statusMessage = nil
         updateButtonsForActiveTab()
         filterItems(searchField?.stringValue ?? "")
-        setAccessibilityValue(activeTab.title)
         needsDisplay = true
+    }
+
+    func updateAccessibilityState() {
+        if isWithdrawing {
+            setAccessibilityValue("closed")
+            return
+        }
+        if isRecording {
+            setAccessibilityValue("recording")
+            return
+        }
+        if let msg = statusMessage {
+            setAccessibilityValue(msg)
+            return
+        }
+        if activeTab == .terminalSettings {
+            let itemDesc = selectedSettingIndex < filteredSettingItems.count ? filteredSettingItems[selectedSettingIndex].title : (filteredSettingItems.isEmpty ? "No matching settings" : "")
+            setAccessibilityValue("Terminal Settings: \(filteredSettingItems.count) items, \(itemDesc)")
+        } else {
+            let itemDesc = selectedIndex < filteredItems.count ? filteredItems[selectedIndex].title : (filteredItems.isEmpty ? "No matching actions" : "")
+            setAccessibilityValue("Keybindings: \(filteredItems.count) items, \(itemDesc)")
+        }
     }
 
     func filterItems(_ query: String) {
@@ -314,6 +335,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             scrollSettingOffset = 0
         }
         needsDisplay = true
+        updateAccessibilityState()
     }
 
     func withdraw() {

@@ -64,8 +64,8 @@ struct TabBarControllerCoverageTests {
 
     @Test func resizeAndKeyNotificationsReapplyTitlebarBackgroundWithoutCrashing() throws {
         let window = makeWindow(title: "notified")
+        defer { window.close() }
         Tako.TabBarController.install(in: window)
-        window.makeKeyAndOrderFront(nil)
 
         let themeFrame = try #require(window.contentView?.superview)
         let titlebarContainer = try #require(themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView"))
@@ -83,7 +83,6 @@ struct TabBarControllerCoverageTests {
             NotificationCenter.default.post(name: name, object: window)
             #expect(titlebarContainer.layer?.backgroundColor == NSColor.clear.cgColor)
         }
-        window.close()
     }
 }
 

@@ -77,7 +77,11 @@ public final class WorkspaceStore: ObservableObject {
                     recentTransitions.removeFirst(recentTransitions.count - maxTransitionHistory)
                 }
                 save()
-                NotificationCenter.default.post(name: .takoWorkspaceDidChange, object: self)
+                NotificationCenter.default.post(
+                    name: .takoWorkspaceDidChange,
+                    object: self,
+                    userInfo: ["fromWorkspaceId": oldValue, "toWorkspaceId": activeWorkspaceId]
+                )
             }
         }
     }

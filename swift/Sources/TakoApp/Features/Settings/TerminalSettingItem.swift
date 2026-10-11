@@ -39,10 +39,16 @@ public enum TerminalSettingType: Equatable, Sendable {
             }
             return opts.first ?? def
         case .number(_, let minVal, let maxVal, let step):
-            let val = Int(current) ?? minVal
-            let nextVal = val + step
-            if nextVal > maxVal {
-                return String(minVal)
+            let effectiveMin = min(minVal, maxVal)
+            let effectiveMax = max(minVal, maxVal)
+            let safeStep = max(1, step)
+            guard let rawVal = Int(current) else {
+                return String(effectiveMin)
+            }
+            let clamped = min(max(rawVal, effectiveMin), effectiveMax)
+            let (nextVal, overflow) = clamped.addingReportingOverflow(safeStep)
+            if overflow || nextVal > effectiveMax {
+                return String(effectiveMin)
             }
             return String(nextVal)
         }
@@ -60,10 +66,16 @@ public enum TerminalSettingType: Equatable, Sendable {
             }
             return opts.last ?? def
         case .number(_, let minVal, let maxVal, let step):
-            let val = Int(current) ?? minVal
-            let prevVal = val - step
-            if prevVal < minVal {
-                return String(maxVal)
+            let effectiveMin = min(minVal, maxVal)
+            let effectiveMax = max(minVal, maxVal)
+            let safeStep = max(1, step)
+            guard let rawVal = Int(current) else {
+                return String(effectiveMax)
+            }
+            let clamped = min(max(rawVal, effectiveMin), effectiveMax)
+            let (prevVal, overflow) = clamped.subtractingReportingOverflow(safeStep)
+            if overflow || prevVal < effectiveMin {
+                return String(effectiveMax)
             }
             return String(prevVal)
         }

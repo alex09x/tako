@@ -249,6 +249,7 @@ extension TerminalSettingsDialog {
                 scrollSettingOffset = selectedSettingIndex - visibleRows + 1
             }
         }
+        updateAccessibilityState()
         needsDisplay = true
     }
 
@@ -263,6 +264,7 @@ extension TerminalSettingsDialog {
             selectedSettingIndex = min(max(target, 0), filteredSettingItems.count - 1)
             scrollSettingOffset = min(selectedSettingIndex, max(filteredSettingItems.count - visibleRows, 0))
         }
+        updateAccessibilityState()
         needsDisplay = true
     }
 
@@ -298,9 +300,11 @@ extension TerminalSettingsDialog {
             return true
         }
         if commandSelector == #selector(cancelOperation(_:)) {
-            if let field = searchField, !field.stringValue.isEmpty {
-                field.stringValue = ""
-                controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+            let fieldString = searchField?.stringValue ?? ""
+            if !textView.string.isEmpty || !fieldString.isEmpty {
+                textView.string = ""
+                searchField?.stringValue = ""
+                filterItems("")
             } else {
                 withdraw()
             }

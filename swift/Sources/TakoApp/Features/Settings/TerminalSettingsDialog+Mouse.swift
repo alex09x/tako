@@ -32,11 +32,13 @@ extension TerminalSettingsDialog {
             if relCol >= tab1Col && relCol < tab1Col + tab1Title.count {
                 switchTab(to: .keybindings)
                 isTabBarFocused = true
+                window?.makeFirstResponder(self)
                 needsDisplay = true
                 return
             } else if relCol >= tab2Col && relCol < tab2Col + tab2Title.count {
                 switchTab(to: .terminalSettings)
                 isTabBarFocused = true
+                window?.makeFirstResponder(self)
                 needsDisplay = true
                 return
             }
@@ -47,6 +49,7 @@ extension TerminalSettingsDialog {
         if pt.y >= startY && pt.y < startY + CGFloat(visibleRows) * rowHeight {
             let clickedVisible = Int((pt.y - startY) / rowHeight)
             isTabBarFocused = false
+            window?.makeFirstResponder(self)
             if activeTab == .keybindings {
                 let targetIdx = scrollOffset + clickedVisible
                 if targetIdx < filteredItems.count {
@@ -54,6 +57,7 @@ extension TerminalSettingsDialog {
                     if event.clickCount == 2 {
                         startRecording()
                     } else {
+                        updateAccessibilityState()
                         needsDisplay = true
                     }
                 }
@@ -64,6 +68,7 @@ extension TerminalSettingsDialog {
                     if event.clickCount == 2 {
                         toggleOrCycleSelectedSetting()
                     } else {
+                        updateAccessibilityState()
                         needsDisplay = true
                     }
                 }

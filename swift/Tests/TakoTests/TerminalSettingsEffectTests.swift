@@ -14,8 +14,9 @@ import Testing
 @testable import Tako
 @testable import TakoKit
 
-/// Integration and CUXT tests verifying that all settings in `TerminalSettingRegistry`
-/// produce measurable concrete effects in `Tako.Config`, `TerminalTheme`, and app runtime.
+/// Unit tests verifying configuration parsing, persistence, and model resolution
+/// for settings declared in `TerminalSettingRegistry`.
+/// Live UI interaction and end-to-end runtime observer effects are exercised in the remote UI runner (`scripts/e2e/tako-e2e.swift`).
 @Suite
 @MainActor
 struct TerminalSettingsEffectTests {
@@ -213,9 +214,11 @@ struct TerminalSettingsEffectTests {
         #expect(tokyoNight.fontSize == takoTheme.fontSize)
     }
 
-    // MARK: - End-to-End Dialog Configuration Persistence & Effect
+    // MARK: - Configuration Persistence & Reparsing Tests
 
-    @Test func endToEndDialogSettingUpdatePropagatesToConfig() throws {
+    /// Verifies that updates written through `KeybindConfigFile` persist to disk and re-parse
+    /// cleanly into `Tako.Config`. Runtime application delivery is exercised in the remote UI runner.
+    @Test func configFileSettingPersistencePropagatesToParsedConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }

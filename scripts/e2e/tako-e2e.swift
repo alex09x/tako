@@ -96,6 +96,11 @@ enum Key {
     static let r: CGKeyCode = 15
     static let k: CGKeyCode = 40
     static let p: CGKeyCode = 35
+    static let one: CGKeyCode = 18
+    static let two: CGKeyCode = 19
+    static let right: CGKeyCode = 124
+    static let down: CGKeyCode = 125
+    static let up: CGKeyCode = 126
 }
 
 // MARK: - Driver
@@ -2329,6 +2334,119 @@ let scenarios: [Scenario] = [
         let recoveredFile = d.path("containment_recovered.txt")
         try d.run("echo 'containment_ok' > \(recoveredFile)")
         try d.expect("containment_recovered.txt", "containment_ok\n", "terminal keyboard input recovery after modal dismissal")
+    }),
+    ("settings-terminal-effects", "settings dialog switches to Terminal Settings tab, exercises search responder handoff, toggles runtime setting, updates config, and resets cleanly", { d in
+        d.key(Key.comma, .maskCommand)
+        var closeBtn: AXUIElement?
+        guard d.wait(for: { closeBtn = d.button(titled: "Close"); return closeBtn != nil }, timeout: 5) else {
+            throw Failure("cmd+, did not present the settings dialog (Close button not found)")
+        }
+        guard let dialog = d.element(withIdentifier: "TerminalSettingsDialog") else {
+            throw Failure("TerminalSettingsDialog accessibility element not found")
+        }
+
+        // Switch to Tab 2: Terminal Settings via Cmd+2
+        d.key(Key.two, .maskCommand)
+        guard d.wait(for: {
+            let val: String? = d.attribute(dialog, kAXValueAttribute)
+            return val?.contains("Terminal Settings") == true
+        }, timeout: 5) else {
+            throw Failure("Cmd+2 did not switch to Terminal Settings tab")
+        }
+
+        // Locate search field and its screen coordinates
+        guard let searchField = d.descendants(of: dialog, role: kAXTextFieldRole).first else {
+            throw Failure("search field not found in settings dialog")
+        }
+        guard let sfPos: AXValue = d.attribute(searchField, kAXPositionAttribute),
+              let sfSize: AXValue = d.attribute(searchField, kAXSizeAttribute) else {
+            throw Failure("could not read search field frame coordinates")
+        }
+        var sfOrigin = CGPoint.zero
+        var sfExtent = CGSize.zero
+        AXValueGetValue(sfPos, .cgPoint, &sfOrigin)
+        AXValueGetValue(sfSize, .cgSize, &sfExtent)
+
+        // 1. Focus search field by clicking inside it and type a query with zero results
+        try d.click(at: CGPoint(x: sfOrigin.x + 20, y: sfOrigin.y + sfExtent.height / 2))
+        usleep(200_000)
+        try d.type("nonexistentqueryxyz")
+        guard d.wait(for: { d.hasText(containing: "No matching") || !d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
+            throw Failure("nonexistent search query did not produce zero results indication")
+        }
+
+        // 2. Escape in search field clears active query and recovers full list
+        d.key(Key.escape)
+        guard d.wait(for: { d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
+            throw Failure("Escape in search field did not clear query and recover settings list")
+        }
+
+        // 3. Type "sync" to filter to workspace sync setting
+        try d.type("sync")
+        guard d.wait(for: { d.hasText(containing: "Sync Window Frame") }, timeout: 5) else {
+            throw Failure("typing 'sync' did not filter to Sync Window Frame setting")
+        }
+
+        // 4. Test mouse-to-keyboard focus handoff:
+        // Click on the list item row (Row 5 is 3.5 row heights below search field at Row 2)
+        let clickPt = CGPoint(x: sfOrigin.x + 50, y: sfOrigin.y + 3.5 * sfExtent.height)
+        try d.click(at: clickPt)
+        usleep(300_000)
+
+        // Now send Space to toggle setting (Space toggles/cycles setting when dialog is focused)
+        d.key(Key.space)
+        guard d.wait(for: { d.hasText(containing: "true") || d.hasText(containing: "custom") }, timeout: 5) else {
+            throw Failure("Space key after mouse click did not toggle filtered setting (responder was not transferred from search editor)")
+        }
+
+        // Verify search field string value remained "sync"
+        let searchVal: String = d.attribute(searchField, kAXValueAttribute) ?? ""
+        guard searchVal == "sync" else {
+            throw Failure("search field text was corrupted or lost during mouse handoff: \(searchVal)")
+        }
+
+        // Dismiss settings dialog via Esc
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog")
+        }
+
+        // Verify config file on disk now contains the persisted setting override
+        let configPath = d.path("config")
+        let configContent = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
+        guard configContent.contains("workspace-sync-window-frame = true") else {
+            throw Failure("config file was not updated with workspace-sync-window-frame = true: \(configContent)")
+        }
+
+        // 5. Reopen settings dialog to reset setting
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("failed to reopen settings dialog for reset")
+        }
+        d.key(Key.two, .maskCommand) // switch to Terminal Settings tab
+        usleep(300_000)
+
+        // Press 'd' to reset setting
+        d.key(Key.d)
+        guard d.wait(for: { d.hasText(containing: "reset") || d.hasText(containing: "default") || !d.hasText(containing: "custom") }, timeout: 5) else {
+            throw Failure("pressing 'd' did not reset setting")
+        }
+
+        // Dismiss settings
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after reset")
+        }
+
+        // Verify config file no longer contains the custom override
+        let resetConfigContent = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
+        guard !resetConfigContent.contains("workspace-sync-window-frame = true") else {
+            throw Failure("config file still contained override after reset: \(resetConfigContent)")
+        }
+
+        // Verify terminal unassisted keyboard delivery
+        try d.run("echo 'settings_effects_ok' > \(d.path("settings_effects_witness"))")
+        try d.expect("settings_effects_witness", "settings_effects_ok\n", "terminal keyboard input after settings effect journey")
     }),
     ("sidebar", "cmd+opt+s toggles the session sidebar open and closed", { d in
         d.key(Key.s, [.maskCommand, .maskAlternate])
@@ -4680,6 +4798,181 @@ let scenarios: [Scenario] = [
         guard rapidTabTTY == ws2_tab1 else {
             throw Failure("rapid tab transition failed to route unassisted input to Tab 1 (got: \(rapidTabTTY), expected: \(ws2_tab1))")
         }
+    }),
+    ("workspace-frame-sync", "workspace switch inherits departing window frame when enabled and preserves independent frames when disabled", { d in
+        // Clean start with pill style config
+        d.quit()
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let wsDir = appSupport.appendingPathComponent(d.bundleID).appendingPathComponent("Workspaces")
+            try? FileManager.default.removeItem(at: wsDir)
+        }
+        try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
+        d.setPosition(CGPoint(x: 100, y: 100))
+        d.setSize(CGSize(width: 800, height: 500))
+        d.focus()
+        usleep(1_000_000)
+
+        guard let initialFrameA = d.windowFrame() else {
+            throw Failure("no window frame discovered for initial window in Default workspace")
+        }
+
+        // Create Workspace 2 via real mouse click on Workspace Pill
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "New Workspace")
+        guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
+            throw Failure("New Project Workspace alert dialog did not appear")
+        }
+        usleep(300_000)
+        try d.clickButton(titled: "Create")
+        guard d.wait(for: { d.button(titled: "Create") == nil }, timeout: 5) else {
+            throw Failure("New Project Workspace alert was not dismissed")
+        }
+        usleep(1_500_000)
+
+        let workspaces = try d.workspaceList()
+        let ws2Info = workspaces.first(where: { ($0["name"] as? String) != "Default" })
+        guard let ws2Name = ws2Info?["name"] as? String else {
+            throw Failure("Workspace 2 record not found")
+        }
+
+        // Give Workspace 2 window a distinctly different frame
+        d.setPosition(CGPoint(x: 250, y: 220))
+        d.setSize(CGSize(width: 650, height: 420))
+        usleep(500_000)
+        guard let initialFrameB = d.windowFrame() else {
+            throw Failure("no window frame for Workspace 2")
+        }
+        guard abs(initialFrameB.origin.x - initialFrameA.origin.x) > 40 ||
+              abs(initialFrameB.size.width - initialFrameA.size.width) > 40 else {
+            throw Failure("Workspace A and B frames are not distinct (A: \(initialFrameA), B: \(initialFrameB))")
+        }
+
+        // 1. With syncWindowFrame == false (default): switching workspaces preserves independent frames
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        usleep(1_500_000)
+        guard let frameAReturned = d.windowFrame() else {
+            throw Failure("no window frame after returning to Default workspace")
+        }
+        guard abs(frameAReturned.origin.x - initialFrameA.origin.x) < 5 &&
+              abs(frameAReturned.size.width - initialFrameA.size.width) < 5 else {
+            throw Failure("Default workspace frame changed while sync was disabled (expected: \(initialFrameA), got: \(frameAReturned))")
+        }
+
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: ws2Name)
+        usleep(1_500_000)
+        guard let frameBReturned = d.windowFrame() else {
+            throw Failure("no window frame after returning to Workspace 2")
+        }
+        guard abs(frameBReturned.origin.x - initialFrameB.origin.x) < 5 &&
+              abs(frameBReturned.size.width - initialFrameB.size.width) < 5 else {
+            throw Failure("Workspace 2 frame changed while sync was disabled (expected: \(initialFrameB), got: \(frameBReturned))")
+        }
+
+        // 2. Enable workspace-sync-window-frame through Settings UI
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("Settings dialog failed to open")
+        }
+        d.key(Key.two, .maskCommand) // switch to Terminal Settings tab
+        usleep(300_000)
+
+        // Focus search and filter to sync
+        if let search = d.descendants(of: d.element(withIdentifier: "TerminalSettingsDialog")!, role: kAXTextFieldRole).first {
+            d.press(search)
+            try d.type("sync")
+            usleep(300_000)
+        }
+        // Click list row to transfer responder and press Space
+        if let f = d.windowFrame() {
+            try d.click(at: CGPoint(x: f.origin.x + 200, y: f.origin.y + 160))
+            usleep(300_000)
+        }
+        d.key(Key.space)
+        usleep(300_000)
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after enabling sync")
+        }
+
+        // Capture departing Workspace B window geometry before switch
+        guard let departingFrameB = d.windowFrame() else {
+            throw Failure("could not read departing Workspace B frame")
+        }
+
+        // Switch to Default workspace via UI
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        usleep(1_500_000)
+
+        // Verify Default workspace window inherited departing Workspace B frame!
+        guard let inheritedFrameA = d.windowFrame() else {
+            throw Failure("no window frame after switching to Default with sync enabled")
+        }
+        guard abs(inheritedFrameA.origin.x - departingFrameB.origin.x) < 5 &&
+              abs(inheritedFrameA.origin.y - departingFrameB.origin.y) < 5 &&
+              abs(inheritedFrameA.size.width - departingFrameB.size.width) < 5 &&
+              abs(inheritedFrameA.size.height - departingFrameB.size.height) < 5 else {
+            throw Failure("Default workspace window did not inherit departing frame (departing B: \(departingFrameB), inherited A: \(inheritedFrameA))")
+        }
+
+        // Resize Window A to a new distinct frame
+        d.setPosition(CGPoint(x: 180, y: 150))
+        d.setSize(CGSize(width: 820, height: 530))
+        usleep(500_000)
+        guard let departingFrameA = d.windowFrame() else {
+            throw Failure("could not read departing Window A frame")
+        }
+
+        // Switch back to Workspace 2: verify Window B inherits departingFrameA
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: ws2Name)
+        usleep(1_500_000)
+
+        guard let inheritedFrameB = d.windowFrame() else {
+            throw Failure("no window frame after switching to Workspace 2 with sync enabled")
+        }
+        guard abs(inheritedFrameB.origin.x - departingFrameA.origin.x) < 5 &&
+              abs(inheritedFrameB.origin.y - departingFrameA.origin.y) < 5 &&
+              abs(inheritedFrameB.size.width - departingFrameA.size.width) < 5 &&
+              abs(inheritedFrameB.size.height - departingFrameA.size.height) < 5 else {
+            throw Failure("Workspace 2 window did not inherit departing frame (departing A: \(departingFrameA), inherited B: \(inheritedFrameB))")
+        }
+
+        // 3. Reset workspace-sync-window-frame through Settings UI
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("Settings dialog failed to reopen for reset")
+        }
+        d.key(Key.two, .maskCommand)
+        usleep(300_000)
+        d.key(Key.d)
+        usleep(300_000)
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Escape did not dismiss settings dialog after reset")
+        }
+
+        // Verify independent frames survive after reset
+        d.setPosition(CGPoint(x: 300, y: 300))
+        d.setSize(CGSize(width: 600, height: 400))
+        usleep(500_000)
+        guard let resetFrameB = d.windowFrame() else { throw Failure("no frame B after reset") }
+
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        usleep(1_500_000)
+
+        guard let currentFrameA = d.windowFrame() else { throw Failure("no frame A") }
+        guard abs(currentFrameA.origin.x - resetFrameB.origin.x) > 20 ||
+              abs(currentFrameA.size.width - resetFrameB.size.width) > 20 else {
+            throw Failure("Independent frame was overwritten after reset: A=\(currentFrameA), B=\(resetFrameB)")
+        }
+
+        // Verify terminal unassisted keyboard delivery
+        try d.run("echo 'frame_sync_ok' > \(d.path("frame_sync_witness"))")
+        try d.expect("frame_sync_witness", "frame_sync_ok\n", "terminal keyboard input after frame sync journey")
     }),
 ]
 

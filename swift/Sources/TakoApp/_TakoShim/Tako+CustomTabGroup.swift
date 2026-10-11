@@ -81,6 +81,7 @@ extension Tako {
         /// Resets test overrides and cached group state for test isolation.
         static func resetForTesting() {
             lastActiveWindowFrame = nil
+            groupsByWindow.removeAll()
             if ProcessInfo.processInfo.environment["TAKO_ENABLE_LIVE_WINDOW_TESTS"] == "1" {
                 suppressWindowOrderingForTesting = false
             } else {
@@ -140,10 +141,34 @@ extension Tako {
                 forName: .takoWorkspaceDidChange,
                 object: nil,
                 queue: nil
-            ) { _ in
+            ) { notification in
                 MainActor.assumeIsolated {
                     // Capture departing active window frame from the departing workspace before selection is cleared or windows hidden.
                     let departingFrame: NSRect? = {
+                        let departingWsId = (notification.userInfo?["fromWorkspaceId"] as? UUID)
+                            ?? WorkspaceStore.shared.recentTransitions.last?.fromId
+                        if let departingWsId,
+                           let departingTabs = WorkspaceStore.shared.workspace(for: departingWsId)?.tabIdentifiers,
+                           !departingTabs.isEmpty {
+                            if let keyWin = NSApp.keyWindow, departingTabs.contains(keyWin.stableTabIdentifier) {
+                                return keyWin.frame
+                            }
+                            for group in allGroups {
+                                if let sel = group.selectedWindow, sel.isVisible, departingTabs.contains(sel.stableTabIdentifier) {
+                                    return sel.frame
+                                }
+                            }
+                            for group in allGroups {
+                                if let sel = group.selectedWindow, departingTabs.contains(sel.stableTabIdentifier) {
+                                    return sel.frame
+                                }
+                            }
+                            for group in allGroups {
+                                for win in group.windows where departingTabs.contains(win.stableTabIdentifier) {
+                                    return win.frame
+                                }
+                            }
+                        }
                         if let keyWin = NSApp.keyWindow, groupsByWindow[ObjectIdentifier(keyWin)] != nil {
                             return keyWin.frame
                         }
