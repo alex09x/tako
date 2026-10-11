@@ -4868,8 +4868,9 @@ let scenarios: [Scenario] = [
         guard let initialFrameA1 = d.windowFrame() else {
             throw Failure("no window frame discovered for initial window in Default workspace")
         }
-        guard let winA1 = d.activeWindow() else {
-            throw Failure("active window A1 not found")
+        guard let winA1 = d.activeWindow(),
+              let idA1 = d.windowID(for: winA1) else {
+            throw Failure("active window A1 or its ID not found")
         }
 
         // Create second window A2 in Default workspace via Cmd+N (multiple groups in Workspace A)
@@ -4877,12 +4878,23 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.onScreenWindowNumbers().count == 2 }, timeout: 5) else {
             throw Failure("second window A2 failed to appear after Cmd+N")
         }
-        guard let winA2 = d.windows().first(where: { d.windowID(for: $0) != d.windowID(for: winA1) }) else {
-            throw Failure("second window A2 AXUIElement not found")
+        guard let winA2 = d.windows().first(where: { d.windowID(for: $0) != idA1 }),
+              let idA2 = d.windowID(for: winA2) else {
+            throw Failure("second window A2 AXUIElement or its ID not found")
         }
         d.setPosition(CGPoint(x: 700, y: 50), for: winA2)
         d.setSize(CGSize(width: 550, height: 380), for: winA2)
         usleep(500_000)
+        guard let initialFrameA2 = d.windowFrame(winA2) else {
+            throw Failure("could not read initial frame for window A2")
+        }
+
+        let liveWin: (CGWindowID) throws -> AXUIElement = { wid in
+            guard let found = d.windows().first(where: { d.windowID(for: $0) == wid }) else {
+                throw Failure("live window element not found for window ID \(wid)")
+            }
+            return found
+        }
 
         // Re-focus Window A1 to establish it as the departing active window
         try d.click(at: CGPoint(x: 250, y: 150))
@@ -4896,7 +4908,7 @@ let scenarios: [Scenario] = [
         }
 
         // Create Workspace 2 via real mouse click on Workspace Pill of Window A1
-        try d.clickWorkspacePill(in: winA1)
+        try d.clickWorkspacePill(in: try liveWin(idA1))
         try d.clickOpenMenuItem(titled: "New Workspace")
         guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
             throw Failure("New Project Workspace alert dialog did not appear")
@@ -4924,12 +4936,16 @@ let scenarios: [Scenario] = [
         guard onScreenB.count == 1 && onScreenB.intersection(allWinA).isEmpty else {
             throw Failure("Window B on-screen set is not disjoint from Workspace A windows (B=\(onScreenB), A=\(allWinA))")
         }
+        guard let idB = onScreenB.first else {
+            throw Failure("could not resolve window ID for Window B")
+        }
 
         // Give Workspace 2 window a distinctly different frame
-        d.setPosition(CGPoint(x: 200, y: 150))
-        d.setSize(CGSize(width: 680, height: 440))
+        let winBInit = try liveWin(idB)
+        d.setPosition(CGPoint(x: 200, y: 150), for: winBInit)
+        d.setSize(CGSize(width: 680, height: 440), for: winBInit)
         usleep(500_000)
-        guard let initialFrameB = d.windowFrame() else {
+        guard let initialFrameB = d.windowFrame(winBInit) else {
             throw Failure("no window frame for Workspace 2")
         }
         guard abs(initialFrameB.origin.x - initialFrameA1.origin.x) > 40 ||
@@ -4951,12 +4967,25 @@ let scenarios: [Scenario] = [
         guard d.onScreenWindowNumbers() == allWinA else {
             throw Failure("on-screen windows in Default did not match allWinA: \(d.onScreenWindowNumbers()) vs \(allWinA)")
         }
-        guard let frameAReturned = d.windowFrame() else {
-            throw Failure("no window frame after returning to Default workspace")
+        let curWinA1 = try liveWin(idA1)
+        let curWinA2 = try liveWin(idA2)
+        guard let frameA1Returned = d.windowFrame(curWinA1) else {
+            throw Failure("no window frame for window A1 after returning to Default workspace")
         }
-        guard abs(frameAReturned.origin.x - initialFrameA1.origin.x) < 5 &&
-              abs(frameAReturned.size.width - initialFrameA1.size.width) < 5 else {
-            throw Failure("Default workspace frame changed while sync was disabled (expected: \(initialFrameA1), got: \(frameAReturned))")
+        guard abs(frameA1Returned.origin.x - initialFrameA1.origin.x) < 5 &&
+              abs(frameA1Returned.origin.y - initialFrameA1.origin.y) < 5 &&
+              abs(frameA1Returned.size.width - initialFrameA1.size.width) < 5 &&
+              abs(frameA1Returned.size.height - initialFrameA1.size.height) < 5 else {
+            throw Failure("Default workspace window A1 frame changed while sync was disabled (expected: \(initialFrameA1), got: \(frameA1Returned))")
+        }
+        guard let frameA2Returned = d.windowFrame(curWinA2) else {
+            throw Failure("no window frame for inactive sibling window A2 after returning to Default workspace")
+        }
+        guard abs(frameA2Returned.origin.x - initialFrameA2.origin.x) < 5 &&
+              abs(frameA2Returned.origin.y - initialFrameA2.origin.y) < 5 &&
+              abs(frameA2Returned.size.width - initialFrameA2.size.width) < 5 &&
+              abs(frameA2Returned.size.height - initialFrameA2.size.height) < 5 else {
+            throw Failure("Default workspace inactive sibling window A2 frame changed while sync was disabled (expected: \(initialFrameA2), got: \(frameA2Returned))")
         }
 
         try d.clickWorkspacePill()
@@ -4972,11 +5001,14 @@ let scenarios: [Scenario] = [
         guard d.onScreenWindowNumbers() == onScreenB else {
             throw Failure("on-screen window in Workspace 2 did not match onScreenB: \(d.onScreenWindowNumbers()) vs \(onScreenB)")
         }
-        guard let frameBReturned = d.windowFrame() else {
+        let curWinB = try liveWin(idB)
+        guard let frameBReturned = d.windowFrame(curWinB) else {
             throw Failure("no window frame after returning to Workspace 2")
         }
         guard abs(frameBReturned.origin.x - initialFrameB.origin.x) < 5 &&
-              abs(frameBReturned.size.width - initialFrameB.size.width) < 5 else {
+              abs(frameBReturned.origin.y - initialFrameB.origin.y) < 5 &&
+              abs(frameBReturned.size.width - initialFrameB.size.width) < 5 &&
+              abs(frameBReturned.size.height - initialFrameB.size.height) < 5 else {
             throw Failure("Workspace 2 frame changed while sync was disabled (expected: \(initialFrameB), got: \(frameBReturned))")
         }
 
@@ -5052,10 +5084,10 @@ let scenarios: [Scenario] = [
               abs(inheritedFrameA.origin.y - departingFrameB.origin.y) < 5 &&
               abs(inheritedFrameA.size.width - departingFrameB.size.width) < 5 &&
               abs(inheritedFrameA.size.height - departingFrameB.size.height) < 5 else {
-            throw Failure("Default workspace window did not inherit departing frame (departing B: \(departingFrameB), inherited A: \(inheritedFrameA))")
+            throw Failure("Default workspace active window did not inherit departing frame (departing B: \(departingFrameB), inherited A: \(inheritedFrameA))")
         }
 
-        // Resize active Window A1 to a new distinct frame while second Window A2 remains untouched
+        // Resize active Window A to a new distinct frame while second window remains untouched
         d.setPosition(CGPoint(x: 80, y: 80))
         d.setSize(CGSize(width: 780, height: 490))
         usleep(500_000)
@@ -5063,7 +5095,7 @@ let scenarios: [Scenario] = [
             throw Failure("could not read departing Window A frame")
         }
 
-        // Switch back to Workspace 2: verify Window B inherits departing active Window A frame (not arbitrary A2)
+        // Switch back to Workspace 2: verify Window B inherits departing active Window A frame (not arbitrary A1)
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: ws2Name)
         usleep(1_500_000)
@@ -5116,12 +5148,15 @@ let scenarios: [Scenario] = [
             throw Failure("config file still contained override after reset")
         }
 
-        // Verify independent frames survive after reset
-        d.setPosition(CGPoint(x: 320, y: 220))
-        d.setSize(CGSize(width: 520, height: 360))
+        // Verify independent frames survive after reset across an A -> B -> A cycle
+        // 1. In Workspace 2, establish explicit geometry for Window B
+        let resetWinB = try liveWin(idB)
+        d.setPosition(CGPoint(x: 320, y: 220), for: resetWinB)
+        d.setSize(CGSize(width: 520, height: 360), for: resetWinB)
         usleep(500_000)
-        guard let resetFrameB = d.windowFrame() else { throw Failure("no frame B after reset") }
+        guard let expectedResetFrameB = d.windowFrame(resetWinB) else { throw Failure("no frame B after reset") }
 
+        // Switch to Default workspace
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "Default")
         usleep(1_500_000)
@@ -5136,10 +5171,86 @@ let scenarios: [Scenario] = [
             throw Failure("on-screen windows did not match allWinA after reset")
         }
 
-        guard let currentFrameA = d.windowFrame() else { throw Failure("no frame A") }
-        guard abs(currentFrameA.origin.x - resetFrameB.origin.x) > 20 ||
-              abs(currentFrameA.size.width - resetFrameB.size.width) > 20 else {
-            throw Failure("Independent frame was overwritten after reset: A=\(currentFrameA), B=\(resetFrameB)")
+        // Capture inactive sibling full frame before switch
+        let postResetActiveWinA = try liveWin(idA2)
+        let postResetInactiveWinA = try liveWin(idA1)
+        guard let expectedResetInactiveFrameA = d.windowFrame(postResetInactiveWinA) else {
+            throw Failure("could not read inactive sibling window frame in Default workspace after reset")
+        }
+
+        // Resize active Window A to a new distinct rectangle while inactive Window A1 is untouched
+        d.setPosition(CGPoint(x: 90, y: 90), for: postResetActiveWinA)
+        d.setSize(CGSize(width: 750, height: 470), for: postResetActiveWinA)
+        usleep(500_000)
+        guard let departingFrameAfterResetA = d.windowFrame(postResetActiveWinA) else {
+            throw Failure("could not read frame for active Window A after post-reset resize")
+        }
+
+        // Switch to Workspace 2: verify Window B strictly retains expectedResetFrameB in all 4 dimensions
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: ws2Name)
+        usleep(1_500_000)
+
+        let wsCheck6 = try d.workspaceList()
+        guard (wsCheck6.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == ws2Id.lowercased() else {
+            throw Failure("active workspace did not transition to Workspace 2 in post-reset check (list: \(wsCheck6))")
+        }
+        guard d.onScreenWindowNumbers() == onScreenB else {
+            throw Failure("on-screen windows did not match onScreenB in post-reset check: \(d.onScreenWindowNumbers()) vs \(onScreenB)")
+        }
+
+        let postResetReturnWinB = try liveWin(idB)
+        guard let actualFrameBAfterSwitch = d.windowFrame(postResetReturnWinB) else {
+            throw Failure("no frame for Window B after returning to Workspace 2 in post-reset check")
+        }
+        guard abs(actualFrameBAfterSwitch.origin.x - expectedResetFrameB.origin.x) < 5 &&
+              abs(actualFrameBAfterSwitch.origin.y - expectedResetFrameB.origin.y) < 5 &&
+              abs(actualFrameBAfterSwitch.size.width - expectedResetFrameB.size.width) < 5 &&
+              abs(actualFrameBAfterSwitch.size.height - expectedResetFrameB.size.height) < 5 else {
+            throw Failure("Window B frame was not preserved with sync disabled (expected: \(expectedResetFrameB), got: \(actualFrameBAfterSwitch), departing A was: \(departingFrameAfterResetA))")
+        }
+
+        // Now resize Window B to another new rectangle in Workspace 2
+        d.setPosition(CGPoint(x: 350, y: 250), for: postResetReturnWinB)
+        d.setSize(CGSize(width: 580, height: 390), for: postResetReturnWinB)
+        usleep(500_000)
+        guard let departingFrameAfterResetB = d.windowFrame(postResetReturnWinB) else {
+            throw Failure("could not read frame for Window B after second post-reset resize")
+        }
+
+        // Switch back to Default workspace: verify both active and inactive windows strictly preserve their geometry
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        usleep(1_500_000)
+
+        let wsCheck7 = try d.workspaceList()
+        guard (wsCheck7.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased() else {
+            throw Failure("active workspace did not transition to Default in final post-reset return (list: \(wsCheck7))")
+        }
+        guard d.onScreenWindowNumbers() == allWinA else {
+            throw Failure("on-screen windows did not match allWinA in final post-reset return: \(d.onScreenWindowNumbers()) vs \(allWinA)")
+        }
+
+        let finalActiveWinA = try liveWin(idA2)
+        let finalInactiveWinA = try liveWin(idA1)
+        guard let actualFrameActiveFinal = d.windowFrame(finalActiveWinA) else {
+            throw Failure("could not read frame for active Window A in final post-reset return")
+        }
+        guard abs(actualFrameActiveFinal.origin.x - departingFrameAfterResetA.origin.x) < 5 &&
+              abs(actualFrameActiveFinal.origin.y - departingFrameAfterResetA.origin.y) < 5 &&
+              abs(actualFrameActiveFinal.size.width - departingFrameAfterResetA.size.width) < 5 &&
+              abs(actualFrameActiveFinal.size.height - departingFrameAfterResetA.size.height) < 5 else {
+            throw Failure("Active Window A frame was not preserved after return switch with sync disabled (expected: \(departingFrameAfterResetA), got: \(actualFrameActiveFinal), departing B was: \(departingFrameAfterResetB))")
+        }
+
+        guard let actualFrameInactiveFinal = d.windowFrame(finalInactiveWinA) else {
+            throw Failure("could not read frame for inactive sibling Window A in final post-reset return")
+        }
+        guard abs(actualFrameInactiveFinal.origin.x - expectedResetInactiveFrameA.origin.x) < 5 &&
+              abs(actualFrameInactiveFinal.origin.y - expectedResetInactiveFrameA.origin.y) < 5 &&
+              abs(actualFrameInactiveFinal.size.width - expectedResetInactiveFrameA.size.width) < 5 &&
+              abs(actualFrameInactiveFinal.size.height - expectedResetInactiveFrameA.size.height) < 5 else {
+            throw Failure("Inactive sibling Window A frame was not preserved after return switch with sync disabled (expected: \(expectedResetInactiveFrameA), got: \(actualFrameInactiveFinal))")
         }
 
         // Verify terminal unassisted keyboard delivery

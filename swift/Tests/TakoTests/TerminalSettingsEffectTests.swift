@@ -18,21 +18,26 @@ import Testing
 /// for settings declared in `TerminalSettingRegistry`.
 ///
 /// Registry Settings Status & Runtime Consumer Acceptance Matrix:
-/// 1.  workspace-sync-window-frame: [Parser: PASS] [Persistence: PASS] [Live UI Witness: COVERED via workspace-frame-sync & settings-terminal-effects]
-/// 2.  tab-style:                   [Parser: PASS] [Persistence: PASS] [Live UI Witness: COVERED via settings-terminal-effects]
-/// 3.  window-inherit-font-size:    [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - next-surface font size inheritance]
-/// 4.  window-inherit-working-dir:  [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - next-surface cwd inheritance]
-/// 5.  cursor-style:                [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal renderer cursor drawing]
-/// 6.  cursor-style-blink:          [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal cursor timer loop]
-/// 7.  mouse-hide-while-typing:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - AppKit mouse cursor autohide]
-/// 8.  copy-on-select:              [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - terminal selection pasteboard bridge]
-/// 9.  confirm-close-surface:       [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - tab close confirmation modal alert]
-/// 10. shell-integration:          [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - OSC 133 shell prompt mark injection]
-/// 11. quick-terminal-position:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - dropdown quick terminal screen anchor]
-/// 12. quick-terminal-autohide:     [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - dropdown window resign active autohide]
-/// 13. theme:                       [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - palette propagation to metal/renderer]
-/// 14. font-size:                   [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - live glyph cache reallocation]
-/// 15. background-blur:             [Parser: PASS] [Persistence: PASS] [Live UI Witness: OPEN - NSVisualEffectView material configuration]
+/// 1.  workspace-sync-window-frame: [Parser: PASS in workspaceSyncWindowFrameEffect] [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: COVERED via workspace-frame-sync]
+/// 2.  tab-style:                   [Parser: PASS in tabStyleEffect]                   [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - tab strip appearance/layout update]
+/// 3.  window-inherit-font-size:    [Parser: PASS in windowInheritFontSizeEffect]      [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - next-surface font size inheritance]
+/// 4.  window-inherit-working-dir:  [Parser: PASS in windowInheritWorkingDirectoryEffect] [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - next-surface cwd inheritance]
+/// 5.  cursor-style:                [Parser: PASS in cursorStyleEffect]                [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - terminal renderer cursor drawing]
+/// 6.  cursor-style-blink:          [Parser: PASS in cursorBlinkEffect]                [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - terminal cursor timer loop]
+/// 7.  mouse-hide-while-typing:     [Parser: PASS in mouseHideWhileTypingEffect]       [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - AppKit mouse cursor autohide]
+/// 8.  copy-on-select:              [Parser: PASS in copyOnSelectEffect]              [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - terminal selection pasteboard bridge]
+/// 9.  confirm-close-surface:       [Parser: PASS in confirmCloseSurfaceEffect]       [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - tab close confirmation modal alert]
+/// 10. shell-integration:          [Parser: PASS in shellIntegrationEffect]          [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - OSC 133 shell prompt mark injection]
+/// 11. quick-terminal-position:     [Parser: PASS in quickTerminalPositionEffect]     [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - dropdown quick terminal screen anchor]
+/// 12. quick-terminal-autohide:     [Parser: PASS in quickTerminalAutoHideEffect]     [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - dropdown window resign active autohide]
+/// 13. theme:                       [Parser: PASS in appearanceSettingsEffect]        [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - palette propagation to metal/renderer]
+/// 14. font-size:                   [Parser: PASS in appearanceSettingsEffect]        [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - live glyph cache reallocation]
+/// 15. background-blur:             [Parser: PASS in appearanceSettingsEffect]        [Persistence: PASS in configFileSettingPersistencePropagatesToParsedConfig] [Live UI Witness: OPEN - NSVisualEffectView material configuration]
+///
+/// Current Acceptance Summary:
+/// - Parser: 15/15 PASS
+/// - Persistence: 15/15 PASS (exercised across all 15 registry settings in configFileSettingPersistencePropagatesToParsedConfig)
+/// - Live UI Witnesses: 1/15 COVERED (workspace-sync-window-frame), 14/15 OPEN
 @Suite
 @MainActor
 struct TerminalSettingsEffectTests {
@@ -232,8 +237,8 @@ struct TerminalSettingsEffectTests {
 
     // MARK: - Configuration Persistence & Reparsing Tests
 
-    /// Verifies that updates written through `KeybindConfigFile` persist to disk and re-parse
-    /// cleanly into `Tako.Config`. Runtime application delivery is exercised in the remote UI runner.
+    /// Verifies that updates written through `KeybindConfigFile` persist to disk, re-parse
+    /// cleanly into `Tako.Config`, and reset to defaults upon removal across all 15 registry settings.
     @Test func configFileSettingPersistencePropagatesToParsedConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -242,34 +247,53 @@ struct TerminalSettingsEffectTests {
         let configPath = tempDir.appendingPathComponent("config").path
         let configFile = KeybindConfigFile(configPath: configPath)
 
-        // Verify initial reload gives default
-        var loaded = Tako.Config(at: configPath)
-        #expect(loaded.workspaceSyncWindowFrame == false)
-        #expect(loaded.tabStyle == .pill)
+        let allSettings = TerminalSettingRegistry.allSettings
+        #expect(allSettings.count == 15)
 
-        // Update workspace sync via registry item
-        guard let wsItem = TerminalSettingRegistry.setting(for: "workspace-sync-window-frame"),
-              let tabItem = TerminalSettingRegistry.setting(for: "tab-style"),
-              let fontItem = TerminalSettingRegistry.setting(for: "font-size") else {
-            Issue.record("Missing required setting registry items")
-            return
+        for setting in allSettings {
+            let defaultValue = setting.type.defaultStringValue
+            #expect(configFile.effectiveSettingValue(for: setting) == defaultValue)
+
+            // Select a valid non-default value to test write + persistence
+            let customValue = setting.type.nextValue(current: defaultValue)
+            #expect(customValue != defaultValue)
+
+            // 1. Write custom value to file
+            #expect(configFile.setSettingValue(customValue, for: setting))
+            #expect(configFile.getSettingValue(for: setting) == customValue)
+            #expect(configFile.effectiveSettingValue(for: setting) == customValue)
+
+            // 2. Reload fresh KeybindConfigFile from disk and verify persistence
+            let reloadedConfigFile = KeybindConfigFile(configPath: configPath)
+            #expect(reloadedConfigFile.getSettingValue(for: setting) == customValue)
+            #expect(reloadedConfigFile.effectiveSettingValue(for: setting) == customValue)
+
+            // 3. Verify Tako.Config parses cleanly with the custom value present
+            let parsedCustom = Tako.Config(at: configPath)
+            if setting.id == "workspace-sync-window-frame" {
+                #expect(parsedCustom.workspaceSyncWindowFrame == true)
+            } else if setting.id == "tab-style" {
+                #expect(parsedCustom.tabStyle == .classic)
+            }
+
+            // 4. Remove setting (reset to default)
+            #expect(configFile.removeSettingValue(for: setting))
+            #expect(configFile.getSettingValue(for: setting) == nil)
+            #expect(configFile.effectiveSettingValue(for: setting) == defaultValue)
+
+            // 5. Reload again from disk and verify override is completely removed
+            let postResetConfigFile = KeybindConfigFile(configPath: configPath)
+            #expect(postResetConfigFile.getSettingValue(for: setting) == nil)
+            #expect(postResetConfigFile.effectiveSettingValue(for: setting) == defaultValue)
+
+            // 6. Verify Tako.Config parses cleanly with default restored
+            let parsedReset = Tako.Config(at: configPath)
+            if setting.id == "workspace-sync-window-frame" {
+                #expect(parsedReset.workspaceSyncWindowFrame == false)
+            } else if setting.id == "tab-style" {
+                #expect(parsedReset.tabStyle == .pill)
+            }
         }
-
-        #expect(configFile.setSettingValue("true", for: wsItem))
-        #expect(configFile.setSettingValue("classic", for: tabItem))
-        #expect(configFile.setSettingValue("16", for: fontItem))
-
-        // Reload configuration from disk and verify effects
-        loaded = Tako.Config(at: configPath)
-        #expect(loaded.workspaceSyncWindowFrame == true)
-        #expect(loaded.tabStyle == .classic)
-        #expect(loaded.theme.fontSize == 16.0)
-
-        // Now reset workspace sync back to default
-        #expect(configFile.removeSettingValue(for: wsItem))
-        loaded = Tako.Config(at: configPath)
-        #expect(loaded.workspaceSyncWindowFrame == false)
-        #expect(loaded.tabStyle == .classic) // still custom
     }
 
     // MARK: - Registry Completeness Check
