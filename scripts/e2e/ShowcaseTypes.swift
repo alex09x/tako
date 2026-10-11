@@ -47,6 +47,58 @@ struct SceneManifestItem: Codable {
     let status: SceneStatus
 }
 
+let showcaseManifest: [SceneManifestItem] = [
+    SceneManifestItem(
+        id: "welcome",
+        chapter: "core",
+        feature: "Launch & 24-bit TrueColor Engine",
+        witness: "24-bit ANSI color rendering, interactive shell readiness, banner visibility",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "splits",
+        chapter: "core",
+        feature: "Split Panes & Keyboard Navigation",
+        witness: "Cmd+D horizontal split, Cmd+] pane cycling, independent TTY delivery, Cmd+W closure",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "workspaces-frame-sync",
+        chapter: "core",
+        feature: "Multi-Workspace & Live Window Frame Sync",
+        witness: "Pill navigation, new workspace dialog, frame independence when off, live sync when enabled",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "tabs-pills",
+        chapter: "core",
+        feature: "Native Tabs & Pill Styling",
+        witness: "Cmd+T tab creation, Cmd+1/2 switching, per-tab TTY isolation, Cmd+W clean closure",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "persistence",
+        chapter: "core",
+        feature: "Process Continuity & Session Persistence",
+        witness: "Active background counter survives app quit/relaunch and continues in reattached PTY",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "quick-terminal",
+        chapter: "optional",
+        feature: "Quake-Style Quick Terminal Dropdown",
+        witness: "Cmd+Shift+` toggle, Quick Terminal discovery via takoctl tree, clean dismissal",
+        status: .supported
+    ),
+    SceneManifestItem(
+        id: "zoom",
+        chapter: "optional",
+        feature: "Dynamic Font Zooming & Column Reflow",
+        witness: "Cmd+= increases font / decreases cols, Cmd+0 resets columns",
+        status: .supported
+    ),
+]
+
 final class ShowcaseContext {
     let driver: Driver
     let pacing: PacingMode

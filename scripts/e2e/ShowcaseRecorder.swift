@@ -15,9 +15,30 @@ import Foundation
 
 // MARK: - Showcase Presentation Stage
 
-/// Fixed bounding stage geometry within which all showcase windows and UI elements must reside.
+/// Bounding stage geometry within which all showcase windows and UI elements must reside.
 struct ShowcaseStage {
-    static let bounds = CGRect(x: 40, y: 40, width: 1240, height: 780)
+    static var bounds: CGRect {
+        if let screen = NSScreen.main {
+            let marginX: CGFloat = 40
+            let marginY: CGFloat = 40
+            let width = min(1400, screen.frame.width - (marginX * 2))
+            let height = min(860, screen.frame.height - (marginY * 2))
+            let x = round((screen.frame.width - width) / 2)
+            let y: CGFloat = marginY
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+        return CGRect(x: 40, y: 40, width: 1240, height: 780)
+    }
+
+    static func validateDisplay(screen: NSScreen? = NSScreen.main) throws {
+        guard let screen = screen else {
+            throw Failure("No active display found to validate showcase stage")
+        }
+        let screenRect = CGRect(x: 0, y: 0, width: screen.frame.width, height: screen.frame.height)
+        guard screenRect.contains(bounds) else {
+            throw Failure("Showcase stage \(bounds) exceeds display bounds \(screenRect)")
+        }
+    }
 
     static func assertContains(window: CGRect, name: String) throws {
         guard bounds.contains(window) else {
@@ -32,10 +53,12 @@ struct VideoMetadata: Codable {
     let path: String
     let fileSize: Int64
     let durationSeconds: Double
+    let expectedMinDuration: Double
     let width: Double
     let height: Double
     let trackCount: Int
-    let sampleFrameDecoded: Bool
+    let decodedSampleCount: Int
+    let status: String
 }
 
 // MARK: - Showcase Recorder
@@ -46,6 +69,7 @@ final class ShowcaseRecorder {
     let captureRect: CGRect
     private var process: Process?
     private let errorPipe = Pipe()
+    private var startTime: Date?
 
     init(targetFile: URL, fullDisplay: Bool = false, customStage: CGRect? = nil) throws {
         self.targetFile = targetFile
@@ -117,6 +141,7 @@ final class ShowcaseRecorder {
         p.standardError = errorPipe
         try p.run()
         self.process = p
+        self.startTime = Date()
 
         // Bounded startup check: wait up to 1.5s for process to initialize and confirm running
         let startDeadline = Date().addingTimeInterval(1.5)
@@ -130,7 +155,7 @@ final class ShowcaseRecorder {
         }
     }
 
-    func stop() throws -> VideoMetadata {
+    func stop(expectedMinDuration: Double = 0.0) throws -> VideoMetadata {
         guard let p = process else {
             throw Failure("Cannot stop recorder: no active recording process")
         }
@@ -138,22 +163,27 @@ final class ShowcaseRecorder {
             process = nil
         }
 
+        // Check if process terminated prematurely before stop was requested
+        if !p.isRunning {
+            let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw Failure("screencapture recorder died unexpectedly before stop (exit code \(p.terminationStatus)): \(errStr)")
+        }
+
+        p.interrupt() // SIGINT tells screencapture to finalize the QuickTime movie
+        let stopDeadline = Date().addingTimeInterval(5.0)
+        while p.isRunning && Date() < stopDeadline {
+            usleep(100_000)
+        }
         if p.isRunning {
-            p.interrupt() // SIGINT tells screencapture to finalize the QuickTime movie
-            let stopDeadline = Date().addingTimeInterval(5.0)
-            while p.isRunning && Date() < stopDeadline {
+            p.terminate() // SIGTERM escalation
+            let termDeadline = Date().addingTimeInterval(2.0)
+            while p.isRunning && Date() < termDeadline {
                 usleep(100_000)
             }
             if p.isRunning {
-                p.terminate() // SIGTERM escalation
-                let termDeadline = Date().addingTimeInterval(2.0)
-                while p.isRunning && Date() < termDeadline {
-                    usleep(100_000)
-                }
-                if p.isRunning {
-                    kill(p.processIdentifier, SIGKILL)
-                    usleep(100_000)
-                }
+                kill(p.processIdentifier, SIGKILL)
+                usleep(100_000)
             }
         }
         p.waitUntilExit() // Reaped child guaranteed
@@ -175,8 +205,15 @@ final class ShowcaseRecorder {
 
         let asset = AVURLAsset(url: targetFile)
         let duration = CMTimeGetSeconds(asset.duration)
-        guard duration > 0.1 else {
-            throw Failure("Recorded video duration is invalid or zero (\(duration)s)")
+        guard duration > 0.5 else {
+            throw Failure("Recorded video duration is invalid or too short (\(duration)s)")
+        }
+
+        // Require video duration to cover executed scenes
+        if expectedMinDuration > 0.0 {
+            guard duration >= expectedMinDuration * 0.85 else {
+                throw Failure("Recorded video duration (\(duration)s) is significantly shorter than expected scene runtime (\(expectedMinDuration)s)")
+            }
         }
 
         let videoTracks = asset.tracks(withMediaType: .video)
@@ -188,24 +225,31 @@ final class ShowcaseRecorder {
             throw Failure("Recorded video has invalid frame dimensions (\(trackSize.width)x\(trackSize.height))")
         }
 
-        // Decode a real frame from the finalized asset to prove media validity
+        // Decode representative frames spanning the entire video duration to prove media validity
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         imageGenerator.appliesPreferredTrackTransform = true
-        let sampleTime = CMTime(seconds: min(0.5, duration / 2), preferredTimescale: 600)
-        var actualTime = CMTime.zero
-        let sampleImage = try imageGenerator.copyCGImage(at: sampleTime, actualTime: &actualTime)
-        guard sampleImage.width > 0 && sampleImage.height > 0 else {
-            throw Failure("Failed to decode video frame from recorded movie asset")
+        let sampleCheckpoints: [Double] = [0.1, 0.25, 0.5, 0.75, 0.9].map { $0 * duration }
+        var decodedCount = 0
+        for sampleTimeSec in sampleCheckpoints {
+            let sampleTime = CMTime(seconds: sampleTimeSec, preferredTimescale: 600)
+            var actualTime = CMTime.zero
+            let sampleImage = try imageGenerator.copyCGImage(at: sampleTime, actualTime: &actualTime)
+            guard sampleImage.width > 0 && sampleImage.height > 0 else {
+                throw Failure("Failed to decode video frame at \(sampleTimeSec)s from recorded movie asset")
+            }
+            decodedCount += 1
         }
 
         return VideoMetadata(
             path: targetFile.path,
             fileSize: size,
             durationSeconds: duration,
+            expectedMinDuration: expectedMinDuration,
             width: Double(trackSize.width),
             height: Double(trackSize.height),
             trackCount: videoTracks.count,
-            sampleFrameDecoded: true
+            decodedSampleCount: decodedCount,
+            status: "RECORDING_VERIFIED"
         )
     }
 

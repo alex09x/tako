@@ -25,6 +25,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
             throw Failure("No open windows at start of tabs scene")
         }
 
+        if let f = d.windowFrame() {
+            try ShowcaseStage.assertContains(window: f, name: "Tabs Window")
+        }
+
         // Initial Tab 1 TTY
         try d.run("tty > \(d.path("tab1_tty1"))")
         let tab1 = try d.file("tab1_tty1").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,6 +85,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         let d = ctx.driver
         d.activate()
 
+        if let f = d.windowFrame() {
+            try ShowcaseStage.assertContains(window: f, name: "Persistence Initial Window")
+        }
+
         let zsPath = d.path("zs")
         let pid1Path = d.path("pid1")
         try d.run("sh -c 'echo $PPID' > \(pid1Path); env | grep -c ZMX_SESSION > \(zsPath)")
@@ -113,11 +121,16 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         // Wait 2.0s while background counter continues ticking in persistent zmx session
         usleep(2_000_000)
 
-        // Relaunch app with session-persistence = true
-        let persistConfig = "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\n"
+        // Relaunch app with session-persistence = true and stage-compatible config
+        let persistConfig = "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\nquick-terminal-position = center\n"
         try d.launch(config: persistConfig)
         guard d.isRunning && d.pid != appPidBefore else {
             throw Failure("App did not relaunch with a fresh process")
+        }
+
+        // Verify stage containment for relaunched window
+        if let f = d.windowFrame() {
+            try ShowcaseStage.assertContains(window: f, name: "Persistence Relaunched Window")
         }
 
         // Verify same shell survived across app restart
@@ -151,53 +164,83 @@ let extraShowcaseScenes: [ShowcaseScene] = [
     // Optional Scene: Quick Terminal
     ShowcaseScene(manifest: showcaseManifest[5], run: { ctx in
         let d = ctx.driver
-        d.activate()
 
+        // Step 1: Positively capture initial active window and pane identity
+        guard let origWin = d.activeWindow(),
+              let origWinId = d.windowID(for: origWin) else {
+            throw Failure("Could not resolve initial active window before Quick Terminal toggle")
+        }
         let origTtyPath = d.path("orig_tty")
-        try d.run("tty > \(origTtyPath)")
+        let origPanePath = d.path("orig_pane")
+        try d.run("tty > \(origTtyPath); echo $TAKO_SURFACE_ID > \(origPanePath)")
         let origTty = (try? d.file("orig_tty").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let origPane = (try? d.file("orig_pane").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard !origTty.isEmpty, !origPane.isEmpty else {
+            throw Failure("Could not resolve initial TTY or surface ID")
+        }
 
-        // Toggle Quick Terminal via Cmd+Shift+`
+        let knownWindowsBefore = Set(d.windows().compactMap { d.windowID(for: $0) })
+
+        // Step 2: Toggle Quick Terminal via Cmd+Shift+`
         d.key(Key.grave, [.maskCommand, .maskShift])
         usleep(1_200_000)
 
+        // Step 3: Positively identify the shown Quick Terminal window
+        guard let qtWindow = d.windows().first(where: { win in
+            guard let wid = d.windowID(for: win) else { return false }
+            if !knownWindowsBefore.contains(wid) { return true }
+            let ident: String? = d.attribute(win, "AXIdentifier")
+            let subrole: String? = d.attribute(win, kAXSubroleAttribute)
+            return ident == "com.tako-core.terminal.quickTerminal" || subrole == "AXFloatingWindow"
+        }), let qtWinId = d.windowID(for: qtWindow) else {
+            throw Failure("Quick Terminal window was not positively identified after toggle")
+        }
+
+        // Positively validate Quick Terminal stage containment
+        if let qtFrame = d.windowFrame(qtWindow) {
+            try ShowcaseStage.assertContains(window: qtFrame, name: "Quick Terminal Window")
+        }
+
+        // Positively validate surface ID in takoctl tree
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         let qTreePath = d.path("qtree")
         let qSelfPath = d.path("qself")
         try d.run("takoctl tree --json > \(qTreePath); echo $TAKO_SURFACE_ID > \(qSelfPath)")
         let tree = (try? d.file("qtree")) ?? ""
-        let me = (try? d.file("qself").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let qtSurfaceId = (try? d.file("qself").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
 
-        // Dismiss Quick Terminal via Cmd+Shift+`
-        d.key(Key.grave, [.maskCommand, .maskShift])
-        usleep(800_000)
-
-        guard tree.contains("\"ok\":true"), tree.contains("quick-terminal"), !me.isEmpty, tree.contains("\"id\":\"\(me)\"") else {
+        guard tree.contains("\"ok\":true"), tree.contains("quick-terminal"),
+              !qtSurfaceId.isEmpty, tree.contains("\"id\":\"\(qtSurfaceId)\"") else {
             throw Failure("Quick Terminal was not discoverable in tree with active surface id: \(tree.prefix(300))")
         }
 
-        // Assert Quick Terminal is hidden after dismissal
+        // Step 4: Dismiss Quick Terminal via Cmd+Shift+`
+        d.key(Key.grave, [.maskCommand, .maskShift])
+        usleep(800_000)
+
+        // Step 5: Require successful window-state query showing that exact window is hidden
         guard d.wait(for: {
-            let hasQuickTerminal = d.windows().contains { win in
-                let id: String? = d.attribute(win, "AXIdentifier")
-                let subrole: String? = d.attribute(win, kAXSubroleAttribute)
-                return id == "com.tako-core.terminal.quickTerminal" || subrole == "AXFloatingWindow"
-            }
-            return !hasQuickTerminal
+            !d.windows().contains(where: { d.windowID(for: $0) == qtWinId })
         }, timeout: 5) else {
-            throw Failure("Quick Terminal was not hidden after dismissal")
+            throw Failure("Quick Terminal window (id: \(qtWinId)) was still present in windows list after dismissal")
         }
-        d.activate()
 
-        // Ordinary input returns to the original pane
-        let qtResumedPath = d.path("qt_resumed_tty")
-        try d.run("tty > \(qtResumedPath)")
+        // Step 6: Verify unassisted focus return to original pane WITHOUT any activate/focus/AX-main repair
+        // NOTE: No d.activate(), no d.focus(), no kAXMainAttribute manipulation!
+        let resumedTtyPath = d.path("qt_resumed_tty")
+        let resumedPanePath = d.path("qt_resumed_pane")
+        try d.run("tty > \(resumedTtyPath); echo $TAKO_SURFACE_ID > \(resumedPanePath)")
         let resumedTty = (try? d.file("qt_resumed_tty").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let resumedPane = (try? d.file("qt_resumed_pane").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+
         guard !resumedTty.isEmpty && resumedTty == origTty else {
-            throw Failure("Ordinary input did not return to original pane after Quick Terminal dismissal: expected \(origTty), got \(resumedTty)")
+            throw Failure("Input did not return to original TTY without focus repair: expected \(origTty), got \(resumedTty)")
+        }
+        guard !resumedPane.isEmpty && resumedPane == origPane else {
+            throw Failure("Input did not return to original pane without focus repair: expected \(origPane), got \(resumedPane)")
         }
 
-        ctx.recordTiming(scene: "quick-terminal", duration: 0, status: "PASS", evidence: "Discovered quick-terminal in tree with surface id \(me); verified hidden after dismissal; restored focus to \(origTty)")
+        ctx.recordTiming(scene: "quick-terminal", duration: 0, status: "PASS", evidence: "Positively validated QT window (id=\(qtWinId), surface=\(qtSurfaceId)); verified exact window hidden after dismissal; restored unassisted input to orig pane \(origPane) (tty=\(origTty))")
         ctx.viewerPause(1.0)
     }),
 
@@ -207,6 +250,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         d.activate()
         d.setSize(CGSize(width: 860, height: 540))
         usleep(400_000)
+
+        if let f = d.windowFrame() {
+            try ShowcaseStage.assertContains(window: f, name: "Zoom Window")
+        }
 
         let cols1Path = d.path("cols1")
         try d.run("tput cols > \(cols1Path)")

@@ -12,32 +12,38 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// MARK: - Main Showcase Entrypoint
-
 @main
-struct TakoShowcase {
+struct TakoShowcaseMain {
     static func main() {
         let rawArgs = Array(CommandLine.arguments.dropFirst())
 
         if rawArgs.contains("--list") {
             print("Tako Feature Showcase Matrix:")
-            print(String(repeating: "-", count: 80))
+            print(String(repeating: "-", count: 70))
             for item in showcaseManifest {
-                print("[\(item.status.rawValue)] \(item.id.padding(toLength: 22, withPad: " ", startingAt: 0)) (\(item.chapter))")
-                print("  Feature: \(item.feature)")
-                print("  Witness: \(item.witness)")
+                print(String(format: "  %-22s [%-8s] %s", item.id, item.chapter, item.feature))
+                print("      Witness: \(item.witness)")
             }
+            print(String(repeating: "-", count: 70))
             exit(0)
         }
 
-        guard let appPath = rawArgs.first, !appPath.starts(with: "-") else {
-            print("usage: tako-showcase <Tako.app> [--pace fast|presentation] [--scene <id>] [--chapter <name>] [--record <file.mov>] [--display] [--output-dir <dir>]")
-            print("       tako-showcase --list")
-            exit(2)
+        guard !rawArgs.isEmpty, !rawArgs[0].hasPrefix("-") else {
+            print("Usage: tako-showcase <path-to-Tako.app> [options]")
+            print("Options:")
+            print("  --pace fast|presentation")
+            print("  --scene <scene-id>")
+            print("  --chapter core|optional|all")
+            print("  --record <output.mov>")
+            print("  --display")
+            print("  --output-dir <path>")
+            print("  --list")
+            exit(1)
         }
 
+        let appPath = rawArgs[0]
         var pacing: PacingMode = .presentation
-        var scenesWanted = Set<String>()
+        var scenesWanted: Set<String> = []
         var chapterWanted: String? = nil
         var recordPath: String? = nil
         var recordFullDisplay = false
@@ -45,8 +51,7 @@ struct TakoShowcase {
 
         var i = 1
         while i < rawArgs.count {
-            let arg = rawArgs[i]
-            switch arg {
+            switch rawArgs[i] {
             case "--pace":
                 if i + 1 < rawArgs.count {
                     pacing = PacingMode(rawValue: rawArgs[i + 1]) ?? .presentation
@@ -89,30 +94,26 @@ struct TakoShowcase {
             print("FAIL: Unique output directory collision: \(outputDirURL.path)")
             exit(1)
         }
-
         do {
             try FileManager.default.createDirectory(at: outputDirURL, withIntermediateDirectories: true)
         } catch {
-            print("FAIL: Failed to create output directory at \(outputDirURL.path): \(error)")
+            print("FAIL: Could not create output directory: \(error)")
             exit(1)
         }
 
-        let gitRevision = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_REV"] ?? Driver.sharedGitRevision()
+        let bundleId = ProcessInfo.processInfo.environment["TAKO_BUNDLE_ID"] ?? "com.tako-core.terminal.showcase"
+        let gitRev = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_REV"] ?? "unknown"
 
-        func persistReport(
-            scenes: [ShowcaseSceneReport],
-            video: VideoMetadata?,
-            errorMsg: String?
-        ) -> Bool {
+        func persistReport(scenes: [ShowcaseSceneReport], video: VideoMetadata?, errorMsg: String?) -> Bool {
             let passed = scenes.filter { $0.status == "PASS" }.count
-            let failed = (errorMsg != nil) ? max(1, scenes.filter { $0.status == "FAIL" }.count) : scenes.filter { $0.status == "FAIL" }.count
-            let skipped = scenes.filter { $0.status == "SKIPPED" || $0.status == "NOT_REQUESTED" }.count
+            let failed = scenes.filter { $0.status == "FAIL" }.count
+            let skipped = scenes.filter { $0.status != "PASS" && $0.status != "FAIL" }.count
 
             let rep = ShowcaseReport(
                 timestamp: ISO8601DateFormatter().string(from: Date()),
-                gitRevision: gitRevision,
+                gitRevision: gitRev,
                 appPath: appPath,
-                bundleId: ProcessInfo.processInfo.environment["TAKO_BUNDLE_ID"] ?? "unknown",
+                bundleId: bundleId,
                 commandOptions: rawArgs,
                 pacing: pacing.rawValue,
                 failedCount: failed,
@@ -150,10 +151,19 @@ struct TakoShowcase {
                     lines.append("")
                     lines.append("Video:")
                     lines.append("  Path: \(v.path)")
-                    lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s")
+                    lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s (Expected: \(String(format: "%.2f", v.expectedMinDuration))s)")
                     lines.append("  Resolution: \(Int(v.width))x\(Int(v.height))")
                     lines.append("  Size: \(v.fileSize) bytes")
-                    lines.append("  Decoded: \(v.sampleFrameDecoded)")
+                    lines.append("  Decoded Samples: \(v.decodedSampleCount)")
+                    lines.append("  Status: \(v.status)")
+                } else if recordPath != nil {
+                    lines.append("")
+                    lines.append("Video:")
+                    lines.append("  Status: UNVERIFIED_TCC_BLOCKED")
+                    lines.append("  Detail: macOS Screen Recording permission required for screencapture in non-interactive sessions; recording validation remains OPEN")
+                } else {
+                    lines.append("")
+                    lines.append("Video: NOT_REQUESTED (non-recording run)")
                 }
                 if let err = errorMsg {
                     lines.append("")
@@ -209,7 +219,7 @@ struct TakoShowcase {
             exit(2)
         }
 
-        // Preflight recorder if requested (Finding 1 & 2)
+        // Preflight recorder if requested
         var recorder: ShowcaseRecorder? = nil
         if let recPath = recordPath {
             print("==> Preflighting screen recorder...")
@@ -230,9 +240,20 @@ struct TakoShowcase {
         var executionError: String? = nil
 
         do {
+            try ShowcaseStage.validateDisplay()
+
             let driver = try Driver(app: URL(fileURLWithPath: appPath))
             defer { driver.quit() }
-            try driver.launch(config: "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\nmacos-titlebar-style = tabs\ntab-style = pill\n")
+            try driver.launch(config: "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\nmacos-titlebar-style = tabs\ntab-style = pill\nquick-terminal-position = center\n")
+
+            // Stage initial window before recording and before scenes
+            driver.activate()
+            driver.setPosition(CGPoint(x: 100, y: 100))
+            driver.setSize(CGSize(width: 860, height: 540))
+            usleep(300_000)
+            if let initialFrame = driver.windowFrame() {
+                try ShowcaseStage.assertContains(window: initialFrame, name: "Initial Staged Window")
+            }
 
             let ctx = ShowcaseContext(driver: driver, pacing: pacing, outputDir: outputDirURL)
 
@@ -289,8 +310,9 @@ struct TakoShowcase {
             if let r = recorder {
                 print("==> Finalizing screen recording...")
                 do {
-                    videoMeta = try r.stop()
-                    print("Recorded showcase movie saved to: \(r.targetFile.path) (\(String(format: "%.2f", videoMeta?.durationSeconds ?? 0))s, \(videoMeta?.fileSize ?? 0) bytes, frame decoded: \(videoMeta?.sampleFrameDecoded ?? false))")
+                    let totalScenesDuration = sceneReportMap.values.reduce(0.0) { $0 + $1.durationSeconds }
+                    videoMeta = try r.stop(expectedMinDuration: totalScenesDuration)
+                    print("Recorded showcase movie saved to: \(r.targetFile.path) (\(String(format: "%.2f", videoMeta?.durationSeconds ?? 0))s, \(videoMeta?.fileSize ?? 0) bytes, \(videoMeta?.decodedSampleCount ?? 0) frames decoded)")
                 } catch {
                     executionError = "Recording finalization failed: \(error)"
                     print("FAIL: \(executionError!)")

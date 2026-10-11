@@ -12,60 +12,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// MARK: - Showcase Manifest
-
-let showcaseManifest: [SceneManifestItem] = [
-    SceneManifestItem(
-        id: "welcome",
-        chapter: "core",
-        feature: "Launch & 24-bit TrueColor Engine",
-        witness: "24-bit ANSI color rendering, interactive shell readiness, banner visibility",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "splits",
-        chapter: "core",
-        feature: "Split Panes & Keyboard Navigation",
-        witness: "Cmd+D horizontal split, Cmd+] pane cycling, independent TTY delivery, Cmd+W closure",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "workspaces-frame-sync",
-        chapter: "core",
-        feature: "Multi-Workspace & Live Window Frame Sync",
-        witness: "Pill navigation, new workspace dialog, frame independence when off, live sync when enabled",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "tabs-pills",
-        chapter: "core",
-        feature: "Native Tabs & Pill Styling",
-        witness: "Cmd+T tab creation, Cmd+1/2 switching, per-tab TTY isolation, Cmd+W clean closure",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "persistence",
-        chapter: "core",
-        feature: "Process Continuity & Session Persistence",
-        witness: "Active background counter survives app quit/relaunch and continues in reattached PTY",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "quick-terminal",
-        chapter: "optional",
-        feature: "Quake-Style Quick Terminal Dropdown",
-        witness: "Cmd+Shift+` toggle, Quick Terminal discovery via takoctl tree, clean dismissal",
-        status: .supported
-    ),
-    SceneManifestItem(
-        id: "zoom",
-        chapter: "optional",
-        feature: "Dynamic Font Zooming & Column Reflow",
-        witness: "Cmd+= increases font / decreases cols, Cmd+0 resets columns",
-        status: .supported
-    ),
-]
-
 // MARK: - Core Scenes Implementations
 
 let coreShowcaseScenes: [ShowcaseScene] = [
@@ -113,6 +59,10 @@ let coreShowcaseScenes: [ShowcaseScene] = [
         let initialPanes = try d.paneIds()
         guard initialPanes.count == 1 else {
             throw Failure("Precondition failed: expected exactly 1 initial pane, got \(initialPanes.count)")
+        }
+
+        if let f = d.windowFrame() {
+            try ShowcaseStage.assertContains(window: f, name: "Splits Window")
         }
 
         // Initial left pane TTY
@@ -257,12 +207,12 @@ let coreShowcaseScenes: [ShowcaseScene] = [
         }
         try ShowcaseStage.assertContains(window: frameB, name: "Workspace B Window")
 
-        // Verify independent frames when sync is disabled
+        // Verify independent 4D frames when sync is disabled
         guard abs(frameB.origin.x - frameA1.origin.x) > 30 || abs(frameB.size.width - frameA1.size.width) > 30 else {
             throw Failure("Frames are unexpectedly identical before enabling sync")
         }
 
-        // Switch to Workspace A: verify disabled sync preserves A1 and A2
+        // Switch to Workspace A: verify disabled sync preserves full 4D frames of A1 and A2
         try d.clickWorkspacePill()
         try d.clickOpenMenuItem(titled: "Default")
         guard d.wait(for: {
@@ -273,11 +223,19 @@ let coreShowcaseScenes: [ShowcaseScene] = [
         usleep(400_000)
         let curWinA1 = try liveWin(idA1)
         let curWinA2 = try liveWin(idA2)
-        guard let curA1 = d.windowFrame(curWinA1), abs(curA1.origin.x - frameA1.origin.x) < 5 && abs(curA1.size.width - frameA1.size.width) < 5 else {
-            throw Failure("Workspace A1 frame changed while sync was disabled")
+        guard let curA1 = d.windowFrame(curWinA1),
+              abs(curA1.origin.x - frameA1.origin.x) < 5 &&
+              abs(curA1.origin.y - frameA1.origin.y) < 5 &&
+              abs(curA1.size.width - frameA1.size.width) < 5 &&
+              abs(curA1.size.height - frameA1.size.height) < 5 else {
+            throw Failure("Workspace A1 4D frame changed while sync was disabled (expected: \(frameA1), got: \(String(describing: d.windowFrame(curWinA1))))")
         }
-        guard let curA2 = d.windowFrame(curWinA2), abs(curA2.origin.x - frameA2.origin.x) < 5 && abs(curA2.size.width - frameA2.size.width) < 5 else {
-            throw Failure("Workspace A2 frame changed while sync was disabled")
+        guard let curA2 = d.windowFrame(curWinA2),
+              abs(curA2.origin.x - frameA2.origin.x) < 5 &&
+              abs(curA2.origin.y - frameA2.origin.y) < 5 &&
+              abs(curA2.size.width - frameA2.size.width) < 5 &&
+              abs(curA2.size.height - frameA2.size.height) < 5 else {
+            throw Failure("Workspace A2 4D frame changed while sync was disabled (expected: \(frameA2), got: \(String(describing: d.windowFrame(curWinA2))))")
         }
 
         // Switch back to Workspace B
@@ -350,6 +308,73 @@ let coreShowcaseScenes: [ShowcaseScene] = [
             throw Failure("Live frame sync did not match 4D geometry on workspace switch (departing: \(departingB), arrived: \(arrivedA))")
         }
 
+        // Reset workspace-sync-window-frame through Settings UI via 'd' (Reset to default)
+        d.key(Key.comma, .maskCommand)
+        guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
+            throw Failure("Settings dialog failed to open for reset")
+        }
+        usleep(250_000)
+        d.key(Key.two, .maskCommand)
+        usleep(250_000)
+        if let search = d.descendants(of: d.element(withIdentifier: "TerminalSettingsDialog")!, role: kAXTextFieldRole).first {
+            d.press(search)
+            try d.type("sync")
+            usleep(250_000)
+        }
+        if let f = d.windowFrame() {
+            try d.click(at: CGPoint(x: f.origin.x + 200, y: f.origin.y + 160))
+            usleep(250_000)
+        }
+        d.key(Key.d) // Reset to default
+        guard d.wait(for: {
+            guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
+            return val == "setting_reset_success: workspace-sync-window-frame" ||
+                   val.contains("Reset to default: workspace-sync-window-frame")
+        }, timeout: 5) else {
+            throw Failure("Failed to reset workspace-sync-window-frame in Settings")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
+            throw Failure("Failed to dismiss Settings dialog after reset")
+        }
+        usleep(250_000)
+
+        // Set distinct frame in Workspace A after reset: (140, 100, 680, 430)
+        d.setPosition(CGPoint(x: 140, y: 100), for: try liveWin(idA1))
+        d.setSize(CGSize(width: 680, height: 430), for: try liveWin(idA1))
+        usleep(300_000)
+        guard let postResetA = d.windowFrame(try liveWin(idA1)) else {
+            throw Failure("No frame for Window A1 after reset resize")
+        }
+        try ShowcaseStage.assertContains(window: postResetA, name: "Post-reset Window A1")
+
+        // Switch to Workspace B: its frame must NOT have changed to postResetA!
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: wsBName)
+        guard d.wait(for: {
+            ((try? d.workspaceList())?.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsBId.lowercased()
+        }, timeout: 8) else {
+            throw Failure("Failed to switch to Workspace B after reset")
+        }
+        usleep(400_000)
+        guard let postResetB = d.windowFrame() else {
+            throw Failure("No frame for Workspace B after reset switch")
+        }
+        guard abs(postResetB.origin.x - postResetA.origin.x) > 10 || abs(postResetB.size.width - postResetA.size.width) > 10 else {
+            throw Failure("Workspace B inherited Workspace A frame despite reset to independent")
+        }
+
+        // Switch back to Workspace A
+        try d.clickWorkspacePill()
+        try d.clickOpenMenuItem(titled: "Default")
+        guard d.wait(for: {
+            ((try? d.workspaceList())?.first(where: { $0["is_active"] as? Bool == true })?["id"] as? String)?.lowercased() == wsAId.lowercased()
+        }, timeout: 8) else {
+            throw Failure("Failed to return to Workspace A after reset verification")
+        }
+        usleep(400_000)
+
         // Close second window A2 before moving to next scene
         if d.windows().count > 1, let extraWin = d.windows().first(where: { d.windowID(for: $0) == idA2 }) {
             AXUIElementSetAttributeValue(extraWin, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -357,7 +382,7 @@ let coreShowcaseScenes: [ShowcaseScene] = [
             usleep(400_000)
         }
 
-        ctx.recordTiming(scene: "workspaces-frame-sync", duration: 0, status: "PASS", evidence: "A1 \(frameA1), A2 \(frameA2), B \(frameB); independent frames when off; live sync matched 4D geometry: departing \(departingB) == arrived \(arrivedA)")
+        ctx.recordTiming(scene: "workspaces-frame-sync", duration: 0, status: "PASS", evidence: "A1 \(frameA1), A2 \(frameA2), B \(frameB); independent 4D frames when off; live sync matched 4D geometry (departing \(departingB) == arrived \(arrivedA)); reset to independent verified")
         ctx.viewerPause(2.0)
     }),
 ]
