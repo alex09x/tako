@@ -31,15 +31,18 @@ struct TakoShowcaseMain {
         }
 
         if rawArgs.contains("--self-test") {
+            let rev = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_REV"] ?? "unknown"
+            let fp = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_FINGERPRINT"] ?? "unknown"
             do {
                 try ShowcaseRecorderFixtures.verifyFixtures()
-                print("Showcase self-test: OK (recorder preflight fixtures passed)")
+                print("Showcase self-test: OK (revision: \(rev), fingerprint: \(fp), recorder preflight fixtures passed)")
                 exit(0)
             } catch {
-                print("FAIL: Showcase self-test failed: \(error)")
+                print("FAIL: Showcase self-test failed (revision: \(rev)): \(error)")
                 exit(1)
             }
         }
+
 
 
         guard !rawArgs.isEmpty, !rawArgs[0].hasPrefix("-") else {

@@ -96,17 +96,21 @@ final class ShowcaseRecorder {
             return .failure(.timeout(duration: 5.0))
         }
         if !hasPermission {
-            return .failure(.permissionDenied(detail: "CGPreflightScreenCaptureAccess API returned false (Screen Recording permission not granted)"))
+            return .failure(.permissionDenied(detail: "CGPreflightScreenCaptureAccess API returned false in probe process (Screen Recording permission not granted)"))
         }
         if terminationStatus != 0 {
             let lower = stderr.lowercased()
-            if lower.contains("kcgerrorcannotcomplete") ||
-               lower.contains("not permitted") ||
+            // Require specific, unambiguous permission denial diagnostic from child process
+            if lower.contains("not permitted to capture") ||
                lower.contains("permission denied") ||
                lower.contains("authorization denied") ||
-               lower.contains("screen recording") {
+               lower.contains("access denied") ||
+               lower.contains("tcc refusal") {
                 return .failure(.permissionDenied(detail: "screencapture exit \(terminationStatus): \(stderr)"))
             }
+            // Nonzero exits with generic errors (e.g. kCGErrorCannotComplete, internal pipeline failures,
+            // invalid arguments, or non-permission mentions of 'screen recording') are classified as
+            // processFailure with raw exit code and raw stderr, with permission cause unknown.
             return .failure(.processFailure(exitCode: terminationStatus, stderr: stderr))
         }
         if !outputValid {
@@ -322,65 +326,4 @@ final class ShowcaseRecorder {
     }
 }
 
-// MARK: - Recorder Preflight Fixtures
-
-struct ShowcaseRecorderFixtures {
-    static func verifyFixtures() throws {
-        // Fixture 1: Permission denial via API
-        let apiDenial = ShowcaseRecorder.classifyPreflightResult(
-            terminationStatus: 0,
-            stderr: "",
-            hasPermission: false
-        )
-        guard case .failure(.permissionDenied) = apiDenial else {
-            throw Failure("Fixture error: permission API denial must classify as permissionDenied")
-        }
-
-        // Fixture 2: Permission denial via preserved diagnostic in stderr
-        let diagDenial = ShowcaseRecorder.classifyPreflightResult(
-            terminationStatus: 1,
-            stderr: "screencapture: not permitted to capture display contents",
-            hasPermission: true
-        )
-        guard case .failure(.permissionDenied) = diagDenial else {
-            throw Failure("Fixture error: stderr with permission denial must classify as permissionDenied")
-        }
-
-        // Fixture 3: Unrelated nonzero recorder exit (preserves raw exit code and stderr, permission cause unknown)
-        let unrelatedExit = ShowcaseRecorder.classifyPreflightResult(
-            terminationStatus: 2,
-            stderr: "screencapture: illegal option -- z",
-            hasPermission: true
-        )
-        guard case .failure(.processFailure(exitCode: 2, stderr: let err)) = unrelatedExit,
-              err.contains("illegal option") else {
-            throw Failure("Fixture error: unrelated nonzero exit must classify as processFailure")
-        }
-
-        // Fixture 4: Subprocess fixture with simulated permission denial
-        do {
-            try ShowcaseRecorder.preflightCheck(
-                permissionChecker: { false }
-            )
-            throw Failure("Fixture error: preflightCheck with permissionChecker=false must throw")
-        } catch let err as RecorderPreflightError {
-            guard case .permissionDenied = err else {
-                throw Failure("Fixture error: expected permissionDenied, got: \(err)")
-            }
-        }
-
-        // Fixture 5: Subprocess fixture with unrelated nonzero exit (/usr/bin/false)
-        do {
-            try ShowcaseRecorder.preflightCheck(
-                permissionChecker: { true },
-                executableURL: URL(fileURLWithPath: "/usr/bin/false")
-            )
-            throw Failure("Fixture error: preflightCheck with /usr/bin/false must throw")
-        } catch let err as RecorderPreflightError {
-            guard case .processFailure(exitCode: let code, _) = err, code != 0 else {
-                throw Failure("Fixture error: expected processFailure with nonzero exit, got: \(err)")
-            }
-        }
-    }
-}
 

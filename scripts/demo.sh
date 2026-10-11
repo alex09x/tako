@@ -45,6 +45,22 @@ SHOWCASE_SWIFT_SOURCES=(
     scripts/e2e/tako-showcase.swift
 )
 
+SHOWCASE_REV="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+export TAKO_SHOWCASE_REV="$SHOWCASE_REV"
+
+SHOWCASE_FINGERPRINT="$(shasum -a 256 "${SHOWCASE_SWIFT_SOURCES[@]}" 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+export TAKO_SHOWCASE_FINGERPRINT="$SHOWCASE_FINGERPRINT"
+
+build_showcase_runner() {
+    mkdir -p target
+    local fp_file="target/.showcase-sources.fingerprint"
+    if [ ! -x target/tako-showcase ] || [ ! -f "$fp_file" ] || [ "$(cat "$fp_file" 2>/dev/null)" != "$SHOWCASE_FINGERPRINT" ]; then
+        echo "==> Compiling tako-showcase runner (revision $SHOWCASE_REV, fingerprint ${SHOWCASE_FINGERPRINT:0:12})..."
+        swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}"
+        echo "$SHOWCASE_FINGERPRINT" > "$fp_file"
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --local)
@@ -52,25 +68,16 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --list)
-            [ -x target/tako-showcase ] || swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}" 2>/dev/null || true
-            if [ -x target/tako-showcase ]; then
-                ./target/tako-showcase --list
-            else
-                echo "Showcase runner not compiled. Run with --local to compile or inspect scripts/e2e/tako-showcase.swift."
-            fi
+            build_showcase_runner
+            ./target/tako-showcase --list
             exit 0
             ;;
         --self-test)
-            [ -x target/tako-showcase ] || swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}" 2>/dev/null || true
-            if [ -x target/tako-showcase ]; then
-                ./target/tako-showcase --self-test
-            else
-                swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}"
-                ./target/tako-showcase --self-test
-            fi
+            build_showcase_runner
+            echo "Running showcase self-test (revision: $SHOWCASE_REV, fingerprint: ${SHOWCASE_FINGERPRINT:0:12})..."
+            ./target/tako-showcase --self-test
             exit 0
             ;;
-
         *)
             FORWARD_ARGS+=("$1")
             shift
@@ -89,10 +96,8 @@ if [ ${#FORWARD_ARGS[@]} -gt 0 ]; then
     ARGS_STRING="${ARGS_STRING% }"
 fi
 
-SHOWCASE_REV="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
-export TAKO_SHOWCASE_REV="$SHOWCASE_REV"
-
 RUN_RC=0
+
 
 if [ $RUN_LOCAL -eq 1 ]; then
     echo "==> Running Tako Showcase locally..."
@@ -116,7 +121,7 @@ if [ $RUN_LOCAL -eq 1 ]; then
 
     mkdir -p target
     python3 scripts/build-macapp.py
-    swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}"
+    build_showcase_runner
     python3 scripts/gui_lock.py -- target/tako-showcase "$TAKO_APP_DIR/Tako.app" "${FORWARD_ARGS[@]}" || RUN_RC=$?
 else
     echo "==> Running Tako Showcase remotely on $REMOTE (local screen stays untouched)..."
@@ -138,12 +143,13 @@ remote_cleanup() { \
     rm -rf \"\$SESSIONS\"; \
 }; \
 trap remote_cleanup EXIT INT TERM; \
-export TAKO_SESSIONS_HOME=\$SESSIONS TAKO_SHOWCASE_REV=$SHOWCASE_REV TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID TAKO_APP_DIR=target/macapp-showcase TAKO_WITH_ZMX=1 && \
+export TAKO_SESSIONS_HOME=\$SESSIONS TAKO_SHOWCASE_REV=$SHOWCASE_REV TAKO_SHOWCASE_FINGERPRINT=$SHOWCASE_FINGERPRINT TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID TAKO_APP_DIR=target/macapp-showcase TAKO_WITH_ZMX=1 && \
 python3 scripts/build-macapp.py && \
 swiftc -O -o target/tako-showcase ${SHOWCASE_SWIFT_SOURCES[*]} && \
 python3 scripts/gui_lock.py -- target/tako-showcase target/macapp-showcase/Tako.app$ARGS_STRING"
 
     ./scripts/mac-remote.sh "$REMOTE_SCRIPT" || RUN_RC=$?
 fi
+
 
 exit $RUN_RC

@@ -301,4 +301,89 @@ struct ShowcaseReport: Codable {
     }
 }
 
+// MARK: - Recorder Preflight Fixtures
+
+struct ShowcaseRecorderFixtures {
+    static func verifyFixtures() throws {
+        // Fixture 1: Permission denial via API (probe process itself lacks permission)
+        let apiDenial = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 0,
+            stderr: "",
+            hasPermission: false
+        )
+        guard case .failure(.permissionDenied) = apiDenial else {
+            throw Failure("Fixture error: permission API denial must classify as permissionDenied")
+        }
+
+        // Fixture 2: Permission denial via explicit diagnostic in child process stderr
+        let diagDenial = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 1,
+            stderr: "screencapture: not permitted to capture display contents",
+            hasPermission: true
+        )
+        guard case .failure(.permissionDenied) = diagDenial else {
+            throw Failure("Fixture error: stderr with explicit permission denial must classify as permissionDenied")
+        }
+
+        // Fixture 3: hasPermission=true with kCGErrorCannotComplete must classify as processFailure (NOT permissionDenied)
+        let cgErrorCannotComplete = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 1,
+            stderr: "screencapture: [error] kCGErrorCannotComplete: operation inappropriate for current system state",
+            hasPermission: true
+        )
+        guard case .failure(.processFailure(exitCode: 1, stderr: let err)) = cgErrorCannotComplete,
+              err.contains("kCGErrorCannotComplete") else {
+            throw Failure("Fixture error: kCGErrorCannotComplete must classify as processFailure (permission cause unknown)")
+        }
+
+        // Fixture 4: hasPermission=true with non-permission 'screen recording' text must classify as processFailure (NOT permissionDenied)
+        let nonPermissionText = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 1,
+            stderr: "screencapture: failed to initialize screen recording compressor pipeline",
+            hasPermission: true
+        )
+        guard case .failure(.processFailure(exitCode: 1, stderr: let err)) = nonPermissionText,
+              err.contains("screen recording compressor pipeline") else {
+            throw Failure("Fixture error: non-permission screen recording error must classify as processFailure")
+        }
+
+        // Fixture 5: Unrelated nonzero recorder exit (preserves raw exit code and stderr, permission cause unknown)
+        let unrelatedExit = ShowcaseRecorder.classifyPreflightResult(
+            terminationStatus: 2,
+            stderr: "screencapture: illegal option -- z",
+            hasPermission: true
+        )
+        guard case .failure(.processFailure(exitCode: 2, stderr: let err)) = unrelatedExit,
+              err.contains("illegal option") else {
+            throw Failure("Fixture error: unrelated nonzero exit must classify as processFailure")
+        }
+
+        // Fixture 6: Subprocess fixture with simulated permission denial
+        do {
+            try ShowcaseRecorder.preflightCheck(
+                permissionChecker: { false }
+            )
+            throw Failure("Fixture error: preflightCheck with permissionChecker=false must throw")
+        } catch let err as RecorderPreflightError {
+            guard case .permissionDenied = err else {
+                throw Failure("Fixture error: expected permissionDenied, got: \(err)")
+            }
+        }
+
+        // Fixture 7: Subprocess fixture with unrelated nonzero exit (/usr/bin/false)
+        do {
+            try ShowcaseRecorder.preflightCheck(
+                permissionChecker: { true },
+                executableURL: URL(fileURLWithPath: "/usr/bin/false")
+            )
+            throw Failure("Fixture error: preflightCheck with /usr/bin/false must throw")
+        } catch let err as RecorderPreflightError {
+            guard case .processFailure(exitCode: let code, _) = err, code != 0 else {
+                throw Failure("Fixture error: expected processFailure with nonzero exit, got: \(err)")
+            }
+        }
+    }
+}
+
+
 
