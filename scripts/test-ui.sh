@@ -42,7 +42,7 @@ for arg in "$@"; do
             ;;
         --list)
             echo "Available E2E UI scenarios:"
-            [ -x target/tako-e2e ] || swiftc -O -o target/tako-e2e scripts/e2e/DriverCore.swift scripts/e2e/tako-e2e.swift 2>/dev/null || true
+            [ -x target/tako-e2e ] || swiftc -O -o target/tako-e2e scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/tako-e2e.swift 2>/dev/null || true
             if [ -x target/tako-e2e ]; then
                 ./target/tako-e2e 2>&1 | grep "^  " || true
             fi

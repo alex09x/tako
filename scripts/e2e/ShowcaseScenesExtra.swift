@@ -25,23 +25,34 @@ let extraShowcaseScenes: [ShowcaseScene] = [
             throw Failure("No open windows at start of tabs scene")
         }
 
+        // Initial Tab 1 TTY
+        try d.run("tty > \(d.path("tab1_tty1"))")
+        let tab1 = try d.file("tab1_tty1").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tab1.isEmpty else {
+            throw Failure("Failed to resolve initial Tab 1 TTY")
+        }
+
         // Open new tab via Cmd+T
         d.key(Key.t, .maskCommand)
         usleep(800_000)
 
-        // Type in Tab 2 and verify witness
-        let tab2Witness = d.path("tab2_witness")
-        try ctx.typeNaturally("echo 'tab2_ok' > \(tab2Witness)\n")
-        try d.expect("tab2_witness", "tab2_ok\n", "Tab 2 typing witness")
+        // Type in Tab 2 and capture distinct TTY
+        try d.run("tty > \(d.path("tab2_tty"))")
+        let tab2 = try d.file("tab2_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tab2.isEmpty && tab1 != tab2 else {
+            throw Failure("Tab 2 did not receive distinct TTY: tab1=\(tab1), tab2=\(tab2)")
+        }
 
         // Switch to Tab 1 via Cmd+1
         d.key(Key.one, .maskCommand)
         usleep(500_000)
 
-        // Type in Tab 1 and verify witness
-        let tab1Witness = d.path("tab1_witness")
-        try ctx.typeNaturally("echo 'tab1_ok' > \(tab1Witness)\n")
-        try d.expect("tab1_witness", "tab1_ok\n", "Tab 1 typing witness")
+        // Verify focus returned to Tab 1
+        try d.run("tty > \(d.path("tab1_tty2"))")
+        let tab1Switched = try d.file("tab1_tty2").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tab1Switched == tab1 else {
+            throw Failure("Cmd+1 did not switch focus back to Tab 1: expected \(tab1), got \(tab1Switched)")
+        }
 
         // Switch back to Tab 2 and close it via Cmd+W
         d.key(Key.two, .maskCommand)
@@ -54,11 +65,14 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         }
         usleep(400_000)
 
-        // Verify Tab 1 resumed and responsive
-        let tabResumeWitness = d.path("tab_resumed_witness")
-        try ctx.typeNaturally("echo 'tab_resumed_ok' > \(tabResumeWitness)\n")
-        try d.expect("tab_resumed_witness", "tab_resumed_ok\n", "Tab 1 resumed after closing Tab 2")
+        // Verify Tab 1 resumed and responsive as sole survivor
+        try d.run("tty > \(d.path("tab_resumed_tty"))")
+        let tabResumed = try d.file("tab_resumed_tty").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tabResumed == tab1 else {
+            throw Failure("Resumed Tab 1 TTY (\(tabResumed)) does not match original Tab 1 (\(tab1))")
+        }
 
+        ctx.recordTiming(scene: "tabs-pills", duration: 0, status: "PASS", evidence: "Tab 1 tty=\(tab1), Tab 2 tty=\(tab2) (distinct); verified tab switching; Tab 2 closed; Tab 1 resumed tty=\(tabResumed)")
         ctx.viewerPause(1.5)
     }),
 
@@ -130,6 +144,7 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         // Cleanly exit persistent shell so session is closed
         try d.run("exit")
 
+        ctx.recordTiming(scene: "persistence", duration: 0, status: "PASS", evidence: "Shell PPID=\(pid1); initial counter=\(val1); app restarted (PID \(appPidBefore)->\(d.pid)); shell PPID=\(pid2) == \(pid1); counter advanced to \(val2); reattach verified")
         ctx.viewerPause(1.8)
     }),
 
@@ -138,10 +153,15 @@ let extraShowcaseScenes: [ShowcaseScene] = [
         let d = ctx.driver
         d.activate()
 
+        let origTtyPath = d.path("orig_tty")
+        try d.run("tty > \(origTtyPath)")
+        let origTty = (try? d.file("orig_tty").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+
         // Toggle Quick Terminal via Cmd+Shift+`
         d.key(Key.grave, [.maskCommand, .maskShift])
         usleep(1_200_000)
 
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         let qTreePath = d.path("qtree")
         let qSelfPath = d.path("qself")
         try d.run("takoctl tree --json > \(qTreePath); echo $TAKO_SURFACE_ID > \(qSelfPath)")
@@ -150,11 +170,34 @@ let extraShowcaseScenes: [ShowcaseScene] = [
 
         // Dismiss Quick Terminal via Cmd+Shift+`
         d.key(Key.grave, [.maskCommand, .maskShift])
-        usleep(600_000)
+        usleep(800_000)
 
         guard tree.contains("\"ok\":true"), tree.contains("quick-terminal"), !me.isEmpty, tree.contains("\"id\":\"\(me)\"") else {
             throw Failure("Quick Terminal was not discoverable in tree with active surface id: \(tree.prefix(300))")
         }
+
+        // Assert Quick Terminal is hidden after dismissal
+        guard d.wait(for: {
+            let hasQuickTerminal = d.windows().contains { win in
+                let id: String? = d.attribute(win, "AXIdentifier")
+                let subrole: String? = d.attribute(win, kAXSubroleAttribute)
+                return id == "com.tako-core.terminal.quickTerminal" || subrole == "AXFloatingWindow"
+            }
+            return !hasQuickTerminal
+        }, timeout: 5) else {
+            throw Failure("Quick Terminal was not hidden after dismissal")
+        }
+        d.activate()
+
+        // Ordinary input returns to the original pane
+        let qtResumedPath = d.path("qt_resumed_tty")
+        try d.run("tty > \(qtResumedPath)")
+        let resumedTty = (try? d.file("qt_resumed_tty").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard !resumedTty.isEmpty && resumedTty == origTty else {
+            throw Failure("Ordinary input did not return to original pane after Quick Terminal dismissal: expected \(origTty), got \(resumedTty)")
+        }
+
+        ctx.recordTiming(scene: "quick-terminal", duration: 0, status: "PASS", evidence: "Discovered quick-terminal in tree with surface id \(me); verified hidden after dismissal; restored focus to \(origTty)")
         ctx.viewerPause(1.0)
     }),
 
@@ -167,9 +210,9 @@ let extraShowcaseScenes: [ShowcaseScene] = [
 
         let cols1Path = d.path("cols1")
         try d.run("tput cols > \(cols1Path)")
-        let before = Int((try? d.file("cols1").trimmingCharacters(in: .whitespacesAndNewlines)) ?? "") ?? 0
-        guard before > 0 else {
-            throw Failure("Could not determine initial terminal columns")
+        let beforeStr = (try? d.file("cols1").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard let before = Int(beforeStr), before > 20 else {
+            throw Failure("Failed to parse valid initial terminal columns: '\(beforeStr)'")
         }
 
         // Zoom in twice via Cmd+=
@@ -180,7 +223,10 @@ let extraShowcaseScenes: [ShowcaseScene] = [
 
         let cols2Path = d.path("cols2")
         try d.run("tput cols > \(cols2Path)")
-        let bigger = Int((try? d.file("cols2").trimmingCharacters(in: .whitespacesAndNewlines)) ?? "") ?? 0
+        let biggerStr = (try? d.file("cols2").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard let bigger = Int(biggerStr), bigger > 0 else {
+            throw Failure("Failed to parse valid zoomed columns: '\(biggerStr)'")
+        }
         guard bigger < before else {
             throw Failure("Zooming in did not decrease columns: before \(before), after \(bigger)")
         }
@@ -191,10 +237,15 @@ let extraShowcaseScenes: [ShowcaseScene] = [
 
         let cols3Path = d.path("cols3")
         try d.run("tput cols > \(cols3Path)")
-        let reset = Int((try? d.file("cols3").trimmingCharacters(in: .whitespacesAndNewlines)) ?? "") ?? 0
+        let resetStr = (try? d.file("cols3").trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        guard let reset = Int(resetStr), reset > 0 else {
+            throw Failure("Failed to parse valid reset columns: '\(resetStr)'")
+        }
         guard reset == before else {
             throw Failure("Zoom reset did not return to initial columns: before \(before), reset \(reset)")
         }
+
+        ctx.recordTiming(scene: "zoom", duration: 0, status: "PASS", evidence: "Initial cols=\(before); 2x zoom cols=\(bigger) (< \(before)); reset cols=\(reset) (== \(before))")
         ctx.viewerPause(1.2)
     }),
 ]

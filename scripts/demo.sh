@@ -34,6 +34,10 @@ FORWARD_ARGS=()
 
 SHOWCASE_SWIFT_SOURCES=(
     scripts/e2e/DriverCore.swift
+    scripts/e2e/DriverEvents.swift
+    scripts/e2e/DriverAX.swift
+    scripts/e2e/DriverAXControls.swift
+    scripts/e2e/DriverPTY.swift
     scripts/e2e/ShowcaseTypes.swift
     scripts/e2e/ShowcaseRecorder.swift
     scripts/e2e/ShowcaseScenesCore.swift
@@ -68,25 +72,6 @@ export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.showcase-$SHOWCA
 export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-showcase}"
 export TAKO_WITH_ZMX="${TAKO_WITH_ZMX:-1}"
 
-# Allocate fresh isolated session home with short path (UNIX domain socket <104 bytes limit)
-SESSIONS_HOME=$(mktemp -d /tmp/tkp.XXXXXX)
-export TAKO_SESSIONS_HOME="$SESSIONS_HOME"
-
-cleanup() {
-    local zmx="$TAKO_APP_DIR/Tako.app/Contents/Helpers/zmx"
-    if [ -x "$zmx" ] && [ -d "$SESSIONS_HOME/.tako-sessions" ]; then
-        for dir in "$SESSIONS_HOME"/.tako-sessions/*/; do
-            [ -d "$dir" ] || continue
-            for name in $(ZMX_DIR="$dir" "$zmx" list --short 2>/dev/null || true); do
-                ZMX_DIR="$dir" "$zmx" kill "$name" --force >/dev/null 2>&1 || true
-            done
-        done
-    fi
-    python3 scripts/e2e/forget-saved-state.py "$TAKO_BUNDLE_ID" 2>/dev/null || true
-    rm -rf "$SESSIONS_HOME"
-}
-trap cleanup EXIT INT TERM
-
 ARGS_STRING=""
 if [ ${#FORWARD_ARGS[@]} -gt 0 ]; then
     ARGS_STRING=" $(printf '%q ' "${FORWARD_ARGS[@]}")"
@@ -96,15 +81,58 @@ fi
 SHOWCASE_REV="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
 export TAKO_SHOWCASE_REV="$SHOWCASE_REV"
 
+RUN_RC=0
+
 if [ $RUN_LOCAL -eq 1 ]; then
     echo "==> Running Tako Showcase locally..."
+    SESSIONS_HOME=$(mktemp -d /tmp/tkp.XXXXXX)
+    export TAKO_SESSIONS_HOME="$SESSIONS_HOME"
+
+    cleanup_local() {
+        local zmx="$TAKO_APP_DIR/Tako.app/Contents/Helpers/zmx"
+        if [ -x "$zmx" ] && [ -d "$SESSIONS_HOME/.tako-sessions" ]; then
+            for dir in "$SESSIONS_HOME"/.tako-sessions/*/; do
+                [ -d "$dir" ] || continue
+                for name in $(ZMX_DIR="$dir" "$zmx" list --short 2>/dev/null || true); do
+                    ZMX_DIR="$dir" "$zmx" kill "$name" --force >/dev/null 2>&1 || true
+                done
+            done
+        fi
+        python3 scripts/e2e/forget-saved-state.py "$TAKO_BUNDLE_ID" 2>/dev/null || true
+        rm -rf "$SESSIONS_HOME"
+    }
+    trap cleanup_local EXIT INT TERM
+
     mkdir -p target
     python3 scripts/build-macapp.py
     swiftc -O -o target/tako-showcase "${SHOWCASE_SWIFT_SOURCES[@]}"
-    exec python3 scripts/gui_lock.py -- target/tako-showcase "$TAKO_APP_DIR/Tako.app" "${FORWARD_ARGS[@]}"
+    python3 scripts/gui_lock.py -- target/tako-showcase "$TAKO_APP_DIR/Tako.app" "${FORWARD_ARGS[@]}" || RUN_RC=$?
 else
     echo "==> Running Tako Showcase remotely on $REMOTE (local screen stays untouched)..."
     export TAKO_MAC="$REMOTE"
     export TAKO_REMOTE_TIMEOUT="${TAKO_REMOTE_TIMEOUT:-600}"
-    exec ./scripts/mac-remote.sh "SESSIONS=\$(mktemp -d /tmp/tkp.XXXXXX); trap 'rm -rf \$SESSIONS; python3 scripts/e2e/forget-saved-state.py $TAKO_BUNDLE_ID 2>/dev/null || true' EXIT INT TERM; export TAKO_SESSIONS_HOME=\$SESSIONS TAKO_SHOWCASE_REV=$SHOWCASE_REV TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID TAKO_APP_DIR=target/macapp-showcase TAKO_WITH_ZMX=1 && python3 scripts/build-macapp.py && swiftc -O -o target/tako-showcase ${SHOWCASE_SWIFT_SOURCES[*]} && python3 scripts/gui_lock.py -- target/tako-showcase target/macapp-showcase/Tako.app$ARGS_STRING"
+
+    REMOTE_SCRIPT="SESSIONS=\$(mktemp -d /tmp/tkp.XXXXXX); \
+remote_cleanup() { \
+    local zmx=target/macapp-showcase/Tako.app/Contents/Helpers/zmx; \
+    if [ -x \"\$zmx\" ] && [ -d \"\$SESSIONS/.tako-sessions\" ]; then \
+        for dir in \"\$SESSIONS\"/.tako-sessions/*/; do \
+            [ -d \"\$dir\" ] || continue; \
+            for name in \$(ZMX_DIR=\"\$dir\" \"\$zmx\" list --short 2>/dev/null || true); do \
+                ZMX_DIR=\"\$dir\" \"\$zmx\" kill \"\$name\" --force >/dev/null 2>&1 || true; \
+            done; \
+        done; \
+    fi; \
+    python3 scripts/e2e/forget-saved-state.py $TAKO_BUNDLE_ID 2>/dev/null || true; \
+    rm -rf \"\$SESSIONS\"; \
+}; \
+trap remote_cleanup EXIT INT TERM; \
+export TAKO_SESSIONS_HOME=\$SESSIONS TAKO_SHOWCASE_REV=$SHOWCASE_REV TAKO_BUNDLE_ID=$TAKO_BUNDLE_ID TAKO_APP_DIR=target/macapp-showcase TAKO_WITH_ZMX=1 && \
+python3 scripts/build-macapp.py && \
+swiftc -O -o target/tako-showcase ${SHOWCASE_SWIFT_SOURCES[*]} && \
+python3 scripts/gui_lock.py -- target/tako-showcase target/macapp-showcase/Tako.app$ARGS_STRING"
+
+    ./scripts/mac-remote.sh "$REMOTE_SCRIPT" || RUN_RC=$?
 fi
+
+exit $RUN_RC

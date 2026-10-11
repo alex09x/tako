@@ -36,17 +36,12 @@ struct TakoShowcase {
             exit(2)
         }
 
-        guard AXIsProcessTrusted() else {
-            print("FAIL: this process has no Accessibility permission to drive Tako UI")
-            exit(1)
-        }
-
         var pacing: PacingMode = .presentation
         var scenesWanted = Set<String>()
         var chapterWanted: String? = nil
         var recordPath: String? = nil
         var recordFullDisplay = false
-        var outputDirPath = "target/demo-runs/\(Int(Date().timeIntervalSince1970))"
+        var outputDirPath: String? = nil
 
         var i = 1
         while i < rawArgs.count {
@@ -85,7 +80,16 @@ struct TakoShowcase {
             i += 1
         }
 
-        let outputDirURL = URL(fileURLWithPath: outputDirPath)
+        // Allocate unique non-existing run directory
+        let runId = "\(Int(Date().timeIntervalSince1970))-\(ProcessInfo.processInfo.processIdentifier)-\(UUID().uuidString.prefix(6))"
+        let chosenOutputDir = outputDirPath ?? "target/demo-runs/\(runId)"
+        let outputDirURL = URL(fileURLWithPath: chosenOutputDir)
+
+        if outputDirPath == nil && FileManager.default.fileExists(atPath: outputDirURL.path) {
+            print("FAIL: Unique output directory collision: \(outputDirURL.path)")
+            exit(1)
+        }
+
         do {
             try FileManager.default.createDirectory(at: outputDirURL, withIntermediateDirectories: true)
         } catch {
@@ -95,12 +99,11 @@ struct TakoShowcase {
 
         let gitRevision = ProcessInfo.processInfo.environment["TAKO_SHOWCASE_REV"] ?? Driver.sharedGitRevision()
 
-        // Helper to persist report on all paths
         func persistReport(
             scenes: [ShowcaseSceneReport],
             video: VideoMetadata?,
             errorMsg: String?
-        ) {
+        ) -> Bool {
             let passed = scenes.filter { $0.status == "PASS" }.count
             let failed = (errorMsg != nil) ? max(1, scenes.filter { $0.status == "FAIL" }.count) : scenes.filter { $0.status == "FAIL" }.count
             let skipped = scenes.filter { $0.status == "SKIPPED" || $0.status == "NOT_REQUESTED" }.count
@@ -139,6 +142,9 @@ struct TakoShowcase {
                 ]
                 for s in scenes {
                     lines.append("  [\(s.status)] \(s.id) (\(String(format: "%.2f", s.durationSeconds))s) - \(s.feature)")
+                    if !s.evidence.isEmpty {
+                        lines.append("    Evidence: \(s.evidence)")
+                    }
                 }
                 if let v = video {
                     lines.append("")
@@ -147,6 +153,7 @@ struct TakoShowcase {
                     lines.append("  Duration: \(String(format: "%.2f", v.durationSeconds))s")
                     lines.append("  Resolution: \(Int(v.width))x\(Int(v.height))")
                     lines.append("  Size: \(v.fileSize) bytes")
+                    lines.append("  Decoded: \(v.sampleFrameDecoded)")
                 }
                 if let err = errorMsg {
                     lines.append("")
@@ -154,8 +161,10 @@ struct TakoShowcase {
                 }
                 try lines.joined(separator: "\n").write(to: outputDirURL.appendingPathComponent("showcase_report.txt"), atomically: true, encoding: .utf8)
                 print("Showcase artifacts written to: \(outputDirURL.path)")
+                return true
             } catch {
                 print("FAIL: Failed to persist showcase artifacts: \(error)")
+                return false
             }
         }
 
@@ -164,18 +173,13 @@ struct TakoShowcase {
         if !scenesWanted.isEmpty {
             targetScenes = showcaseScenes.filter { scenesWanted.contains($0.manifest.id) }
         } else if let chapter = chapterWanted {
-            targetScenes = showcaseScenes.filter { $0.manifest.chapter == chapter }
+            if chapter == "all" {
+                targetScenes = showcaseScenes
+            } else {
+                targetScenes = showcaseScenes.filter { $0.manifest.chapter == chapter }
+            }
         } else {
             targetScenes = showcaseScenes.filter { $0.manifest.chapter == "core" }
-        }
-
-        guard !targetScenes.isEmpty else {
-            let initialReports = showcaseManifest.map {
-                ShowcaseSceneReport(id: $0.id, chapter: $0.chapter, feature: $0.feature, status: "NOT_REQUESTED", durationSeconds: 0, evidence: "No matching target scenes")
-            }
-            persistReport(scenes: initialReports, video: nil, errorMsg: "No matching showcase scenes found")
-            print("FAIL: No matching showcase scenes found")
-            exit(2)
         }
 
         var sceneReportMap: [String: ShowcaseSceneReport] = [:]
@@ -191,6 +195,20 @@ struct TakoShowcase {
             )
         }
 
+        guard AXIsProcessTrusted() else {
+            let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
+            _ = persistReport(scenes: reports, video: nil, errorMsg: "Accessibility permission not granted to driver process")
+            print("FAIL: this process has no Accessibility permission to drive Tako UI")
+            exit(1)
+        }
+
+        guard !targetScenes.isEmpty else {
+            let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
+            _ = persistReport(scenes: reports, video: nil, errorMsg: "No matching showcase scenes found")
+            print("FAIL: No matching showcase scenes found")
+            exit(2)
+        }
+
         // Preflight recorder if requested (Finding 1 & 2)
         var recorder: ShowcaseRecorder? = nil
         if let recPath = recordPath {
@@ -201,7 +219,7 @@ struct TakoShowcase {
                 recorder = try ShowcaseRecorder(targetFile: recURL, fullDisplay: recordFullDisplay)
             } catch {
                 let reports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-                persistReport(scenes: reports, video: nil, errorMsg: "Screen recording preflight error: \(error)")
+                _ = persistReport(scenes: reports, video: nil, errorMsg: "Screen recording preflight error: \(error)")
                 print("FAIL: Screen recording preflight error: \(error)")
                 exit(1)
             }
@@ -214,15 +232,14 @@ struct TakoShowcase {
         do {
             let driver = try Driver(app: URL(fileURLWithPath: appPath))
             defer { driver.quit() }
-            try driver.launch(config: "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\n")
+            try driver.launch(config: "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\nmacos-titlebar-style = tabs\ntab-style = pill\n")
 
             let ctx = ShowcaseContext(driver: driver, pacing: pacing, outputDir: outputDirURL)
 
             // Start bounded recording if requested
             if let r = recorder {
-                let initialFrame = driver.windowFrame()
-                print("==> Starting screen recording (bounded: \(!recordFullDisplay))...")
-                try r.start(for: initialFrame)
+                print("==> Starting screen recording (bounded stage: \(!recordFullDisplay))...")
+                try r.start()
             }
 
             var hasFailed = false
@@ -244,13 +261,14 @@ struct TakoShowcase {
                 do {
                     try scene.run(ctx)
                     let duration = Date().timeIntervalSince(start)
+                    let ev = ctx.sceneTimings.last(where: { $0.scene == scene.manifest.id })?.evidence ?? "Verified postconditions"
                     sceneReportMap[scene.manifest.id] = ShowcaseSceneReport(
                         id: scene.manifest.id,
                         chapter: scene.manifest.chapter,
                         feature: scene.manifest.feature,
                         status: "PASS",
                         durationSeconds: duration,
-                        evidence: "Verified postconditions"
+                        evidence: ev
                     )
                 } catch {
                     hasFailed = true
@@ -272,7 +290,7 @@ struct TakoShowcase {
                 print("==> Finalizing screen recording...")
                 do {
                     videoMeta = try r.stop()
-                    print("Recorded showcase movie saved to: \(r.targetFile.path) (\(String(format: "%.2f", videoMeta?.durationSeconds ?? 0))s, \(videoMeta?.fileSize ?? 0) bytes)")
+                    print("Recorded showcase movie saved to: \(r.targetFile.path) (\(String(format: "%.2f", videoMeta?.durationSeconds ?? 0))s, \(videoMeta?.fileSize ?? 0) bytes, frame decoded: \(videoMeta?.sampleFrameDecoded ?? false))")
                 } catch {
                     executionError = "Recording finalization failed: \(error)"
                     print("FAIL: \(executionError!)")
@@ -293,28 +311,12 @@ struct TakoShowcase {
             previouslyFront.activate()
         }
 
-        // Write mandatory artifacts (Finding 6)
+        // Write mandatory artifacts (Finding 4)
         let finalReports = showcaseManifest.compactMap { sceneReportMap[$0.id] }
-        persistReport(scenes: finalReports, video: videoMeta, errorMsg: executionError)
+        let writeReportOk = persistReport(scenes: finalReports, video: videoMeta, errorMsg: executionError)
 
-        let overallSuccess = executionError == nil && !finalReports.contains(where: { $0.status == "FAIL" })
+        let overallSuccess = writeReportOk && executionError == nil && !finalReports.contains(where: { $0.status == "FAIL" })
         print(overallSuccess ? "Tako Showcase: OK" : "Tako Showcase: FAILED")
         exit(overallSuccess ? 0 : 1)
-    }
-}
-
-extension Driver {
-    static func sharedGitRevision() -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        p.arguments = ["rev-parse", "HEAD"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = Pipe()
-        try? p.run()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return "unknown" }
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
