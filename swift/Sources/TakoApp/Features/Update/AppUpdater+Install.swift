@@ -107,41 +107,31 @@ extension AppUpdater {
 
     @MainActor
     func showUpdateSuccessAlert(tagName: String) {
-        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            let lines = [
-                TUIText.Line(runs: [TUIText.Run(text: "Tako \(tagName) is ready to use.", kind: .bold)]),
-                TUIText.Line(runs: []),
-                TUIText.Line(runs: [TUIText.Run(text: "The update was installed successfully. Would you like to relaunch Tako now to start using the new version, or keep working and relaunch later?", kind: .plain)])
-            ]
-            Task { @MainActor in
-                let answer = await TerminalDialogView.choose(
-                    in: window,
-                    title: "Tako \(tagName) Installed",
-                    lines: lines,
-                    choices: [
-                        .init(title: "Keep Working", kind: .normal),
-                        .init(title: "Relaunch Now", kind: .primary)
-                    ],
-                    selected: 1,
-                    cancelIndex: 0,
-                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
-                )
-                if answer == 1 {
-                    Self.relaunchApp()
-                }
-            }
-            return
-        }
+        guard let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "Tako \(tagName) Installed!"
-        alert.informativeText = "The update has been installed successfully.\n\nWould you like to relaunch Tako now to use \(tagName), or keep working and relaunch later?"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Relaunch Now")
-        alert.addButton(withTitle: "Keep Working")
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            Self.relaunchApp()
+        let lines = [
+            TUIText.Line(runs: [TUIText.Run(text: "Tako \(tagName) is ready to use.", kind: .bold)]),
+            TUIText.Line(runs: []),
+            TUIText.Line(runs: [TUIText.Run(text: "The update was installed successfully. Would you like to relaunch Tako now to start using the new version, or keep working and relaunch later?", kind: .plain)])
+        ]
+        Task { @MainActor in
+            let answer = await TerminalDialogView.choose(
+                in: window,
+                title: "Tako \(tagName) Installed",
+                lines: lines,
+                choices: [
+                    .init(title: "Keep Working", kind: .normal),
+                    .init(title: "Relaunch Now", kind: .primary)
+                ],
+                selected: 1,
+                cancelIndex: 0,
+                theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+            )
+            if answer == 1 {
+                Self.relaunchApp()
+            }
         }
     }
 

@@ -30,6 +30,21 @@ pub fn default_path(bundle_id: &str) -> Result<String, String> {
     Ok(format!("{}/tako-ctl-{}.sock", dir.trim_end_matches('/'), &hex[..12]))
 }
 
+pub fn resolve_path(
+    bundle_id: &str,
+    socket_arg: Option<&str>,
+    explicit_bundle: bool,
+    inherited: Option<&str>,
+) -> Result<String, String> {
+    if let Some(s) = socket_arg {
+        Ok(s.to_string())
+    } else if explicit_bundle || inherited.is_none() {
+        default_path(bundle_id)
+    } else {
+        Ok(inherited.unwrap().to_string())
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn user_temp_dir() -> Result<String, String> {
     let mut buf = vec![0u8; libc::PATH_MAX as usize];

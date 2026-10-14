@@ -15,12 +15,16 @@ import TakoKit
 extension QuickTerminalController {
     func showNoNewTabAlert() {
         guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Cannot Create New Tab"
-        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
-        alert.addButton(withTitle: "OK")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window)
+        let theme = tako.config.theme
+        Task { @MainActor in
+            await TerminalDialogView.alert(
+                in: window,
+                title: "Cannot Create New Tab",
+                message: "Tabs aren't supported in the Quick Terminal.",
+                button: "OK",
+                theme: theme
+            )
+        }
     }
     // MARK: First Responder
     @IBAction func newTab(_ sender: Any?) {

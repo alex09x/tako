@@ -109,7 +109,13 @@ pub fn render(cmd: &str, result: &Value) -> String {
             format!("{}\n", result["id"].as_str().unwrap_or(""))
         }
         "last" | "wait" | "run" => command_report(result),
-        "status" => status_report(result),
+        "status" => {
+            if result.get("action").and_then(Value::as_str) == Some("tab") {
+                tab_status_report(result)
+            } else {
+                status_report(result)
+            }
+        }
         "progress" => progress_report(result),
         "find" => find_report(result),
         "dialog" => dialog_report(result),

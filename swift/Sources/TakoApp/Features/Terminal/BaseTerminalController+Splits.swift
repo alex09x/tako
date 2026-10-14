@@ -80,4 +80,48 @@ extension BaseTerminalController {
         )
     }
 
+    func applySurfaceTreeReplacement(
+        _ newTree: SplitTree<Tako.SurfaceView>,
+        moveFocusTo newView: Tako.SurfaceView? = nil,
+        moveFocusFrom oldView: Tako.SurfaceView? = nil,
+        undoAction: String? = nil
+    ) {
+        // Setup our new split tree
+        let oldTree = surfaceTree
+        surfaceTree = newTree
+        if let newView {
+            DispatchQueue.main.async {
+                Tako.moveFocus(to: newView, from: oldView)
+            }
+        }
+
+        // Setup our undo
+        guard let undoManager else { return }
+        if let undoAction {
+            undoManager.setActionName(undoAction)
+        }
+
+        undoManager.registerUndo(
+            withTarget: self,
+            expiresAfter: undoExpiration
+        ) { target in
+            target.surfaceTree = oldTree
+            if let oldView {
+                DispatchQueue.main.async {
+                    Tako.moveFocus(to: oldView, from: target.focusedSurface)
+                }
+            }
+
+            undoManager.registerUndo(
+                withTarget: target,
+                expiresAfter: target.undoExpiration
+            ) { target in
+                target.replaceSurfaceTree(
+                    newTree,
+                    moveFocusTo: newView,
+                    moveFocusFrom: target.focusedSurface,
+                    undoAction: undoAction)
+            }
+        }
+    }
 }

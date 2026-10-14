@@ -31,18 +31,22 @@ extension AppDelegate {
 
     func promptNewWorkspace() {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "New Project Workspace"
-        alert.informativeText = "Enter a name for the new workspace:"
-        alert.alertStyle = .informational
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        input.placeholderString = "e.g. backend, docs, tako"
-        alert.accessoryView = input
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
+        guard let window = TerminalDialogView.ensureHostWindow(tako: tako) else { return }
+
+        let theme = tako.config.theme
+        Task { @MainActor in
+            guard let name = await TerminalDialogView.askText(
+                in: window,
+                title: "New Project Workspace",
+                label: "Workspace Name:",
+                value: "",
+                hint: "e.g. backend, docs, tako",
+                confirm: "Create",
+                theme: theme
+            ) else { return }
+
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let finalName = trimmed.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : trimmed
             let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
             WorkspaceStore.shared.switchWorkspace(to: ws.id)
             NSApp.activate(ignoringOtherApps: true)

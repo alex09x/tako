@@ -214,6 +214,9 @@ extension Driver {
             throw Failure("refusing to drag from \(start): the window there is not Tako's")
         }
         let home = CGEvent(source: nil)?.location
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(40_000)
         guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                  mouseCursorPosition: start, mouseButton: .left) else { return }
         down.setIntegerValueField(.mouseEventClickState, value: 1)

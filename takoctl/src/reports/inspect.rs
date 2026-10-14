@@ -98,6 +98,41 @@ pub fn status_report(result: &Value) -> String {
     if result["unread"].as_bool() == Some(true) {
         out += " [unread]";
     }
+    if let Some(tab) = result.get("tab").filter(|v| !v.is_null()) {
+        let title = tab["title"].as_str().unwrap_or("");
+        let dot = tab["dot"].as_str().unwrap_or("");
+        let color = tab["color"].as_str().unwrap_or("");
+        let selected = tab["selected"].as_bool().unwrap_or(false);
+        let idx = tab["index"].as_u64().unwrap_or(0);
+        let sel_str = if selected { "active" } else { "inactive" };
+        out += &format!("  [tab {idx} \"{title}\": dot={color} ({dot}), {sel_str}]");
+    }
+    out.push('\n');
+    out
+}
+
+pub fn tab_status_report(result: &Value) -> String {
+    let tab = result.get("tab").unwrap_or(result);
+    let title = tab["title"].as_str().unwrap_or("");
+    let dot = tab["dot"].as_str().unwrap_or("");
+    let color = tab["color"].as_str().unwrap_or("");
+    let hex = tab["hex"].as_str().unwrap_or("");
+    let state = tab["state"].as_str().unwrap_or("");
+    let selected = tab["selected"].as_bool().unwrap_or(false);
+    let idx = tab["index"].as_u64().unwrap_or(0);
+    let sel_str = if selected { "active" } else { "inactive" };
+    let mut out = format!("tab {idx} \"{title}\" ({sel_str}): dot {color} ({dot}, {hex}), state {state}");
+    if let Some(text) = result.get("text").and_then(Value::as_str) {
+        out += &format!(" ({text})");
+    }
+    if let Some(prog) = tab.get("progress").filter(|p| !p.is_null()) {
+        let p_state = prog["state"].as_str().unwrap_or("");
+        if let Some(val) = prog.get("value").and_then(Value::as_u64) {
+            out += &format!(" [progress: {p_state} {val}%]");
+        } else {
+            out += &format!(" [progress: {p_state}]");
+        }
+    }
     out.push('\n');
     out
 }

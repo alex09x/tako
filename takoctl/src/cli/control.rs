@@ -75,6 +75,12 @@ pub fn parse(
                         return Err(format!("unexpected argument {}", positional[0]));
                     }
                 }
+                "tab" => {
+                    args.insert("action".into(), Value::String("tab".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
                 "set" => {
                     args.insert("action".into(), Value::String("set".into()));
                     if positional.is_empty() {
@@ -93,8 +99,27 @@ pub fn parse(
                 }
                 other => {
                     return Err(format!(
-                        "unknown status action \"{other}\"; use get, set, or clear"
+                        "unknown status action \"{other}\"; use get, tab, set, or clear"
                     ));
+                }
+            }
+            Ok(Some(()))
+        }
+        "tab" => {
+            let sub = if positional.is_empty() {
+                "status".to_string()
+            } else {
+                positional.remove(0)
+            };
+            match sub.as_str() {
+                "status" => {
+                    args.insert("action".into(), Value::String("tab".into()));
+                    if !positional.is_empty() {
+                        return Err(format!("unexpected argument {}", positional[0]));
+                    }
+                }
+                other => {
+                    return Err(format!("unknown tab action \"{other}\"; use status"));
                 }
             }
             Ok(Some(()))

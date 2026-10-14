@@ -17,6 +17,7 @@ use super::fs_util::resolve_home_path;
 
 pub const ADAPTER_CLAUDE: &str = include_str!("../../adapters/claude.json");
 pub const ADAPTER_GEMINI: &str = include_str!("../../adapters/gemini.json");
+pub const ADAPTER_ANTIGRAVITY: &str = include_str!("../../adapters/antigravity.json");
 pub const ADAPTER_CODEX: &str = include_str!("../../adapters/codex.json");
 pub const ADAPTER_AIDER: &str = include_str!("../../adapters/aider.json");
 
@@ -65,6 +66,14 @@ impl Adapter {
         if let Some(p) = override_path {
             return PathBuf::from(p);
         }
+        if self.name == "codex" {
+            if let Ok(codex_home) = std::env::var("CODEX_HOME") {
+                let trimmed = codex_home.trim();
+                if !trimmed.is_empty() {
+                    return PathBuf::from(trimmed).join("hooks.json");
+                }
+            }
+        }
         resolve_home_path(&self.config_path)
     }
 
@@ -85,12 +94,12 @@ impl Adapter {
             };
             if let Some(hooks_obj) = val.get(&self.hook_field) {
                 let serialized = hooks_obj.to_string();
-                serialized.contains("takoctl status") || serialized.contains("takoctl progress")
+                serialized.contains("takoctl status") || serialized.contains("takoctl progress") || serialized.contains("tako-hook")
             } else {
                 false
             }
         } else {
-            content.contains("takoctl status") || content.contains("takoctl progress")
+            content.contains("takoctl status") || content.contains("takoctl progress") || content.contains("tako-hook")
         }
     }
 
@@ -115,21 +124,9 @@ impl Adapter {
                     .ok_or_else(|| format!("'{}' field must be an object", self.hook_field))?;
 
                 for (event, hook_val) in template_obj {
-                    if let Some(new_arr) = hook_val.as_array() {
-                        if let Some(existing_val) = existing_hooks.get_mut(event) {
-                            if let Some(existing_arr) = existing_val.as_array_mut() {
-                                for item in new_arr {
-                                    let item_str = item.to_string();
-                                    if !existing_arr.iter().any(|ex| ex.to_string() == item_str) {
-                                        existing_arr.push(item.clone());
-                                    }
-                                }
-                            } else {
-                                existing_hooks.insert(event.clone(), hook_val.clone());
-                            }
-                        } else {
-                            existing_hooks.insert(event.clone(), hook_val.clone());
-                        }
+                    if hook_val.is_array() {
+                        let merged = super::merge::merge_event(existing_hooks.get(event), hook_val, &self.name, false)?;
+                        existing_hooks.insert(event.clone(), merged);
                     } else {
                         existing_hooks.insert(event.clone(), hook_val.clone());
                     }
@@ -170,14 +167,17 @@ impl Adapter {
                 if let Some(template_obj) = self.hooks.as_object() {
                     for (event, hook_val) in template_obj {
                         if hook_val.is_array() {
-                            if let Some(arr) = existing_hooks.get_mut(event).and_then(Value::as_array_mut) {
-                                arr.retain(|item| !item.to_string().contains("takoctl"));
-                                if arr.is_empty() {
+                            if existing_hooks.contains_key(event) {
+                                let remaining = super::merge::merge_event(existing_hooks.get(event), hook_val, &self.name, true)?;
+                                if remaining.as_array().is_some_and(Vec::is_empty) {
                                     existing_hooks.remove(event);
+                                } else {
+                                    existing_hooks.insert(event.clone(), remaining);
                                 }
                             }
                         } else if let Some(val) = existing_hooks.get(event) {
-                            if val.to_string().contains("takoctl") {
+                            let s = val.to_string();
+                            if s.contains("takoctl") || s.contains("tako-hook") {
                                 existing_hooks.remove(event);
                             }
                         }
@@ -212,6 +212,7 @@ pub fn all_adapters() -> Vec<Adapter> {
     vec![
         Adapter::from_json_str(ADAPTER_CLAUDE).expect("valid claude adapter"),
         Adapter::from_json_str(ADAPTER_GEMINI).expect("valid gemini adapter"),
+        Adapter::from_json_str(ADAPTER_ANTIGRAVITY).expect("valid antigravity adapter"),
         Adapter::from_json_str(ADAPTER_CODEX).expect("valid codex adapter"),
         Adapter::from_json_str(ADAPTER_AIDER).expect("valid aider adapter"),
     ]

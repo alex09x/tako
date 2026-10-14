@@ -37,24 +37,7 @@ extension BaseTerminalController {
                                                   confirm: confirmButtonTitle, theme: theme)
         asking = false
         if let answer { return answer ? .alertFirstButtonReturn : .alertSecondButtonReturn }
-
-        // If we need confirmation by any, show one confirmation for all windows
-        // in the tab group.
-        let alert = NSAlert()
-        alert.messageText = messageText
-        alert.informativeText = informativeText
-        alert.addButton(withTitle: confirmButtonTitle)
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        // Store our alert so we only ever show one.
-        self.alert = alert
-        defer {
-            // This is important so that we avoid losing focus when Stage
-            // Manager is used.
-            alert.window.orderOut(nil)
-            self.alert = nil
-        }
-        return await alert.beginSheetModal(for: window)
+        return .alertSecondButtonReturn
     }
 
     func confirmClose(

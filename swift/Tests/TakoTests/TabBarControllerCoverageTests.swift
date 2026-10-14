@@ -84,5 +84,58 @@ struct TabBarControllerCoverageTests {
             #expect(titlebarContainer.layer?.backgroundColor == NSColor.clear.cgColor)
         }
     }
+
+    @Test func becomeMainNotificationClearsBackgroundAndResetsOpaque() throws {
+        let window = makeWindow(title: "main-notified")
+        defer { window.close() }
+        Tako.TabBarController.install(in: window)
+
+        let themeFrame = try #require(window.contentView?.superview)
+        let titlebarContainer = try #require(themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView"))
+
+        titlebarContainer.wantsLayer = true
+        titlebarContainer.layer?.backgroundColor = NSColor.red.cgColor
+        titlebarContainer.layer?.isOpaque = true
+
+        NotificationCenter.default.post(name: NSWindow.didBecomeMainNotification, object: window)
+        #expect(titlebarContainer.layer?.backgroundColor == NSColor.clear.cgColor)
+        #expect(titlebarContainer.layer?.isOpaque == false)
+    }
+
+    @Test func closingSecondTabKeepsSurvivingTabIndicatorActiveAndClearsBadges() throws {
+        let first = makeWindow(title: "first")
+        let second = makeWindow(title: "second")
+        defer {
+            Tako.CustomTabGroup.leave(first)
+            Tako.CustomTabGroup.leave(second)
+        }
+
+        Tako.TabBarController.install(in: first)
+        Tako.TabBarController.install(in: second)
+        Tako.CustomTabGroup.join(second, to: first, select: true)
+
+        let bar = try #require(first.contentView?.subviews.compactMap { $0 as? Tako.TabBarView }.first)
+
+        // Simulate Command held (e.g. Cmd+W pressed)
+        bar.commandKeyChanged(held: true)
+
+        // Close the second window
+        Tako.CustomTabGroup.leave(second)
+        second.close()
+
+        // Group now has only `first` window
+        let group = Tako.CustomTabGroup.group(for: first)
+        #expect(group.windows == [first])
+        #expect(group.selectedWindow === first)
+
+        bar.layoutTabs()
+        #expect(bar.windows.count == 1)
+        #expect(bar.showingBadges == false)
+        if bar.effectiveTabStyle == .pill {
+            #expect(bar.tabs.count == 1)
+            #expect(bar.tabs[0].isActive == true)
+            #expect(bar.pillIndicatorColor(for: bar.tabs[0]) == Tako.Brand.ok)
+        }
+    }
 }
 

@@ -10,13 +10,14 @@
 
 use super::*;
 use std::fs;
+use std::path::PathBuf;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn all_adapters_parse_valid_json() {
     let adapters = all_adapters();
-    assert_eq!(adapters.len(), 4);
+    assert_eq!(adapters.len(), 5);
     assert!(find_adapter("claude").is_some());
     assert!(find_adapter("gemini").is_some());
     assert!(find_adapter("antigravity").is_some());
@@ -43,7 +44,7 @@ fn claude_adapter_injects_and_removes_hooks() {
 
     let diff = unified_diff(sample_orig, &modified, "settings.json");
     assert!(diff.contains("+    \"UserPromptSubmit\":"));
-    assert!(diff.contains("+    \"PreToolUse\":"));
+    assert!(diff.contains("+    \"PermissionRequest\":"));
 
     // Fallback removal
     let restored = adapter.remove_hooks(&modified).unwrap();
@@ -59,11 +60,8 @@ fn gemini_adapter_injects_and_removes_hooks() {
 }
 "#;
     let modified = adapter.apply_hooks(sample_orig).unwrap();
-    assert!(modified.contains("on_prompt"));
-    assert!(modified.contains("on_approval"));
-    assert!(modified.contains("on_wait_input"));
-    assert!(modified.contains("on_done"));
-    assert!(modified.contains("on_session_end"));
+    assert!(modified.contains("BeforeAgent"));
+    assert!(modified.contains("AfterAgent"));
     assert!(modified.contains("model"));
 
     let restored = adapter.remove_hooks(&modified).unwrap();
@@ -72,16 +70,46 @@ fn gemini_adapter_injects_and_removes_hooks() {
 }
 
 #[test]
+fn antigravity_adapter_injects_and_removes_hooks() {
+    let adapter = find_adapter("antigravity").unwrap();
+    let sample_orig = r#"{
+  "prod-code-guard": {
+    "enabled": true
+  }
+}
+"#;
+    let modified = adapter.apply_hooks(sample_orig).unwrap();
+    assert!(modified.contains("PreInvocation"));
+    assert!(modified.contains("Stop"));
+    assert!(modified.contains("prod-code-guard"));
+
+    let restored = adapter.remove_hooks(&modified).unwrap();
+    assert!(!restored.contains("takoctl"));
+    assert!(restored.contains("prod-code-guard"));
+}
+
+#[test]
 fn codex_adapter_injects_and_removes_hooks() {
     let adapter = find_adapter("codex").unwrap();
     let empty = "";
     let modified = adapter.apply_hooks(empty).unwrap();
-    assert!(modified.contains("prompt_submit"));
-    assert!(modified.contains("approval_requested"));
-    assert!(modified.contains("turn_done"));
+    assert!(modified.contains("UserPromptSubmit"));
+    assert!(modified.contains("Stop"));
+    assert!(modified.contains("PermissionRequest"));
+    assert!(modified.contains("\"matcher\": \"\""));
 
     let restored = adapter.remove_hooks(&modified).unwrap();
     assert_eq!(restored.trim(), "");
+
+    // Path resolution respects CODEX_HOME if set
+    let custom_dir = "/tmp/custom_codex_home_test";
+    unsafe {
+        std::env::set_var("CODEX_HOME", custom_dir);
+    }
+    assert_eq!(adapter.resolve_path(None), PathBuf::from(custom_dir).join("hooks.json"));
+    unsafe {
+        std::env::remove_var("CODEX_HOME");
+    }
 }
 
 #[test]
@@ -139,7 +167,7 @@ fn install_and_uninstall_roundtrip_is_byte_identical_on_new_file() {
     install("codex", Some(path_str), true, false, false).unwrap();
     assert!(config_file.exists());
     let installed = fs::read_to_string(&config_file).unwrap();
-    assert!(installed.contains("takoctl"));
+    assert!(installed.contains("takoctl") || installed.contains("tako-hook"));
 
     // 2. Uninstall
     uninstall("codex", Some(path_str), true, false, false).unwrap();

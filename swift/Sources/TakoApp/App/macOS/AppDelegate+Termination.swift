@@ -87,10 +87,11 @@ import TakoKit
 
             return .terminateLater
         } else if let window = MainActor.assumeIsolated({
-            AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            TerminalDialogView.ensureHostWindow(tako: self.tako)
+                ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                ?? controllersNeedConfirmation.first?.window
+                ?? NSApp.windows.first(where: { $0.isVisible })
         }) {
-            // Asked in a terminal window, drawn as the terminal UI is; the
-            // alert below only when no terminal window is there to ask in.
             let count = controllersNeedConfirmation.count
             Task { @MainActor in
                 let answer = await TerminalDialogView.choose(
@@ -108,23 +109,7 @@ import TakoKit
             }
             return .terminateLater
         } else {
-            let alert = NSAlert()
-            alert.messageText = "You have \(controllersNeedConfirmation.count) windows with running processes. Do you want to review these windows before quitting?"
-            alert.informativeText = "If you don't review your windows, any running processes will be terminated"
-            alert.addButton(withTitle: "Review Windows...")
-            alert.addButton(withTitle: "Terminate Processes")
-            alert.addButton(withTitle: "Cancel")
-            alert.alertStyle = .warning
-
-            switch runModalAlert(alert) {
-            case .alertFirstButtonReturn:
-                reviewWindows(controllersNeedConfirmation)
-                return .terminateLater
-            case .alertSecondButtonReturn:
-                return .terminateNow
-            default:
-                return .terminateCancel
-            }
+            return .terminateCancel
         }
     }
 

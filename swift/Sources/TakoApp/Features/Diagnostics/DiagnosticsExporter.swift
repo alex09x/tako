@@ -76,8 +76,20 @@ enum DiagnosticsExporter {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 completion?(.success(url))
             } catch {
-                let alert = NSAlert(error: error)
-                alert.runModal()
+                if let window = targetWindow
+                    ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                    ?? TerminalController.preferredParent?.window
+                    ?? NSApp.windows.first(where: { $0.isVisible }) {
+                    Task { @MainActor in
+                        await TerminalDialogView.alert(
+                            in: window,
+                            title: "Export Failed",
+                            message: "Failed to export diagnostics:\n\(error.localizedDescription)",
+                            button: "OK",
+                            theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+                        )
+                    }
+                }
                 completion?(.failure(error))
             }
         }

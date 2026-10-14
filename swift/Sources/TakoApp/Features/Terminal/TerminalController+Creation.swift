@@ -254,12 +254,16 @@ extension TerminalController {
         // If our parent is in non-native fullscreen, then new tabs do not work.
         if let fullscreenStyle = parentController.fullscreenStyle,
            fullscreenStyle.isFullscreen && !fullscreenStyle.supportsTabs {
-            let alert = NSAlert()
-            alert.messageText = "Cannot Create New Tab"
-            alert.informativeText = "New tabs are unsupported while in non-native fullscreen. Exit fullscreen and try again."
-            alert.addButton(withTitle: "OK")
-            alert.alertStyle = .warning
-            alert.beginSheetModal(for: parent)
+            let theme = tako.config.theme
+            Task { @MainActor in
+                await TerminalDialogView.alert(
+                    in: parent,
+                    title: "Cannot Create New Tab",
+                    message: "New tabs are unsupported while in non-native fullscreen. Exit fullscreen and try again.",
+                    button: "OK",
+                    theme: theme
+                )
+            }
             return nil
         }
 

@@ -186,7 +186,7 @@ struct TerminalDialogTests {
                                                             value: "old", hint: nil, confirm: "Save", theme: nil) }
         while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
         let dialog = TerminalDialogView.pending(in: window)!
-        let field = dialog.subviews.compactMap { $0 as? NSTextField }.first!
+        let field = (dialog.field ?? dialog.subviews.compactMap { $0 as? NSTextField }.first(where: { $0.isEditable }))!
         #expect(field.stringValue == "old")
         field.stringValue = "build logs"
         #expect(dialog.press("Save"))
@@ -205,7 +205,7 @@ struct TerminalDialogTests {
                                                             value: "x", hint: nil, confirm: "Save", theme: nil) }
         while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
         let dialog = TerminalDialogView.pending(in: window)!
-        let field = dialog.subviews.compactMap { $0 as? NSTextField }.first!
+        let field = (dialog.field ?? dialog.subviews.compactMap { $0 as? NSTextField }.first(where: { $0.isEditable }))!
         let editor = NSTextView()
         #expect(dialog.summary["selected"] == .string("Save"))
         _ = dialog.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:)))
@@ -213,5 +213,76 @@ struct TerminalDialogTests {
         _ = dialog.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
         #expect(await asked.value == nil)
     }
-}
 
+    @Test func windowCloseCancelsPendingDialogContinuation() async {
+        let window = window()
+        let asked = Task {
+            await TerminalDialogView.ask(
+                in: window,
+                title: "Grant Access?",
+                message: "A remote client requested access.",
+                confirm: "Allow",
+                cancel: "Deny",
+                destructive: false,
+                theme: nil
+            )
+        }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window) != nil)
+
+        // Close the window while the dialog is awaiting input
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+
+        let result = await asked.value
+        #expect(result == false)
+        #expect(TerminalDialogView.pending(in: window) == nil)
+    }
+
+    @Test func viewRemovalCancelsPendingDialogContinuation() async {
+        let window = window()
+        let asked = Task {
+            await TerminalDialogView.choose(
+                in: window,
+                title: "Choose Action",
+                lines: TUIText.plain("Select an option", width: 40),
+                choices: [.init(title: "Cancel", kind: .normal), .init(title: "Execute", kind: .primary)],
+                selected: 1,
+                cancelIndex: 0,
+                theme: nil
+            )
+        }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+
+        // Remove the view from hierarchy without answering
+        dialog.removeFromSuperview()
+
+        let result = await asked.value
+        #expect(result == 0)
+        #expect(TerminalDialogView.pending(in: window) == nil)
+    }
+
+    @Test func windowCloseCancelsPendingAskTextContinuation() async {
+        let window = window()
+        let asked = Task {
+            await TerminalDialogView.askText(
+                in: window,
+                title: "New Workspace",
+                label: "Name:",
+                value: "test",
+                hint: nil,
+                confirm: "Create",
+                cancel: "Cancel",
+                theme: nil
+            )
+        }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window) != nil)
+
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+
+        let result = await asked.value
+        #expect(result == nil)
+        #expect(TerminalDialogView.pending(in: window) == nil)
+    }
+}

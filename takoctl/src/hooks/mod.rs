@@ -15,6 +15,9 @@
 
 pub mod adapter;
 pub mod fs_util;
+mod merge;
+#[cfg(test)]
+mod merge_tests;
 #[cfg(test)]
 mod tests;
 

@@ -186,20 +186,20 @@ extension TerminalController {
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = "Close All Windows?"
-        alert.informativeText = "All terminal sessions will be terminated."
-        alert.addButton(withTitle: "Close All Windows")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: confirmWindow, completionHandler: { response in
-            if response == .alertFirstButtonReturn {
-                // This is important so that we avoid losing focus when Stage
-                // Manager is used.
-                alert.window.orderOut(nil)
+        let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        Task { @MainActor in
+            let answer = await TerminalDialogView.ask(
+                in: confirmWindow,
+                title: "Close All Windows?",
+                message: "All terminal sessions will be terminated.",
+                confirm: "Close All Windows",
+                cancel: "Cancel",
+                theme: theme
+            )
+            if answer == true {
                 closeAllWindowsImmediately()
             }
-        })
+        }
     }
 
     static private func closeAllWindowsImmediately() {

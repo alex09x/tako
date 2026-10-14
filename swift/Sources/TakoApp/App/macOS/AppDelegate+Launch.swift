@@ -107,6 +107,9 @@ extension AppDelegate {
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
 
+        // Configure terminal dialog handlers to route all alerts and link confirmations through TerminalDialogView
+        Self.configureTerminalDialogHandlers()
+
         // This registers the Tako => Services menu to exist.
         NSApp.servicesMenu = menuServices
 
@@ -206,6 +209,7 @@ extension AppDelegate {
         setupWhatsNewMenuItem()
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
+        setupAgentHooksMenuItem()
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
         setupSidebarMenuItem()
@@ -225,6 +229,7 @@ extension AppDelegate {
         setDockBadge()
         WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
         CommandLineTool.offerAtLaunch(theme: tako.config.theme)
+        AgentHooksTool.offerAtLaunch(theme: tako.config.theme)
 
         // Setup signal handlers
         setupSignals()
@@ -296,5 +301,4 @@ extension AppDelegate {
             }
         }
     }
-
 }

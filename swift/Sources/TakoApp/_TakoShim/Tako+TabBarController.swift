@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Combine
 
@@ -18,6 +28,10 @@ extension Tako {
         private static var installed: [ObjectIdentifier: TabBarView] = [:]
         private static var monitor: Any?
 
+        static func bar(for window: NSWindow) -> TabBarView? {
+            installed[ObjectIdentifier(window)]
+        }
+
         static func install(in window: NSWindow) {
             let key = ObjectIdentifier(window)
             if installed[key] != nil { return }
@@ -29,6 +43,8 @@ extension Tako {
             // late for AppKit to actually extend the content view under the
             // titlebar, even though the properties themselves report true.
             window.tabbingMode = .disallowed // The whole point: AppKit never manages tabbing for this window.
+            window.isMovable = false
+            window.isMovableByWindowBackground = false
 
             // `titlebarAppearsTransparent` alone does not make the native
             // titlebar see-through here: confirmed live that `NSTitlebarContainerView`
@@ -57,6 +73,9 @@ extension Tako {
                 forName: NSWindow.willCloseNotification, object: window, queue: .main
             ) { _ in
                 MainActor.assumeIsolated {
+                    if let bar = installed[key], bar.draggingTabIndex != nil || bar.draggingWindow === window {
+                        setDragState(in: nil, index: nil, start: nil, isDragging: false)
+                    }
                     Tako.CustomTabGroup.leave(window)
                     installed.removeValue(forKey: key)
                     refreshAll()
@@ -73,12 +92,17 @@ extension Tako {
                 NSWindow.didResizeNotification,
                 NSWindow.didBecomeKeyNotification,
                 NSWindow.didResignKeyNotification,
+                NSWindow.didBecomeMainNotification,
+                NSWindow.didResignMainNotification,
                 NSWindow.didEndLiveResizeNotification,
             ] {
                 NotificationCenter.default.addObserver(
                     forName: name, object: window, queue: .main
                 ) { _ in
-                    MainActor.assumeIsolated { clearTitlebarBackground(in: window) }
+                    MainActor.assumeIsolated {
+                        clearTitlebarBackground(in: window)
+                        installed[key]?.needsDisplay = true
+                    }
                 }
             }
 
@@ -105,6 +129,32 @@ extension Tako {
             }
         }
 
+        /// Synchronize drag state across tab bars belonging to the originating
+        /// `CustomTabGroup` so selecting a different tab window during mouseDown
+        /// preserves the active drag on the newly frontmost window's TabBarView
+        /// without leaking drag state to unrelated window groups.
+        static func setDragState(
+            in group: Tako.CustomTabGroup?,
+            draggedWindow: NSWindow? = nil,
+            index: Int?,
+            start: CGPoint?,
+            isDragging: Bool
+        ) {
+            for bar in installed.values {
+                if let group, bar.group === group {
+                    bar.draggingTabIndex = index
+                    bar.draggingWindow = draggedWindow
+                    bar.dragStartPoint = start
+                    bar.isTabDragging = isDragging
+                } else {
+                    bar.draggingTabIndex = nil
+                    bar.draggingWindow = nil
+                    bar.dragStartPoint = nil
+                    bar.isTabDragging = false
+                }
+            }
+        }
+
         /// Some AppKit-internal operations (resize, appearance change, full
         /// screen transitions) re-apply `NSTitlebarContainerView`'s opaque
         /// gray layer background on their own schedule -- matches upstream's
@@ -123,6 +173,7 @@ extension Tako {
             else { return }
             titlebarContainer.wantsLayer = true
             titlebarContainer.layer?.backgroundColor = NSColor.clear.cgColor
+            titlebarContainer.layer?.isOpaque = false
         }
 
         /// Inset the real content below the strip's row -- the content view

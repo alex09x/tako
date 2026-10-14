@@ -60,44 +60,8 @@ extension Tako.TabBarView {
     }
 
     func pillIndicatorColor(for tab: Tab) -> NSColor {
-        let unread = surfaces(in: tab.window).contains(where: {
-            !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
-        })
-        if unread {
-            return Tako.Brand.claw
-        }
-        guard let crab = aggregateCrab(for: tab.window) else {
-            return tab.isActive ? Tako.Brand.ok : Palette.dim
-        }
-        switch crab.paneStatus {
-        case .running, .working:
-            return Tako.Brand.ember
-        case .error:
-            return Tako.Brand.error
-        case .done:
-            return Tako.Brand.ok
-        case .needsApproval, .waitingForInput:
-            return Tako.Brand.claw
-        case .disconnected:
-            return Tako.Brand.dim
-        case .idle, .unknown:
-            switch crab.state {
-            case .running:
-                return Tako.Brand.ember
-            case .failed:
-                return Tako.Brand.error
-            case .succeeded:
-                return Tako.Brand.ok
-            case .attention:
-                return Tako.Brand.claw
-            case .ghost:
-                return Tako.Brand.dim
-            case .reconnecting:
-                return Tako.Brand.ember
-            case .idle:
-                return tab.isActive ? Tako.Brand.ok : Palette.dim
-            }
-        }
+        let report = Tako.tabVisualStatus(for: tab.window)
+        return Tako.Brand.color(for: report.dot, active: tab.isActive)
     }
 
     func drawPillTab(_ tab: Tab, in ctx: CGContext) {
@@ -138,7 +102,7 @@ extension Tako.TabBarView {
 
         // Status indicator dot (7×7) matching workspace pill, or numeric badge when Command is held
         let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
-        if showingBadges && tab.index < 9 {
+        if showingBadges && tab.index < 9 && windows.count > 1 {
             let badgeRect = CGRect(x: rect.minX + 5, y: rect.midY - 7, width: 14, height: 14)
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
@@ -157,6 +121,7 @@ extension Tako.TabBarView {
             let dotColor = pillIndicatorColor(for: tab)
             ctx.setFillColor(dotColor.cgColor)
             ctx.fillEllipse(in: dotRect)
+            paintedPillDots[ObjectIdentifier(tab.window)] = Tako.Brand.hexString(for: dotColor)
         }
 
         // Close button: visible on tabs with enough room, with 8px right margin
@@ -287,7 +252,7 @@ extension Tako.TabBarView {
 
     /// The badge sits over the crab, so it costs no width.
     func drawCrab(for tab: Tab, in rect: CGRect, ctx: CGContext) {
-        guard !(showingBadges && tab.index < 9) else {
+        guard !(showingBadges && tab.index < 9 && windows.count > 1) else {
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4,
                                transform: nil))

@@ -83,7 +83,8 @@ struct PaneStatusTests {
         #expect(tracker.signalStatus == .running)
         #expect(tracker.paneStatus == .running)
 
-        // Command ends with exit code 0
+        // Command ends with exit code 0 after lasting beyond minimumVisibleDuration
+        clock = clock.addingTimeInterval(5)
         tracker.commandEnded(exitCode: 0)
         #expect(tracker.signalStatus == .done)
         #expect(tracker.paneStatus == .done)
@@ -210,5 +211,34 @@ struct PaneStatusTests {
         t2.connectionLost()
         let dominant3 = trackers.max(by: { $0.paneStatus.priority < $1.paneStatus.priority })
         #expect(dominant3 === t2, "disconnected (priority 8) must dominate all other statuses")
+    }
+
+    @Test func focusedClearsExplicitDoneStatus() {
+        let tracker = Tako.CrabTracker()
+        tracker.setStatus(.done, text: "Finished task")
+        #expect(tracker.paneStatus == .done)
+
+        tracker.focused()
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.statusText == nil)
+    }
+
+    @Test func doneStatusWhileFocusedImmediatelyReportsIdle() {
+        let tracker = Tako.CrabTracker()
+        tracker.isFocused = true
+        tracker.setStatus(.done, text: "Finished task")
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.unread == false)
+
+        tracker.unfocused()
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.unread == false)
+    }
+
+    @Test func explicitIdleStatusReportsIdleState() {
+        let tracker = Tako.CrabTracker()
+        tracker.setStatus(.idle, text: nil)
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.state == .idle)
     }
 }

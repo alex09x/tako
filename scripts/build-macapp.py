@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# tako — macOS application packaging
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
 """Build the macOS app: upstream's Swift app layer over the Rust core.
 
 Produces Tako.app. The Rust staticlib, the Objective-C helpers and
@@ -111,9 +117,13 @@ if not up_to_date(bindings_swift, ["src", "Cargo.toml", "Cargo.lock"]):
 # is the one library `MTLDevice.makeDefaultLibrary(bundle:)` -- what
 # MetalTerminalRenderer asks for -- will load.
 metal_src = "swift/Sources/TakoCoreUI/Resources/TerminalShaders.metal"
-if not up_to_date(os.path.join(BUILD, "default.metallib"), [metal_src]):
+if not up_to_date(os.path.join(BUILD, "default.metallib"), [metal_src, __file__]):
     air = os.path.join(BUILD, "TerminalShaders.air")
-    run(["xcrun", "-sdk", "macosx", "metal", "-c", metal_src, "-o", air], "compile metal shader")
+    # Match the app's macOS 14 deployment target. A newer build SDK defaults
+    # to its own Metal language version (Xcode 26 emits Metal 4.0), which
+    # macOS 15 cannot load and silently sends every surface to CPU rendering.
+    run(["xcrun", "-sdk", "macosx", "metal", "-std=metal3.1",
+         "-mmacosx-version-min=14.0", "-c", metal_src, "-o", air], "compile metal shader")
     run(["xcrun", "-sdk", "macosx", "metallib", air, "-o", os.path.join(BUILD, "default.metallib")], "link metallib")
 
 # Upstream imports this as a module, so it is built first.

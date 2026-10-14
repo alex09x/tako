@@ -378,6 +378,11 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     if token.is_none() && cmd != "grant" {
         token = args.get("token").and_then(Value::as_str).map(String::from);
     }
+    let cmd = if cmd == "tab" {
+        "status".to_string()
+    } else {
+        cmd
+    };
     Ok(Options {
         cmd,
         args,

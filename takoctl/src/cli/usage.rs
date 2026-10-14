@@ -45,9 +45,11 @@ commands:
   run -- PROGRAM ARGS...  run PROGRAM, as given -- no shell -- in a new tab (--split
                           right|down|left|up: a split; --cwd DIR); prints the pane id, or
                           with --wait its exit status and output (--timeout S)
-  status [get]            print the pane's status (status, text, TTL)
+  status [get]            print the pane's status (status, text, TTL, and tab indicator)
+  status tab              print the target tab's visual status, dot color, and circle state
   status set STATUS       set the pane's explicit status (--text T, --ttl D)
   status clear            clear the pane's explicit status
+  tab [status]            alias for status tab (inspect tab title, dot, and color)
   progress [STATE|0-100]  get or set progress: 0-100, indeterminate, error, pause, clear
   events                  stream terminal events as ndjson (--pane ID, --tab ID,
                           --workspace NAME, --type TYPES, --cursor N)

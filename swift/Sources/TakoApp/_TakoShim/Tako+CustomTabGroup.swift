@@ -29,6 +29,7 @@ extension Tako {
     final class CustomTabGroup {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
+        private weak var pendingOrderOutWindow: NSWindow?
         private var lastSelectedWindowByWorkspace: [UUID: NSWindow] = [:]
         private(set) var focusGeneration: Int = 0
         /// Test override for workspace window frame synchronization.
@@ -294,7 +295,8 @@ extension Tako {
             ) { notif in
                 MainActor.assumeIsolated {
                     guard let win = notif.object as? NSWindow,
-                          let group = groupsByWindow[ObjectIdentifier(win)] else { return }
+                          let group = groupsByWindow[ObjectIdentifier(win)],
+                          win !== group.pendingOrderOutWindow else { return }
                     lastActiveWindowFrame = win.frame
                     let tabId = win.stableTabIdentifier
                     let wsId = WorkspaceStore.shared.workspace(forTab: tabId)?.id ?? WorkspaceStore.shared.activeWorkspaceId
@@ -430,20 +432,20 @@ extension Tako {
             let visible = group.visibleWindows
             let next = index < visible.count ? visible[index] : visible.last
 
-            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
-            group.lastSelectedWindowByWorkspace = group.lastSelectedWindowByWorkspace.filter { _, win in
-                win !== window && group.windows.contains(win)
-            }
-
             if isSelected {
                 if let next {
                     group.select(next)
                 } else {
                     group.selectedWindow = nil
                 }
-            } else {
-                Tako.TabBarController.refreshAll()
             }
+
+            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+            group.lastSelectedWindowByWorkspace = group.lastSelectedWindowByWorkspace.filter { _, win in
+                win !== window && group.windows.contains(win)
+            }
+
+            Tako.TabBarController.refreshAll()
         }
 
         /// Reorder a window within its own group (Cmd+Shift+[/]).
@@ -552,6 +554,7 @@ extension Tako {
             guard selectedWindow !== window else {
                 if window.isVisible {
                     window.makeKeyAndOrderFront(nil)
+                    Tako.TabBarController.clearTitlebarBackground(in: window)
                 }
                 Self.lastActiveWindowFrame = window.frame
                 let wsId = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.shared.activeWorkspaceId
@@ -562,18 +565,25 @@ extension Tako {
             }
             let previous = selectedWindow
             selectedWindow = window
+            pendingOrderOutWindow = previous
             Self.lastActiveWindowFrame = window.frame
             if previous?.isVisible == true || window.isVisible {
                 window.setFrame(previous?.frame ?? window.frame, display: false)
                 window.order(.above, relativeTo: previous?.windowNumber ?? 0)
                 window.makeKeyAndOrderFront(nil)
+                Tako.TabBarController.clearTitlebarBackground(in: window)
                 NSApp.activate(ignoringOtherApps: true)
                 CATransaction.flush()
-                DispatchQueue.main.async { [weak self, weak previous] in
-                    guard let self, let previous else { return }
-                    if previous !== self.selectedWindow {
+                DispatchQueue.main.async { [weak self, weak previous, weak window] in
+                    guard let self, self.focusGeneration == gen else { return }
+                    self.pendingOrderOutWindow = nil
+                    if let window {
+                        self.selectedWindow = window
+                    }
+                    if let previous, previous !== self.selectedWindow {
                         previous.orderOut(nil)
                     }
+                    Tako.TabBarController.refreshAll()
                 }
             }
 

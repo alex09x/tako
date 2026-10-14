@@ -84,6 +84,9 @@ extension Tako.TabBarView {
             tabElem.setAccessibilityLabel(title)
             tabElem.setAccessibilityIdentifier("tab-\(tab.index)")
             tabElem.setAccessibilityValue((tab.isActive ? 1 : 0) as NSNumber)
+            if let paintedHex = paintedPillDots[ObjectIdentifier(tab.window)] {
+                tabElem.setAccessibilityHelp("dot:\(paintedHex)")
+            }
             let localRect = pillRect(for: tab)
             let windowRect = convert(localRect, to: nil)
             tabElem.setAccessibilityFrame(window.convertToScreen(windowRect))

@@ -53,6 +53,7 @@ public struct InputOwnershipHeaderView: View {
 
                     Button("Take Over") {
                         store.takeOver(paneId: paneId)
+                        restorePaneFocus()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.mini)
@@ -72,6 +73,7 @@ public struct InputOwnershipHeaderView: View {
 
                     Button("Hand Back") {
                         store.handBack(paneId: paneId, to: prevAgent)
+                        restorePaneFocus()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -82,6 +84,7 @@ public struct InputOwnershipHeaderView: View {
                 if state.automationMayType {
                     Button {
                         store.setAutomationMayType(paneId: paneId, allowed: false)
+                        restorePaneFocus()
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "bolt.fill")
@@ -137,6 +140,21 @@ public struct InputOwnershipHeaderView: View {
             .transition(.move(edge: .top).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.15), value: state.isLocked)
         }
+    }
+
+    private func restorePaneFocus() {
+        let targetId = paneId
+        let focus = {
+            for window in NSApp.windows {
+                if let controller = window.windowController as? BaseTerminalController,
+                   let surface = controller.surfaceTree.first(where: { $0.id == targetId }) {
+                    ControlLayout.focus(surface)
+                    return
+                }
+            }
+        }
+        focus()
+        DispatchQueue.main.async(execute: focus)
     }
 }
 

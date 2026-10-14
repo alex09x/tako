@@ -139,7 +139,8 @@ extension Driver {
     }
 
     func hasText(containing target: String) -> Bool {
-        for window in windows() {
+        let onScreen = onScreenWindows()
+        for window in (onScreen.isEmpty ? windows() : onScreen) {
             if elementContainsText(window, target: target, depth: 22) { return true }
         }
         return false

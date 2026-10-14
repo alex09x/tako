@@ -59,6 +59,20 @@ fn status_command_parses_get_set_clear_and_options() {
         json!({"cmd": "status", "args": {"action": "clear"}})
     );
 
+    // tab
+    let opts = parse(&args(&["status", "tab"])).unwrap();
+    assert_eq!(
+        request(&opts, None),
+        json!({"cmd": "status", "args": {"action": "tab"}})
+    );
+
+    // tab alias
+    let opts = parse(&args(&["tab", "status"])).unwrap();
+    assert_eq!(
+        request(&opts, None),
+        json!({"cmd": "status", "args": {"action": "tab"}})
+    );
+
     // errors
     assert!(parse(&args(&["status", "set"])).is_err());
     assert!(parse(&args(&["status", "unknown_action"])).is_err());
@@ -72,10 +86,21 @@ fn status_report_renders_human_output() {
         "text": "compiling",
         "ttl": 298.5,
         "unread": true,
+        "tab": {
+            "title": "agy ~",
+            "index": 0,
+            "selected": true,
+            "dot": "ember",
+            "color": "orange",
+            "hex": "#f4581c",
+            "state": "working",
+            "style": "pill",
+            "panes": 1
+        }
     });
     assert_eq!(
         status_report(&result),
-        "working (compiling) [TTL: 4m 58s] [unread]\n"
+        "working (compiling) [TTL: 4m 58s] [unread]  [tab 0 \"agy ~\": dot=orange (ember), active]\n"
     );
 
     let simple = json!({
@@ -83,6 +108,30 @@ fn status_report_renders_human_output() {
         "unread": false,
     });
     assert_eq!(status_report(&simple), "idle\n");
+
+    let tab_result = json!({
+        "action": "tab",
+        "status": "working",
+        "text": "Thinking...",
+        "tab": {
+            "title": "agy ~",
+            "index": 0,
+            "selected": true,
+            "dot": "ember",
+            "color": "orange",
+            "hex": "#f4581c",
+            "state": "working",
+            "style": "pill",
+            "panes": 1,
+            "progress": {
+                "state": "indeterminate"
+            }
+        }
+    });
+    assert_eq!(
+        tab_status_report(&tab_result),
+        "tab 0 \"agy ~\" (active): dot orange (ember, #f4581c), state working (Thinking...) [progress: indeterminate]\n"
+    );
 }
 
 #[test]
@@ -269,4 +318,57 @@ fn events_command_parses_filters_and_cursor() {
     // Disallows positional arguments
     assert!(parse(&args(&["events", "unexpected"])).is_err());
     assert!(parse(&args(&["events", "--cursor", "not_a_number"])).is_err());
+}
+
+#[test]
+fn render_dispatches_status_tab_and_restored_commands() {
+    use crate::reports::render;
+
+    // status (normal)
+    let status_val = json!({
+        "status": "working",
+        "tab": { "title": "t1", "dot": "ember", "color": "orange", "hex": "#f4581c", "state": "working" }
+    });
+    let status_out = render("status", &status_val);
+    assert!(status_out.contains("working"));
+
+    // status (tab)
+    let tab_val = json!({
+        "action": "tab",
+        "title": "t1",
+        "dot": "ember",
+        "color": "orange",
+        "hex": "#f4581c",
+        "state": "working"
+    });
+    let tab_out = render("status", &tab_val);
+    assert!(tab_out.contains("dot orange (ember, #f4581c)"));
+
+    // progress
+    let prog_val = json!({
+        "state": "normal",
+        "progress": 50
+    });
+    let prog_out = render("progress", &prog_val);
+    assert!(prog_out.contains("50%"));
+
+    // run with state (command_report)
+    let cmd_val = json!({
+        "state": "running",
+        "command": {
+            "ref": "c1",
+            "running": true,
+            "input": "cargo build"
+        }
+    });
+    let run_out = render("run", &cmd_val);
+    assert!(run_out.contains("cargo build"));
+
+    // wait
+    let wait_out = render("wait", &cmd_val);
+    assert!(wait_out.contains("cargo build"));
+
+    // last
+    let last_out = render("last", &cmd_val);
+    assert!(last_out.contains("cargo build"));
 }

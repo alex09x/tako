@@ -113,8 +113,10 @@ extension Tako {
         var tracking: NSTrackingArea?
 
         var draggingTabIndex: Int?
+        weak var draggingWindow: NSWindow?
         var dragStartPoint: CGPoint?
         var isTabDragging: Bool = false
+        var paintedPillDots: [ObjectIdentifier: String] = [:]
 
         override var isFlipped: Bool { false }
 
@@ -123,14 +125,21 @@ extension Tako {
         }
 
         override var mouseDownCanMoveWindow: Bool {
-            true
+            false
         }
 
         var group: CustomTabGroup? { window.map { Tako.CustomTabGroup.group(for: $0) } }
         var windows: [NSWindow] { group?.visibleWindows ?? [] }
-        /// A single window shows no strip -- just its title, centred. There
-        /// is no such thing as an empty bar.
-        var showsStrip: Bool { windows.count > 1 }
+        /// A single window in pill style shows a pill tab (the "бублик").
+        /// In classic style, a single window shows no strip -- just its title, centred.
+        var showsStrip: Bool {
+            switch effectiveTabStyle {
+            case .pill:
+                return !windows.isEmpty
+            case .classic:
+                return windows.count > 1
+            }
+        }
 
         var workspaceHovered = false
         var showsWorkspacePill: Bool {
@@ -214,7 +223,10 @@ extension Tako {
             tabs = []
             guard showsStrip else { return }
             let all = windows
-            let selected = group?.selectedWindow
+            if all.count <= 1 && showingBadges {
+                showingBadges = false
+            }
+            let selected = group?.selectedWindow ?? window
             let startX = effectiveFirstTabX
             let available = bounds.width - startX - buttonsReservedWidth
             let natural = all.map(naturalWidth(for:))

@@ -34,6 +34,7 @@ struct TabBarViewCoverageTests {
         let window = makeWindow(title: "Lone Window")
         defer { Tako.CustomTabGroup.leave(window) }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .classic
         mount(bar, in: window)
         // showsStrip == false: exercises drawLoneTitle(). Blanking the title
         // afterwards must change the render -- proof the title text itself,
@@ -49,6 +50,7 @@ struct TabBarViewCoverageTests {
         let window = makeWindow(title: "")
         defer { Tako.CustomTabGroup.leave(window) }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .classic
         mount(bar, in: window)
         // `drawLoneTitle` returns before drawing anything beyond the plain
         // bar background/hairline that `draw(_:)` already painted, so
@@ -111,7 +113,7 @@ struct TabBarViewCoverageTests {
         #expect(group.selectedWindow === windows[23])
     }
 
-    /// Closing from two tabs to one drops the strip entirely: no cached
+    /// Closing from two tabs to one drops the strip entirely in classic style: no cached
     /// tabs are left for a click on the title bar to land on.
     @Test func goingDownToOneWindowForgetsTheStrip() {
         let a = makeWindow(title: "a")
@@ -123,6 +125,7 @@ struct TabBarViewCoverageTests {
         Tako.CustomTabGroup.join(b, to: a, select: false)
 
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .classic
         mount(bar, in: a)
         draw(bar)
         #expect(bar.laidOutTabCount == 2)
@@ -130,6 +133,27 @@ struct TabBarViewCoverageTests {
         Tako.CustomTabGroup.leave(b)
         draw(bar)
         #expect(bar.laidOutTabCount == 0)
+    }
+
+    @Test func goingDownToOneWindowInPillStyleKeepsSinglePillTab() {
+        let a = makeWindow(title: "a")
+        let b = makeWindow(title: "b")
+        defer {
+            Tako.CustomTabGroup.leave(a)
+            Tako.CustomTabGroup.leave(b)
+        }
+        Tako.CustomTabGroup.join(b, to: a, select: false)
+
+        let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .pill
+        mount(bar, in: a)
+        draw(bar)
+        #expect(bar.laidOutTabCount == 2)
+
+        Tako.CustomTabGroup.leave(b)
+        draw(bar)
+        #expect(bar.laidOutTabCount == 1)
+        #expect(bar.tabs[0].isActive)
     }
 
     @Test func scrollOffsetKeepsTheSelectedTabInView() {

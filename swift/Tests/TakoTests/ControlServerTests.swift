@@ -234,5 +234,93 @@ struct ControlServerTests {
         #expect(lastCleared?.action == "clear")
     }
 
+    @Test func socketStatusRoutingAcrossMultiplePanes() async throws {
+        let dir = try privateDir()
+        let path = dir + "/c.sock"
+        defer { try? FileManager.default.removeItem(atPath: dir) }
 
+        let winA = makeWindow(title: "socket-pane-a")
+        let winB = makeWindow(title: "socket-pane-b")
+        defer {
+            Tako.CustomTabGroup.leave(winA)
+            Tako.CustomTabGroup.leave(winB)
+        }
+        let surfA = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let surfB = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        winA.contentView?.addSubview(surfA)
+        winB.contentView?.addSubview(surfB)
+        defer {
+            surfA.removeFromSuperview()
+            surfB.removeFromSuperview()
+        }
+        Tako.CustomTabGroup.join(winB, to: winA, select: false)
+
+        let oldMode = ControlCommands.mode
+        ControlCommands.mode = .on
+        defer { ControlCommands.mode = oldMode }
+
+        let paneA = ControlCommands.Pane(surface: surfA, windowID: "w1", tabID: "t1")
+        let paneB = ControlCommands.Pane(surface: surfB, windowID: "w2", tabID: "t2")
+
+        let server = ControlServer(path: path) { request, reply in
+            ControlCommands.handle(request, all: [paneA, paneB], reply: reply)
+        }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+
+        let idA = surfA.id.uuidString.lowercased()
+        let idB = surfB.id.uuidString.lowercased()
+
+        let grant = ControlGrantStore.shared.issueGrant(client: "test-agent", scopes: [.signal, .read])
+        let token = grant.token
+
+        // 1. Initially both panes are idle
+        let initA = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let initB = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        #expect((initA["result"] as? [String: Any])?["status"] as? String == "idle")
+        #expect((initB["result"] as? [String: Any])?["status"] as? String == "idle")
+
+        // 2. Client sends status set 'working' targeting Pane A over UNIX socket
+        let setWorking = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"set","status":"working","text":"Thinking..."}}"#)
+        #expect(setWorking["ok"] as? Bool == true)
+
+        // Verify Pane A reflects working over socket
+        let getAWorking = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let resA = getAWorking["result"] as? [String: Any]
+        #expect(resA?["status"] as? String == "working")
+        #expect(resA?["text"] as? String == "Thinking...")
+        let tabA = resA?["tab"] as? [String: Any]
+        #expect(tabA?["dot"] as? String == "ember")
+        #expect(tabA?["color"] as? String == "orange")
+
+        // Nonrecipient Pane B MUST remain completely untouched (idle/dim/gray)
+        let getBStillIdle = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        let resB = getBStillIdle["result"] as? [String: Any]
+        #expect(resB?["status"] as? String == "idle")
+        #expect(resB?["text"] == nil)
+        let tabB = resB?["tab"] as? [String: Any]
+        #expect(tabB?["dot"] as? String == "dim")
+        #expect(tabB?["color"] as? String == "gray")
+
+        // 3. Client sets Pane A to 'done' over socket
+        surfA.crab.isFocused = false
+        let setDone = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"set","status":"done","text":"Turn complete"}}"#)
+        #expect(setDone["ok"] as? Bool == true)
+
+        let getADone = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let tabADone = (getADone["result"] as? [String: Any])?["tab"] as? [String: Any]
+        #expect(tabADone?["dot"] as? String == "ok")
+        #expect(tabADone?["color"] as? String == "green")
+
+        // Nonrecipient Pane B is STILL untouched
+        let getBStillIdle2 = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        #expect((getBStillIdle2["result"] as? [String: Any])?["status"] as? String == "idle")
+
+        // 4. Focus acknowledgement: focusing Pane A resets done to idle
+        surfA.crab.focused()
+        let getAFocused = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let tabAFocused = (getAFocused["result"] as? [String: Any])?["tab"] as? [String: Any]
+        #expect(tabAFocused?["dot"] as? String == "dim")
+        #expect(tabAFocused?["color"] as? String == "gray")
+    }
 }

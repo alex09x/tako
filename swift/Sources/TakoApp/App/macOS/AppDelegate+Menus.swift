@@ -194,15 +194,16 @@ extension AppDelegate {
         NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpen: .unixExecutable) { error in
             guard let error else { return }
             Task { @MainActor in
-                let alert = NSAlert()
-                alert.messageText = "Failed to Set Default Terminal"
-                alert.informativeText = """
-                Tako could not be set as the default terminal application.
-
-                Error: \(error.localizedDescription)
-                """
-                alert.alertStyle = .warning
-                alert.runModal()
+                guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                    ?? TerminalController.preferredParent?.window
+                    ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
+                await TerminalDialogView.alert(
+                    in: window,
+                    title: "Failed to Set Default Terminal",
+                    message: "Tako could not be set as the default terminal application.\n\nError: \(error.localizedDescription)",
+                    button: "OK",
+                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+                )
             }
         }
     }

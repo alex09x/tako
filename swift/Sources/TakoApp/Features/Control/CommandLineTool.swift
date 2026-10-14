@@ -178,11 +178,10 @@ enum CommandLineTool {
     }
 
     private static func report(in window: NSWindow?, title: String, text: String, theme: TerminalTheme?) {
-        guard let window else {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = text
-            alert.runModal()
+        guard let window = window
+            ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else {
             return
         }
         Task { @MainActor in

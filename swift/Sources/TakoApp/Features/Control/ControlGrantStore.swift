@@ -60,6 +60,11 @@ final class ControlGrantStore: @unchecked Sendable {
             description: "Primary local user session grant"
         )
         self.grants[token] = primaryGrant
+        if HookGrantPersistence.enabled {
+            for grant in HookGrantPersistence.restore(bundleID: Bundle.main.bundleIdentifier ?? "com.tako-core.terminal") {
+                self.grants[grant.token] = grant
+            }
+        }
     }
 
     /// Generates a cryptographically secure 64-character random hex token.
@@ -90,12 +95,14 @@ final class ControlGrantStore: @unchecked Sendable {
     /// Revokes an existing grant. The primary grant cannot be revoked.
     @discardableResult
     func revokeGrant(token: String) -> Bool {
-        lock.withLock {
+        guard token != primaryToken, HookGrantPersistence.remove(token: token) else { return false }
+        let revoked = lock.withLock {
             if token == primaryToken {
                 return false
             }
             return grants.removeValue(forKey: token) != nil
         }
+        return revoked
     }
 
     /// Lists all registered grants.

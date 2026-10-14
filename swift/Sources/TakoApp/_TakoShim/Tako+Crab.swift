@@ -125,6 +125,9 @@ extension Tako {
             successTimer?.invalidate()
             signalStatus = .running
             unread = false
+            if explicitStatus?.status == .done || explicitStatus?.status == .idle {
+                explicitStatus = nil
+            }
             recomputeEffectiveStatus()
 
             // The state only becomes `.running` once the command has lasted
@@ -235,7 +238,20 @@ extension Tako {
             ttlTimer = nil
 
             let sanitizedText = text.flatMap(Tako.sanitizeStatusText)
-            explicitStatus = (status: status, text: sanitizedText)
+            if status == .done {
+                if isFocused {
+                    explicitStatus = (status: .idle, text: sanitizedText)
+                    unread = false
+                } else {
+                    explicitStatus = (status: .done, text: sanitizedText)
+                    unread = true
+                }
+            } else {
+                explicitStatus = (status: status, text: sanitizedText)
+                if status == .working || status == .running || status == .needsApproval || status == .waitingForInput {
+                    unread = !isFocused
+                }
+            }
             statusText = sanitizedText
 
             if let ttl, ttl > 0 {
@@ -308,6 +324,9 @@ extension Tako {
         func focused() {
             isFocused = true
             unread = false
+            if explicitStatus?.status == .done {
+                explicitStatus = (status: .idle, text: nil)
+            }
             if signalStatus == .done || signalStatus == .error {
                 signalStatus = .idle
             }
@@ -325,6 +344,7 @@ extension Tako {
         /// Advance the running clock. Public so a test can drive it without
         /// waiting on a real timer.
         func tick() {
+            guard explicitStatus == nil else { return }
             guard let startedAt else { return }
             let ran = now().timeIntervalSince(startedAt)
             guard ran >= Self.minimumVisibleDuration else { return }

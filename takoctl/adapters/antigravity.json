@@ -1,0 +1,26 @@
+{
+  "name": "antigravity",
+  "title": "Antigravity",
+  "aliases": [
+    "agy"
+  ],
+  "config_path": "~/.gemini/config/hooks.json",
+  "format": "json",
+  "hook_field": "tako-status",
+  "hooks": {
+    "PreInvocation": [
+      {
+        "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook agy pre_invocation; else [ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi; echo \"{}\"; fi; :",
+        "timeout": 5,
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook agy stop; else [ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi; echo \"{}\"; fi; :",
+        "timeout": 5,
+        "type": "command"
+      }
+    ]
+  }
+}

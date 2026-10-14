@@ -11,6 +11,7 @@
 import Cocoa
 import TakoKit
 
+@MainActor
 extension AppDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // If we have visible windows then we allow macOS to do its default behavior
@@ -83,21 +84,32 @@ extension AppDelegate {
         let config = Self.surfaceConfiguration(forOpening: filename, isDirectory: isDirectory.boolValue)
 
         if requiresConfirm {
-            // Confirmation required. We use an app-wide NSAlert for now. In the future we
-            // may want to show this as a sheet on the focused window (especially if we're
-            // opening a tab). I'm not sure.
-            let alert = NSAlert()
-            alert.messageText = "Allow Tako to execute \"\(filename)\"?"
-            alert.addButton(withTitle: "Allow")
-            alert.addButton(withTitle: "Cancel")
-            alert.alertStyle = .warning
-            switch runModalAlert(alert) {
-            case .alertFirstButtonReturn:
-                break
-
-            default:
-                return false
+            guard let window = TerminalDialogView.ensureHostWindow(tako: self.tako) else { return false }
+            let theme = tako.config.theme
+            Task { @MainActor in
+                let answer = await TerminalDialogView.ask(
+                    in: window,
+                    title: "Execute File?",
+                    message: "Allow Tako to execute \"\(filename)\"?",
+                    confirm: "Allow",
+                    cancel: "Cancel",
+                    destructive: false,
+                    theme: theme
+                )
+                if answer == true {
+                    switch self.tako.config.macosDockDropBehavior {
+                    case .new_tab:
+                        _ = TerminalController.newTab(
+                            self.tako,
+                            from: window,
+                            withBaseConfig: config
+                        )
+                    case .new_window:
+                        _ = TerminalController.newWindow(self.tako, withBaseConfig: config)
+                    }
+                }
             }
+            return true
         }
 
         switch tako.config.macosDockDropBehavior {

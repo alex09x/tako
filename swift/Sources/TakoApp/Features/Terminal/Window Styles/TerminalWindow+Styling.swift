@@ -164,4 +164,22 @@ extension TerminalWindow {
         standardWindowButton(.zoomButton)?.isHidden = true
     }
 
+    func generateResetZoomButton() -> NSButton {
+        let button = NSButton()
+        button.isHidden = true
+        button.target = terminalController
+        button.action = #selector(TerminalController.splitZoom(_:))
+        button.isBordered = false
+        button.allowsExpansionToolTips = true
+        button.toolTip = "Reset Zoom"
+        button.contentTintColor = isMainWindow ? .controlAccentColor : .secondaryLabelColor
+        button.state = .on
+        button.image = NSImage(named: "ResetZoom")
+        button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        return button
+    }
+
 }

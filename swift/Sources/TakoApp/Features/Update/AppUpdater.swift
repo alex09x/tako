@@ -215,129 +215,90 @@ final class AppUpdater: @unchecked Sendable {
 
     @MainActor
     private func presentUpdateFound(release: GitHubRelease, currentVersion: String) {
-        // In the terminal window, drawn as the terminal UI is; the alert
-        // below only when no terminal window is open to draw in.
-        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            var lines = [TUIText.Line(runs: [TUIText.Run(text: "v\(currentVersion)", kind: .muted),
-                                             TUIText.Run(text: "  →  ", kind: .muted),
-                                             TUIText.Run(text: release.tagName, kind: .bold)]),
-                         TUIText.Line(runs: [])]
-            // All of it: the card scrolls.
-            lines += TUIText.markdown(release.body ?? "", width: 64, maxLines: 400)
-            Task { @MainActor in
-                let answer = await TerminalDialogView.choose(
-                    in: window, title: "Tako \(release.tagName) is available", lines: lines,
-                    choices: [.init(title: "Later", kind: .normal),
-                              .init(title: "View on GitHub", kind: .normal),
-                              .init(title: "Download & Install", kind: .primary)],
-                    selected: 2, cancelIndex: 0,
-                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme)
-                switch answer {
-                case 2: self.performDownloadAndInstall(release: release)
-                case 1: if let url = URL(string: release.htmlUrl) { NSWorkspace.shared.open(url) }
-                default: break
-                }
+        guard let window = TerminalDialogView.ensureHostWindow()
+            ?? Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
+
+        var lines = [TUIText.Line(runs: [TUIText.Run(text: "v\(currentVersion)", kind: .muted),
+                                         TUIText.Run(text: "  →  ", kind: .muted),
+                                         TUIText.Run(text: release.tagName, kind: .bold)]),
+                     TUIText.Line(runs: [])]
+        // All of it: the card scrolls.
+        lines += TUIText.markdown(release.body ?? "", width: 64, maxLines: 400)
+        Task { @MainActor in
+            let answer = await TerminalDialogView.choose(
+                in: window, title: "Tako \(release.tagName) is available", lines: lines,
+                choices: [.init(title: "Later", kind: .normal),
+                          .init(title: "View on GitHub", kind: .normal),
+                          .init(title: "Download & Install", kind: .primary)],
+                selected: 2, cancelIndex: 0,
+                theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme)
+            switch answer {
+            case 2: self.performDownloadAndInstall(release: release)
+            case 1: if let url = URL(string: release.htmlUrl) { NSWorkspace.shared.open(url) }
+            default: break
             }
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Tako \(release.tagName) is Available!"
-
-        var details = "A newer version of Tako is ready to install.\n\n"
-        details += "• Current version: v\(currentVersion)\n"
-        details += "• New version: \(release.tagName)\n"
-
-        if let body = release.body, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let truncated = body.prefix(400)
-            details += "\nRelease notes:\n\(truncated)\(body.count > 400 ? "..." : "")\n"
-        }
-
-        alert.informativeText = details
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Download & Install")
-        alert.addButton(withTitle: "View on GitHub")
-        alert.addButton(withTitle: "Later")
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            performDownloadAndInstall(release: release)
-        case .alertSecondButtonReturn:
-            if let url = URL(string: release.htmlUrl) {
-                NSWorkspace.shared.open(url)
-            }
-        default:
-            break
         }
     }
 
     @MainActor
     private func showUpToDateAlert(version: String? = nil) {
         let current = version ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.8")
-        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            let lines = [
-                TUIText.Line(runs: [
-                    TUIText.Run(text: "Tako v\(current) is currently the newest version available.", kind: .plain)
-                ]),
-                TUIText.Line(runs: []),
-                TUIText.Line(runs: [
-                    TUIText.Run(text: "You are running the latest release.", kind: .muted)
-                ])
-            ]
-            Task { @MainActor in
-                _ = await TerminalDialogView.choose(
-                    in: window,
-                    title: "You're Up to Date",
-                    lines: lines,
-                    choices: [.init(title: "OK", kind: .primary)],
-                    selected: 0,
-                    cancelIndex: 0,
-                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
-                )
-            }
-            return
-        }
+        guard let window = TerminalDialogView.ensureHostWindow()
+            ?? Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "You're up to date!"
-        alert.informativeText = "Tako v\(current) is currently the newest version available."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        let lines = [
+            TUIText.Line(runs: [
+                TUIText.Run(text: "Tako v\(current) is currently the newest version available.", kind: .plain)
+            ]),
+            TUIText.Line(runs: []),
+            TUIText.Line(runs: [
+                TUIText.Run(text: "You are running the latest release.", kind: .muted)
+            ])
+        ]
+        Task { @MainActor in
+            _ = await TerminalDialogView.choose(
+                in: window,
+                title: "You're Up to Date",
+                lines: lines,
+                choices: [.init(title: "OK", kind: .primary)],
+                selected: 0,
+                cancelIndex: 0,
+                theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+            )
+        }
     }
 
     @MainActor
     func showErrorAlert(_ error: Error) {
-        if let window = Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows) {
-            let lines = [
-                TUIText.Line(runs: [
-                    TUIText.Run(text: "Could not check for updates:", kind: .bold)
-                ]),
-                TUIText.Line(runs: []),
-                TUIText.Line(runs: [
-                    TUIText.Run(text: error.localizedDescription, kind: .plain)
-                ])
-            ]
-            Task { @MainActor in
-                _ = await TerminalDialogView.choose(
-                    in: window,
-                    title: "Update Check Failed",
-                    lines: lines,
-                    choices: [.init(title: "OK", kind: .primary)],
-                    selected: 0,
-                    cancelIndex: 0,
-                    theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
-                )
-            }
-            return
-        }
+        guard let window = TerminalDialogView.ensureHostWindow()
+            ?? Self.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "Update Check Failed"
-        alert.informativeText = "Could not check for updates:\n\(error.localizedDescription)"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        let lines = [
+            TUIText.Line(runs: [
+                TUIText.Run(text: "Could not check for updates:", kind: .bold)
+            ]),
+            TUIText.Line(runs: []),
+            TUIText.Line(runs: [
+                TUIText.Run(text: error.localizedDescription, kind: .plain)
+            ])
+        ]
+        Task { @MainActor in
+            _ = await TerminalDialogView.choose(
+                in: window,
+                title: "Update Check Failed",
+                lines: lines,
+                choices: [.init(title: "OK", kind: .primary)],
+                selected: 0,
+                cancelIndex: 0,
+                theme: (NSApp.delegate as? AppDelegate)?.tako.config.theme
+            )
+        }
     }
 }
 

@@ -31,7 +31,8 @@ extension SessionSidebarStore {
             let winSurfaces = surfaces(in: win)
             let controller = win.windowController as? BaseTerminalController
             let focused = controller?.focusedSurface
-            let surface = (focused != nil && winSurfaces.contains(where: { $0 === focused })) ? focused : winSurfaces.first
+            let focusedSurface = (focused != nil && winSurfaces.contains(where: { $0 === focused })) ? focused : winSurfaces.first
+            let surface = winSurfaces.first(where: { SubagentHierarchyStore.shared.hasChildren($0.id) }) ?? focusedSurface
             let surfaceIds = Set(winSurfaces.map(\.id))
             let surfaceId = surface?.id
             let id = win.stableTabIdentifier
@@ -176,7 +177,7 @@ extension SessionSidebarStore {
 
             let item = SessionSidebarItem(
                 id: id,
-                surfaceId: surfaceId,
+                surfaceId: pId ?? surfaceId,
                 surfaceIds: surfaceIds,
                 index: index,
                 totalCount: windows.count,

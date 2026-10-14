@@ -129,7 +129,9 @@ extension Tako.TabBarView {
             if event.clickCount == 2 {
                 window?.performZoom(nil)
             } else {
+                window?.isMovable = true
                 window?.performDrag(with: event)
+                window?.isMovable = false
             }
             return
         }
@@ -146,9 +148,7 @@ extension Tako.TabBarView {
             }
         } else {
             group?.select(tab.window)
-            draggingTabIndex = tab.index
-            dragStartPoint = point
-            isTabDragging = false
+            Tako.TabBarController.setDragState(in: group, draggedWindow: tab.window, index: tab.index, start: point, isDragging: false)
         }
     }
 
@@ -157,12 +157,15 @@ extension Tako.TabBarView {
             super.mouseDragged(with: event)
             return
         }
+        if tabs.isEmpty || tabs.count != windows.count {
+            layoutTabs()
+        }
         let currentPoint = convert(event.locationInWindow, from: nil)
         if !isTabDragging {
             let dx = currentPoint.x - dragStart.x
             let dy = currentPoint.y - dragStart.y
             if hypot(dx, dy) > 4 {
-                isTabDragging = true
+                Tako.TabBarController.setDragState(in: group, draggedWindow: draggingWindow, index: fromIndex, start: dragStart, isDragging: true)
             }
         }
         guard isTabDragging else { return }
@@ -178,32 +181,43 @@ extension Tako.TabBarView {
 
         if let toIndex = targetIndex {
             let visible = group.visibleWindows
-            if toIndex != fromIndex && toIndex >= 0 && toIndex < visible.count && fromIndex < visible.count {
-                let draggedWin = visible[fromIndex]
-                Tako.CustomTabGroup.move(draggedWin, to: toIndex, in: group)
-                draggingTabIndex = toIndex
-                needsDisplay = true
+            if toIndex != fromIndex && toIndex >= 0 && toIndex < visible.count && fromIndex < visible.count,
+               fromIndex < tabs.count && toIndex < tabs.count {
+                let fromTab = tabs[fromIndex]
+                let toTab = tabs[toIndex]
+                let crossesThreshold: Bool
+                if toIndex > fromIndex {
+                    crossesThreshold = currentPoint.x > max(toTab.frame.minX, fromTab.frame.minX + toTab.frame.width)
+                } else {
+                    crossesThreshold = currentPoint.x < min(toTab.frame.maxX, toTab.frame.minX + fromTab.frame.width)
+                }
+                if crossesThreshold {
+                    let draggedWin = draggingWindow ?? visible[fromIndex]
+                    guard visible.contains(where: { $0 === draggedWin }) else {
+                        Tako.TabBarController.setDragState(in: nil, index: nil, start: nil, isDragging: false)
+                        return
+                    }
+                    Tako.CustomTabGroup.move(draggedWin, to: toIndex, in: group)
+                    Tako.TabBarController.setDragState(in: group, draggedWindow: draggedWin, index: toIndex, start: dragStart, isDragging: true)
+                    needsDisplay = true
+                }
             }
         }
     }
 
     override func mouseUp(with event: NSEvent) {
-        if isTabDragging {
-            isTabDragging = false
-            draggingTabIndex = nil
-            dragStartPoint = nil
+        let wasDragging = isTabDragging
+        Tako.TabBarController.setDragState(in: nil, index: nil, start: nil, isDragging: false)
+        if wasDragging {
             LayoutRecorder.record()
-        } else {
-            draggingTabIndex = nil
-            dragStartPoint = nil
         }
         super.mouseUp(with: event)
     }
 
-    /// Show the command-number badges while the key is held.
+    /// Show the command-number badges while the key is held, provided multiple tabs exist.
     func commandKeyChanged(held: Bool) {
         badgeWork?.cancel()
-        guard held else {
+        guard held, windows.count > 1 else {
             if showingBadges {
                 showingBadges = false
                 needsDisplay = true
@@ -211,7 +225,7 @@ extension Tako.TabBarView {
             return
         }
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.windows.count > 1 else { return }
             self.showingBadges = true
             self.needsDisplay = true
         }

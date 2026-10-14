@@ -202,12 +202,31 @@ class TerminalWindow: NSWindow {
     override var canBecomeMain: Bool { return true }
 
     override func sendEvent(_ event: NSEvent) {
+        if let bar = Tako.TabBarController.bar(for: self), bar.draggingTabIndex != nil {
+            if event.type == .leftMouseDragged {
+                bar.mouseDragged(with: event)
+                return
+            } else if event.type == .leftMouseUp {
+                bar.mouseUp(with: event)
+                return
+            }
+        }
+
         if tabTitleEditor.handleMouseDown(event) {
             return
         }
 
         if tabTitleEditor.handleRightMouseDown(event) {
             return
+        }
+
+        if event.type == .leftMouseDown,
+           let bar = Tako.TabBarController.bar(for: self) {
+            let pt = bar.convert(event.locationInWindow, from: nil)
+            if bar.bounds.contains(pt), bar.hitTab(at: pt) != nil {
+                bar.mouseDown(with: event)
+                return
+            }
         }
 
         super.sendEvent(event)
@@ -323,24 +342,6 @@ class TerminalWindow: NSWindow {
     }
 
     private lazy var resetZoomTabButton: NSButton = generateResetZoomButton()
-
-    private func generateResetZoomButton() -> NSButton {
-        let button = NSButton()
-        button.isHidden = true
-        button.target = terminalController
-        button.action = #selector(TerminalController.splitZoom(_:))
-        button.isBordered = false
-        button.allowsExpansionToolTips = true
-        button.toolTip = "Reset Zoom"
-        button.contentTintColor = isMainWindow ? .controlAccentColor : .secondaryLabelColor
-        button.state = .on
-        button.image = NSImage(named: "ResetZoom")
-        button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        return button
-    }
 
     // MARK: Title Text
 

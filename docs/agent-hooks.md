@@ -50,16 +50,28 @@ Adapters are declarative data files residing in `takoctl/adapters/<agent>.json` 
 
 1. **Claude Code** (`claude`)
    - Configuration file: `~/.claude/settings.json`
-   - Hooks: `UserPromptSubmit`, `PreToolUse`, `Notification`, `Stop`, `SessionEnd`.
-2. **Gemini CLI / Antigravity** (`gemini`, aliases: `antigravity`, `agy`)
+   - Hook Schema: Nested matcher groups (`[{"matcher": "", "hooks": [{"type": "command", "command": "...", "timeout": 5}]}]`)
+   - Events configured: `UserPromptSubmit` (working/progress), `Stop` (done), `PermissionRequest` (needs_approval), `Elicitation` (waiting_for_input).
+
+2. **Antigravity** (`antigravity`)
+   - Configuration file: `~/.gemini/config/hooks.json`
+   - Hook Schema: Direct command handler arrays under hook events
+   - Events configured: `PreInvocation` (working/progress), `Stop` (done).
+
+3. **Gemini CLI** (`gemini`)
    - Configuration file: `~/.gemini/settings.json`
-   - Hooks: `on_prompt`, `on_approval`, `on_wait_input`, `on_done`, `on_session_end`.
-3. **Codex CLI** (`codex`, alias: `opencode`)
-   - Configuration file: `~/.codex/config.json`
-   - Hooks: `prompt_submit`, `approval_requested`, `waiting_input`, `turn_done`, `session_end`.
-4. **Aider** (`aider`)
+   - Hook Schema: Nested matcher groups (`[{"matcher": "", "hooks": [{"type": "command", "command": "..."}]}]`)
+   - Events configured: `BeforeAgent` (working), `AfterAgent` (idle).
+
+4. **Codex** (`codex`)
+   - Configuration file: `$CODEX_HOME/hooks.json` (defaults to `~/.codex/hooks.json`)
+   - Hook Schema: Nested matcher groups (`[{"matcher": "", "hooks": [{"type": "command", "command": "...", "timeout": 5}]}]`)
+   - Events configured: `UserPromptSubmit` (working), `Stop` (done), `PermissionRequest` (needs_approval).
+   - Trust Model: Codex validates hook commands against `trusted_hash` entries in `$CODEX_HOME/config.toml` under `[hooks.state."..."]`. In interactive mode, untrusted hooks prompt for user confirmation and record the hash; in non-interactive mode (`codex exec`), untrusted hooks are skipped unless `--dangerously-bypass-hook-trust` is supplied in isolated testing environments.
+
+5. **Aider** (`aider`)
    - Configuration file: `~/.aider.conf.yml`
-   - Hooks: `notifications-command`.
+   - Hook Key: `notifications-command`.
 
 ---
 
@@ -99,3 +111,39 @@ takoctl hooks uninstall claude --yes
 # Specify a custom config file path (e.g. for testing or isolated environments)
 takoctl hooks install claude --config ./test-settings.json --yes
 ```
+
+## 6. Dispatcher recipient and credential isolation
+
+The source for an existing `tako-hook` installation is `scripts/tako-hook.py`.
+`python3 scripts/install-tako-hook.py` updates only that executable atomically,
+retaining a private backup. It does not edit provider configuration or hook trust.
+
+The dispatcher requires an inherited absolute `TAKO_SOCKET`, a UUID
+`TAKO_SURFACE_ID`, and a nonempty caller grant (`TAKO_CONTROL_TOKEN`, or
+`TAKO_AUTH_TOKEN` when the primary variable is absent). It preserves those values
+when invoking `takoctl`; a denied request is not retried with a different grant.
+All notifications and status/progress commands identify the same recipient.
+
+Detached Codex events resolve an explicitly enrolled Session ID from their hook
+JSON payload. `scripts/bind-tako-hook.py` enrolls a specifically selected pane and
+process with a signal-only grant stored in macOS Keychain. A direct provider
+context is refreshed only when its inherited grant matches the exact retired
+grant enrolled for that surface/socket. Unregistered session IDs are no-ops;
+process names, shared directories and the active tab are never recipient
+identities. Tako restores enrolled signal grants across application restarts.
+Revoking a grant removes its persisted bindings as well. No provider trust hash
+is seeded or modified by this enrollment.
+
+Fresh terminal contexts enroll a signal-only lifecycle grant using their already
+authorized parent credential. A restricted caller cannot create a broader grant.
+The optional `--codex-wrapper` installer installs `tako-codex` and a Fish
+autoload function: inside Tako, new Codex sessions use the supported
+`--no-daemon` flag so hooks retain their PTY context. Outside Tako, arguments are
+passed unchanged to the original vendor launcher. The vendor-managed launcher
+and existing user Fish functions are preserved.
+
+CLI JSON hook updates preserve sibling handlers and matcher metadata. Only exact
+current template commands or simple, recognized `tako-hook <agent> <event>`
+commands are replaced/removed. Unknown custom shell commands remain untouched;
+an intentionally disabled recognized hook makes installation fail rather than
+silently enabling it. Malformed existing event containers are rejected.

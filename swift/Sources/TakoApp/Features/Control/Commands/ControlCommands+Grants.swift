@@ -145,42 +145,47 @@ extension ControlCommands {
                 return
             }
 
-            let alert = NSAlert()
-            alert.messageText = "Remote Control Access Request"
-            let scopeList = effectiveScopes.map(\.rawValue).sorted().joined(separator: ", ")
-            var info = """
-            An unauthenticated client is requesting remote control access to Tako.
+            let info = """
+            Client "\(client)" is requesting remote control access.
 
-            Origin (verified): \(procOrigin)
+            Scopes: \(effectiveScopes.map(\.rawValue).sorted().joined(separator: ", "))
+            \(desc != nil ? "Description: \(desc!)\n" : "")
+            Origin:
+            \(displayOrigin)
             """
-            if let pc = paneContext {
-                info += "\n\(pc)"
-            }
-            info += """
 
-            Requested Scopes: [\(scopeList)]
-            Claimed Client Name (unverified): "\(client)"
-            """
-            if let d = desc, !d.isEmpty {
-                info += "\nClaimed Purpose (unverified): \"\(d)\""
+            let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                ?? TerminalController.preferredParent?.window
+                ?? NSApp.windows.first(where: { $0.isVisible })
+            guard let window else {
+                reply(.failure(ControlError(.disabled, "no terminal window available for grant confirmation")))
+                return
             }
-            info += "\n\nWarning: Authorizing this request will grant the process the ability to interact with your terminal sessions. Do you want to allow this request?"
-            alert.informativeText = info
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Allow")
-            alert.addButton(withTitle: "Deny")
 
-            let appDelegate = NSApp?.delegate as? AppDelegate
-            let response = appDelegate?.runModalAlert(alert) ?? alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
-                reply(.ok([
-                    "token": .string(grant.token),
-                    "client": .string(grant.client),
-                    "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
-                ]))
-            } else {
-                reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+            let theme = (NSApp?.delegate as? AppDelegate)?.tako.config.theme
+            Task { @MainActor in
+                let answer = await TerminalDialogView.choose(
+                    in: window,
+                    title: "Remote Control Access Request",
+                    lines: TUIText.plain(info, width: 60),
+                    choices: [
+                        .init(title: "Deny", kind: .normal),
+                        .init(title: "Allow", kind: .primary)
+                    ],
+                    selected: 1,
+                    cancelIndex: 0,
+                    theme: theme
+                )
+                if answer == 1 {
+                    let grant = ControlGrantStore.shared.issueGrant(client: client, scopes: effectiveScopes, description: desc)
+                    reply(.ok([
+                        "token": .string(grant.token),
+                        "client": .string(grant.client),
+                        "scopes": .array(grant.scopes.map { .string($0.rawValue) }.sorted(by: { $0.string! < $1.string! }))
+                    ]))
+                } else {
+                    reply(.failure(ControlError(.disabled, "grant request for '\(client)' was denied by user")))
+                }
             }
         } catch let err as ControlError {
             reply(.failure(err))

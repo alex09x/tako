@@ -83,12 +83,7 @@ final class Ending: @unchecked Sendable {
         markClosedButRunning()
         guard reportFailure else { return false }
         DispatchQueue.main.async {
-            if Self.askAgain(self.name) {
-                _ = self.attemptFinished.wait(timeout: .now())
-                DispatchQueue.global(qos: .utility).async { self.run() }
-            } else {
-                self.leaveRunning()
-            }
+            Self.promptAskAgain(self)
         }
         return false
     }
@@ -107,13 +102,34 @@ final class Ending: @unchecked Sendable {
         settle()
     }
 
-    @MainActor static func askAgain(_ name: String) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "A closed terminal is still running"
-        alert.informativeText = "Its session could not be ended. Try again, or leave it running -- Tako will then stop tracking it."
-        alert.addButton(withTitle: "Try Again")
-        alert.addButton(withTitle: "Leave It Running")
-        return alert.runModal() == .alertFirstButtonReturn
+    @MainActor static func promptAskAgain(_ ending: Ending) {
+        Task { @MainActor in
+            guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                ?? TerminalController.preferredParent?.window
+                ?? NSApp.windows.first(where: { $0.isVisible }) else {
+                ending.leaveRunning()
+                return
+            }
+            let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+            let answer = await TerminalDialogView.choose(
+                in: window,
+                title: "Terminal Still Running",
+                lines: TUIText.plain("A closed terminal is still running. Its session could not be ended. Try again, or leave it running -- Tako will then stop tracking it.", width: 56),
+                choices: [
+                    .init(title: "Leave Running", kind: .normal),
+                    .init(title: "Try Again", kind: .primary)
+                ],
+                selected: 1,
+                cancelIndex: 0,
+                theme: theme
+            )
+            if answer == 1 {
+                _ = ending.attemptFinished.wait(timeout: .now())
+                DispatchQueue.global(qos: .utility).async { ending.run() }
+            } else {
+                ending.leaveRunning()
+            }
+        }
     }
 
     /// Quitting: waits up to `seconds` for every ending under way. Those
@@ -141,24 +157,52 @@ final class Ending: @unchecked Sendable {
     /// could not be ended. Each is asked about: end it, or leave it running.
     @MainActor static func askAboutLeftovers(records: SessionRecordStore, registry: SessionRuntimeRegistry,
                                              home: URL, openIDs: Set<UUID>) {
-        for record in records.all() where !openIDs.contains(record.id) {
-            guard case .error(let reason) = record.state, reason == closedButRunning else { continue }
-            let alert = NSAlert()
-            alert.messageText = "A terminal closed before Tako last quit is still running"
-            alert.informativeText = "Its session could not be ended then. End it now, or leave it running -- Tako will then stop tracking it."
-            alert.addButton(withTitle: "End It")
-            alert.addButton(withTitle: "Leave It Running")
-            guard alert.runModal() == .alertFirstButtonReturn else {
-                records.remove(record.id)
-                continue
+        let leftovers = records.all().filter { record in
+            guard !openIDs.contains(record.id) else { return false }
+            if case .error(let reason) = record.state, reason == closedButRunning { return true }
+            return false
+        }
+        guard !leftovers.isEmpty else { return }
+
+        Task { @MainActor in
+            var window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                ?? TerminalController.preferredParent?.window
+                ?? NSApp.windows.first(where: { $0.isVisible })
+            if window == nil {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                    ?? TerminalController.preferredParent?.window
+                    ?? NSApp.windows.first(where: { $0.isVisible })
             }
-            let name = SessionNamespace.sessionName(for: record.id)
-            guard let runtime = try? registry.executable(for: record.runtimeID),
-                  let namespace = try? SessionNamespace.open(runtimeID: record.runtimeID, home: home),
-                  let owner = try? SessionOwnerLock(namespace: namespace, name: name)
-            else { continue }   // Still marked: asked again next launch.
-            Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
-                   id: record.id, generation: record.generation, owner: owner).start()
+            guard let window else {
+                return
+            }
+            let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+            for record in leftovers {
+                let answer = await TerminalDialogView.choose(
+                    in: window,
+                    title: "Leftover Terminal Session",
+                    lines: TUIText.plain("A terminal closed before Tako last quit is still running. Its session could not be ended then. End it now, or leave it running -- Tako will then stop tracking it.", width: 56),
+                    choices: [
+                        .init(title: "Leave Running", kind: .normal),
+                        .init(title: "End Session", kind: .destructive)
+                    ],
+                    selected: 1,
+                    cancelIndex: 0,
+                    theme: theme
+                )
+                guard answer == 1 else {
+                    records.remove(record.id)
+                    continue
+                }
+                let name = SessionNamespace.sessionName(for: record.id)
+                guard let runtime = try? registry.executable(for: record.runtimeID),
+                      let namespace = try? SessionNamespace.open(runtimeID: record.runtimeID, home: home),
+                      let owner = try? SessionOwnerLock(namespace: namespace, name: name)
+                else { continue }   // Still marked: asked again next launch.
+                Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
+                       id: record.id, generation: record.generation, owner: owner).start()
+            }
         }
     }
 }

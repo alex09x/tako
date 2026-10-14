@@ -21,8 +21,10 @@ struct SessionSidebarRowView: View {
     @Binding var editingItemId: String?
     @Binding var editingDescriptionText: String
     @Binding var isPresented: Bool
+    var onSelect: () -> Void = {}
 
     @ObservedObject private var store = SessionSidebarStore.shared
+    @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
 
     private var isNavSelected: Bool {
         selectedIndex == index
@@ -35,7 +37,14 @@ struct SessionSidebarRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             headerRow
-            metadataRows
+            VStack(alignment: .leading, spacing: 3) {
+                metadataRows
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onSelect()
+            }
             descriptionSection
             progressSection
         }
@@ -49,6 +58,10 @@ struct SessionSidebarRowView: View {
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(isTabActive ? Color(nsColor: SessionSidebarPalette.activeTab) : (isNavSelected ? Color(nsColor: SessionSidebarPalette.hoverTab) : Color.clear))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onSelect()
+            }
     }
 
     private var rowOverlay: some View {
@@ -66,62 +79,69 @@ struct SessionSidebarRowView: View {
                     Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .frame(width: 10, height: 10)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(item.isCollapsed ? "Expand subagent group" : "Collapse subagent group")
             }
 
-            Circle()
-                .fill(Color(nsColor: item.status.crabState.color))
-                .frame(width: 8, height: 8)
-                .help("Status: \(item.status.rawValue)")
-
-            Text(item.title)
-                .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
-                .foregroundColor(isTabActive ? Color(nsColor: SessionSidebarPalette.activeText) : Color(nsColor: SessionSidebarPalette.inactiveText))
-                .lineLimit(1)
-
-            if let label = item.label {
-                Text("[\(label)]")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 1)
-                    .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
-                    .foregroundColor(Color(nsColor: Tako.Brand.ember))
-                    .cornerRadius(3)
-            }
-
-            if let summary = item.childrenSummary {
-                Text("(\(summary))")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .lineLimit(1)
-            }
-
-            if let elapsed = item.elapsed {
-                Text(elapsed)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-            }
-
-            Spacer(minLength: 4)
-
-            if item.needsAttention {
+            HStack(spacing: 6) {
                 Circle()
-                    .stroke(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
+                    .fill(Color(nsColor: item.status.crabState.color))
                     .frame(width: 8, height: 8)
-                    .help("Needs Attention")
-            }
+                    .help("Status: \(item.status.rawValue)")
 
-            if item.unreadCount > 0 {
-                Text("\(item.unreadCount)")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Color(nsColor: Tako.Brand.ember))
-                    .foregroundColor(.black)
-                    .clipShape(Capsule())
+                Text(item.title)
+                    .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
+                    .foregroundColor(isTabActive ? Color(nsColor: SessionSidebarPalette.activeText) : Color(nsColor: SessionSidebarPalette.inactiveText))
+                    .lineLimit(1)
+
+                if let label = item.label {
+                    Text("[\(label)]")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
+                        .foregroundColor(Color(nsColor: Tako.Brand.ember))
+                        .cornerRadius(3)
+                }
+
+                if let summary = item.childrenSummary {
+                    Text("(\(summary))")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                        .lineLimit(1)
+                }
+
+                if let elapsed = item.elapsed {
+                    Text(elapsed)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                }
+
+                Spacer(minLength: 4)
+
+                if item.needsAttention {
+                    Circle()
+                        .stroke(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
+                        .frame(width: 8, height: 8)
+                        .help("Needs Attention")
+                }
+
+                if item.unreadCount > 0 {
+                    Text("\(item.unreadCount)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color(nsColor: Tako.Brand.ember))
+                        .foregroundColor(.black)
+                        .clipShape(Capsule())
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onSelect()
             }
 
             reorderButtons
@@ -241,12 +261,17 @@ struct SessionSidebarRowView: View {
             .padding(.top, 2)
         } else if let desc = item.userDescription, !desc.isEmpty {
             HStack(spacing: 4) {
-                Text(desc)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Tako.Brand.ember).opacity(0.85))
-                    .lineLimit(1)
-
-                Spacer()
+                HStack(spacing: 0) {
+                    Text(desc)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(Color(nsColor: Tako.Brand.ember).opacity(0.85))
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect()
+                }
 
                 Button(action: {
                     editingItemId = item.id
@@ -259,15 +284,23 @@ struct SessionSidebarRowView: View {
                 .buttonStyle(.plain)
             }
         } else {
-            Button(action: {
-                editingItemId = item.id
-                editingDescriptionText = ""
-            }) {
-                Text("+ note")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim).opacity(0.6))
+            HStack(spacing: 0) {
+                Button(action: {
+                    editingItemId = item.id
+                    editingDescriptionText = ""
+                }) {
+                    Text("+ note")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim).opacity(0.6))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSelect()
+                    }
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -275,6 +308,10 @@ struct SessionSidebarRowView: View {
     private var progressSection: some View {
         if item.progressState != .none, let progress = item.progress ?? (item.progressState == .indeterminate ? 0.0 : nil) {
             progressBarView(fraction: progress, state: item.progressState)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect()
+                }
         }
     }
 

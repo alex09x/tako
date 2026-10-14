@@ -20,6 +20,7 @@ struct SessionSidebarView: View {
 
     @ObservedObject private var store = SessionSidebarStore.shared
     @ObservedObject private var notificationStore = NotificationStore.shared
+    @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
 
     private typealias Palette = SessionSidebarPalette
 
@@ -131,6 +132,9 @@ struct SessionSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoPresentTerminal)) { _ in
             store.objectWillChange.send()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
+            store.objectWillChange.send()
+        }
     }
 
     // MARK: - Header
@@ -163,6 +167,7 @@ struct SessionSidebarView: View {
             }
             .buttonStyle(.plain)
             .help("Close Session Sidebar (Esc)")
+            .accessibilityLabel("Close Session Sidebar (Esc)")
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
@@ -261,13 +266,12 @@ struct SessionSidebarView: View {
                                 targetWindow: targetWindow,
                                 editingItemId: $editingItemId,
                                 editingDescriptionText: $editingDescriptionText,
-                                isPresented: $isPresented
+                                isPresented: $isPresented,
+                                onSelect: {
+                                    selectedIndex = index
+                                    store.selectTab(item: item, in: targetWindow)
+                                }
                             )
-                            .id(index)
-                            .onTapGesture {
-                                selectedIndex = index
-                                store.selectTab(item: item, in: targetWindow)
-                            }
                         }
                     }
                 }
@@ -279,14 +283,14 @@ struct SessionSidebarView: View {
             .onKeyPress(.upArrow) {
                 if selectedIndex > 0 {
                     selectedIndex -= 1
-                    proxy.scrollTo(selectedIndex)
+                    proxy.scrollTo(items[selectedIndex].id)
                 }
                 return .handled
             }
             .onKeyPress(.downArrow) {
                 if selectedIndex < items.count - 1 {
                     selectedIndex += 1
-                    proxy.scrollTo(selectedIndex)
+                    proxy.scrollTo(items[selectedIndex].id)
                 }
                 return .handled
             }

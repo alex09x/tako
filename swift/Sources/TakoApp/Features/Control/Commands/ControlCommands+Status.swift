@@ -12,6 +12,47 @@ import Foundation
 import AppKit
 
 extension ControlCommands {
+    /// Resolves detailed visual tab status for a pane's window.
+    static func tabJSON(for surface: Tako.SurfaceView) -> [String: JSON] {
+        guard let win = surface.window else {
+            let working = surface.crab.paneStatus == .working || surface.crab.paneStatus == .running
+            return [
+                "title": .string(surface.title.isEmpty ? "~" : surface.title),
+                "index": .number(0),
+                "selected": .bool(true),
+                "dot": .string(working ? "ember" : "ok"),
+                "color": .string(working ? "orange" : "green"),
+                "hex": .string(working ? "#f4581c" : "#7bd88f"),
+                "state": .string(surface.crab.paneStatus.rawValue),
+                "style": .string("pill"),
+                "panes": .number(1),
+                "progress": .null,
+            ]
+        }
+        let report = Tako.tabVisualStatus(for: win, targetSurface: surface)
+        var dict: [String: JSON] = [
+            "title": .string(report.title),
+            "index": .number(Double(report.index)),
+            "selected": .bool(report.selected),
+            "dot": .string(report.dot),
+            "color": .string(report.color),
+            "hex": .string(report.hex),
+            "state": .string(report.state),
+            "style": .string(report.style),
+            "panes": .number(Double(report.panesCount)),
+        ]
+        if let pState = report.progressState {
+            var progDict: [String: JSON] = ["state": .string(pState)]
+            if let pVal = report.progressValue {
+                progDict["value"] = .number(Double(pVal))
+            }
+            dict["progress"] = .object(progDict)
+        } else {
+            dict["progress"] = .null
+        }
+        return dict
+    }
+
     /// `takoctl status`: get, set, or clear a pane's status indicator and text.
     static func statusCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
@@ -36,6 +77,19 @@ extension ControlCommands {
             if let ttl = surface.crab.remainingTTL {
                 dict["ttl"] = .number(ttl)
             }
+            dict["tab"] = .object(tabJSON(for: surface))
+            return dict
+        case "tab":
+            var dict: [String: JSON] = [
+                "id": .string(surface.id.uuidString.lowercased()),
+                "action": .string("tab"),
+                "status": .string(surface.crab.paneStatus.rawValue),
+                "unread": .bool(surface.crab.unread),
+            ]
+            if let text = surface.crab.statusText {
+                dict["text"] = .string(text)
+            }
+            dict["tab"] = .object(tabJSON(for: surface))
             return dict
         case "set":
             let statusStr: String = try {
@@ -58,6 +112,7 @@ extension ControlCommands {
                 return nil
             }()
             surface.setStatus(parsed.rawValue, text: text, ttl: ttl)
+            Tako.TabBarController.refreshAll()
             var dict: [String: JSON] = [
                 "id": .string(surface.id.uuidString.lowercased()),
                 "status": .string(surface.crab.paneStatus.rawValue),
@@ -68,6 +123,7 @@ extension ControlCommands {
             return dict
         case "clear":
             surface.clearStatus()
+            Tako.TabBarController.refreshAll()
             return [
                 "id": .string(surface.id.uuidString.lowercased()),
                 "status": .string(surface.crab.paneStatus.rawValue),

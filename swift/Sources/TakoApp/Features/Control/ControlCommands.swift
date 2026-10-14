@@ -291,7 +291,7 @@ enum ControlCommands {
                 recordActivity(for: request, on: surface.id, action: "ask")
                 try PromptManager.shared.ask(request: request, surface: surface, reply: reply)
             default:
-                reply(handle(request))
+                reply(handle(request, all: all))
             }
         } catch let error as ControlError {
             reply(.failure(error))

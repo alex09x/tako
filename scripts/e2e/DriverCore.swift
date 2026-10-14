@@ -78,8 +78,12 @@ final class Driver {
         try config.write(to: configURL, atomically: true, encoding: .utf8)
 
         let before = Set(running().map(\.processIdentifier))
+        let hooksHome = work.appendingPathComponent("agent-hooks-home")
+        try? FileManager.default.createDirectory(at: hooksHome, withIntermediateDirectories: true)
         var env = environment
         if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
+        if env["TAKO_AGENT_HOOKS_HOME"] == nil { env["TAKO_AGENT_HOOKS_HOME"] = hooksHome.path }
+        if env["CODEX_HOME"] == nil { env["CODEX_HOME"] = hooksHome.appendingPathComponent(".codex").path }
         env["TAKO_NO_UPDATE"] = "1"
         env["TAKO_NO_LAUNCH_NOTICES"] = "1"
 

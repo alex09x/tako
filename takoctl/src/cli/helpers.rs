@@ -27,7 +27,12 @@ pub fn request(opts: &Options, from: Option<String>) -> Value {
         req["client"] = Value::String(client.clone());
     }
     if let Some(scopes) = &opts.scopes {
+        let issuing_grant = opts.cmd == "grant" && matches!(opts.args.get("subcommand").and_then(Value::as_str), Some("create" | "request"));
+        if issuing_grant {
+            req["args"]["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
+        } else {
         req["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
+        }
     }
     req
 }
@@ -181,4 +186,3 @@ pub fn dispatch_and_validate(
     }
     Ok(())
 }
-

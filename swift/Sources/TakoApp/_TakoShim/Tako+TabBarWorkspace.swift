@@ -140,25 +140,28 @@ extension Tako.TabBarView {
 
     private func presentNewWorkspaceDialog() {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "New Project Workspace"
-        alert.informativeText = "Enter a name for the new workspace:"
-        alert.alertStyle = .informational
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        input.placeholderString = "e.g. backend, docs, tako"
-        alert.accessoryView = input
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-        let response = alert.runModal()
-        alert.window.orderOut(nil)
-        if response == .alertFirstButtonReturn {
-            let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let finalName = name.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : name
+        guard let window = self.window
+            ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+            ?? TerminalController.preferredParent?.window
+            ?? NSApp.windows.first(where: { $0.isVisible }) else { return }
+
+        let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        Task { @MainActor in
+            guard let name = await TerminalDialogView.askText(
+                in: window,
+                title: "New Project Workspace",
+                label: "Workspace Name:",
+                value: "",
+                hint: "e.g. backend, docs, tako",
+                confirm: "Create",
+                theme: theme
+            ) else { return }
+
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let finalName = trimmed.isEmpty ? "Workspace \(WorkspaceStore.shared.workspaces.count + 1)" : trimmed
             let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
-            DispatchQueue.main.async {
-                WorkspaceStore.shared.switchWorkspace(to: ws.id)
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            WorkspaceStore.shared.switchWorkspace(to: ws.id)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }

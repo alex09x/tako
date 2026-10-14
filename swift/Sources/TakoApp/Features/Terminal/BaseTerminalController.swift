@@ -70,6 +70,14 @@ class BaseTerminalController: NSWindowController,
             if SessionSidebarStore.shared.isShowing != sessionSidebarIsShowing {
                 SessionSidebarStore.shared.isShowing = sessionSidebarIsShowing
             }
+            if let window = self.window {
+                for sibling in Tako.CustomTabGroup.group(for: window).windows where sibling !== window {
+                    if let siblingController = sibling.windowController as? BaseTerminalController,
+                       siblingController.sessionSidebarIsShowing != sessionSidebarIsShowing {
+                        siblingController.sessionSidebarIsShowing = sessionSidebarIsShowing
+                    }
+                }
+            }
             guard oldValue, !sessionSidebarIsShowing else { return }
             DispatchQueue.main.async { [weak self] in
                 Tako.moveFocus(to: self?.focusedSurface)
@@ -342,52 +350,14 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-
     func replaceSurfaceTree(
         _ newTree: SplitTree<Tako.SurfaceView>,
         moveFocusTo newView: Tako.SurfaceView? = nil,
         moveFocusFrom oldView: Tako.SurfaceView? = nil,
         undoAction: String? = nil
     ) {
-        // Setup our new split tree
-        let oldTree = surfaceTree
-        surfaceTree = newTree
-        if let newView {
-            DispatchQueue.main.async {
-                Tako.moveFocus(to: newView, from: oldView)
-            }
-        }
-
-        // Setup our undo
-        guard let undoManager else { return }
-        if let undoAction {
-            undoManager.setActionName(undoAction)
-        }
-
-        undoManager.registerUndo(
-            withTarget: self,
-            expiresAfter: undoExpiration
-        ) { target in
-            target.surfaceTree = oldTree
-            if let oldView {
-                DispatchQueue.main.async {
-                    Tako.moveFocus(to: oldView, from: target.focusedSurface)
-                }
-            }
-
-            undoManager.registerUndo(
-                withTarget: target,
-                expiresAfter: target.undoExpiration
-            ) { target in
-                target.replaceSurfaceTree(
-                    newTree,
-                    moveFocusTo: newView,
-                    moveFocusFrom: target.focusedSurface,
-                    undoAction: undoAction)
-            }
-        }
+        applySurfaceTreeReplacement(newTree, moveFocusTo: newView, moveFocusFrom: oldView, undoAction: undoAction)
     }
-
 
     func focusedSurfaceDidChange(to: Tako.SurfaceView?) {
         let lastFocusedSurface = focusedSurface

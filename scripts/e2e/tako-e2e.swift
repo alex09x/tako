@@ -4152,6 +4152,30 @@ let scenarios: [Scenario] = [
         try d.run("echo 'frame_sync_ok' > \(d.path("frame_sync_witness"))")
         try d.expect("frame_sync_witness", "frame_sync_ok\n", "terminal keyboard input after frame sync journey")
     }),
+    ("tab-status-click", "pill tab status dots transition across working/waiting/done and reset to idle/dim on real mouse click with unassisted focus recovery", { d in
+        try runTabStatusClickScenario(d)
+    }),
+    ("terminal-dialogs", "Rename Tab, multi-window Quit confirmation, and Connect AI Agents use in-terminal TerminalDialogView and recover unassisted focus", { d in
+        try runTerminalDialogsScenario(d)
+    }),
+    ("tab-drag-reorder", "dragging a pill tab across another tab reorders tabs in custom tab bar and tree and recovers unassisted focus", { d in
+        try runTabDragReorderScenario(d)
+    }),
+    ("safe-paste-guard", "multiline Cmd+V at prompt opens Safe Paste confirmation, Cancel blocks execution, Paste runs lines, and recovers unassisted focus", { d in
+        try runSafePasteGuardScenario(d)
+    }),
+    ("sidebar-interaction", "Session Sidebar collapses/expands subagents, filters tabs, switches active session on click, and recovers unassisted focus", { d in
+        try runSidebarInteractionScenario(d)
+    }),
+    ("overview-selection", "Pane Overview filters cards, clears empty state, jumps to selected pane on Return, and recovers unassisted focus", { d in
+        try runOverviewSelectionScenario(d)
+    }),
+    ("attention-jump", "Next Attention and Go Back to Previous Pane navigate unseen attention across tabs and recover unassisted focus", { d in
+        try runAttentionJumpScenario(d)
+    }),
+    ("input-takeover-confirm", "InputOwnershipHeaderView Take Over, Hand Back, confirm-automation one-time grant, and Auto-type revoke work end-to-end", { d in
+        try runInputTakeoverConfirmScenario(d)
+    }),
 ]
 
 // MARK: - Main

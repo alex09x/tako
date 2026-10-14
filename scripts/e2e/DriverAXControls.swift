@@ -21,7 +21,8 @@ extension Driver {
 
     /// A button with this title anywhere in Tako's visible windows or sheets.
     func button(titled title: String, depth: Int = 24) -> AXUIElement? {
-        for window in windows() {
+        let onScreen = onScreenWindows()
+        for window in (onScreen.isEmpty ? windows() : onScreen) {
             let hidden: Bool? = attribute(window, "AXHidden")
             let minimized: Bool? = attribute(window, "AXMinimized")
             if hidden == true || minimized == true { continue }
@@ -315,5 +316,39 @@ extension Driver {
         let groups = descendants(of: window, role: kAXTabGroupRole as String)
         let tabs = groups.flatMap { descendants(of: $0, role: kAXRadioButtonRole as String, depth: 2) }
         return max(tabs.count, 1)
+    }
+
+    func paintedTabDot(index: Int, in window: AXUIElement? = nil) -> String? {
+        guard let tab = tabElement(index: index, in: window) else { return nil }
+        return attribute(tab, kAXHelpAttribute)
+    }
+
+    func assertInTerminalDialog(title: String, bodyContains: String? = nil) throws {
+        let liveWins = onScreenWindows()
+        guard !liveWins.isEmpty else {
+            throw Failure("no live on-screen host windows found for dialog '\(title)'")
+        }
+        for w in liveWins where !descendants(of: w, role: "AXSheet").isEmpty {
+            throw Failure("dialog '\(title)' attached a native AXSheet instead of TerminalDialogView")
+        }
+        var matched = false
+        for w in liveWins {
+            for elem in descendants(of: w, role: kAXGroupRole as String) + descendants(of: w, role: kAXStaticTextRole as String) {
+                let id: String? = attribute(elem, "AXIdentifier")
+                if id == "terminal-dialog-view" || id == "terminal-dialog-body" {
+                    let lbl = (attribute(elem, kAXTitleAttribute) as String?) ?? (attribute(elem, kAXDescriptionAttribute) as String?) ?? ""
+                    let val = (attribute(elem, kAXValueAttribute) as String?) ?? ""
+                    if lbl.contains(title) || val.contains(title) {
+                        if let sub = bodyContains, !val.contains(sub) && !lbl.contains(sub) { continue }
+                        matched = true
+                        break
+                    }
+                }
+            }
+            if matched { break }
+        }
+        guard matched else {
+            throw Failure("positive TerminalDialogView witness not found for title '\(title)'")
+        }
     }
 }

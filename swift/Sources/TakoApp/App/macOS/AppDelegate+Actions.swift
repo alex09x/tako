@@ -82,6 +82,20 @@ extension AppDelegate {
         takoMenu.insertItem(item, at: min(2, takoMenu.items.count))
     }
 
+    @IBAction func connectAgentHooks(_ sender: Any?) {
+        AgentHooksTool.installFromMenu(theme: tako.config.theme)
+    }
+
+    func setupAgentHooksMenuItem() {
+        guard let takoMenu = NSApp.mainMenu?.items.first?.submenu,
+              !takoMenu.items.contains(where: { $0.action == #selector(connectAgentHooks) })
+        else { return }
+        let item = NSMenuItem(title: "Connect AI Agents…", action: #selector(connectAgentHooks), keyEquivalent: "")
+        item.target = self
+        item.setImageIfDesired(systemSymbolName: "cpu")
+        takoMenu.insertItem(item, at: min(3, takoMenu.items.count))
+    }
+
     func setupUpdateMenuItem() {
         guard let takoMenu = NSApp.mainMenu?.items.first?.submenu else { return }
         if takoMenu.items.contains(where: { $0.action == #selector(checkForUpdates) }) {

@@ -97,13 +97,36 @@ struct PillTabBarUITests {
         let activeTab = bar.tabs[0]
         let inactiveTab = bar.tabs[1]
 
-        // Idle active tab indicator should be ok (green ready dot)
+        // Idle active tab indicator should be dim (acknowledged idle)
         let activeColor = bar.pillIndicatorColor(for: activeTab)
-        #expect(activeColor == Tako.Brand.ok)
+        #expect(activeColor == Tako.Brand.dim)
 
         // Idle inactive tab indicator should be dim
         let inactiveColor = bar.pillIndicatorColor(for: inactiveTab)
-        #expect(inactiveColor == Tako.TabBarView.Palette.dim)
+        #expect(inactiveColor == Tako.Brand.dim)
+
+        // Explicit brand dot-to-color and hex mapping tests
+        #expect(Tako.Brand.color(for: "dim", active: true) == Tako.Brand.dim)
+        #expect(Tako.Brand.hex(for: "dim", active: true) == "#8a7f76")
+        #expect(Tako.Brand.color(for: "dim", active: false) == Tako.Brand.dim)
+        #expect(Tako.Brand.hex(for: "dim", active: false) == "#8a7f76")
+
+        #expect(Tako.Brand.color(for: "ok", active: true) == Tako.Brand.ok)
+        #expect(Tako.Brand.hex(for: "ok", active: true) == "#7bd88f")
+        #expect(Tako.Brand.color(for: "ok", active: false) == Tako.Brand.ok)
+        #expect(Tako.Brand.hex(for: "ok", active: false) == "#7bd88f")
+
+        #expect(Tako.Brand.color(for: "unknown", active: true) == Tako.Brand.ok)
+        #expect(Tako.Brand.hex(for: "unknown", active: true) == "#7bd88f")
+        #expect(Tako.Brand.color(for: "unknown", active: false) == Tako.Brand.dim)
+        #expect(Tako.Brand.hex(for: "unknown", active: false) == "#8a7f76")
+
+        #expect(Tako.Brand.color(for: "ember", active: true) == Tako.Brand.ember)
+        #expect(Tako.Brand.hex(for: "ember", active: true) == "#f4581c")
+        #expect(Tako.Brand.color(for: "claw", active: true) == Tako.Brand.claw)
+        #expect(Tako.Brand.hex(for: "claw", active: true) == "#ff7a3d")
+        #expect(Tako.Brand.color(for: "error", active: true) == Tako.Brand.error)
+        #expect(Tako.Brand.hex(for: "error", active: true) == "#d54e53")
     }
 
     @Test func pillCloseRectHitsInsidePillAndThresholdBoundary() {
@@ -313,5 +336,57 @@ struct PillTabBarUITests {
             let expectedPixels = Int(Tako.TabBarView.Metrics.buttonSize) * scale
             #expect(abs(renderedHeight - expectedPixels) <= 1)
         }
+    }
+
+    @Test func loneWindowInPillStyleLaysOutSinglePillTab() {
+        let window = makeWindow(title: "solo-term")
+        defer { Tako.CustomTabGroup.leave(window) }
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+        draw(bar)
+
+        #expect(bar.effectiveTabStyle == .pill)
+        #expect(bar.showsStrip)
+        #expect(bar.tabs.count == 1)
+        guard bar.tabs.count == 1 else { return }
+        let tab = bar.tabs[0]
+        #expect(tab.isActive)
+        let pill = bar.pillRect(for: tab)
+        #expect(pill.height == Tako.TabBarView.Metrics.buttonSize)
+        #expect(pill.minY == Tako.TabBarView.Metrics.buttonY)
+        #expect(pill.minX == bar.effectiveFirstTabX)
+        #expect(bar.closeRect(of: tab) != .null)
+        #expect(bar.pillIndicatorColor(for: tab) == Tako.Brand.dim)
+    }
+
+    @Test func loneWindowInPillStyleShowsDistinctSnapshotWhenTitleChanges() {
+        let window = makeWindow(title: "term-one")
+        defer { Tako.CustomTabGroup.leave(window) }
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+        draw(bar)
+
+        let initial = snapshot(bar)
+        window.title = "term-two-with-longer-name"
+        bar.needsDisplay = true
+        let updated = snapshot(bar)
+
+        #expect(!bitmapsEqual(initial, updated))
+    }
+
+    @Test func renderLonePillTabGeneratesValidBitmap() {
+        let window = makeWindow(title: "agy ~")
+        defer { Tako.CustomTabGroup.leave(window) }
+
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: window)
+        draw(bar)
+
+        let rep = snapshot(bar)
+        let pngData = rep.representation(using: .png, properties: [:])
+        #expect(pngData != nil)
+        #expect((pngData?.count ?? 0) > 0)
     }
 }

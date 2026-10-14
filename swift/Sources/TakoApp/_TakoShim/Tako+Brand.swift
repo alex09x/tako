@@ -24,5 +24,28 @@ extension Tako {
         static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
         static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1)
         static let error = NSColor(srgbRed: 0xD5 / 255, green: 0x4E / 255, blue: 0x53 / 255, alpha: 1)
+
+        static func color(for dot: String, active: Bool = true) -> NSColor {
+            switch dot {
+            case "ember": return ember
+            case "ok": return ok
+            case "claw": return claw
+            case "error": return error
+            case "dim": return dim
+            default: return active ? ok : dim
+            }
+        }
+
+        static func hexString(for color: NSColor) -> String {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return "#7bd88f" }
+            let r = Int(round(rgb.redComponent * 255.0))
+            let g = Int(round(rgb.greenComponent * 255.0))
+            let b = Int(round(rgb.blueComponent * 255.0))
+            return String(format: "#%02x%02x%02x", r, g, b)
+        }
+
+        static func hex(for dot: String, active: Bool = true) -> String {
+            hexString(for: color(for: dot, active: active))
+        }
     }
 }

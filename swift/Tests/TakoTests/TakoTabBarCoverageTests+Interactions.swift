@@ -209,6 +209,7 @@ extension TabBarViewCoverageTests {
             window.close()
         }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .classic
         mount(bar, in: window)
 
         // Single-window group never shows a strip, so `tabs` stays empty and

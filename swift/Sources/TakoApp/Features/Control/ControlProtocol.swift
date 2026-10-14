@@ -209,7 +209,10 @@ struct ControlRequest: Equatable {
             throw ControlError(.invalid, "\"client\" is not a string")
         }
 
-        let requestedScopes = try ControlScope.parseScopes(from: object["scopes"] ?? args["scopes"])
+        // A grant's args.scopes describe the new credential, not attenuation
+        // of the issuer (which still needs approval to create that grant).
+        let issuingGrant = cmd == "grant" && ["create", "request"].contains(args["subcommand"]?.string ?? "")
+        let requestedScopes = try ControlScope.parseScopes(from: object["scopes"] ?? (issuingGrant ? nil : args["scopes"]))
 
         return ControlRequest(
             cmd: cmd,

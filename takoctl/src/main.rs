@@ -137,15 +137,12 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
     if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
         return Err("remote control is unavailable in this Tako (remote-control = off, or another copy of Tako owns the socket)".into());
     }
-    let socket_path = if let Some(s) = opts.socket.clone() {
-        s
-    } else if opts.bundle_id_explicit {
-        socket::default_path(&opts.bundle_id)?
-    } else if let Some(p) = inherited {
-        p
-    } else {
-        socket::default_path(&opts.bundle_id)?
-    };
+    let socket_path = socket::resolve_path(
+        &opts.bundle_id,
+        opts.socket.as_deref(),
+        opts.bundle_id_explicit,
+        inherited.as_deref(),
+    )?;
 
     let surface_id = opts
         .args
@@ -164,7 +161,11 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    let opts = match parse(&argv) {
+    run_cli(&argv)
+}
+
+pub fn run_cli(argv: &[String]) -> ExitCode {
+    let opts = match parse(argv) {
         Ok(o) => o,
         Err(e) => {
             // Asked for help, or nothing at all: the usage. A mistake: just
@@ -210,15 +211,7 @@ fn main() -> ExitCode {
             if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
                 return None;
             }
-            let path = if let Some(s) = opts.socket.clone() {
-                Some(s)
-            } else if opts.bundle_id_explicit {
-                socket::default_path(&opts.bundle_id).ok()
-            } else if let Some(p) = inherited {
-                Some(p)
-            } else {
-                socket::default_path(&opts.bundle_id).ok()
-            }?;
+            let path = socket::resolve_path(&opts.bundle_id, opts.socket.as_deref(), opts.bundle_id_explicit, inherited.as_deref()).ok()?;
             let mut opts = opts.clone();
             opts.token = resolve_token(&opts, &path);
             let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
@@ -259,25 +252,11 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(3);
     }
-    let path = if let Some(s) = opts.socket.clone() {
-        s
-    } else if opts.bundle_id_explicit {
-        match socket::default_path(&opts.bundle_id) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("takoctl: {e}");
-                return ExitCode::from(3);
-            }
-        }
-    } else if let Some(p) = inherited {
-        p
-    } else {
-        match socket::default_path(&opts.bundle_id) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("takoctl: {e}");
-                return ExitCode::from(3);
-            }
+    let path = match socket::resolve_path(&opts.bundle_id, opts.socket.as_deref(), opts.bundle_id_explicit, inherited.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("takoctl: {e}");
+            return ExitCode::from(3);
         }
     };
     let mut opts = opts;
