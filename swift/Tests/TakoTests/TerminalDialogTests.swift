@@ -285,4 +285,79 @@ struct TerminalDialogTests {
         #expect(result == nil)
         #expect(TerminalDialogView.pending(in: window) == nil)
     }
+
+    @Test func configureTerminalDialogHandlersReplacesNSAlertWithInTerminalDialogs() async {
+        let prevConfirm = TakoTerminalNSView.confirmOpenURL
+        let prevAlert = TakoTerminalNSView.presentAlert
+        defer {
+            TakoTerminalNSView.confirmOpenURL = prevConfirm
+            TakoTerminalNSView.presentAlert = prevAlert
+        }
+
+        AppDelegate.configureTerminalDialogHandlers()
+        let window = window()
+
+        // 1. unsafeScheme -> "Open External Application?", default "Open" (index 1), Return confirms (true)
+        var unsafeOutcome: Bool?
+        TakoTerminalNSView.confirmOpenURL(
+            URL(string: "ssh://prod.codes")!,
+            .unsafeScheme("ssh"),
+            window
+        ) { unsafeOutcome = $0 }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let unsafeDialog = TerminalDialogView.pending(in: window)!
+        #expect(window.attachedSheet == nil)
+        #expect(unsafeDialog.title == "Open External Application?")
+        #expect(unsafeDialog.subviews.compactMap { $0 as? NSButton }.map(\.title) == ["Cancel", "Open"])
+        unsafeDialog.keyDown(with: key(36, "\r"))
+        while unsafeOutcome == nil { await Task.yield() }
+        #expect(unsafeOutcome == true)
+
+        // 2. urlMismatch -> "Suspicious Link Destination", default "Cancel" (index 0), Return cancels (false)
+        var mismatchOutcome: Bool?
+        TakoTerminalNSView.confirmOpenURL(
+            URL(string: "https://evil.example")!,
+            .urlMismatch(displayedText: "https://trusted.example", targetURL: URL(string: "https://evil.example")!),
+            window
+        ) { mismatchOutcome = $0 }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let mismatchDialog = TerminalDialogView.pending(in: window)!
+        #expect(window.attachedSheet == nil)
+        #expect(mismatchDialog.title == "Suspicious Link Destination")
+        #expect(mismatchDialog.subviews.compactMap { $0 as? NSButton }.map(\.title) == ["Cancel", "Open Anyway"])
+        mismatchDialog.keyDown(with: key(36, "\r"))
+        while mismatchOutcome == nil { await Task.yield() }
+        #expect(mismatchOutcome == false)
+
+        // 3. unconfirmedDestination -> "Open Link?", Escape cancels (false)
+        var unconfirmedOutcome: Bool?
+        TakoTerminalNSView.confirmOpenURL(
+            URL(string: "https://prod.codes/docs")!,
+            .unconfirmedDestination(URL(string: "https://prod.codes/docs")!),
+            window
+        ) { unconfirmedOutcome = $0 }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let unconfirmedDialog = TerminalDialogView.pending(in: window)!
+        #expect(window.attachedSheet == nil)
+        #expect(unconfirmedDialog.title == "Open Link?")
+        #expect(unconfirmedDialog.subviews.compactMap { $0 as? NSButton }.map(\.title) == ["Cancel", "Open"])
+        unconfirmedDialog.keyDown(with: key(53, "\u{1B}"))
+        while unconfirmedOutcome == nil { await Task.yield() }
+        #expect(unconfirmedOutcome == false)
+
+        // 4. presentAlert -> in-terminal "OK" dialog instead of NSAlert sheet
+        let alert = NSAlert()
+        alert.messageText = "Terminal Alert Title"
+        alert.informativeText = "Detailed terminal notice."
+        TakoTerminalNSView.presentAlert(alert, window)
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let alertDialog = TerminalDialogView.pending(in: window)!
+        #expect(window.attachedSheet == nil)
+        #expect(alertDialog.title == "Terminal Alert Title")
+        #expect(alertDialog.subviews.compactMap { $0 as? NSButton }.map(\.title) == ["OK"])
+        alertDialog.keyDown(with: key(36, "\r"))
+        while TerminalDialogView.pending(in: window) != nil { await Task.yield() }
+        #expect(TerminalDialogView.pending(in: window) == nil)
+    }
 }
+
