@@ -166,4 +166,177 @@ struct TabStatusLifecycleTests {
         #expect(repAStillIdle.dot == "dim")
         #expect(repAStillIdle.color == "gray")
     }
+
+    private static func findTakoctl() -> String? {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let candidates = [
+            repoRoot.appendingPathComponent("takoctl/target/debug/takoctl").path,
+            repoRoot.appendingPathComponent("takoctl/target/release/takoctl").path,
+            "/Applications/Tako.app/Contents/MacOS/takoctl",
+            "/opt/homebrew/bin/takoctl",
+            "/usr/local/bin/takoctl",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private static func runTakoHook(
+        agent: String,
+        event: String,
+        stdinJSON: String? = nil,
+        env: [String: String]
+    ) async throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptPath = repoRoot.appendingPathComponent("scripts/tako-hook.py").path
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        proc.arguments = [scriptPath, agent, event]
+        proc.environment = env
+        let inPipe = Pipe()
+        proc.standardInput = inPipe
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        try proc.run()
+        if let stdinJSON, let data = stdinJSON.data(using: .utf8) {
+            inPipe.fileHandleForWriting.write(data)
+        }
+        inPipe.fileHandleForWriting.closeFile()
+        while proc.isRunning {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(proc.terminationStatus == 0)
+    }
+
+    private func render(_ bar: Tako.TabBarView) {
+        bar.layoutTabs()
+        if let rep = bar.bitmapImageRepForCachingDisplay(in: bar.bounds) {
+            bar.cacheDisplay(in: bar.bounds, to: rep)
+        }
+    }
+
+    @Test func allFourAgentsHookLifecycleDrivesPaintedTabDotsSidebarBadgesAndFocusAutoReset() async throws {
+        let takoctl = try #require(Self.findTakoctl(), "takoctl binary required")
+        let takoctlDir = (takoctl as NSString).deletingLastPathComponent
+
+        let dir = try privateDir()
+        let socketPath = dir + "/hook-visual.sock"
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+
+        let winA = makeWindow(title: "fg-tab")
+        let winB = makeWindow(title: "bg-agent-tab")
+        defer {
+            Tako.overrideTabStatusTheme = nil
+            Tako.CustomTabGroup.leave(winA)
+            Tako.CustomTabGroup.leave(winB)
+        }
+
+        let surfA = attachSurface(to: winA)
+        let surfB = attachSurface(to: winB)
+        defer {
+            surfA.removeFromSuperview()
+            surfB.removeFromSuperview()
+        }
+        Tako.CustomTabGroup.join(winB, to: winA, select: false)
+        Tako.CustomTabGroup.group(for: winA).select(winA)
+
+        let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 520, height: 38))
+        winA.contentView?.addSubview(bar)
+
+        let suiteName = "test.tako.hook.sidebar.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let sidebarStore = SessionSidebarStore(defaults: defaults)
+
+        let oldMode = ControlCommands.mode
+        ControlCommands.mode = .on
+        defer { ControlCommands.mode = oldMode }
+
+        let paneA = ControlCommands.Pane(surface: surfA, windowID: "wA", tabID: "tA")
+        let paneB = ControlCommands.Pane(surface: surfB, windowID: "wB", tabID: "tB")
+        let server = ControlServer(path: socketPath) { request, reply in
+            ControlCommands.mode = .on
+            ControlCommands.handle(request, all: [paneA, paneB], reply: reply)
+        }
+        #expect(try server.start() == .listening)
+        defer { server.stop() }
+
+        let grant = ControlGrantStore.shared.issueGrant(client: "test-4-agents", scopes: [.signal, .read])
+        var env = ProcessInfo.processInfo.environment
+        env["TAKO_SOCKET"] = socketPath
+        env["TAKO_CONTROL_TOKEN"] = grant.token
+        env["TAKO_SURFACE_ID"] = surfB.id.uuidString.lowercased()
+        let existingPath = env["PATH"] ?? "/usr/bin:/bin"
+        env["PATH"] = "\(takoctlDir):\(existingPath)"
+
+        let idleHex = Tako.Brand.hex(for: "dim")
+        let workingHex = Tako.Brand.hex(for: "ember")
+        let waitingHex = Tako.Brand.hex(for: "claw")
+        let doneHex = Tako.Brand.hex(for: "ok")
+
+        for agent in ["claude", "gemini", "codex", "agy"] {
+            surfA.crab.setStatus(.idle, text: nil)
+            surfB.crab.isFocused = false
+            surfB.crab.setStatus(.idle, text: nil)
+
+            // 1. Initial Idle: painted dot on tab B is dim (gray), sidebar is .idle
+            render(bar)
+            #expect(bar.paintedPillDots.count == 2)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == idleHex, "Agent \(agent) initial idle dot")
+            #expect(sidebarStore.items(for: winA)[1].status == .idle)
+
+            // 2. Working hook (user_prompt_submit / pre_invocation): painted dot is ember (orange)
+            let startEvent = (agent == "agy") ? "pre_invocation" : "user_prompt_submit"
+            try await Self.runTakoHook(agent: agent, event: startEvent, env: env)
+            render(bar)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == workingHex, "Agent \(agent) working dot")
+            #expect(bar.paintedPillDots[ObjectIdentifier(winA)] == idleHex, "Foreground tab A stays idle gray")
+            let workingSidebar = sidebarStore.items(for: winA)[1]
+            #expect(workingSidebar.status == .working)
+            #expect(surfB.crab.statusText == "Thinking...")
+
+            // 3. Approval hook (permission_request): painted dot is claw (amber)
+            try await Self.runTakoHook(agent: agent, event: "permission_request", env: env)
+            render(bar)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == waitingHex, "Agent \(agent) approval dot")
+            let approvalSidebar = sidebarStore.items(for: winA)[1]
+            #expect(approvalSidebar.status == .needsApproval)
+            #expect(approvalSidebar.needsAttention == true)
+
+            // 4. Waiting Input hook (AskUserQuestion / ask_question): painted dot is claw (amber)
+            try await Self.runTakoHook(
+                agent: agent,
+                event: "permission_request",
+                stdinJSON: #"{"tool_name":"AskUserQuestion"}"#,
+                env: env
+            )
+            render(bar)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == waitingHex, "Agent \(agent) waiting_for_input dot")
+            let waitingSidebar = sidebarStore.items(for: winA)[1]
+            #expect(waitingSidebar.status == .waitingForInput)
+            #expect(waitingSidebar.needsAttention == true)
+
+            // 5. Done hook (stop in background): painted dot is ok (green)
+            surfB.crab.isFocused = false
+            try await Self.runTakoHook(agent: agent, event: "stop", env: env)
+            render(bar)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == doneHex, "Agent \(agent) done dot")
+            let doneSidebar = sidebarStore.items(for: winA)[1]
+            #expect(doneSidebar.status == .done)
+            #expect(surfB.crab.unread == true)
+
+            // 6. Auto-reset on tab focus: focusing tab B resets Done (green) -> Idle (gray)
+            surfB.crab.focused()
+            render(bar)
+            #expect(bar.paintedPillDots[ObjectIdentifier(winB)] == idleHex, "Agent \(agent) focus auto-reset to idle dot")
+            #expect(sidebarStore.items(for: winA)[1].status == .idle)
+            #expect(surfB.crab.unread == false)
+        }
+    }
 }
