@@ -66,7 +66,7 @@ extension TerminalSettingsDialog {
         }
 
         // Allow standard clipboard and text editing shortcuts while searching
-        if let field = searchField, window?.firstResponder == field.currentEditor() {
+        if let field = colorEditField ?? searchField, window?.firstResponder == field.currentEditor() {
             if flags == .command, let char = event.charactersIgnoringModifiers?.lowercased() {
                 if ["a", "c", "v", "x", "z"].contains(char) {
                     return super.performKeyEquivalent(with: event)
@@ -231,6 +231,7 @@ extension TerminalSettingsDialog {
     }
 
     func moveSelection(_ delta: Int) {
+        cancelEditingColor()
         pendingConflict = nil
         if activeTab == .keybindings {
             guard !filteredItems.isEmpty else { return }
@@ -254,6 +255,7 @@ extension TerminalSettingsDialog {
     }
 
     func scrollTo(_ target: Int) {
+        cancelEditingColor()
         pendingConflict = nil
         if activeTab == .keybindings {
             guard !filteredItems.isEmpty else { return }
@@ -270,13 +272,31 @@ extension TerminalSettingsDialog {
 
     // MARK: - NSTextFieldDelegate (Search)
 
+    func controlTextDidEndEditing(_ obj: Notification) {
+        if (obj.object as? NSTextField) === colorEditField {
+            cancelEditingColor(restoreFocus: false)
+        }
+    }
+
     func controlTextDidChange(_ obj: Notification) {
+        if (obj.object as? NSTextField) === colorEditField { return }
+        cancelEditingColor(restoreFocus: false)
         pendingConflict = nil
         guard let field = searchField else { return }
         filterItems(field.stringValue)
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if control === colorEditField {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                saveEditedColor(); return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                cancelEditingColor(); return true
+            }
+            return false
+        }
+        cancelEditingColor(restoreFocus: false)
         if commandSelector == #selector(moveDown(_:)) {
             window?.makeFirstResponder(self)
             isTabBarFocused = false

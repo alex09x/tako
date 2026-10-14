@@ -168,7 +168,12 @@ extension TerminalSettingsDialog {
 
                 // Current Value
                 let displayVal = configFile.effectiveSettingValue(for: item)
-                let isCustom = displayVal != item.type.defaultStringValue
+                if case .color = item.type, let cg = TerminalTheme.parseColor(displayVal) {
+                    NSColor(cgColor: cg)?.setFill()
+                    let point = cell(44, r)
+                    NSRect(x: point.x, y: point.y + 3, width: cellWidth, height: cellHeight - 6).fill()
+                }
+                let isCustom = configFile.getSettingValue(for: item) != nil
                 let valColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
                 drawText(displayVal, col: 46, row: r, font: style.boldFont, color: valColor)
             }
@@ -208,7 +213,7 @@ extension TerminalSettingsDialog {
             let hint = "↑↓ navigate · return/R record · D reset · 1/2 tabs · / search · esc close"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         } else {
-            let hint = "↑↓ navigate · return/space toggle/cycle · D reset · 1/2 tabs · / search · esc close"
+            let hint = "↑↓ navigate · return edit/toggle · D reset · / search · esc close"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         }
     }

@@ -123,6 +123,8 @@ public struct TerminalTheme {
 
     /// The 16 ANSI colors plus the 240 extended ones a theme can override.
     public var palette: [Int: CGColor] = [:]
+    /// User overrides for the tab's lifecycle indicators, independent of ANSI colors.
+    public var tabStatusColors: [String: CGColor] = [:]
 
     /// Families for styled text (`font-family-bold` and so on); nil uses
     /// `fontFamily`.

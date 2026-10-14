@@ -61,7 +61,7 @@ extension Tako.TabBarView {
 
     func pillIndicatorColor(for tab: Tab) -> NSColor {
         let report = Tako.tabVisualStatus(for: tab.window)
-        return Tako.Brand.color(for: report.dot, active: tab.isActive)
+        return Tako.tabStatusColor(for: report.dot)
     }
 
     func drawPillTab(_ tab: Tab, in ctx: CGContext) {

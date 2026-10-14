@@ -14,6 +14,7 @@ public enum TerminalSettingType: Equatable, Sendable {
     case boolean(defaultValue: Bool)
     case options(options: [String], defaultValue: String)
     case number(defaultValue: Int, min: Int, max: Int, step: Int)
+    case color(defaultValue: String)
 
     public var defaultStringValue: String {
         switch self {
@@ -23,11 +24,14 @@ public enum TerminalSettingType: Equatable, Sendable {
             return def
         case .number(let def, _, _, _):
             return String(def)
+        case .color(let def):
+            return def
         }
     }
 
     public func nextValue(current: String) -> String {
         switch self {
+        case .color: return current
         case .boolean:
             let isTrue = current.lowercased() == "true" || current == "1"
             return isTrue ? "false" : "true"
@@ -56,6 +60,7 @@ public enum TerminalSettingType: Equatable, Sendable {
 
     public func previousValue(current: String) -> String {
         switch self {
+        case .color: return current
         case .boolean:
             return nextValue(current: current)
         case .options(let opts, let def):
@@ -224,7 +229,7 @@ public enum TerminalSettingRegistry {
             type: .number(defaultValue: 0, min: 0, max: 60, step: 5),
             description: "Window background blur radius in pixels (0 = disabled)"
         ),
-    ]
+    ] + colorSettings
 
     public static func setting(for id: String) -> TerminalSettingItem? {
         allSettings.first { $0.id == id || $0.aliases.contains(id) }

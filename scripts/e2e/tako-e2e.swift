@@ -1297,9 +1297,9 @@ let scenarios: [Scenario] = [
                   let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
                   let searchVal: String = d.attribute(searchField, kAXValueAttribute),
                   let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
-            return searchVal.isEmpty && val.contains("Terminal Settings: 15 items") && val.contains("Sync Window Frame")
+            return searchVal.isEmpty && val.contains("Terminal Settings: 24 items") && val.contains("Sync Window Frame")
         }, timeout: 5) else {
-            throw Failure("Escape in search field did not clear search text and recover full 15 settings list")
+            throw Failure("Escape in search field did not clear search text and recover full 24 settings list")
         }
 
         // 3. Type "sync" to filter to workspace sync setting

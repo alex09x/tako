@@ -14,6 +14,7 @@ extension TerminalSettingsDialog {
     // MARK: - Mouse Events (Modal containment)
 
     override func mouseDown(with event: NSEvent) {
+        cancelEditingColor()
         pendingConflict = nil
         let pt = convert(event.locationInWindow, from: nil)
         guard cardRect.contains(pt) else {
@@ -87,6 +88,7 @@ extension TerminalSettingsDialog {
     override func otherMouseUp(with event: NSEvent) {}
 
     override func scrollWheel(with event: NSEvent) {
+        cancelEditingColor()
         let delta = event.scrollingDeltaY
         if activeTab == .keybindings {
             if delta > 0 {

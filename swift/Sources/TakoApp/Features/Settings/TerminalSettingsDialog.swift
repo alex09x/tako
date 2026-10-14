@@ -68,6 +68,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     var scrollSettingOffset: Int = 0
 
     var searchField: NSTextField?
+    var colorEditField: NSTextField?
+    var colorEditItem: TerminalSettingItem?
     var isRecording: Bool = false
     var recordingHeldModifiers: NSEvent.ModifierFlags = []
     struct ConflictInfo {
@@ -229,8 +231,10 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func toggleOrCycleSelectedSetting(reverse: Bool = false) {
+        if colorEditField != nil { saveEditedColor(); return }
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
+        if case .color = item.type { beginEditingColor(item); return }
         let current = configFile.effectiveSettingValue(for: item)
         let next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
         if next == item.type.defaultStringValue {
@@ -254,10 +258,12 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func resetSelectedSetting() {
+        cancelEditingColor()
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
         let wasCustom = configFile.getSettingValue(for: item) != nil
         if configFile.removeSettingValue(for: item) {
+            Tako.TabBarController.refreshAll()
             if wasCustom {
                 statusMessage = "Reset to default: \(item.id)"
             } else {
@@ -272,6 +278,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func switchTab(to tab: SettingsTab) {
+        cancelEditingColor()
         guard activeTab != tab else { return }
         activeTab = tab
         pendingConflict = nil
@@ -305,6 +312,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func filterItems(_ query: String) {
+        cancelEditingColor(restoreFocus: false)
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
         if activeTab == .keybindings {
             if q.isEmpty {
@@ -339,6 +347,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     func withdraw() {
+        cancelEditingColor()
         guard !isWithdrawing else { return }
         isWithdrawing = true
         setAccessibilityValue("closed")
@@ -371,6 +380,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     override func layout() {
         super.layout()
+        layoutColorEditor()
         if let field = searchField {
             let origin = cell(3, 2)
             field.frame = NSRect(x: origin.x, y: origin.y, width: CGFloat(columns - 6) * cellWidth, height: cellHeight)

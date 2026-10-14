@@ -238,7 +238,7 @@ struct TerminalSettingsEffectTests {
     // MARK: - Configuration Persistence & Reparsing Tests
 
     /// Verifies that updates written through `KeybindConfigFile` persist to disk, re-parse
-    /// cleanly into `Tako.Config`, and reset to defaults upon removal across all 15 registry settings.
+    /// cleanly into `Tako.Config`, and reset to defaults upon removal across all 24 registry settings.
     @Test func configFileSettingPersistencePropagatesToParsedConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -248,14 +248,19 @@ struct TerminalSettingsEffectTests {
         let configFile = KeybindConfigFile(configPath: configPath)
 
         let allSettings = TerminalSettingRegistry.allSettings
-        #expect(allSettings.count == 15)
+        #expect(allSettings.count == 24)
 
         for setting in allSettings {
             let defaultValue = setting.type.defaultStringValue
             #expect(configFile.effectiveSettingValue(for: setting) == defaultValue)
 
             // Select a valid non-default value to test write + persistence
-            let customValue = setting.type.nextValue(current: defaultValue)
+            let customValue: String
+            if case .color = setting.type {
+                customValue = "#5fafff"
+            } else {
+                customValue = setting.type.nextValue(current: defaultValue)
+            }
             #expect(customValue != defaultValue)
 
             // 1. Write custom value to file
@@ -270,10 +275,14 @@ struct TerminalSettingsEffectTests {
 
             // 3. Verify Tako.Config parses cleanly with the custom value present
             let parsedCustom = Tako.Config(at: configPath)
+            #expect(parsedCustom.errors.isEmpty)
             if setting.id == "workspace-sync-window-frame" {
                 #expect(parsedCustom.workspaceSyncWindowFrame == true)
             } else if setting.id == "tab-style" {
                 #expect(parsedCustom.tabStyle == .classic)
+            } else if case .color = setting.type {
+                let resolved = parsedCustom.theme.settingsColor(for: setting.id).flatMap { NSColor(cgColor: $0) }
+                #expect(resolved.map { Tako.Brand.hexString(for: $0) } == customValue)
             }
 
             // 4. Remove setting (reset to default)
@@ -288,6 +297,7 @@ struct TerminalSettingsEffectTests {
 
             // 6. Verify Tako.Config parses cleanly with default restored
             let parsedReset = Tako.Config(at: configPath)
+            #expect(parsedReset.errors.isEmpty)
             if setting.id == "workspace-sync-window-frame" {
                 #expect(parsedReset.workspaceSyncWindowFrame == false)
             } else if setting.id == "tab-style" {
@@ -300,7 +310,7 @@ struct TerminalSettingsEffectTests {
 
     @Test func allSettingsInRegistryAreKnownAndHaveDefaults() {
         let all = TerminalSettingRegistry.allSettings
-        #expect(all.count == 15)
+        #expect(all.count == 24)
 
         for setting in all {
             #expect(!setting.id.isEmpty)

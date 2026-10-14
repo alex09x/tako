@@ -74,12 +74,15 @@ public func tako_config_clone(_ config: tako_config_t?) -> tako_config_t? {
     clone.triggerLines = storage.triggerLines
     clone.snapshotRedactionPatternLines = storage.snapshotRedactionPatternLines
     clone.errors = storage.errors
+    clone.loadedPath = storage.loadedPath
     return tako_config_t(raw: Unmanaged.passRetained(clone).toOpaque())
 }
 
 public func tako_config_load_file(_ config: tako_config_t?, _ path: UnsafePointer<CChar>?) {
     guard let storage = configStorage(config), let path else { return }
-    guard let text = try? String(contentsOfFile: String(cString: path), encoding: .utf8) else { return }
+    let filePath = String(cString: path)
+    guard let text = try? String(contentsOfFile: filePath, encoding: .utf8) else { return }
+    storage.loadedPath = filePath
     parseTakoConfigText(text, into: storage)
 }
 
@@ -177,6 +180,8 @@ let knownTakoConfigKeys: Set<String> = [
     "link-url", "palette", "safe-paste", "command-marks", "command-durations", "command-timestamps", "progress-style", "sticky-command-header", "editor", "trigger", "passive-regex-triggers", "clipboard-read",
     "snapshot-redact-pattern", "snapshot-redaction-pattern", "tab-style",
     "workspace-sync-window-frame", "workspace-inherit-window-frame",
+    "tab-status-color-working", "tab-status-color-waiting", "tab-status-color-done",
+    "tab-status-color-error", "tab-status-color-idle",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.

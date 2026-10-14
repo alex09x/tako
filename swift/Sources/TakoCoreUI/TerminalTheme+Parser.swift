@@ -65,6 +65,7 @@ extension TerminalTheme {
             merged.windowColorSpace = windowColorSpace
             merged.customShaders = customShaders
             merged.customShaderAnimation = customShaderAnimation
+            merged.tabStatusColors = tabStatusColors
             return merged
         }
         return self
@@ -219,6 +220,13 @@ extension TerminalTheme {
                     theme.palette[index] = color
                 }
             default:
+                if key.hasPrefix("tab-status-color-"),
+                   let color = parseColor(value) {
+                    let state = String(key.dropFirst("tab-status-color-".count))
+                    if ["working", "waiting", "done", "error", "idle"].contains(state) {
+                        theme.tabStatusColors[state] = color
+                    }
+                }
                 continue
             }
         }
