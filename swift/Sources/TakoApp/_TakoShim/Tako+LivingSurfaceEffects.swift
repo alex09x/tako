@@ -82,6 +82,8 @@ struct LivingSurfaceEffectsOverlay: View {
             let needsGeo = (doneFrac != nil) || (showsBottomProgressLine && { if case .progress = state { return true }; return false }())
 
             ZStack(alignment: .bottom) {
+                borderEffect(at: t)
+
                 if state == .failed {
                     VStack(spacing: 0) {
                         Spacer(minLength: 0)
@@ -112,19 +114,17 @@ struct LivingSurfaceEffectsOverlay: View {
                             }
                             if showsBottomProgressLine, case .progress(let p) = state {
                                 let clamped = CGFloat(min(1.0, max(0.0, p)))
-                                let availW = max(0, w - progressInsetLeft)
+                                let availW = max(0, w - progressInsetLeft * 2)
                                 RoundedRectangle(cornerRadius: 1)
                                     .fill(LinearGradient(colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)], startPoint: .leading, endPoint: .trailing))
                                     .frame(width: max(2, availW * clamped), height: 2)
-                                    .offset(x: progressInsetLeft)
+                                    .offset(x: progressInsetLeft, y: 0)
                             }
                         }
                         .frame(width: w, height: h, alignment: .bottomLeading)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 }
-
-                borderEffect(at: t)
             }
             .allowsHitTesting(false)
         }
@@ -142,23 +142,17 @@ struct LivingSurfaceEffectsOverlay: View {
         case .waiting:
             let s = reduceMotion ? 1.0 : LivingAnimationState.breatheFactor(at: t)
             if isSelectedOverviewCard {
-                // breatheSel (§3.2): 2px border #F4581C <-> #FF7A3D, blur 22 (radius 11), opacity 0 <-> 0.32
+                // breatheSel (§3.2): 2px border #F4581C <-> #FF7A3D
                 let r = (0xF4 / 255.0) + ((0xFF - 0xF4) / 255.0) * s
                 let g = (0x58 / 255.0) + ((0x7A - 0x58) / 255.0) * s
                 let b = (0x1C / 255.0) + ((0x3D - 0x1C) / 255.0) * s
                 let borderColor = Color(.sRGB, red: r, green: g, blue: b, opacity: 1.0)
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(borderColor, lineWidth: 2.0)
-                    .shadow(
-                        color: Color(nsColor: T.claw).opacity(reduceMotion ? 0.20 : 0.32 * s),
-                        radius: 11
-                    )
             } else {
                 let alpha = reduceMotion ? 0.90 : (0.40 + 0.55 * s)
-                let shadowAlpha = reduceMotion ? 0.20 : (0.30 * s)
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(Color(nsColor: T.claw).opacity(alpha), lineWidth: 1.0)
-                    .shadow(color: Color(nsColor: T.claw).opacity(shadowAlpha), radius: 8)
             }
         case .offline:
             RoundedRectangle(cornerRadius: cornerRadius)
@@ -197,6 +191,44 @@ struct LivingSurfaceEffectsOverlay: View {
     }
 }
 
+/// Renders the outer breathing `box-shadow` for `.waiting` surfaces (`row.glow`, `card.glow`, `card.sel.glow`).
+/// Placed in `.background` as a filled rounded rectangle with `.shadow` so CoreGraphics bitmap snapshots
+/// and live GPU layers both produce the exact CSS `box-shadow: 0 0 16px` / `0 0 22px` outer glow falloff.
+struct LivingSurfaceOuterGlow: View {
+    let state: Tako.SurfaceState
+    let cornerRadius: CGFloat
+    let backingColor: NSColor
+    var alwaysFillBacking: Bool = false
+    var isSelectedOverviewCard: Bool = false
+    var now: Date = Date()
+    var reduceMotion: Bool = false
+
+    private typealias T = Tako.LivingTokens
+
+    @ViewBuilder
+    var body: some View {
+        if state == .waiting {
+            let t = now.timeIntervalSinceReferenceDate
+            let s = reduceMotion ? 1.0 : LivingAnimationState.breatheFactor(at: t)
+            let alpha = isSelectedOverviewCard
+                ? (reduceMotion ? 0.25 : 0.42 * s)
+                : (reduceMotion ? 0.22 : 0.35 * s)
+            if alpha > 0.005 {
+                let radius: CGFloat = isSelectedOverviewCard ? 11.5 : 8.5
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color(nsColor: backingColor))
+                    .shadow(color: Color(nsColor: T.claw).opacity(alpha), radius: radius, x: 0, y: 0)
+            } else if alwaysFillBacking {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color(nsColor: backingColor))
+            }
+        } else if alwaysFillBacking {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(Color(nsColor: backingColor))
+        }
+    }
+}
+
 /// Unified Status Chip per Spec 1b (§6): h 18, padding 0 7, capsule, mono 10 medium, gap 5.
 struct LivingStatusChipView: View {
     let status: Tako.PaneStatus
@@ -214,7 +246,7 @@ struct LivingStatusChipView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .frame(height: 18)
         .background(Capsule().fill(spec.fill))
         .overlay(Capsule().strokeBorder(spec.border, lineWidth: 1))
@@ -245,13 +277,13 @@ struct LivingStatusChipView: View {
 }
 
 /// L-shaped tree connector line for Level 2 split-pane and subagent rows in Session Sidebar (§5.6).
-/// Vertical from `(minX - 12, minY - 4)` to `midY`, rounded corner `r = 4`, horizontal `9pt` right.
+/// Vertical from `(-11.5, -4)` to `10.5`, rounded corner `r = 4`, horizontal to `-3`.
 struct SidebarPaneTreeConnectorShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let startX: CGFloat = -12
+        let startX: CGFloat = -11.5
         let startY: CGFloat = -4
-        let midY = rect.midY
+        let midY: CGFloat = 10.5
         let endX: CGFloat = -3
         let r: CGFloat = 4
         path.move(to: CGPoint(x: startX, y: startY))

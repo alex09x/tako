@@ -35,7 +35,10 @@ extension Tako.TabBarView {
                 tabCount += 1
             }
         }
-        return max(baseCount, tabCount)
+        if !windows.isEmpty {
+            return tabCount
+        }
+        return store.attentionCount(for: liveWs)
     }
 
     func drawWorkspacePill(in ctx: CGContext) {
@@ -230,7 +233,7 @@ extension Tako.TabBarView {
 
     func hasUnreadInWindow(_ window: NSWindow) -> Bool {
         surfaces(in: window).contains {
-            !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
+            !$0.isAttentionMuted && NotificationStore.shared.unreadCount(for: $0.id) > 0
         }
     }
 

@@ -49,16 +49,19 @@ extension SessionSidebarItem {
         return state
     }
 
-    /// Compact pane tag text for Level 2 rows (§5.6: `"1"`, `"2"`, `"3"` without `"pane"` prefix).
+    /// Compact pane tag text for Level 2 rows (§5.6: `"1"`, `"2"`, `"3"` without `"pane"` or `"#"` prefix).
     var compactPaneTag: String? {
         guard let raw = label?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return isChild ? "\(index + 1)" : nil
         }
-        if raw.lowercased().hasPrefix("pane ") {
-            let suffix = raw.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            return suffix.isEmpty ? raw : String(suffix)
+        var cleaned = raw
+        if cleaned.lowercased().hasPrefix("pane ") {
+            cleaned = String(cleaned.dropFirst(5)).trimmingCharacters(in: .whitespaces)
         }
-        return raw
+        if cleaned.hasPrefix("#") {
+            cleaned = String(cleaned.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        return cleaned.isEmpty ? raw : cleaned
     }
 
     /// Meta text shown on the right of Line 1: `"NN%"` when progress is active, otherwise `elapsed`.
@@ -66,6 +69,12 @@ extension SessionSidebarItem {
         if case .progress(let p) = surfaceState {
             return "\(Int((p * 100).rounded()))%"
         }
-        return elapsed
+        if let elapsed, !elapsed.isEmpty {
+            return elapsed
+        }
+        if isChild, let port = listeningPorts?.first {
+            return ":\(port)"
+        }
+        return nil
     }
 }

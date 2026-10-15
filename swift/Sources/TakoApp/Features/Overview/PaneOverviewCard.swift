@@ -17,11 +17,12 @@ struct PaneOverviewCard: View, Equatable {
     let isSelected: Bool
     var now: Date = Date()
     var reduceMotion: Bool = false
+    var showsAnimatedEffects: Bool = true
 
     private typealias T = Tako.LivingTokens
 
     static func == (lhs: PaneOverviewCard, rhs: PaneOverviewCard) -> Bool {
-        lhs.item == rhs.item && lhs.isSelected == rhs.isSelected && lhs.reduceMotion == rhs.reduceMotion && lhs.now == rhs.now
+        lhs.item == rhs.item && lhs.isSelected == rhs.isSelected && lhs.reduceMotion == rhs.reduceMotion && lhs.now == rhs.now && lhs.showsAnimatedEffects == rhs.showsAnimatedEffects
     }
 
     var body: some View {
@@ -41,18 +42,16 @@ struct PaneOverviewCard: View, Equatable {
                     size: .large,
                     now: now,
                     elapsedInState: elapsedInState,
-                    reduceMotion: reduceMotion,
+                    reduceMotion: reduceMotion || !showsAnimatedEffects,
                     shakeRingOnly: true
                 )
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 13, weight: .semibold)))
+                    .font(Font(T.monoFont(size: 13, weight: .bold)))
                     .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textActive))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
                     Text(meta)
@@ -62,6 +61,7 @@ struct PaneOverviewCard: View, Equatable {
                         .fixedSize(horizontal: true, vertical: false)
                 }
             }
+            .frame(height: 18)
 
             // Row 2 (gap 7): Status Chip -> statusText mono 10.5 #8A7F76
             HStack(spacing: 7) {
@@ -77,6 +77,7 @@ struct PaneOverviewCard: View, Equatable {
 
                 Spacer(minLength: 0)
             }
+            .frame(height: 18)
 
             // Live Thumbnail Preview (h 112, #14100E, r 7, border 1 #2A211B, bottom 24pt fade, 3px progress bar)
             thumbnailView(item: item)
@@ -88,9 +89,7 @@ struct PaneOverviewCard: View, Equatable {
                     .foregroundColor(Color(nsColor: T.dim))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(item.provenanceLabel)
                     .font(Font(T.monoFont(size: 10.5, weight: .regular)))
@@ -99,28 +98,39 @@ struct PaneOverviewCard: View, Equatable {
                     .truncationMode(.tail)
                     .fixedSize(horizontal: true, vertical: false)
             }
+            .frame(height: 16)
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: radius)
-                .fill(Color(nsColor: T.surfaceActive))
-        )
-        .overlay(
-            baseBorderOverlay(state: state, radius: radius)
-        )
-        .overlay(
-            LivingSurfaceEffectsOverlay(
-                state: state,
+            LivingSurfaceOuterGlow(
+                state: showsAnimatedEffects ? state : .idle,
                 cornerRadius: radius,
-                cometLineWidth: 1.5,
-                showsCometForProgress: true,
-                showsBottomProgressLine: false,
+                backingColor: T.surfaceActive,
+                alwaysFillBacking: true,
                 isSelectedOverviewCard: isSelected,
                 now: now,
-                elapsedInState: elapsedInState,
                 reduceMotion: reduceMotion
             )
         )
+        .overlay(
+            baseBorderOverlay(state: showsAnimatedEffects ? state : .idle, radius: radius)
+        )
+        .overlay {
+            if showsAnimatedEffects {
+                LivingSurfaceEffectsOverlay(
+                    state: state,
+                    cornerRadius: radius,
+                    cometLineWidth: 1.5,
+                    showsCometForProgress: true,
+                    showsBottomProgressLine: false,
+                    isSelectedOverviewCard: isSelected,
+                    now: now,
+                    elapsedInState: elapsedInState,
+                    reduceMotion: reduceMotion
+                )
+            }
+        }
         .contentShape(Rectangle())
     }
 
@@ -145,17 +155,16 @@ struct PaneOverviewCard: View, Equatable {
                         .foregroundColor(Color(nsColor: T.dim))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    Text(item.thumbnailLines.prefix(7).joined(separator: "\n"))
+                    styledThumbnailText(item.thumbnailLines.prefix(7))
                         .font(Font(T.monoFont(size: 10, weight: .regular)))
-                        .foregroundColor(Color(nsColor: T.text))
-                        .lineSpacing(3)
+                        .lineSpacing(2.2)
                         .lineLimit(7)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+            .frame(height: 112, alignment: .topLeading)
 
             // Bottom 24pt fade gradient from clear to #14100E over text (§6)
             LinearGradient(
@@ -182,6 +191,59 @@ struct PaneOverviewCard: View, Equatable {
             RoundedRectangle(cornerRadius: 7)
                 .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
         )
+    }
+
+    private func styledThumbnailText(_ lines: ArraySlice<String>) -> Text {
+        let needsRich = lines.contains {
+            $0.hasPrefix("? ") || $0.hasPrefix("$ ") || $0.hasPrefix("● ") ||
+            $0.hasPrefix("❯ 1.") || $0.hasPrefix("error:") ||
+            $0.hasSuffix(" ok") || $0.hasSuffix(" FAILED")
+        }
+        if !needsRich {
+            return Text(lines.joined(separator: "\n")).foregroundColor(Color(nsColor: T.text))
+        }
+        var result = Text("")
+        for (idx, line) in lines.enumerated() {
+            if idx > 0 { result = result + Text("\n") }
+            result = result + styledTerminalLine(line)
+        }
+        return result
+    }
+
+    private func styledTerminalLine(_ line: String) -> Text {
+        let baseColor = Color(nsColor: T.text)
+        let dimColor = Color(nsColor: T.dim)
+        let clawColor = Color(nsColor: T.claw)
+        let okColor = Color(nsColor: T.ok)
+        let errColor = Color(nsColor: T.error)
+
+        if line.hasPrefix("? ") {
+            return Text(line).foregroundColor(clawColor)
+        }
+        if line.hasPrefix("$ ") {
+            return Text("$").foregroundColor(dimColor) + Text(String(line.dropFirst())).foregroundColor(baseColor)
+        }
+        if line.hasPrefix("● ") {
+            return Text("●").foregroundColor(dimColor) + Text(String(line.dropFirst())).foregroundColor(baseColor)
+        }
+        if line.hasPrefix("❯ 1. High Contrast Ember") {
+            let prefix = "❯ 1. High Contrast Ember"
+            let suffix = String(line.dropFirst(prefix.count))
+            return Text(prefix).foregroundColor(clawColor) + Text(suffix).foregroundColor(baseColor)
+        }
+        if line.hasPrefix("error:") {
+            let suffix = String(line.dropFirst(6))
+            return Text("error:").foregroundColor(errColor) + Text(suffix).foregroundColor(baseColor)
+        }
+        if line.hasSuffix(" ok") {
+            let prefix = String(line.dropLast(2))
+            return Text(prefix).foregroundColor(baseColor) + Text("ok").foregroundColor(okColor)
+        }
+        if line.hasSuffix(" FAILED") {
+            let prefix = String(line.dropLast(6))
+            return Text(prefix).foregroundColor(baseColor) + Text("FAILED").foregroundColor(errColor)
+        }
+        return Text(line).foregroundColor(baseColor)
     }
 
     private func progressBarView(state: TakoTerminalNSView.ProgressState, value: Int?) -> some View {

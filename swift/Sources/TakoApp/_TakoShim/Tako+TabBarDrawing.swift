@@ -100,10 +100,6 @@ extension Tako.TabBarView {
             ctx.addPath(path)
             ctx.setFillColor(Tako.LivingTokens.chrome.cgColor)
             ctx.fillPath()
-        } else if tab.index > 0, !tabs[tab.index - 1].isActive, hovered != (tab.index - 1) {
-            // Optional 1x12 #2A211B divider between adjacent background tabs (§4)
-            ctx.setFillColor(Palette.hairline.cgColor)
-            ctx.fill(CGRect(x: rect.minX - 3.5, y: rect.midY - 6, width: 1, height: 12))
         }
 
         // Status Ring S=14 via TabStatusLayer or Command-number badge when Command is held
@@ -134,7 +130,7 @@ extension Tako.TabBarView {
         // Right-side affordance: ✕ on active/hovered tab, or Ø5 Claw unread dot on background tabs with unread notifications
         let showsClose = (tab.isActive || hovering) && rect.width >= Metrics.pillCloseMinWidth
         let showsUnreadDot = !showsClose && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive))
-        let rightExtra: CGFloat = showsClose ? (7 + 10) : (showsUnreadDot ? (7 + 5) : 0)
+        let rightExtra: CGFloat = showsClose ? (7 + 6) : (showsUnreadDot ? (7 + 5) : 0)
 
         let titleFont = tab.isActive ? Fonts.pillActiveTitle : Fonts.pillTitle
         let rawTitle = titleFor(tab.window)
@@ -146,7 +142,6 @@ extension Tako.TabBarView {
         let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= fullTitleWidth - 1.0)
         let maxTitleWidth = availableForTitleAndMeta - (includesMeta ? (metaWidth + 7) : 0)
 
-        var drawnTitleWidth: CGFloat = 0
         if maxTitleWidth > 8 {
             let title = Tako.TabText.truncate(rawTitle, to: maxTitleWidth, font: titleFont)
             let titleColor: NSColor
@@ -157,7 +152,7 @@ extension Tako.TabBarView {
             } else {
                 titleColor = Palette.inactiveText
             }
-            drawnTitleWidth = Tako.TabText.draw(
+            _ = Tako.TabText.draw(
                 title,
                 atX: titleStartX,
                 centeredAtY: rect.midY,
@@ -168,7 +163,7 @@ extension Tako.TabBarView {
         }
 
         if includesMeta, let metaText {
-            let metaX = min(titleStartX + drawnTitleWidth + 7, rect.maxX - 9 - rightExtra - metaWidth)
+            let metaX = rect.maxX - 9 - rightExtra - metaWidth
             Tako.TabText.draw(
                 metaText,
                 atX: metaX,
@@ -180,14 +175,10 @@ extension Tako.TabBarView {
         }
 
         if showsClose {
-            let closeGlyphRect = CGRect(
-                x: rect.maxX - 9 - 10,
-                y: rect.midY - 5,
-                width: 10,
-                height: 10
-            )
+            let closeFont = Tako.LivingTokens.monoFont(size: 10)
+            let closeW = Tako.TabText.width(of: "✕", font: closeFont)
             let closeColor = (hoveredClose && hovering) ? Palette.activeText : Palette.dim
-            drawClose(in: closeGlyphRect, color: closeColor, ctx: ctx)
+            Tako.TabText.draw("✕", atX: rect.maxX - 9 - closeW, centeredAtY: rect.midY, font: closeFont, color: closeColor, context: ctx)
         } else if showsUnreadDot {
             let unreadRect = CGRect(x: rect.maxX - 9 - 5, y: rect.midY - 2.5, width: 5, height: 5)
             ctx.setFillColor(Tako.LivingTokens.claw.cgColor)
@@ -219,7 +210,9 @@ extension Tako.TabBarView {
         let style = progressStyle(for: tab.window)
         if style.showsInTab, let prog = aggregateProgress(for: tab.window) {
             drawProgressBar(in: tab.frame, progress: prog, context: ctx)
-        } else if tab.isActive {
+        }
+
+        if tab.isActive {
             ctx.setFillColor(Tako.Brand.ember.cgColor)
             ctx.fill(CGRect(x: tab.frame.minX, y: tab.frame.minY,
                             width: tab.frame.width, height: Metrics.activeBarHeight))
@@ -308,37 +301,29 @@ extension Tako.TabBarView {
     }
 
     func drawButtons(in ctx: CGContext) {
-        drawButton(infoRect, hovered: infoHovered, in: ctx) { ctx, rect in
-            let r: CGFloat = Metrics.infoGlyphSize / 2
-            ctx.setStrokeColor(Palette.dim.cgColor)
-            ctx.setLineWidth(1.2)
-            ctx.strokeEllipse(in: CGRect(x: rect.midX - r, y: rect.midY - r, width: r * 2, height: r * 2))
-            ctx.setFillColor(Palette.dim.cgColor)
-            ctx.fillEllipse(in: CGRect(x: rect.midX - 1.0, y: rect.midY + 1.5, width: 2.0, height: 2.0))
-            ctx.setLineWidth(1.3)
-            ctx.move(to: CGPoint(x: rect.midX, y: rect.midY + 0.5))
-            ctx.addLine(to: CGPoint(x: rect.midX, y: rect.midY - 3.5))
-            ctx.strokePath()
+        if infoRect.width > 0 {
+            drawButton(infoRect, hovered: infoHovered, in: ctx) { ctx, rect in
+                let r: CGFloat = Metrics.infoGlyphSize / 2
+                ctx.setStrokeColor(Palette.dim.cgColor)
+                ctx.setLineWidth(1.2)
+                ctx.strokeEllipse(in: CGRect(x: rect.midX - r, y: rect.midY - r, width: r * 2, height: r * 2))
+                ctx.setFillColor(Palette.dim.cgColor)
+                ctx.fillEllipse(in: CGRect(x: rect.midX - 1.0, y: rect.midY + 1.5, width: 2.0, height: 2.0))
+                ctx.setLineWidth(1.3)
+                ctx.move(to: CGPoint(x: rect.midX, y: rect.midY + 0.5))
+                ctx.addLine(to: CGPoint(x: rect.midX, y: rect.midY - 3.5))
+                ctx.strokePath()
+            }
         }
         drawButton(splitRect, hovered: splitHovered, in: ctx) { ctx, rect in
-            let glyphSize: CGFloat = Metrics.splitGlyphSize
-            let glyphRect = CGRect(x: rect.midX - glyphSize / 2, y: rect.midY - glyphSize * 0.7 / 2, width: glyphSize, height: glyphSize * 0.7)
-            ctx.setStrokeColor(Palette.dim.cgColor)
-            ctx.setLineWidth(1.2)
-            ctx.stroke(glyphRect)
-            ctx.move(to: CGPoint(x: glyphRect.midX, y: glyphRect.minY))
-            ctx.addLine(to: CGPoint(x: glyphRect.midX, y: glyphRect.maxY))
-            ctx.strokePath()
+            let font = Tako.LivingTokens.monoFont(size: 15)
+            let w = Tako.TabText.width(of: "◫", font: font)
+            Tako.TabText.draw("◫", atX: rect.midX - w / 2, centeredAtY: rect.midY, font: font, color: Palette.dim, context: ctx)
         }
         drawButton(plusRect, hovered: plusHovered, in: ctx) { ctx, rect in
-            let half: CGFloat = Metrics.plusGlyphSize / 2
-            ctx.setStrokeColor(Palette.dim.cgColor)
-            ctx.setLineWidth(1.5)
-            ctx.move(to: CGPoint(x: rect.midX - half, y: rect.midY))
-            ctx.addLine(to: CGPoint(x: rect.midX + half, y: rect.midY))
-            ctx.move(to: CGPoint(x: rect.midX, y: rect.midY - half))
-            ctx.addLine(to: CGPoint(x: rect.midX, y: rect.midY + half))
-            ctx.strokePath()
+            let font = Tako.LivingTokens.monoFont(size: 15)
+            let w = Tako.TabText.width(of: "+", font: font)
+            Tako.TabText.draw("+", atX: rect.midX - w / 2, centeredAtY: rect.midY, font: font, color: Palette.dim, context: ctx)
         }
     }
 

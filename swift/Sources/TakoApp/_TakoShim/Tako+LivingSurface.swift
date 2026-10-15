@@ -10,6 +10,7 @@
 
 import AppKit
 import Combine
+import CoreText
 import SwiftUI
 
 extension Tako {
@@ -52,26 +53,45 @@ extension Tako {
             }
         }
 
-        private static let hasJetBrainsMono: Bool = (NSFont(name: "JetBrainsMono-Regular", size: 12) != nil)
-        private static let spaceGroteskName: String? = ["SpaceGrotesk-Bold", "Space Grotesk Bold", "Space Grotesk"].first { NSFont(name: $0, size: 13) != nil }
+        private static let didRegisterFonts: Bool = {
+            var fontDirs: [URL] = []
+            if let resURL = Bundle.main.resourceURL {
+                fontDirs.append(resURL.appendingPathComponent("fonts"))
+                fontDirs.append(resURL)
+            }
+            let srcFontsURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/fonts")
+            fontDirs.append(srcFontsURL)
+            for dir in fontDirs {
+                guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+                for item in items where ["ttf", "otf"].contains(item.pathExtension.lowercased()) {
+                    CTFontManagerRegisterFontsForURL(item as CFURL, .process, nil)
+                }
+            }
+            return true
+        }()
+
+        nonisolated(unsafe) private static var monoCache: [Int: NSFont] = [:]
 
         static func monoFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-            if hasJetBrainsMono {
-                let name: String
-                switch weight {
-                case .bold, .heavy, .black: name = "JetBrainsMono-Bold"
-                case .semibold: name = "JetBrainsMono-SemiBold"
-                case .medium: name = "JetBrainsMono-Medium"
-                default: name = "JetBrainsMono-Regular"
-                }
-                if let font = NSFont(name: name, size: size) { return font }
+            _ = didRegisterFonts
+            let key = Int(size * 10) * 100 + Int((weight.rawValue + 1.0) * 10)
+            if let cached = monoCache[key] { return cached }
+            let candidates: [String]
+            switch weight {
+            case .bold, .heavy, .black: candidates = ["JetBrainsMonoNF-Bold", "JetBrainsMono-SemiBold"]
+            case .semibold: candidates = ["JetBrainsMono-SemiBold", "JetBrainsMono-Medium"]
+            case .medium: candidates = ["JetBrainsMono-Medium", "JetBrainsMonoNF-Regular"]
+            default: candidates = ["JetBrainsMonoNF-Regular"]
             }
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+            let font = candidates.lazy.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+            monoCache[key] = font
+            return font
         }
 
-        static func headerFont(size: CGFloat) -> Font {
-            if let name = spaceGroteskName { return .custom(name, size: size).weight(.bold) }
-            return .system(size: size, weight: .bold)
+        static func headerFont(size: CGFloat, weight: Font.Weight = .bold) -> Font {
+            _ = didRegisterFonts
+            let name = (weight == .medium || weight == .regular) ? "SpaceGrotesk-Medium" : "SpaceGrotesk-Bold"
+            return NSFont(name: name, size: size) != nil ? .custom(name, fixedSize: size) : .system(size: size, weight: weight)
         }
     }
 }
@@ -304,19 +324,13 @@ struct StatusRingView: View {
 
             case .progress(let p):
                 let clamped = CGFloat(min(1.0, max(0.0, p)))
-                Circle()
-                    .inset(by: 1.25)
-                    .stroke(Color(nsColor: T.progressTrack), lineWidth: 2.5)
+                Circle().inset(by: 1.25).stroke(Color(nsColor: T.progressTrack), lineWidth: 2.5)
                 Circle()
                     .inset(by: 1.25)
                     .trim(from: 0, to: clamped)
                     .rotation(.degrees(-90))
                     .stroke(
-                        LinearGradient(
-                            colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
+                        LinearGradient(colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)], startPoint: .top, endPoint: .bottom),
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .butt)
                     )
                     .animation(.easeOut(duration: 0.25), value: clamped)
@@ -324,44 +338,26 @@ struct StatusRingView: View {
             case .waiting:
                 if !reduceMotion {
                     let halo = LivingAnimationState.haloMetrics(at: t)
-                    Circle()
-                        .stroke(Color(nsColor: T.claw), lineWidth: 2.0)
-                        .frame(width: d, height: d)
-                        .scaleEffect(halo.scale)
-                        .opacity(halo.opacity)
+                    Circle().stroke(Color(nsColor: T.claw), lineWidth: 2.0)
+                        .frame(width: d, height: d).scaleEffect(halo.scale).opacity(halo.opacity)
                 }
-                Circle()
-                    .inset(by: 1.0)
-                    .stroke(Color(nsColor: T.claw), lineWidth: 2.0)
+                Circle().inset(by: 1.0).stroke(Color(nsColor: T.claw), lineWidth: 2.0)
                 let dotD: CGFloat = (size == .extraSmall) ? 3.0 : (size == .large ? 5.0 : 4.0)
                 let blink = reduceMotion ? 1.0 : LivingAnimationState.blinkOpacity(at: t)
-                Circle()
-                    .fill(Color(nsColor: T.claw))
-                    .frame(width: dotD, height: dotD)
-                    .opacity(blink)
+                Circle().fill(Color(nsColor: T.claw)).frame(width: dotD, height: dotD).opacity(blink)
 
             case .done:
-                Circle()
-                    .fill(Color(nsColor: T.ok))
+                Circle().fill(Color(nsColor: T.ok))
                 checkmarkShape(in: d)
-                    .stroke(
-                        Color(nsColor: T.ink),
-                        style: StrokeStyle(lineWidth: size == .large ? 2.0 : 1.75, lineCap: .round, lineJoin: .round)
-                    )
+                    .stroke(Color(nsColor: T.ink), style: StrokeStyle(lineWidth: size == .large ? 2.0 : 1.75, lineCap: .round, lineJoin: .round))
 
             case .failed:
-                Circle()
-                    .fill(Color(nsColor: T.error))
-                exclamationShape(in: d)
-                    .fill(Color(nsColor: T.ink))
+                Circle().fill(Color(nsColor: T.error))
+                exclamationShape(in: d).fill(Color(nsColor: T.ink))
 
             case .offline:
-                Circle()
-                    .inset(by: 0.75)
-                    .stroke(
-                        Color(nsColor: T.faint),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [2, 2])
-                    )
+                Circle().inset(by: 0.75)
+                    .stroke(Color(nsColor: T.faint), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
             }
         }
         .frame(width: d, height: d)

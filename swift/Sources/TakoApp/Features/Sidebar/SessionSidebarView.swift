@@ -92,7 +92,6 @@ struct SessionSidebarView: View {
             VStack(spacing: 0) {
                 headerView
                 searchAndSegmentsBar(now: now)
-                Divider().background(Color(nsColor: T.hairline))
                 tabListView(now: now)
                 Divider().background(Color(nsColor: T.hairline))
                 footerView
@@ -169,6 +168,7 @@ struct SessionSidebarView: View {
                 .font(Font(T.monoFont(size: 10, weight: .medium)))
                 .foregroundColor(Color(nsColor: T.dim))
         }
+        .frame(height: 18)
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 8)
@@ -184,7 +184,7 @@ struct SessionSidebarView: View {
     private func searchAndSegmentsBar(now: Date) -> some View {
         VStack(spacing: 0) {
             // Search input: margin 0 12 8, h 26, r 7, bg #1A1512, border 1 #2A211B, padding 0 9
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Text("⌕")
                     .font(Font(T.monoFont(size: 11)))
                     .foregroundColor(Color(nsColor: T.faint))
@@ -229,13 +229,13 @@ struct SessionSidebarView: View {
                     store.setFilterNeedsAttention(false, for: targetWindow)
                 } content: {
                     Text("All")
-                        .font(Font(T.monoFont(size: 10, weight: .medium)))
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
                 }
 
                 segmentButton(isActive: filterNeedsAttention) {
                     store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
                 } content: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         StatusRingView(
                             state: .waiting,
                             size: .extraSmall,
@@ -243,7 +243,7 @@ struct SessionSidebarView: View {
                             reduceMotion: animState.reduceMotion
                         )
                         Text("Needs you · \(totalAttentionCount)")
-                            .font(Font(T.monoFont(size: 10, weight: .medium)))
+                            .font(Font(T.monoFont(size: 10, weight: .regular)))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
@@ -306,7 +306,6 @@ struct SessionSidebarView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
             }
             .focusable()
             .focused($isListFocused)

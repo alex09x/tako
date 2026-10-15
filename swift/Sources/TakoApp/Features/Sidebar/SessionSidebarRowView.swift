@@ -65,6 +65,14 @@ struct SessionSidebarRowView: View {
 
     private func sessionParentRow(elapsedInState: TimeInterval) -> some View {
         let radius: CGFloat = 7
+        let hasBorderBox1px: Bool = {
+            if state == .working || state == .offline { return true }
+            if case .progress = state { return true }
+            return false
+        }()
+        let vPad: CGFloat = hasBorderBox1px ? 7 : 6
+        let glowBacking: NSColor = isTabActive ? T.surfaceActive : (isNavSelected ? T.surfaceHover : T.body)
+
         return VStack(alignment: .leading, spacing: 3) {
             // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
             HStack(spacing: 7) {
@@ -77,9 +85,9 @@ struct SessionSidebarRowView: View {
                             SubagentHierarchyStore.shared.toggleCollapsed(pid)
                         }
                     }) {
-                        Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
-                            .font(.system(size: 8.5, weight: .bold))
-                            .foregroundColor(Color(nsColor: T.dim))
+                        Text(item.isCollapsed ? "▸" : "▾")
+                            .font(Font(T.monoFont(size: 9, weight: .regular)))
+                            .foregroundColor(Color(nsColor: T.faint))
                             .frame(width: 10, height: 14, alignment: .center)
                             .contentShape(Rectangle())
                     }
@@ -103,9 +111,7 @@ struct SessionSidebarRowView: View {
                     .foregroundColor(sessionTitleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
                     Text(meta)
@@ -121,6 +127,7 @@ struct SessionSidebarRowView: View {
                         .frame(width: 5, height: 5)
                 }
             }
+            .frame(height: 16)
 
             // Line 2: 31pt left indent (= 10 + 7 + 14, directly under title)
             if let secondLine = sessionSecondLineContent {
@@ -132,6 +139,7 @@ struct SessionSidebarRowView: View {
                         .truncationMode(secondLine.truncation)
                     Spacer(minLength: 0)
                 }
+                .frame(height: 14)
                 .padding(.leading, 31)
             }
 
@@ -141,7 +149,16 @@ struct SessionSidebarRowView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, vPad)
+        .background(
+            LivingSurfaceOuterGlow(
+                state: state,
+                cornerRadius: radius,
+                backingColor: glowBacking,
+                now: now,
+                reduceMotion: reduceMotion
+            )
+        )
         .background(
             RoundedRectangle(cornerRadius: radius)
                 .fill(rowBackgroundColor)
@@ -151,7 +168,7 @@ struct SessionSidebarRowView: View {
                 state: state,
                 cornerRadius: radius,
                 cometLineWidth: 1.0,
-                showsCometForProgress: false,
+                showsCometForProgress: true,
                 showsBottomProgressLine: true,
                 progressInsetLeft: 8,
                 now: now,
@@ -181,6 +198,7 @@ struct SessionSidebarRowView: View {
     private func paneChildRow(elapsedInState: TimeInterval) -> some View {
         let radius: CGFloat = 6
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
+        let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
@@ -197,9 +215,7 @@ struct SessionSidebarRowView: View {
                     .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
                     Text(meta)
@@ -226,6 +242,7 @@ struct SessionSidebarRowView: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
                 }
             }
+            .frame(height: 15)
 
             if let pwd = item.workingDirectory, !pwd.isEmpty {
                 Text(Tako.formatCompactDirectory(pwd))
@@ -237,7 +254,7 @@ struct SessionSidebarRowView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, vPad)
         .background(
             RoundedRectangle(cornerRadius: radius)
                 .fill(isNavSelected ? Color(nsColor: T.surfaceHover) : Color.clear)
@@ -310,7 +327,7 @@ struct SessionSidebarRowView: View {
             parts.append(Tako.formatCompactDirectory(pwd))
         }
         if let branch = item.gitBranch, !branch.isEmpty {
-            let dirtySuffix = (item.gitDirty == true) ? " ±" : ""
+            let dirtySuffix = (item.gitDirty == true && !branch.contains("±")) ? " ±" : ""
             parts.append("⎇ \(branch)\(dirtySuffix)")
         }
         if let ports = item.listeningPorts, !ports.isEmpty {

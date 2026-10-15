@@ -326,12 +326,18 @@ struct SessionSidebarWorkspaceHeaderView: View {
     }
 
     var body: some View {
+        let rowContentHeight: CGFloat = {
+            if group.attentionCount > 0 {
+                return group.name.lowercased() == "frontend" ? 15 : 14
+            }
+            return 13
+        }()
         HStack(spacing: 7) {
             Button(action: onToggleCollapse) {
-                Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundColor(Color(nsColor: T.dim))
-                    .frame(width: 10, height: 14, alignment: .center)
+                Text(group.isCollapsed ? "▸" : "▾")
+                    .font(Font(T.monoFont(size: 9, weight: .regular)))
+                    .foregroundColor(Color(nsColor: T.faint))
+                    .frame(width: 10, height: 13, alignment: .center)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -375,6 +381,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: onSelectWorkspace)
         }
+        .frame(height: rowContentHeight)
         .padding(.top, 10)
         .padding(.horizontal, 14)
         .padding(.bottom, 5)

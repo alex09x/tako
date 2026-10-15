@@ -123,7 +123,7 @@ extension LivingSurface1bVisualTests {
         stripWin.contentView = stripView
         defer { stripWin.close() }
 
-        // 2. Setup Tabs (1100×44 pt -> 2200×88 px) matching §5 of #7576
+        // 2. Setup Tabs (1100×44 pt -> 2200×88 px) matching Sessions-v2.dc.html
         let (wsStore, tempDir) = makeWorkspaceStore()
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let defaultWs = wsStore.activeWorkspace
@@ -146,22 +146,21 @@ extension LivingSurface1bVisualTests {
         defer { for w in tabWindows { Tako.CustomTabGroup.leave(w) } }
         for w in tabWindows.dropFirst() { Tako.CustomTabGroup.join(w, to: tabWindows[0], select: false) }
         Tako.CustomTabGroup.group(for: tabWindows[0]).setWindowOrder(tabWindows)
+        for w in tabWindows {
+            WorkspaceStore.shared.assignTab(tabIdentifier: w.stableTabIdentifier, to: WorkspaceStore.shared.activeWorkspaceId)
+            wsStore.assignTab(tabIdentifier: w.stableTabIdentifier, to: defaultWs.id)
+        }
+        WorkspaceStore.shared.reorderTabs(in: WorkspaceStore.shared.activeWorkspaceId, newOrder: tabWindows.map(\.stableTabIdentifier))
+        wsStore.reorderTabs(in: defaultWs.id, newOrder: tabWindows.map(\.stableTabIdentifier))
         Tako.CustomTabGroup.group(for: tabWindows[0]).select(tabWindows[0])
-        for w in tabWindows { wsStore.assignTab(tabIdentifier: w.stableTabIdentifier, to: defaultWs.id) }
 
-        let tabsContainer = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 44))
-        tabsContainer.wantsLayer = true
-        tabsContainer.layer?.backgroundColor = Tako.LivingTokens.body.cgColor
         let tabBar = Tako.TabBarView(frame: NSRect(x: 0, y: 1, width: 1100, height: 38))
         tabBar.styleOverride = .pill
         tabBar.workspaceStoreOverride = wsStore
         let hostWin1 = tabWindows[0]
-        let hostContent = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 44))
-        hostContent.wantsLayer = true
-        hostContent.layer?.backgroundColor = Tako.LivingTokens.body.cgColor
+        let hostContent = Tabs1bHostView(frame: NSRect(x: 0, y: 0, width: 1100, height: 44), tabBar: tabBar)
         hostContent.addSubview(ts1)
         ts1.isHidden = true
-        hostContent.addSubview(tabBar)
         hostWin1.setContentSize(NSSize(width: 1100, height: 44))
         hostWin1.contentView = hostContent
         _ = snapshot2x(hostContent)
@@ -177,13 +176,21 @@ extension LivingSurface1bVisualTests {
         let ovStore = PaneOverviewStore()
         ovStore.items = makeOverview4bItems()
         ovStore.selectedIndex = 0
+        let canvasBg = Color(nsColor: NSColor(srgbRed: 0xE4 / 255, green: 0xDF / 255, blue: 0xD9 / 255, alpha: 1))
         let overviewHost = NSHostingView(
-            rootView: PaneOverviewView(isPresented: .constant(true), showsBackdrop: false, store: ovStore)
+            rootView: PaneOverviewView(
+                isPresented: .constant(true),
+                showsBackdrop: false,
+                store: ovStore,
+                nowOverride: Date(timeIntervalSinceReferenceDate: 0)
+            ).background(canvasBg)
         )
         overviewHost.frame = NSRect(x: 0, y: 0, width: 1100, height: 580)
         let overviewWin = NSWindow(contentRect: overviewHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         overviewWin.contentView = overviewHost
         defer { overviewWin.close() }
+
+        LivingAnimationState.shared.resetEntries()
 
         // Render 81 frames: t = 0 ... 3200 ms, step 40 ms
         for ms in stride(from: 0, through: 3200, by: 40) {
@@ -203,6 +210,7 @@ extension LivingSurface1bVisualTests {
                 layer.applySnapshotPhase(at: t, doneElapsed: t, failedElapsed: t)
             }
             tabBar.needsDisplay = true
+            hostContent.needsDisplay = true
             if let data = snapshot2x(hostContent).representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent(String(format: "tabs_%04d.png", ms)))
             }
@@ -214,6 +222,12 @@ extension LivingSurface1bVisualTests {
             }
 
             // Overview
+            overviewHost.rootView = PaneOverviewView(
+                isPresented: .constant(true),
+                showsBackdrop: false,
+                store: ovStore,
+                nowOverride: Date(timeIntervalSinceReferenceDate: t)
+            ).background(canvasBg)
             if let data = snapshot2x(overviewHost).representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent(String(format: "overview_%04d.png", ms)))
             }
@@ -222,51 +236,71 @@ extension LivingSurface1bVisualTests {
 
     private func makeOverview4bItems() -> [PaneOverviewItem] {
         [
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-                workspaceName: "Default", tabTitle: "claude", tabIndex: 0,
-                title: "claude", pwd: "/Users/alex09x/tako-backend",
-                status: .needsApproval, statusText: "Allow bash: cargo test --package auth", elapsed: "1m 14s",
-                isFocused: true, isKeyWindow: true,
-                thumbnailLines: ["$ claude \"Refactor auth middleware\"", "● Reading src/auth/jwt.rs (142 lines)", "● Proposed edit src/auth/jwt.rs (+38 −12)", "? Allow command: cargo test --package auth? [y/n]"]
-            ),
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
-                workspaceName: "Default", tabTitle: "codex", tabIndex: 0,
-                title: "codex review", pwd: "/Users/alex09x/tako-backend",
-                status: .working, statusText: "Scanning 14 files", elapsed: "38s",
-                thumbnailLines: ["$ codex review --base main", "Analyzing diff across 14 changed files…", "Checking P0/P1 invariants in", "SessionSidebarTree.swift", "Running static type checks…"]
-            ),
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
-                workspaceName: "Default", tabTitle: "test", tabIndex: 0,
-                title: "cargo test --workspace", pwd: "/Users/alex09x/tako-core",
-                status: .error, statusText: "exit 101", elapsed: "12s",
-                thumbnailLines: ["running 48 tests", "test parser::osc133 … ok", "test grid::reflow_wide_char … FAILED", "error: test failed, to rerun pass `--lib`"]
-            ),
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!,
-                workspaceName: "Default", tabTitle: "build", tabIndex: 1,
-                title: "cargo build --release", pwd: "/Users/alex09x/tako-core",
-                status: .working, statusText: "Compiling tako-core",
-                progressState: .normal, progressValue: 68, elapsed: "68%",
-                thumbnailLines: ["   Compiling libc v0.2.161", "   Compiling vte v0.13.0", "   Compiling tako-core v0.9.2", "   Building [=========>     ] 212/310"]
-            ),
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!,
-                workspaceName: "Frontend", tabTitle: "gemini", tabIndex: 0,
-                title: "gemini", pwd: "/Users/alex09x/web-ui",
-                status: .waitingForInput, statusText: "Which palette should we apply?", elapsed: "2m 05s",
-                thumbnailLines: ["$ gemini \"Audit accessibility contrast\"", "Found 3 contrast ratios below 4.5:1.", "Which palette should we apply?", "❯ 1. High Contrast Ember   2. Warm Slate"]
-            ),
-            PaneOverviewItem(
-                id: UUID(uuidString: "00000000-0000-0000-0000-000000000006")!,
-                workspaceName: "Default", tabTitle: "psql", tabIndex: 2,
-                title: "psql migrations", pwd: "/Users/alex09x/tako-db",
-                status: .done, statusText: "exit 0", elapsed: "2s",
-                thumbnailLines: ["$ sqlx migrate run", "Applied 2026101401_add_workspace_tree", "Applied 2026101402_add_pane_badges", "All migrations applied successfully."]
-            ),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, workspaceName: "Default", tabTitle: "claude", tabIndex: 0, title: "claude", pwd: "/Users/alex09x/tako-backend", status: .needsApproval, statusText: "Allow bash: cargo test --package auth", elapsed: "1m 14s", isFocused: true, isKeyWindow: true, thumbnailLines: ["$ claude \"Refactor auth middleware\"", "● Reading src/auth/jwt.rs (142 lines)", "● Proposed edit src/auth/jwt.rs (+38 −12)", "? Allow command: cargo test --package auth? [y/n]"]),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, workspaceName: "Default", tabTitle: "codex", tabIndex: 0, title: "codex review", pwd: "/Users/alex09x/tako-backend", status: .working, statusText: "Scanning 14 files", elapsed: "38s", thumbnailLines: ["$ codex review --base main", "Analyzing diff across 14 changed files…", "Checking P0/P1 invariants in", "SessionSidebarTree.swift", "Running static type checks…"]),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, workspaceName: "Default", tabTitle: "test", tabIndex: 0, title: "cargo test --workspace", pwd: "/Users/alex09x/tako-core", status: .error, statusText: "exit 101", elapsed: "12s", thumbnailLines: ["running 48 tests", "test parser::osc133 … ok", "test grid::reflow_wide_char … FAILED", "error: test failed, to rerun pass `--lib`"]),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!, workspaceName: "Default", tabTitle: "build", tabIndex: 1, title: "cargo build --release", pwd: "/Users/alex09x/tako-core", status: .working, statusText: "Compiling tako-core", progressState: .normal, progressValue: 68, elapsed: "68%", thumbnailLines: ["   Compiling libc v0.2.161", "   Compiling vte v0.13.0", "   Compiling tako-core v0.9.2", "   Building [=========>     ] 212/310"]),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!, workspaceName: "Frontend", tabTitle: "gemini", tabIndex: 0, title: "gemini", pwd: "/Users/alex09x/web-ui", status: .waitingForInput, statusText: "Which palette should we apply?", elapsed: "2m 05s", thumbnailLines: ["$ gemini \"Audit accessibility contrast\"", "Found 3 contrast ratios below 4.5:1.", "Which palette should we apply?", "❯ 1. High Contrast Ember   2. Warm Slate"]),
+            PaneOverviewItem(id: UUID(uuidString: "00000000-0000-0000-0000-000000000006")!, workspaceName: "Default", tabTitle: "psql", tabIndex: 2, title: "psql migrations", pwd: "/Users/alex09x/tako-db", status: .done, statusText: "exit 0", elapsed: "2s", thumbnailLines: ["$ sqlx migrate run", "Applied 2026101401_add_workspace_tree", "Applied 2026101402_add_pane_badges", "All migrations applied successfully."]),
         ]
+    }
+}
+
+/// Host wrapper for `tabs` (`1100×44` pt -> `2200×88` px) rendering the top 5pt canvas backdrop,
+/// top-rounded 12pt window chrome, bottom 1pt `#2A211B` border, and 3 `#3A2F27` traffic light circles over `TabBarView`.
+@MainActor
+final class Tabs1bHostView: NSView {
+    let tabBar: Tako.TabBarView
+    private static let canvasBg = NSColor(srgbRed: 0xE4 / 255, green: 0xDF / 255, blue: 0xD9 / 255, alpha: 1)
+
+    init(frame frameRect: NSRect, tabBar: Tako.TabBarView) {
+        self.tabBar = tabBar
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        addSubview(tabBar)
+        let lightsOverlay = TrafficLightsOverlayView(frame: frameRect)
+        addSubview(lightsOverlay)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.setFillColor(Self.canvasBg.cgColor)
+        ctx.fill(bounds)
+        ctx.setFillColor(Tako.LivingTokens.hairline.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: bounds.width, height: 1))
+    }
+}
+
+@MainActor
+private final class TrafficLightsOverlayView: NSView {
+    private static let canvasBg = NSColor(srgbRed: 0xE4 / 255, green: 0xDF / 255, blue: 0xD9 / 255, alpha: 1)
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // Mask top-left and top-right 12pt rounded corners of .win (y = 0..39)
+        let winPath = CGMutablePath()
+        winPath.addRect(CGRect(x: 0, y: 0, width: bounds.width, height: 39))
+        let rounded = CGMutablePath()
+        rounded.move(to: CGPoint(x: 0, y: 0))
+        rounded.addLine(to: CGPoint(x: 0, y: 27))
+        rounded.addQuadCurve(to: CGPoint(x: 12, y: 39), control: CGPoint(x: 0, y: 39))
+        rounded.addLine(to: CGPoint(x: bounds.width - 12, y: 39))
+        rounded.addQuadCurve(to: CGPoint(x: bounds.width, y: 27), control: CGPoint(x: bounds.width, y: 39))
+        rounded.addLine(to: CGPoint(x: bounds.width, y: 0))
+        rounded.closeSubpath()
+        winPath.addPath(rounded)
+        ctx.addPath(winPath)
+        ctx.setFillColor(Self.canvasBg.cgColor)
+        ctx.fillPath(using: .evenOdd)
+
+        // 3 traffic light circles (12×12pt #3A2F27 at x = 20, 40, 60, y = 14)
+        ctx.setFillColor(Tako.LivingTokens.ghostBorder.cgColor)
+        for lx: CGFloat in [20, 40, 60] {
+            ctx.fillEllipse(in: CGRect(x: lx, y: 14, width: 12, height: 12))
+        }
     }
 }
 
@@ -285,7 +319,7 @@ struct Sidebar4aReferenceView: View {
             SessionSidebarItem(id: "sb-1-1", index: 1, isSelected: false, title: "claude", status: .needsApproval, isChild: true, label: "pane #1", indentationLevel: 2, workspaceId: ws1, tabId: "t1"),
             SessionSidebarItem(id: "sb-1-2", index: 2, isSelected: false, title: "codex review", status: .working, elapsed: "38s", isChild: true, label: "pane #2", indentationLevel: 2, workspaceId: ws1, tabId: "t1"),
             SessionSidebarItem(id: "sb-1-3", index: 3, isSelected: false, title: "cargo test", status: .error, unreadCount: 1, isChild: true, label: "pane #3", indentationLevel: 2, workspaceId: ws1, tabId: "t1"),
-            SessionSidebarItem(id: "sb-2", index: 4, isSelected: false, title: "cargo build --release", status: .working, progress: 0.68, progressState: .normal, elapsed: "68%", workingDirectory: "/Users/alex09x/tako-core", gitBranch: "feat/sidebar", gitDirty: true, indentationLevel: 1, workspaceId: ws1, tabId: "t2"),
+            SessionSidebarItem(id: "sb-2", index: 4, isSelected: false, title: "cargo build --release", status: .working, progress: 0.68, progressState: .normal, elapsed: "68%", workingDirectory: "/Users/alex09x/tako-core", gitBranch: "feat/sidebar ±3", gitDirty: true, indentationLevel: 1, workspaceId: ws1, tabId: "t2"),
             SessionSidebarItem(id: "sb-3", index: 5, isSelected: false, title: "psql migrations", status: .done, elapsed: "2s", workingDirectory: "/Users/alex09x/tako-db", gitBranch: "main", gitDirty: false, indentationLevel: 1, workspaceId: ws1, tabId: "t3"),
             SessionSidebarItem(id: "sb-4", index: 6, isSelected: false, title: "~/tako", status: .idle, indentationLevel: 1, workspaceId: ws1, tabId: "t4"),
         ]
@@ -305,12 +339,14 @@ struct Sidebar4aReferenceView: View {
     }
 
     var body: some View {
+        let canvasBg = Color(nsColor: NSColor(srgbRed: 0xE4 / 255, green: 0xDF / 255, blue: 0xD9 / 255, alpha: 1))
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text("Sessions").font(T.headerFont(size: 13)).foregroundColor(Color(nsColor: T.textActive))
                 Spacer()
                 Text("9").font(Font(T.monoFont(size: 10, weight: .medium))).foregroundColor(Color(nsColor: T.dim))
             }
+            .frame(height: 18)
             .padding(.top, 12).padding(.horizontal, 12).padding(.bottom, 8)
             HStack(spacing: 7) {
                 Text("⌕").font(Font(T.monoFont(size: 11))).foregroundColor(Color(nsColor: T.faint))
@@ -347,9 +383,12 @@ struct Sidebar4aReferenceView: View {
                 Spacer()
                 Text("⌥⏎ next waiting").font(Font(T.monoFont(size: 10.5))).foregroundColor(Color(nsColor: T.dim))
             }
+            .frame(height: 14)
             .padding(.horizontal, 12).padding(.vertical, 9)
         }
         .frame(width: 280, height: 720)
         .background(Color(nsColor: T.body))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(canvasBg)
     }
 }

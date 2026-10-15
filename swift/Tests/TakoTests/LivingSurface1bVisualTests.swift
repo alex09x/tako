@@ -160,7 +160,7 @@ struct LivingSurface1bVisualTests {
         #expect(bar.pillMetaText(for: w1) == "1m 14s")
         #expect(bar.pillMetaText(for: w2) == "42s")
         #expect(bar.pillMetaText(for: w3) == "68%")
-        #expect(bar.workspaceAttentionCount(for: backendWs) == 2)
+        #expect(bar.workspaceAttentionCount(for: backendWs) == 1)
 
         // Verify #483C32 is never present anywhere in the rendered TabBar bitmap (§8.6)
         for y in 0..<barRep.pixelsHigh {

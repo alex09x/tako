@@ -17,6 +17,7 @@ struct PaneOverviewView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
     var showsBackdrop: Bool = true
+    var nowOverride: Date? = nil
 
     @ObservedObject private var store: PaneOverviewStore
     @ObservedObject private var animState = LivingAnimationState.shared
@@ -25,21 +26,25 @@ struct PaneOverviewView: View {
     private static let staticDate = Date(timeIntervalSinceReferenceDate: 1.1)
     private typealias T = Tako.LivingTokens
 
-    // 3 columns adaptive (280...380), gap 16
+    // 3 equal columns matching CSS repeat(3, minmax(0, 1fr)), gap 16
     private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 380), spacing: 16)
+        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 16),
+        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 16),
+        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 16),
     ]
 
     init(
         isPresented: Binding<Bool>,
         backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
         showsBackdrop: Bool = true,
-        store: PaneOverviewStore = .shared
+        store: PaneOverviewStore = .shared,
+        nowOverride: Date? = nil
     ) {
         self._isPresented = isPresented
         self.backgroundColor = backgroundColor
         self.showsBackdrop = showsBackdrop
         self.store = store
+        self.nowOverride = nowOverride
     }
 
     private var waitingCount: Int {
@@ -87,7 +92,7 @@ struct PaneOverviewView: View {
 
                 // Single TimelineView for the entire Overview modal (§7)
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
-                    let now = animState.effectiveDate(isInitialFrameComplete ? context.date : Self.staticDate)
+                    let now = nowOverride ?? animState.effectiveDate(isInitialFrameComplete ? context.date : Self.staticDate)
                     VStack(spacing: 0) {
                         headerView
                         Divider().background(Color(nsColor: T.hairline))
@@ -96,7 +101,12 @@ struct PaneOverviewView: View {
                         footerLegendView
                     }
                 }
-                .frame(maxWidth: 1100, minHeight: 580, idealHeight: 580, maxHeight: showsBackdrop ? 760 : 580)
+                .frame(
+                    maxWidth: 1100,
+                    minHeight: showsBackdrop ? 680 : 580,
+                    idealHeight: showsBackdrop ? 760 : 580,
+                    maxHeight: showsBackdrop ? 760 : 580
+                )
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color(nsColor: T.chrome))
@@ -106,7 +116,7 @@ struct PaneOverviewView: View {
                     RoundedRectangle(cornerRadius: 14)
                         .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
                 )
-                .padding(showsBackdrop ? 32 : 0)
+                .padding(showsBackdrop ? 20 : 0)
             }
         }
         .onAppear {
@@ -172,6 +182,7 @@ struct PaneOverviewView: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(height: 30)
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
     }
@@ -185,7 +196,8 @@ struct PaneOverviewView: View {
                 if currentItems.isEmpty {
                     emptyStateView
                 } else {
-                    let visibleLimit = min(currentItems.count, max(9, store.selectedIndex + 6))
+                    let isFull = isInitialFrameComplete || nowOverride != nil
+                    let visibleLimit = min(currentItems.count, max(isFull ? 9 : 5, store.selectedIndex + (isFull ? 6 : 5)))
                     let visibleSlice = currentItems.prefix(visibleLimit)
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
@@ -194,7 +206,8 @@ struct PaneOverviewView: View {
                                 item: item,
                                 isSelected: index == store.selectedIndex,
                                 now: cardNow,
-                                reduceMotion: animState.reduceMotion
+                                reduceMotion: animState.reduceMotion,
+                                showsAnimatedEffects: isFull
                             )
                             .equatable()
                             .id(index)
@@ -233,6 +246,7 @@ struct PaneOverviewView: View {
                     .lineLimit(1)
             }
         }
+        .frame(height: 14)
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
     }

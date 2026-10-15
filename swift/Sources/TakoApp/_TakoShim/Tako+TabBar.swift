@@ -172,18 +172,20 @@ extension Tako {
             guard showsWorkspacePill else { return .zero }
             let ws = effectiveWorkspaceStore.activeWorkspace
             let title = ws.name
-            let titleWidth = TabText.width(of: title, font: Fonts.badge)
+            let wsFont = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
+            let titleWidth = TabText.width(of: title, font: wsFont)
             let attention = workspaceAttentionCount(for: ws)
-            let pillWidth = min(140, max(54, 8 + 7 + 6 + titleWidth + (attention > 0 ? 22 : 0) + 9))
-            return CGRect(x: 84, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
+            let badgeExtra: CGFloat = attention > 0 ? 20 : 0
+            let pillWidth = min(140, max(54, round(8 + 7 + 6 + titleWidth + badgeExtra + 9)))
+            return CGRect(x: 100, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
         }
 
         var effectiveFirstTabX: CGFloat {
-            showsWorkspacePill ? workspacePillRect.maxX + 6 : Metrics.firstTabX
+            showsWorkspacePill ? workspacePillRect.maxX + 12 : Metrics.firstTabX
         }
 
         /// "кнопки справа 28×28, gap 4, отступ 8": + is rightmost (window
-        /// edge minus the 8px margin), ◫ sits 4px to its left, ⓘ sits 4px to the left of ◫.
+        /// edge minus the 8px margin), ◫ sits 4px to its left, ⓘ sits 4px to the left of ◫ (classic mode only).
         var plusRect: CGRect {
             CGRect(x: bounds.width - Metrics.buttonMarginRight - Metrics.buttonSize,
                    y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
@@ -195,8 +197,9 @@ extension Tako {
         }
 
         var infoRect: CGRect {
-            CGRect(x: splitRect.minX - Metrics.buttonGap - Metrics.buttonSize,
-                   y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
+            if effectiveTabStyle == .pill { return .zero }
+            return CGRect(x: splitRect.minX - Metrics.buttonGap - Metrics.buttonSize,
+                          y: Metrics.buttonY, width: Metrics.buttonSize, height: Metrics.buttonSize)
         }
 
         func refresh() {
@@ -205,12 +208,13 @@ extension Tako {
 
         // MARK: Layout
 
-        /// Right edge reserved for buttons: ⓘ info, ◫ split, + new tab.
+        /// Right edge reserved for buttons: ◫ split and + new tab in pill mode (plus ⓘ info in classic mode).
         var buttonsReservedWidth: CGFloat {
-            Metrics.buttonSize * Metrics.buttonCount + Metrics.buttonGap * (Metrics.buttonCount - 1) + Metrics.buttonMarginRight
+            let count: CGFloat = (effectiveTabStyle == .pill) ? 2 : Metrics.buttonCount
+            return Metrics.buttonSize * count + Metrics.buttonGap * (count - 1) + Metrics.buttonMarginRight
         }
 
-        /// "ширина: по контенту, clamp 120-220px. НИКОГДА не justify на
+        /// "ширина: по контенту, clamp 110-220px. НИКОГДА не justify на
         /// всю ширину бара" -- each tab is sized to its own content, not an
         /// equal share of whatever space is left.
         private func naturalWidth(for window: NSWindow) -> CGFloat {
@@ -225,9 +229,10 @@ extension Tako {
                 let rightExtra: CGFloat = isSelected
                     ? (7 + 10)
                     : ((hasUnreadInWindow(window) || state == .failed) ? (7 + 5) : 0)
-                // §4: padding-left 8 -> ring S=14 -> gap 7 -> title -> (gap 7 + meta) -> rightExtra -> padding-right 9
-                let needed = 8 + 14 + 7 + titleWidth + metaExtra + rightExtra + 9
-                return min(Metrics.maxTabWidth, max(Metrics.minTabWidth, ceil(needed)))
+                let flexRoom: CGFloat = isSelected ? 12 : (rightExtra > 0 ? 19 : 20.5)
+                let needed = 8 + 14 + 7 + titleWidth + metaExtra + rightExtra + 9 + flexRoom
+                let evenWidth = 2.0 * ((needed / 2.0).rounded())
+                return min(Metrics.maxTabWidth, max(110, evenWidth))
             }
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
