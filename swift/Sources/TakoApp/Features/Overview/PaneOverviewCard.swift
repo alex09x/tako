@@ -31,7 +31,9 @@ struct PaneOverviewCard: View, Equatable {
                     Text(item.statusLabel.uppercased())
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(statusColor)
+                        .lineLimit(1)
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(statusColor.opacity(0.15))
@@ -42,14 +44,18 @@ struct PaneOverviewCard: View, Equatable {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 // Workspace / Window / Tab provenance tag
                 Text(item.workspaceName.isEmpty ? "Tab \(item.tabIndex + 1)" : "\(item.workspaceName) · Tab \(item.tabIndex + 1)")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Color(nsColor: PaneOverviewPalette.badge))

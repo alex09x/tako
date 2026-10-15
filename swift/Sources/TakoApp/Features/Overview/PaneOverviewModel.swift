@@ -96,7 +96,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         case .error:
             return Tako.Brand.error
         case .working, .running:
-            return NSColor(srgbRed: 0x38 / 255, green: 0x90 / 255, blue: 0xE6 / 255, alpha: 1) // Active blue
+            return Tako.Brand.ember
         case .needsApproval, .waitingForInput:
             return Tako.Brand.ember
         case .done:

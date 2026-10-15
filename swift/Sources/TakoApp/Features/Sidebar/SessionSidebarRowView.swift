@@ -35,22 +35,26 @@ struct SessionSidebarRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: item.isChild ? 2 : 3) {
             headerRow
-            VStack(alignment: .leading, spacing: 3) {
-                metadataRows
+            if !item.isChild || (item.workingDirectory != nil && !(item.workingDirectory?.isEmpty ?? true)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    metadataRows
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect()
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onSelect()
+            if !item.isChild {
+                descriptionSection
             }
-            descriptionSection
             progressSection
         }
-        .padding(.leading, CGFloat(8 + item.indentationLevel * 16))
+        .padding(.leading, CGFloat(8 + item.indentationLevel * 10))
         .padding(.trailing, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, item.isChild ? 3 : 6)
         .background(rowBackground)
         .overlay(rowOverlay)
     }
@@ -73,8 +77,12 @@ struct SessionSidebarRowView: View {
     private var headerRow: some View {
         let dotColor = Color(nsColor: item.status.sidebarDotColor)
 
-        HStack(spacing: 6) {
-            if item.hasChildren {
+        HStack(spacing: 5) {
+            if item.isChild {
+                Text("↳")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+            } else if item.hasChildren {
                 Button(action: {
                     if item.paneCount > 1 {
                         store.toggleTabSplitsCollapsed(item.tabId)
@@ -93,7 +101,7 @@ struct SessionSidebarRowView: View {
                 .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 ZStack {
                     if item.status.isSidebarPulsing {
                         Circle()
@@ -111,10 +119,14 @@ struct SessionSidebarRowView: View {
                     .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
                     .foregroundColor(isTabActive ? Color(nsColor: SessionSidebarPalette.activeText) : Color(nsColor: SessionSidebarPalette.inactiveText))
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
 
                 if let label = item.label {
                     Text("[\(label)]")
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
                         .background(Color(nsColor: SessionSidebarPalette.badge))
@@ -125,6 +137,8 @@ struct SessionSidebarRowView: View {
                 if let badge = item.status.sidebarBadgeLabel {
                     Text(badge)
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(dotColor.opacity(0.20))
@@ -137,17 +151,20 @@ struct SessionSidebarRowView: View {
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
                         .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
 
                 if let elapsed = item.elapsed {
                     Text(elapsed)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
 
                 Spacer(minLength: 4)
 
-                if item.needsAttention {
+                if item.needsAttention && item.unreadCount == 0 && item.status.sidebarBadgeLabel == nil {
                     Circle()
                         .stroke(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
                         .frame(width: 8, height: 8)
@@ -157,6 +174,8 @@ struct SessionSidebarRowView: View {
                 if item.unreadCount > 0 {
                     Text("\(item.unreadCount)")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(Color(nsColor: Tako.Brand.ember))
@@ -322,11 +341,7 @@ struct SessionSidebarRowView: View {
                 }
                 .buttonStyle(.plain)
 
-                Spacer()
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onSelect()
-                    }
+                Spacer().contentShape(Rectangle()).onTapGesture(perform: onSelect)
             }
         }
     }
@@ -336,29 +351,18 @@ struct SessionSidebarRowView: View {
         if item.progressState != .none, let progress = item.progress ?? (item.progressState == .indeterminate ? 0.0 : nil) {
             progressBarView(fraction: progress, state: item.progressState)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect()
-                }
+                .onTapGesture(perform: onSelect)
         }
     }
-
-    // MARK: - Progress Bar
 
     private func progressBarView(fraction: Double, state: TakoTerminalNSView.ProgressState) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color(nsColor: SessionSidebarPalette.badge))
-                    .frame(height: 2)
-
+                RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: SessionSidebarPalette.badge)).frame(height: 2)
                 if state == .indeterminate {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color(nsColor: Tako.Brand.ember))
-                        .frame(width: max(8, geo.size.width * 0.3), height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: Tako.Brand.ember)).frame(width: max(8, geo.size.width * 0.3), height: 2)
                 } else {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color(nsColor: color(for: state)))
-                        .frame(width: max(2, geo.size.width * CGFloat(min(1.0, max(0.0, fraction)))), height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: color(for: state))).frame(width: max(2, geo.size.width * CGFloat(min(1.0, max(0.0, fraction)))), height: 2)
                 }
             }
         }
@@ -378,9 +382,6 @@ struct SessionSidebarRowView: View {
     private func formatDirectory(_ raw: String) -> String {
         let home = NSHomeDirectory()
         if raw == home { return "~" }
-        if raw.hasPrefix(home) {
-            return "~" + raw.dropFirst(home.count)
-        }
-        return raw
+        return raw.hasPrefix(home) ? "~" + raw.dropFirst(home.count) : raw
     }
 }

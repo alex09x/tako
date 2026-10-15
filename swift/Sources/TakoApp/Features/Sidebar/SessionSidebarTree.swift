@@ -189,11 +189,11 @@ extension SessionSidebarStore {
                             ? 0
                             : NotificationStore.shared.unreadCount(for: paneSurface.id)
                         let pAttention = !AttentionManager.shared.isMuted(surfaceId: paneSurface.id) && (
-                            paneSurface.crab.unread ||
                             pUnread > 0 ||
                             pStatus == .error ||
                             pStatus == .needsApproval ||
-                            pStatus == .waitingForInput
+                            pStatus == .waitingForInput ||
+                            (paneSurface.crab.unread && pStatus != .working && pStatus != .running && pStatus != .idle)
                         )
                         let subLabel = SubagentHierarchyStore.shared.label(for: paneSurface.id) ?? "pane \(paneIdx + 1)"
 
@@ -351,10 +351,13 @@ struct SessionSidebarWorkspaceHeaderView: View {
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundColor(Color(nsColor: group.isActive ? SessionSidebarPalette.activeText : SessionSidebarPalette.inactiveText))
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
 
                 if let badge = group.dominantStatus.sidebarBadgeLabel {
                     Text(badge)
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(Color(nsColor: group.dominantStatus.sidebarDotColor).opacity(0.18))
                         .foregroundColor(Color(nsColor: group.dominantStatus.sidebarDotColor))
@@ -368,6 +371,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
                         Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8))
                         Text("\(group.attentionCount)").font(.system(size: 9, weight: .bold, design: .monospaced))
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 4).padding(.vertical, 1)
                     .background(Color(nsColor: Tako.Brand.ember).opacity(0.22))
                     .foregroundColor(Color(nsColor: Tako.Brand.ember))
@@ -376,6 +380,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
 
                 Text("\(group.sessionCount)")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Color(nsColor: SessionSidebarPalette.badge))
                     .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
@@ -386,9 +391,6 @@ struct SessionSidebarWorkspaceHeaderView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(group.isActive ? Color(nsColor: SessionSidebarPalette.badge).opacity(0.65) : Color.clear)
-        )
+        .background(RoundedRectangle(cornerRadius: 5).fill(group.isActive ? Color(nsColor: SessionSidebarPalette.badge).opacity(0.65) : Color.clear))
     }
 }
