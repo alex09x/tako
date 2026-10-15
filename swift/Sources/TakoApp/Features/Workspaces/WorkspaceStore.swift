@@ -21,7 +21,7 @@ extension Notification.Name {
 /// Manages workspace metadata, tab assignments, tab order, and attention aggregation.
 @MainActor
 public final class WorkspaceStore: ObservableObject {
-    public static let shared = WorkspaceStore()
+    public static let shared = WorkspaceStore(isTesting: Tako.CustomTabGroup.suppressWindowOrderingForTesting)
 
     public static let defaultWorkspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 

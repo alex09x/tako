@@ -13,18 +13,61 @@ import Foundation
 import TakoKit
 
 extension SessionSidebarStore {
-    /// Selects a tab corresponding to the sidebar item.
-    func selectTab(item: SessionSidebarItem, in window: NSWindow?) {
+    /// Selects a tab or child split pane corresponding to the sidebar item, switching workspace if needed.
+    func selectTab(
+        item: SessionSidebarItem,
+        in window: NSWindow?,
+        workspaceStore: WorkspaceStore = .shared
+    ) {
+        if let wsId = item.workspaceId {
+            _ = workspaceStore.switchWorkspace(to: wsId)
+            workspaceStore.setActiveTab(tabIdentifier: item.tabId, in: wsId)
+        }
         guard let group = window.flatMap({ Tako.CustomTabGroup.group(for: $0) }) else { return }
-        if item.index >= 0 && item.index < group.windows.count {
-            let target = group.windows[item.index]
-            group.select(target)
-            if let sid = item.surfaceId,
-               let targetController = target.windowController as? BaseTerminalController,
-               let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) {
+        let target: NSWindow? = group.windows.first(where: { $0.stableTabIdentifier == item.tabId })
+            ?? ((item.index >= 0 && item.index < group.windows.count) ? group.windows[item.index] : nil)
+        guard let target else { return }
+
+        group.select(target)
+        let allTargetSurfaces = surfaces(in: target)
+        if let sid = item.surfaceId {
+            if let targetController = target.windowController as? BaseTerminalController,
+               let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) ?? allTargetSurfaces.first(where: { $0.id == sid }) {
+                for s in allTargetSurfaces where s.id != sid {
+                    s.focusDidChange(false)
+                }
+                targetController.focusedSurface = targetSurface
                 ControlLayout.focus(targetSurface)
+                targetSurface.focusDidChange(true)
+            } else if let targetSurface = allTargetSurfaces.first(where: { $0.id == sid }) {
+                for s in allTargetSurfaces where s.id != sid {
+                    s.focusDidChange(false)
+                }
+                _ = target.makeFirstResponder(targetSurface)
+                targetSurface.focusDidChange(true)
             }
         }
+        objectWillChange.send()
+    }
+
+    /// Selects a workspace header in the sidebar tree and activates its active or first tab.
+    func selectWorkspace(
+        _ workspaceId: UUID,
+        in window: NSWindow?,
+        workspaceStore: WorkspaceStore = .shared
+    ) {
+        _ = workspaceStore.switchWorkspace(to: workspaceId)
+        guard let ws = workspaceStore.workspace(for: workspaceId),
+              let group = window.flatMap({ Tako.CustomTabGroup.group(for: $0) }) else {
+            objectWillChange.send()
+            return
+        }
+        let targetId = ws.activeTabIdentifier ?? ws.tabIdentifiers.first
+        if let targetId,
+           let target = group.windows.first(where: { $0.stableTabIdentifier == targetId }) {
+            group.select(target)
+        }
+        objectWillChange.send()
     }
 
     /// Moves a tab up or down within its group.

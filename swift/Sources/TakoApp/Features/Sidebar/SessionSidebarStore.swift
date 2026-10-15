@@ -187,4 +187,50 @@ final class SessionSidebarStore: ObservableObject {
     func description(for id: String) -> String? {
         descriptions[id]
     }
+
+    // MARK: - Tree Collapse / Expand State (Workspace -> Session -> Split Pane)
+
+    @Published var collapsedWorkspaces: Set<UUID> = []
+    @Published var collapsedTabSplits: Set<String> = []
+
+    func isWorkspaceCollapsed(_ id: UUID) -> Bool {
+        collapsedWorkspaces.contains(id)
+    }
+
+    func toggleWorkspaceCollapsed(_ id: UUID) {
+        if collapsedWorkspaces.contains(id) {
+            collapsedWorkspaces.remove(id)
+        } else {
+            collapsedWorkspaces.insert(id)
+        }
+    }
+
+    func setWorkspaceCollapsed(_ id: UUID, collapsed: Bool) {
+        if collapsed {
+            collapsedWorkspaces.insert(id)
+        } else {
+            collapsedWorkspaces.remove(id)
+        }
+    }
+
+    func isTabSplitsCollapsed(_ tabId: String) -> Bool {
+        collapsedTabSplits.contains(tabId)
+    }
+
+    func toggleTabSplitsCollapsed(_ tabId: String) {
+        if collapsedTabSplits.contains(tabId) {
+            collapsedTabSplits.remove(tabId)
+        } else {
+            collapsedTabSplits.insert(tabId)
+        }
+    }
+
+    func setTabSplitsCollapsed(_ tabId: String, collapsed: Bool) {
+        if collapsed {
+            collapsedTabSplits.insert(tabId)
+        } else {
+            collapsedTabSplits.remove(tabId)
+        }
+    }
 }
+

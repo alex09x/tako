@@ -339,6 +339,11 @@ extension Tako {
             }
         }
 
+        /// Read-only lookup of a window's existing tab group without creating a new group or mutating WorkspaceStore.
+        static func existingGroup(for window: NSWindow) -> CustomTabGroup? {
+            groupsByWindow[ObjectIdentifier(window)]
+        }
+
         /// The group a window belongs to, creating a fresh single-window
         /// group the first time a window is asked about.
         static func group(for window: NSWindow) -> CustomTabGroup {

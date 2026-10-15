@@ -71,26 +71,41 @@ struct SessionSidebarRowView: View {
 
     @ViewBuilder
     private var headerRow: some View {
+        let dotColor = Color(nsColor: item.status.sidebarDotColor)
+
         HStack(spacing: 6) {
-            if item.hasChildren, let pid = item.surfaceId {
+            if item.hasChildren {
                 Button(action: {
-                    SubagentHierarchyStore.shared.toggleCollapsed(pid)
+                    if item.paneCount > 1 {
+                        store.toggleTabSplitsCollapsed(item.tabId)
+                    }
+                    if let pid = item.surfaceId, SubagentHierarchyStore.shared.hasChildren(pid) {
+                        SubagentHierarchyStore.shared.toggleCollapsed(pid)
+                    }
                 }) {
                     Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 14, height: 14)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(item.isCollapsed ? "Expand subagent group" : "Collapse subagent group")
+                .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
             }
 
             HStack(spacing: 6) {
-                Circle()
-                    .fill(Color(nsColor: item.status.crabState.color))
-                    .frame(width: 8, height: 8)
-                    .help("Status: \(item.status.rawValue)")
+                ZStack {
+                    if item.status.isSidebarPulsing {
+                        Circle()
+                            .stroke(dotColor.opacity(0.45), lineWidth: 2)
+                            .frame(width: 12, height: 12)
+                    }
+                    Circle()
+                        .fill(dotColor)
+                        .frame(width: 8, height: 8)
+                }
+                .frame(width: 12, height: 12)
+                .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
                     .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
@@ -99,11 +114,21 @@ struct SessionSidebarRowView: View {
 
                 if let label = item.label {
                     Text("[\(label)]")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
-                        .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
-                        .foregroundColor(Color(nsColor: Tako.Brand.ember))
+                        .background(Color(nsColor: SessionSidebarPalette.badge))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.inactiveText))
+                        .cornerRadius(3)
+                }
+
+                if let badge = item.status.sidebarBadgeLabel {
+                    Text(badge)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(dotColor.opacity(0.20))
+                        .foregroundColor(dotColor)
                         .cornerRadius(3)
                 }
 
@@ -144,7 +169,9 @@ struct SessionSidebarRowView: View {
                 onSelect()
             }
 
-            reorderButtons
+            if !item.isChild {
+                reorderButtons
+            }
         }
     }
 

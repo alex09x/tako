@@ -162,7 +162,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     PaneOverviewView(
                         isPresented: $viewModel.paneOverviewIsShowing,
                         backgroundColor: tako.config.backgroundColor)
-                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)

@@ -18,7 +18,8 @@ struct SessionSidebarView: View {
     let containingWindow: NSWindow?
     let backgroundColor: Color
 
-    @ObservedObject private var store = SessionSidebarStore.shared
+    @ObservedObject private var store: SessionSidebarStore
+    @ObservedObject private var workspaceStore: WorkspaceStore
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
 
@@ -36,11 +37,15 @@ struct SessionSidebarView: View {
     init(
         isPresented: Binding<Bool>,
         containingWindow: NSWindow? = nil,
-        backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
+        backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
+        store: SessionSidebarStore = .shared,
+        workspaceStore: WorkspaceStore = .shared
     ) {
         self._isPresented = isPresented
         self.containingWindow = containingWindow
         self.backgroundColor = backgroundColor
+        self.store = store
+        self.workspaceStore = workspaceStore
     }
 
     private var targetWindow: NSWindow? {
@@ -69,8 +74,12 @@ struct SessionSidebarView: View {
         )
     }
 
+    private var workspaceGroups: [SessionSidebarWorkspaceGroup] {
+        store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore)
+    }
+
     private var items: [SessionSidebarItem] {
-        store.items(for: targetWindow)
+        workspaceGroups.flatMap(\.items)
     }
 
     public var body: some View {
@@ -249,8 +258,10 @@ struct SessionSidebarView: View {
     private var tabListView: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 2) {
-                    if items.isEmpty {
+                let groups = workspaceGroups
+                let flatItems = groups.flatMap(\.items)
+                LazyVStack(spacing: 3) {
+                    if groups.isEmpty || (flatItems.isEmpty && groups.allSatisfy({ !$0.isCollapsed })) {
                         VStack(spacing: 6) {
                             Text("No tabs match filter")
                                 .font(.system(size: 11, design: .monospaced))
@@ -258,20 +269,33 @@ struct SessionSidebarView: View {
                         }
                         .padding(.vertical, 24)
                     } else {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            SessionSidebarRowView(
-                                item: item,
-                                index: index,
-                                selectedIndex: selectedIndex,
-                                targetWindow: targetWindow,
-                                editingItemId: $editingItemId,
-                                editingDescriptionText: $editingDescriptionText,
-                                isPresented: $isPresented,
-                                onSelect: {
-                                    selectedIndex = index
-                                    store.selectTab(item: item, in: targetWindow)
+                        ForEach(groups) { wsGroup in
+                            SessionSidebarWorkspaceHeaderView(
+                                group: wsGroup,
+                                onToggleCollapse: {
+                                    store.toggleWorkspaceCollapsed(wsGroup.id)
+                                },
+                                onSelectWorkspace: {
+                                    store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore)
                                 }
                             )
+
+                            ForEach(wsGroup.items) { item in
+                                let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
+                                SessionSidebarRowView(
+                                    item: item,
+                                    index: flatIdx,
+                                    selectedIndex: selectedIndex,
+                                    targetWindow: targetWindow,
+                                    editingItemId: $editingItemId,
+                                    editingDescriptionText: $editingDescriptionText,
+                                    isPresented: $isPresented,
+                                    onSelect: {
+                                        selectedIndex = flatIdx
+                                        store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -294,9 +318,29 @@ struct SessionSidebarView: View {
                 }
                 return .handled
             }
+            .onKeyPress(.leftArrow) {
+                if selectedIndex >= 0 && selectedIndex < items.count {
+                    let current = items[selectedIndex]
+                    if current.hasChildren && !current.isCollapsed {
+                        store.setTabSplitsCollapsed(current.tabId, collapsed: true)
+                    } else if let wsId = current.workspaceId {
+                        store.setWorkspaceCollapsed(wsId, collapsed: true)
+                    }
+                }
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                if selectedIndex >= 0 && selectedIndex < items.count {
+                    let current = items[selectedIndex]
+                    if current.hasChildren && current.isCollapsed {
+                        store.setTabSplitsCollapsed(current.tabId, collapsed: false)
+                    }
+                }
+                return .handled
+            }
             .onKeyPress(.return) {
                 if selectedIndex >= 0 && selectedIndex < items.count {
-                    store.selectTab(item: items[selectedIndex], in: targetWindow)
+                    store.selectTab(item: items[selectedIndex], in: targetWindow, workspaceStore: workspaceStore)
                 }
                 return .handled
             }

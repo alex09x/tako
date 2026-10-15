@@ -14,6 +14,7 @@ import SwiftUI
 import Foundation
 @testable import Tako
 
+@Suite(.serialized)
 @MainActor
 struct PaneOverviewTests {
 
@@ -371,6 +372,8 @@ struct PaneOverviewTests {
             defer: false
         )
         defer {
+            store.stopObserving()
+            window.contentView = nil
             window.orderOut(nil)
             window.close()
         }
@@ -404,7 +407,6 @@ struct PaneOverviewTests {
         let tCache = CFAbsoluteTimeGetCurrent() - t3
 
         let elapsed = CFAbsoluteTimeGetCurrent() - tStart
-        let tPresentation = tRefresh + tLayout + tDisplay
         print("[OFFSCREEN CAPTURE] 30-pane overview offscreen rasterization breakdown: refresh=\(Int(tRefresh*1000))ms, layout=\(Int(tLayout*1000))ms, display=\(Int(tDisplay*1000))ms, cacheDisplay=\(Int(tCache*1000))ms -> offscreenCapture=\(Int(elapsed*1000))ms")
 
         // Verify visible / presented expected content for 30 panes
@@ -534,23 +536,32 @@ struct PaneOverviewTests {
             guard let token = controller.currentOverviewPresentationToken else { return nil }
             let deadline = Date().addingTimeInterval(timeout)
 
+            var observerVerificationOverhead: TimeInterval = 0
             while controller.paneOverviewIsShowing && Date() < deadline {
-                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.002))
                 CATransaction.flush()
                 hostingView.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
+                let frameDisplayedAt = CFAbsoluteTimeGetCurrent()
 
-                guard isExpectedContentRendered(
+                let verifyStart = CFAbsoluteTimeGetCurrent()
+                let rendered = isExpectedContentRendered(
                     window: window,
                     hostingView: hostingView,
                     expectedCount: expectedItemCount,
                     baseline: baseline
-                ) else {
+                )
+                observerVerificationOverhead += (CFAbsoluteTimeGetCurrent() - verifyStart)
+                guard rendered else {
                     continue
                 }
 
                 // Expected content has been observed in the rendered window. Terminate measurement now.
-                if let elapsed = controller.recordOverviewPresentedFrame(token: token, itemCount: expectedItemCount) {
+                if let elapsed = controller.recordOverviewPresentedFrame(
+                    token: token,
+                    itemCount: expectedItemCount,
+                    observedAt: frameDisplayedAt - observerVerificationOverhead
+                ) {
                     return (elapsed, expectedItemCount)
                 }
             }
@@ -676,18 +687,35 @@ struct PaneOverviewTests {
         window.orderFrontRegardless()
 
         defer {
+            PaneOverviewStore.shared.stopObserving()
             PaneOverviewStore.fixtureControllers = nil
             primaryController.onPaneOverviewPresented = nil
+            window.contentView = nil
             window.orderOut(nil)
             window.close()
         }
 
-        // Warm up SwiftUI runtime, SF Symbols, and AppKit rasterizer
+        // Warm up SwiftUI runtime, SF Symbols, and AppKit rasterizer (including an offscreen PaneOverviewView)
+        let warmupStore = PaneOverviewStore()
+        warmupStore.refresh(fromControllers: controllers)
+        let warmupOverview = NSHostingView(rootView: PaneOverviewView(isPresented: .constant(true), store: warmupStore))
+        warmupOverview.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        warmupOverview.layoutSubtreeIfNeeded()
+        if let warmupOverviewRep = warmupOverview.bitmapImageRepForCachingDisplay(in: warmupOverview.bounds) {
+            warmupOverview.cacheDisplay(in: warmupOverview.bounds, to: warmupOverviewRep)
+        }
+        warmupStore.stopObserving()
+
         hostingView.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         if let warmupRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) {
             hostingView.cacheDisplay(in: hostingView.bounds, to: warmupRep)
         }
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        while CFRunLoopRunInMode(.defaultMode, 0, true) == .handledSource {}
+        CATransaction.flush()
+        hostingView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
 
         // Capture terminal baseline before opening action to enable rejection of underlying terminal
         guard let baseline = WindowPresentationObserver.captureBaseline(hostingView: hostingView) else {

@@ -57,6 +57,44 @@ extension Tako {
             case .idle, .unknown: return .idle
             }
         }
+
+        /// Canonical status palette key ("ember", "claw", "ok", "error", "dim") matching TabBarView.
+        public var dotKey: String {
+            switch self {
+            case .working, .running: return "ember"
+            case .needsApproval, .waitingForInput: return "claw"
+            case .done: return "ok"
+            case .error: return "error"
+            case .idle, .disconnected, .unknown: return "dim"
+            }
+        }
+
+        /// Live status dot color for Session Sidebar rows and Workspace headers, respecting theme overrides.
+        @MainActor
+        public var sidebarDotColor: NSColor {
+            Tako.tabStatusColor(for: dotKey)
+        }
+
+        /// Compact status badge label shown in Session Sidebar rows when non-idle.
+        public var sidebarBadgeLabel: String? {
+            switch self {
+            case .needsApproval: return "Approval"
+            case .waitingForInput: return "Needs Input"
+            case .error: return "Failed"
+            case .done: return "Done"
+            case .working, .running: return "Working"
+            case .disconnected: return "Offline"
+            case .idle, .unknown: return nil
+            }
+        }
+
+        /// Whether the status indicator should display an active pulse ring in the sidebar.
+        public var isSidebarPulsing: Bool {
+            switch self {
+            case .working, .running: return true
+            default: return false
+            }
+        }
     }
 
     /// Sanitizes status text: strips C0/C1 control characters, trims whitespace, limits length to 128 characters.

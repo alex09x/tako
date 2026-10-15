@@ -24,7 +24,6 @@ struct PaneOverviewView: View {
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
     @ObservedObject private var store: PaneOverviewStore
-    @FocusState private var isSearchFieldFocused: Bool
 
     // Grid layout: responsive adaptive columns
     private let columns = [
@@ -76,11 +75,11 @@ struct PaneOverviewView: View {
                     Divider().background(Color(nsColor: Palette.hairline))
                     footerLegendView
                 }
-                .frame(maxWidth: 1100, maxHeight: 760)
+                .frame(maxWidth: 1100, minHeight: 680, idealHeight: 760, maxHeight: 760)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color(nsColor: Palette.modalBackground))
-                        .shadow(color: Color.black.opacity(0.4), radius: 24, x: 0, y: 12)
+                        .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 4)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -92,9 +91,6 @@ struct PaneOverviewView: View {
         .onAppear {
             if store.items.isEmpty {
                 store.refresh()
-            }
-            DispatchQueue.main.async {
-                isSearchFieldFocused = true
             }
         }
         .onDisappear {
@@ -125,35 +121,7 @@ struct PaneOverviewView: View {
 
             Spacer()
 
-            // Search filter field
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-
-                TextField("Filter by title, directory, or status…", text: $store.filterText)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .font(.system(size: 13, design: .monospaced))
-                    .focused($isSearchFieldFocused)
-                    .frame(minWidth: 260)
-
-                if !store.filterText.isEmpty {
-                    Button(action: { store.filterText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(nsColor: Palette.dim))
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: Palette.searchBackground))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(nsColor: Palette.hairline), lineWidth: 1)
-            )
+            PaneOverviewSearchField(filterText: $store.filterText)
 
             // Pane Count Badge
             let total = store.items.count
@@ -190,9 +158,12 @@ struct PaneOverviewView: View {
                 if currentItems.isEmpty {
                     emptyStateView
                 } else {
+                    let visibleLimit = min(currentItems.count, max(12, store.selectedIndex + 9))
+                    let visibleSlice = currentItems.prefix(visibleLimit)
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
+                        ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
                             PaneOverviewCard(item: item, isSelected: index == store.selectedIndex)
+                                .equatable()
                                 .id(index)
                                 .onTapGesture {
                                     store.selectedIndex = index
@@ -290,5 +261,46 @@ struct PaneOverviewView: View {
     // MARK: - Theme Palette
 
     private typealias Palette = PaneOverviewPalette
+}
+
+private struct PaneOverviewSearchField: View {
+    @Binding var filterText: String
+    @FocusState private var isSearchFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+
+            TextField("Filter by title, directory, or status…", text: $filterText)
+                .textFieldStyle(PlainTextFieldStyle())
+                .font(.system(size: 13, design: .monospaced))
+                .focused($isSearchFieldFocused)
+                .frame(minWidth: 260)
+
+            if !filterText.isEmpty {
+                Button(action: { filterText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: PaneOverviewPalette.searchBackground))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: PaneOverviewPalette.hairline), lineWidth: 1)
+        )
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isSearchFieldFocused = true
+            }
+        }
+    }
 }
 

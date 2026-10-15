@@ -119,12 +119,16 @@ class BaseTerminalController: NSWindowController,
     ///   - itemCount: The count of rendered pane overview items.
     /// - Returns: Total elapsed time from open trigger to the presented frame, or nil if no matching presentation was active.
     @discardableResult
-    func recordOverviewPresentedFrame(token: UUID? = nil, itemCount: Int) -> TimeInterval? {
+    func recordOverviewPresentedFrame(
+        token: UUID? = nil,
+        itemCount: Int,
+        observedAt: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+    ) -> TimeInterval? {
         guard paneOverviewIsShowing, paneOverviewOpenStartTime > 0 else { return nil }
         if let token, let currentToken = currentOverviewPresentationToken, token != currentToken {
             return nil
         }
-        let elapsed = CFAbsoluteTimeGetCurrent() - paneOverviewOpenStartTime
+        let elapsed = max(0, observedAt - paneOverviewOpenStartTime)
         currentOverviewPresentationToken = nil
         paneOverviewOpenStartTime = 0
         onPaneOverviewPresented?(elapsed, itemCount)

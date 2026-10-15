@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Combine
 import Foundation
@@ -63,17 +73,22 @@ final class PaneOverviewStore: ObservableObject {
 
     /// Discovers all terminal panes across all windows and tab groups.
     /// Fast: designed to complete in < 20 ms for 30 panes (well under 150 ms budget).
-    func refresh(fromControllers customControllers: [BaseTerminalController]? = nil) {
+    func refresh(
+        fromControllers customControllers: [BaseTerminalController]? = nil,
+        workspaceStore: WorkspaceStore = .shared
+    ) {
         let controllers = customControllers ?? discoverControllers()
         var discoveredItems: [PaneOverviewItem] = []
         var discoveredSurfaces: [UUID: Weak<Tako.SurfaceView>] = [:]
+        let activeWsName = workspaceStore.activeWorkspace.name
 
         for controller in controllers {
             let win = controller.window
             let winTitle = win?.title ?? ""
-            let group = win.flatMap { Tako.CustomTabGroup.group(for: $0) }
+            let group = win.flatMap { Tako.CustomTabGroup.existingGroup(for: $0) }
             let groupWindows = group?.windows ?? (win.map { [$0] } ?? [])
             let tabIndex = groupWindows.firstIndex(where: { $0 === win }) ?? 0
+            let wsName = win.flatMap { workspaceStore.workspace(forTab: $0.stableTabIdentifier)?.name } ?? activeWsName
 
             for surface in controller.surfaceTree {
                 let sid = surface.id
@@ -94,6 +109,7 @@ final class PaneOverviewStore: ObservableObject {
 
                 let item = PaneOverviewItem(
                     id: sid,
+                    workspaceName: wsName,
                     windowTitle: winTitle,
                     tabTitle: tabTitle,
                     tabIndex: tabIndex,
@@ -219,8 +235,9 @@ final class PaneOverviewStore: ObservableObject {
         let title = surface.titleText.isEmpty ? (surface.title.isEmpty ? current.title : surface.title) : surface.titleText
         let lines = surfacePreviewLines(for: surface, maxRows: 10)
 
-        items[index] = PaneOverviewItem(
+        let updated = PaneOverviewItem(
             id: sid,
+            workspaceName: current.workspaceName,
             windowTitle: current.windowTitle,
             tabTitle: current.tabTitle,
             tabIndex: current.tabIndex,
@@ -236,6 +253,9 @@ final class PaneOverviewStore: ObservableObject {
             isKeyWindow: current.isKeyWindow,
             thumbnailLines: lines.isEmpty ? current.thumbnailLines : lines
         )
+        if updated != current {
+            items[index] = updated
+        }
     }
 
     /// Stops observers and releases references when overview closes.

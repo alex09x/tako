@@ -24,6 +24,7 @@ import TakoKit
 /// - `thumbnailLines`: Recent visible lines extracted from the active grid buffer.
 struct PaneOverviewItem: Identifiable, Equatable, Sendable {
     let id: UUID
+    let workspaceName: String
     let windowTitle: String
     let tabTitle: String
     let tabIndex: Int
@@ -42,6 +43,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
 
     init(
         id: UUID,
+        workspaceName: String = "",
         windowTitle: String = "",
         tabTitle: String = "",
         tabIndex: Int = 0,
@@ -59,6 +61,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         thumbnailLines: [String] = []
     ) {
         self.id = id
+        self.workspaceName = workspaceName
         self.windowTitle = windowTitle
         self.tabTitle = tabTitle
         self.tabIndex = tabIndex
@@ -120,7 +123,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Checks whether this pane matches a search query by title, directory, or status (B6).
+    /// Checks whether this pane matches a search query by title, workspace, directory, or status (B6).
     func matches(query: String) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
@@ -128,7 +131,8 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         // Match title
         if title.localizedCaseInsensitiveContains(trimmed) { return true }
 
-        // Match window / tab title
+        // Match workspace / window / tab title
+        if !workspaceName.isEmpty && workspaceName.localizedCaseInsensitiveContains(trimmed) { return true }
         if windowTitle.localizedCaseInsensitiveContains(trimmed) { return true }
         if tabTitle.localizedCaseInsensitiveContains(trimmed) { return true }
 

@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 
 /// A single card in the pane overview grid, showing thumbnail preview, status, and metadata.
-struct PaneOverviewCard: View {
+struct PaneOverviewCard: View, Equatable {
     let item: PaneOverviewItem
     let isSelected: Bool
 
@@ -46,8 +46,8 @@ struct PaneOverviewCard: View {
 
                 Spacer()
 
-                // Window / Tab provenance tag
-                Text("Tab \(item.tabIndex + 1)")
+                // Workspace / Window / Tab provenance tag
+                Text(item.workspaceName.isEmpty ? "Tab \(item.tabIndex + 1)" : "\(item.workspaceName) · Tab \(item.tabIndex + 1)")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
                     .padding(.horizontal, 5)
@@ -114,15 +114,12 @@ struct PaneOverviewCard: View {
                     .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(item.thumbnailLines.prefix(8).enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                            .foregroundColor(Color(nsColor: PaneOverviewPalette.terminalText))
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                Text(item.thumbnailLines.prefix(8).joined(separator: "\n"))
+                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                    .foregroundColor(Color(nsColor: PaneOverviewPalette.terminalText))
+                    .lineSpacing(2)
+                    .lineLimit(8)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
             Spacer(minLength: 0)

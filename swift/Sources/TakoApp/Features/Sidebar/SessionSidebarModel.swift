@@ -47,7 +47,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let needsAttention: Bool
     let totalCount: Int
 
-    // Subagent hierarchy fields (C5)
+    // Subagent & Split Pane tree hierarchy fields (C5 / B5 Tree)
     let isChild: Bool
     let parentId: UUID?
     let label: String?
@@ -55,9 +55,12 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let isCollapsed: Bool
     let childrenSummary: String?
     let indentationLevel: Int
+    let workspaceId: UUID?
+    let tabId: String
+    let paneCount: Int
 
-    var canMoveUp: Bool { index > 0 }
-    var canMoveDown: Bool { index < totalCount - 1 }
+    var canMoveUp: Bool { !isChild && index > 0 }
+    var canMoveDown: Bool { !isChild && index < totalCount - 1 }
 
     init(
         id: String,
@@ -86,7 +89,10 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         hasChildren: Bool = false,
         isCollapsed: Bool = false,
         childrenSummary: String? = nil,
-        indentationLevel: Int = 0
+        indentationLevel: Int = 0,
+        workspaceId: UUID? = nil,
+        tabId: String? = nil,
+        paneCount: Int = 1
     ) {
         self.id = id
         self.surfaceId = surfaceId
@@ -115,6 +121,9 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.isCollapsed = isCollapsed
         self.childrenSummary = childrenSummary
         self.indentationLevel = indentationLevel
+        self.workspaceId = workspaceId
+        self.tabId = tabId ?? id
+        self.paneCount = max(1, paneCount)
     }
 }
 
