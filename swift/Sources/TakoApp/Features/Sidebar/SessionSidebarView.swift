@@ -88,7 +88,7 @@ struct SessionSidebarView: View {
 
     public var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: animState.isTimelinePaused || !isPresented)) { context in
-            let now = context.date
+            let now = animState.effectiveDate(context.date)
             VStack(spacing: 0) {
                 headerView
                 searchAndSegmentsBar(now: now)
@@ -102,7 +102,7 @@ struct SessionSidebarView: View {
                 Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
             }
         }
-        .frame(width: 260)
+        .frame(minWidth: 260, idealWidth: 260, maxWidth: .infinity)
         .background(Color(nsColor: T.body))
         .overlay(
             Rectangle()

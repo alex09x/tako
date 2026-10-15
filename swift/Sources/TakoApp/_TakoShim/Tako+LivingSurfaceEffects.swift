@@ -11,6 +11,52 @@
 import AppKit
 import SwiftUI
 
+/// Exact CSS cubic-bezier and per-segment keyframe evaluator matching `Sessions UI.dc.html` (§7).
+enum CSSTiming {
+    static func cubicBezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> (Double) -> Double {
+        { x in
+            if x <= 0.0 { return 0.0 }
+            if x >= 1.0 { return 1.0 }
+            var lo = 0.0
+            var hi = 1.0
+            for _ in 0..<60 {
+                let u = 0.5 * (lo + hi)
+                let om = 1.0 - u
+                let bx = 3.0 * om * om * u * x1 + 3.0 * om * u * u * x2 + u * u * u
+                if bx < x { lo = u } else { hi = u }
+            }
+            let u = 0.5 * (lo + hi)
+            let om = 1.0 - u
+            return 3.0 * om * om * u * y1 + 3.0 * om * u * u * y2 + u * u * u
+        }
+    }
+
+    static let linear: (Double) -> Double = { $0 }
+    static let easeInOut: (Double) -> Double = cubicBezier(0.42, 0.0, 0.58, 1.0)
+    static let easeOut: (Double) -> Double = cubicBezier(0.0, 0.0, 0.58, 1.0)
+    static let popOvershoot: (Double) -> Double = cubicBezier(0.3, 1.6, 0.5, 1.0)
+
+    static func positiveMod(_ value: Double, _ period: Double) -> Double {
+        let r = value.truncatingRemainder(dividingBy: period)
+        return r < 0 ? r + period : r
+    }
+
+    static func keyframes(_ stops: [(ms: Double, value: Double)], ease: (Double) -> Double, atMs t: Double) -> Double {
+        guard let first = stops.first, let last = stops.last else { return 0.0 }
+        if t <= first.ms { return first.value }
+        for i in 0..<(stops.count - 1) {
+            let s0 = stops[i]
+            let s1 = stops[i + 1]
+            if t >= s0.ms && t <= s1.ms {
+                guard s1.ms > s0.ms else { return s1.value }
+                let p = (t - s0.ms) / (s1.ms - s0.ms)
+                return s0.value + (s1.value - s0.value) * ease(p)
+            }
+        }
+        return last.value
+    }
+}
+
 /// Renders the Spec 1b Surface Effects (§3) on top of a rounded rectangle surface in SwiftUI (Sidebar & Overview).
 struct LivingSurfaceEffectsOverlay: View {
     let state: Tako.SurfaceState
@@ -48,6 +94,8 @@ struct LivingSurfaceEffectsOverlay: View {
                     GeometryReader { geo in
                         let w = geo.size.width
                         let h = geo.size.height
+                        let hLayer = max(1, h + 8)
+                        let dy = Double(tan(10.0 * .pi / 180.0) * (w / hLayer))
                         ZStack(alignment: .bottomLeading) {
                             if let frac = doneFrac {
                                 LinearGradient(
@@ -56,10 +104,10 @@ struct LivingSurfaceEffectsOverlay: View {
                                         .init(color: Color(nsColor: T.ok).opacity(0.26), location: 0.5),
                                         .init(color: .clear, location: 1.0),
                                     ],
-                                    startPoint: UnitPoint(x: 0, y: 0.41),
-                                    endPoint: UnitPoint(x: 1, y: 0.59)
+                                    startPoint: UnitPoint(x: 0, y: 0.5 - dy / 2.0),
+                                    endPoint: UnitPoint(x: 1, y: 0.5 + dy / 2.0)
                                 )
-                                .frame(width: max(1, w), height: h + 8)
+                                .frame(width: max(1, w), height: hLayer)
                                 .offset(x: frac * w - w * 0.5, y: -4)
                             }
                             if showsBottomProgressLine, case .progress(let p) = state {

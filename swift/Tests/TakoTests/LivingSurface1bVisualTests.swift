@@ -20,21 +20,20 @@ import UniformTypeIdentifiers
 @Suite(.serialized)
 @MainActor
 struct LivingSurface1bVisualTests {
-    private func makeDefaults() -> UserDefaults {
+    func makeDefaults() -> UserDefaults {
         let name = "TakoLiving1bTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defaults.removePersistentDomain(forName: name)
         return defaults
     }
 
-    private func makeWorkspaceStore() -> (WorkspaceStore, URL) {
+    func makeWorkspaceStore() -> (WorkspaceStore, URL) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-ws-1b-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let store = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"))
-        return (store, dir)
+        return (WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json")), dir)
     }
 
-    private func makeSurface(
+    func makeSurface(
         title: String,
         pwd: String,
         status: Tako.PaneStatus = .idle,
@@ -45,20 +44,14 @@ struct LivingSurface1bVisualTests {
         lines: [String] = []
     ) -> Tako.SurfaceView {
         let s = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
-        s.title = title
-        s.pwd = pwd
+        s.title = title; s.pwd = pwd
         s.crab.setStatus(status, text: statusText)
-        s.activeProgressState = progressState
-        s.activeProgressValue = progressValue
+        s.activeProgressState = progressState; s.activeProgressValue = progressValue
         if !lines.isEmpty {
             s.crab.commandStarted()
-            if status != .working && status != .running {
-                s.crab.setStatus(status, text: statusText)
-            }
+            if status != .working && status != .running { s.crab.setStatus(status, text: statusText) }
         }
-        if let elapsedSeconds {
-            s.crab.setElapsed(elapsedSeconds)
-        }
+        if let elapsedSeconds { s.crab.setElapsed(elapsedSeconds) }
         return s
     }
 
@@ -290,6 +283,8 @@ struct LivingSurface1bVisualTests {
                 overviewItems: Array(overviewStore.items.prefix(2))
             )
         }
+
+        try exportDesignFramesIfRequested()
     }
 
     private func exportAnimatedGif(

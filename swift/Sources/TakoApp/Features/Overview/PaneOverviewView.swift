@@ -16,6 +16,7 @@ import TakoKit
 struct PaneOverviewView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
+    var showsBackdrop: Bool = true
 
     @ObservedObject private var store: PaneOverviewStore
     @ObservedObject private var animState = LivingAnimationState.shared
@@ -32,15 +33,17 @@ struct PaneOverviewView: View {
     init(
         isPresented: Binding<Bool>,
         backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
+        showsBackdrop: Bool = true,
         store: PaneOverviewStore = .shared
     ) {
         self._isPresented = isPresented
         self.backgroundColor = backgroundColor
+        self.showsBackdrop = showsBackdrop
         self.store = store
     }
 
     private var waitingCount: Int {
-        store.items.filter { $0.surfaceState == .waiting || $0.status == .error }.count
+        store.items.filter { $0.surfaceState == .waiting }.count
     }
 
     private var workingCount: Int {
@@ -54,12 +57,14 @@ struct PaneOverviewView: View {
 
     var body: some View {
         ZStack {
-            // Backdrop (§6: 0.72 opacity)
-            Color.black.opacity(0.72)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    close()
-                }
+            if showsBackdrop {
+                // Backdrop (§6: 0.72 opacity)
+                Color.black.opacity(0.72)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        close()
+                    }
+            }
 
             ZStack {
                 Group {
@@ -82,7 +87,7 @@ struct PaneOverviewView: View {
 
                 // Single TimelineView for the entire Overview modal (§7)
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
-                    let now = isInitialFrameComplete ? context.date : Self.staticDate
+                    let now = animState.effectiveDate(isInitialFrameComplete ? context.date : Self.staticDate)
                     VStack(spacing: 0) {
                         headerView
                         Divider().background(Color(nsColor: T.hairline))
@@ -91,17 +96,17 @@ struct PaneOverviewView: View {
                         footerLegendView
                     }
                 }
-                .frame(maxWidth: 1100, minHeight: 680, idealHeight: 760, maxHeight: 760)
+                .frame(maxWidth: 1100, minHeight: 580, idealHeight: 580, maxHeight: showsBackdrop ? 760 : 580)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color(nsColor: T.chrome))
-                        .shadow(color: Color(nsColor: T.chrome).opacity(0.4), radius: 30, x: 0, y: 24)
+                        .shadow(color: Color(nsColor: T.chrome).opacity(showsBackdrop ? 0.4 : 0), radius: 30, x: 0, y: 24)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
                         .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
                 )
-                .padding(32)
+                .padding(showsBackdrop ? 32 : 0)
             }
         }
         .onAppear {

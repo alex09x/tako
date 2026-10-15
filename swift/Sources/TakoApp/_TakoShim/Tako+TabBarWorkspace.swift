@@ -31,7 +31,7 @@ extension Tako.TabBarView {
             guard belongsToWs else { continue }
             let isSelected = (w === selected)
             let state = pillSurfaceState(for: w)
-            if !isSelected && (state == .waiting || state == .failed || hasUnreadInWindow(w)) {
+            if state == .waiting || state == .failed || (!isSelected && hasUnreadInWindow(w)) {
                 tabCount += 1
             }
         }

@@ -33,7 +33,7 @@ struct PaneOverviewCard: View, Equatable {
         )
         let radius: CGFloat = 10
 
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 9) {
             // Row 1 (gap 8): Ring L=18 -> title mono 13 semibold #FAF7F2 -> timer mono 10 #8A7F76 (dim, NOT ember)
             HStack(spacing: 8) {
                 StatusRingView(

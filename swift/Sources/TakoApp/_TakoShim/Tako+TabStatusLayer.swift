@@ -70,8 +70,10 @@ extension Tako {
 
             cometGradient.type = .conic
             cometGradient.startPoint = CGPoint(x: 0.5, y: 0.5); cometGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
-            cometGradient.colors = [NSColor.clear.cgColor, NSColor.clear.cgColor, T.rust.cgColor, T.claw.cgColor, NSColor.clear.cgColor]
-            cometGradient.locations = [0.0, 0.62, 0.78, 0.88, 1.0]
+            // In unflipped CALayer (+y up), .conic sweeps counter-clockwise from 12 o'clock:
+            // map CSS clockwise stops (0.62 clear, 0.78 rust, 0.88 claw, 1.0 clear) via (1 - s).
+            cometGradient.colors = [NSColor.clear.cgColor, T.claw.cgColor, T.rust.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
+            cometGradient.locations = [0.0, 0.12, 0.22, 0.38, 1.0]
             cometContainer.addSublayer(cometGradient)
             addSublayer(cometContainer)
 
@@ -121,7 +123,11 @@ extension Tako {
             let b = CGRect(origin: .zero, size: size)
             clippedInnerContainer.frame = b
             failedLineLayer.frame = CGRect(x: 0, y: 0, width: size.width, height: 2)
-            flashLayer.frame = CGRect(x: -size.width, y: -3, width: size.width, height: size.height + 6)
+            let hLayer = max(1, size.height + 6)
+            flashLayer.frame = CGRect(x: -size.width, y: -3, width: size.width, height: hLayer)
+            let dy = tan(10.0 * .pi / 180.0) * (size.width / hLayer)
+            flashLayer.startPoint = CGPoint(x: 0, y: 0.5 + dy / 2.0)
+            flashLayer.endPoint = CGPoint(x: 1, y: 0.5 - dy / 2.0)
 
             cometContainer.frame = b
             let insetRect = b.insetBy(dx: 0.5, dy: 0.5)
@@ -165,13 +171,10 @@ extension Tako {
             case .working:
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 1.25, color: T.ember.withAlphaComponent(0.16).cgColor, width: 2.5))
                 let conic = CAGradientLayer()
-                conic.name = "workingSpin"
-                conic.type = .conic
-                conic.frame = rBounds
-                conic.startPoint = CGPoint(x: 0.5, y: 0.5)
-                conic.endPoint = CGPoint(x: 0.5, y: 1.0)
-                conic.colors = [T.ember.withAlphaComponent(0).cgColor, T.ember.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
-                conic.locations = [0, 0.777, 0.778, 1.0]
+                conic.name = "workingSpin"; conic.type = .conic; conic.frame = rBounds
+                conic.startPoint = CGPoint(x: 0.5, y: 0.5); conic.endPoint = CGPoint(x: 0.5, y: 1.0)
+                conic.colors = [NSColor.clear.cgColor, NSColor.clear.cgColor, T.ember.cgColor, T.ember.withAlphaComponent(0).cgColor]
+                conic.locations = [0, 0.222, 0.223, 1.0]
                 conic.mask = makeStrokeCircle(rBounds, inset: 1.25, color: NSColor.black.cgColor, width: 2.5)
                 ringContainer.addSublayer(conic)
                 if !reduceMotion { conic.add(makeSpinAnimation(duration: 0.9), forKey: "spin") }
@@ -179,16 +182,11 @@ extension Tako {
             case .progress(let p):
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 1.25, color: T.progressTrack.cgColor, width: 2.5))
                 let arc = CAShapeLayer()
-                arc.name = "progressArc"
-                arc.frame = rBounds
+                arc.name = "progressArc"; arc.frame = rBounds
                 let arcPath = CGMutablePath()
                 arcPath.addArc(center: CGPoint(x: 7, y: 7), radius: 5.75, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2, clockwise: true)
-                arc.path = arcPath
-                arc.fillColor = nil
-                arc.strokeColor = T.ember.cgColor
-                arc.lineWidth = 2.5
-                arc.lineCap = .butt
-                arc.strokeEnd = CGFloat(min(1.0, max(0.0, p)))
+                arc.path = arcPath; arc.fillColor = nil; arc.strokeColor = T.ember.cgColor
+                arc.lineWidth = 2.5; arc.lineCap = .butt; arc.strokeEnd = CGFloat(min(1.0, max(0.0, p)))
                 ringContainer.addSublayer(arc)
 
             case .waiting:
@@ -201,16 +199,13 @@ extension Tako {
                     let opAnim = CABasicAnimation(keyPath: "opacity")
                     opAnim.fromValue = 0.75; opAnim.toValue = 0.0
                     let group = CAAnimationGroup()
-                    group.animations = [scaleAnim, opAnim]
-                    group.duration = 1.6; group.repeatCount = .infinity
-                    group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    group.isRemovedOnCompletion = false
+                    group.animations = [scaleAnim, opAnim]; group.duration = 1.6; group.repeatCount = .infinity
+                    group.timingFunction = CAMediaTimingFunction(name: .easeOut); group.isRemovedOnCompletion = false
                     halo.add(group, forKey: "halo")
                 }
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 1.0, color: T.claw.cgColor, width: 2.0))
                 let dot = CAShapeLayer()
-                dot.name = "waitingDot"
-                dot.frame = rBounds
+                dot.name = "waitingDot"; dot.frame = rBounds
                 dot.path = CGPath(ellipseIn: CGRect(x: 5, y: 5, width: 4, height: 4), transform: nil)
                 dot.fillColor = T.claw.cgColor
                 ringContainer.addSublayer(dot)
@@ -218,16 +213,13 @@ extension Tako {
                     let blink = CABasicAnimation(keyPath: "opacity")
                     blink.fromValue = 1.0; blink.toValue = 0.25; blink.duration = 0.8
                     blink.autoreverses = true; blink.repeatCount = .infinity
-                    blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    blink.isRemovedOnCompletion = false
+                    blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut); blink.isRemovedOnCompletion = false
                     dot.add(blink, forKey: "blink")
                 }
 
             case .done:
                 let disc = CAShapeLayer()
-                disc.frame = rBounds
-                disc.path = CGPath(ellipseIn: rBounds, transform: nil)
-                disc.fillColor = T.ok.cgColor
+                disc.frame = rBounds; disc.path = CGPath(ellipseIn: rBounds, transform: nil); disc.fillColor = T.ok.cgColor
                 ringContainer.addSublayer(disc)
                 let check = CAShapeLayer()
                 check.frame = rBounds
@@ -235,13 +227,16 @@ extension Tako {
                 checkPath.move(to: CGPoint(x: 4.0, y: 14.0 - 7.2))
                 checkPath.addLine(to: CGPoint(x: 6.1, y: 14.0 - 9.3))
                 checkPath.addLine(to: CGPoint(x: 10.0, y: 14.0 - 5.0))
-                check.path = checkPath
-                check.fillColor = nil; check.strokeColor = T.ink.cgColor
+                check.path = checkPath; check.fillColor = nil; check.strokeColor = T.ink.cgColor
                 check.lineWidth = 1.75; check.lineCap = .round; check.lineJoin = .round
                 ringContainer.addSublayer(check)
                 if triggerOneShot && !reduceMotion {
+                    let b = CAMediaTimingFunction(controlPoints: 0.3, 1.6, 0.5, 1.0)
                     let pop = CAKeyframeAnimation(keyPath: "transform.scale")
-                    pop.values = [1.0, 0.55, 1.25, 1.0]; pop.keyTimes = [0.0, 0.27, 0.64, 1.0]; pop.duration = 0.70
+                    pop.values = [1.0, 0.55, 1.25, 1.0]
+                    pop.keyTimes = [0.0, NSNumber(value: 192.0 / 704.0), NSNumber(value: 448.0 / 704.0), 1.0]
+                    pop.timingFunctions = [b, b, b]
+                    pop.duration = 0.704
                     ringContainer.add(pop, forKey: "donePop")
                 }
 
@@ -310,9 +305,19 @@ extension Tako {
                 }
             case .failed:
                 if triggerOneShot && !reduceMotion {
+                    let eio = CAMediaTimingFunction(name: .easeInEaseOut)
                     let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
                     shake.values = [0, -2, 2, -2, 2, -1, 0]
-                    shake.keyTimes = [0, 0.143, 0.286, 0.429, 0.571, 0.714, 1.0]
+                    shake.keyTimes = [
+                        0.0,
+                        NSNumber(value: 1.0 / 7.0),
+                        NSNumber(value: 2.0 / 7.0),
+                        NSNumber(value: 3.0 / 7.0),
+                        NSNumber(value: 4.0 / 7.0),
+                        NSNumber(value: 5.0 / 7.0),
+                        1.0,
+                    ]
+                    shake.timingFunctions = [eio, eio, eio, eio, eio, eio]
                     shake.duration = 0.448
                     add(shake, forKey: "failedShake")
                 }
@@ -334,28 +339,35 @@ extension Tako {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             transform = CATransform3DIdentity
+            ringContainer.transform = CATransform3DIdentity
             switch currentState {
             case .working:
-                cometGradient.transform = CATransform3DMakeRotation(-CGFloat((t / 2.2) * .pi * 2.0), 0, 0, 1)
+                let cometRad = CGFloat(LivingAnimationState.cometDegrees(at: t) * .pi / 180.0)
+                cometGradient.transform = CATransform3DMakeRotation(-cometRad, 0, 0, 1)
                 if let spin = ringContainer.sublayers?.first(where: { $0.name == "workingSpin" }) {
-                    spin.transform = CATransform3DMakeRotation(-CGFloat((t / 0.9) * .pi * 2.0), 0, 0, 1)
+                    let spinRad = CGFloat(LivingAnimationState.spinDegrees(at: t) * .pi / 180.0)
+                    spin.transform = CATransform3DMakeRotation(-spinRad, 0, 0, 1)
                 }
             case .waiting:
                 let s = CGFloat(LivingAnimationState.breatheFactor(at: t))
                 breatheLayer.strokeColor = T.claw.withAlphaComponent(0.40 + 0.55 * s).cgColor
                 breatheLayer.shadowOpacity = Float(0.30 * s)
                 if let halo = ringContainer.sublayers?.first(where: { $0.name == "waitingHalo" }) {
-                    let h = CGFloat(t.truncatingRemainder(dividingBy: 1.6) / 1.6)
-                    halo.transform = CATransform3DMakeScale(1.0 + 1.1 * h, 1.0 + 1.1 * h, 1.0)
-                    halo.opacity = Float(0.75 * (1.0 - h))
+                    let hm = LivingAnimationState.haloMetrics(at: t)
+                    halo.transform = CATransform3DMakeScale(hm.scale, hm.scale, 1.0)
+                    halo.opacity = Float(hm.opacity)
                 }
                 if let dot = ringContainer.sublayers?.first(where: { $0.name == "waitingDot" }) {
-                    dot.opacity = Float(0.25 + 0.75 * s)
+                    dot.opacity = Float(LivingAnimationState.blinkOpacity(at: t))
                 }
             case .done:
+                if let el = doneElapsed {
+                    let pop = LivingAnimationState.donePopScale(elapsed: el)
+                    ringContainer.transform = CATransform3DMakeScale(pop, pop, 1.0)
+                }
                 if let el = doneElapsed, let frac = LivingAnimationState.doneFlashFraction(elapsed: el), lastSize.width > 0 {
                     flashLayer.opacity = 1.0
-                    flashLayer.position.x = CGFloat(-0.55 * lastSize.width + frac * 2.1 * lastSize.width)
+                    flashLayer.position.x = frac * lastSize.width
                 } else {
                     flashLayer.opacity = 0.0
                 }

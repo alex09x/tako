@@ -153,8 +153,21 @@ final class LivingAnimationState: ObservableObject {
         }
     }
 
+    /// Optional deterministic time override (in seconds) for frame-by-frame visual verification.
+    var fixedTimeOverride: TimeInterval?
+
+    func effectiveDate(_ contextDate: Date) -> Date {
+        if let fixed = fixedTimeOverride {
+            return Date(timeIntervalSinceReferenceDate: fixed)
+        }
+        return contextDate
+    }
+
     /// Returns elapsed seconds since `id` entered `state` (recording transition on first observation).
     func elapsedInState(for id: String, state: Tako.SurfaceState, now: Date) -> TimeInterval {
+        if let fixed = fixedTimeOverride {
+            return max(0, fixed)
+        }
         if let existing = entries[id] {
             if existing.state == state {
                 return max(0, now.timeIntervalSince(existing.enteredAt))
@@ -162,8 +175,6 @@ final class LivingAnimationState: ObservableObject {
             entries[id] = (state, now)
             return 0
         }
-        // First time observing this surface: only fire one-shot if it's a fresh transition,
-        // except in Overview where recent done/failed shows once on open.
         entries[id] = (state, now)
         return 0
     }
@@ -172,66 +183,58 @@ final class LivingAnimationState: ObservableObject {
         entries.removeAll()
     }
 
-    // MARK: - Phase Math (§2, §3, §7)
+    // MARK: - Phase Math (§2, §3, §7 — Exact CSS cubic-bezier curves)
 
     static func cometDegrees(at t: TimeInterval) -> Double {
-        let mod = t.truncatingRemainder(dividingBy: 2.2)
-        return ((mod < 0 ? mod + 2.2 : mod) / 2.2) * 360.0
+        let ms = CSSTiming.positiveMod(t * 1000.0, 2200.0)
+        return (ms / 2200.0) * 360.0
     }
 
     static func spinDegrees(at t: TimeInterval) -> Double {
-        let mod = t.truncatingRemainder(dividingBy: 0.9)
-        return ((mod < 0 ? mod + 0.9 : mod) / 0.9) * 360.0
+        let ms = CSSTiming.positiveMod(t * 1000.0, 900.0)
+        return (ms / 900.0) * 360.0
     }
 
     static func breatheFactor(at t: TimeInterval) -> Double {
-        (1.0 - cos(2.0 * .pi * t / 1.6)) / 2.0
+        let ms = CSSTiming.positiveMod(t * 1000.0, 1600.0)
+        return CSSTiming.keyframes([(0, 0.0), (800, 1.0), (1600, 0.0)], ease: CSSTiming.easeInOut, atMs: ms)
     }
 
     static func blinkOpacity(at t: TimeInterval) -> Double {
-        0.625 + 0.375 * cos(2.0 * .pi * t / 1.6)
+        let ms = CSSTiming.positiveMod(t * 1000.0, 1600.0)
+        return CSSTiming.keyframes([(0, 1.0), (800, 0.25), (1600, 1.0)], ease: CSSTiming.easeInOut, atMs: ms)
     }
 
     static func haloMetrics(at t: TimeInterval) -> (scale: CGFloat, opacity: Double) {
-        let mod = t.truncatingRemainder(dividingBy: 1.6)
-        let raw = (mod < 0 ? mod + 1.6 : mod) / 1.6
-        let k = 1.0 - pow(1.0 - raw, 2.0) // easeOut
+        let ms = CSSTiming.positiveMod(t * 1000.0, 1600.0)
+        let k = CSSTiming.easeOut(ms / 1600.0)
         return (scale: CGFloat(1.0 + 1.1 * k), opacity: 0.75 * (1.0 - k))
     }
 
     static func donePopScale(elapsed: TimeInterval) -> CGFloat {
-        guard elapsed >= 0, elapsed < 0.70 else { return 1.0 }
-        if elapsed < 0.19 {
-            let p = elapsed / 0.19
-            return CGFloat(1.0 + (0.55 - 1.0) * p)
-        } else if elapsed < 0.45 {
-            let p = (elapsed - 0.19) / (0.45 - 0.19)
-            return CGFloat(0.55 + (1.25 - 0.55) * p)
-        } else {
-            let p = (elapsed - 0.45) / (0.70 - 0.45)
-            return CGFloat(1.25 + (1.0 - 1.25) * p)
-        }
+        guard elapsed >= 0, elapsed < 0.704 else { return 1.0 }
+        let s = CSSTiming.keyframes(
+            [(0, 1.0), (192, 0.55), (448, 1.25), (704, 1.0)],
+            ease: CSSTiming.popOvershoot,
+            atMs: elapsed * 1000.0
+        )
+        return CGFloat(s)
     }
 
     static func doneFlashFraction(elapsed: TimeInterval) -> CGFloat? {
-        guard elapsed >= 0, elapsed < 0.96 else { return nil }
-        let raw = elapsed / 0.96
-        let eased = 1.0 - pow(1.0 - raw, 2.0) // easeOut
-        return CGFloat(-0.55 + (2.15 - (-0.55)) * eased)
+        guard elapsed >= 0, elapsed < 0.960 else { return nil }
+        let k = CSSTiming.easeOut((elapsed * 1000.0) / 960.0)
+        return CGFloat(-0.55 + (2.15 - (-0.55)) * k)
     }
 
     static func failedShakeOffset(elapsed: TimeInterval) -> CGFloat {
         guard elapsed >= 0, elapsed < 0.448 else { return 0 }
-        let times: [Double] = [0, 0.064, 0.128, 0.192, 0.256, 0.320, 0.448]
-        let values: [Double] = [0, -2, 2, -2, 2, -1, 0]
-        for i in 0..<(times.count - 1) {
-            if elapsed >= times[i] && elapsed <= times[i + 1] {
-                let p = (elapsed - times[i]) / (times[i + 1] - times[i])
-                let s = (1.0 - cos(.pi * p)) / 2.0
-                return CGFloat(values[i] + (values[i + 1] - values[i]) * s)
-            }
-        }
-        return 0
+        let dx = CSSTiming.keyframes(
+            [(0, 0), (64, -2), (128, 2), (192, -2), (256, 2), (320, -1), (448, 0)],
+            ease: CSSTiming.easeInOut,
+            atMs: elapsed * 1000.0
+        )
+        return CGFloat(dx)
     }
 }
 
