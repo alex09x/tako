@@ -168,6 +168,10 @@ final class LivingAnimationState: ObservableObject {
         return 0
     }
 
+    func resetEntries() {
+        entries.removeAll()
+    }
+
     // MARK: - Phase Math (§2, §3, §7)
 
     static func cometDegrees(at t: TimeInterval) -> Double {

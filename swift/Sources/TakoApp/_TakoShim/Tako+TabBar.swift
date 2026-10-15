@@ -160,6 +160,8 @@ extension Tako {
 
         /// Override tab presentation style for tests and dynamic previews.
         var styleOverride: Tako.Config.TabStyle?
+        var workspaceStoreOverride: WorkspaceStore?
+        var effectiveWorkspaceStore: WorkspaceStore { workspaceStoreOverride ?? .shared }
 
         /// Effective tab presentation style.
         var effectiveTabStyle: Tako.Config.TabStyle {
@@ -168,11 +170,11 @@ extension Tako {
 
         var workspacePillRect: CGRect {
             guard showsWorkspacePill else { return .zero }
-            let ws = WorkspaceStore.shared.activeWorkspace
+            let ws = effectiveWorkspaceStore.activeWorkspace
             let title = ws.name
             let titleWidth = TabText.width(of: title, font: Fonts.badge)
-            let attention = WorkspaceStore.shared.attentionCount(for: ws)
-            let pillWidth = min(140, max(54, 8 + 7 + 6 + titleWidth + (attention > 0 ? 20 : 0) + 8))
+            let attention = workspaceAttentionCount(for: ws)
+            let pillWidth = min(140, max(54, 8 + 7 + 6 + titleWidth + (attention > 0 ? 22 : 0) + 9))
             return CGRect(x: 84, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
         }
 
@@ -210,18 +212,22 @@ extension Tako {
 
         /// "ширина: по контенту, clamp 120-220px. НИКОГДА не justify на
         /// всю ширину бара" -- each tab is sized to its own content, not an
-        /// equal share of whatever space is left. A first pass divided
-        /// space evenly instead, which read as visibly wrong: three short
-        /// titles all stretched out with dead air around them.
+        /// equal share of whatever space is left.
         private func naturalWidth(for window: NSWindow) -> CGFloat {
             if effectiveTabStyle == .pill {
+                let isSelected = (group?.selectedWindow ?? self.window) === window
+                let titleFont = isSelected ? Fonts.pillActiveTitle : Fonts.pillTitle
                 let title = titleFor(window)
-                let titleWidth = TabText.width(of: title, font: Fonts.pillActiveTitle)
+                let titleWidth = TabText.width(of: title, font: titleFont)
                 let metaText = pillMetaText(for: window)
                 let metaExtra = metaText.map { 7 + TabText.width(of: $0, font: Fonts.timer) } ?? 0
-                // §4: padding-left 8 -> ring S=14 -> gap 7 -> title -> (gap 7 + meta) -> gap 7 -> ✕ (10) -> padding-right 9
-                let needed = 8 + 14 + 7 + titleWidth + metaExtra + 7 + 10 + 9
-                return min(220, max(72, ceil(needed)))
+                let state = pillSurfaceState(for: window)
+                let rightExtra: CGFloat = isSelected
+                    ? (7 + 10)
+                    : ((hasUnreadInWindow(window) || state == .failed) ? (7 + 5) : 0)
+                // §4: padding-left 8 -> ring S=14 -> gap 7 -> title -> (gap 7 + meta) -> rightExtra -> padding-right 9
+                let needed = 8 + 14 + 7 + titleWidth + metaExtra + rightExtra + 9
+                return min(Metrics.maxTabWidth, max(Metrics.minTabWidth, ceil(needed)))
             }
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
@@ -252,15 +258,16 @@ extension Tako {
                 ? max(0, min(preferredGap, availableForGaps / CGFloat(all.count - 1)))
                 : 0
 
-            let totalNatural = natural.reduce(0, +) + CGFloat(max(0, all.count - 1)) * gap
+            let totalGaps = CGFloat(max(0, all.count - 1)) * gap
+            let naturalSum = natural.reduce(0, +)
+            let totalNatural = naturalSum + totalGaps
             let widths: [CGFloat]
-            if totalNatural <= available || all.isEmpty {
+            if totalNatural <= available || all.isEmpty || naturalSum <= 0 {
                 widths = natural
             } else {
-                let totalGaps = CGFloat(max(0, all.count - 1)) * gap
                 let availableForTabs = max(0, available - totalGaps)
-                let shrunk = max(Metrics.iconTabWidth, availableForTabs / CGFloat(all.count))
-                widths = all.map { _ in shrunk }
+                let scale = availableForTabs / naturalSum
+                widths = natural.map { max(Metrics.iconTabWidth, floor($0 * scale)) }
             }
 
             let tabHeight = isPill ? Metrics.buttonSize : Metrics.tabHeight

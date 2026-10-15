@@ -77,9 +77,9 @@ struct SessionSidebarRowView: View {
                             SubagentHierarchyStore.shared.toggleCollapsed(pid)
                         }
                     }) {
-                        Text(item.isCollapsed ? "▸" : "▾")
-                            .font(Font(T.monoFont(size: 9, weight: .bold)))
-                            .foregroundColor(Color(nsColor: T.faint))
+                        Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundColor(Color(nsColor: T.dim))
                             .frame(width: 10, height: 14, alignment: .center)
                             .contentShape(Rectangle())
                     }

@@ -11,11 +11,38 @@
 import AppKit
 
 extension Tako.TabBarView {
+    func workspaceAttentionCount(for ws: Workspace) -> Int {
+        let store = effectiveWorkspaceStore
+        let liveWs = store.workspace(for: ws.id) ?? ws
+        let baseCount = store.attentionCount(for: liveWs)
+        let assignedIds = Set(liveWs.tabIdentifiers)
+        let selected = group?.selectedWindow ?? window
+        var tabCount = 0
+        for w in windows {
+            let tabId = w.stableTabIdentifier
+            let belongsToWs: Bool
+            if assignedIds.contains(tabId) {
+                belongsToWs = true
+            } else if liveWs.id == WorkspaceStore.defaultWorkspaceId {
+                belongsToWs = store.workspace(forTab: tabId) == nil
+            } else {
+                belongsToWs = false
+            }
+            guard belongsToWs else { continue }
+            let isSelected = (w === selected)
+            let state = pillSurfaceState(for: w)
+            if !isSelected && (state == .waiting || state == .failed || hasUnreadInWindow(w)) {
+                tabCount += 1
+            }
+        }
+        return max(baseCount, tabCount)
+    }
+
     func drawWorkspacePill(in ctx: CGContext) {
         guard showsWorkspacePill else { return }
         let rect = workspacePillRect
-        let ws = WorkspaceStore.shared.activeWorkspace
-        let attention = WorkspaceStore.shared.attentionCount(for: ws)
+        let ws = effectiveWorkspaceStore.activeWorkspace
+        let attention = workspaceAttentionCount(for: ws)
 
         // Background pill (§4): #241C16 (hover #1F1915), r=6
         ctx.setFillColor(workspaceHovered ? Palette.hoverTab.cgColor : Palette.activeTab.cgColor)
@@ -61,9 +88,9 @@ extension Tako.TabBarView {
         Self.shouldPresentNewWorkspaceDialog = false
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let store = WorkspaceStore.shared
+        let store = effectiveWorkspaceStore
         for ws in store.workspaces {
-            let attention = store.attentionCount(for: ws)
+            let attention = workspaceAttentionCount(for: ws)
             let title = attention > 0 ? "\(ws.name) (\(attention))" : ws.name
             let item = NSMenuItem(title: title, action: #selector(handleWorkspaceSelected(_:)), keyEquivalent: "")
             item.target = self

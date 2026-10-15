@@ -41,6 +41,7 @@ struct LivingSurface1bVisualTests {
         statusText: String? = nil,
         progressState: TakoTerminalNSView.ProgressState = .none,
         progressValue: Int? = nil,
+        elapsedSeconds: TimeInterval? = nil,
         lines: [String] = []
     ) -> Tako.SurfaceView {
         let s = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
@@ -54,6 +55,9 @@ struct LivingSurface1bVisualTests {
             if status != .working && status != .running {
                 s.crab.setStatus(status, text: statusText)
             }
+        }
+        if let elapsedSeconds {
+            s.crab.setElapsed(elapsedSeconds)
         }
         return s
     }
@@ -72,13 +76,13 @@ struct LivingSurface1bVisualTests {
         #expect(Tako.Brand.hexString(for: Tako.LivingTokens.workspaceColor(for: "purple")) == "#b294bb")
         #expect(Tako.Brand.hexString(for: Tako.LivingTokens.workspaceColor(for: "yellow")) == "#f0c674")
 
-        // Tab 1 (Active, Split with 2 panes: Working + Waiting for Approval)
-        let s1a = makeSurface(title: "claude — auth refactor", pwd: "/Users/alex09x/Projects/tako", status: .working, statusText: "Editing Tako+TabBar.swift")
-        let s1b = makeSurface(title: "cargo test --workspace", pwd: "/Users/alex09x/Projects/tako", status: .running, statusText: "Running 142 tests")
+        // Tab 1 (Active, Split with 2 panes: Working + Running with elapsed timers "1m 14s" and "38s")
+        let s1a = makeSurface(title: "claude · auth", pwd: "/Users/alex09x/Projects/tako", status: .working, statusText: "Editing Tako+TabBar.swift", elapsedSeconds: 74)
+        let s1b = makeSurface(title: "cargo test --workspace", pwd: "/Users/alex09x/Projects/tako", status: .running, statusText: "Running 142 tests", elapsedSeconds: 38)
         var tree1 = SplitTree<Tako.SurfaceView>(view: s1a)
         tree1 = (try? tree1.inserting(view: s1b, at: s1a, direction: .right)) ?? tree1
         let c1 = BaseTerminalController(Tako.App(), surfaceTree: tree1)
-        let w1 = makeWindow(title: "claude — auth refactor")
+        let w1 = makeWindow(title: "claude · auth")
         w1.setContentSize(NSSize(width: 980, height: 600))
         w1.windowController = c1
         c1.window = w1
@@ -87,11 +91,11 @@ struct LivingSurface1bVisualTests {
         container1.addSubview(s1b)
         w1.contentView = container1
 
-        // Tab 2 (Waiting for approval — shows Claw question in Sidebar line 2)
-        let s2 = makeSurface(title: "codex — db migration", pwd: "/Users/alex09x/Projects/tako/db", status: .needsApproval, statusText: "Allow `psql -f 004_drop_legacy.sql` on staging?")
+        // Tab 2 (Waiting for approval — shows Claw question in Sidebar line 2 + timer "42s")
+        let s2 = makeSurface(title: "codex · db-mig", pwd: "/Users/alex09x/Projects/tako/db", status: .needsApproval, statusText: "Allow `psql -f 004_drop_legacy.sql` on staging?", elapsedSeconds: 42)
         NotificationStore.shared.addNotification(id: nil, surfaceId: s2.id, paneTitle: s2.title, title: "Approval", body: "Allow `psql -f 004_drop_legacy.sql` on staging?")
         let c2 = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: s2))
-        let w2 = makeWindow(title: "codex — db migration")
+        let w2 = makeWindow(title: "codex · db-mig")
         w2.windowController = c2
         c2.window = w2
         w2.contentView = s2
@@ -113,10 +117,10 @@ struct LivingSurface1bVisualTests {
         w4.contentView = s4
 
         // Tab 5 (Failed ! + unread dot)
-        let s5 = makeSurface(title: "integration-suite", pwd: "/Users/alex09x/Projects/web/e2e", status: .error, statusText: "exit 101 · auth_flow_spec")
+        let s5 = makeSurface(title: "e2e · auth_flow", pwd: "/Users/alex09x/Projects/web/e2e", status: .error, statusText: "exit 101 · auth_flow_spec")
         NotificationStore.shared.addNotification(id: nil, surfaceId: s5.id, paneTitle: s5.title, title: "Failed", body: "exit 101 · auth_flow_spec")
         let c5 = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: s5))
-        let w5 = makeWindow(title: "integration-suite")
+        let w5 = makeWindow(title: "e2e · auth_flow")
         w5.windowController = c5
         c5.window = w5
         w5.contentView = s5
@@ -133,9 +137,9 @@ struct LivingSurface1bVisualTests {
         defer {
             for w in allWindows { Tako.CustomTabGroup.leave(w) }
         }
-        for w in allWindows.dropFirst() {
-            Tako.CustomTabGroup.join(w, to: w1, select: false)
-        }
+        for w in allWindows.dropFirst() { Tako.CustomTabGroup.join(w, to: w1, select: false) }
+        Tako.CustomTabGroup.group(for: w1).setWindowOrder(allWindows)
+        WorkspaceStore.shared.reorderTabs(in: WorkspaceStore.shared.activeWorkspaceId, newOrder: allWindows.map(\.stableTabIdentifier))
         Tako.CustomTabGroup.group(for: w1).select(w1)
 
         wsStore.assignTab(tabIdentifier: w1.stableTabIdentifier, to: backendWs.id)
@@ -146,13 +150,12 @@ struct LivingSurface1bVisualTests {
         wsStore.assignTab(tabIdentifier: w6.stableTabIdentifier, to: infraWs.id)
 
         // 1. Verify Pill Tab Bar (§4 & §8.1-8.6, §8.10)
-        let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 1120, height: 38))
+        let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 1360, height: 38))
         bar.styleOverride = .pill
+        bar.workspaceStoreOverride = wsStore
         container1.addSubview(bar)
         _ = snapshot(bar)
-        for layer in bar.statusLayers.values {
-            layer.applySnapshotPhase(at: 1.1, doneElapsed: 0.35)
-        }
+        for layer in bar.statusLayers.values { layer.applySnapshotPhase(at: 1.1, doneElapsed: 0.35) }
         let barRep = snapshot(bar)
 
         #expect(bar.paintedRingStates[ObjectIdentifier(w1)] == .working)
@@ -161,7 +164,10 @@ struct LivingSurface1bVisualTests {
         #expect(bar.paintedRingStates[ObjectIdentifier(w4)] == .done)
         #expect(bar.paintedRingStates[ObjectIdentifier(w5)] == .failed)
         #expect(bar.paintedRingStates[ObjectIdentifier(w6)] == .offline)
+        #expect(bar.pillMetaText(for: w1) == "1m 14s")
+        #expect(bar.pillMetaText(for: w2) == "42s")
         #expect(bar.pillMetaText(for: w3) == "68%")
+        #expect(bar.workspaceAttentionCount(for: backendWs) == 2)
 
         // Verify #483C32 is never present anywhere in the rendered TabBar bitmap (§8.6)
         for y in 0..<barRep.pixelsHigh {
@@ -210,14 +216,14 @@ struct LivingSurface1bVisualTests {
         overviewStore.items = [
             PaneOverviewItem(
                 id: s1a.id, workspaceName: "Default", tabTitle: "claude", tabIndex: 0,
-                title: "claude — auth refactor", pwd: "/Users/alex09x/Projects/tako",
-                status: .working, statusText: "Editing Tako+TabBar.swift", elapsed: "1m 24s",
+                title: "claude · auth", pwd: "/Users/alex09x/Projects/tako",
+                status: .working, statusText: "Editing Tako+TabBar.swift", elapsed: "1m 14s",
                 isFocused: true, isKeyWindow: true,
                 thumbnailLines: ["$ claude \"implement style 1b living surface\"", "● Reading Tako+TabBarDrawing.swift…", "● Applying conic comet gradient (2.2s)", "✓ Updated TabStatusLayer.swift (+368 -0)"]
             ),
             PaneOverviewItem(
                 id: s2.id, workspaceName: "Default", tabTitle: "codex", tabIndex: 1,
-                title: "codex — db migration", pwd: "/Users/alex09x/Projects/tako/db",
+                title: "codex · db-mig", pwd: "/Users/alex09x/Projects/tako/db",
                 status: .needsApproval, statusText: "Allow psql -f 004_drop_legacy.sql?", elapsed: "42s",
                 thumbnailLines: ["$ codex \"migrate staging schema\"", "? Tool Permission Request: bash", "  Command: psql -f 004_drop_legacy.sql", "  [y] Approve   [n] Reject"]
             ),
@@ -236,7 +242,7 @@ struct LivingSurface1bVisualTests {
             ),
             PaneOverviewItem(
                 id: s5.id, workspaceName: "frontend", tabTitle: "e2e", tabIndex: 4,
-                title: "integration-suite", pwd: "/Users/alex09x/Projects/web/e2e",
+                title: "e2e · auth_flow", pwd: "/Users/alex09x/Projects/web/e2e",
                 status: .error, statusText: "exit 101 · auth_flow_spec", elapsed: "19s",
                 thumbnailLines: ["$ cargo test --test auth_flow_spec", "thread 'auth_token_refresh' panicked at src/auth.rs:84:", "assertion `left == right` failed: 401 != 200", "error: test failed, to rerun pass `--test auth_flow_spec`"]
             ),
@@ -263,7 +269,7 @@ struct LivingSurface1bVisualTests {
         let overviewRep = snapshot(overviewHost)
         #expect(overviewRep.pixelsWide >= 1180 && overviewRep.pixelsHigh >= 820)
 
-        // Export screenshots & 3.6s animated GIF when requested
+        // Export screenshots & 6.0s animated GIF when requested
         if let outDir = ProcessInfo.processInfo.environment["TAKO_EXPORT_1B_SCREENSHOTS"], !outDir.isEmpty {
             let dirURL = URL(fileURLWithPath: outDir)
             try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
@@ -276,11 +282,11 @@ struct LivingSurface1bVisualTests {
             if let data = overviewRep.representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent("overview_1b_4b.png"))
             }
+            let allTopLevelSidebar = (groups[0].items + groups[1].items).filter { !$0.isChild }
             try exportAnimatedGif(
                 to: dirURL.appendingPathComponent("living_surface_1b_animation.gif"),
                 bar: bar,
-                sidebarStore: sidebarStore,
-                sidebarItems: groups[0].items.filter { !$0.isChild },
+                sidebarItems: allTopLevelSidebar,
                 overviewItems: Array(overviewStore.items.prefix(2))
             )
         }
@@ -289,12 +295,11 @@ struct LivingSurface1bVisualTests {
     private func exportAnimatedGif(
         to url: URL,
         bar: Tako.TabBarView,
-        sidebarStore: SessionSidebarStore,
         sidebarItems: [SessionSidebarItem],
         overviewItems: [PaneOverviewItem]
     ) throws {
-        let frameCount = 30
-        let dt: TimeInterval = 0.12 // 30 * 0.12s = 3.6s animation
+        let frameCount = 50
+        let dt: TimeInterval = 0.12 // 50 * 0.12s = 6.0s recording
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
             return
         }
@@ -309,31 +314,47 @@ struct LivingSurface1bVisualTests {
             ]
         ]
 
+        LivingAnimationState.shared.resetEntries()
+
         let animHost = NSHostingView(rootView: AnyView(EmptyView()))
-        animHost.frame = NSRect(x: 0, y: 0, width: 960, height: 310)
+        animHost.frame = NSRect(x: 0, y: 0, width: 980, height: 360)
         let animWin = NSWindow(contentRect: animHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         animWin.contentView = animHost
         defer { animWin.close() }
 
         for i in 0..<frameCount {
-            let t = Double(i) * dt
+            let rawT = Double(i) * dt
+            // First 4.4s (2 full 2.2s comet cycles): active animations + one-shot done flash (0..0.96s) + one-shot failed shake (0..0.45s).
+            // Last 1.6s (4.4s..6.0s): simulate Cmd+H / window occlusion -> CA speed=0.0, TimelineView paused (frozen at t=4.4s).
+            let isOccludedPhase = rawT >= 4.4
+            let t = isOccludedPhase ? 4.4 : rawT
             let date = Date(timeIntervalSinceReferenceDate: t)
             for layer in bar.statusLayers.values {
-                layer.applySnapshotPhase(at: t, doneElapsed: t.truncatingRemainder(dividingBy: 1.8))
+                layer.setLayerPaused(isOccludedPhase)
+                layer.applySnapshotPhase(at: t, doneElapsed: t, failedElapsed: t)
             }
             let barStepRep = snapshot(bar)
             let barNSImage = NSImage(size: bar.bounds.size)
             barNSImage.addRepresentation(barStepRep)
 
-            let root = VStack(alignment: .leading, spacing: 12) {
+            let root = VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Text(isOccludedPhase
+                         ? "⏸ t=\(String(format: "%.1fs", rawT))  Cmd+H / Window Occluded → CA speed=0.0, TimelineView paused (0% CPU)"
+                         : "▶ t=\(String(format: "%.1fs", rawT))  Live 1b: Comet 2.2s · Claw Breathe 1.6s · One-shot Done Flash (0.96s) & Failed Shake (0.45s)")
+                        .font(Font(Tako.LivingTokens.monoFont(size: 10.5, weight: .medium)))
+                        .foregroundColor(Color(nsColor: isOccludedPhase ? Tako.LivingTokens.claw : Tako.LivingTokens.textInactive))
+                    Spacer()
+                }
+
                 Image(nsImage: barNSImage)
                     .resizable()
-                    .frame(width: 932, height: 38, alignment: .leading)
+                    .frame(width: 952, height: 38, alignment: .leading)
                     .clipped()
 
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(sidebarItems.prefix(3).enumerated()), id: \.element.id) { idx, item in
+                        ForEach(Array(sidebarItems.enumerated()), id: \.element.id) { idx, item in
                             SessionSidebarRowView(
                                 item: item,
                                 index: idx,
@@ -357,12 +378,12 @@ struct LivingSurface1bVisualTests {
                             now: date,
                             reduceMotion: false
                         )
-                        .frame(width: 325)
+                        .frame(width: 330)
                     }
                 }
             }
             .padding(14)
-            .frame(width: 960, height: 310, alignment: .topLeading)
+            .frame(width: 980, height: 360, alignment: .topLeading)
             .background(Color(nsColor: Tako.LivingTokens.body))
 
             animHost.rootView = AnyView(root)

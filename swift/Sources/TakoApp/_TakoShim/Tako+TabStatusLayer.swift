@@ -330,9 +330,10 @@ extension Tako {
         }
 
         /// Steps model-layer properties for deterministic offscreen snapshots/GIF capture.
-        func applySnapshotPhase(at t: TimeInterval, doneElapsed: TimeInterval? = nil) {
+        func applySnapshotPhase(at t: TimeInterval, doneElapsed: TimeInterval? = nil, failedElapsed: TimeInterval? = nil) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            transform = CATransform3DIdentity
             switch currentState {
             case .working:
                 cometGradient.transform = CATransform3DMakeRotation(-CGFloat((t / 2.2) * .pi * 2.0), 0, 0, 1)
@@ -357,6 +358,11 @@ extension Tako {
                     flashLayer.position.x = CGFloat(-0.55 * lastSize.width + frac * 2.1 * lastSize.width)
                 } else {
                     flashLayer.opacity = 0.0
+                }
+            case .failed:
+                if let el = failedElapsed {
+                    let dx = LivingAnimationState.failedShakeOffset(elapsed: el)
+                    transform = CATransform3DMakeTranslation(dx, 0, 0)
                 }
             default:
                 break

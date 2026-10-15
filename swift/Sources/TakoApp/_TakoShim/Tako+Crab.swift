@@ -239,6 +239,7 @@ extension Tako {
 
             let sanitizedText = text.flatMap(Tako.sanitizeStatusText)
             if status == .done {
+                ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
                 if isFocused {
                     explicitStatus = (status: .idle, text: sanitizedText)
                     unread = false
@@ -250,6 +251,14 @@ extension Tako {
                 explicitStatus = (status: status, text: sanitizedText)
                 if status == .working || status == .running || status == .needsApproval || status == .waitingForInput {
                     unread = !isFocused
+                    if startedAt == nil { startedAt = now() }
+                    if ticker == nil {
+                        ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                            MainActor.assumeIsolated { self?.tick() }
+                        }
+                    }
+                } else {
+                    ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
                 }
             }
             statusText = sanitizedText
@@ -344,14 +353,18 @@ extension Tako {
         /// Advance the running clock. Public so a test can drive it without
         /// waiting on a real timer.
         func tick() {
-            guard explicitStatus == nil else { return }
             guard let startedAt else { return }
             let ran = now().timeIntervalSince(startedAt)
             guard ran >= Self.minimumVisibleDuration else { return }
             elapsed = ran
+            guard explicitStatus == nil else { return }
             if CrabState.running.priority > state.priority || state == .idle {
                 state = .running
             }
+        }
+
+        func setElapsed(_ seconds: TimeInterval?) {
+            elapsed = seconds
         }
 
         /// The one duration format: a tenth under ten seconds, whole

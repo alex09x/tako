@@ -97,6 +97,10 @@ struct SessionSidebarView: View {
                 Divider().background(Color(nsColor: T.hairline))
                 footerView
             }
+            .contextMenu {
+                Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
+                Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+            }
         }
         .frame(width: 260)
         .background(Color(nsColor: T.body))
@@ -168,6 +172,11 @@ struct SessionSidebarView: View {
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 8)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
+            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+        }
     }
 
     // MARK: - Search & Segments (§5.2, §5.3)

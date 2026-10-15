@@ -136,17 +136,18 @@ extension Tako.TabBarView {
         let showsUnreadDot = !showsClose && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive))
         let rightExtra: CGFloat = showsClose ? (7 + 10) : (showsUnreadDot ? (7 + 5) : 0)
 
+        let titleFont = tab.isActive ? Fonts.pillActiveTitle : Fonts.pillTitle
+        let rawTitle = titleFor(tab.window)
+        let fullTitleWidth = Tako.TabText.width(of: rawTitle, font: titleFont)
         let metaText = pillMetaText(for: tab.window)
         let metaWidth = metaText.map { Tako.TabText.width(of: $0, font: Fonts.timer) } ?? 0
         let titleStartX = rect.minX + 29 // 8 + 14 (ring S) + 7 (gap)
         let availableForTitleAndMeta = rect.width - 29 - 9 - rightExtra
-        let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= 32)
+        let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= fullTitleWidth - 1.0)
         let maxTitleWidth = availableForTitleAndMeta - (includesMeta ? (metaWidth + 7) : 0)
 
         var drawnTitleWidth: CGFloat = 0
         if maxTitleWidth > 8 {
-            let titleFont = tab.isActive ? Fonts.pillActiveTitle : Fonts.pillTitle
-            let rawTitle = titleFor(tab.window)
             let title = Tako.TabText.truncate(rawTitle, to: maxTitleWidth, font: titleFont)
             let titleColor: NSColor
             if state == .offline {
