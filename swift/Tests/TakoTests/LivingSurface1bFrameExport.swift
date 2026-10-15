@@ -285,9 +285,9 @@ private final class TrafficLightsOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        // Mask top-left and top-right 12pt rounded corners of .win (y = 0..39)
+        // Mask top 5pt canvas backdrop and top-left/top-right 12pt rounded corners of .win (y = 0..39)
         let winPath = CGMutablePath()
-        winPath.addRect(CGRect(x: 0, y: 0, width: bounds.width, height: 39))
+        winPath.addRect(bounds)
         let rounded = CGMutablePath()
         rounded.move(to: CGPoint(x: 0, y: 0))
         rounded.addLine(to: CGPoint(x: 0, y: 27))

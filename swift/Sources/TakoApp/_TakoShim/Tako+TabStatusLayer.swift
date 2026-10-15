@@ -32,21 +32,20 @@ extension Tako {
         private let cometMask = CAShapeLayer()
         private let cometGradient = CAGradientLayer()
 
+        private let breatheGlowContainer = CALayer()
+        private let breatheGlowMask = CAShapeLayer()
+        private let breatheGlowLayer = CAShapeLayer()
         private let breatheLayer = CAShapeLayer()
         private let offlineBorderLayer = CAShapeLayer()
         private let ringContainer = CALayer()
 
-        override init() {
-            super.init()
-            setupSublayers()
-        }
-
+        override init() { super.init(); setupSublayers() }
         override init(layer: Any) { super.init(layer: layer) }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         private func setupSublayers() {
             contentsScale = 2.0; masksToBounds = false
-            for l: CALayer in [clippedInnerContainer, failedLineLayer, progressLineLayer, flashLayer, cometContainer, cometMask, cometGradient, breatheLayer, offlineBorderLayer, ringContainer] {
+            for l: CALayer in [clippedInnerContainer, failedLineLayer, progressLineLayer, flashLayer, cometContainer, cometMask, cometGradient, breatheGlowContainer, breatheGlowMask, breatheGlowLayer, breatheLayer, offlineBorderLayer, ringContainer] {
                 l.contentsScale = 2.0
             }
             clippedInnerContainer.cornerRadius = 6; clippedInnerContainer.masksToBounds = true
@@ -71,17 +70,19 @@ extension Tako {
 
             cometGradient.type = .conic
             cometGradient.startPoint = CGPoint(x: 0.5, y: 0.5); cometGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
-            // In unflipped CALayer (+y up), .conic sweeps counter-clockwise from 12 o'clock:
-            // map CSS clockwise stops (0.62 clear, 0.78 rust, 0.88 claw, 1.0 clear) via (1 - s).
             cometGradient.colors = [NSColor.clear.cgColor, T.claw.cgColor, T.rust.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
             cometGradient.locations = [0.0, 0.12, 0.22, 0.38, 1.0]
             cometContainer.addSublayer(cometGradient)
             addSublayer(cometContainer)
 
+            breatheGlowMask.fillRule = .evenOdd; breatheGlowContainer.mask = breatheGlowMask; breatheGlowContainer.isHidden = true
+            breatheGlowLayer.fillColor = NSColor.black.cgColor
+            breatheGlowLayer.shadowColor = T.claw.cgColor; breatheGlowLayer.shadowOffset = .zero; breatheGlowLayer.shadowRadius = 8.0
+            breatheGlowContainer.addSublayer(breatheGlowLayer)
+            addSublayer(breatheGlowContainer)
+
             breatheLayer.fillColor = nil; breatheLayer.lineWidth = 1.0
-            breatheLayer.strokeColor = T.claw.withAlphaComponent(0.65).cgColor
-            breatheLayer.shadowColor = T.claw.cgColor; breatheLayer.shadowOffset = .zero; breatheLayer.shadowRadius = 8
-            breatheLayer.isHidden = true
+            breatheLayer.strokeColor = T.claw.withAlphaComponent(0.65).cgColor; breatheLayer.isHidden = true
             addSublayer(breatheLayer)
 
             offlineBorderLayer.fillColor = nil; offlineBorderLayer.lineWidth = 1.0
@@ -145,8 +146,16 @@ extension Tako {
             cometGradient.bounds = CGRect(x: 0, y: 0, width: diag, height: diag)
             cometGradient.position = CGPoint(x: size.width / 2, y: size.height / 2)
 
+            let pad: CGFloat = 24
+            let outer = CGRect(x: 0, y: 0, width: size.width + pad * 2, height: size.height + pad * 2)
+            let inner = CGRect(x: pad, y: pad, width: size.width, height: size.height)
+            breatheGlowContainer.frame = CGRect(x: -pad, y: -pad, width: outer.width, height: outer.height)
+            breatheGlowMask.frame = outer
+            let mp = CGMutablePath(); mp.addRect(outer); mp.addRoundedRect(in: inner, cornerWidth: 6, cornerHeight: 6)
+            breatheGlowMask.path = mp
+            breatheGlowLayer.frame = outer; breatheGlowLayer.path = CGPath(roundedRect: inner, cornerWidth: 6, cornerHeight: 6, transform: nil)
+            breatheGlowLayer.shadowPath = CGPath(roundedRect: inner.insetBy(dx: -1, dy: -1), cornerWidth: 7, cornerHeight: 7, transform: nil)
             breatheLayer.frame = b; breatheLayer.path = borderPath
-            breatheLayer.shadowPath = CGPath(roundedRect: b.insetBy(dx: -1, dy: -1), cornerWidth: 7, cornerHeight: 7, transform: nil)
             offlineBorderLayer.frame = b; offlineBorderLayer.path = borderPath
             ringContainer.frame = CGRect(x: ringX, y: ((size.height - 14) / 2).rounded(), width: 14, height: 14)
         }
@@ -260,16 +269,13 @@ extension Tako {
         }
 
         private func rebuildSurfaceEffects(for state: SurfaceState, size: CGSize, reduceMotion: Bool, triggerOneShot: Bool) {
-            cometContainer.isHidden = (state != .working)
-            cometGradient.removeAllAnimations()
-            breatheLayer.isHidden = (state != .waiting)
-            breatheLayer.removeAllAnimations()
-            failedLineLayer.isHidden = (state != .failed)
-            offlineBorderLayer.isHidden = (state != .offline)
+            cometContainer.isHidden = (state != .working); cometGradient.removeAllAnimations()
+            breatheGlowContainer.isHidden = (state != .waiting); breatheGlowLayer.removeAllAnimations()
+            breatheLayer.isHidden = (state != .waiting); breatheLayer.removeAllAnimations()
+            failedLineLayer.isHidden = (state != .failed); offlineBorderLayer.isHidden = (state != .offline)
 
             if case .progress(let p) = state {
-                progressLineLayer.isHidden = false
-                updateProgressValue(p, in: size)
+                progressLineLayer.isHidden = false; updateProgressValue(p, in: size)
             } else {
                 progressLineLayer.isHidden = true
             }
@@ -280,27 +286,27 @@ extension Tako {
             case .waiting:
                 if reduceMotion {
                     breatheLayer.strokeColor = T.claw.withAlphaComponent(0.90).cgColor
-                    breatheLayer.shadowOpacity = 0.20
+                    breatheGlowLayer.shadowOpacity = 0.20
                 } else {
+                    let eio = CAMediaTimingFunction(name: .easeInEaseOut)
                     let strokeAnim = CABasicAnimation(keyPath: "strokeColor")
-                    strokeAnim.fromValue = T.claw.withAlphaComponent(0.40).cgColor
-                    strokeAnim.toValue = T.claw.withAlphaComponent(0.95).cgColor
+                    strokeAnim.fromValue = T.claw.withAlphaComponent(0.40).cgColor; strokeAnim.toValue = T.claw.withAlphaComponent(0.95).cgColor
+                    strokeAnim.duration = 0.8; strokeAnim.autoreverses = true; strokeAnim.repeatCount = .infinity
+                    strokeAnim.timingFunction = eio; strokeAnim.isRemovedOnCompletion = false
+                    breatheLayer.add(strokeAnim, forKey: "breathe")
+
                     let shadowAnim = CABasicAnimation(keyPath: "shadowOpacity")
                     shadowAnim.fromValue = 0.0; shadowAnim.toValue = 0.30
-                    let group = CAAnimationGroup()
-                    group.animations = [strokeAnim, shadowAnim]
-                    group.duration = 0.8; group.autoreverses = true; group.repeatCount = .infinity
-                    group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    group.isRemovedOnCompletion = false
-                    breatheLayer.add(group, forKey: "breathe")
+                    shadowAnim.duration = 0.8; shadowAnim.autoreverses = true; shadowAnim.repeatCount = .infinity
+                    shadowAnim.timingFunction = eio; shadowAnim.isRemovedOnCompletion = false
+                    breatheGlowLayer.add(shadowAnim, forKey: "breatheGlow")
                 }
             case .done:
                 if triggerOneShot && !reduceMotion && size.width > 0 {
                     flashLayer.opacity = 1.0
                     let sweep = CABasicAnimation(keyPath: "position.x")
                     sweep.fromValue = -0.55 * size.width; sweep.toValue = 2.15 * size.width
-                    sweep.duration = 0.96; sweep.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    sweep.fillMode = .forwards
+                    sweep.duration = 0.96; sweep.timingFunction = CAMediaTimingFunction(name: .easeOut); sweep.fillMode = .forwards
                     flashLayer.add(sweep, forKey: "doneFlash")
                 }
             case .failed:
@@ -308,17 +314,8 @@ extension Tako {
                     let eio = CAMediaTimingFunction(name: .easeInEaseOut)
                     let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
                     shake.values = [0, -2, 2, -2, 2, -1, 0]
-                    shake.keyTimes = [
-                        0.0,
-                        NSNumber(value: 1.0 / 7.0),
-                        NSNumber(value: 2.0 / 7.0),
-                        NSNumber(value: 3.0 / 7.0),
-                        NSNumber(value: 4.0 / 7.0),
-                        NSNumber(value: 5.0 / 7.0),
-                        1.0,
-                    ]
-                    shake.timingFunctions = [eio, eio, eio, eio, eio, eio]
-                    shake.duration = 0.448
+                    shake.keyTimes = [0.0, 1.0 / 7.0, 2.0 / 7.0, 3.0 / 7.0, 4.0 / 7.0, 5.0 / 7.0, 1.0].map { NSNumber(value: $0) }
+                    shake.timingFunctions = [eio, eio, eio, eio, eio, eio]; shake.duration = 0.448
                     add(shake, forKey: "failedShake")
                 }
             case .idle, .progress, .offline:
@@ -329,9 +326,7 @@ extension Tako {
         private func updateProgressValue(_ p: Double, in size: CGSize) {
             let clamped = CGFloat(min(1.0, max(0.0, p)))
             progressLineLayer.frame = CGRect(x: 0, y: 0, width: max(2, size.width * clamped), height: 2)
-            if let arc = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAShapeLayer {
-                arc.strokeEnd = clamped
-            }
+            if let arc = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAShapeLayer { arc.strokeEnd = clamped }
         }
 
         /// Steps model-layer properties for deterministic offscreen snapshots/GIF capture.
@@ -351,7 +346,7 @@ extension Tako {
             case .waiting:
                 let s = CGFloat(LivingAnimationState.breatheFactor(at: t))
                 breatheLayer.strokeColor = T.claw.withAlphaComponent(0.40 + 0.55 * s).cgColor
-                breatheLayer.shadowOpacity = Float(0.30 * s)
+                breatheGlowLayer.shadowOpacity = Float(0.30 * s)
                 if let halo = ringContainer.sublayers?.first(where: { $0.name == "waitingHalo" }) {
                     let hm = LivingAnimationState.haloMetrics(at: t)
                     halo.transform = CATransform3DMakeScale(hm.scale, hm.scale, 1.0)
