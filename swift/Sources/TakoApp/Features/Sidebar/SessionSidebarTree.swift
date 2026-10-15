@@ -197,6 +197,8 @@ extension SessionSidebarStore {
                         )
                         let subLabel = SubagentHierarchyStore.shared.label(for: paneSurface.id) ?? "pane \(paneIdx + 1)"
 
+                        let childPwd: String? = (paneSurface.pwd == rawTabItem.workingDirectory) ? nil : paneSurface.pwd
+
                         let child = SessionSidebarItem(
                             id: "\(tabId)-pane-\(paneSurface.id.uuidString.lowercased())",
                             surfaceId: paneSurface.id,
@@ -210,7 +212,7 @@ extension SessionSidebarStore {
                             progress: paneSurface.activeProgressValue.map { Double($0) / 100.0 },
                             progressState: paneSurface.activeProgressState,
                             elapsed: paneSurface.crab.elapsedLabel,
-                            workingDirectory: paneSurface.pwd,
+                            workingDirectory: childPwd,
                             unreadCount: pUnread,
                             needsAttention: pAttention,
                             isChild: true,
@@ -225,7 +227,8 @@ extension SessionSidebarStore {
                     }
                 } else if !subagentKids.isEmpty {
                     childNodes = subagentKids.map { kid in
-                        SessionSidebarItem(
+                        let kidPwd: String? = (kid.workingDirectory == rawTabItem.workingDirectory) ? nil : kid.workingDirectory
+                        return SessionSidebarItem(
                             id: kid.id,
                             surfaceId: kid.surfaceId,
                             surfaceIds: kid.surfaceIds,
@@ -238,7 +241,7 @@ extension SessionSidebarStore {
                             progress: kid.progress,
                             progressState: kid.progressState,
                             elapsed: kid.elapsed,
-                            workingDirectory: kid.workingDirectory,
+                            workingDirectory: kidPwd,
                             unreadCount: kid.unreadCount,
                             needsAttention: kid.needsAttention,
                             isChild: true,
@@ -318,7 +321,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
 
     private var workspaceDotColor: NSColor {
         if group.dominantStatus != .idle && group.dominantStatus != .unknown {
-            return group.dominantStatus.sidebarDotColor
+            return group.dominantStatus.uiChipColor
         }
         return switch group.color?.lowercased() {
         case "red": Tako.Brand.error
@@ -326,7 +329,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
         case "orange": Tako.Brand.ember
         case "purple": NSColor.systemPurple
         case "yellow": NSColor.systemYellow
-        default: NSColor.systemBlue
+        default: SessionSidebarPalette.dim
         }
     }
 
@@ -343,26 +346,26 @@ struct SessionSidebarWorkspaceHeaderView: View {
             .help(group.isCollapsed ? "Expand workspace" : "Collapse workspace")
 
             HStack(spacing: 6) {
-                Circle().fill(Color(nsColor: workspaceDotColor)).frame(width: 7, height: 7)
+                if group.dominantStatus.isWaitingForHuman {
+                    Circle()
+                        .stroke(Color(nsColor: workspaceDotColor), lineWidth: 1.6)
+                        .frame(width: 7, height: 7)
+                } else {
+                    Circle()
+                        .fill(Color(nsColor: workspaceDotColor))
+                        .frame(width: 7, height: 7)
+                }
+
                 Image(systemName: group.icon ?? "folder.fill")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(Color(nsColor: group.isActive ? SessionSidebarPalette.activeText : SessionSidebarPalette.dim))
+
                 Text(group.name)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(Color(nsColor: group.isActive ? SessionSidebarPalette.activeText : SessionSidebarPalette.inactiveText))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(-1)
-
-                if let badge = group.dominantStatus.sidebarBadgeLabel {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color(nsColor: group.dominantStatus.sidebarDotColor).opacity(0.18))
-                        .foregroundColor(Color(nsColor: group.dominantStatus.sidebarDotColor))
-                        .cornerRadius(3)
-                }
+                    .layoutPriority(1)
 
                 Spacer(minLength: 4)
 
@@ -373,7 +376,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color(nsColor: Tako.Brand.ember).opacity(0.22))
+                    .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
                     .foregroundColor(Color(nsColor: Tako.Brand.ember))
                     .clipShape(Capsule())
                 }

@@ -37,15 +37,16 @@ struct SessionSidebarRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: item.isChild ? 2 : 3) {
             headerRow
-            if !item.isChild || (item.workingDirectory != nil && !(item.workingDirectory?.isEmpty ?? true)) {
+            if hasStatusOrSummaryRow {
+                statusAndSummaryRow
+            }
+            if hasMetadataRow {
                 VStack(alignment: .leading, spacing: 2) {
                     metadataRows
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect()
-                }
+                .onTapGesture(perform: onSelect)
             }
             if !item.isChild {
                 descriptionSection
@@ -59,13 +60,23 @@ struct SessionSidebarRowView: View {
         .overlay(rowOverlay)
     }
 
+    private var hasStatusOrSummaryRow: Bool {
+        item.status.sidebarBadgeLabel != nil || item.childrenSummary != nil
+    }
+
+    private var hasMetadataRow: Bool {
+        let hasPwd = !(item.workingDirectory?.isEmpty ?? true)
+        let hasGit = item.gitBranch != nil
+        let hasPorts = !(item.listeningPorts?.isEmpty ?? true)
+        let hasNotif = item.latestNotification != nil
+        return !item.isChild ? (hasPwd || hasGit || hasPorts || hasNotif) : (hasPwd || hasPorts || hasNotif)
+    }
+
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(isTabActive ? Color(nsColor: SessionSidebarPalette.activeTab) : (isNavSelected ? Color(nsColor: SessionSidebarPalette.hoverTab) : Color.clear))
             .contentShape(Rectangle())
-            .onTapGesture {
-                onSelect()
-            }
+            .onTapGesture(perform: onSelect)
     }
 
     private var rowOverlay: some View {
@@ -75,8 +86,6 @@ struct SessionSidebarRowView: View {
 
     @ViewBuilder
     private var headerRow: some View {
-        let dotColor = Color(nsColor: item.status.sidebarDotColor)
-
         HStack(spacing: 5) {
             if item.isChild {
                 Text("↳")
@@ -94,81 +103,44 @@ struct SessionSidebarRowView: View {
                     Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .frame(width: 14, height: 14)
+                        .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
             }
 
-            HStack(spacing: 5) {
-                ZStack {
-                    if item.status.isSidebarPulsing {
-                        Circle()
-                            .stroke(dotColor.opacity(0.45), lineWidth: 2)
-                            .frame(width: 12, height: 12)
-                    }
-                    Circle()
-                        .fill(dotColor)
-                        .frame(width: 8, height: 8)
-                }
-                .frame(width: 12, height: 12)
-                .help("Status: \(item.status.rawValue)")
+            HStack(spacing: 6) {
+                SidebarStatusIndicatorView(status: item.status, isChild: item.isChild)
+                    .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
-                    .font(.system(size: 12, weight: isTabActive ? .semibold : .regular, design: .monospaced))
+                    .font(.system(size: 12, weight: isTabActive ? .medium : .regular, design: .monospaced))
                     .foregroundColor(isTabActive ? Color(nsColor: SessionSidebarPalette.activeText) : Color(nsColor: SessionSidebarPalette.inactiveText))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(-1)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 4)
 
                 if let label = item.label {
                     Text("[\(label)]")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 3)
-                        .padding(.vertical, 1)
-                        .background(Color(nsColor: SessionSidebarPalette.badge))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.inactiveText))
-                        .cornerRadius(3)
-                }
-
-                if let badge = item.status.sidebarBadgeLabel {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(dotColor.opacity(0.20))
-                        .foregroundColor(dotColor)
-                        .cornerRadius(3)
+                        .background(Color(nsColor: SessionSidebarPalette.badge))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.inactiveText))
+                        .cornerRadius(4)
                 }
 
-                if let summary = item.childrenSummary {
-                    Text("(\(summary))")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-
-                if let elapsed = item.elapsed {
+                if !hasStatusOrSummaryRow, let elapsed = item.elapsed {
                     Text(elapsed)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
-                }
-
-                Spacer(minLength: 4)
-
-                if item.needsAttention && item.unreadCount == 0 && item.status.sidebarBadgeLabel == nil {
-                    Circle()
-                        .stroke(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
-                        .frame(width: 8, height: 8)
-                        .help("Needs Attention")
                 }
 
                 if item.unreadCount > 0 {
@@ -184,14 +156,39 @@ struct SessionSidebarRowView: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                onSelect()
-            }
+            .onTapGesture(perform: onSelect)
 
             if !item.isChild {
                 reorderButtons
             }
         }
+    }
+
+    @ViewBuilder
+    private var statusAndSummaryRow: some View {
+        HStack(spacing: 6) {
+            if let badge = item.status.sidebarBadgeLabel {
+                SidebarStatusChipView(status: item.status, label: badge)
+            }
+            if let summary = item.childrenSummary {
+                Text("(\(summary))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Spacer(minLength: 4)
+            if let elapsed = item.elapsed {
+                Text(elapsed)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .padding(.leading, item.isChild ? 15 : 0)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
     }
 
     private var reorderButtons: some View {
@@ -216,41 +213,51 @@ struct SessionSidebarRowView: View {
 
     @ViewBuilder
     private var metadataRows: some View {
-        if let pwd = item.workingDirectory, !pwd.isEmpty {
-            Text(formatDirectory(pwd))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                .lineLimit(1)
-        }
+        let hasPwd = !(item.workingDirectory?.isEmpty ?? true)
+        let hasGit = item.gitBranch != nil
+        let hasPorts = !(item.listeningPorts?.isEmpty ?? true)
+        if hasPwd || hasGit || hasPorts {
+            HStack(spacing: 8) {
+                if let pwd = item.workingDirectory, !pwd.isEmpty {
+                    Text(Tako.formatCompactDirectory(pwd))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
 
-        if let branch = item.gitBranch {
-            HStack(spacing: 3) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9))
-                Text(branch + (item.gitDirty == true ? "*" : (item.gitDirty == nil ? " (?)" : "")))
-                    .font(.system(size: 9, design: .monospaced))
-            }
-            .foregroundColor(gitStatusColor)
-            .help(gitStatusHelp)
-        }
+                if let branch = item.gitBranch {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 9))
+                        Text(branch + (item.gitDirty == true ? "*" : (item.gitDirty == nil ? " (?)" : "")))
+                            .font(.system(size: 10, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(gitStatusColor)
+                    .help(gitStatusHelp)
+                }
 
-        if let ports = item.listeningPorts, !ports.isEmpty {
-            HStack(spacing: 3) {
-                Image(systemName: "network")
-                    .font(.system(size: 9))
-                Text(ports.map { ":\($0)" }.joined(separator: ", "))
-                    .font(.system(size: 9, design: .monospaced))
+                if let ports = item.listeningPorts, !ports.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "network")
+                            .font(.system(size: 9))
+                        Text(ports.map { ":\($0)" }.joined(separator: ", "))
+                            .font(.system(size: 10, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                }
             }
-            .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
         }
 
         if let notif = item.latestNotification {
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 Image(systemName: "bell.fill")
                     .font(.system(size: 8))
                     .foregroundColor(Color(nsColor: Tako.Brand.ember))
                 Text(notif)
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
                     .lineLimit(1)
             }
@@ -258,23 +265,13 @@ struct SessionSidebarRowView: View {
     }
 
     private var gitStatusColor: Color {
-        if item.gitDirty == true {
-            return Color(nsColor: Tako.Brand.ember)
-        } else if item.gitDirty == nil {
-            return Color(nsColor: SessionSidebarPalette.inactiveText)
-        } else {
-            return Color(nsColor: SessionSidebarPalette.dim)
-        }
+        if item.gitDirty == true { return Color(nsColor: Tako.Brand.ember) }
+        return Color(nsColor: item.gitDirty == nil ? SessionSidebarPalette.inactiveText : SessionSidebarPalette.dim)
     }
 
     private var gitStatusHelp: String {
-        if item.gitDirty == true {
-            return "Modified repository"
-        } else if item.gitDirty == nil {
-            return "Git status unavailable"
-        } else {
-            return "Clean repository"
-        }
+        if item.gitDirty == true { return "Modified repository" }
+        return item.gitDirty == nil ? "Git status unavailable" : "Clean repository"
     }
 
     @ViewBuilder
@@ -315,9 +312,7 @@ struct SessionSidebarRowView: View {
                     Spacer()
                 }
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect()
-                }
+                .onTapGesture(perform: onSelect)
 
                 Button(action: {
                     editingItemId = item.id
@@ -358,30 +353,35 @@ struct SessionSidebarRowView: View {
     private func progressBarView(fraction: Double, state: TakoTerminalNSView.ProgressState) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: SessionSidebarPalette.badge)).frame(height: 2)
-                if state == .indeterminate {
-                    RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: Tako.Brand.ember)).frame(width: max(8, geo.size.width * 0.3), height: 2)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color(nsColor: SessionSidebarPalette.activeTab))
+                    .frame(height: 2)
+                let fillWidth = state == .indeterminate
+                    ? max(8, geo.size.width * 0.3)
+                    : max(2, geo.size.width * CGFloat(min(1.0, max(0.0, fraction))))
+                if state == .error {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color(nsColor: Tako.Brand.error))
+                        .frame(width: fillWidth, height: 2)
+                } else if state == .paused {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color(nsColor: Tako.Brand.claw))
+                        .frame(width: fillWidth, height: 2)
                 } else {
-                    RoundedRectangle(cornerRadius: 1).fill(Color(nsColor: color(for: state))).frame(width: max(2, geo.size.width * CGFloat(min(1.0, max(0.0, fraction)))), height: 2)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(LinearGradient(
+                            colors: [
+                                Color(nsColor: SessionSidebarPalette.progressGradientStart),
+                                Color(nsColor: SessionSidebarPalette.progressGradientEnd)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                        .frame(width: fillWidth, height: 2)
                 }
             }
         }
         .frame(height: 2)
         .padding(.top, 2)
-    }
-
-    private func color(for state: TakoTerminalNSView.ProgressState) -> NSColor {
-        switch state {
-        case .normal: return Tako.Brand.ok
-        case .error: return Tako.Brand.error
-        case .paused: return NSColor.systemOrange
-        case .indeterminate, .none: return Tako.Brand.ember
-        }
-    }
-
-    private func formatDirectory(_ raw: String) -> String {
-        let home = NSHomeDirectory()
-        if raw == home { return "~" }
-        return raw.hasPrefix(home) ? "~" + raw.dropFirst(home.count) : raw
     }
 }

@@ -79,33 +79,26 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         self.thumbnailLines = thumbnailLines
     }
 
-    /// Formats path into a compact display string (~/Projects/tako).
+    /// Formats path into a compact display string per spec ($HOME -> ~, max 2 segments).
     static func formatDirectory(_ path: String?) -> String {
-        guard let path, !path.isEmpty else { return "~" }
-        let home = NSHomeDirectory()
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
+        Tako.formatCompactDirectory(path)
     }
 
-    /// Status badge and border accent color based on Tako Brand palette (B1/B6).
+    /// Status badge color sourced from `Tako.tabStatusColor(for: status.dotKey)` matching Session Sidebar.
+    @MainActor
     var statusColor: NSColor {
-        switch status {
-        case .error:
-            return Tako.Brand.error
-        case .working, .running:
-            return Tako.Brand.ember
-        case .needsApproval, .waitingForInput:
-            return Tako.Brand.ember
-        case .done:
-            return Tako.Brand.ok
-        case .disconnected:
-            return Tako.Brand.dim
-        case .idle, .unknown:
-            return NSColor(srgbRed: 0x6E / 255, green: 0x68 / 255, blue: 0x62 / 255, alpha: 1)
-        }
+        status.sidebarDotColor
+    }
+
+    /// UI Kit status chip accent color (distinguishes waiting states with Tomorrow Yellow `#F0C674`).
+    @MainActor
+    var chipColor: NSColor {
+        status.uiChipColor
+    }
+
+    /// Unified UI Kit status chip label (`Approval`, `Needs Input`, `Working`, `Failed`, `Done`, `Offline`, `Idle`).
+    var chipLabel: String {
+        status.overviewChipLabel
     }
 
     /// Human-readable status label.
@@ -146,9 +139,10 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
             if let pwd, pwd.localizedCaseInsensitiveContains(relative) { return true }
         }
 
-        // Match status (raw value, human-readable label, or custom status text)
+        // Match status (raw value, human-readable label, chip label, or custom status text)
         if status.rawValue.localizedCaseInsensitiveContains(trimmed) { return true }
         if statusLabel.localizedCaseInsensitiveContains(trimmed) { return true }
+        if chipLabel.localizedCaseInsensitiveContains(trimmed) { return true }
         if let statusText, statusText.localizedCaseInsensitiveContains(trimmed) { return true }
 
         // Match crab state fallback (succeeded -> done, failed -> error, etc.)

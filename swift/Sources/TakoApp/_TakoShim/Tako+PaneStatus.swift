@@ -75,6 +75,31 @@ extension Tako {
             Tako.tabStatusColor(for: dotKey)
         }
 
+        /// UI Kit indicator and chip accent color.
+        /// Distinguishes "waiting for human" (`needsApproval`/`waitingForInput`) with Tomorrow Yellow (`#F0C674`)
+        /// from `working` (`ember` `#F4581C`) when no custom theme waiting override is set.
+        @MainActor
+        public var uiChipColor: NSColor {
+            switch self {
+            case .needsApproval, .waitingForInput:
+                if let color = Tako.activeTabStatusTheme?.tabStatusColors["waiting"],
+                   let nsColor = NSColor(cgColor: color) {
+                    return nsColor
+                }
+                return NSColor(srgbRed: 0xF0 / 255, green: 0xC6 / 255, blue: 0x74 / 255, alpha: 1)
+            default:
+                return sidebarDotColor
+            }
+        }
+
+        /// Whether this status represents an agent waiting on human input or approval (rendered with a hollow ring).
+        public var isWaitingForHuman: Bool {
+            switch self {
+            case .needsApproval, .waitingForInput: return true
+            default: return false
+            }
+        }
+
         /// Compact status badge label shown in Session Sidebar rows when non-idle.
         public var sidebarBadgeLabel: String? {
             switch self {
@@ -88,6 +113,11 @@ extension Tako {
             }
         }
 
+        /// Unified UI Kit chip label used in Pane Overview cards and Sidebar chips.
+        public var overviewChipLabel: String {
+            sidebarBadgeLabel ?? "Idle"
+        }
+
         /// Whether the status indicator should display an active pulse ring in the sidebar.
         public var isSidebarPulsing: Bool {
             switch self {
@@ -95,6 +125,41 @@ extension Tako {
             default: return false
             }
         }
+    }
+
+    /// Formats a directory path per the Tako design spec: `$HOME` -> `~`, keeping at most 2 path segments.
+    public static func formatCompactDirectory(_ rawPath: String?) -> String {
+        guard let rawPath, !rawPath.isEmpty else { return "~" }
+        let home = NSHomeDirectory()
+        var path = rawPath
+        var hasHomePrefix = false
+
+        if path == home {
+            return "~"
+        } else if path.hasPrefix(home + "/") {
+            path = String(path.dropFirst(home.count + 1))
+            hasHomePrefix = true
+        } else if path.hasPrefix("~/") {
+            path = String(path.dropFirst(2))
+            hasHomePrefix = true
+        } else if path.hasPrefix("/Users/") {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+            if parts.count >= 2 && parts[0] == "Users" {
+                if parts.count == 2 { return "~" }
+                path = parts.dropFirst(2).joined(separator: "/")
+                hasHomePrefix = true
+            }
+        }
+
+        let segments = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !segments.isEmpty else { return hasHomePrefix ? "~" : "/" }
+
+        if segments.count <= 2 {
+            let joined = segments.joined(separator: "/")
+            return hasHomePrefix ? "~/\(joined)" : "/\(joined)"
+        }
+        let tail = segments.suffix(2).joined(separator: "/")
+        return hasHomePrefix ? "~/…/\(tail)" : "…/\(tail)"
     }
 
     /// Sanitizes status text: strips C0/C1 control characters, trims whitespace, limits length to 128 characters.

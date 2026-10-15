@@ -103,11 +103,11 @@ struct PaneOverviewTests {
         #expect(doneItem.statusLabel == "Done")
 
         let waitingItem = PaneOverviewItem(id: UUID(), title: "Prompt", status: .waitingForInput)
-        #expect(waitingItem.statusColor == Tako.Brand.ember)
+        #expect(waitingItem.statusColor == Tako.Brand.claw)
         #expect(waitingItem.statusLabel == "Waiting for Input")
 
         let approvalItem = PaneOverviewItem(id: UUID(), title: "Review", status: .needsApproval)
-        #expect(approvalItem.statusColor == Tako.Brand.ember)
+        #expect(approvalItem.statusColor == Tako.Brand.claw)
         #expect(approvalItem.statusLabel == "Needs Approval")
 
         let idleItem = PaneOverviewItem(id: UUID(), title: "Prompt", status: .idle)
