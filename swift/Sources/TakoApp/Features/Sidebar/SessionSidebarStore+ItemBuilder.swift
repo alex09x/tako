@@ -135,8 +135,11 @@ extension SessionSidebarStore {
                 .filter { surfaceIds.contains($0.surfaceId) }
                 .max(by: { $0.time < $1.time })
             let latestNotification = latestRecord.flatMap { rec in
-                rec.title.isEmpty ? (rec.body.isEmpty ? nil : rec.body) : rec.title
-            }
+                if !rec.body.isEmpty && (rec.title.isEmpty || rec.title == "Approval" || rec.title == "Failed" || rec.title == "Needs input") {
+                    return rec.body
+                }
+                return rec.title.isEmpty ? (rec.body.isEmpty ? nil : rec.body) : rec.title
+            } ?? crab?.statusText
 
             // User-editable description (for stable tab ID, with legacy surface ID fallback)
             var userDesc = descriptions[id]

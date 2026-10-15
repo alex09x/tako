@@ -17,42 +17,38 @@ extension Tako.TabBarView {
         let ws = WorkspaceStore.shared.activeWorkspace
         let attention = WorkspaceStore.shared.attentionCount(for: ws)
 
-        // Background pill
-        ctx.setFillColor(workspaceHovered ? Palette.hoverTab.cgColor : Palette.badge.cgColor)
+        // Background pill (§4): #241C16 (hover #1F1915), r=6
+        ctx.setFillColor(workspaceHovered ? Palette.hoverTab.cgColor : Palette.activeTab.cgColor)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
         ctx.addPath(path)
         ctx.fillPath()
 
-        // Color dot
-        let dotColor: NSColor
-        switch ws.color?.lowercased() {
-        case "red": dotColor = Tako.Brand.error
-        case "green": dotColor = Tako.Brand.ok
-        case "orange": dotColor = Tako.Brand.ember
-        case "purple": dotColor = NSColor.systemPurple
-        case "yellow": dotColor = NSColor.systemYellow
-        default: dotColor = NSColor.systemBlue
-        }
+        // Color dot (§0 Tomorrow palette, no systemBlue)
+        let dotColor = Tako.LivingTokens.workspaceColor(for: ws.color)
         ctx.setFillColor(dotColor.cgColor)
         let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
         ctx.fillEllipse(in: dotRect)
 
-        // Workspace title
-        let maxTitleWidth = rect.width - 24 - (attention > 0 ? 20 : 0)
-        let title = Tako.TabText.truncate(ws.name, to: maxTitleWidth, font: Fonts.badge)
+        // Workspace title: mono 11 medium #B7ACA1 (hover #FAF7F2)
+        let wsFont = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
+        let maxTitleWidth = rect.width - 24 - (attention > 0 ? 22 : 0)
+        let title = Tako.TabText.truncate(ws.name, to: maxTitleWidth, font: wsFont)
         let textColor = workspaceHovered ? Palette.activeText : Palette.inactiveText
         Tako.TabText.draw(title, atX: dotRect.maxX + 6, centeredAtY: rect.midY,
-                          font: Fonts.badge, color: textColor, context: ctx)
+                          font: wsFont, color: textColor, context: ctx)
 
-        // Attention badge if > 0
+        // Attention badge if > 0 (§4: Claw #FF7A3D, r4, padding 1x4, mono 9.5 bold ink #14100E, "9+")
         if attention > 0 {
-            let badgeRect = CGRect(x: rect.maxX - 18, y: rect.midY - 6, width: 14, height: 12)
-            ctx.setFillColor(Tako.Brand.ember.cgColor)
+            let countStr = attention > 9 ? "9+" : "\(attention)"
+            let badgeFont = Tako.LivingTokens.monoFont(size: 9.5, weight: .bold)
+            let textW = Tako.TabText.width(of: countStr, font: badgeFont)
+            let badgeW = max(14, ceil(textW + 8))
+            let badgeRect = CGRect(x: rect.maxX - 9 - badgeW, y: rect.midY - 6.5, width: badgeW, height: 13)
+            ctx.setFillColor(Tako.LivingTokens.claw.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
-            let countStr = attention > 9 ? "9+" : "\(attention)"
-            Tako.TabText.draw(countStr, atX: badgeRect.minX + 3, centeredAtY: badgeRect.midY,
-                              font: Fonts.timer, color: Palette.bar, context: ctx)
+            Tako.TabText.draw(countStr, atX: badgeRect.midX - textW / 2, centeredAtY: badgeRect.midY,
+                              font: badgeFont, color: Tako.LivingTokens.ink, context: ctx)
         }
     }
 
@@ -162,6 +158,93 @@ extension Tako.TabBarView {
             let ws = WorkspaceStore.shared.createWorkspace(name: finalName)
             WorkspaceStore.shared.switchWorkspace(to: ws.id)
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    // MARK: - Pill Tab Living Surface Resolution (§1, §2, §4)
+
+    func pillSurfaceState(for window: NSWindow) -> Tako.SurfaceState {
+        let style = progressStyle(for: window)
+        let progPair = style.showsInTab ? aggregateProgress(for: window) : nil
+        let pState = progPair?.state ?? .none
+        let pFraction: Double? = {
+            guard pState != .none else { return nil }
+            if let v = progPair?.progress {
+                return min(1.0, max(0.0, Double(v) / 100.0))
+            }
+            return pState == .indeterminate ? 0.35 : nil
+        }()
+
+        let report = Tako.tabVisualStatus(for: window)
+        switch report.state {
+        case "disconnected":
+            return .offline
+        case "error":
+            return .failed
+        case "needs_approval", "waiting_for_input", "attention":
+            return .waiting
+        case "working", "running", "reconnecting":
+            if let pFraction { return .progress(pFraction) }
+            return .working
+        case "done", "succeeded":
+            return .done
+        default:
+            if let pFraction { return .progress(pFraction) }
+            return .idle
+        }
+    }
+
+    func pillMetaText(for window: NSWindow) -> String? {
+        if case .progress(let p) = pillSurfaceState(for: window) {
+            return "\(Int((p * 100).rounded()))%"
+        }
+        return elapsedFor(window)
+    }
+
+    func hasUnreadInWindow(_ window: NSWindow) -> Bool {
+        surfaces(in: window).contains {
+            !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
+        }
+    }
+
+    func updateStatusLayer(for window: NSWindow, rect: CGRect, state: Tako.SurfaceState, hideRing: Bool) {
+        if !wantsLayer {
+            wantsLayer = true
+            layer?.masksToBounds = false
+        }
+        let key = ObjectIdentifier(window)
+        let statusLayer: Tako.TabStatusLayer
+        if let existing = statusLayers[key] {
+            statusLayer = existing
+        } else {
+            let created = Tako.TabStatusLayer()
+            statusLayers[key] = created
+            layer?.addSublayer(created)
+            statusLayer = created
+        }
+        if statusLayer.superlayer == nil {
+            layer?.addSublayer(statusLayer)
+        }
+        let animState = LivingAnimationState.shared
+        statusLayer.apply(
+            state: state,
+            in: rect,
+            hideRing: hideRing,
+            reduceMotion: animState.reduceMotion,
+            paused: animState.isTimelinePaused,
+            allowFrameAnimation: isTabDragging
+        )
+    }
+
+    func syncStatusLayers(visibleTabIds: Set<ObjectIdentifier>) {
+        guard effectiveTabStyle == .pill else {
+            for (_, l) in statusLayers { l.removeFromSuperlayer() }
+            statusLayers.removeAll()
+            return
+        }
+        for (id, l) in statusLayers where !visibleTabIds.contains(id) {
+            l.removeFromSuperlayer()
+            statusLayers.removeValue(forKey: id)
         }
     }
 }

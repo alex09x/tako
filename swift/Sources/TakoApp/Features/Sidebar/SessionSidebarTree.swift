@@ -313,87 +313,70 @@ extension SessionSidebarStore {
     }
 }
 
-/// Tree header row for a Workspace in `SessionSidebarView`.
+/// Tree header row for a Workspace in `SessionSidebarView` (Spec 1b §5.4).
 struct SessionSidebarWorkspaceHeaderView: View {
     let group: SessionSidebarWorkspaceGroup
     var onToggleCollapse: () -> Void
     var onSelectWorkspace: () -> Void
 
+    private typealias T = Tako.LivingTokens
+
     private var workspaceDotColor: NSColor {
-        if group.dominantStatus != .idle && group.dominantStatus != .unknown {
-            return group.dominantStatus.uiChipColor
-        }
-        return switch group.color?.lowercased() {
-        case "red": Tako.Brand.error
-        case "green": Tako.Brand.ok
-        case "orange": Tako.Brand.ember
-        case "purple": NSColor.systemPurple
-        case "yellow": NSColor.systemYellow
-        default: SessionSidebarPalette.dim
-        }
+        T.workspaceColor(for: group.color)
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Button(action: onToggleCollapse) {
-                Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .frame(width: 14, height: 14)
+                Text(group.isCollapsed ? "▸" : "▾")
+                    .font(Font(T.monoFont(size: 9, weight: .bold)))
+                    .foregroundColor(Color(nsColor: T.faint))
+                    .frame(width: 10, height: 14, alignment: .center)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(group.isCollapsed ? "Expand workspace" : "Collapse workspace")
 
-            HStack(spacing: 6) {
-                if group.dominantStatus.isWaitingForHuman {
-                    Circle()
-                        .stroke(Color(nsColor: workspaceDotColor), lineWidth: 1.6)
-                        .frame(width: 7, height: 7)
-                } else {
-                    Circle()
-                        .fill(Color(nsColor: workspaceDotColor))
-                        .frame(width: 7, height: 7)
-                }
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(Color(nsColor: workspaceDotColor))
+                    .frame(width: 7, height: 7)
 
-                Image(systemName: group.icon ?? "folder.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Color(nsColor: group.isActive ? SessionSidebarPalette.activeText : SessionSidebarPalette.dim))
-
-                Text(group.name)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(Color(nsColor: group.isActive ? SessionSidebarPalette.activeText : SessionSidebarPalette.inactiveText))
+                Text(group.name.uppercased())
+                    .font(Font(T.monoFont(size: 10, weight: .bold)))
+                    .tracking(0.8)
+                    .foregroundColor(Color(nsColor: T.dim))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
                 Spacer(minLength: 4)
 
-                if group.attentionCount > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8))
-                        Text("\(group.attentionCount)").font(.system(size: 9, weight: .bold, design: .monospaced))
+                HStack(spacing: 6) {
+                    if group.attentionCount > 0 {
+                        let countStr = group.attentionCount > 9 ? "9+" : "\(group.attentionCount)"
+                        Text(countStr)
+                            .font(Font(T.monoFont(size: 9.5, weight: .bold)))
+                            .foregroundColor(Color(nsColor: T.ink))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.claw)))
                     }
-                    .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color(nsColor: Tako.Brand.ember).opacity(0.18))
-                    .foregroundColor(Color(nsColor: Tako.Brand.ember))
-                    .clipShape(Capsule())
-                }
 
-                Text("\(group.sessionCount)")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Color(nsColor: SessionSidebarPalette.badge))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .clipShape(Capsule())
+                    Text("\(group.sessionCount)")
+                        .font(Font(T.monoFont(size: 10, weight: .medium)))
+                        .foregroundColor(Color(nsColor: T.dim))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onSelectWorkspace)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 5).fill(group.isActive ? Color(nsColor: SessionSidebarPalette.badge).opacity(0.65) : Color.clear))
+        .padding(.top, 10)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 5)
     }
 }

@@ -323,19 +323,28 @@ struct PillTabBarUITests {
         let pill = bar.pillRect(for: bar.tabs[0])
         let midX = Int(pill.midX)
 
+        // Active pill in Spec 1b (§4) uses surfaceActive #241C16 (R=0.141) with hairline #2A211B (R=0.165)
+        // on bar #14100E (R=0.078), plus a 2px Ember #F4581C bar at the bottom of the bar.
         var pillYRows: [Int] = []
+        var hasEmberBottomBar = false
         for y in 0..<rep.pixelsHigh {
-            if let color = rep.colorAt(x: midX, y: y), color.redComponent > 0.19 {
-                pillYRows.append(y)
+            if let color = rep.colorAt(x: midX, y: y) {
+                if color.redComponent > 0.80 {
+                    hasEmberBottomBar = true
+                } else if color.redComponent > 0.12 && color.redComponent < 0.50 {
+                    pillYRows.append(y)
+                }
             }
         }
         #expect(!pillYRows.isEmpty)
+        #expect(hasEmberBottomBar)
         if let minY = pillYRows.min(), let maxY = pillYRows.max() {
             let renderedHeight = maxY - minY + 1
             let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
             let expectedPixels = Int(Tako.TabBarView.Metrics.buttonSize) * scale
             #expect(abs(renderedHeight - expectedPixels) <= 1)
         }
+        #expect(bar.paintedRingStates[ObjectIdentifier(a)] == .idle)
     }
 
     @Test func loneWindowInPillStyleLaysOutSinglePillTab() {
@@ -363,30 +372,24 @@ struct PillTabBarUITests {
     @Test func loneWindowInPillStyleShowsDistinctSnapshotWhenTitleChanges() {
         let window = makeWindow(title: "term-one")
         defer { Tako.CustomTabGroup.leave(window) }
-
         let bar = Tako.TabBarView(frame: .zero)
         mount(bar, in: window)
         draw(bar)
-
         let initial = snapshot(bar)
         window.title = "term-two-with-longer-name"
         bar.needsDisplay = true
         let updated = snapshot(bar)
-
         #expect(!bitmapsEqual(initial, updated))
     }
 
     @Test func renderLonePillTabGeneratesValidBitmap() {
         let window = makeWindow(title: "agy ~")
         defer { Tako.CustomTabGroup.leave(window) }
-
         let bar = Tako.TabBarView(frame: .zero)
         mount(bar, in: window)
         draw(bar)
-
         let rep = snapshot(bar)
         let pngData = rep.representation(using: .png, properties: [:])
-        #expect(pngData != nil)
         #expect((pngData?.count ?? 0) > 0)
     }
 }

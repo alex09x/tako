@@ -69,41 +69,53 @@ extension Tako.TabBarView {
         let rect = pillRect(for: tab)
         guard rect.width > 0 else { return }
 
-        // Background pill matching workspace pill corner geometry
+        let state = pillSurfaceState(for: tab.window)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
-        ctx.addPath(path)
+
+        // Background (§4): inactive transparent, hover #1F1915, progress #1A1512, active #241C16 + 1px #2A211B inset border
         if tab.isActive {
-            let activeBg = NSColor(srgbRed: 0x48 / 255, green: 0x3C / 255, blue: 0x32 / 255, alpha: 1.0)
-            ctx.setFillColor(activeBg.cgColor)
+            ctx.addPath(path)
+            ctx.setFillColor(Palette.activeTab.cgColor)
             ctx.fillPath()
 
-            // Crisp hairline outline for the active pill
-            ctx.setStrokeColor(Palette.hairline.cgColor)
-            ctx.setLineWidth(1)
-            ctx.addPath(path)
-            ctx.strokePath()
+            if state != .waiting {
+                let insetPath = CGPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 6, cornerHeight: 6, transform: nil)
+                ctx.addPath(insetPath)
+                ctx.setStrokeColor(Palette.hairline.cgColor)
+                ctx.setLineWidth(1)
+                ctx.strokePath()
+            }
+
+            // Active 2px Ember bar flush with the bottom of the 38pt bar (x: minX+10 ..< maxX-10, y: 0..<2)
+            let barW = max(4, rect.width - 20)
+            let emberBarRect = CGRect(x: rect.minX + 10, y: 0, width: barW, height: 2)
+            ctx.setFillColor(Tako.LivingTokens.ember.cgColor)
+            ctx.addPath(CGPath(roundedRect: emberBarRect, cornerWidth: 1, cornerHeight: 1, transform: nil))
+            ctx.fillPath()
         } else if hovering {
+            ctx.addPath(path)
             ctx.setFillColor(Palette.hoverTab.cgColor)
             ctx.fillPath()
-        } else {
-            ctx.setFillColor(Palette.badge.cgColor)
-            ctx.fillPath()
-        }
-
-        // Clipped progress bar along the bottom curve of the pill
-        let style = progressStyle(for: tab.window)
-        if style.showsInTab, let prog = aggregateProgress(for: tab.window) {
-            ctx.saveGState()
+        } else if case .progress = state {
             ctx.addPath(path)
-            ctx.clip()
-            drawProgressBar(in: rect, progress: prog, context: ctx)
-            ctx.restoreGState()
+            ctx.setFillColor(Tako.LivingTokens.chrome.cgColor)
+            ctx.fillPath()
+        } else if tab.index > 0, !tabs[tab.index - 1].isActive, hovered != (tab.index - 1) {
+            // Optional 1x12 #2A211B divider between adjacent background tabs (§4)
+            ctx.setFillColor(Palette.hairline.cgColor)
+            ctx.fill(CGRect(x: rect.minX - 3.5, y: rect.midY - 6, width: 1, height: 12))
         }
 
-        // Status indicator dot (7×7) matching workspace pill, or numeric badge when Command is held
-        let dotRect = CGRect(x: rect.minX + 8, y: rect.midY - 3.5, width: 7, height: 7)
-        if showingBadges && tab.index < 9 && windows.count > 1 {
-            let badgeRect = CGRect(x: rect.minX + 5, y: rect.midY - 7, width: 14, height: 14)
+        // Status Ring S=14 via TabStatusLayer or Command-number badge when Command is held
+        let showNumberBadge = showingBadges && tab.index < 9 && windows.count > 1
+        let dotColor = pillIndicatorColor(for: tab)
+        let tabKey = ObjectIdentifier(tab.window)
+        paintedPillDots[tabKey] = Tako.Brand.hexString(for: dotColor)
+        paintedRingStates[tabKey] = state
+        updateStatusLayer(for: tab.window, rect: rect, state: state, hideRing: showNumberBadge)
+
+        if showNumberBadge {
+            let badgeRect = CGRect(x: rect.minX + 8, y: rect.midY - 7, width: 14, height: 14)
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
@@ -117,47 +129,68 @@ extension Tako.TabBarView {
                 color: Palette.activeText,
                 context: ctx
             )
-        } else {
-            let dotColor = pillIndicatorColor(for: tab)
-            ctx.setFillColor(dotColor.cgColor)
-            ctx.fillEllipse(in: dotRect)
-            paintedPillDots[ObjectIdentifier(tab.window)] = Tako.Brand.hexString(for: dotColor)
         }
 
-        // Close button: visible on tabs with enough room, with 8px right margin
-        let showsClose = rect.width >= Metrics.pillCloseMinWidth
-        let closeExtra: CGFloat = showsClose ? (6 + 10) : 0
-        let maxTitleWidth = rect.width - 21 - 8 - closeExtra
+        // Right-side affordance: ✕ on active/hovered tab, or Ø5 Claw unread dot on background tabs with unread notifications
+        let showsClose = (tab.isActive || hovering) && rect.width >= Metrics.pillCloseMinWidth
+        let showsUnreadDot = !showsClose && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive))
+        let rightExtra: CGFloat = showsClose ? (7 + 10) : (showsUnreadDot ? (7 + 5) : 0)
+
+        let metaText = pillMetaText(for: tab.window)
+        let metaWidth = metaText.map { Tako.TabText.width(of: $0, font: Fonts.timer) } ?? 0
+        let titleStartX = rect.minX + 29 // 8 + 14 (ring S) + 7 (gap)
+        let availableForTitleAndMeta = rect.width - 29 - 9 - rightExtra
+        let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= 32)
+        let maxTitleWidth = availableForTitleAndMeta - (includesMeta ? (metaWidth + 7) : 0)
+
+        var drawnTitleWidth: CGFloat = 0
         if maxTitleWidth > 8 {
+            let titleFont = tab.isActive ? Fonts.pillActiveTitle : Fonts.pillTitle
             let rawTitle = titleFor(tab.window)
-            let title = Tako.TabText.truncate(rawTitle, to: maxTitleWidth, font: Fonts.badge)
-            let titleColor = (tab.isActive || hovering) ? Palette.activeText : Palette.inactiveText
-            Tako.TabText.draw(
+            let title = Tako.TabText.truncate(rawTitle, to: maxTitleWidth, font: titleFont)
+            let titleColor: NSColor
+            if state == .offline {
+                titleColor = Tako.LivingTokens.faint
+            } else if tab.isActive || hovering {
+                titleColor = Palette.activeText
+            } else {
+                titleColor = Palette.inactiveText
+            }
+            drawnTitleWidth = Tako.TabText.draw(
                 title,
-                atX: dotRect.maxX + 6,
+                atX: titleStartX,
                 centeredAtY: rect.midY,
-                font: Fonts.badge,
+                font: titleFont,
                 color: titleColor,
+                context: ctx
+            )
+        }
+
+        if includesMeta, let metaText {
+            let metaX = min(titleStartX + drawnTitleWidth + 7, rect.maxX - 9 - rightExtra - metaWidth)
+            Tako.TabText.draw(
+                metaText,
+                atX: metaX,
+                centeredAtY: rect.midY,
+                font: Fonts.timer,
+                color: Palette.dim,
                 context: ctx
             )
         }
 
         if showsClose {
             let closeGlyphRect = CGRect(
-                x: rect.maxX - 8 - 10,
+                x: rect.maxX - 9 - 10,
                 y: rect.midY - 5,
                 width: 10,
                 height: 10
             )
-            let closeColor: NSColor
-            if hoveredClose && hovering {
-                closeColor = Palette.activeText
-            } else if tab.isActive {
-                closeColor = Palette.inactiveText
-            } else {
-                closeColor = Palette.dim
-            }
+            let closeColor = (hoveredClose && hovering) ? Palette.activeText : Palette.dim
             drawClose(in: closeGlyphRect, color: closeColor, ctx: ctx)
+        } else if showsUnreadDot {
+            let unreadRect = CGRect(x: rect.maxX - 9 - 5, y: rect.midY - 2.5, width: 5, height: 5)
+            ctx.setFillColor(Tako.LivingTokens.claw.cgColor)
+            ctx.fillEllipse(in: unreadRect)
         }
     }
 
@@ -221,31 +254,16 @@ extension Tako.TabBarView {
         let titleFont = tab.isActive ? Fonts.activeTitle : Fonts.title
         let titleColor = tab.isActive ? Palette.activeText : Palette.inactiveText
         let timer = elapsedFor(tab.window)
-        let timerWidth = timer.map {
-            Tako.TabText.width(of: $0, font: Fonts.timer) + Metrics.contentGap
-        } ?? 0
+        let timerWidth = timer.map { Tako.TabText.width(of: $0, font: Fonts.timer) + Metrics.contentGap } ?? 0
 
-        let title = Tako.TabText.truncate(
-            titleFor(tab.window),
-            to: width - timerWidth,
-            font: titleFont
-        )
+        let title = Tako.TabText.truncate(titleFor(tab.window), to: width - timerWidth, font: titleFont)
         let titleWidth = Tako.TabText.draw(
-            title,
-            atX: x,
-            centeredAtY: tab.frame.midY,
-            font: titleFont,
-            color: titleColor,
-            context: ctx
+            title, atX: x, centeredAtY: tab.frame.midY, font: titleFont, color: titleColor, context: ctx
         )
         if let timer {
             Tako.TabText.draw(
-                timer,
-                atX: x + titleWidth + Metrics.contentGap,
-                centeredAtY: tab.frame.midY,
-                font: Fonts.timer,
-                color: Palette.dim,
-                context: ctx
+                timer, atX: x + titleWidth + Metrics.contentGap, centeredAtY: tab.frame.midY,
+                font: Fonts.timer, color: Palette.dim, context: ctx
             )
         }
     }
@@ -254,19 +272,11 @@ extension Tako.TabBarView {
     func drawCrab(for tab: Tab, in rect: CGRect, ctx: CGContext) {
         guard !(showingBadges && tab.index < 9 && windows.count > 1) else {
             ctx.setFillColor(Palette.badge.cgColor)
-            ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4,
-                               transform: nil))
+            ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
             let label = "\(tab.index + 1)"
             let width = Tako.TabText.width(of: label, font: Fonts.badge)
-            Tako.TabText.draw(
-                label,
-                atX: rect.midX - width / 2,
-                centeredAtY: rect.midY,
-                font: Fonts.badge,
-                color: Palette.activeText,
-                context: ctx
-            )
+            Tako.TabText.draw(label, atX: rect.midX - width / 2, centeredAtY: rect.midY, font: Fonts.badge, color: Palette.activeText, context: ctx)
             return
         }
         let unread = surfaces(in: tab.window).contains(where: {
@@ -299,26 +309,17 @@ extension Tako.TabBarView {
     func drawButtons(in ctx: CGContext) {
         drawButton(infoRect, hovered: infoHovered, in: ctx) { ctx, rect in
             let r: CGFloat = Metrics.infoGlyphSize / 2
-            let circleRect = CGRect(x: rect.midX - r, y: rect.midY - r, width: r * 2, height: r * 2)
             ctx.setStrokeColor(Palette.dim.cgColor)
             ctx.setLineWidth(1.2)
-            ctx.strokeEllipse(in: circleRect)
-
-            // Info dot (at top)
-            let dotRadius: CGFloat = 1.0
-            let dotCenterY = rect.midY + 2.5
+            ctx.strokeEllipse(in: CGRect(x: rect.midX - r, y: rect.midY - r, width: r * 2, height: r * 2))
             ctx.setFillColor(Palette.dim.cgColor)
-            ctx.fillEllipse(in: CGRect(x: rect.midX - dotRadius, y: dotCenterY - dotRadius,
-                                       width: dotRadius * 2, height: dotRadius * 2))
-
-            // Info stem (downwards)
+            ctx.fillEllipse(in: CGRect(x: rect.midX - 1.0, y: rect.midY + 1.5, width: 2.0, height: 2.0))
             ctx.setLineWidth(1.3)
             ctx.move(to: CGPoint(x: rect.midX, y: rect.midY + 0.5))
             ctx.addLine(to: CGPoint(x: rect.midX, y: rect.midY - 3.5))
             ctx.strokePath()
         }
         drawButton(splitRect, hovered: splitHovered, in: ctx) { ctx, rect in
-            // rectangle.split.2x1: two cells side by side, 13pt optical.
             let glyphSize: CGFloat = Metrics.splitGlyphSize
             let glyphRect = CGRect(x: rect.midX - glyphSize / 2, y: rect.midY - glyphSize * 0.7 / 2, width: glyphSize, height: glyphSize * 0.7)
             ctx.setStrokeColor(Palette.dim.cgColor)
@@ -344,11 +345,9 @@ extension Tako.TabBarView {
         let path = CGMutablePath()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.maxY),
-                          control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - radius),
-                          control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - radius), control: CGPoint(x: rect.maxX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
         path.closeSubpath()
         return path

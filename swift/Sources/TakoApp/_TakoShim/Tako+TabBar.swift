@@ -82,8 +82,10 @@ extension Tako {
         enum Fonts {
             static let title = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             static let activeTitle = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
-            static let timer = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-            static let badge = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+            static let pillTitle = Tako.LivingTokens.monoFont(size: 11.5, weight: .regular)
+            static let pillActiveTitle = Tako.LivingTokens.monoFont(size: 11.5, weight: .medium)
+            static let timer = Tako.LivingTokens.monoFont(size: 10, weight: .regular)
+            static let badge = Tako.LivingTokens.monoFont(size: 10, weight: .medium)
             static let loneTitle = NSFont.systemFont(ofSize: 13, weight: .semibold)
         }
 
@@ -117,8 +119,18 @@ extension Tako {
         var dragStartPoint: CGPoint?
         var isTabDragging: Bool = false
         var paintedPillDots: [ObjectIdentifier: String] = [:]
+        var paintedRingStates: [ObjectIdentifier: SurfaceState] = [:]
+        var statusLayers: [ObjectIdentifier: TabStatusLayer] = [:]
 
         override var isFlipped: Bool { false }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            wantsLayer = true
+            layer?.masksToBounds = false
+            superview?.wantsLayer = true
+            superview?.layer?.masksToBounds = false
+        }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
             true
@@ -204,10 +216,12 @@ extension Tako {
         private func naturalWidth(for window: NSWindow) -> CGFloat {
             if effectiveTabStyle == .pill {
                 let title = titleFor(window)
-                let titleWidth = TabText.width(of: title, font: Fonts.badge)
-                // Symmetrical pill: 8 (left) + 7 (dot) + 6 (gap) + titleWidth + 6 (gap) + 10 (close) + 8 (right)
-                let needed = 8 + 7 + 6 + titleWidth + 6 + 10 + 8
-                return min(180, max(64, ceil(needed)))
+                let titleWidth = TabText.width(of: title, font: Fonts.pillActiveTitle)
+                let metaText = pillMetaText(for: window)
+                let metaExtra = metaText.map { 7 + TabText.width(of: $0, font: Fonts.timer) } ?? 0
+                // §4: padding-left 8 -> ring S=14 -> gap 7 -> title -> (gap 7 + meta) -> gap 7 -> ✕ (10) -> padding-right 9
+                let needed = 8 + 14 + 7 + titleWidth + metaExtra + 7 + 10 + 9
+                return min(220, max(72, ceil(needed)))
             }
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
@@ -292,13 +306,11 @@ extension Tako {
             drawWorkspacePill(in: ctx)
 
             guard showsStrip else {
-                // Down to one window: forget the strip, or a click where it
-                // was would still be taken as a tab click instead of a drag
-                // of the title bar.
                 tabs = []
                 stripRect = .zero
                 hovered = nil
                 hoveredClose = false
+                syncStatusLayers(visibleTabIds: [])
                 drawLoneTitle()
                 drawButtons(in: ctx)
                 return
@@ -306,8 +318,13 @@ extension Tako {
             layoutTabs()
             ctx.saveGState()
             ctx.clip(to: stripRect)
-            for tab in tabs where tab.frame.intersects(stripRect) { drawTab(tab, in: ctx) }
+            var visibleTabIds: Set<ObjectIdentifier> = []
+            for tab in tabs where tab.frame.intersects(stripRect) {
+                visibleTabIds.insert(ObjectIdentifier(tab.window))
+                drawTab(tab, in: ctx)
+            }
             ctx.restoreGState()
+            syncStatusLayers(visibleTabIds: visibleTabIds)
             if let w = window {
                 let style = progressStyle(for: w)
                 if style.showsInWindow && !style.showsInTab, let prog = aggregateProgress(for: w) {

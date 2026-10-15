@@ -67,10 +67,10 @@ struct SessionSidebarVisualTreeTests {
             #expect(status.isSidebarPulsing)
         }
 
-        // 3. Waiting for Input -> Amber (#ff7a3d), "Needs Input" badge
+        // 3. Waiting for Input -> Amber (#ff7a3d), "Needs input" badge (§1)
         #expect(Tako.PaneStatus.waitingForInput.dotKey == "claw")
         #expect(Tako.Brand.hexString(for: Tako.PaneStatus.waitingForInput.sidebarDotColor) == "#ff7a3d")
-        #expect(Tako.PaneStatus.waitingForInput.sidebarBadgeLabel == "Needs Input")
+        #expect(Tako.PaneStatus.waitingForInput.sidebarBadgeLabel == "Needs input")
         #expect(!Tako.PaneStatus.waitingForInput.isSidebarPulsing)
 
         // 4. Needs Approval -> Amber (#ff7a3d), "Approval" badge

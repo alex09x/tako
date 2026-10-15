@@ -12,20 +12,19 @@ import AppKit
 import SwiftUI
 import TakoKit
 
-/// Full-window overview of every pane across tabs and windows as live thumbnails, coloured by status (B6).
-///
-/// Features:
-/// - Real-time live status updates reflecting immediately on pane cards.
-/// - Type-to-filter by title, working directory, or status.
-/// - Keyboard navigation: Arrow keys to navigate, Return to jump, Escape to close.
-/// - Fast opening meeting the < 150 ms budget for 30 panes.
+/// Full-window Pane Overview 4b modal (Spec 1b §6 & §7).
 struct PaneOverviewView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
 
     @ObservedObject private var store: PaneOverviewStore
+    @ObservedObject private var animState = LivingAnimationState.shared
+    @State private var isInitialFrameComplete = false
 
-    // Grid layout: responsive adaptive columns
+    private static let staticDate = Date(timeIntervalSinceReferenceDate: 0)
+    private typealias T = Tako.LivingTokens
+
+    // 3 columns adaptive (280...380), gap 16
     private let columns = [
         GridItem(.adaptive(minimum: 280, maximum: 380), spacing: 16)
     ]
@@ -40,50 +39,67 @@ struct PaneOverviewView: View {
         self.store = store
     }
 
+    private var waitingCount: Int {
+        store.items.filter { $0.surfaceState == .waiting || $0.status == .error }.count
+    }
+
+    private var workingCount: Int {
+        store.items.filter {
+            switch $0.surfaceState {
+            case .working, .progress: return true
+            default: return false
+            }
+        }.count
+    }
+
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop dismissing overview on click
+            // Backdrop (§6: 0.72 opacity)
             Color.black.opacity(0.72)
                 .ignoresSafeArea()
                 .onTapGesture {
                     close()
                 }
 
-            // Hidden buttons for reliable AppKit keyboard shortcuts
             ZStack {
                 Group {
                     Button { store.selectPrevious(cols: 1) } label: { Color.clear }
                         .keyboardShortcut(.leftArrow, modifiers: [])
                     Button { store.selectNext(cols: 1) } label: { Color.clear }
                         .keyboardShortcut(.rightArrow, modifiers: [])
-                    Button { store.selectPrevious(cols: 2) } label: { Color.clear }
+                    Button { store.selectPrevious(cols: 3) } label: { Color.clear }
                         .keyboardShortcut(.upArrow, modifiers: [])
-                    Button { store.selectNext(cols: 2) } label: { Color.clear }
+                    Button { store.selectNext(cols: 3) } label: { Color.clear }
                         .keyboardShortcut(.downArrow, modifiers: [])
                     Button { handleReturn() } label: { Color.clear }
                         .keyboardShortcut(.return, modifiers: [])
+                    Button { jumpToNextWaiting() } label: { Color.clear }
+                        .keyboardShortcut(.return, modifiers: [.option])
                 }
                 .buttonStyle(PlainButtonStyle())
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
 
-                // Main Content Modal
-                VStack(spacing: 0) {
-                    headerView
-                    Divider().background(Color(nsColor: Palette.hairline))
-                    contentGridView
-                    Divider().background(Color(nsColor: Palette.hairline))
-                    footerLegendView
+                // Single TimelineView for the entire Overview modal (§7)
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
+                    let now = isInitialFrameComplete ? context.date : Self.staticDate
+                    VStack(spacing: 0) {
+                        headerView
+                        Divider().background(Color(nsColor: T.hairline))
+                        contentGridView(now: now)
+                        Divider().background(Color(nsColor: T.hairline))
+                        footerLegendView
+                    }
                 }
                 .frame(maxWidth: 1100, minHeight: 680, idealHeight: 760, maxHeight: 760)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(nsColor: Palette.modalBackground))
-                        .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 4)
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(nsColor: T.chrome))
+                        .shadow(color: Color(nsColor: T.chrome).opacity(0.4), radius: 30, x: 0, y: 24)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color(nsColor: Palette.modalBorder), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
                 )
                 .padding(32)
             }
@@ -92,8 +108,12 @@ struct PaneOverviewView: View {
             if store.items.isEmpty {
                 store.refresh()
             }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isInitialFrameComplete = true
+            }
         }
         .onDisappear {
+            isInitialFrameComplete = false
             store.stopObserving()
         }
         .onKeyPress(.escape) {
@@ -101,74 +121,82 @@ struct PaneOverviewView: View {
             return .handled
         }
         .onKeyPress(.return) {
+            if NSEvent.modifierFlags.contains(.option) {
+                jumpToNextWaiting()
+                return .handled
+            }
             handleReturn()
             return .handled
         }
     }
 
-    // MARK: - Header
+    // MARK: - Header (§6: padding 14/18, gap 12, search flex h=30 r=8 #14100E, summary chips on right)
 
     private var headerView: some View {
         HStack(spacing: 12) {
-            Image(systemName: "square.grid.2x2.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(Color(nsColor: Tako.Brand.ember))
-
             Text("Pane Overview")
-                .font(.system(size: 15, weight: .bold, design: .monospaced))
-                .foregroundColor(Color(nsColor: Palette.activeText))
+                .font(T.headerFont(size: 15))
+                .foregroundColor(Color(nsColor: T.textActive))
                 .accessibilityIdentifier("PaneOverviewHeader")
-
-            Spacer()
 
             PaneOverviewSearchField(filterText: $store.filterText)
 
-            // Pane Count Badge
-            let total = store.items.count
-            let showing = store.filteredItems.count
-            Text(showing == total ? "\(total) panes" : "\(showing) of \(total)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color(nsColor: Palette.badge))
-                .foregroundColor(Color(nsColor: Palette.dim))
-                .clipShape(Capsule())
+            // Summary chips on right (gap 6): "N need you" (attn), "N working" (work), "N panes" (idle)
+            HStack(spacing: 6) {
+                if waitingCount > 0 {
+                    Button(action: {
+                        store.filterText = (store.filterText == "Approval" || store.filterText == "Needs input") ? "" : "Approval"
+                    }) {
+                        LivingStatusChipView(status: .needsApproval, customLabel: "\(waitingCount) need you")
+                    }
+                    .buttonStyle(.plain)
+                }
 
-            // Close button
-            Button(action: { close() }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-                    .padding(6)
-                    .background(Color(nsColor: Palette.buttonBackground))
-                    .clipShape(Circle())
+                if workingCount > 0 {
+                    Button(action: {
+                        store.filterText = (store.filterText == "Working") ? "" : "Working"
+                    }) {
+                        LivingStatusChipView(status: .working, customLabel: "\(workingCount) working")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Button(action: { store.filterText = "" }) {
+                    LivingStatusChipView(status: .idle, customLabel: "\(store.items.count) panes")
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(PlainButtonStyle())
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 18)
         .padding(.vertical, 14)
     }
 
-    // MARK: - Grid
+    // MARK: - Grid (§6: 3 columns, gap 16, padding 20)
 
-    private var contentGridView: some View {
+    private func contentGridView(now: Date) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 let currentItems = store.filteredItems
                 if currentItems.isEmpty {
                     emptyStateView
                 } else {
-                    let visibleLimit = min(currentItems.count, max(12, store.selectedIndex + 9))
+                    let visibleLimit = min(currentItems.count, max(9, store.selectedIndex + 6))
                     let visibleSlice = currentItems.prefix(visibleLimit)
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
-                            PaneOverviewCard(item: item, isSelected: index == store.selectedIndex)
-                                .equatable()
-                                .id(index)
-                                .onTapGesture {
-                                    store.selectedIndex = index
-                                    jump(to: item)
-                                }
+                            let cardNow = (item.surfaceState == .idle || item.surfaceState == .offline) ? Self.staticDate : now
+                            PaneOverviewCard(
+                                item: item,
+                                isSelected: index == store.selectedIndex,
+                                now: cardNow,
+                                reduceMotion: animState.reduceMotion
+                            )
+                            .equatable()
+                            .id(index)
+                            .onTapGesture {
+                                store.selectedIndex = index
+                                jump(to: item)
+                            }
                         }
                     }
                     .padding(20)
@@ -182,40 +210,40 @@ struct PaneOverviewView: View {
         }
     }
 
-    // MARK: - Footer Legend
+    // MARK: - Footer Legend (§6: border-top 1 #2A211B, padding 10/18, gap 16, keycaps mono 9.5 medium #EDE6DF on #352B23)
 
     private var footerLegendView: some View {
         HStack(spacing: 16) {
-            legendItem(key: "↑/↓/←/→", description: "Navigate")
-            legendItem(key: "↵", description: "Jump to Pane")
-            legendItem(key: "esc", description: "Close")
+            legendItem(key: "↑↓←→", description: "navigate")
+            legendItem(key: "⏎", description: "jump to pane")
+            legendItem(key: "⌥⏎", description: "next waiting")
+            legendItem(key: "esc", description: "close")
 
             Spacer()
 
             if let selected = store.selectedItem {
-                Text("Selected: \(selected.title)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Palette.activeText))
+                Text("\(selected.title) · \(selected.provenanceLabel)")
+                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                    .foregroundColor(Color(nsColor: T.text))
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 18)
         .padding(.vertical, 10)
     }
 
     private func legendItem(key: String, description: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text(key)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(Font(T.monoFont(size: 9.5, weight: .medium)))
                 .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Color(nsColor: Palette.badge))
-                .foregroundColor(Color(nsColor: Palette.activeText))
-                .cornerRadius(4)
+                .padding(.vertical, 1)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
+                .foregroundColor(Color(nsColor: T.text))
 
             Text(description)
-                .font(.system(size: 11))
-                .foregroundColor(Color(nsColor: Palette.dim))
+                .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                .foregroundColor(Color(nsColor: T.dim))
         }
     }
 
@@ -225,17 +253,17 @@ struct PaneOverviewView: View {
         VStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 32))
-                .foregroundColor(Color(nsColor: Palette.dim))
+                .foregroundColor(Color(nsColor: T.dim))
 
             Text("No panes found matching '\(store.filterText)'")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(nsColor: Palette.activeText))
+                .font(Font(T.monoFont(size: 13, weight: .medium)))
+                .foregroundColor(Color(nsColor: T.textActive))
 
             Button("Clear Filter") {
                 store.filterText = ""
             }
             .buttonStyle(.bordered)
-            .font(.system(size: 12))
+            .font(Font(T.monoFont(size: 11)))
         }
         .frame(maxWidth: .infinity, minHeight: 280)
     }
@@ -248,6 +276,20 @@ struct PaneOverviewView: View {
         }
     }
 
+    private func jumpToNextWaiting() {
+        let currentItems = store.filteredItems
+        guard !currentItems.isEmpty else { return }
+        let start = max(0, store.selectedIndex)
+        for offset in 1...currentItems.count {
+            let idx = (start + offset) % currentItems.count
+            let candidate = currentItems[idx]
+            if candidate.surfaceState == .waiting || candidate.status == .error {
+                store.selectedIndex = idx
+                return
+            }
+        }
+    }
+
     private func jump(to item: PaneOverviewItem) {
         store.jump(to: item)
         isPresented = false
@@ -257,44 +299,51 @@ struct PaneOverviewView: View {
         store.stopObserving()
         isPresented = false
     }
-
-    // MARK: - Theme Palette
-
-    private typealias Palette = PaneOverviewPalette
 }
 
 private struct PaneOverviewSearchField: View {
     @Binding var filterText: String
     @FocusState private var isSearchFieldFocused: Bool
 
+    private typealias T = Tako.LivingTokens
+
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+            Text("⌕")
+                .font(Font(T.monoFont(size: 12, weight: .medium)))
+                .foregroundColor(Color(nsColor: T.faint))
 
-            TextField("Filter by title, directory, or status…", text: $filterText)
-                .textFieldStyle(PlainTextFieldStyle())
-                .font(.system(size: 13, design: .monospaced))
-                .focused($isSearchFieldFocused)
-                .frame(minWidth: 260)
+            ZStack(alignment: .leading) {
+                if filterText.isEmpty {
+                    Text("Filter by title, directory or status…")
+                        .font(Font(T.monoFont(size: 11.5)))
+                        .foregroundColor(Color(nsColor: T.faint))
+                        .allowsHitTesting(false)
+                }
+                TextField("", text: $filterText)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .font(Font(T.monoFont(size: 11.5)))
+                    .foregroundColor(Color(nsColor: T.textActive))
+                    .focused($isSearchFieldFocused)
+            }
+            .frame(maxWidth: .infinity)
 
             if !filterText.isEmpty {
                 Button(action: { filterText = "" }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(nsColor: T.dim))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color(nsColor: PaneOverviewPalette.searchBackground))
-        .cornerRadius(8)
+        .padding(.horizontal, 11)
+        .frame(height: 30)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: T.body)))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: PaneOverviewPalette.hairline), lineWidth: 1)
+                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
         )
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -303,4 +352,3 @@ private struct PaneOverviewSearchField: View {
         }
     }
 }
-

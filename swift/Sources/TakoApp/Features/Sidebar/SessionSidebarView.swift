@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 import TakoKit
 
-/// SwiftUI view for the vertical Session Sidebar (B5).
+/// SwiftUI view for the vertical Session Sidebar 4a (Spec 1b §5 & §7).
 struct SessionSidebarView: View {
     @Binding var isPresented: Bool
     let containingWindow: NSWindow?
@@ -22,8 +22,9 @@ struct SessionSidebarView: View {
     @ObservedObject private var workspaceStore: WorkspaceStore
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
+    @ObservedObject private var animState = LivingAnimationState.shared
 
-    private typealias Palette = SessionSidebarPalette
+    private typealias T = Tako.LivingTokens
 
     @State private var selectedIndex: Int = 0
     @State private var editingItemId: String? = nil
@@ -31,7 +32,6 @@ struct SessionSidebarView: View {
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isListFocused: Bool
 
-    // Tracks window for tab group resolution
     @State private var hostingWindow: NSWindow?
 
     init(
@@ -60,13 +60,6 @@ struct SessionSidebarView: View {
         store.filterText(for: targetWindow)
     }
 
-    private var filterNeedsAttentionBinding: Binding<Bool> {
-        Binding(
-            get: { store.filterNeedsAttention(for: targetWindow) },
-            set: { store.setFilterNeedsAttention($0, for: targetWindow) }
-        )
-    }
-
     private var filterTextBinding: Binding<String> {
         Binding(
             get: { store.filterText(for: targetWindow) },
@@ -82,21 +75,35 @@ struct SessionSidebarView: View {
         workspaceGroups.flatMap(\.items)
     }
 
+    private var totalSessionCount: Int {
+        let sum = workspaceGroups.reduce(0) { $0 + $1.sessionCount }
+        return sum > 0 ? sum : items.filter { !$0.isChild }.count
+    }
+
+    private var totalAttentionCount: Int {
+        let sum = workspaceGroups.reduce(0) { $0 + $1.attentionCount }
+        if sum > 0 { return sum }
+        return items.filter { !$0.isChild && ($0.needsAttention || $0.surfaceState == .waiting || $0.surfaceState == .failed) }.count
+    }
+
     public var body: some View {
-        VStack(spacing: 0) {
-            headerView
-            searchAndFilterBar
-            Divider().background(Color(nsColor: Palette.hairline))
-            tabListView
-            Divider().background(Color(nsColor: Palette.hairline))
-            footerView
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: animState.isTimelinePaused || !isPresented)) { context in
+            let now = context.date
+            VStack(spacing: 0) {
+                headerView
+                searchAndSegmentsBar(now: now)
+                Divider().background(Color(nsColor: T.hairline))
+                tabListView(now: now)
+                Divider().background(Color(nsColor: T.hairline))
+                footerView
+            }
         }
         .frame(width: 260)
-        .background(Color(nsColor: Palette.bar))
+        .background(Color(nsColor: T.body))
         .overlay(
             Rectangle()
                 .frame(width: 1)
-                .foregroundColor(Color(nsColor: Palette.hairline)),
+                .foregroundColor(Color(nsColor: T.hairline)),
             alignment: .trailing
         )
         .onKeyPress(.escape) {
@@ -117,12 +124,9 @@ struct SessionSidebarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
             guard let win = notif.object as? NSWindow else { return }
-            // Only update hostingWindow if we were not explicitly bound to a window,
-            // or if the window that became key belongs to our own window's tab group.
             if let bound = containingWindow {
                 let group = Tako.CustomTabGroup.group(for: bound)
-                let groupWindows = group.windows
-                guard groupWindows.contains(where: { $0 === win }) else { return }
+                guard group.windows.contains(where: { $0 === win }) else { return }
                 hostingWindow = win
             } else if hostingWindow == nil {
                 hostingWindow = win
@@ -146,95 +150,97 @@ struct SessionSidebarView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Header (§5.1)
 
     private var headerView: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sidebar.left")
-                .foregroundColor(Color(nsColor: Tako.Brand.ember))
-                .font(.system(size: 13, weight: .medium))
-
             Text("Sessions")
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(Color(nsColor: Palette.activeText))
+                .font(T.headerFont(size: 13))
+                .foregroundColor(Color(nsColor: T.textActive))
                 .accessibilityIdentifier("SessionSidebarHeader")
 
             Spacer()
 
-            Text("\(items.count)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color(nsColor: Palette.badge))
-                .foregroundColor(Color(nsColor: Palette.dim))
-                .clipShape(Capsule())
-
-            Button(action: { isPresented = false }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color(nsColor: Palette.dim))
-            }
-            .buttonStyle(.plain)
-            .help("Close Session Sidebar (Esc)")
-            .accessibilityLabel("Close Session Sidebar (Esc)")
+            Text("\(totalSessionCount)")
+                .font(Font(T.monoFont(size: 10, weight: .medium)))
+                .foregroundColor(Color(nsColor: T.dim))
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
 
-    // MARK: - Search & Filters
+    // MARK: - Search & Segments (§5.2, §5.3)
 
-    private var searchAndFilterBar: some View {
-        VStack(spacing: 6) {
+    private func searchAndSegmentsBar(now: Date) -> some View {
+        VStack(spacing: 0) {
+            // Search input: margin 0 12 8, h 26, r 7, bg #1A1512, border 1 #2A211B, padding 0 9
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(nsColor: Palette.dim))
+                Text("⌕")
+                    .font(Font(T.monoFont(size: 11)))
+                    .foregroundColor(Color(nsColor: T.faint))
 
-                TextField("Filter tabs...", text: filterTextBinding)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(Color(nsColor: Palette.activeText))
-                    .focused($isSearchFocused)
-                    .onKeyPress(.escape) {
-                        isPresented = false
-                        return .handled
+                ZStack(alignment: .leading) {
+                    if filterText.isEmpty {
+                        Text("Filter sessions…")
+                            .font(Font(T.monoFont(size: 11)))
+                            .foregroundColor(Color(nsColor: T.faint))
+                            .allowsHitTesting(false)
                     }
+                    TextField("", text: filterTextBinding)
+                        .textFieldStyle(.plain)
+                        .font(Font(T.monoFont(size: 11)))
+                        .foregroundColor(Color(nsColor: T.textActive))
+                        .focused($isSearchFocused)
+                        .onKeyPress(.escape) {
+                            isPresented = false
+                            return .handled
+                        }
+                }
 
                 if !filterText.isEmpty {
                     Button(action: { store.setFilterText("", for: targetWindow) }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(Color(nsColor: Palette.dim))
+                            .foregroundColor(Color(nsColor: T.dim))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: Palette.activeTab))
-            .cornerRadius(5)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color(nsColor: T.chrome)))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color(nsColor: T.hairline), lineWidth: 1))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
 
-            // Filter button & Opt-ins
-            HStack(spacing: 6) {
-                Button(action: { store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow) }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: filterNeedsAttention ? "exclamationmark.circle.fill" : "exclamationmark.circle")
-                            .font(.system(size: 10))
-                        Text("Needs Attention")
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(filterNeedsAttention ? Color(nsColor: Tako.Brand.ember).opacity(0.25) : Color(nsColor: Palette.badge))
-                    .foregroundColor(filterNeedsAttention ? Color(nsColor: Tako.Brand.ember) : Color(nsColor: Palette.dim))
-                    .cornerRadius(4)
+            // Segments: margin 0 12 6, gap 4. Two segments h 22, r 6, padding 0 8, mono 10: "All" and "◎ Needs you · N"
+            HStack(spacing: 4) {
+                segmentButton(isActive: !filterNeedsAttention) {
+                    store.setFilterNeedsAttention(false, for: targetWindow)
+                } content: {
+                    Text("All")
+                        .font(Font(T.monoFont(size: 10, weight: .medium)))
                 }
-                .buttonStyle(.plain)
-                .help("Filter to tabs needing attention")
 
-                Spacer()
+                segmentButton(isActive: filterNeedsAttention) {
+                    store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
+                } content: {
+                    HStack(spacing: 5) {
+                        StatusRingView(
+                            state: .waiting,
+                            size: .extraSmall,
+                            now: now,
+                            reduceMotion: animState.reduceMotion
+                        )
+                        Text("Needs you · \(totalAttentionCount)")
+                            .font(Font(T.monoFont(size: 10, weight: .medium)))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+
+                Spacer(minLength: 4)
 
                 Menu {
                     Toggle("Git Branch & Status", isOn: $store.optInGit)
@@ -242,54 +248,58 @@ struct SessionSidebarView: View {
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 10))
-                        .foregroundColor(Color(nsColor: Palette.dim))
+                        .foregroundColor(Color(nsColor: T.dim))
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 18)
                 .help("Opt-in Inspections (Git, Ports)")
             }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
     }
 
-    // MARK: - Tab List
+    private func segmentButton<Content: View>(
+        isActive: Bool, action: @escaping () -> Void, @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button(action: action) {
+            content()
+                .foregroundColor(Color(nsColor: isActive ? T.textActive : T.dim))
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(RoundedRectangle(cornerRadius: 6).fill(isActive ? Color(nsColor: T.surfaceActive) : Color.clear))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isActive ? Color(nsColor: T.hairline) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 
-    private var tabListView: some View {
+    // MARK: - Tab List (§5.4 - §5.7)
+
+    private func tabListView(now: Date) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
                 let groups = workspaceGroups
                 let flatItems = groups.flatMap(\.items)
-                LazyVStack(spacing: 3) {
+                LazyVStack(spacing: 0) {
                     if groups.isEmpty || (flatItems.isEmpty && groups.allSatisfy({ !$0.isCollapsed })) {
-                        VStack(spacing: 6) {
-                            Text("No tabs match filter")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color(nsColor: Palette.dim))
-                        }
-                        .padding(.vertical, 24)
+                        Text("No tabs match filter")
+                            .font(Font(T.monoFont(size: 11)))
+                            .foregroundColor(Color(nsColor: T.dim))
+                            .padding(.vertical, 24)
                     } else {
                         ForEach(groups) { wsGroup in
                             SessionSidebarWorkspaceHeaderView(
                                 group: wsGroup,
-                                onToggleCollapse: {
-                                    store.toggleWorkspaceCollapsed(wsGroup.id)
-                                },
-                                onSelectWorkspace: {
-                                    store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore)
-                                }
+                                onToggleCollapse: { store.toggleWorkspaceCollapsed(wsGroup.id) },
+                                onSelectWorkspace: { store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore) }
                             )
-
                             ForEach(wsGroup.items) { item in
                                 let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
                                 SessionSidebarRowView(
-                                    item: item,
-                                    index: flatIdx,
-                                    selectedIndex: selectedIndex,
-                                    targetWindow: targetWindow,
-                                    editingItemId: $editingItemId,
-                                    editingDescriptionText: $editingDescriptionText,
-                                    isPresented: $isPresented,
+                                    item: item, index: flatIdx, selectedIndex: selectedIndex,
+                                    targetWindow: targetWindow, editingItemId: $editingItemId,
+                                    editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
+                                    now: now, reduceMotion: animState.reduceMotion,
                                     onSelect: {
                                         selectedIndex = flatIdx
                                         store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
@@ -299,23 +309,16 @@ struct SessionSidebarView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
             }
             .focusable()
             .focused($isListFocused)
             .onKeyPress(.upArrow) {
-                if selectedIndex > 0 {
-                    selectedIndex -= 1
-                    proxy.scrollTo(items[selectedIndex].id)
-                }
+                if selectedIndex > 0 { selectedIndex -= 1; proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.downArrow) {
-                if selectedIndex < items.count - 1 {
-                    selectedIndex += 1
-                    proxy.scrollTo(items[selectedIndex].id)
-                }
+                if selectedIndex < items.count - 1 { selectedIndex += 1; proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.leftArrow) {
@@ -339,48 +342,50 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(.return) {
+                if NSEvent.modifierFlags.contains(.option) { jumpToNextWaiting(); return .handled }
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     store.selectTab(item: items[selectedIndex], in: targetWindow, workspaceStore: workspaceStore)
                 }
                 return .handled
             }
-            .onKeyPress(.escape) {
-                isPresented = false
-                return .handled
+            .onKeyPress(.escape) { isPresented = false; return .handled }
+        }
+    }
+
+    private func jumpToNextWaiting() {
+        let allItems = items
+        guard !allItems.isEmpty else { return }
+        let start = max(0, selectedIndex)
+        for offset in 1...allItems.count {
+            let idx = (start + offset) % allItems.count
+            let candidate = allItems[idx]
+            if candidate.surfaceState == .waiting || candidate.needsAttention {
+                selectedIndex = idx
+                store.selectTab(item: candidate, in: targetWindow, workspaceStore: workspaceStore)
+                return
             }
         }
     }
 
-    // MARK: - Footer
+    // MARK: - Footer (§5.8)
 
     private var footerView: some View {
         HStack(spacing: 8) {
             Button(action: {
-                if let win = targetWindow,
-                   let surface = store.surfaces(in: win).first {
-                    NotificationCenter.default.post(
-                        name: Tako.Notification.takoNewTab,
-                        object: surface
-                    )
+                if let win = targetWindow, let surface = store.surfaces(in: win).first {
+                    NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: surface)
                 }
             }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("New Tab")
-                        .font(.system(size: 11, design: .monospaced))
-                }
-                .foregroundColor(Color(nsColor: Palette.inactiveText))
+                Text("+ New session").font(Font(T.monoFont(size: 10.5, weight: .regular))).foregroundColor(Color(nsColor: T.dim))
             }
             .buttonStyle(.plain)
-
             Spacer()
-
-            Text("↑↓ / ⏎")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(Color(nsColor: Palette.dim))
+            Button(action: jumpToNextWaiting) {
+                Text("⌥⏎ next waiting").font(Font(T.monoFont(size: 10.5, weight: .regular))).foregroundColor(Color(nsColor: T.dim))
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
     }
 }

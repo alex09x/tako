@@ -187,19 +187,23 @@ extension Tako {
 
         static func aggregateProgress(for surfaces: [SurfaceView]) -> (state: ProgressState, progress: Int?)? {
             guard !surfaces.isEmpty else { return nil }
-            if let err = surfaces.first(where: { $0.crab.progressState == .error }) {
-                return (.error, err.crab.progress)
+            let eff: (SurfaceView) -> (state: ProgressState, progress: Int?) = { s in
+                if s.crab.progressState != .none { return (s.crab.progressState, s.crab.progress) }
+                return (s.activeProgressState, s.activeProgressValue)
             }
-            if let paused = surfaces.first(where: { $0.crab.progressState == .paused }) {
-                return (.paused, paused.crab.progress)
+            if let err = surfaces.map(eff).first(where: { $0.state == .error }) {
+                return (.error, err.progress)
             }
-            let normalPanes = surfaces.filter { $0.crab.progressState == .normal }
+            if let paused = surfaces.map(eff).first(where: { $0.state == .paused }) {
+                return (.paused, paused.progress)
+            }
+            let normalPanes = surfaces.map(eff).filter { $0.state == .normal }
             if !normalPanes.isEmpty {
-                let values = normalPanes.compactMap { $0.crab.progress }
+                let values = normalPanes.compactMap { $0.progress }
                 let avg = values.isEmpty ? nil : values.reduce(0, +) / values.count
                 return (.normal, avg)
             }
-            if surfaces.contains(where: { $0.crab.progressState == .indeterminate }) {
+            if surfaces.map(eff).contains(where: { $0.state == .indeterminate }) {
                 return (.indeterminate, nil)
             }
             return nil

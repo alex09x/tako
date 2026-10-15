@@ -96,9 +96,34 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         status.uiChipColor
     }
 
-    /// Unified UI Kit status chip label (`Approval`, `Needs Input`, `Working`, `Failed`, `Done`, `Offline`, `Idle`).
+    /// Unified UI Kit status chip label (`Approval`, `Needs input`, `Working`, `Failed`, `Done`, `Offline`, `Idle`).
     var chipLabel: String {
         status.overviewChipLabel
+    }
+
+    /// Unified `Tako.SurfaceState` for this overview card per Spec 1b (§1).
+    var surfaceState: Tako.SurfaceState {
+        let frac: Double? = {
+            guard progressState != .none else { return nil }
+            if let progressValue { return min(1.0, max(0.0, Double(progressValue) / 100.0)) }
+            return progressState == .indeterminate ? 0.35 : nil
+        }()
+        return status.surfaceState(progressState: progressState, progressFraction: frac)
+    }
+
+    /// Meta text shown on the right of Row 1: `"NN%"` when progress is active, otherwise `elapsed`.
+    var metaDisplayText: String? {
+        if case .progress(let p) = surfaceState {
+            return "\(Int((p * 100).rounded()))%"
+        }
+        return elapsed
+    }
+
+    /// Provenance string `"Workspace › N"` for the card footer and modal footer (§6).
+    var provenanceLabel: String {
+        let ws = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = ws.isEmpty ? "Workspace" : ws
+        return "\(prefix) › \(tabIndex + 1)"
     }
 
     /// Human-readable status label.

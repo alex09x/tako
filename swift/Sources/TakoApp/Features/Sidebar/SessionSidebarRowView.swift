@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 import TakoKit
 
-/// Row component for an individual tab session within the Session Sidebar (B5).
+/// Row component for an individual session (Level 1) or split pane / subagent (Level 2) in Session Sidebar (Spec 1b §5).
 struct SessionSidebarRowView: View {
     let item: SessionSidebarItem
     let index: Int
@@ -21,10 +21,14 @@ struct SessionSidebarRowView: View {
     @Binding var editingItemId: String?
     @Binding var editingDescriptionText: String
     @Binding var isPresented: Bool
+    var now: Date = Date()
+    var reduceMotion: Bool = false
     var onSelect: () -> Void = {}
 
     @ObservedObject private var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
+
+    private typealias T = Tako.LivingTokens
 
     private var isNavSelected: Bool {
         selectedIndex == index
@@ -34,244 +38,289 @@ struct SessionSidebarRowView: View {
         item.isSelected
     }
 
+    private var state: Tako.SurfaceState {
+        item.surfaceState
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: item.isChild ? 2 : 3) {
-            headerRow
-            if hasStatusOrSummaryRow {
-                statusAndSummaryRow
-            }
-            if hasMetadataRow {
-                VStack(alignment: .leading, spacing: 2) {
-                    metadataRows
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onSelect)
-            }
-            if !item.isChild {
-                descriptionSection
-            }
-            progressSection
-        }
-        .padding(.leading, CGFloat(8 + item.indentationLevel * 10))
-        .padding(.trailing, 8)
-        .padding(.vertical, item.isChild ? 3 : 6)
-        .background(rowBackground)
-        .overlay(rowOverlay)
-    }
+        let elapsedInState = LivingAnimationState.shared.elapsedInState(
+            for: "sidebar-\(item.id)",
+            state: state,
+            now: now
+        )
+        let shouldShake = (state == .failed) && !reduceMotion
+        let shakeX = shouldShake ? LivingAnimationState.failedShakeOffset(elapsed: elapsedInState) : 0
 
-    private var hasStatusOrSummaryRow: Bool {
-        item.status.sidebarBadgeLabel != nil || item.childrenSummary != nil
-    }
-
-    private var hasMetadataRow: Bool {
-        let hasPwd = !(item.workingDirectory?.isEmpty ?? true)
-        let hasGit = item.gitBranch != nil
-        let hasPorts = !(item.listeningPorts?.isEmpty ?? true)
-        let hasNotif = item.latestNotification != nil
-        return !item.isChild ? (hasPwd || hasGit || hasPorts || hasNotif) : (hasPwd || hasPorts || hasNotif)
-    }
-
-    private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isTabActive ? Color(nsColor: SessionSidebarPalette.activeTab) : (isNavSelected ? Color(nsColor: SessionSidebarPalette.hoverTab) : Color.clear))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onSelect)
-    }
-
-    private var rowOverlay: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .stroke(isNavSelected ? Color(nsColor: Tako.Brand.ember).opacity(0.6) : Color.clear, lineWidth: 1)
-    }
-
-    @ViewBuilder
-    private var headerRow: some View {
-        HStack(spacing: 5) {
+        Group {
             if item.isChild {
-                Text("↳")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-            } else if item.hasChildren {
-                Button(action: {
-                    if item.paneCount > 1 {
-                        store.toggleTabSplitsCollapsed(item.tabId)
-                    }
-                    if let pid = item.surfaceId, SubagentHierarchyStore.shared.hasChildren(pid) {
-                        SubagentHierarchyStore.shared.toggleCollapsed(pid)
-                    }
-                }) {
-                    Image(systemName: item.isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .frame(width: 12, height: 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
+                paneChildRow(elapsedInState: elapsedInState)
+            } else {
+                sessionParentRow(elapsedInState: elapsedInState)
             }
+        }
+        .offset(x: shakeX)
+    }
 
-            HStack(spacing: 6) {
-                SidebarStatusIndicatorView(status: item.status, isChild: item.isChild)
-                    .help("Status: \(item.status.rawValue)")
+    // MARK: - Level 1: Session Row (§5.5)
+
+    private func sessionParentRow(elapsedInState: TimeInterval) -> some View {
+        let radius: CGFloat = 7
+        return VStack(alignment: .leading, spacing: 3) {
+            // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
+            HStack(spacing: 7) {
+                if item.hasChildren {
+                    Button(action: {
+                        if item.paneCount > 1 {
+                            store.toggleTabSplitsCollapsed(item.tabId)
+                        }
+                        if let pid = item.surfaceId, SubagentHierarchyStore.shared.hasChildren(pid) {
+                            SubagentHierarchyStore.shared.toggleCollapsed(pid)
+                        }
+                    }) {
+                        Text(item.isCollapsed ? "▸" : "▾")
+                            .font(Font(T.monoFont(size: 9, weight: .bold)))
+                            .foregroundColor(Color(nsColor: T.faint))
+                            .frame(width: 10, height: 14, alignment: .center)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
+                } else {
+                    Color.clear.frame(width: 10, height: 14)
+                }
+
+                StatusRingView(
+                    state: state,
+                    size: .small,
+                    now: now,
+                    elapsedInState: elapsedInState,
+                    reduceMotion: reduceMotion
+                )
+                .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
-                    .font(.system(size: 12, weight: isTabActive ? .medium : .regular, design: .monospaced))
-                    .foregroundColor(isTabActive ? Color(nsColor: SessionSidebarPalette.activeText) : Color(nsColor: SessionSidebarPalette.inactiveText))
+                    .font(Font(T.monoFont(size: 12, weight: isTabActive ? .medium : .regular)))
+                    .foregroundColor(sessionTitleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
                 Spacer(minLength: 4)
 
-                if let label = item.label {
-                    Text("[\(label)]")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color(nsColor: SessionSidebarPalette.badge))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.inactiveText))
-                        .cornerRadius(4)
-                }
-
-                if !hasStatusOrSummaryRow, let elapsed = item.elapsed {
-                    Text(elapsed)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+                if let meta = item.metaDisplayText {
+                    Text(meta)
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.dim))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
 
-                if item.unreadCount > 0 {
-                    Text("\(item.unreadCount)")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color(nsColor: Tako.Brand.ember))
-                        .foregroundColor(.black)
-                        .clipShape(Capsule())
+                if item.unreadCount > 0 || (state == .failed && !isTabActive) {
+                    Circle()
+                        .fill(Color(nsColor: T.claw))
+                        .frame(width: 5, height: 5)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onSelect)
 
-            if !item.isChild {
-                reorderButtons
+            // Line 2: 31pt left indent (= 10 + 7 + 14, directly under title)
+            if let secondLine = sessionSecondLineContent {
+                HStack(spacing: 6) {
+                    Text(secondLine.text)
+                        .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                        .foregroundColor(secondLine.color)
+                        .lineLimit(1)
+                        .truncationMode(secondLine.truncation)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 31)
+            }
+
+            if editingItemId == item.id || !(item.userDescription?.isEmpty ?? true) {
+                descriptionSection
+                    .padding(.leading, 31)
             }
         }
-    }
-
-    @ViewBuilder
-    private var statusAndSummaryRow: some View {
-        HStack(spacing: 6) {
-            if let badge = item.status.sidebarBadgeLabel {
-                SidebarStatusChipView(status: item.status, label: badge)
-            }
-            if let summary = item.childrenSummary {
-                Text("(\(summary))")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            Spacer(minLength: 4)
-            if let elapsed = item.elapsed {
-                Text(elapsed)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: radius)
+                .fill(rowBackgroundColor)
+        )
+        .overlay(
+            LivingSurfaceEffectsOverlay(
+                state: state,
+                cornerRadius: radius,
+                cometLineWidth: 1.0,
+                showsCometForProgress: false,
+                showsBottomProgressLine: true,
+                progressInsetLeft: 8,
+                now: now,
+                elapsedInState: elapsedInState,
+                reduceMotion: reduceMotion
+            )
+        )
+        .overlay(keyboardSelectionBorder(cornerRadius: radius))
+        .overlay(alignment: .leading) {
+            // Active row left 2pt Ember bar at sidebar left edge (x = 0, i.e. -8pt from row minX)
+            if isTabActive {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color(nsColor: T.ember))
+                    .frame(width: 2)
+                    .padding(.vertical, 8)
+                    .offset(x: -8)
             }
         }
-        .padding(.leading, item.isChild ? 15 : 0)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
     }
 
-    private var reorderButtons: some View {
-        HStack(spacing: 2) {
-            Button(action: { store.moveTab(item: item, delta: -1, in: targetWindow) }) {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 8))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-            }
-            .buttonStyle(.plain)
-            .disabled(!item.canMoveUp)
+    // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
 
-            Button(action: { store.moveTab(item: item, delta: 1, in: targetWindow) }) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
+    private func paneChildRow(elapsedInState: TimeInterval) -> some View {
+        let radius: CGFloat = 6
+        let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
+
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                StatusRingView(
+                    state: state,
+                    size: .small,
+                    now: now,
+                    elapsedInState: elapsedInState,
+                    reduceMotion: reduceMotion
+                )
+
+                Text(item.title)
+                    .font(Font(T.monoFont(size: 11, weight: isTabActive ? .medium : .regular)))
+                    .foregroundColor(sessionTitleColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 4)
+
+                if let meta = item.metaDisplayText {
+                    Text(meta)
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.dim))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                if item.unreadCount > 0 || (state == .failed && !isTabActive) {
+                    Circle()
+                        .fill(Color(nsColor: T.claw))
+                        .frame(width: 5, height: 5)
+                }
+
+                if let tag = item.compactPaneTag {
+                    Text(tag)
+                        .font(Font(T.monoFont(size: 9.5, weight: .medium)))
+                        .foregroundColor(Color(nsColor: T.textInactive))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
+                }
             }
-            .buttonStyle(.plain)
-            .disabled(!item.canMoveDown)
+
+            if let pwd = item.workingDirectory, !pwd.isEmpty {
+                Text(Tako.formatCompactDirectory(pwd))
+                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                    .foregroundColor(Color(nsColor: T.dim))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, 21)
+            }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: radius)
+                .fill(rowBackgroundColor)
+        )
+        .overlay(
+            SidebarPaneTreeConnectorShape()
+                .stroke(Color(nsColor: T.badge), lineWidth: 1.0)
+        )
+        .overlay(
+            LivingSurfaceEffectsOverlay(
+                state: paneEffectState,
+                cornerRadius: radius,
+                cometLineWidth: 1.0,
+                now: now,
+                elapsedInState: elapsedInState,
+                reduceMotion: reduceMotion
+            )
+        )
+        .overlay(keyboardSelectionBorder(cornerRadius: radius))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .padding(.leading, 36)
+        .padding(.trailing, 8)
+        .padding(.vertical, 1)
+    }
+
+    // MARK: - Helpers
+
+    private var sessionTitleColor: Color {
+        if state == .offline {
+            return Color(nsColor: T.faint)
+        }
+        return Color(nsColor: isTabActive ? T.textActive : T.textInactive)
+    }
+
+    private var rowBackgroundColor: Color {
+        if isTabActive {
+            return Color(nsColor: T.surfaceActive)
+        }
+        if isNavSelected {
+            return Color(nsColor: T.surfaceHover)
+        }
+        return Color.clear
     }
 
     @ViewBuilder
-    private var metadataRows: some View {
-        let hasPwd = !(item.workingDirectory?.isEmpty ?? true)
-        let hasGit = item.gitBranch != nil
-        let hasPorts = !(item.listeningPorts?.isEmpty ?? true)
-        if hasPwd || hasGit || hasPorts {
-            HStack(spacing: 8) {
-                if let pwd = item.workingDirectory, !pwd.isEmpty {
-                    Text(Tako.formatCompactDirectory(pwd))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                if let branch = item.gitBranch {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 9))
-                        Text(branch + (item.gitDirty == true ? "*" : (item.gitDirty == nil ? " (?)" : "")))
-                            .font(.system(size: 10, design: .monospaced))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(gitStatusColor)
-                    .help(gitStatusHelp)
-                }
-
-                if let ports = item.listeningPorts, !ports.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "network")
-                            .font(.system(size: 9))
-                        Text(ports.map { ":\($0)" }.joined(separator: ", "))
-                            .font(.system(size: 10, design: .monospaced))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                }
-            }
-        }
-
-        if let notif = item.latestNotification {
-            HStack(spacing: 4) {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 8))
-                    .foregroundColor(Color(nsColor: Tako.Brand.ember))
-                Text(notif)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                    .lineLimit(1)
-            }
+    private func keyboardSelectionBorder(cornerRadius: CGFloat) -> some View {
+        if isNavSelected && !isTabActive {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(Color(nsColor: T.ember).opacity(0.6), lineWidth: 1.0)
         }
     }
 
-    private var gitStatusColor: Color {
-        if item.gitDirty == true { return Color(nsColor: Tako.Brand.ember) }
-        return Color(nsColor: item.gitDirty == nil ? SessionSidebarPalette.inactiveText : SessionSidebarPalette.dim)
-    }
+    private var sessionSecondLineContent: (text: String, color: Color, truncation: Text.TruncationMode)? {
+        // §5.5: For waiting session, show the agent question in Claw #FF7A3D instead of path
+        if state == .waiting {
+            let prompt = item.latestNotification
+                ?? item.userDescription
+                ?? (item.status == .needsApproval ? "Approval required" : "Waiting for input…")
+            return (prompt, Color(nsColor: T.claw), .tail)
+        }
 
-    private var gitStatusHelp: String {
-        if item.gitDirty == true { return "Modified repository" }
-        return item.gitDirty == nil ? "Git status unavailable" : "Clean repository"
+        // §5.5: For failed session, show error message / exit info in #D54E53 if available
+        if state == .failed, let errNote = item.latestNotification ?? item.userDescription, !errNote.isEmpty {
+            return (errNote, Color(nsColor: T.error), .tail)
+        }
+
+        var parts: [String] = []
+        if let pwd = item.workingDirectory, !pwd.isEmpty {
+            parts.append(Tako.formatCompactDirectory(pwd))
+        }
+        if let branch = item.gitBranch, !branch.isEmpty {
+            let dirtySuffix = (item.gitDirty == true) ? " ±" : ""
+            parts.append("⎇ \(branch)\(dirtySuffix)")
+        }
+        if let ports = item.listeningPorts, !ports.isEmpty {
+            parts.append(ports.map { ":\($0)" }.joined(separator: ", "))
+        }
+        if parts.isEmpty, let notif = item.latestNotification, !notif.isEmpty {
+            return (notif, Color(nsColor: T.dim), .tail)
+        }
+        guard !parts.isEmpty else { return nil }
+        return (parts.joined(separator: " · "), Color(nsColor: T.dim), .middle)
     }
 
     @ViewBuilder
@@ -283,8 +332,8 @@ struct SessionSidebarRowView: View {
                     editingItemId = nil
                 })
                 .textFieldStyle(.plain)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(Color(nsColor: SessionSidebarPalette.activeText))
+                .font(Font(T.monoFont(size: 10)))
+                .foregroundColor(Color(nsColor: T.textActive))
                 .onKeyPress(.escape) {
                     editingItemId = nil
                     isPresented = false
@@ -297,91 +346,18 @@ struct SessionSidebarRowView: View {
                 }) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(Color(nsColor: Tako.Brand.ok))
+                        .foregroundColor(Color(nsColor: T.ok))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.top, 2)
         } else if let desc = item.userDescription, !desc.isEmpty {
             HStack(spacing: 4) {
-                HStack(spacing: 0) {
-                    Text(desc)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(Color(nsColor: Tako.Brand.ember).opacity(0.85))
-                        .lineLimit(1)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onSelect)
-
-                Button(action: {
-                    editingItemId = item.id
-                    editingDescriptionText = desc
-                }) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 8))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim))
-                }
-                .buttonStyle(.plain)
-            }
-        } else {
-            HStack(spacing: 0) {
-                Button(action: {
-                    editingItemId = item.id
-                    editingDescriptionText = ""
-                }) {
-                    Text("+ note")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(Color(nsColor: SessionSidebarPalette.dim).opacity(0.6))
-                }
-                .buttonStyle(.plain)
-
-                Spacer().contentShape(Rectangle()).onTapGesture(perform: onSelect)
+                Text(desc)
+                    .font(Font(T.monoFont(size: 10)))
+                    .foregroundColor(Color(nsColor: T.dim))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
         }
-    }
-
-    @ViewBuilder
-    private var progressSection: some View {
-        if item.progressState != .none, let progress = item.progress ?? (item.progressState == .indeterminate ? 0.0 : nil) {
-            progressBarView(fraction: progress, state: item.progressState)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onSelect)
-        }
-    }
-
-    private func progressBarView(fraction: Double, state: TakoTerminalNSView.ProgressState) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color(nsColor: SessionSidebarPalette.activeTab))
-                    .frame(height: 2)
-                let fillWidth = state == .indeterminate
-                    ? max(8, geo.size.width * 0.3)
-                    : max(2, geo.size.width * CGFloat(min(1.0, max(0.0, fraction))))
-                if state == .error {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color(nsColor: Tako.Brand.error))
-                        .frame(width: fillWidth, height: 2)
-                } else if state == .paused {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color(nsColor: Tako.Brand.claw))
-                        .frame(width: fillWidth, height: 2)
-                } else {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(LinearGradient(
-                            colors: [
-                                Color(nsColor: SessionSidebarPalette.progressGradientStart),
-                                Color(nsColor: SessionSidebarPalette.progressGradientEnd)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ))
-                        .frame(width: fillWidth, height: 2)
-                }
-            }
-        }
-        .frame(height: 2)
-        .padding(.top, 2)
     }
 }

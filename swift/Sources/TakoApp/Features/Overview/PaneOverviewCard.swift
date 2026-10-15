@@ -11,47 +11,66 @@
 import AppKit
 import SwiftUI
 
-/// A single card in the pane overview grid, showing thumbnail preview, status, and metadata.
+/// A single card in the Pane Overview 4b grid (Spec 1b §6).
 struct PaneOverviewCard: View, Equatable {
     let item: PaneOverviewItem
     let isSelected: Bool
+    var now: Date = Date()
+    var reduceMotion: Bool = false
+
+    private typealias T = Tako.LivingTokens
+
+    static func == (lhs: PaneOverviewCard, rhs: PaneOverviewCard) -> Bool {
+        lhs.item == rhs.item && lhs.isSelected == rhs.isSelected && lhs.reduceMotion == rhs.reduceMotion && lhs.now == rhs.now
+    }
 
     var body: some View {
-        let chipColor = Color(nsColor: item.chipColor)
+        let state = item.surfaceState
+        let elapsedInState = LivingAnimationState.shared.elapsedInState(
+            for: "overview-\(item.id.uuidString)",
+            state: state,
+            now: now
+        )
+        let radius: CGFloat = 10
 
         VStack(alignment: .leading, spacing: 6) {
-            // Card Top Row: UI Kit Status Chip + full-width status text (provenance moved to footer per P2 #13)
+            // Row 1 (gap 8): Ring L=18 -> title mono 13 semibold #FAF7F2 -> timer mono 10 #8A7F76 (dim, NOT ember)
             HStack(spacing: 8) {
-                HStack(spacing: 5) {
-                    if item.status.isWaitingForHuman {
-                        Circle()
-                            .stroke(chipColor, lineWidth: 1.5)
-                            .frame(width: 6, height: 6)
-                    } else {
-                        Circle()
-                            .fill(chipColor)
-                            .frame(width: 6, height: 6)
-                    }
-
-                    Text(item.chipLabel)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(chipColor)
-                        .lineLimit(1)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(chipColor.opacity(0.10))
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(chipColor.opacity(0.25), lineWidth: 1)
+                StatusRingView(
+                    state: state,
+                    size: .large,
+                    now: now,
+                    elapsedInState: elapsedInState,
+                    reduceMotion: reduceMotion,
+                    shakeRingOnly: true
                 )
+
+                Text(item.title)
+                    .font(Font(T.monoFont(size: 13, weight: .semibold)))
+                    .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textActive))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 4)
+
+                if let meta = item.metaDisplayText {
+                    Text(meta)
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.dim))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+
+            // Row 2 (gap 7): Status Chip -> statusText mono 10.5 #8A7F76
+            HStack(spacing: 7) {
+                LivingStatusChipView(status: item.status)
 
                 if let text = item.statusText, !text.isEmpty {
                     Text(text)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+                        .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.dim))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -59,98 +78,109 @@ struct PaneOverviewCard: View, Equatable {
                 Spacer(minLength: 0)
             }
 
-            // Pane Title
-            Text(item.title)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundColor(Color(nsColor: PaneOverviewPalette.activeText))
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            // Live Thumbnail: Terminal Output Preview
+            // Live Thumbnail Preview (h 112, #14100E, r 7, border 1 #2A211B, bottom 24pt fade, 3px progress bar)
             thumbnailView(item: item)
 
-            // Card Footer: Working directory, dim elapsed timer (P2 #8), and Workspace · Tab tag (P2 #13)
+            // Card Footer (gap 6): "~/…" mono 10.5 #8A7F76 on left, "Workspace › N" mono 10.5 #6B6259 on right
             HStack(spacing: 6) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
-
                 Text(item.directoryDisplay)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
+                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                    .foregroundColor(Color(nsColor: T.dim))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
 
                 Spacer(minLength: 4)
 
-                if let elapsed = item.elapsed {
-                    Text(elapsed)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-
-                Text(item.workspaceName.isEmpty ? "Tab \(item.tabIndex + 1)" : "\(item.workspaceName) · Tab \(item.tabIndex + 1)")
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(Color(nsColor: PaneOverviewPalette.inactiveText))
+                Text(item.provenanceLabel)
+                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                    .foregroundColor(Color(nsColor: T.faint))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color(nsColor: PaneOverviewPalette.badge))
-                    .cornerRadius(4)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: isSelected ? PaneOverviewPalette.selectedCardBackground : PaneOverviewPalette.cardBackground))
+            RoundedRectangle(cornerRadius: radius)
+                .fill(Color(nsColor: T.surfaceActive))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isSelected ? Color(nsColor: Tako.Brand.ember) : Color(nsColor: PaneOverviewPalette.hairline),
-                    lineWidth: isSelected ? 2.0 : 1.0
-                )
+            baseBorderOverlay(state: state, radius: radius)
+        )
+        .overlay(
+            LivingSurfaceEffectsOverlay(
+                state: state,
+                cornerRadius: radius,
+                cometLineWidth: 1.5,
+                showsCometForProgress: true,
+                showsBottomProgressLine: false,
+                isSelectedOverviewCard: isSelected,
+                now: now,
+                elapsedInState: elapsedInState,
+                reduceMotion: reduceMotion
+            )
         )
         .contentShape(Rectangle())
     }
 
+    @ViewBuilder
+    private func baseBorderOverlay(state: Tako.SurfaceState, radius: CGFloat) -> some View {
+        if isSelected && state != .waiting {
+            // §6: Selected card has 2px solid Ember #F4581C border (unless waiting, which uses breatheSel in LivingSurfaceEffectsOverlay)
+            RoundedRectangle(cornerRadius: radius)
+                .strokeBorder(Color(nsColor: T.ember), lineWidth: 2.0)
+        } else if state != .waiting && state != .offline {
+            RoundedRectangle(cornerRadius: radius)
+                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1.0)
+        }
+    }
+
     private func thumbnailView(item: PaneOverviewItem) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if item.thumbnailLines.isEmpty {
-                Text("~ $")
-                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundColor(Color(nsColor: PaneOverviewPalette.dim))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                Text(item.thumbnailLines.prefix(8).joined(separator: "\n"))
-                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundColor(Color(nsColor: PaneOverviewPalette.terminalText))
-                    .lineSpacing(2)
-                    .lineLimit(8)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+        ZStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                if item.thumbnailLines.isEmpty {
+                    Text("~ $")
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.dim))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    Text(item.thumbnailLines.prefix(7).joined(separator: "\n"))
+                        .font(Font(T.monoFont(size: 10, weight: .regular)))
+                        .foregroundColor(Color(nsColor: T.text))
+                        .lineSpacing(3)
+                        .lineLimit(7)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
 
-            Spacer(minLength: 0)
+            // Bottom 24pt fade gradient from clear to #14100E over text (§6)
+            LinearGradient(
+                colors: [Color(nsColor: T.body).opacity(0), Color(nsColor: T.body)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 24)
+            .allowsHitTesting(false)
 
-            // Progress bar if active (OSC 9;4)
+            // 3px Progress bar inside preview (§3.5): left 10, right 10, bottom 8, r 1.5, track #2A211B, fill Rust->Ember
             if item.progressState != .none {
                 progressBarView(state: item.progressState, value: item.progressValue)
                     .frame(height: 3)
-                    .padding(.top, 4)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
             }
         }
-        .padding(8)
-        .frame(height: 110)
+        .frame(height: 112)
         .frame(maxWidth: .infinity)
-        .background(Color(nsColor: PaneOverviewPalette.terminalBackground))
-        .cornerRadius(6)
+        .background(Color(nsColor: T.body))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(nsColor: PaneOverviewPalette.hairline), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
         )
     }
 
@@ -161,20 +191,17 @@ struct PaneOverviewCard: View, Equatable {
 
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color(nsColor: PaneOverviewPalette.selectedCardBackground))
+                    .fill(Color(nsColor: T.hairline))
 
                 if state == .error {
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color(nsColor: Tako.Brand.error))
+                        .fill(Color(nsColor: T.error))
                         .frame(width: width * CGFloat(fraction))
                 } else {
                     RoundedRectangle(cornerRadius: 1.5)
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color(nsColor: PaneOverviewPalette.progressGradientStart),
-                                    Color(nsColor: PaneOverviewPalette.progressGradientEnd)
-                                ],
+                                colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )

@@ -75,9 +75,7 @@ extension Tako {
             Tako.tabStatusColor(for: dotKey)
         }
 
-        /// UI Kit indicator and chip accent color.
-        /// Distinguishes "waiting for human" (`needsApproval`/`waitingForInput`) with Tomorrow Yellow (`#F0C674`)
-        /// from `working` (`ember` `#F4581C`) when no custom theme waiting override is set.
+        /// UI Kit indicator and chip accent color per Spec 1b (§0 & §6).
         @MainActor
         public var uiChipColor: NSColor {
             switch self {
@@ -86,13 +84,13 @@ extension Tako {
                    let nsColor = NSColor(cgColor: color) {
                     return nsColor
                 }
-                return NSColor(srgbRed: 0xF0 / 255, green: 0xC6 / 255, blue: 0x74 / 255, alpha: 1)
+                return Tako.Brand.claw
             default:
                 return sidebarDotColor
             }
         }
 
-        /// Whether this status represents an agent waiting on human input or approval (rendered with a hollow ring).
+        /// Whether this status represents an agent waiting on human input or approval.
         public var isWaitingForHuman: Bool {
             switch self {
             case .needsApproval, .waitingForInput: return true
@@ -100,11 +98,11 @@ extension Tako {
             }
         }
 
-        /// Compact status badge label shown in Session Sidebar rows when non-idle.
+        /// Compact status badge label shown in Session Sidebar and Pane Overview chips when non-idle (§1).
         public var sidebarBadgeLabel: String? {
             switch self {
             case .needsApproval: return "Approval"
-            case .waitingForInput: return "Needs Input"
+            case .waitingForInput: return "Needs input"
             case .error: return "Failed"
             case .done: return "Done"
             case .working, .running: return "Working"
@@ -113,16 +111,72 @@ extension Tako {
             }
         }
 
-        /// Unified UI Kit chip label used in Pane Overview cards and Sidebar chips.
+        /// Unified UI Kit chip label used in Pane Overview cards and Sidebar chips (§1).
         public var overviewChipLabel: String {
             sidebarBadgeLabel ?? "Idle"
         }
 
-        /// Whether the status indicator should display an active pulse ring in the sidebar.
+        /// Whether the status indicator should display an active animation in the sidebar.
         public var isSidebarPulsing: Bool {
             switch self {
             case .working, .running: return true
             default: return false
+            }
+        }
+
+        /// Maps `PaneStatus` and optional OSC 9;4 progress to the unified `SurfaceState` (§1).
+        public func surfaceState(
+            progressState: TakoTerminalNSView.ProgressState = .none,
+            progressFraction: Double? = nil,
+            elapsedSeconds: TimeInterval? = nil
+        ) -> Tako.SurfaceState {
+            switch self {
+            case .disconnected:
+                return .offline
+            case .error:
+                return .failed
+            case .needsApproval, .waitingForInput:
+                return .waiting
+            case .working, .running:
+                if progressState != .none, let p = progressFraction {
+                    return .progress(min(1.0, max(0.0, p)))
+                }
+                if self == .running, let elapsedSeconds, elapsedSeconds < 3.0 {
+                    return .idle
+                }
+                return .working
+            case .done:
+                return .done
+            case .idle, .unknown:
+                if progressState != .none, let p = progressFraction {
+                    return .progress(min(1.0, max(0.0, p)))
+                }
+                return .idle
+            }
+        }
+    }
+
+    /// Unified Living Surface state across Pill Tabs, Session Sidebar, and Pane Overview (Spec 1b §1).
+    public enum SurfaceState: Equatable, Sendable {
+        case idle
+        case working
+        case progress(Double /* 0...1 */)
+        case waiting
+        case done
+        case failed
+        case offline
+
+        /// Priority when aggregating across split panes, tabs, or workspaces:
+        /// offline > failed > waiting > working > progress > done > idle
+        public var priority: Int {
+            switch self {
+            case .offline: return 6
+            case .failed: return 5
+            case .waiting: return 4
+            case .working: return 3
+            case .progress: return 2
+            case .done: return 1
+            case .idle: return 0
             }
         }
     }
