@@ -148,7 +148,7 @@ struct SessionSidebarRowView: View {
                     .padding(.leading, 31)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, hasBorderBox1px ? 9 : 8)
         .padding(.vertical, vPad)
         .background(
             LivingSurfaceOuterGlow(
@@ -170,7 +170,7 @@ struct SessionSidebarRowView: View {
                 cometLineWidth: 1.0,
                 showsCometForProgress: true,
                 showsBottomProgressLine: true,
-                progressInsetLeft: 8,
+                progressInsetLeft: hasBorderBox1px ? 9 : 8,
                 now: now,
                 elapsedInState: elapsedInState,
                 reduceMotion: reduceMotion
@@ -199,6 +199,7 @@ struct SessionSidebarRowView: View {
         let radius: CGFloat = 6
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
         let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4
+        let hPad: CGFloat = (paneEffectState == .working) ? 9 : 8
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
@@ -253,7 +254,7 @@ struct SessionSidebarRowView: View {
                     .padding(.leading, 21)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, hPad)
         .padding(.vertical, vPad)
         .background(
             RoundedRectangle(cornerRadius: radius)

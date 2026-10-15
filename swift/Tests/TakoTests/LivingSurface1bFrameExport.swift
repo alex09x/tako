@@ -75,7 +75,8 @@ final class Strip1bFixtureView: NSView {
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil))
             ctx.setFillColor(spec.bg.cgColor)
             ctx.fillPath()
-            Tako.TabText.draw(spec.title, atX: rect.minX + 29, centeredAtY: rect.midY, font: font, color: spec.textColor, context: ctx)
+            let borderInset: CGFloat = (spec.state == .working || spec.state == .offline) ? 1.0 : 0.0
+            Tako.TabText.draw(spec.title, atX: rect.minX + 29 + borderInset, centeredAtY: rect.midY, font: font, color: spec.textColor, context: ctx)
         }
     }
 
@@ -83,8 +84,17 @@ final class Strip1bFixtureView: NSView {
 }
 
 extension LivingSurface1bVisualTests {
+    private func applyScale2x(_ layer: CALayer?) {
+        guard let layer else { return }
+        layer.contentsScale = 2.0
+        layer.mask?.contentsScale = 2.0
+        layer.sublayers?.forEach { applyScale2x($0) }
+    }
+
     func snapshot2x(_ view: NSView) -> NSBitmapImageRep {
         view.layoutSubtreeIfNeeded()
+        applyScale2x(view.layer)
+        for sub in view.subviews { applyScale2x(sub.layer) }
         let b = view.bounds
         let pw = max(1, Int((b.width * 2.0).rounded()))
         let ph = max(1, Int((b.height * 2.0).rounded()))
@@ -103,6 +113,19 @@ extension LivingSurface1bVisualTests {
         rep.size = b.size
         view.cacheDisplay(in: b, to: rep)
         return rep
+    }
+
+    func snapshotSwiftUI2x<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> NSBitmapImageRep? {
+        let renderer = ImageRenderer(
+            content: view
+                .frame(width: width, height: height)
+                .environment(\.displayScale, 2.0)
+                .environment(\.colorScheme, .dark)
+        )
+        renderer.scale = 2.0
+        renderer.proposedSize = ProposedViewSize(width: width, height: height)
+        guard let cgImage = renderer.cgImage else { return nil }
+        return NSBitmapImageRep(cgImage: cgImage)
     }
 
     func exportDesignFramesIfRequested() throws {
@@ -165,30 +188,11 @@ extension LivingSurface1bVisualTests {
         hostWin1.contentView = hostContent
         _ = snapshot2x(hostContent)
 
-        // 3. Setup Sidebar 4a (280×720 pt -> 560×1440 px)
-        let sidebarHost = NSHostingView(rootView: Sidebar4aReferenceView())
-        sidebarHost.frame = NSRect(x: 0, y: 0, width: 280, height: 720)
-        let sidebarWin = NSWindow(contentRect: sidebarHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        sidebarWin.contentView = sidebarHost
-        defer { sidebarWin.close() }
-
-        // 4. Setup Overview 4b (1100×580 pt -> 2200×1160 px)
+        // 3. Setup Overview 4b store (1100×580 pt -> 2200×1160 px)
         let ovStore = PaneOverviewStore()
         ovStore.items = makeOverview4bItems()
         ovStore.selectedIndex = 0
         let canvasBg = Color(nsColor: NSColor(srgbRed: 0xE4 / 255, green: 0xDF / 255, blue: 0xD9 / 255, alpha: 1))
-        let overviewHost = NSHostingView(
-            rootView: PaneOverviewView(
-                isPresented: .constant(true),
-                showsBackdrop: false,
-                store: ovStore,
-                nowOverride: Date(timeIntervalSinceReferenceDate: 0)
-            ).background(canvasBg)
-        )
-        overviewHost.frame = NSRect(x: 0, y: 0, width: 1100, height: 580)
-        let overviewWin = NSWindow(contentRect: overviewHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        overviewWin.contentView = overviewHost
-        defer { overviewWin.close() }
 
         LivingAnimationState.shared.resetEntries()
 
@@ -196,7 +200,6 @@ extension LivingSurface1bVisualTests {
         for ms in stride(from: 0, through: 3200, by: 40) {
             let t = Double(ms) / 1000.0
             LivingAnimationState.shared.fixedTimeOverride = t
-            LivingAnimationState.shared.objectWillChange.send()
 
             // Strip
             stripView.pillTimeOffset = t
@@ -215,20 +218,22 @@ extension LivingSurface1bVisualTests {
                 try data.write(to: dirURL.appendingPathComponent(String(format: "tabs_%04d.png", ms)))
             }
 
-            // Sidebar
-            sidebarHost.rootView = Sidebar4aReferenceView(now: Date(timeIntervalSinceReferenceDate: t))
-            if let data = snapshot2x(sidebarHost).representation(using: .png, properties: [:]) {
+            // Sidebar (true @2x via ImageRenderer)
+            let sidebarView = Sidebar4aReferenceView(now: Date(timeIntervalSinceReferenceDate: t))
+            if let rep = snapshotSwiftUI2x(sidebarView, width: 280, height: 720),
+               let data = rep.representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent(String(format: "sidebar_%04d.png", ms)))
             }
 
-            // Overview
-            overviewHost.rootView = PaneOverviewView(
+            // Overview (true @2x via ImageRenderer)
+            let overviewView = PaneOverviewView(
                 isPresented: .constant(true),
                 showsBackdrop: false,
                 store: ovStore,
                 nowOverride: Date(timeIntervalSinceReferenceDate: t)
             ).background(canvasBg)
-            if let data = snapshot2x(overviewHost).representation(using: .png, properties: [:]) {
+            if let rep = snapshotSwiftUI2x(overviewView, width: 1100, height: 580),
+               let data = rep.representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent(String(format: "overview_%04d.png", ms)))
             }
         }
@@ -346,8 +351,8 @@ struct Sidebar4aReferenceView: View {
                 Spacer()
                 Text("9").font(Font(T.monoFont(size: 10, weight: .medium))).foregroundColor(Color(nsColor: T.dim))
             }
-            .frame(height: 18)
-            .padding(.top, 12).padding(.horizontal, 12).padding(.bottom, 8)
+            .frame(height: 17)
+            .padding(.top, 11).padding(.horizontal, 12).padding(.bottom, 9)
             HStack(spacing: 7) {
                 Text("⌕").font(Font(T.monoFont(size: 11))).foregroundColor(Color(nsColor: T.faint))
                 Text("Filter sessions…").font(Font(T.monoFont(size: 11))).foregroundColor(Color(nsColor: T.faint))
@@ -381,7 +386,8 @@ struct Sidebar4aReferenceView: View {
             HStack {
                 Text("+ New session").font(Font(T.monoFont(size: 10.5))).foregroundColor(Color(nsColor: T.dim))
                 Spacer()
-                Text("⌥⏎ next waiting").font(Font(T.monoFont(size: 10.5))).foregroundColor(Color(nsColor: T.dim))
+                (Text("⌥⏎").font(.custom("Menlo-Regular", fixedSize: 10.5)) + Text(" next waiting").font(Font(T.monoFont(size: 10.5))))
+                    .foregroundColor(Color(nsColor: T.dim))
             }
             .frame(height: 14)
             .padding(.horizontal, 12).padding(.vertical, 9)

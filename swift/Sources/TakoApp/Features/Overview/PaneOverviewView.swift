@@ -154,7 +154,7 @@ struct PaneOverviewView: View {
                 .foregroundColor(Color(nsColor: T.textActive))
                 .accessibilityIdentifier("PaneOverviewHeader")
 
-            PaneOverviewSearchField(filterText: $store.filterText)
+            PaneOverviewSearchField(filterText: $store.filterText, isInteractive: nowOverride == nil)
 
             // Summary chips on right (gap 6): "N need you" (attn), "N working" (work), "N panes" (idle)
             HStack(spacing: 6) {
@@ -189,40 +189,60 @@ struct PaneOverviewView: View {
 
     // MARK: - Grid (§6: 3 columns, gap 16, padding 20)
 
+    @ViewBuilder
     private func contentGridView(now: Date) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                let currentItems = store.filteredItems
-                if currentItems.isEmpty {
-                    emptyStateView
-                } else {
-                    let isFull = isInitialFrameComplete || nowOverride != nil
-                    let visibleLimit = min(currentItems.count, max(isFull ? 9 : 5, store.selectedIndex + (isFull ? 6 : 5)))
-                    let visibleSlice = currentItems.prefix(visibleLimit)
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
-                            let cardNow = (item.surfaceState == .idle || item.surfaceState == .offline) ? Self.staticDate : now
-                            PaneOverviewCard(
-                                item: item,
-                                isSelected: index == store.selectedIndex,
-                                now: cardNow,
-                                reduceMotion: animState.reduceMotion,
-                                showsAnimatedEffects: isFull
-                            )
-                            .equatable()
-                            .id(index)
-                            .onTapGesture {
-                                store.selectedIndex = index
-                                jump(to: item)
+        let currentItems = store.filteredItems
+        let isFull = isInitialFrameComplete || nowOverride != nil
+        let visibleLimit = min(currentItems.count, max(isFull ? 9 : 5, store.selectedIndex + (isFull ? 6 : 5)))
+        let visibleSlice = currentItems.prefix(visibleLimit)
+
+        if nowOverride != nil {
+            VStack(spacing: 0) {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
+                        PaneOverviewCard(
+                            item: item,
+                            isSelected: index == store.selectedIndex,
+                            now: now,
+                            reduceMotion: animState.reduceMotion,
+                            showsAnimatedEffects: true
+                        )
+                    }
+                }
+                .padding(20)
+                Spacer(minLength: 0)
+            }
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    if currentItems.isEmpty {
+                        emptyStateView
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 16) {
+                            ForEach(Array(visibleSlice.enumerated()), id: \.element.id) { index, item in
+                                let cardNow = (item.surfaceState == .idle || item.surfaceState == .offline) ? Self.staticDate : now
+                                PaneOverviewCard(
+                                    item: item,
+                                    isSelected: index == store.selectedIndex,
+                                    now: cardNow,
+                                    reduceMotion: animState.reduceMotion,
+                                    showsAnimatedEffects: isFull
+                                )
+                                .equatable()
+                                .id(index)
+                                .onTapGesture {
+                                    store.selectedIndex = index
+                                    jump(to: item)
+                                }
                             }
                         }
+                        .padding(20)
                     }
-                    .padding(20)
                 }
-            }
-            .onChange(of: store.selectedIndex) {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    proxy.scrollTo(store.selectedIndex, anchor: .center)
+                .onChange(of: store.selectedIndex) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        proxy.scrollTo(store.selectedIndex, anchor: .center)
+                    }
                 }
             }
         }
@@ -252,9 +272,14 @@ struct PaneOverviewView: View {
     }
 
     private func legendItem(key: String, description: String) -> some View {
-        HStack(spacing: 5) {
+        let isSymbolKey = (key == "⏎" || key == "⌥⏎")
+        let keyFont: Font = isSymbolKey
+            ? .custom("Menlo-Regular", fixedSize: 9.5)
+            : Font(T.monoFont(size: 9.5, weight: .medium))
+        return HStack(spacing: 5) {
             Text(key)
-                .font(Font(T.monoFont(size: 9.5, weight: .medium)))
+                .font(keyFont)
+                .frame(height: 12)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
@@ -322,6 +347,7 @@ struct PaneOverviewView: View {
 
 private struct PaneOverviewSearchField: View {
     @Binding var filterText: String
+    var isInteractive: Bool = true
     @FocusState private var isSearchFieldFocused: Bool
 
     private typealias T = Tako.LivingTokens
@@ -339,13 +365,17 @@ private struct PaneOverviewSearchField: View {
                         .foregroundColor(Color(nsColor: T.faint))
                         .allowsHitTesting(false)
                 }
-                TextField("", text: $filterText)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .font(Font(T.monoFont(size: 11.5)))
-                    .foregroundColor(Color(nsColor: T.textActive))
-                    .focused($isSearchFieldFocused)
+                if isInteractive {
+                    TextField("", text: $filterText)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .font(Font(T.monoFont(size: 11.5)))
+                        .foregroundColor(Color(nsColor: T.textActive))
+                        .focused($isSearchFieldFocused)
+                } else {
+                    Color.clear.frame(height: 16)
+                }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if !filterText.isEmpty {
                 Button(action: { filterText = "" }) {
@@ -360,14 +390,9 @@ private struct PaneOverviewSearchField: View {
         .frame(height: 30)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: T.body)))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: T.hairline), lineWidth: 1))
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                isSearchFieldFocused = true
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { isSearchFieldFocused = true }
         }
     }
 }

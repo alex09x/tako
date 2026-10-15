@@ -24,7 +24,7 @@ extension Tako {
         private var isLayerPaused: Bool = false
 
         private let clippedInnerContainer = CALayer()
-        private let failedLineLayer = CALayer()
+        private let failedLineLayer = CAShapeLayer()
         private let progressLineLayer = CAGradientLayer()
         private let flashLayer = CAGradientLayer()
 
@@ -45,13 +45,14 @@ extension Tako {
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         private func setupSublayers() {
-            masksToBounds = false
-            clippedInnerContainer.cornerRadius = 6
-            clippedInnerContainer.masksToBounds = true
+            contentsScale = 2.0; masksToBounds = false
+            for l: CALayer in [clippedInnerContainer, failedLineLayer, progressLineLayer, flashLayer, cometContainer, cometMask, cometGradient, breatheLayer, offlineBorderLayer, ringContainer] {
+                l.contentsScale = 2.0
+            }
+            clippedInnerContainer.cornerRadius = 6; clippedInnerContainer.masksToBounds = true
             addSublayer(clippedInnerContainer)
 
-            failedLineLayer.backgroundColor = T.error.cgColor
-            failedLineLayer.isHidden = true
+            failedLineLayer.fillColor = T.error.cgColor; failedLineLayer.fillRule = .evenOdd; failedLineLayer.isHidden = true
             clippedInnerContainer.addSublayer(failedLineLayer)
 
             progressLineLayer.colors = [T.rust.cgColor, T.ember.cgColor]
@@ -100,11 +101,14 @@ extension Tako {
 
             CATransaction.begin()
             CATransaction.setDisableActions(!allowFrameAnimation)
-            frame = pillRect
+            let savedTransform = transform; transform = CATransform3DIdentity
+            frame = pillRect; transform = savedTransform
             ringContainer.isHidden = hideRing
+            let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
+            ringContainer.frame = CGRect(x: ringX, y: ((pillRect.height - 14) / 2).rounded(), width: 14, height: 14)
             if sizeChanged {
                 lastSize = pillRect.size; lastReduceMotion = reduceMotion
-                layoutGeometries(for: pillRect.size)
+                layoutGeometries(for: pillRect.size, ringX: ringX)
             }
             CATransaction.commit()
             setLayerPaused(paused)
@@ -119,10 +123,14 @@ extension Tako {
             rebuildSurfaceEffects(for: state, size: pillRect.size, reduceMotion: reduceMotion, triggerOneShot: didChangeState)
         }
 
-        private func layoutGeometries(for size: CGSize) {
+        private func layoutGeometries(for size: CGSize, ringX: CGFloat = 8) {
             let b = CGRect(origin: .zero, size: size)
             clippedInnerContainer.frame = b
-            failedLineLayer.frame = CGRect(x: 0, y: 0, width: size.width, height: 2)
+            failedLineLayer.frame = b
+            let errPath = CGMutablePath()
+            errPath.addRect(b)
+            errPath.addRoundedRect(in: b.offsetBy(dx: 0, dy: 2), cornerWidth: 6, cornerHeight: 6)
+            failedLineLayer.path = errPath
             let hLayer = max(1, size.height + 6)
             flashLayer.frame = CGRect(x: -size.width, y: -3, width: size.width, height: hLayer)
             let dy = tan(10.0 * .pi / 180.0) * (size.width / hLayer)
@@ -141,12 +149,12 @@ extension Tako {
             breatheLayer.frame = b; breatheLayer.path = borderPath
             breatheLayer.shadowPath = CGPath(roundedRect: b.insetBy(dx: -1, dy: -1), cornerWidth: 7, cornerHeight: 7, transform: nil)
             offlineBorderLayer.frame = b; offlineBorderLayer.path = borderPath
-            ringContainer.frame = CGRect(x: 8, y: ((size.height - 14) / 2).rounded(), width: 14, height: 14)
+            ringContainer.frame = CGRect(x: ringX, y: ((size.height - 14) / 2).rounded(), width: 14, height: 14)
         }
 
         private func makeStrokeCircle(_ rect: CGRect, inset: CGFloat, color: CGColor, width: CGFloat, dash: [NSNumber]? = nil) -> CAShapeLayer {
             let l = CAShapeLayer()
-            l.frame = rect; l.path = CGPath(ellipseIn: rect.insetBy(dx: inset, dy: inset), transform: nil)
+            l.contentsScale = 2.0; l.frame = rect; l.path = CGPath(ellipseIn: rect.insetBy(dx: inset, dy: inset), transform: nil)
             l.fillColor = nil; l.strokeColor = color; l.lineWidth = width; l.lineDashPattern = dash
             return l
         }
@@ -192,12 +200,9 @@ extension Tako {
             case .waiting:
                 if !reduceMotion {
                     let halo = makeStrokeCircle(rBounds, inset: 1.0, color: T.claw.cgColor, width: 2.0)
-                    halo.name = "waitingHalo"
-                    ringContainer.addSublayer(halo)
-                    let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
-                    scaleAnim.fromValue = 1.0; scaleAnim.toValue = 2.1
-                    let opAnim = CABasicAnimation(keyPath: "opacity")
-                    opAnim.fromValue = 0.75; opAnim.toValue = 0.0
+                    halo.name = "waitingHalo"; ringContainer.addSublayer(halo)
+                    let scaleAnim = CABasicAnimation(keyPath: "transform.scale"); scaleAnim.fromValue = 1.0; scaleAnim.toValue = 2.1
+                    let opAnim = CABasicAnimation(keyPath: "opacity"); opAnim.fromValue = 0.75; opAnim.toValue = 0.0
                     let group = CAAnimationGroup()
                     group.animations = [scaleAnim, opAnim]; group.duration = 1.6; group.repeatCount = .infinity
                     group.timingFunction = CAMediaTimingFunction(name: .easeOut); group.isRemovedOnCompletion = false
@@ -221,8 +226,7 @@ extension Tako {
                 let disc = CAShapeLayer()
                 disc.frame = rBounds; disc.path = CGPath(ellipseIn: rBounds, transform: nil); disc.fillColor = T.ok.cgColor
                 ringContainer.addSublayer(disc)
-                let check = CAShapeLayer()
-                check.frame = rBounds
+                let check = CAShapeLayer(); check.frame = rBounds
                 let checkPath = CGMutablePath()
                 checkPath.move(to: CGPoint(x: 4.0, y: 14.0 - 7.2))
                 checkPath.addLine(to: CGPoint(x: 6.1, y: 14.0 - 9.3))
@@ -235,19 +239,15 @@ extension Tako {
                     let pop = CAKeyframeAnimation(keyPath: "transform.scale")
                     pop.values = [1.0, 0.55, 1.25, 1.0]
                     pop.keyTimes = [0.0, NSNumber(value: 192.0 / 704.0), NSNumber(value: 448.0 / 704.0), 1.0]
-                    pop.timingFunctions = [b, b, b]
-                    pop.duration = 0.704
+                    pop.timingFunctions = [b, b, b]; pop.duration = 0.704
                     ringContainer.add(pop, forKey: "donePop")
                 }
 
             case .failed:
                 let disc = CAShapeLayer()
-                disc.frame = rBounds
-                disc.path = CGPath(ellipseIn: rBounds, transform: nil)
-                disc.fillColor = T.error.cgColor
+                disc.frame = rBounds; disc.path = CGPath(ellipseIn: rBounds, transform: nil); disc.fillColor = T.error.cgColor
                 ringContainer.addSublayer(disc)
-                let bang = CAShapeLayer()
-                bang.frame = rBounds
+                let bang = CAShapeLayer(); bang.frame = rBounds
                 let bangPath = CGMutablePath()
                 bangPath.addRoundedRect(in: CGRect(x: 6, y: 14.0 - 8.0, width: 2, height: 5), cornerWidth: 1, cornerHeight: 1)
                 bangPath.addRoundedRect(in: CGRect(x: 6, y: 14.0 - 11.5, width: 2, height: 2), cornerWidth: 1, cornerHeight: 1)
@@ -257,6 +257,7 @@ extension Tako {
             case .offline:
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 0.75, color: T.faint.cgColor, width: 1.5, dash: [2, 2]))
             }
+            ringContainer.sublayers?.forEach { $0.contentsScale = 2.0 }
         }
 
         private func rebuildSurfaceEffects(for state: SurfaceState, size: CGSize, reduceMotion: Bool, triggerOneShot: Bool) {

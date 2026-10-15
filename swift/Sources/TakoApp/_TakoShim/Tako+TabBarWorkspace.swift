@@ -264,6 +264,9 @@ extension Tako.TabBarView {
             paused: animState.isTimelinePaused,
             allowFrameAnimation: isTabDragging
         )
+        if let t = animState.fixedTimeOverride {
+            statusLayer.applySnapshotPhase(at: t, doneElapsed: t, failedElapsed: t)
+        }
     }
 
     func syncStatusLayers(visibleTabIds: Set<ObjectIdentifier>) {

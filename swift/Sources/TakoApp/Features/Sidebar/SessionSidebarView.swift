@@ -168,10 +168,10 @@ struct SessionSidebarView: View {
                 .font(Font(T.monoFont(size: 10, weight: .medium)))
                 .foregroundColor(Color(nsColor: T.dim))
         }
-        .frame(height: 18)
+        .frame(height: 17)
         .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.top, 11)
+        .padding(.bottom, 9)
         .contentShape(Rectangle())
         .contextMenu {
             Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
@@ -377,7 +377,8 @@ struct SessionSidebarView: View {
             .buttonStyle(.plain)
             Spacer()
             Button(action: jumpToNextWaiting) {
-                Text("⌥⏎ next waiting").font(Font(T.monoFont(size: 10.5, weight: .regular))).foregroundColor(Color(nsColor: T.dim))
+                (Text("⌥⏎").font(.custom("Menlo-Regular", fixedSize: 10.5)) + Text(" next waiting").font(Font(T.monoFont(size: 10.5, weight: .regular))))
+                    .foregroundColor(Color(nsColor: T.dim))
             }
             .buttonStyle(.plain)
         }

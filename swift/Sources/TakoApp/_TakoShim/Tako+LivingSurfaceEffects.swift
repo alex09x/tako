@@ -57,6 +57,22 @@ enum CSSTiming {
     }
 }
 
+/// Even-odd crescent shape matching CSS `box-shadow: inset 0 -2px 0 #D54E53` inside a rounded rect.
+private struct InsetBottomLineShape: Shape {
+    let cornerRadius: CGFloat
+    var lineHeight: CGFloat = 2.0
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.addRect(rect)
+        p.addRoundedRect(
+            in: rect.offsetBy(dx: 0, dy: -lineHeight),
+            cornerSize: CGSize(width: cornerRadius, height: cornerRadius)
+        )
+        return p
+    }
+}
+
 /// Renders the Spec 1b Surface Effects (§3) on top of a rounded rectangle surface in SwiftUI (Sidebar & Overview).
 struct LivingSurfaceEffectsOverlay: View {
     let state: Tako.SurfaceState
@@ -85,13 +101,9 @@ struct LivingSurfaceEffectsOverlay: View {
                 borderEffect(at: t)
 
                 if state == .failed {
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        Rectangle()
-                            .fill(Color(nsColor: T.error))
-                            .frame(height: 2)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                    InsetBottomLineShape(cornerRadius: cornerRadius, lineHeight: 2.0)
+                        .fill(Color(nsColor: T.error), style: FillStyle(eoFill: true))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 } else if needsGeo {
                     GeometryReader { geo in
                         let w = geo.size.width
@@ -118,7 +130,7 @@ struct LivingSurfaceEffectsOverlay: View {
                                 RoundedRectangle(cornerRadius: 1)
                                     .fill(LinearGradient(colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)], startPoint: .leading, endPoint: .trailing))
                                     .frame(width: max(2, availW * clamped), height: 2)
-                                    .offset(x: progressInsetLeft, y: 0)
+                                    .offset(x: progressInsetLeft, y: showsCometForProgress ? -1 : 0)
                             }
                         }
                         .frame(width: w, height: h, alignment: .bottomLeading)

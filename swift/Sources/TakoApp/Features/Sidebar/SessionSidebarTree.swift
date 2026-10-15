@@ -326,12 +326,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
     }
 
     var body: some View {
-        let rowContentHeight: CGFloat = {
-            if group.attentionCount > 0 {
-                return group.name.lowercased() == "frontend" ? 15 : 14
-            }
-            return 13
-        }()
+        let rowContentHeight: CGFloat = group.attentionCount > 0 ? 15 : 13
         HStack(spacing: 7) {
             Button(action: onToggleCollapse) {
                 Text(group.isCollapsed ? "▸" : "▾")

@@ -66,10 +66,16 @@ extension Tako.TabBarView {
 
     func drawPillTab(_ tab: Tab, in ctx: CGContext) {
         let hovering = hovered == tab.index
-        let rect = pillRect(for: tab)
-        guard rect.width > 0 else { return }
+        let baseRect = pillRect(for: tab)
+        guard baseRect.width > 0 else { return }
 
         let state = pillSurfaceState(for: tab.window)
+        let shakeDX: CGFloat = {
+            guard state == .failed, !LivingAnimationState.shared.reduceMotion,
+                  let t = LivingAnimationState.shared.fixedTimeOverride else { return 0 }
+            return LivingAnimationState.failedShakeOffset(elapsed: t)
+        }()
+        let rect = baseRect.offsetBy(dx: shakeDX, dy: 0)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
 
         // Background (§4): inactive transparent, hover #1F1915, progress #1A1512, active #241C16 + 1px #2A211B inset border
@@ -108,10 +114,12 @@ extension Tako.TabBarView {
         let tabKey = ObjectIdentifier(tab.window)
         paintedPillDots[tabKey] = Tako.Brand.hexString(for: dotColor)
         paintedRingStates[tabKey] = state
-        updateStatusLayer(for: tab.window, rect: rect, state: state, hideRing: showNumberBadge)
+        updateStatusLayer(for: tab.window, rect: baseRect, state: state, hideRing: showNumberBadge)
+
+        let borderInset: CGFloat = (state == .working || state == .offline) ? 1.0 : 0.0
 
         if showNumberBadge {
-            let badgeRect = CGRect(x: rect.minX + 8, y: rect.midY - 7, width: 14, height: 14)
+            let badgeRect = CGRect(x: rect.minX + 8 + borderInset, y: rect.midY - 7, width: 14, height: 14)
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
@@ -137,9 +145,9 @@ extension Tako.TabBarView {
         let fullTitleWidth = Tako.TabText.width(of: rawTitle, font: titleFont)
         let metaText = pillMetaText(for: tab.window)
         let metaWidth = metaText.map { Tako.TabText.width(of: $0, font: Fonts.timer) } ?? 0
-        let titleStartX = rect.minX + 29 // 8 + 14 (ring S) + 7 (gap)
-        let availableForTitleAndMeta = rect.width - 29 - 9 - rightExtra
-        let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= fullTitleWidth - 1.0)
+        let titleStartX = rect.minX + 29 + borderInset // (8 + border) + 14 (ring S) + 7 (gap)
+        let availableForTitleAndMeta = rect.width - (29 + borderInset) - (9 + borderInset) - rightExtra
+        let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= fullTitleWidth - 1.5)
         let maxTitleWidth = availableForTitleAndMeta - (includesMeta ? (metaWidth + 7) : 0)
 
         if maxTitleWidth > 8 {

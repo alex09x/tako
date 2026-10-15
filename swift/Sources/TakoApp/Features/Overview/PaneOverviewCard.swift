@@ -27,6 +27,11 @@ struct PaneOverviewCard: View, Equatable {
 
     var body: some View {
         let state = item.surfaceState
+        let hasSweepBorder: Bool = {
+            if state == .working { return true }
+            if case .progress = state { return true }
+            return false
+        }()
         let elapsedInState = LivingAnimationState.shared.elapsedInState(
             for: "overview-\(item.id.uuidString)",
             state: state,
@@ -78,6 +83,7 @@ struct PaneOverviewCard: View, Equatable {
                 Spacer(minLength: 0)
             }
             .frame(height: 18)
+            .offset(y: 0.5)
 
             // Live Thumbnail Preview (h 112, #14100E, r 7, border 1 #2A211B, bottom 24pt fade, 3px progress bar)
             thumbnailView(item: item)
@@ -99,9 +105,11 @@ struct PaneOverviewCard: View, Equatable {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .frame(height: 16)
+            .offset(y: -1)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .padding(.horizontal, hasSweepBorder ? 13 : 12)
+        .padding(.top, hasSweepBorder ? 13 : 12)
+        .padding(.bottom, hasSweepBorder ? 11 : 12)
         .background(
             LivingSurfaceOuterGlow(
                 state: showsAnimatedEffects ? state : .idle,
@@ -157,13 +165,14 @@ struct PaneOverviewCard: View, Equatable {
                 } else {
                     styledThumbnailText(item.thumbnailLines.prefix(7))
                         .font(Font(T.monoFont(size: 10, weight: .regular)))
-                        .lineSpacing(2.2)
+                        .lineSpacing(1.85)
                         .lineLimit(7)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.top, 9)
+            .padding(.bottom, 8)
             .frame(height: 112, alignment: .topLeading)
 
             // Bottom 24pt fade gradient from clear to #14100E over text (§6)
