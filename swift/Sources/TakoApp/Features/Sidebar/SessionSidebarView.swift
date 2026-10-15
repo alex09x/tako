@@ -241,18 +241,6 @@ struct SessionSidebarView: View {
                 }
 
                 Spacer(minLength: 4)
-
-                Menu {
-                    Toggle("Git Branch & Status", isOn: $store.optInGit)
-                    Toggle("Listening Ports", isOn: $store.optInPorts)
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color(nsColor: T.dim))
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: 18)
-                .help("Opt-in Inspections (Git, Ports)")
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 6)

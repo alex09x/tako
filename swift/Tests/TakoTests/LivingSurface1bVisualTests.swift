@@ -10,8 +10,10 @@
 
 import AppKit
 import Foundation
+import ImageIO
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 @testable import Tako
 @testable import TakoKit
 
@@ -147,6 +149,10 @@ struct LivingSurface1bVisualTests {
         let bar = Tako.TabBarView(frame: NSRect(x: 0, y: 0, width: 1120, height: 38))
         bar.styleOverride = .pill
         container1.addSubview(bar)
+        _ = snapshot(bar)
+        for layer in bar.statusLayers.values {
+            layer.applySnapshotPhase(at: 1.1, doneElapsed: 0.35)
+        }
         let barRep = snapshot(bar)
 
         #expect(bar.paintedRingStates[ObjectIdentifier(w1)] == .working)
@@ -257,7 +263,7 @@ struct LivingSurface1bVisualTests {
         let overviewRep = snapshot(overviewHost)
         #expect(overviewRep.pixelsWide >= 1180 && overviewRep.pixelsHigh >= 820)
 
-        // Export screenshots when requested
+        // Export screenshots & 3.6s animated GIF when requested
         if let outDir = ProcessInfo.processInfo.environment["TAKO_EXPORT_1B_SCREENSHOTS"], !outDir.isEmpty {
             let dirURL = URL(fileURLWithPath: outDir)
             try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
@@ -270,6 +276,102 @@ struct LivingSurface1bVisualTests {
             if let data = overviewRep.representation(using: .png, properties: [:]) {
                 try data.write(to: dirURL.appendingPathComponent("overview_1b_4b.png"))
             }
+            try exportAnimatedGif(
+                to: dirURL.appendingPathComponent("living_surface_1b_animation.gif"),
+                bar: bar,
+                sidebarStore: sidebarStore,
+                sidebarItems: groups[0].items.filter { !$0.isChild },
+                overviewItems: Array(overviewStore.items.prefix(2))
+            )
         }
+    }
+
+    private func exportAnimatedGif(
+        to url: URL,
+        bar: Tako.TabBarView,
+        sidebarStore: SessionSidebarStore,
+        sidebarItems: [SessionSidebarItem],
+        overviewItems: [PaneOverviewItem]
+    ) throws {
+        let frameCount = 30
+        let dt: TimeInterval = 0.12 // 30 * 0.12s = 3.6s animation
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
+            return
+        }
+        let fileProps: [CFString: Any] = [
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
+        ]
+        CGImageDestinationSetProperties(dest, fileProps as CFDictionary)
+        let frameProps: [CFString: Any] = [
+            kCGImagePropertyGIFDictionary: [
+                kCGImagePropertyGIFDelayTime: dt,
+                kCGImagePropertyGIFUnclampedDelayTime: dt
+            ]
+        ]
+
+        let animHost = NSHostingView(rootView: AnyView(EmptyView()))
+        animHost.frame = NSRect(x: 0, y: 0, width: 960, height: 310)
+        let animWin = NSWindow(contentRect: animHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        animWin.contentView = animHost
+        defer { animWin.close() }
+
+        for i in 0..<frameCount {
+            let t = Double(i) * dt
+            let date = Date(timeIntervalSinceReferenceDate: t)
+            for layer in bar.statusLayers.values {
+                layer.applySnapshotPhase(at: t, doneElapsed: t.truncatingRemainder(dividingBy: 1.8))
+            }
+            let barStepRep = snapshot(bar)
+            let barNSImage = NSImage(size: bar.bounds.size)
+            barNSImage.addRepresentation(barStepRep)
+
+            let root = VStack(alignment: .leading, spacing: 12) {
+                Image(nsImage: barNSImage)
+                    .resizable()
+                    .frame(width: 932, height: 38, alignment: .leading)
+                    .clipped()
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(sidebarItems.prefix(3).enumerated()), id: \.element.id) { idx, item in
+                            SessionSidebarRowView(
+                                item: item,
+                                index: idx,
+                                selectedIndex: 0,
+                                targetWindow: nil,
+                                editingItemId: .constant(nil),
+                                editingDescriptionText: .constant(""),
+                                isPresented: .constant(true),
+                                now: date,
+                                reduceMotion: false,
+                                onSelect: {}
+                            )
+                        }
+                    }
+                    .frame(width: 260)
+
+                    ForEach(Array(overviewItems.enumerated()), id: \.element.id) { idx, ovItem in
+                        PaneOverviewCard(
+                            item: ovItem,
+                            isSelected: idx == 1,
+                            now: date,
+                            reduceMotion: false
+                        )
+                        .frame(width: 325)
+                    }
+                }
+            }
+            .padding(14)
+            .frame(width: 960, height: 310, alignment: .topLeading)
+            .background(Color(nsColor: Tako.LivingTokens.body))
+
+            animHost.rootView = AnyView(root)
+            animHost.layoutSubtreeIfNeeded()
+            let rep = snapshot(animHost)
+            if let cgImg = rep.cgImage {
+                CGImageDestinationAddImage(dest, cgImg, frameProps as CFDictionary)
+            }
+        }
+        CGImageDestinationFinalize(dest)
     }
 }

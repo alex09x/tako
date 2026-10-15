@@ -21,7 +21,7 @@ struct PaneOverviewView: View {
     @ObservedObject private var animState = LivingAnimationState.shared
     @State private var isInitialFrameComplete = false
 
-    private static let staticDate = Date(timeIntervalSinceReferenceDate: 0)
+    private static let staticDate = Date(timeIntervalSinceReferenceDate: 1.1)
     private typealias T = Tako.LivingTokens
 
     // 3 columns adaptive (280...380), gap 16

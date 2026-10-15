@@ -193,8 +193,8 @@ struct SessionSidebarRowView: View {
                 )
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 11, weight: isTabActive ? .medium : .regular)))
-                    .foregroundColor(sessionTitleColor)
+                    .font(Font(T.monoFont(size: 11, weight: .regular)))
+                    .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -240,7 +240,7 @@ struct SessionSidebarRowView: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: radius)
-                .fill(rowBackgroundColor)
+                .fill(isNavSelected ? Color(nsColor: T.surfaceHover) : Color.clear)
         )
         .overlay(
             SidebarPaneTreeConnectorShape()
