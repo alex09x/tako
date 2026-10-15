@@ -170,8 +170,8 @@ struct SessionSidebarView: View {
         }
         .frame(height: 17)
         .padding(.horizontal, 12)
-        .padding(.top, 11)
-        .padding(.bottom, 9)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
         .contentShape(Rectangle())
         .contextMenu {
             Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)

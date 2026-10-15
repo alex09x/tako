@@ -352,7 +352,7 @@ struct Sidebar4aReferenceView: View {
                 Text("9").font(Font(T.monoFont(size: 10, weight: .medium))).foregroundColor(Color(nsColor: T.dim))
             }
             .frame(height: 17)
-            .padding(.top, 11).padding(.horizontal, 12).padding(.bottom, 9)
+            .padding(.top, 12).padding(.horizontal, 12).padding(.bottom, 8)
             HStack(spacing: 7) {
                 Text("⌕").font(Font(T.monoFont(size: 11))).foregroundColor(Color(nsColor: T.faint))
                 Text("Filter sessions…").font(Font(T.monoFont(size: 11))).foregroundColor(Color(nsColor: T.faint))

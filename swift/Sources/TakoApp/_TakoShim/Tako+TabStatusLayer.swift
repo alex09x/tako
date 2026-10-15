@@ -103,13 +103,12 @@ extension Tako {
             CATransaction.setDisableActions(!allowFrameAnimation)
             let savedTransform = transform; transform = CATransform3DIdentity
             frame = pillRect; transform = savedTransform
+            let savedRingTransform = ringContainer.transform; ringContainer.transform = CATransform3DIdentity
             ringContainer.isHidden = hideRing
             let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
             ringContainer.frame = CGRect(x: ringX, y: ((pillRect.height - 14) / 2).rounded(), width: 14, height: 14)
-            if sizeChanged {
-                lastSize = pillRect.size; lastReduceMotion = reduceMotion
-                layoutGeometries(for: pillRect.size, ringX: ringX)
-            }
+            if sizeChanged { lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX) }
+            ringContainer.transform = savedRingTransform
             CATransaction.commit()
             setLayerPaused(paused)
 
