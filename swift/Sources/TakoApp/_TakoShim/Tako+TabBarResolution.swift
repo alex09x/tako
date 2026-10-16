@@ -54,6 +54,11 @@ extension Tako {
     }
 
     public static func titleFor(_ window: NSWindow) -> String {
+        // A title the user gave the tab (Rename Tab, takoctl title) beats
+        // whatever the program in it reports.
+        if let override = (window.windowController as? BaseTerminalController)?.titleOverride, !override.isEmpty {
+            return override
+        }
         let raw = surface(in: window)?.title ?? window.title
         guard !raw.isEmpty else { return "~" }
         if raw.hasPrefix("/") || raw.hasPrefix("~") {

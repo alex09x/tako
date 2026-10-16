@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import Foundation
 import Testing
 @testable import Tako
@@ -195,5 +196,57 @@ struct DoneGlintGeometryTests {
         for (x, y) in [(0.0, 0.0), (g / 2, h / 2), (g, h), (g / 3, 0), (2 * g / 3, h)] as [(CGFloat, CGFloat)] {
             #expect(abs(caLocation(x, y) - location(x, y, g: g, h: h)) < 0.001)
         }
+    }
+}
+
+/// Found trying the demo by hand: what a background tab holds, and its title.
+@Suite
+@MainActor
+struct LivingSurfaceLiveFindingsTests {
+    // "на фоновых держатся до фокуса" -- fish ends a command, then sends one
+    // more end with no status at its next prompt.
+    @Test func aStatuslessEndAfterTheRealOneLeavesFailureAndDoneAlone() {
+        var now = Date(timeIntervalSince1970: 0)
+        let tracker = Tako.CrabTracker(now: { now })
+        tracker.isFocused = false
+        tracker.commandStarted()
+        now = now.addingTimeInterval(5)
+        tracker.commandEnded(exitCode: 1)
+        tracker.commandEnded(exitCode: 1)
+        tracker.commandEnded(exitCode: nil)
+        #expect(tracker.paneStatus == .error)
+        #expect(tracker.unread)
+
+        tracker.commandStarted()
+        now = now.addingTimeInterval(5)
+        tracker.commandEnded(exitCode: 0)
+        tracker.commandEnded(exitCode: nil)
+        #expect(tracker.paneStatus == .done)
+    }
+
+    @Test func aStatuslessEndOfARunningCommandStillEndsIt() {
+        var now = Date(timeIntervalSince1970: 0)
+        let tracker = Tako.CrabTracker(now: { now })
+        tracker.commandStarted()
+        now = now.addingTimeInterval(5)
+        tracker.commandEnded(exitCode: nil)
+        #expect(tracker.paneStatus != .running)
+    }
+
+    // A renamed pill tab shows its name, not the program's title.
+    @Test func thePillTabShowsTheNameTheUserGaveIt() {
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        surface.title = "~"
+        let controller = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: surface))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.windowController = controller
+        controller.window = window
+        window.contentView = surface
+        defer { window.close() }
+        #expect(Tako.titleFor(window) == "~")
+        controller.titleOverride = "cargo test"
+        #expect(Tako.titleFor(window) == "cargo test")
+        controller.titleOverride = nil
+        #expect(Tako.titleFor(window) == "~")
     }
 }

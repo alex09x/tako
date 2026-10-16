@@ -141,6 +141,11 @@ extension Tako {
         }
 
         func commandEnded(exitCode: Int32?) {
+            // A shell can report an end with no status after the real one (fish
+            // sends one more at its next prompt). It ends no command; taken as
+            // a short success it wiped a background tab's "failed" or "done"
+            // a moment after it showed.
+            if exitCode == nil && startedAt == nil { return }
             ticker?.invalidate()
             ticker = nil
             let ran = startedAt.map { now().timeIntervalSince($0) }
