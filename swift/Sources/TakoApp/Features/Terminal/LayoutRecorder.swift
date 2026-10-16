@@ -252,6 +252,8 @@ enum LayoutRecorder {
             }
             guard windows.count > 1 else { continue }
             let anchor = selected ?? windows[0]
+            // Where the group stood, not where AppKit put this one tab.
+            anchor.setFrame(onScreen(entry.frame), display: false)
             for window in windows where window !== anchor {
                 Tako.CustomTabGroup.join(window, to: anchor, select: false)
             }

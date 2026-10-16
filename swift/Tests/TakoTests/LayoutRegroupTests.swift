@@ -43,13 +43,15 @@ struct LayoutRegroupTests {
         #expect(windows.allSatisfy { $0.isVisible })
 
         // The journal the last run wrote: one window, these three tabs, the
-        // second selected.
+        // second selected -- at a frame none of the restored windows has.
+        let recorded = NSRect(x: 220, y: 140, width: 640, height: 420)
+        #expect(windows.allSatisfy { $0.frame != recorded })
         let encoder = JSONEncoder()
         let tabs: [Any] = try controllers.map {
             try JSONSerialization.jsonObject(with: encoder.encode(TerminalRestorableState(from: $0)))
         }
         let journal = LayoutJournal.Journal(generation: 1, windows: [
-            LayoutJournal.Window(frame: windows[1].frame, isKey: true, selectedTab: 1, tabs: tabs),
+            LayoutJournal.Window(frame: recorded, isKey: true, selectedTab: 1, tabs: tabs),
         ])
 
         LayoutRecorder.regroup(journal)
@@ -59,6 +61,8 @@ struct LayoutRegroupTests {
         let expected = windows.map { ObjectIdentifier($0) }
         #expect(grouped == expected)
         #expect(group.selectedWindow === windows[1])
+        // The group stands where it stood, not where AppKit put a tab.
+        #expect(windows[1].frame == LayoutRecorder.onScreen(recorded))
         // Only the selected tab is on screen; the others stand where it does.
         #expect(windows[1].isVisible)
         #expect(!windows[0].isVisible && !windows[2].isVisible)
