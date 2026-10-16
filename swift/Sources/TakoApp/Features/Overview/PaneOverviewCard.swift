@@ -111,6 +111,14 @@ struct PaneOverviewCard: View, Equatable {
         .padding(.top, hasSweepBorder ? 13 : 12)
         .padding(.bottom, hasSweepBorder ? 11 : 12)
         .background(
+            DoneGlintBackground(
+                state: showsAnimatedEffects ? state : .idle,
+                cornerRadius: radius,
+                elapsedInState: elapsedInState,
+                reduceMotion: reduceMotion
+            )
+        )
+        .background(
             LivingSurfaceOuterGlow(
                 state: showsAnimatedEffects ? state : .idle,
                 cornerRadius: radius,
@@ -132,6 +140,7 @@ struct PaneOverviewCard: View, Equatable {
                     cometLineWidth: 1.5,
                     showsCometForProgress: true,
                     showsBottomProgressLine: false,
+                    drawsDoneGlint: false,
                     isSelectedOverviewCard: isSelected,
                     now: now,
                     elapsedInState: elapsedInState,

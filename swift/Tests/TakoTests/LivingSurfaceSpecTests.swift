@@ -150,3 +150,50 @@ struct LivingSurfaceSpecDetailTests {
         #expect(PaneOverviewItem(id: UUID(), title: "make", status: .idle).surfaceState == .idle)
     }
 }
+
+/// The done glint drawn as the design's `.shim::before` is.
+@Suite
+struct DoneGlintGeometryTests {
+    /// Gradient location (0...1) at a point of a `g`×`h` tile, from unit end
+    /// points interpreted in points -- what SwiftUI does.
+    private func location(_ x: CGFloat, _ y: CGFloat, g: CGFloat, h: CGFloat) -> CGFloat {
+        let e = DoneGlint.unitEndpoints(tileWidth: g, height: h)
+        let s = CGPoint(x: e.start.x * g, y: e.start.y * h), t = CGPoint(x: e.end.x * g, y: e.end.y * h)
+        let d = CGPoint(x: t.x - s.x, y: t.y - s.y)
+        return ((x - s.x) * d.x + (y - s.y) * d.y) / (d.x * d.x + d.y * d.y)
+    }
+
+    @Test func theBandSweepsFromJustLeftToJustRightOfTheSurface() {
+        let w: CGFloat = 140
+        // The band's centre sits at the tile's centre: 120% -> -60%.
+        #expect(abs(DoneGlint.tileOrigin(progress: 0, width: w) + 1.25 * w - (-0.55 * w)) < 0.001)
+        #expect(abs(DoneGlint.tileOrigin(progress: 1, width: w) + 1.25 * w - 2.15 * w) < 0.001)
+        #expect(DoneGlint.progress(elapsed: 0) == 0)
+        #expect(DoneGlint.progress(elapsed: 0.96) == nil)
+    }
+
+    @Test func aTileHasNoGreenAtItsEdgesSoTheGlintHasNoHardEdge() {
+        for (w, h) in [(CGFloat(139.4), CGFloat(28)), (340, 245), (264, 47)] {
+            let g = DoneGlint.tileScale * w
+            for y in stride(from: CGFloat(0), through: h, by: h / 8) {
+                #expect(location(0, y, g: g, h: h) <= DoneGlint.locations[0])
+                #expect(location(g, y, g: g, h: h) >= DoneGlint.locations[2])
+            }
+        }
+    }
+
+    @Test func theLayerEndpointsGiveTheSameBandAsCSS() {
+        // CAGradientLayer runs its gradient perpendicular in unit space; the
+        // layer end points must reproduce the point-space CSS gradient.
+        let g: CGFloat = 349, h: CGFloat = 28
+        let e = DoneGlint.layerEndpoints(tileWidth: g, height: h)
+        func caLocation(_ x: CGFloat, _ yDown: CGFloat) -> CGFloat {
+            let u = x / g, v = 1 - yDown / h
+            let d = CGPoint(x: e.end.x - e.start.x, y: e.end.y - e.start.y)
+            return ((u - e.start.x) * d.x + (v - e.start.y) * d.y) / (d.x * d.x + d.y * d.y)
+        }
+        for (x, y) in [(0.0, 0.0), (g / 2, h / 2), (g, h), (g / 3, 0), (2 * g / 3, h)] as [(CGFloat, CGFloat)] {
+            #expect(abs(caLocation(x, y) - location(x, y, g: g, h: h)) < 0.001)
+        }
+    }
+}

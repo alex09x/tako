@@ -73,6 +73,22 @@ private struct InsetBottomLineShape: Shape {
     }
 }
 
+/// The done glint behind a SwiftUI surface's content (Spec 1b `.shim::before`):
+/// the surface's own opaque parts, such as an overview card's preview, cover it.
+struct DoneGlintBackground: View {
+    let state: Tako.SurfaceState
+    let cornerRadius: CGFloat
+    var elapsedInState: TimeInterval
+    var reduceMotion: Bool = false
+
+    var body: some View {
+        if state == .done, !reduceMotion, let k = DoneGlint.progress(elapsed: elapsedInState) {
+            DoneGlintView(progress: k)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        }
+    }
+}
+
 /// Renders the Spec 1b Surface Effects (§3) on top of a rounded rectangle surface in SwiftUI (Sidebar & Overview).
 struct LivingSurfaceEffectsOverlay: View {
     let state: Tako.SurfaceState
@@ -81,6 +97,9 @@ struct LivingSurfaceEffectsOverlay: View {
     var showsCometForProgress: Bool = false
     var showsBottomProgressLine: Bool = false
     var progressInsetLeft: CGFloat = 0
+    /// False where the surface draws the done glint behind its own content,
+    /// as the design's `::before` is (cards and sidebar rows).
+    var drawsDoneGlint: Bool = true
     var isSelectedOverviewCard: Bool = false
     var now: Date = Date()
     var elapsedInState: TimeInterval = 10.0
@@ -94,7 +113,7 @@ struct LivingSurfaceEffectsOverlay: View {
             EmptyView()
         } else {
             let t = now.timeIntervalSinceReferenceDate
-            let doneFrac = (state == .done && !reduceMotion) ? LivingAnimationState.doneFlashFraction(elapsed: elapsedInState) : nil
+            let doneFrac = (state == .done && !reduceMotion && drawsDoneGlint) ? DoneGlint.progress(elapsed: elapsedInState) : nil
             let needsGeo = (doneFrac != nil) || (showsBottomProgressLine && { if case .progress = state { return true }; return false }())
 
             ZStack(alignment: .bottom) {
@@ -108,21 +127,10 @@ struct LivingSurfaceEffectsOverlay: View {
                     GeometryReader { geo in
                         let w = geo.size.width
                         let h = geo.size.height
-                        let hLayer = max(1, h + 8)
-                        let dy = Double(tan(10.0 * .pi / 180.0) * (w / hLayer))
                         ZStack(alignment: .bottomLeading) {
-                            if let frac = doneFrac {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .clear, location: 0),
-                                        .init(color: Color(nsColor: T.ok).opacity(0.26), location: 0.5),
-                                        .init(color: .clear, location: 1.0),
-                                    ],
-                                    startPoint: UnitPoint(x: 0, y: 0.5 - dy / 2.0),
-                                    endPoint: UnitPoint(x: 1, y: 0.5 + dy / 2.0)
-                                )
-                                .frame(width: max(1, w), height: hLayer)
-                                .offset(x: frac * w - w * 0.5, y: -4)
+                            if let k = doneFrac {
+                                DoneGlintView(progress: k)
+                                    .frame(width: w, height: h)
                             }
                             if showsBottomProgressLine, case .progress(let p) = state {
                                 let clamped = CGFloat(min(1.0, max(0.0, p)))

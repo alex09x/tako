@@ -241,12 +241,6 @@ final class LivingAnimationState: ObservableObject {
         return CGFloat(s)
     }
 
-    static func doneFlashFraction(elapsed: TimeInterval) -> CGFloat? {
-        guard elapsed >= 0, elapsed < 0.960 else { return nil }
-        let k = CSSTiming.easeOut((elapsed * 1000.0) / 960.0)
-        return CGFloat(-0.55 + (2.15 - (-0.55)) * k)
-    }
-
     static func failedShakeOffset(elapsed: TimeInterval) -> CGFloat {
         guard elapsed >= 0, elapsed < 0.448 else { return 0 }
         let dx = CSSTiming.keyframes(

@@ -26,7 +26,7 @@ extension Tako {
         private let clippedInnerContainer = CALayer()
         private let failedLineLayer = CAShapeLayer()
         private let progressLineLayer = CAGradientLayer()
-        private let flashLayer = CAGradientLayer()
+        private let flashLayer = DoneGlintLayer()
 
         private let cometContainer = CALayer()
         private let cometMask = CAShapeLayer()
@@ -59,9 +59,6 @@ extension Tako {
             progressLineLayer.cornerRadius = 1; progressLineLayer.isHidden = true
             clippedInnerContainer.addSublayer(progressLineLayer)
 
-            flashLayer.colors = [NSColor.clear.cgColor, T.ok.withAlphaComponent(0.26).cgColor, NSColor.clear.cgColor]
-            flashLayer.locations = [0, 0.5, 1.0]
-            flashLayer.startPoint = CGPoint(x: 0, y: 0.41); flashLayer.endPoint = CGPoint(x: 1, y: 0.59)
             flashLayer.opacity = 0
             clippedInnerContainer.addSublayer(flashLayer)
 
@@ -131,11 +128,7 @@ extension Tako {
             errPath.addRect(b)
             errPath.addRoundedRect(in: b.offsetBy(dx: 0, dy: 2), cornerWidth: 6, cornerHeight: 6)
             failedLineLayer.path = errPath
-            let hLayer = max(1, size.height + 6)
-            flashLayer.frame = CGRect(x: -size.width, y: -3, width: size.width, height: hLayer)
-            let dy = tan(10.0 * .pi / 180.0) * (size.width / hLayer)
-            flashLayer.startPoint = CGPoint(x: 0, y: 0.5 + dy / 2.0)
-            flashLayer.endPoint = CGPoint(x: 1, y: 0.5 - dy / 2.0)
+            flashLayer.layout(for: size)
 
             cometContainer.frame = b
             let insetRect = b.insetBy(dx: 0.5, dy: 0.5)
@@ -304,9 +297,12 @@ extension Tako {
             case .done:
                 if triggerOneShot && !reduceMotion && size.width > 0 {
                     flashLayer.opacity = 1.0
+                    // background-position 120% -> -60%, ease-out, over 0.96 s
                     let sweep = CABasicAnimation(keyPath: "position.x")
-                    sweep.fromValue = -0.55 * size.width; sweep.toValue = 2.15 * size.width
-                    sweep.duration = 0.96; sweep.timingFunction = CAMediaTimingFunction(name: .easeOut); sweep.fillMode = .forwards
+                    sweep.fromValue = flashLayer.x(at: 0); sweep.toValue = flashLayer.x(at: 1)
+                    sweep.duration = 0.96; sweep.timingFunction = CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
+                    // Then quiet: the model position is the start, where no band shows.
+                    sweep.fillMode = .forwards
                     flashLayer.add(sweep, forKey: "doneFlash")
                 }
             case .failed:
@@ -360,9 +356,9 @@ extension Tako {
                     let pop = LivingAnimationState.donePopScale(elapsed: el)
                     ringContainer.transform = CATransform3DMakeScale(pop, pop, 1.0)
                 }
-                if let el = doneElapsed, let frac = LivingAnimationState.doneFlashFraction(elapsed: el), lastSize.width > 0 {
+                if let el = doneElapsed, let k = DoneGlint.progress(elapsed: el), lastSize.width > 0 {
                     flashLayer.opacity = 1.0
-                    flashLayer.position.x = frac * lastSize.width
+                    flashLayer.position.x = flashLayer.x(at: k)
                 } else {
                     flashLayer.opacity = 0.0
                 }

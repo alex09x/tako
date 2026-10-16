@@ -151,6 +151,9 @@ struct SessionSidebarRowView: View {
         .padding(.horizontal, hasBorderBox1px ? 9 : 8)
         .padding(.vertical, vPad)
         .background(
+            DoneGlintBackground(state: state, cornerRadius: radius, elapsedInState: elapsedInState, reduceMotion: reduceMotion)
+        )
+        .background(
             LivingSurfaceOuterGlow(
                 state: state,
                 cornerRadius: radius,
@@ -171,6 +174,7 @@ struct SessionSidebarRowView: View {
                 showsCometForProgress: true,
                 showsBottomProgressLine: true,
                 progressInsetLeft: hasBorderBox1px ? 9 : 8,
+                drawsDoneGlint: false,
                 now: now,
                 elapsedInState: elapsedInState,
                 reduceMotion: reduceMotion
