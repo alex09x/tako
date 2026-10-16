@@ -220,8 +220,10 @@ struct LivingSurfaceLiveFindingsTests {
         tracker.commandStarted()
         now = now.addingTimeInterval(5)
         tracker.commandEnded(exitCode: 0)
+        tracker.commandEnded(exitCode: 0)
         tracker.commandEnded(exitCode: nil)
         #expect(tracker.paneStatus == .done)
+        #expect(tracker.state == .succeeded)
     }
 
     @Test func aStatuslessEndOfARunningCommandStillEndsIt() {

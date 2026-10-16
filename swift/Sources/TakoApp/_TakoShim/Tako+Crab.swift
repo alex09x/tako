@@ -141,11 +141,13 @@ extension Tako {
         }
 
         func commandEnded(exitCode: Int32?) {
-            // A shell can report an end with no status after the real one (fish
-            // sends one more at its next prompt). It ends no command; taken as
-            // a short success it wiped a background tab's "failed" or "done"
-            // a moment after it showed.
-            if exitCode == nil && startedAt == nil { return }
+            // fish reports each end more than once -- the same status again,
+            // then one with none at its next prompt. Those end no started
+            // command; taken as a short success they wiped a background tab's
+            // "failed" or "done" a moment after it showed. An end that starts
+            // nothing and says nothing new (no status, or success) is ignored;
+            // a failure is still shown.
+            if startedAt == nil && (exitCode == nil || exitCode == 0) { return }
             ticker?.invalidate()
             ticker = nil
             let ran = startedAt.map { now().timeIntervalSince($0) }
