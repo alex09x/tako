@@ -328,7 +328,7 @@ struct SessionSidebarRowView: View {
             parts.append(Tako.formatCompactDirectory(pwd))
         }
         if let branch = item.gitBranch, !branch.isEmpty {
-            let dirtySuffix = (item.gitDirty == true && !branch.contains("±")) ? " ±" : ""
+            let dirtySuffix = branch.contains("±") ? "" : item.gitDirtySuffix
             parts.append("⎇ \(branch)\(dirtySuffix)")
         }
         if let ports = item.listeningPorts, !ports.isEmpty {

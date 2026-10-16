@@ -119,3 +119,34 @@ struct LivingSurfaceSpecTests {
         #expect(store.filteredItems.count == 5)
     }
 }
+
+/// The smaller 4a/4b details: the dirty count and a bell in the overview.
+@Suite
+@MainActor
+struct LivingSurfaceSpecDetailTests {
+    // "~/tako-core · ⎇ feat/sidebar ±3"
+    @Test func theBranchCarriesTheChangedFileCount() {
+        #expect(LocalGitInspection.changedFileCount(porcelain: " M a.swift\n?? b.swift\nA  c.swift\n") == 3)
+        #expect(LocalGitInspection.changedFileCount(porcelain: "") == 0)
+
+        func item(dirty: Bool?, count: Int?) -> SessionSidebarItem {
+            SessionSidebarItem(id: "t", index: 0, isSelected: false, title: "cargo build",
+                               gitBranch: "feat/sidebar", gitDirty: dirty, gitChangedFiles: count)
+        }
+        #expect(item(dirty: true, count: 3).gitDirtySuffix == " ±3")
+        #expect(item(dirty: true, count: nil).gitDirtySuffix == " ±")
+        #expect(item(dirty: false, count: 0).gitDirtySuffix == "")
+        #expect(LocalGitInspection.GitInfo(branch: "main", isDirty: false).changedFiles == 0)
+    }
+
+    // A bell on a quiet pane waits for you in the overview as in the sidebar.
+    @Test func aBellOnAQuietPaneIsWaitingInTheOverview() {
+        let rang = PaneOverviewItem(id: UUID(), title: "make", status: .idle, hasUnread: true)
+        #expect(rang.surfaceState == .waiting)
+        #expect(PaneOverviewStore.StatusFilter.needsYou.matches(rang))
+        // Something louder keeps its own state.
+        let failed = PaneOverviewItem(id: UUID(), title: "make", status: .error, hasUnread: true)
+        #expect(failed.surfaceState == .failed)
+        #expect(PaneOverviewItem(id: UUID(), title: "make", status: .idle).surfaceState == .idle)
+    }
+}

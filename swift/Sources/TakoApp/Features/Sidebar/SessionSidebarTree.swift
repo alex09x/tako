@@ -153,6 +153,7 @@ extension SessionSidebarStore {
                     workingDirectory: rawTabItem.workingDirectory,
                     gitBranch: rawTabItem.gitBranch,
                     gitDirty: rawTabItem.gitDirty,
+                    gitChangedFiles: rawTabItem.gitChangedFiles,
                     latestNotification: rawTabItem.latestNotification,
                     userDescription: rawTabItem.userDescription,
                     listeningPorts: rawTabItem.listeningPorts,

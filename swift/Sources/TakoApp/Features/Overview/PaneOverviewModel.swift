@@ -39,6 +39,10 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
     let elapsed: String?
     let isFocused: Bool
     let isKeyWindow: Bool
+    /// The pane rang the bell or has an unread notification the user has
+    /// not looked at; a quiet pane with one counts as waiting, as in the
+    /// sidebar and on the tab.
+    let hasUnread: Bool
     let thumbnailLines: [String]
 
     init(
@@ -58,6 +62,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         elapsed: String? = nil,
         isFocused: Bool = false,
         isKeyWindow: Bool = false,
+        hasUnread: Bool = false,
         thumbnailLines: [String] = []
     ) {
         self.id = id
@@ -76,6 +81,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         self.elapsed = elapsed
         self.isFocused = isFocused
         self.isKeyWindow = isKeyWindow
+        self.hasUnread = hasUnread
         self.thumbnailLines = thumbnailLines
     }
 
@@ -108,7 +114,11 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
             if let progressValue { return min(1.0, max(0.0, Double(progressValue) / 100.0)) }
             return progressState == .indeterminate ? 0.35 : nil
         }()
-        return status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
+        let state = status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
+        if state == .idle, hasUnread {
+            return .waiting
+        }
+        return state
     }
 
     /// Meta text shown on the right of Row 1: `"NN%"` when progress is active, otherwise `elapsed`.

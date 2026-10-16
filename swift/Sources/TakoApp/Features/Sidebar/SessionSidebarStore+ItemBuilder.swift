@@ -48,6 +48,7 @@ extension SessionSidebarStore {
             // Opt-in Git branch and dirty status (no background polling on render cadence)
             var gitBranch: String?
             var gitDirty: Bool?
+            var gitChangedFiles: Int?
             if optInGit, let dir = pwd, !dir.isEmpty {
                 let knownRoot = dirToRepoRoot[dir] ?? repoRootToDirs.keys.first(where: { dir == $0 || dir.hasPrefix($0 + "/") })
                 if let knownRoot {
@@ -58,6 +59,7 @@ extension SessionSidebarStore {
                 if let cached = gitCache[dir] ?? gitCache[cacheKey] {
                     gitBranch = cached?.branch
                     gitDirty = cached?.isDirty
+                    gitChangedFiles = cached?.changedFiles
                 } else if !pendingGitInspections.contains(dir) && (knownRoot == nil || !pendingGitInspections.contains(knownRoot!)) {
                     pendingGitInspections.insert(dir)
                     let gen = gitGenerations[dir, default: 0]
@@ -194,6 +196,7 @@ extension SessionSidebarStore {
                 workingDirectory: pwd,
                 gitBranch: gitBranch,
                 gitDirty: gitDirty,
+                gitChangedFiles: gitChangedFiles,
                 latestNotification: latestNotification,
                 userDescription: userDesc,
                 listeningPorts: ports,

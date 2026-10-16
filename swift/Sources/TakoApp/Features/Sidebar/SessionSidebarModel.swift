@@ -43,6 +43,8 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let parentWorkingDirectory: String?
     let gitBranch: String?
     let gitDirty: Bool?
+    /// How many files `git status` lists as changed (Spec 4a: "⎇ feat/sidebar ±3").
+    let gitChangedFiles: Int?
     let latestNotification: String?
     let userDescription: String?
     let listeningPorts: [Int]?
@@ -61,6 +63,12 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let workspaceId: UUID?
     let tabId: String
     let paneCount: Int
+
+    /// " ±N" after the branch (Spec 4a), " ±" when dirty with no count, else "".
+    var gitDirtySuffix: String {
+        if let n = gitChangedFiles, n > 0 { return " ±\(n)" }
+        return gitDirty == true ? " ±" : ""
+    }
 
     /// What a pane row shows under its title: its directory, unless it is
     /// the session's own.
@@ -93,6 +101,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         parentWorkingDirectory: String? = nil,
         gitBranch: String? = nil,
         gitDirty: Bool? = nil,
+        gitChangedFiles: Int? = nil,
         latestNotification: String? = nil,
         userDescription: String? = nil,
         listeningPorts: [Int]? = nil,
@@ -125,6 +134,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.parentWorkingDirectory = parentWorkingDirectory
         self.gitBranch = gitBranch
         self.gitDirty = gitDirty
+        self.gitChangedFiles = gitChangedFiles
         self.latestNotification = latestNotification
         self.userDescription = userDescription
         self.listeningPorts = listeningPorts
@@ -149,11 +159,14 @@ enum LocalGitInspection {
         let branch: String
         let isDirty: Bool?
         let repoRoot: String?
+        /// Files `git status --porcelain` lists; nil when it could not run.
+        let changedFiles: Int?
 
-        init(branch: String, isDirty: Bool? = nil, repoRoot: String? = nil) {
+        init(branch: String, isDirty: Bool? = nil, repoRoot: String? = nil, changedFiles: Int? = nil) {
             self.branch = branch
             self.isDirty = isDirty
             self.repoRoot = repoRoot
+            self.changedFiles = changedFiles ?? isDirty.flatMap { $0 ? nil : 0 }
         }
     }
 
@@ -210,11 +223,17 @@ enum LocalGitInspection {
     /// Strictly operates on the local filesystem: no network, no polling.
     static func inspect(directory: String) -> GitInfo? {
         guard let resolved = resolveBranch(directory: directory) else { return nil }
-        let isDirty = checkDirtyState(repoRoot: resolved.repoRoot)
-        return GitInfo(branch: resolved.branch, isDirty: isDirty, repoRoot: resolved.repoRoot)
+        let changed = changedFileCount(repoRoot: resolved.repoRoot)
+        return GitInfo(branch: resolved.branch, isDirty: changed.map { $0 > 0 }, repoRoot: resolved.repoRoot,
+                       changedFiles: changed)
     }
 
-    private static func checkDirtyState(repoRoot: String) -> Bool? {
+    /// One line of `git status --porcelain` per changed file.
+    static func changedFileCount(porcelain: String) -> Int {
+        porcelain.split(whereSeparator: \.isNewline).filter { !$0.isEmpty }.count
+    }
+
+    private static func changedFileCount(repoRoot: String) -> Int? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", repoRoot, "status", "--porcelain", "--ignore-submodules=dirty"]
@@ -229,7 +248,7 @@ enum LocalGitInspection {
             guard process.terminationStatus == 0 else {
                 return nil
             }
-            return !data.isEmpty
+            return changedFileCount(porcelain: String(decoding: data, as: UTF8.self))
         } catch {
             return nil
         }

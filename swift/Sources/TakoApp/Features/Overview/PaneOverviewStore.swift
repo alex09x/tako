@@ -143,6 +143,7 @@ final class PaneOverviewStore: ObservableObject {
                     elapsed: elapsed,
                     isFocused: isFocused,
                     isKeyWindow: isKey,
+                    hasUnread: Self.hasUnread(surface),
                     thumbnailLines: lines
                 )
                 discoveredItems.append(item)
@@ -225,6 +226,16 @@ final class PaneOverviewStore: ObservableObject {
                     }
             )
 
+            // A bell or a notification seen or not: waiting or quiet
+            subs.append(
+                surface.crab.$unread
+                    .dropFirst()
+                    .sink { [weak self, weak surface] newUnread in
+                        guard let self, let surface else { return }
+                        self.updateItem(for: sid, surface: surface, unread: newUnread)
+                    }
+            )
+
             // Crab state / elapsed updates
             subs.append(
                 surface.crab.objectWillChange
@@ -248,7 +259,16 @@ final class PaneOverviewStore: ObservableObject {
     }
 
     /// Updates a single item in-place when a live event occurs.
-    private func updateItem(for sid: UUID, surface: Tako.SurfaceView, newStatus: Tako.PaneStatus? = nil) {
+    /// Something on the pane the user has not seen (bell or notification),
+    /// unless its attention is muted.
+    /// `crabUnread` is the crab's new value when called from its publisher,
+    /// before the property itself changes.
+    static func hasUnread(_ surface: Tako.SurfaceView, crabUnread: Bool? = nil) -> Bool {
+        guard !AttentionManager.shared.isMuted(surfaceId: surface.id) else { return false }
+        return (crabUnread ?? surface.crab.unread) || NotificationStore.shared.unreadCount(for: surface.id) > 0
+    }
+
+    private func updateItem(for sid: UUID, surface: Tako.SurfaceView, newStatus: Tako.PaneStatus? = nil, unread: Bool? = nil) {
         guard let index = items.firstIndex(where: { $0.id == sid }) else { return }
         let current = items[index]
         let status = newStatus ?? surface.crab.paneStatus
@@ -271,6 +291,7 @@ final class PaneOverviewStore: ObservableObject {
             elapsed: surface.crab.elapsedLabel,
             isFocused: current.isFocused,
             isKeyWindow: current.isKeyWindow,
+            hasUnread: Self.hasUnread(surface, crabUnread: unread),
             thumbnailLines: lines.isEmpty ? current.thumbnailLines : lines
         )
         if updated != current {
