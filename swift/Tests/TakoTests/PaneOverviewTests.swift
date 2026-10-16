@@ -181,6 +181,25 @@ struct PaneOverviewTests {
 
     // MARK: - Live Status Updates
 
+    @Test func aNotificationArrivingWhileOpenMakesAQuietCardWaitAndReadingItQuietsIt() {
+        NotificationStore.shared.clear()
+        defer { NotificationStore.shared.clear() }
+        let store = PaneOverviewStore()
+        let s1 = makeSurface(title: "make", pwd: "/Users/alex/tako", status: .idle)
+        store.refresh(fromControllers: [makeController(surfaces: [s1])])
+        #expect(store.items.first?.surfaceState == .idle)
+
+        NotificationStore.shared.addNotification(id: "n-overview", surfaceId: s1.id, paneTitle: "make",
+                                                 title: "Build", body: "done", unread: true)
+        #expect(store.items.first?.hasUnread == true)
+        #expect(store.items.first?.surfaceState == .waiting)
+
+        NotificationStore.shared.markRead(surfaceId: s1.id)
+        #expect(store.items.first?.hasUnread == false)
+        #expect(store.items.first?.surfaceState == .idle)
+        store.stopObserving()
+    }
+
     @Test func liveStatusUpdateReflectsImmediatelyInStore() {
         let store = PaneOverviewStore()
 

@@ -50,6 +50,9 @@ final class PaneOverviewStore: ObservableObject {
     /// Weak references to live surfaces mapped by surface ID.
     private var surfacesByID: [UUID: Weak<Tako.SurfaceView>] = [:]
     private var surfaceSubscriptions: [UUID: [AnyCancellable]] = [:]
+    /// Notifications arriving or read while the overview is open change
+    /// which quiet panes wait for you.
+    private var notificationSubscription: AnyCancellable?
 
     init() {}
 
@@ -211,6 +214,11 @@ final class PaneOverviewStore: ObservableObject {
     /// When status changes (B1), the card updates in-place live without reopening!
     private func bindLiveObservers() {
         surfaceSubscriptions.removeAll()
+        notificationSubscription = NotificationCenter.default
+            .publisher(for: .takoNotificationStoreDidChange)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshUnread() }
+            }
 
         for (sid, weakSurface) in surfacesByID {
             guard let surface = weakSurface.value else { continue }
@@ -299,8 +307,17 @@ final class PaneOverviewStore: ObservableObject {
         }
     }
 
+    /// Re-reads every card's unread state, as the notification store changed.
+    func refreshUnread() {
+        for (sid, weakSurface) in surfacesByID {
+            guard let surface = weakSurface.value else { continue }
+            updateItem(for: sid, surface: surface)
+        }
+    }
+
     /// Stops observers and releases references when overview closes.
     func stopObserving() {
+        notificationSubscription = nil
         surfaceSubscriptions.removeAll()
         surfacesByID.removeAll()
     }
