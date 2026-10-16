@@ -188,11 +188,14 @@ extension Tako {
             }
         }
 
+        /// Whether a fade is armed, for tests.
+        var isFadePending: Bool { successTimer?.isValid == true }
+
         /// What the fade does when it fires. Internal so a test can fire it
         /// without waiting on a real timer.
         func fadeSeenOutcome() {
             guard isFocused else { return }
-            if explicitStatus?.status == .done {
+            if explicitStatus?.status == .done || explicitStatus?.status == .error {
                 explicitStatus = (status: .idle, text: nil)
             }
             if signalStatus == .done || signalStatus == .error {
@@ -278,6 +281,9 @@ extension Tako {
                 } else {
                     ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
                 }
+                // An explicit failure fades on the focused tab like one from
+                // a command's exit.
+                if status == .error && isFocused { fadeWhileFocused() }
             }
             statusText = sanitizedText
 

@@ -50,11 +50,24 @@ struct LivingSurfaceSpecTests {
         now = now.addingTimeInterval(4)
         tracker.commandEnded(exitCode: 7)
         #expect(tracker.paneStatus == .error)
+        #expect(tracker.isFadePending)
 
         tracker.fadeSeenOutcome()
         #expect(tracker.paneStatus == .idle)
         #expect(tracker.state == .idle)
         #expect(tracker.unread == false)
+    }
+
+    @Test func anExplicitFailureInTheFocusedTabFadesToo() {
+        let tracker = Tako.CrabTracker()
+        tracker.isFocused = true
+        tracker.setStatus(.error, text: "tests failed")
+        #expect(tracker.paneStatus == .error)
+        #expect(tracker.isFadePending)
+
+        tracker.fadeSeenOutcome()
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.statusText == nil)
     }
 
     // "...на фоновых держатся до фокуса"
