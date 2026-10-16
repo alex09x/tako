@@ -21,6 +21,9 @@ enum LayoutRecorder {
     /// Every write goes through this, on `io` only.
     private static var committer: JournalCommitter?
     private static var pending: LayoutJournal.Journal?
+    /// On the AppKit path, the layout the last run left: AppKit brings each
+    /// tab back as a window of its own, and this says how they were grouped.
+    private static var previousLayout: LayoutJournal.Journal?
     private static var timer: Timer?
     private static let io = DispatchQueue(label: "tako.layout-journal")
     /// How many windows AppKit's restoration was asked to rebuild this
@@ -45,6 +48,7 @@ enum LayoutRecorder {
         let (read, journal) = LayoutJournal.check(try? Data(contentsOf: named),
                                                   expected: previous.journalGeneration)
         source = LayoutJournal.decide(previous: previous.state, journal: read, keepsWindows: keepsWindows)
+        if source == .appKit, read == .valid { previousLayout = journal }
         if case .invalid(let why) = read, previous.state != .clean {
             AppDelegate.logger.error("layout journal unusable, AppKit restores instead: \(why, privacy: .public)")
         }
@@ -80,12 +84,16 @@ enum LayoutRecorder {
             io.sync { _ = c.setState(.dirty) }
             armed = true
         } else {
-            // AppKit has restored its windows by now: record them, in full,
-            // before anything says a crash should come back to the journal.
+            // AppKit has restored its windows by now -- each tab on its own,
+            // where it last stood. Put them back in their groups, then record
+            // them, in full, before anything says a crash should come back
+            // to the journal.
+            if let previous = previousLayout { regroup(previous) }
             let now = capture()
             armed = io.sync { arm(c, with: now) }
         }
         pending = nil
+        previousLayout = nil
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             MainActor.assumeIsolated { record() }
         }
@@ -219,6 +227,38 @@ enum LayoutRecorder {
         }
         keyWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Groups the windows AppKit restored as `journal` recorded them: each
+    /// recorded window's tabs joined behind the tab that was selected, in
+    /// their order, the others out of sight. Tabs are matched by their
+    /// stable identifier; one AppKit did not bring back is skipped.
+    static func regroup(_ journal: LayoutJournal.Journal) {
+        let decoder = JSONDecoder()
+        var byTab: [String: NSWindow] = [:]
+        for controller in TerminalController.all {
+            if let window = controller.window { byTab[window.stableTabIdentifier] = window }
+        }
+        for entry in journal.windows {
+            var windows: [NSWindow] = []
+            var selected: NSWindow?
+            for (index, tab) in entry.tabs.enumerated() {
+                guard let data = try? JSONSerialization.data(withJSONObject: tab),
+                      let state = try? decoder.decode(TerminalRestorableState.self, from: data),
+                      let id = state.tabIdentifier,
+                      let window = byTab.removeValue(forKey: id) else { continue }
+                windows.append(window)
+                if index == entry.selectedTab { selected = window }
+            }
+            guard windows.count > 1 else { continue }
+            let anchor = selected ?? windows[0]
+            for window in windows where window !== anchor {
+                Tako.CustomTabGroup.join(window, to: anchor, select: false)
+            }
+            let group = Tako.CustomTabGroup.group(for: anchor)
+            group.setWindowOrder(windows)
+            group.select(anchor)
+        }
     }
 
     /// `frame`, moved onto the main screen when no screen shows it any more.
