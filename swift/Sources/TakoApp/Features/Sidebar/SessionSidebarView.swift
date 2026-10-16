@@ -101,7 +101,7 @@ struct SessionSidebarView: View {
                 Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
             }
         }
-        .frame(minWidth: 260, idealWidth: 260, maxWidth: .infinity)
+        .frame(maxWidth: .infinity)
         .background(Color(nsColor: T.body))
         .overlay(
             Rectangle()

@@ -87,6 +87,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @FocusState private var focused: Bool
 
     // Various state values sent back up from the currently focused terminals.
+    @AppStorage(SessionSidebarWidth.defaultsKey, store: UserDefaults.tako)
+    private var sessionSidebarWidth: Double = Double(SessionSidebarWidth.standard)
+
     @FocusedValue(\.takoSurfaceView) private var focusedSurface
     @FocusedValue(\.takoSurfacePwd) private var surfacePwd
     @FocusedValue(\.takoSurfaceCellSize) private var cellSize
@@ -111,6 +114,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             isPresented: $viewModel.sessionSidebarIsShowing,
                             containingWindow: viewModel.containingWindow,
                             backgroundColor: tako.config.backgroundColor)
+                            .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
+                            .overlay(alignment: .trailing) {
+                                SessionSidebarResizeHandle(width: $sessionSidebarWidth)
+                                    .offset(x: 3)
+                            }
+                            .zIndex(1)
                     }
 
                     VStack(spacing: 0) {

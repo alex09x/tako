@@ -252,3 +252,14 @@ struct LivingSurfaceLiveFindingsTests {
         #expect(Tako.titleFor(window) == "~")
     }
 }
+
+/// The session sidebar is 280 wide (4a) and can be dragged within bounds.
+@Suite
+struct SessionSidebarWidthTests {
+    @Test func theWidthStartsAtTheDesignsAndStaysWithinItsBounds() {
+        #expect(SessionSidebarWidth.standard == 280)
+        #expect(SessionSidebarWidth.clamped(100) == 260)
+        #expect(SessionSidebarWidth.clamped(400) == 400)
+        #expect(SessionSidebarWidth.clamped(5000) == 720)
+    }
+}
