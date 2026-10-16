@@ -117,10 +117,15 @@ struct SessionSidebarView: View {
             if hostingWindow == nil {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
             }
-            if let activeIndex = items.firstIndex(where: { $0.isSelected }) {
-                selectedIndex = activeIndex
-            }
+            followActiveTab()
             isListFocused = true
+        }
+        // Each tab is a window with a sidebar of its own; the one on screen
+        // must not keep an arrow-key cursor left from when it was last shown,
+        // or a second row looks chosen. The cursor goes where the active
+        // tab goes.
+        .onChange(of: items.firstIndex(where: { $0.isSelected })) { _, _ in
+            followActiveTab()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoNotificationStoreDidChange)) { _ in
             store.objectWillChange.send()
@@ -134,6 +139,7 @@ struct SessionSidebarView: View {
             } else if hostingWindow == nil {
                 hostingWindow = win
             }
+            if win === hostingWindow { followActiveTab() }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoNewTab)) { _ in
@@ -345,6 +351,13 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(.escape) { isPresented = false; return .handled }
+        }
+    }
+
+    /// Puts the arrow-key cursor on the active tab's row.
+    private func followActiveTab() {
+        if let activeIndex = SessionSidebarSelection.activeIndex(in: items) {
+            selectedIndex = activeIndex
         }
     }
 

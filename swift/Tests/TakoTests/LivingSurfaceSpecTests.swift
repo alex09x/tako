@@ -263,3 +263,18 @@ struct SessionSidebarWidthTests {
         #expect(SessionSidebarWidth.clamped(5000) == 720)
     }
 }
+
+/// One chosen row in the sidebar: the arrow-key cursor follows the active tab.
+@Suite
+struct SessionSidebarSelectionTests {
+    @Test func theCursorGoesToTheActiveTabsSessionRow() {
+        let items = [
+            SessionSidebarItem(id: "a", index: 0, isSelected: false, title: "agy"),
+            SessionSidebarItem(id: "b", index: 1, isSelected: true, title: "petition"),
+            SessionSidebarItem(id: "b-pane", index: 1, isSelected: true, title: "claude", isChild: true),
+            SessionSidebarItem(id: "c", index: 2, isSelected: false, title: "japan"),
+        ]
+        #expect(SessionSidebarSelection.activeIndex(in: items) == 1)
+        #expect(SessionSidebarSelection.activeIndex(in: [items[0], items[3]]) == nil)
+    }
+}

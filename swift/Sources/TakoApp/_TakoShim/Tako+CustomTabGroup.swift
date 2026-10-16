@@ -542,7 +542,11 @@ extension Tako {
 
         func select(_ window: NSWindow) {
             guard windows.contains(window) else { return }
-            focusGeneration += 1
+            // Selecting the tab that is already chosen starts nothing new, so
+            // it must not cancel the pending order-out of the one it replaced:
+            // a sidebar click selects, then presenting the pane selects again,
+            // and every tab clicked away from used to stay on screen beneath.
+            if selectedWindow !== window { focusGeneration += 1 }
             let gen = focusGeneration
             let reflowSurfaces: () -> Void = { [weak self, weak window] in
                 guard let self, let window, self.focusGeneration == gen else { return }
