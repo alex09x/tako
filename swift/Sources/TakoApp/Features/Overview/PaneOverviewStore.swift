@@ -54,7 +54,12 @@ final class PaneOverviewStore: ObservableObject {
     /// which quiet panes wait for you.
     private var notificationSubscription: AnyCancellable?
 
-    init() {}
+    /// Where unread notifications are read from; a test passes its own.
+    let notifications: NotificationStore
+
+    init(notifications: NotificationStore = .shared) {
+        self.notifications = notifications
+    }
 
     /// Filtered list of items matching the current `filterText`.
     var filteredItems: [PaneOverviewItem] {
@@ -146,7 +151,7 @@ final class PaneOverviewStore: ObservableObject {
                     elapsed: elapsed,
                     isFocused: isFocused,
                     isKeyWindow: isKey,
-                    hasUnread: Self.hasUnread(surface),
+                    hasUnread: hasUnread(surface),
                     thumbnailLines: lines
                 )
                 discoveredItems.append(item)
@@ -215,7 +220,7 @@ final class PaneOverviewStore: ObservableObject {
     private func bindLiveObservers() {
         surfaceSubscriptions.removeAll()
         notificationSubscription = NotificationCenter.default
-            .publisher(for: .takoNotificationStoreDidChange)
+            .publisher(for: .takoNotificationStoreDidChange, object: notifications)
             .sink { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshUnread() }
             }
@@ -271,9 +276,9 @@ final class PaneOverviewStore: ObservableObject {
     /// unless its attention is muted.
     /// `crabUnread` is the crab's new value when called from its publisher,
     /// before the property itself changes.
-    static func hasUnread(_ surface: Tako.SurfaceView, crabUnread: Bool? = nil) -> Bool {
+    func hasUnread(_ surface: Tako.SurfaceView, crabUnread: Bool? = nil) -> Bool {
         guard !AttentionManager.shared.isMuted(surfaceId: surface.id) else { return false }
-        return (crabUnread ?? surface.crab.unread) || NotificationStore.shared.unreadCount(for: surface.id) > 0
+        return (crabUnread ?? surface.crab.unread) || notifications.unreadCount(for: surface.id) > 0
     }
 
     private func updateItem(for sid: UUID, surface: Tako.SurfaceView, newStatus: Tako.PaneStatus? = nil, unread: Bool? = nil) {
@@ -299,7 +304,7 @@ final class PaneOverviewStore: ObservableObject {
             elapsed: surface.crab.elapsedLabel,
             isFocused: current.isFocused,
             isKeyWindow: current.isKeyWindow,
-            hasUnread: Self.hasUnread(surface, crabUnread: unread),
+            hasUnread: hasUnread(surface, crabUnread: unread),
             thumbnailLines: lines.isEmpty ? current.thumbnailLines : lines
         )
         if updated != current {
