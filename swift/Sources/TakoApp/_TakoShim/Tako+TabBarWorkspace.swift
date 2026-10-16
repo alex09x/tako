@@ -215,6 +215,10 @@ extension Tako.TabBarView {
             return .waiting
         case "working", "running", "reconnecting":
             if let pFraction { return .progress(pFraction) }
+            // Spec 1b: a shell command shows as working only after 3 s.
+            if let crab = Tako.aggregateCrab(for: window), crab.paneStatus == .running, crab.state != .running {
+                return .idle
+            }
             return .working
         case "done", "succeeded":
             return .done

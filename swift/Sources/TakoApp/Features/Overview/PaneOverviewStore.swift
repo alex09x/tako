@@ -26,6 +26,27 @@ final class PaneOverviewStore: ObservableObject {
     }
     @Published var selectedIndex: Int = 0
 
+    /// What the header chips filter by (Spec 4b: "2 need you", "2 working"
+    /// are filters too) -- the same states they count.
+    enum StatusFilter: Equatable {
+        case needsYou
+        case working
+
+        func matches(_ item: PaneOverviewItem) -> Bool {
+            switch (self, item.surfaceState) {
+            case (.needsYou, .waiting): return true
+            case (.working, .working), (.working, .progress): return true
+            default: return false
+            }
+        }
+    }
+
+    @Published var statusFilter: StatusFilter? {
+        didSet {
+            clampSelection()
+        }
+    }
+
     /// Weak references to live surfaces mapped by surface ID.
     private var surfacesByID: [UUID: Weak<Tako.SurfaceView>] = [:]
     private var surfaceSubscriptions: [UUID: [AnyCancellable]] = [:]
@@ -35,10 +56,9 @@ final class PaneOverviewStore: ObservableObject {
     /// Filtered list of items matching the current `filterText`.
     var filteredItems: [PaneOverviewItem] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            return items
+        return items.filter { item in
+            (statusFilter?.matches(item) ?? true) && (query.isEmpty || item.matches(query: query))
         }
-        return items.filter { $0.matches(query: query) }
     }
 
     /// The currently selected item in the filtered view, if any.

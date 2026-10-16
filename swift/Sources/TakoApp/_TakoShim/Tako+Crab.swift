@@ -59,7 +59,9 @@ extension Tako {
         /// make the indicator twitch.
         static let minimumVisibleDuration: TimeInterval = 3
 
-        /// How long a success stays green in a focused tab.
+        /// How long a success or a failure stays on the surface in a focused
+        /// tab (Spec 1b: "done" and "failed" fade after 2 s on the active
+        /// tab, and hold until focus on a background one).
         static let successLinger: TimeInterval = 2
 
         @Published private(set) var state: CrabState = .idle
@@ -152,16 +154,14 @@ extension Tako {
                 state = .failed(code: exitCode)
                 unread = true
                 recomputeEffectiveStatus()
+                if isFocused { fadeWhileFocused() }
                 return
             }
 
-            if isFocused {
-                signalStatus = .idle
-                unread = false
-            } else {
-                signalStatus = .done
-                unread = true
-            }
+            // Shown as done in a focused tab too, for `successLinger`; in a
+            // background one it waits to be seen.
+            signalStatus = .done
+            unread = !isFocused
 
             // A command too short to have shown as running should not flash
             // green either.
@@ -174,14 +174,36 @@ extension Tako {
             }
             state = .succeeded
             recomputeEffectiveStatus()
+            if isFocused { fadeWhileFocused() }
+        }
+
+        /// In the focused tab a finished command's "done" or "failed" is
+        /// seen as it happens: it goes quiet after `successLinger`, unless
+        /// something newer replaced it or the tab lost focus meanwhile.
+        private func fadeWhileFocused() {
             successTimer?.invalidate()
             successTimer = Timer.scheduledTimer(withTimeInterval: Self.successLinger, repeats: false) {
                 [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, case .succeeded = self.state, !self.unread else { return }
-                    self.state = .idle
-                }
+                MainActor.assumeIsolated { self?.fadeSeenOutcome() }
             }
+        }
+
+        /// What the fade does when it fires. Internal so a test can fire it
+        /// without waiting on a real timer.
+        func fadeSeenOutcome() {
+            guard isFocused else { return }
+            if explicitStatus?.status == .done {
+                explicitStatus = (status: .idle, text: nil)
+            }
+            if signalStatus == .done || signalStatus == .error {
+                signalStatus = .idle
+            }
+            switch state {
+            case .succeeded, .failed: state = .idle
+            default: break
+            }
+            unread = false
+            recomputeEffectiveStatus()
         }
 
         func bellRang() {
@@ -240,13 +262,9 @@ extension Tako {
             let sanitizedText = text.flatMap(Tako.sanitizeStatusText)
             if status == .done {
                 ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
-                if isFocused {
-                    explicitStatus = (status: .idle, text: sanitizedText)
-                    unread = false
-                } else {
-                    explicitStatus = (status: .done, text: sanitizedText)
-                    unread = true
-                }
+                explicitStatus = (status: .done, text: sanitizedText)
+                unread = !isFocused
+                if isFocused { fadeWhileFocused() }
             } else {
                 explicitStatus = (status: status, text: sanitizedText)
                 if status == .working || status == .running || status == .needsApproval || status == .waitingForInput {

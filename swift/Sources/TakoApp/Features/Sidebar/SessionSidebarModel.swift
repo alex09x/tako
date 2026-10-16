@@ -38,6 +38,9 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let progressState: TakoTerminalNSView.ProgressState
     let elapsed: String?
     let workingDirectory: String?
+    /// The session row's directory, for a pane row: its own is shown only
+    /// when it differs (Spec 4a).
+    let parentWorkingDirectory: String?
     let gitBranch: String?
     let gitDirty: Bool?
     let latestNotification: String?
@@ -59,6 +62,17 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let tabId: String
     let paneCount: Int
 
+    /// What a pane row shows under its title: its directory, unless it is
+    /// the session's own.
+    var paneDirectoryToShow: String? {
+        guard let pwd = workingDirectory, !pwd.isEmpty else { return nil }
+        if let parent = parentWorkingDirectory,
+           (parent as NSString).standardizingPath == (pwd as NSString).standardizingPath {
+            return nil
+        }
+        return pwd
+    }
+
     var canMoveUp: Bool { !isChild && index > 0 }
     var canMoveDown: Bool { !isChild && index < totalCount - 1 }
 
@@ -76,6 +90,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         progressState: TakoTerminalNSView.ProgressState = .none,
         elapsed: String? = nil,
         workingDirectory: String? = nil,
+        parentWorkingDirectory: String? = nil,
         gitBranch: String? = nil,
         gitDirty: Bool? = nil,
         latestNotification: String? = nil,
@@ -107,6 +122,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.progressState = progressState
         self.elapsed = elapsed
         self.workingDirectory = workingDirectory
+        self.parentWorkingDirectory = parentWorkingDirectory
         self.gitBranch = gitBranch
         self.gitDirty = gitDirty
         self.latestNotification = latestNotification

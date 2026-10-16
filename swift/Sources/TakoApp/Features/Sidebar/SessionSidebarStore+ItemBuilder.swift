@@ -252,6 +252,7 @@ extension SessionSidebarStore {
                         crabState: cCrabState,
                         elapsed: cElapsed,
                         workingDirectory: cPwd,
+                        parentWorkingDirectory: pwd,
                         needsAttention: cNeedsAttention,
                         isChild: true,
                         parentId: pId,

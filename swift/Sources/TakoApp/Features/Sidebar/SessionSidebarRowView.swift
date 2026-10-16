@@ -245,7 +245,7 @@ struct SessionSidebarRowView: View {
             }
             .frame(height: 15)
 
-            if let pwd = item.workingDirectory, !pwd.isEmpty {
+            if let pwd = item.paneDirectoryToShow {
                 Text(Tako.formatCompactDirectory(pwd))
                     .font(Font(T.monoFont(size: 10.5, weight: .regular)))
                     .foregroundColor(Color(nsColor: T.dim))

@@ -116,11 +116,16 @@ struct PaneStatusTests {
         clock = clock.addingTimeInterval(5)
         tracker.commandEnded(exitCode: 0)
 
-        // Focused tab should be idle in paneStatus, unread false, but state is succeeded
-        #expect(tracker.signalStatus == .idle)
-        #expect(tracker.paneStatus == .idle)
+        // Spec 1b: the focused tab shows "done" too, seen (not unread)...
+        #expect(tracker.signalStatus == .done)
+        #expect(tracker.paneStatus == .done)
         #expect(tracker.unread == false)
         #expect(tracker.state == .succeeded)
+
+        // ...and goes quiet when the 2 s fade fires.
+        tracker.fadeSeenOutcome()
+        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.state == .idle)
     }
 
     @Test func signalStatusErrorTransitionsAndFocus() {
@@ -223,14 +228,14 @@ struct PaneStatusTests {
         #expect(tracker.statusText == nil)
     }
 
-    @Test func doneStatusWhileFocusedImmediatelyReportsIdle() {
+    @Test func doneStatusWhileFocusedShowsThenFades() {
         let tracker = Tako.CrabTracker()
         tracker.isFocused = true
         tracker.setStatus(.done, text: "Finished task")
-        #expect(tracker.paneStatus == .idle)
+        #expect(tracker.paneStatus == .done)
         #expect(tracker.unread == false)
 
-        tracker.unfocused()
+        tracker.fadeSeenOutcome()
         #expect(tracker.paneStatus == .idle)
         #expect(tracker.unread == false)
     }

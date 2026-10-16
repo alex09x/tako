@@ -128,7 +128,8 @@ extension Tako {
         public func surfaceState(
             progressState: TakoTerminalNSView.ProgressState = .none,
             progressFraction: Double? = nil,
-            elapsedSeconds: TimeInterval? = nil
+            elapsedSeconds: TimeInterval? = nil,
+            crabState: Tako.CrabState? = nil
         ) -> Tako.SurfaceState {
             switch self {
             case .disconnected:
@@ -142,6 +143,12 @@ extension Tako {
                     return .progress(min(1.0, max(0.0, p)))
                 }
                 if self == .running, let elapsedSeconds, elapsedSeconds < 3.0 {
+                    return .idle
+                }
+                // Spec 1b: "working" only once a command has run > 3 s. The
+                // crab turns `.running` at that point; before it, a shell
+                // command is still quiet.
+                if self == .running, let crabState, crabState != .running {
                     return .idle
                 }
                 return .working

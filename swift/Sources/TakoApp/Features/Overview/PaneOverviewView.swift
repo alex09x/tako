@@ -48,16 +48,15 @@ struct PaneOverviewView: View {
     }
 
     private var waitingCount: Int {
-        store.items.filter { $0.surfaceState == .waiting }.count
+        store.items.filter { PaneOverviewStore.StatusFilter.needsYou.matches($0) }.count
     }
 
     private var workingCount: Int {
-        store.items.filter {
-            switch $0.surfaceState {
-            case .working, .progress: return true
-            default: return false
-            }
-        }.count
+        store.items.filter { PaneOverviewStore.StatusFilter.working.matches($0) }.count
+    }
+
+    private func toggleStatusFilter(_ filter: PaneOverviewStore.StatusFilter) {
+        store.statusFilter = store.statusFilter == filter ? nil : filter
     }
 
     var body: some View {
@@ -159,24 +158,20 @@ struct PaneOverviewView: View {
             // Summary chips on right (gap 6): "N need you" (attn), "N working" (work), "N panes" (idle)
             HStack(spacing: 6) {
                 if waitingCount > 0 {
-                    Button(action: {
-                        store.filterText = (store.filterText == "Approval" || store.filterText == "Needs input") ? "" : "Approval"
-                    }) {
+                    Button(action: { toggleStatusFilter(.needsYou) }) {
                         LivingStatusChipView(status: .needsApproval, customLabel: "\(waitingCount) need you")
                     }
                     .buttonStyle(.plain)
                 }
 
                 if workingCount > 0 {
-                    Button(action: {
-                        store.filterText = (store.filterText == "Working") ? "" : "Working"
-                    }) {
+                    Button(action: { toggleStatusFilter(.working) }) {
                         LivingStatusChipView(status: .working, customLabel: "\(workingCount) working")
                     }
                     .buttonStyle(.plain)
                 }
 
-                Button(action: { store.filterText = "" }) {
+                Button(action: { store.statusFilter = nil; store.filterText = "" }) {
                     LivingStatusChipView(status: .idle, customLabel: "\(store.items.count) panes")
                 }
                 .buttonStyle(.plain)
@@ -304,6 +299,7 @@ struct PaneOverviewView: View {
                 .foregroundColor(Color(nsColor: T.textActive))
 
             Button("Clear Filter") {
+                store.statusFilter = nil
                 store.filterText = ""
             }
             .buttonStyle(.bordered)

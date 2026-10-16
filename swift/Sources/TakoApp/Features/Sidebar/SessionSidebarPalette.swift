@@ -42,7 +42,7 @@ extension SessionSidebarItem {
             if let progress { return min(1.0, max(0.0, progress)) }
             return progressState == .indeterminate ? 0.35 : nil
         }()
-        let state = status.surfaceState(progressState: progressState, progressFraction: frac)
+        let state = status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
         if state == .idle, needsAttention {
             return .waiting
         }

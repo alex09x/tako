@@ -108,7 +108,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
             if let progressValue { return min(1.0, max(0.0, Double(progressValue) / 100.0)) }
             return progressState == .indeterminate ? 0.35 : nil
         }()
-        return status.surfaceState(progressState: progressState, progressFraction: frac)
+        return status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
     }
 
     /// Meta text shown on the right of Row 1: `"NN%"` when progress is active, otherwise `elapsed`.
