@@ -56,14 +56,19 @@ public final class NotificationStore: ObservableObject {
             saveToDefaults()
             updateDockBadge()
             NotificationCenter.default.post(name: .takoNotificationStoreDidChange, object: self)
-            Tako.TabBarController.refreshAll()
+            if drivesApp { Tako.TabBarController.refreshAll() }
         }
     }
 
     private let defaults: UserDefaults
+    /// Whether this store is the app's: it sets the Dock badge and redraws
+    /// the tab bars. A store a test makes for itself passes false and leaves
+    /// the running app alone.
+    private let drivesApp: Bool
 
-    public init(defaults: UserDefaults = .tako) {
+    public init(defaults: UserDefaults = .tako, drivesApp: Bool = true) {
         self.defaults = defaults
+        self.drivesApp = drivesApp
         self.isInitializing = true
         loadFromDefaults()
         self.isInitializing = false
@@ -215,7 +220,7 @@ public final class NotificationStore: ObservableObject {
         let unread = totalUnreadCount()
         let label = unread > 0 ? (unread > 99 ? "99+" : "\(unread)") : nil
         onDockBadgeUpdate?(label)
-        if let appDelegate = NSApp?.delegate as? AppDelegate {
+        if drivesApp, let appDelegate = NSApp?.delegate as? AppDelegate {
             appDelegate.setDockBadge(notificationUnreadCount: unread)
         }
     }

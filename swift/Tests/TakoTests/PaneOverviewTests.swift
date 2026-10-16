@@ -187,7 +187,7 @@ struct PaneOverviewTests {
         let suite = "tako.tests.overview-unread.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let notifications = NotificationStore(defaults: defaults)
+        let notifications = NotificationStore(defaults: defaults, drivesApp: false)
         let store = PaneOverviewStore(notifications: notifications)
         let s1 = makeSurface(title: "make", pwd: "/Users/alex/tako", status: .idle)
         store.refresh(fromControllers: [makeController(surfaces: [s1])])
