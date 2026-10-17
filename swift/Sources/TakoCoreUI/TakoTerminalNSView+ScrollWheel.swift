@@ -19,7 +19,7 @@ extension TakoTerminalNSView {
         let point = convert(event.locationInWindow, from: nil)
         lastMousePoint = point
         mouseCell = cellAt(point)
-        let onScrollbar = scrollbarLayer.frame.contains(point)
+        let onScrollbar = scrollbarTakesPointer(at: point)
         if onScrollbar != isHoveringScrollbar {
             isHoveringScrollbar = onScrollbar
             updateScroller()

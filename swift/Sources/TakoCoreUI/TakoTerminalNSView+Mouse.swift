@@ -55,7 +55,7 @@ extension TakoTerminalNSView {
     override open func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let loc = convert(event.locationInWindow, from: nil)
-        if scrollbarLayer.frame.contains(loc) {
+        if scrollbarTakesPointer(at: loc) {
             if isOutputFilterActive {
                 let matchCount = outputFilterMatchingLines.count
                 let visibleLines = Int(core.rows())

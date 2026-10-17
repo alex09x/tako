@@ -56,6 +56,14 @@ extension TakoTerminalNSView {
         scrollbarKnob.isHidden = true
     }
 
+    /// Whether the scrollbar takes a press or hover at `point` (view
+    /// coordinates): only while its line shows. With nothing to scroll the
+    /// track is not there, and the last columns under it are text again --
+    /// a command-click on a link there opened nothing at all.
+    func scrollbarTakesPointer(at point: CGPoint) -> Bool {
+        !scrollbarKnob.isHidden && scrollbarLayer.frame.contains(point)
+    }
+
     /// Whether a point in the track's coordinates is on the line's span:
     /// only its height counts, so the thin line is as easy to grab as the
     /// whole track is wide.

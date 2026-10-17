@@ -32,6 +32,16 @@ final class TerminalScrollbarStyleTests: XCTestCase {
         XCTAssertEqual(view.scrollbarLayer.backgroundColor?.alpha ?? 0, 0, "the track is not drawn")
     }
 
+    func testWithNothingToScrollTheTrackTakesNoPress() {
+        let view = TakoTerminalNSView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        view.updateScroller()
+        let inTrack = CGPoint(x: view.scrollbarLayer.frame.midX, y: view.scrollbarLayer.frame.midY)
+        XCTAssertFalse(view.scrollbarTakesPointer(at: inTrack), "the last columns are text when nothing scrolls")
+        view.feed(data: Data((0..<200).map { "line \($0)\r\n" }.joined().utf8))
+        view.updateScroller()
+        XCTAssertTrue(view.scrollbarTakesPointer(at: inTrack))
+    }
+
     func testAScrollingTerminalShowsTheLineAndItsSpanTakesThePress() {
         let view = TakoTerminalNSView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
         view.feed(data: Data((0..<200).map { "line \($0)\r\n" }.joined().utf8))
