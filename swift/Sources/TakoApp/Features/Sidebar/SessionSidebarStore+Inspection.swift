@@ -124,8 +124,7 @@ extension SessionSidebarStore {
                             if let pwd = s.pwd {
                                 self.invalidateGitCache(for: pwd)
                             }
-                            if let pty = s.pty {
-                                let pid = pty.foregroundPID ?? Int(pty.child)
+                            if let pid = s.foregroundProcess?.pid ?? s.shellProcessID {
                                 self.invalidatePortsCache(for: pid)
                             }
                         }

@@ -79,6 +79,32 @@ enum RuntimeCommand {
     /// Whether `zmx list` shows exactly this name. Nil when it cannot tell.
     static func isListed(_ runtime: URL, name: String, environment: [String: String]) -> Bool? {
         guard let result = run(runtime, ["list"], environment: environment), result.status == 0 else { return nil }
-        return result.output.split(separator: "\n").contains { $0.split(separator: "\t").first == "name=\(name)" }
+        return listing(result.output)[name] != nil
+    }
+
+    /// The process `zmx list` gives for this session: its shell. Nil when
+    /// it cannot tell.
+    static func sessionPID(_ runtime: URL, name: String, environment: [String: String]) -> pid_t? {
+        guard let result = run(runtime, ["list"], environment: environment), result.status == 0 else { return nil }
+        return listing(result.output)[name]?["pid"].flatMap { pid_t($0) }
+    }
+
+    /// `zmx list` as fields by session name. Every line starts with a
+    /// marker -- `→ ` for the session the caller runs in, two spaces for the
+    /// rest, even with no session in the environment -- and lists its
+    /// fields as `key=value`, tab separated. Read without the marker, every
+    /// name looked absent: a client that ended on its own was taken for its
+    /// shell having exited, and the tab closed over a session still running.
+    static func listing(_ output: String) -> [String: [String: String]] {
+        var sessions: [String: [String: String]] = [:]
+        for line in output.split(separator: "\n") {
+            var fields: [String: String] = [:]
+            for field in line.drop(while: { $0 == " " || $0 == "→" }).split(separator: "\t") {
+                guard let eq = field.firstIndex(of: "=") else { continue }
+                fields[String(field[..<eq])] = String(field[field.index(after: eq)...])
+            }
+            if let name = fields["name"] { sessions[name] = fields }
+        }
+        return sessions
     }
 }

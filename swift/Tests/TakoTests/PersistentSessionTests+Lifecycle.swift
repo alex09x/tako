@@ -38,7 +38,9 @@ extension RuntimeCommandTests {
     }
 
     @Test func listingIsExactAndUnknownWhenTheHelperFails() throws {
-        let listed = try helper("printf 'name=abcd\\tpid=1\\nname=abc\\tpid=2\\n'")
+        // As zmx prints it: every line behind a marker, two spaces for a
+        // session the caller does not run in.
+        let listed = try helper("printf '  name=abcd\\tpid=1\\n  name=abc\\tpid=2\\tclients=1\\n'")
         let failing = try helper("exit 1")
         defer {
             try? FileManager.default.removeItem(at: listed)
@@ -47,6 +49,34 @@ extension RuntimeCommandTests {
         #expect(RuntimeCommand.isListed(listed, name: "abc", environment: [:]) == true)
         #expect(RuntimeCommand.isListed(listed, name: "ab", environment: [:]) == false)
         #expect(RuntimeCommand.isListed(failing, name: "abc", environment: [:]) == nil)
+        #expect(RuntimeCommand.sessionPID(listed, name: "abc", environment: [:]) == 2)
+        #expect(RuntimeCommand.sessionPID(listed, name: "ab", environment: [:]) == nil)
+    }
+
+    @Test func theListingIsReadBehindEitherMarker() {
+        let output = "→ name=here\tpid=7\tcwd=/a=b\n  name=there\terr=ConnectionRefused\tstatus=cleaning up\n"
+        let sessions = RuntimeCommand.listing(output)
+        #expect(sessions["here"]?["pid"] == "7")
+        #expect(sessions["here"]?["cwd"] == "/a=b")
+        #expect(sessions["there"]?["status"] == "cleaning up")
+        #expect(sessions.count == 2)
+    }
+}
+
+@Suite
+struct SessionShellTests {
+    @Test func aShellsTerminalIsFoundFromItsPid() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory()))
+        defer { pty.terminate() }
+        #expect(waitUntil { pty.foregroundPID != nil })
+        let terminal = try #require(SessionShell.terminal(ofShell: pty.child))
+        #expect(terminal.foregroundPID == pty.foregroundPID)
+        #expect(terminal.ttyName == pty.ttyName)
+        #expect(terminal.ttyName?.hasPrefix("/dev/tty") == true)
+    }
+
+    @Test func aProcessThatIsGoneHasNoTerminal() {
+        #expect(SessionShell.terminal(ofShell: 999_999) == nil)
     }
 }
 

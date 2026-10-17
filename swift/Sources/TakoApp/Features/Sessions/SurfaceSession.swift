@@ -27,6 +27,9 @@ final class SurfaceSession {
     /// This attempt's nonce while a reattach check has not been decided.
     var attempt: String?
 
+    /// The session's shell, as the runtime lists it, once attached.
+    var shellPID: pid_t?
+
     /// Set once quitting is confirmed: from then on clients are detached,
     /// never their sessions ended. Read from any thread (a deinit).
     nonisolated(unsafe) private static var detachingFlag = false

@@ -103,9 +103,8 @@ extension SessionSidebarStore {
                 var aggregatedPorts: Set<Int> = []
                 var hasInspectedPane = false
                 for s in winSurfaces {
-                    guard let pty = s.pty else { continue }
-                    let pid = pty.foregroundPID ?? Int(pty.child)
-                    guard pid > 0 else { continue }
+                    guard s.pty != nil, let pid = s.foregroundProcess?.pid ?? s.shellProcessID, pid > 0
+                    else { continue }
                     if let cached = portsCache[pid] {
                         hasInspectedPane = true
                         aggregatedPorts.formUnion(cached)

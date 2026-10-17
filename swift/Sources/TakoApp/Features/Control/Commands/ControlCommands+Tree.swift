@@ -73,13 +73,9 @@ extension ControlCommands {
                 }
                 node["collapsed"] = .bool(SubagentHierarchyStore.shared.isCollapsed(surface.id))
             }
-            if persistent {
-                node["pid"] = .null
-                node["tty"] = .null
-            } else {
-                node["pid"] = surface.surfaceModel?.foregroundPID.map { .number(Double($0)) } ?? .null
-                node["tty"] = surface.surfaceModel?.ttyName.map(JSON.string) ?? .null
-            }
+            let foreground = surface.foregroundProcess
+            node["pid"] = foreground.map { .number(Double($0.pid)) } ?? .null
+            node["tty"] = foreground?.tty.map(JSON.string) ?? .null
             // Grouped by id, in the order first seen: tabs of one window
             // need not come one after another.
             let w = windows.firstIndex { $0.id == pane.windowID } ?? {

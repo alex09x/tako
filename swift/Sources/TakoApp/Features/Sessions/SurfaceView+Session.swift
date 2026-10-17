@@ -28,6 +28,38 @@ extension Tako.SurfaceView {
         }
     }
 
+    /// The process in front on the terminal the shell runs on -- the
+    /// running command, or the shell itself -- and that terminal. For a
+    /// persistent session that is the runtime's terminal, not the client's
+    /// pty Tako holds.
+    var foregroundProcess: (pid: Int, tty: String?)? {
+        if let session = persistence {
+            guard let shell = session.shellPID else { return nil }
+            return SessionShell.terminal(ofShell: shell).map { ($0.foregroundPID, $0.ttyName) }
+        }
+        guard let pty, let pid = pty.foregroundPID else { return nil }
+        return (pid, pty.ttyName)
+    }
+
+    /// The shell's own process.
+    var shellProcessID: Int? {
+        if let session = persistence { return session.shellPID.map(Int.init) }
+        return pty.map { Int($0.child) }
+    }
+
+    /// Asks the runtime which process the session's shell is, once it is
+    /// attached.
+    func learnShellPID(_ session: SurfaceSession) {
+        let runtime = session.runtime, name = session.name, env = session.environment
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let pid = RuntimeCommand.sessionPID(runtime, name: name, environment: env)
+            DispatchQueue.main.async {
+                guard let self, self.persistence === session else { return }
+                session.shellPID = pid
+            }
+        }
+    }
+
     /// A line from Tako, not from the shell, in the terminal itself.
     func sessionNotice(_ text: String) {
         core.feed(bytes: Data("\r\n\u{1b}[33m[Tako] \(text)\u{1b}[0m\r\n".utf8))
@@ -161,6 +193,7 @@ extension Tako.SurfaceView {
             }
             DispatchQueue.main.async {
                 guard let self, self.persistence === session, self.pty === client, confirmed else { return }
+                self.learnShellPID(session)
                 do {
                     try session.save(.attached)
                 } catch {
@@ -257,6 +290,7 @@ extension Tako.SurfaceView {
         session.attempt = nil
         switch outcome {
         case .live:
+            learnShellPID(session)
             do {
                 try session.save(.attached)
             } catch {
@@ -276,6 +310,7 @@ extension Tako.SurfaceView {
                 DispatchQueue.main.async {
                     guard let self, self.persistence === session, self.pty == nil else { return }
                     if let snapshot { self.showSnapshot(snapshot) }
+                    session.shellPID = nil
                     session.record.generation = SessionRecord.newGeneration()
                     self.createSession(session, workingDir: workingDir)
                 }
