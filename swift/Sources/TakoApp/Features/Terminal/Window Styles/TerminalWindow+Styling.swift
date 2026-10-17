@@ -30,7 +30,21 @@ extension TerminalWindow {
         return NSAttributedString(string: title, attributes: attributes)
     }
 
+    /// Found once and kept while it stays in a window: AppKit asks for it
+    /// on every layout and update pass, and each search walked the whole
+    /// window's view tree -- a fifth of the main thread with a log streaming.
     var titlebarContainer: NSView? {
+        let fullScreen = styleMask.contains(.fullScreen)
+        if let cached = cachedTitlebarContainer, cachedTitlebarContainerFullScreen == fullScreen,
+           fullScreen ? cached.window?.parent === self : cached.window === self {
+            return cached
+        }
+        cachedTitlebarContainer = findTitlebarContainer()
+        cachedTitlebarContainerFullScreen = fullScreen
+        return cachedTitlebarContainer
+    }
+
+    private func findTitlebarContainer() -> NSView? {
         // If we aren't fullscreen then the titlebar container is part of our window.
         if !styleMask.contains(.fullScreen) {
             return contentView?.firstViewFromRoot(withClassName: "NSTitlebarContainerView")

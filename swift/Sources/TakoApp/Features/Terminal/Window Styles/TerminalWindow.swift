@@ -53,6 +53,11 @@ class TerminalWindow: NSWindow {
     /// Glass effect view for liquid glass background when transparency is enabled
     private var glassEffectView: NSView?
 
+    /// The titlebar container found last, and whether the window was full
+    /// screen then (it lives in another window in full screen).
+    weak var cachedTitlebarContainer: NSView?
+    var cachedTitlebarContainerFullScreen = false
+
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
         windowController as? TerminalController

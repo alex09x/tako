@@ -213,5 +213,16 @@ struct TerminalWindowCoverageTests {
         #expect(window.titlebarContainer != nil)
     }
 
+    @Test func titlebarContainerIsSearchedOnceAndAgainWhenItLeavesTheWindow() throws {
+        let window = makeWindow()
+        defer { window.orderOut(nil) }
+        let first = try #require(window.titlebarContainer)
+        #expect(window.titlebarContainer === first, "kept, not searched again")
+        // A container no longer in this window is not handed out.
+        let stale = NSView()
+        window.cachedTitlebarContainer = stale
+        #expect(window.titlebarContainer === first)
+    }
+
 
 }
