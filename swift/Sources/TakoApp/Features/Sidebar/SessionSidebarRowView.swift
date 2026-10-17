@@ -21,12 +21,19 @@ struct SessionSidebarRowView: View {
     @Binding var editingItemId: String?
     @Binding var editingDescriptionText: String
     @Binding var isPresented: Bool
-    var now: Date = Date()
+    /// The moment to draw the row at; nil draws it live, with animation
+    /// frames only while its state moves.
+    var now: Date? = nil
     var reduceMotion: Bool = false
+    /// No frames at all: the window is hidden or the app has been away.
+    var motionPaused: Bool = false
     var onSelect: () -> Void = {}
 
     @ObservedObject private var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
+    /// Bumped when a state that moves once comes to rest, so the row is
+    /// drawn again and its frames stop.
+    @State private var restCount = 0
 
     private typealias T = Tako.LivingTokens
 
@@ -42,9 +49,31 @@ struct SessionSidebarRowView: View {
         item.surfaceState
     }
 
+    private var animationKey: String { "sidebar-\(item.id)" }
+
+    @ViewBuilder
     var body: some View {
+        if let now {
+            row(at: now)
+        } else {
+            let elapsed = LivingAnimationState.shared.elapsedInState(for: animationKey, state: state, now: Date())
+            let moving = LivingMotion.isMoving(state, elapsed: elapsed, reduceMotion: reduceMotion)
+            let _ = restCount
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || !moving)) { context in
+                row(at: LivingAnimationState.shared.effectiveDate(context.date))
+            }
+            .task(id: state) {
+                guard let wait = LivingMotion.remaining(state, elapsed: elapsed, reduceMotion: reduceMotion) else { return }
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                if !Task.isCancelled { restCount += 1 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(at now: Date) -> some View {
         let elapsedInState = LivingAnimationState.shared.elapsedInState(
-            for: "sidebar-\(item.id)",
+            for: animationKey,
             state: state,
             now: now
         )
@@ -53,9 +82,9 @@ struct SessionSidebarRowView: View {
 
         Group {
             if item.isChild {
-                paneChildRow(elapsedInState: elapsedInState)
+                paneChildRow(elapsedInState: elapsedInState, now: now)
             } else {
-                sessionParentRow(elapsedInState: elapsedInState)
+                sessionParentRow(elapsedInState: elapsedInState, now: now)
             }
         }
         .offset(x: shakeX)
@@ -63,7 +92,7 @@ struct SessionSidebarRowView: View {
 
     // MARK: - Level 1: Session Row (§5.5)
 
-    private func sessionParentRow(elapsedInState: TimeInterval) -> some View {
+    private func sessionParentRow(elapsedInState: TimeInterval, now: Date) -> some View {
         let radius: CGFloat = 7
         let hasBorderBox1px: Bool = {
             if state == .working || state == .offline { return true }
@@ -199,7 +228,7 @@ struct SessionSidebarRowView: View {
 
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
 
-    private func paneChildRow(elapsedInState: TimeInterval) -> some View {
+    private func paneChildRow(elapsedInState: TimeInterval, now: Date) -> some View {
         let radius: CGFloat = 6
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
         let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4

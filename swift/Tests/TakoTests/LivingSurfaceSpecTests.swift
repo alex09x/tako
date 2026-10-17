@@ -278,3 +278,34 @@ struct SessionSidebarSelectionTests {
         #expect(SessionSidebarSelection.activeIndex(in: [items[0], items[3]]) == nil)
     }
 }
+
+/// Frames only where something moves: a quiet sidebar draws nothing between changes.
+@Suite
+@MainActor
+struct LivingMotionTests {
+    @Test func spinnersHaloAndCometMoveForAsLongAsTheStateLasts() {
+        for state in [Tako.SurfaceState.working, .progress(0.4), .waiting] {
+            #expect(LivingMotion.isMoving(state, elapsed: 3600, reduceMotion: false))
+            #expect(LivingMotion.remaining(state, elapsed: 3600, reduceMotion: false) == nil)
+        }
+    }
+
+    @Test func doneAndFailedMoveOnceAndComeToRest() {
+        #expect(LivingMotion.isMoving(.done, elapsed: 0.9, reduceMotion: false))
+        #expect(!LivingMotion.isMoving(.done, elapsed: 1.0, reduceMotion: false))
+        #expect(LivingMotion.remaining(.done, elapsed: 0.25, reduceMotion: false) == 0.75)
+        #expect(LivingMotion.isMoving(.failed, elapsed: 0.4, reduceMotion: false))
+        #expect(!LivingMotion.isMoving(.failed, elapsed: 0.5, reduceMotion: false))
+        // The motion each covers: the glint, the pop, the shake.
+        #expect(DoneGlint.progress(elapsed: 1.0) == nil)
+        #expect(LivingAnimationState.donePopScale(elapsed: 1.0) == 1)
+        #expect(LivingAnimationState.failedShakeOffset(elapsed: 0.5) == 0)
+    }
+
+    @Test func idleOfflineAndReducedMotionNeverMove() {
+        #expect(!LivingMotion.isMoving(.idle, elapsed: 0, reduceMotion: false))
+        #expect(!LivingMotion.isMoving(.offline, elapsed: 0, reduceMotion: false))
+        #expect(!LivingMotion.isMoving(.working, elapsed: 0, reduceMotion: true))
+        #expect(LivingMotion.remaining(.done, elapsed: 0, reduceMotion: true) == nil)
+    }
+}

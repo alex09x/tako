@@ -75,31 +75,37 @@ struct SessionSidebarView: View {
         workspaceGroups.flatMap(\.items)
     }
 
-    private var totalSessionCount: Int {
-        let sum = workspaceGroups.reduce(0) { $0 + $1.sessionCount }
+    private static func sessionCount(_ groups: [SessionSidebarWorkspaceGroup], _ items: [SessionSidebarItem]) -> Int {
+        let sum = groups.reduce(0) { $0 + $1.sessionCount }
         return sum > 0 ? sum : items.filter { !$0.isChild }.count
     }
 
-    private var totalAttentionCount: Int {
-        let sum = workspaceGroups.reduce(0) { $0 + $1.attentionCount }
+    private static func attentionCount(_ groups: [SessionSidebarWorkspaceGroup], _ items: [SessionSidebarItem]) -> Int {
+        let sum = groups.reduce(0) { $0 + $1.attentionCount }
         if sum > 0 { return sum }
         return items.filter { !$0.isChild && ($0.needsAttention || $0.surfaceState == .waiting || $0.surfaceState == .failed) }.count
     }
 
+    /// No animation frames anywhere: the window is hidden or the app away.
+    private var motionPaused: Bool {
+        animState.isTimelinePaused || !isPresented
+    }
+
+    // The list is built once per change, not per animation frame: only the
+    // rings and rows that move redraw on their own (`SessionSidebarRowView`).
     public var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: animState.isTimelinePaused || !isPresented)) { context in
-            let now = animState.effectiveDate(context.date)
-            VStack(spacing: 0) {
-                headerView
-                searchAndSegmentsBar(now: now)
-                tabListView(now: now)
-                Divider().background(Color(nsColor: T.hairline))
-                footerView
-            }
-            .contextMenu {
-                Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
-                Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
-            }
+        let groups = workspaceGroups
+        let flatItems = groups.flatMap(\.items)
+        VStack(spacing: 0) {
+            headerView(sessionCount: Self.sessionCount(groups, flatItems))
+            searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
+            tabListView(groups: groups, flatItems: flatItems)
+            Divider().background(Color(nsColor: T.hairline))
+            footerView
+        }
+        .contextMenu {
+            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
+            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
         }
         .frame(maxWidth: .infinity)
         .background(Color(nsColor: T.body))
@@ -124,7 +130,7 @@ struct SessionSidebarView: View {
         // must not keep an arrow-key cursor left from when it was last shown,
         // or a second row looks chosen. The cursor goes where the active
         // tab goes.
-        .onChange(of: items.firstIndex(where: { $0.isSelected })) { _, _ in
+        .onChange(of: flatItems.firstIndex(where: { $0.isSelected })) { _, _ in
             followActiveTab()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoNotificationStoreDidChange)) { _ in
@@ -161,7 +167,7 @@ struct SessionSidebarView: View {
 
     // MARK: - Header (§5.1)
 
-    private var headerView: some View {
+    private func headerView(sessionCount: Int) -> some View {
         HStack(spacing: 8) {
             Text("Sessions")
                 .font(T.headerFont(size: 13))
@@ -170,7 +176,7 @@ struct SessionSidebarView: View {
 
             Spacer()
 
-            Text("\(totalSessionCount)")
+            Text("\(sessionCount)")
                 .font(Font(T.monoFont(size: 10, weight: .medium)))
                 .foregroundColor(Color(nsColor: T.dim))
         }
@@ -187,7 +193,7 @@ struct SessionSidebarView: View {
 
     // MARK: - Search & Segments (§5.2, §5.3)
 
-    private func searchAndSegmentsBar(now: Date) -> some View {
+    private func searchAndSegmentsBar(attentionCount: Int) -> some View {
         VStack(spacing: 0) {
             // Search input: margin 0 12 8, h 26, r 7, bg #1A1512, border 1 #2A211B, padding 0 9
             HStack(spacing: 7) {
@@ -242,13 +248,15 @@ struct SessionSidebarView: View {
                     store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
                 } content: {
                     HStack(spacing: 6) {
-                        StatusRingView(
-                            state: .waiting,
-                            size: .extraSmall,
-                            now: now,
-                            reduceMotion: animState.reduceMotion
-                        )
-                        Text("Needs you · \(totalAttentionCount)")
+                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || animState.reduceMotion)) { context in
+                            StatusRingView(
+                                state: .waiting,
+                                size: .extraSmall,
+                                now: animState.effectiveDate(context.date),
+                                reduceMotion: animState.reduceMotion
+                            )
+                        }
+                        Text("Needs you · \(attentionCount)")
                             .font(Font(T.monoFont(size: 10, weight: .regular)))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -278,11 +286,9 @@ struct SessionSidebarView: View {
 
     // MARK: - Tab List (§5.4 - §5.7)
 
-    private func tabListView(now: Date) -> some View {
+    private func tabListView(groups: [SessionSidebarWorkspaceGroup], flatItems: [SessionSidebarItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                let groups = workspaceGroups
-                let flatItems = groups.flatMap(\.items)
                 LazyVStack(spacing: 0) {
                     if groups.isEmpty || (flatItems.isEmpty && groups.allSatisfy({ !$0.isCollapsed })) {
                         Text("No tabs match filter")
@@ -302,7 +308,7 @@ struct SessionSidebarView: View {
                                     item: item, index: flatIdx, selectedIndex: selectedIndex,
                                     targetWindow: targetWindow, editingItemId: $editingItemId,
                                     editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
-                                    now: now, reduceMotion: animState.reduceMotion,
+                                    reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
                                     onSelect: {
                                         selectedIndex = flatIdx
                                         store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
