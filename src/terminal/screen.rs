@@ -180,9 +180,9 @@ impl Terminal {
     }
 
     pub(crate) fn scroll_region_up(&mut self, n: usize) {
-        let scrollback_before = self.active_grid().scrollback_len();
+        let pushed_before = self.history_pushed();
         self.scroll_region_up_inner(n);
-        self.keep_viewport_anchored(scrollback_before);
+        self.keep_viewport_anchored(pushed_before);
     }
 
     pub(crate) fn scroll_region_up_inner(&mut self, n: usize) {

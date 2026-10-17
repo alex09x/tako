@@ -133,6 +133,66 @@ fn viewport_scrolled_up_then_new_output_snaps_back() {
     assert!(screen.contains('$'), "prompt missing from live screen");
 }
 
+fn viewport_top_line(term: &Terminal) -> String {
+    term.viewport_row(0)
+        .iter()
+        .map(|c| if c.char == '\0' { ' ' } else { c.char })
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
+#[test]
+fn scrolled_back_viewport_stays_on_its_lines_while_output_streams() {
+    let mut term = Terminal::new(80, 24);
+    for i in 0..60u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    term.scroll_viewport_up(20);
+    let shown = viewport_top_line(&term);
+    for i in 60..90u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    assert_eq!(viewport_top_line(&term), shown);
+}
+
+#[test]
+fn scrolled_back_viewport_stays_on_its_lines_once_history_is_full() {
+    // A streaming log fills the history; from then on every new line drops
+    // the oldest one and the history stops growing. The viewport crept up
+    // one line for every line the log printed.
+    let mut term = Terminal::new(80, 24);
+    term.set_scrollback_capacity(100);
+    for i in 0..300u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    assert_eq!(term.active_grid().scrollback_len(), 100);
+    term.scroll_viewport_up(20);
+    let shown = viewport_top_line(&term);
+    for i in 300..340u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    assert_eq!(viewport_top_line(&term), shown);
+    assert_eq!(term.viewport_offset(), 60);
+}
+
+#[test]
+fn viewport_on_the_oldest_line_stays_there_as_history_drops_lines() {
+    // Lines dropped from the full history cannot stay on screen; the
+    // viewport waits at the oldest line left rather than jumping away.
+    let mut term = Terminal::new(80, 24);
+    term.set_scrollback_capacity(100);
+    for i in 0..300u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    term.scroll_viewport_up(100);
+    for i in 300..310u32 {
+        term.feed(format!("line {i}\r\n").as_bytes());
+    }
+    assert_eq!(term.viewport_offset(), 100);
+    assert_eq!(viewport_top_line(&term), "line 187");
+}
+
 #[test]
 fn has_damage_reflects_synchronized_output_state() {
     let mut term = Terminal::new(80, 24);

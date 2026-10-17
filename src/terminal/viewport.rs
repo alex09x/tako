@@ -90,17 +90,27 @@ impl Terminal {
         self.active_grid_mut().mark_all_dirty();
     }
 
-    /// Keep viewport anchored when new lines are appended to scrollback.
-    pub(crate) fn keep_viewport_anchored(&mut self, scrollback_before: usize) {
+    /// Lines ever pushed into the active screen's history, evicted or not.
+    pub(crate) fn history_pushed(&self) -> usize {
+        let grid = self.active_grid();
+        grid.history_evicted() + grid.scrollback_len()
+    }
+
+    /// Keeps a scrolled-back viewport on the lines it shows while output
+    /// pushes new lines into history. Counted in lines pushed, not in how
+    /// much the history grew: a full history drops a line for every line it
+    /// takes and stays the same length, and the viewport used to creep up
+    /// through a streaming log as soon as its history was full.
+    pub(crate) fn keep_viewport_anchored(&mut self, pushed_before: usize) {
         if self.viewport_offset == 0 {
             return;
         }
-        let now = self.active_grid().scrollback_len();
-        let grown = now.saturating_sub(scrollback_before);
-        if grown == 0 {
+        let pushed = self.history_pushed().saturating_sub(pushed_before);
+        if pushed == 0 {
             return;
         }
-        self.viewport_offset = (self.viewport_offset + grown).min(now);
+        let retained = self.active_grid().scrollback_len();
+        self.viewport_offset = (self.viewport_offset + pushed).min(retained);
         self.active_grid_mut().mark_all_dirty();
     }
 }
