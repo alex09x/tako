@@ -62,7 +62,7 @@ struct SessionSidebarRowView: View {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || !moving)) { context in
                 row(at: LivingAnimationState.shared.effectiveDate(context.date))
             }
-            .task(id: state) {
+            .task(id: LivingMotion.RestKey(state: state, reduceMotion: reduceMotion)) {
                 guard let wait = LivingMotion.remaining(state, elapsed: elapsed, reduceMotion: reduceMotion) else { return }
                 try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 if !Task.isCancelled { restCount += 1 }

@@ -308,4 +308,16 @@ struct LivingMotionTests {
         #expect(!LivingMotion.isMoving(.working, elapsed: 0, reduceMotion: true))
         #expect(LivingMotion.remaining(.done, elapsed: 0, reduceMotion: true) == nil)
     }
+
+    @Test func turningReduceMotionOffMidStateArmsTheRestTimer() {
+        // Entered done with motion reduced: still, nothing to wait for.
+        let reduced = LivingMotion.RestKey(state: .done, reduceMotion: true)
+        #expect(LivingMotion.remaining(.done, elapsed: 0.3, reduceMotion: true) == nil)
+        // Motion back on 0.3 s in: the row moves again, its timer is armed
+        // anew, and it has the rest of the second to wait.
+        let restored = LivingMotion.RestKey(state: .done, reduceMotion: false)
+        #expect(restored != reduced)
+        #expect(LivingMotion.isMoving(.done, elapsed: 0.3, reduceMotion: false))
+        #expect(LivingMotion.remaining(.done, elapsed: 0.3, reduceMotion: false) == 0.7)
+    }
 }

@@ -38,4 +38,12 @@ enum LivingMotion {
         guard !reduceMotion, let duration = duration(of: state), elapsed < duration else { return nil }
         return duration - elapsed
     }
+
+    /// What a row's rest timer is armed for. Reduce Motion is part of it: a
+    /// state entered while motion was reduced has no timer, and turning it
+    /// off mid-state must arm one, or the frames it starts never stop.
+    struct RestKey: Equatable {
+        let state: Tako.SurfaceState
+        let reduceMotion: Bool
+    }
 }
