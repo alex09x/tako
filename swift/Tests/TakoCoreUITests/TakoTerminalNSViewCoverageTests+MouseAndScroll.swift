@@ -110,6 +110,13 @@ extension TakoTerminalNSViewCoverageTests {
     }
 
     func testRightAndOtherMouseEvents() {
+        // Without its own handlers the view falls back to NSView's, which
+        // runs a real context menu that waits for someone to close it: the
+        // test would hang instead of failing.
+        guard TakoTerminalNSView.overridesRightAndMiddleButtons else {
+            XCTFail("TakoTerminalNSView lost its right/middle button handlers")
+            return
+        }
         let (view, _) = makeHostedView()
         let delegate = CoverageMockDelegate()
         view.delegate = delegate
