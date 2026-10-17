@@ -177,10 +177,10 @@ function __tako_precmd() {
     builtin printf "\e]133;D;%s;aid=%s\a" "$ret" "$BASHPID"
   fi
 
-  # A prompt means no full-screen program is running: leave an alternate
-  # screen one that died left on (no scrollback, the wheel sends arrows).
-  # Nothing happens when it is already off.
-  builtin printf "\e[?1047l"
+  # A prompt means no full-screen program is running: turn off what one
+  # that died left on -- the alternate screen (no scrollback, the wheel
+  # sends arrows), focus and mouse reports. Modes already off stay off.
+  builtin printf "\e[?1047l\e[?1004l\e[?1000l\e[?1002l\e[?1003l\e[?1006l"
 
   # Fresh line and start of prompt. When ble.sh is active, emit 133;P instead
   # of 133;A because ble.sh maintains its own cursor position tracking. 133;A's

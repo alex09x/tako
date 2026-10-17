@@ -121,10 +121,11 @@ _tako_deferred_init() {
             fi
         fi
 
-        # A prompt means no full-screen program is running: leave an
-        # alternate screen one that died left on (no scrollback, the wheel
-        # sends arrows). Nothing happens when it is already off.
-        builtin print -nu $_tako_fd '\e[?1047l'
+        # A prompt means no full-screen program is running: turn off what
+        # one that died left on -- the alternate screen (no scrollback, the
+        # wheel sends arrows), focus and mouse reports. Modes already off
+        # stay off.
+        builtin print -nu $_tako_fd '\e[?1047l\e[?1004l\e[?1000l\e[?1002l\e[?1003l\e[?1006l'
 
         builtin local mark1=$'%{\e]133;A;cl=line\a%}'
         if [[ -o prompt_percent ]]; then

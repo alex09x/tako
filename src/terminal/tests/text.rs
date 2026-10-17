@@ -367,3 +367,18 @@ fn test_prompt_leave_alternate_screen_is_harmless_on_the_normal_screen() {
     assert_eq!(term.active_grid().scrollback_len(), scrollback);
     assert_eq!(term.active_grid().get(3, 0).unwrap().char, 'l');
 }
+
+/// The same prompt sequence turns off focus and mouse reports a dead
+/// full-screen program left on: the shell would print them as ^[[I, ^[[M...
+#[test]
+fn test_prompt_sequence_turns_off_leftover_focus_and_mouse_reports() {
+    let mut term = Terminal::new(20, 4);
+    term.feed(b"\x1b[?1049h\x1b[?1004h\x1b[?1003h\x1b[?1006h");
+    assert!(term.modes().focus_events);
+    assert_ne!(term.modes().mouse_tracking, MouseTracking::Off);
+    term.feed(b"\x1b[?1047l\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
+    assert_eq!(term.active_screen(), ScreenBuffer::Primary);
+    assert!(!term.modes().focus_events);
+    assert_eq!(term.modes().mouse_tracking, MouseTracking::Off);
+    assert!(!term.modes().mouse_sgr);
+}
