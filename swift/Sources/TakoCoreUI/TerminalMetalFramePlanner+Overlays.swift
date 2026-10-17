@@ -234,7 +234,7 @@ extension TerminalMetalFramePlanner {
 
     public func foregroundColor(of cell: TerminalCell, alpha: Float = 1) -> SIMD4<Float> {
         let (r, g, b) = cell.reverse
-            ? (cell.fgR, cell.fgG, cell.fgB)
+            ? (cell.bgR, cell.bgG, cell.bgB)
             : (cell.fgR, cell.fgG, cell.fgB)
         let foreground = TerminalMetalColor.rgba(
             r: r, g: g, b: b, alpha: alpha,
