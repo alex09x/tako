@@ -294,8 +294,12 @@ extension Tako {
         /// between windows rebinds but staying put does not.
         private weak var crabWindow: NSWindow?
 
+        /// Pauses drawing while the window is hidden (a background tab).
+        private var visibilityWatch: Tako.SurfaceVisibilityWatch?
+
         override open func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            visibilityWatch = window.map { Tako.SurfaceVisibilityWatch(surface: self, window: $0) }
             guard let window else { crabBinding = nil; crabWindow = nil; return }
             guard window !== crabWindow else { return }
             crabWindow = window
