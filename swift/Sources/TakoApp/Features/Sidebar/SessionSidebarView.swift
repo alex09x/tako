@@ -248,12 +248,15 @@ struct SessionSidebarView: View {
                     store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
                 } content: {
                     HStack(spacing: 6) {
-                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || animState.reduceMotion)) { context in
+                        // It pulses only while something waits for you; with
+                        // nothing waiting it rests, and draws no frames.
+                        let ringRests = animState.reduceMotion || attentionCount == 0
+                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || ringRests)) { context in
                             StatusRingView(
                                 state: .waiting,
                                 size: .extraSmall,
                                 now: animState.effectiveDate(context.date),
-                                reduceMotion: animState.reduceMotion
+                                reduceMotion: ringRests
                             )
                         }
                         Text("Needs you · \(attentionCount)")
