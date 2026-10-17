@@ -142,6 +142,11 @@ function __tako_setup --on-event fish_prompt -d "Setup tako integration"
         end
 
         set --global __tako_prompt_state prompt-start
+        # A prompt means no full-screen program is running. One that died
+        # or was killed left its alternate screen on, which has no
+        # scrollback and turns the wheel into arrow keys; back to the normal
+        # screen. Nothing happens when the normal screen is already on.
+        echo -en "\e[?1047l"
         echo -en $__tako_prompt_start_mark
     end
 

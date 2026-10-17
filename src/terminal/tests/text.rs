@@ -342,3 +342,28 @@ fn test_osc8_implicit_id_opens_are_independent() {
     assert_eq!(term.hyperlink_uri(first_id), Some("https://a.example"));
     assert_eq!(term.hyperlink_uri(second_id), Some("https://a.example"));
 }
+
+/// The shell integration sends `CSI ? 1047 l` before every prompt: a
+/// full-screen program that died left its alternate screen on, with no
+/// scrollback and the wheel turned into arrow keys. It must bring the
+/// normal screen back, and do nothing at all when that screen is on.
+#[test]
+fn test_prompt_leave_alternate_screen_is_harmless_on_the_normal_screen() {
+    let mut term = Terminal::new(20, 4);
+    term.feed(b"line1\r\nline2\r\nline3\r\nline4\r\nline5");
+    let scrollback = term.active_grid().scrollback_len();
+    // A saved cursor elsewhere must not be restored by the prompt's switch.
+    term.feed(b"\x1b[2;2H\x1b7\x1b[4;6H");
+    term.feed(b"\x1b[?1047l");
+    assert_eq!(term.active_screen(), ScreenBuffer::Primary);
+    assert_eq!(term.cursor(), (3, 5));
+    assert_eq!(term.active_grid().scrollback_len(), scrollback);
+
+    // A program enters the alternate screen and dies without leaving it.
+    term.feed(b"\x1b[?1049h\x1b[HFULLSCREEN");
+    assert_eq!(term.active_screen(), ScreenBuffer::Alternate);
+    term.feed(b"\x1b[?1047l");
+    assert_eq!(term.active_screen(), ScreenBuffer::Primary);
+    assert_eq!(term.active_grid().scrollback_len(), scrollback);
+    assert_eq!(term.active_grid().get(3, 0).unwrap().char, 'l');
+}
