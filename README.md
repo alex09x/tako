@@ -164,6 +164,10 @@ window-save-content-limit = 64
 notify-on-command-finish = unfocused
 notify-on-command-finish-after = 10s
 notify-on-command-finish-action = bell,notify
+# A tab shows "working" only for jobs that finish on their own: ssh, vim,
+# htop, tail -f and dev servers stay quiet. Add your own programs to either side
+quiet-commands = my-repl, my-server
+busy-commands = ssh
 # Experimental: keep shells running across a quit and reattach them
 session-persistence = false
 

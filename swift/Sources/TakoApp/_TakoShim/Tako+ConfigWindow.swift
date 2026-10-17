@@ -50,6 +50,19 @@ extension Tako.Config {
         rawValue("notify-on-command-finish-after").flatMap(Tako.parseDuration) ?? .seconds(5)
     }
 
+    /// `quiet-commands`: program names, comma or space separated, that
+    /// never show as working -- added to the built-in ones (ssh, vim, htop,
+    /// `tail -f`, dev servers...).
+    var quietCommands: Set<String> { Self.programNames(rawValue("quiet-commands")) }
+
+    /// `busy-commands`: program names that always show as working, even
+    /// ones the built-in rules call quiet.
+    var busyCommands: Set<String> { Self.programNames(rawValue("busy-commands")) }
+
+    static func programNames(_ raw: String?) -> Set<String> {
+        Set((raw ?? "").split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init))
+    }
+
     /// Preserved zoom state when splitting panes.
     ///
     /// WHY: Pane zoom preservation is managed by our layout tree in Swift/Rust core; return empty options.

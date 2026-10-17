@@ -93,6 +93,12 @@ extension Tako {
         public var isFocused: Bool = false
 
         private var startedAt: Date?
+        /// What the running command is; nil when none runs.
+        private(set) var commandKind: CommandKind?
+        /// Whether the terminal shows its alternate screen now: a job that
+        /// turns full-screen (`git log` paging, `make menuconfig`) is one
+        /// the user is inside, whatever its name said.
+        private var isAlternateScreen: (() -> Bool)?
         private var ticker: Timer?
         private var successTimer: Timer?
 
@@ -120,12 +126,14 @@ extension Tako {
             recomputeEffectiveStatus()
         }
 
-        func commandStarted() {
+        func commandStarted(kind: CommandKind = .batch, isAlternateScreen: (() -> Bool)? = nil) {
             startedAt = now()
+            commandKind = kind
+            self.isAlternateScreen = isAlternateScreen
             elapsed = nil
             progress = nil
             successTimer?.invalidate()
-            signalStatus = .running
+            signalStatus = kind == .batch ? .running : .idle
             unread = false
             if explicitStatus?.status == .done || explicitStatus?.status == .idle {
                 explicitStatus = nil
@@ -133,8 +141,10 @@ extension Tako {
             recomputeEffectiveStatus()
 
             // The state only becomes `.running` once the command has lasted
-            // long enough to be worth showing.
+            // long enough to be worth showing. A quiet one never does.
             ticker?.invalidate()
+            ticker = nil
+            guard kind == .batch else { return }
             ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
@@ -148,6 +158,9 @@ extension Tako {
             // nothing and says nothing new (no status, or success) is ignored;
             // a failure is still shown.
             if startedAt == nil && (exitCode == nil || exitCode == 0) { return }
+            let kind = commandKind ?? .batch
+            commandKind = nil
+            isAlternateScreen = nil
             ticker?.invalidate()
             ticker = nil
             let ran = startedAt.map { now().timeIntervalSince($0) }
@@ -156,12 +169,21 @@ extension Tako {
             progress = nil
             progressState = .none
 
-            if let exitCode, exitCode != 0 {
+            if let exitCode, kind.fails(exitCode) {
                 signalStatus = .error
                 state = .failed(code: exitCode)
                 unread = true
                 recomputeEffectiveStatus()
                 if isFocused { fadeWhileFocused() }
+                return
+            }
+
+            // Leaving vim or ssh, or stopping a server, is not news.
+            guard kind == .batch else {
+                signalStatus = .idle
+                state = .idle
+                unread = false
+                recomputeEffectiveStatus()
                 return
             }
 
@@ -385,13 +407,31 @@ extension Tako {
         /// waiting on a real timer.
         func tick() {
             guard let startedAt else { return }
+            if commandKind == .batch, isAlternateScreen?() == true { settleQuiet() }
             let ran = now().timeIntervalSince(startedAt)
             guard ran >= Self.minimumVisibleDuration else { return }
+            // An agent's own status keeps its clock whatever its kind.
+            if explicitStatus != nil {
+                elapsed = ran
+                return
+            }
+            guard commandKind == nil || commandKind == .batch else { return }
             elapsed = ran
-            guard explicitStatus == nil else { return }
             if CrabState.running.priority > state.priority || state == .idle {
                 state = .running
             }
+        }
+
+        /// The running job turned out to be one the user is inside.
+        private func settleQuiet() {
+            commandKind = .quiet
+            if explicitStatus == nil {
+                ticker?.invalidate()
+                ticker = nil
+                elapsed = nil
+            }
+            if state == .running { state = .idle }
+            signalStatus = .idle
         }
 
         func setElapsed(_ seconds: TimeInterval?) {

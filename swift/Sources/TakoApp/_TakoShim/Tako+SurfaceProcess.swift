@@ -26,6 +26,14 @@ extension Tako.SurfaceView {
         /// written -- so an answer leaves out exactly that line and no line
         /// of the program's that happens to look like it.
 
+        /// What the command line the shell reported runs, by the built-in
+        /// rules and the user's `quiet-commands` and `busy-commands`.
+        func commandKind(of line: String) -> Tako.CommandKind {
+            let config = owningApp?.config
+            return Tako.CommandKind.classify(
+                line, quiet: config?.quietCommands ?? [], busy: config?.busyCommands ?? [])
+        }
+
         /// Whether a command the shell marked (OSC 133) is running now.
         var isCommandRunning: Bool { commandStartedAt != nil }
 
@@ -38,9 +46,12 @@ extension Tako.SurfaceView {
         /// `notify-on-command-finish`: ring the bell and/or post a system
         /// notification when a long command ends. The tab's crab shows the
         /// outcome either way; this is for when the user is not watching.
-        func commandEnded(exitCode: Int32?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        func commandEnded(exitCode: Int32?, kind: Tako.CommandKind = .batch,
+                          now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             let ran = commandStartedAt.map { now - $0 }
             commandStartedAt = nil
+            // Leaving vim after an hour is not a finished command.
+            guard kind == .batch || exitCode.map(kind.fails) == true else { return }
             guard let config = owningApp?.config,
                   Tako.commandFinishShouldSignal(
                     mode: config.notifyOnCommandFinish, ran: ran,
@@ -220,9 +231,6 @@ extension Tako.SurfaceView {
                                     ]
                                 )
                             case .commandStart:
-                                self.crab.isFocused = self.isBeingLookedAt
-                                self.crab.commandStarted()
-                                self.commandStarted()
                                 var cmdText = ""
                                 var cmdRef = ""
                                 if let id = self.core.newestCommandId(),
@@ -231,6 +239,11 @@ extension Tako.SurfaceView {
                                     cmdText = info.input ?? ""
                                     cmdRef = "\(info.id)@\(info.epoch)"
                                 }
+                                self.crab.isFocused = self.isBeingLookedAt
+                                self.crab.commandStarted(
+                                    kind: self.commandKind(of: cmdText),
+                                    isAlternateScreen: { [weak self] in self?.isAlternateScreen ?? false })
+                                self.commandStarted()
                                 self.publishEvent(
                                     type: "command_start",
                                     payload: [
@@ -247,12 +260,13 @@ extension Tako.SurfaceView {
                                 }
                                 self.activeRunningCommandText = nil
                                 self.crab.isFocused = self.isBeingLookedAt
+                                let kind = self.crab.commandKind ?? .batch
                                 self.crab.commandEnded(exitCode: exitCode)
                                 self.progressReport = nil
                                 self.updateProgressBar(state: .none, progress: nil)
                                 (NSApp.delegate as? AppDelegate)?.setDockBadge()
                                 Tako.TabBarController.refreshAll()
-                                self.commandEnded(exitCode: exitCode)
+                                self.commandEnded(exitCode: exitCode, kind: kind)
                                 var payload: [String: JSON] = [
                                     "command": .string(cmdRef),
                                     "ref": .string(cmdRef),
