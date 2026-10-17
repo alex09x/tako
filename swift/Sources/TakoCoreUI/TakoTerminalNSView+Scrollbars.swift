@@ -34,7 +34,7 @@ extension TakoTerminalNSView {
         let trackHeight = bounds.height
         guard trackHeight > 0 else { return }
         
-        let scrollerWidth: CGFloat = 10.0
+        let scrollerWidth = TerminalScrollbarStyle.trackWidth
         scrollbarLayer.frame = CGRect(x: bounds.width - scrollerWidth - 2.0, y: 2.0, width: scrollerWidth, height: trackHeight - 4.0)
         
         let maxScroll = scrollbackLength
@@ -50,8 +50,7 @@ extension TakoTerminalNSView {
             let matchCount = outputFilterMatchingLines.count
             let visibleLines = Double(core.rows())
             if matchCount <= Int(visibleLines) {
-                scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
-                scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+                hideScrollbarKnob()
             } else {
                 let totalLines = Double(matchCount)
                 let proportion = max(0.05, min(1.0, visibleLines / totalLines))
@@ -60,10 +59,7 @@ extension TakoTerminalNSView {
                 let maxOffset = max(1, matchCount - Int(visibleLines))
                 let fraction = CGFloat(outputFilterScrollOffset) / CGFloat(maxOffset)
                 let knobY = maxKnobTravel * fraction
-                scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
-                scrollbarKnob.backgroundColor = isDraggingScrollbar
-                    ? NSColor.white.withAlphaComponent(0.85).cgColor
-                    : NSColor.white.withAlphaComponent(0.45).cgColor
+                placeScrollbarKnob(y: knobY, height: knobHeight)
             }
             CATransaction.commit()
             return
@@ -74,12 +70,10 @@ extension TakoTerminalNSView {
             scrollbarMarksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
             let knobHeight: CGFloat = 44.0
             let knobY = (usableHeight - knobHeight) / 2.0
-            scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
-            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.5).cgColor
+            placeScrollbarKnob(y: knobY, height: knobHeight)
         } else if maxScroll == 0 {
             updateScrollbarMarks(usableHeight: usableHeight, totalLines: Double(core.rows()), scrollerWidth: scrollerWidth)
-            scrollbarKnob.frame = CGRect(x: 1.5, y: 1.5, width: scrollerWidth - 3.0, height: max(0, usableHeight - 3.0))
-            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+            hideScrollbarKnob()
         } else {
             let visibleLines = Double(core.rows())
             let totalLines = Double(maxScroll) + visibleLines
@@ -92,10 +86,7 @@ extension TakoTerminalNSView {
             let pos = core.scrollPosition()
             let knobY = maxKnobTravel * CGFloat(1.0 - pos)
             
-            scrollbarKnob.frame = CGRect(x: 1.5, y: knobY, width: scrollerWidth - 3.0, height: knobHeight)
-            scrollbarKnob.backgroundColor = isDraggingScrollbar
-                ? NSColor.white.withAlphaComponent(0.85).cgColor
-                : NSColor.white.withAlphaComponent(0.45).cgColor
+            placeScrollbarKnob(y: knobY, height: knobHeight)
         }
         CATransaction.commit()
     }

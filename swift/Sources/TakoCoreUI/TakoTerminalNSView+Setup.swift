@@ -85,15 +85,15 @@ extension TakoTerminalNSView {
         self.layer?.addSublayer(linkHUDLayer)
 
         scrollbarLayer.zPosition = 9999
-        scrollbarLayer.backgroundColor = NSColor(white: 0.05, alpha: 0.3).cgColor
-        scrollbarLayer.cornerRadius = 5.0
+        // The track is not drawn: only the Ember line on it is.
+        scrollbarLayer.backgroundColor = NSColor.clear.cgColor
         scrollbarLayer.masksToBounds = true
         scrollbarMarksLayer.zPosition = 10
         scrollbarMarksLayer.masksToBounds = true
         scrollbarLayer.addSublayer(scrollbarMarksLayer)
         scrollbarKnob.zPosition = 20
-        scrollbarKnob.cornerRadius = 3.5
-        scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
+        scrollbarKnob.backgroundColor = TerminalScrollbarStyle.knobColor(active: false)
+        scrollbarKnob.isHidden = true
         scrollbarLayer.addSublayer(scrollbarKnob)
         scrollbarLayer.opacity = 1.0
         self.layer?.addSublayer(scrollbarLayer)

@@ -19,18 +19,10 @@ extension TakoTerminalNSView {
         let point = convert(event.locationInWindow, from: nil)
         lastMousePoint = point
         mouseCell = cellAt(point)
-        if scrollbarLayer.frame.contains(point) {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.65).cgColor
-            CATransaction.commit()
-        } else if !isDraggingScrollbar {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            scrollbarKnob.backgroundColor = scrollbackLength == 0
-                ? NSColor.white.withAlphaComponent(0.15).cgColor
-                : NSColor.white.withAlphaComponent(0.45).cgColor
-            CATransaction.commit()
+        let onScrollbar = scrollbarLayer.frame.contains(point)
+        if onScrollbar != isHoveringScrollbar {
+            isHoveringScrollbar = onScrollbar
+            updateScroller()
         }
         if stickyCommandHeaderEnabled && !stickyHeaderLayer.isHidden && stickyHeaderLayer.frame.contains(point) {
             if !isHoveringStickyHeader {
@@ -91,6 +83,10 @@ extension TakoTerminalNSView {
         }
         lastMousePoint = nil
         clearHoveredLink()
+        if isHoveringScrollbar {
+            isHoveringScrollbar = false
+            updateScroller()
+        }
         super.mouseExited(with: event)
     }
 

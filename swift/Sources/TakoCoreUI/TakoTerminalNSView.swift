@@ -92,6 +92,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
 
     var isDraggingScrollbar = false
     var scrollbarDragStartKnobY: CGFloat = 0.0
+    /// The pointer is over the scrollbar's track: its line widens.
+    var isHoveringScrollbar = false
     var scrollbarDragStartMouseY: CGFloat = 0.0
     var isUpdatingScroller = false
 

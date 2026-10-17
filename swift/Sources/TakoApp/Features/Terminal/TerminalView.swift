@@ -117,6 +117,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
                             .overlay(alignment: .trailing) {
                                 SessionSidebarResizeHandle(width: $sessionSidebarWidth)
+                                    .frame(width: SessionSidebarResizeHandle.hitWidth)
+                                    .offset(x: SessionSidebarResizeHandle.overhang)
                             }
                             .zIndex(1)
                     }

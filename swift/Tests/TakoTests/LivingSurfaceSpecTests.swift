@@ -275,6 +275,40 @@ struct SessionSidebarWidthTests {
     }
 }
 
+/// The sidebar's edge is an AppKit grip: drag within bounds, double-click
+/// for the standard width.
+@Suite
+@MainActor
+struct SessionSidebarGripTests {
+    private func press(_ type: NSEvent.EventType, x: CGFloat, clicks: Int = 1) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: CGPoint(x: x, y: 10), modifierFlags: [],
+                           timestamp: 0, windowNumber: 0, context: nil,
+                           eventNumber: 0, clickCount: clicks, pressure: 1)!
+    }
+
+    @Test func draggingTheEdgeResizesWithinBoundsAndDoubleClickRestores() {
+        let grip = SessionSidebarGripView(frame: CGRect(x: 0, y: 0, width: 12, height: 400))
+        var width = 300.0
+        grip.currentWidth = { width }
+        grip.setWidth = { width = $0 }
+
+        grip.mouseDown(with: press(.leftMouseDown, x: 100))
+        grip.mouseDragged(with: press(.leftMouseDragged, x: 140))
+        #expect(width == 340)
+        grip.mouseDragged(with: press(.leftMouseDragged, x: -500))
+        #expect(width == 260, "never narrower than the design's minimum")
+        grip.mouseUp(with: press(.leftMouseUp, x: -500))
+
+        // Dragging without a press first does nothing.
+        grip.mouseDragged(with: press(.leftMouseDragged, x: 900))
+        #expect(width == 260)
+
+        grip.mouseDown(with: press(.leftMouseDown, x: 0, clicks: 2))
+        #expect(width == 280)
+        #expect(!grip.mouseDownCanMoveWindow, "a drag on the edge must not move the window")
+    }
+}
+
 /// One chosen row in the sidebar: the arrow-key cursor follows the active tab.
 @Suite
 struct SessionSidebarSelectionTests {

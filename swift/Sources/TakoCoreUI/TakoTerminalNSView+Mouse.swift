@@ -62,7 +62,7 @@ extension TakoTerminalNSView {
                 if matchCount > visibleLines {
                     isDraggingScrollbar = true
                     let locInLayer = CGPoint(x: loc.x - scrollbarLayer.frame.origin.x, y: loc.y - scrollbarLayer.frame.origin.y)
-                    if scrollbarKnob.frame.contains(locInLayer) {
+                    if scrollbarKnobSpanContains(locInLayer) {
                         scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
                         scrollbarDragStartMouseY = loc.y
                     } else {
@@ -78,10 +78,7 @@ extension TakoTerminalNSView {
                         scrollbarDragStartKnobY = targetKnobY
                         scrollbarDragStartMouseY = loc.y
                     }
-                    CATransaction.begin()
-                    CATransaction.setDisableActions(true)
-                    scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
-                    CATransaction.commit()
+                    updateScroller()
                 }
                 return
             }
@@ -104,7 +101,7 @@ extension TakoTerminalNSView {
                 isDraggingScrollbar = true
                 let locInLayer = CGPoint(x: loc.x - scrollbarLayer.frame.origin.x, y: loc.y - scrollbarLayer.frame.origin.y)
                 
-                if scrollbarKnob.frame.contains(locInLayer) {
+                if scrollbarKnobSpanContains(locInLayer) {
                     scrollbarDragStartKnobY = scrollbarKnob.frame.origin.y
                     scrollbarDragStartMouseY = loc.y
                 } else {
@@ -122,10 +119,7 @@ extension TakoTerminalNSView {
                     scrollbarDragStartMouseY = loc.y
                 }
                 
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                scrollbarKnob.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
-                CATransaction.commit()
+                updateScroller()
             }
             return
         }
