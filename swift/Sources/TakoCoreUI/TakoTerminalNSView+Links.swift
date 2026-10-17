@@ -302,6 +302,25 @@ extension TakoTerminalNSView {
         updateHoveredLink(commandHeld: isCmd)
     }
 
+    /// After a frame: the link under the pointer can only have changed if
+    /// the pointer moved to another cell or its row's content changed. A
+    /// streaming log redraws every frame, and each check reads the row
+    /// through the FFI; a pointer resting on an unchanged row skips it.
+    /// A command-click re-reads the link at the click itself.
+    func refreshHoveredLinkAfterFrame(changedRows: IndexSet) {
+        guard let window else { return refreshHoveredLink() }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(point) else {
+            lastFrameHoverCell = nil
+            if currentHoveredLink != nil { clearHoveredLink() }
+            return
+        }
+        let cell = cellAt(point)
+        if let last = lastFrameHoverCell, last == cell, !changedRows.contains(cell.row) { return }
+        lastFrameHoverCell = cell
+        refreshHoveredLink(at: point)
+    }
+
     func clearHoveredLink() {
         hasPresentedMatchingPreview = false
         mouseCell = nil

@@ -103,9 +103,11 @@ extension TerminalMetalFramePlanner {
                let from = shiftIndex.match(rowData, graphemes: rowGraphemes, at: row) {
                 rowCache[row] = shiftIndex.previous[from].shifted(byRows: row - from, cellHeight: cellHeight)
                 shiftedRows += 1
+                changedRows.insert(row)
                 continue
             }
             replannedRows += 1
+            changedRows.insert(row)
             var currentRow = -1
             var cachedRow = CachedRow()
             var runColor = SIMD4<Float>(repeating: 0)

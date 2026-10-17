@@ -123,7 +123,12 @@ extension TakoTerminalNSView {
         redrawPending = true
         guard !isPresentationPaused else { return }
         drivePresentationIfNeeded()
-        refreshHoveredLink()
+        // A frame that is going to be drawn checks the pointer's link after
+        // it (`refreshHoveredLinkAfterFrame`); only a surface that will not
+        // draw checks it here.
+        if metalRenderer == nil || window == nil {
+            refreshHoveredLink()
+        }
     }
 
     func armPresentationRetry() {
@@ -202,7 +207,7 @@ extension TakoTerminalNSView {
         if customShaderKeepsAnimating {
             scheduleRedraw()
         }
-        refreshHoveredLink()
+        refreshHoveredLinkAfterFrame(changedRows: metalRenderer.planner.changedRows)
     }
 
     /// Custom shaders are running and `custom-shader-animation` wants

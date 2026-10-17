@@ -46,6 +46,9 @@ public final class TerminalMetalFramePlanner {
     public var cellColorsAreDisplayP3 = false
     /// Off only to measure what moving scrolled rows saves.
     var rowShiftEnabled = true
+    /// Viewport rows whose content differs from the previous frame's
+    /// (laid out again or moved in): what a host re-reads under the pointer.
+    public internal(set) var changedRows = IndexSet()
 
     public internal(set) var viewport = TerminalMetalViewport(drawableWidth: 0, drawableHeight: 0)
     public internal(set) var backgroundInstances: [TerminalMetalBackgroundInstance] = []
@@ -212,6 +215,7 @@ public final class TerminalMetalFramePlanner {
         atlasGeneration = Int(truncatingIfNeeded: atlas.generation)
         var stats = TerminalMetalFrameStatistics()
         stats.validation = Self.validate(frame: frame, viewport: viewport, overscanRows: overscanRows)
+        changedRows = IndexSet()
         stats.atlasGeneration = atlasGeneration
         stats.atlasPageCount = atlas.pages.count
 
