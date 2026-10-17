@@ -232,7 +232,7 @@ extension TerminalController {
 
         var terminalWidth = contentBounds.width
         if sessionSidebarIsShowing {
-            terminalWidth = max(terminalWidth - 260, 100)
+            terminalWidth = max(terminalWidth - SessionSidebarWidth.current(), 100)
         }
 
         var terminalHeight = contentBounds.height

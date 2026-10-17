@@ -60,7 +60,10 @@ struct SessionSidebarRowView: View {
             let moving = LivingMotion.isMoving(state, elapsed: elapsed, reduceMotion: reduceMotion)
             let _ = restCount
             TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || !moving)) { context in
-                row(at: LivingAnimationState.shared.effectiveDate(context.date))
+                // A paused timeline keeps the date of its last frame, which
+                // can fall inside a glint or a shake: a row at rest is drawn
+                // at the time it is now, past its motion.
+                row(at: LivingAnimationState.shared.effectiveDate(moving ? context.date : Date()))
             }
             .task(id: LivingMotion.RestKey(state: state, reduceMotion: reduceMotion)) {
                 guard let wait = LivingMotion.remaining(state, elapsed: elapsed, reduceMotion: reduceMotion) else { return }

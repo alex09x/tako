@@ -262,6 +262,17 @@ struct SessionSidebarWidthTests {
         #expect(SessionSidebarWidth.clamped(400) == 400)
         #expect(SessionSidebarWidth.clamped(5000) == 720)
     }
+
+    @Test func theTerminalIsSizedFromTheWidthTheUserLeft() throws {
+        let suite = "tako.sidebar-width.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(SessionSidebarWidth.current(in: defaults) == 280)
+        defaults.set(412.0, forKey: SessionSidebarWidth.defaultsKey)
+        #expect(SessionSidebarWidth.current(in: defaults) == 412)
+        defaults.set(10.0, forKey: SessionSidebarWidth.defaultsKey)
+        #expect(SessionSidebarWidth.current(in: defaults) == 260)
+    }
 }
 
 /// One chosen row in the sidebar: the arrow-key cursor follows the active tab.
