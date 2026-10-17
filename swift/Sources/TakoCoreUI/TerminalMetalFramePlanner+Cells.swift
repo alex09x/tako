@@ -84,7 +84,9 @@ extension TerminalMetalFramePlanner {
             }
         }
         let rowsToReplan = rowsToReplanSet.sorted()
-        let replannedRows = rowsToReplan.count
+        var replannedRows = 0
+        var shiftedRows = 0
+        let shiftIndex = !isFullInvalidation && canShiftRows ? ShiftIndex(previous: rowCache) : nil
 
         let cellWidth = metrics.pixelCellWidth
         let cellHeight = metrics.pixelCellHeight
@@ -94,9 +96,18 @@ extension TerminalMetalFramePlanner {
         let margins = self.margins
         let lastCol = cells.cols - 1
         for row in rowsToReplan {
+            let rowGraphemes = frameGraphemes[row]
+            let rowData = cells.rowData(for: row)
+            if let shiftIndex, let rowData,
+               selectedColumnsByRow[row] == nil, blockCursorCell?.row != row,
+               let from = shiftIndex.match(rowData, graphemes: rowGraphemes, at: row) {
+                rowCache[row] = shiftIndex.previous[from].shifted(byRows: row - from, cellHeight: cellHeight)
+                shiftedRows += 1
+                continue
+            }
+            replannedRows += 1
             var currentRow = -1
             var cachedRow = CachedRow()
-            let rowGraphemes = frameGraphemes[row]
             var runColor = SIMD4<Float>(repeating: 0)
             var runStart = 0
             var runLength = 0
@@ -166,7 +177,7 @@ extension TerminalMetalFramePlanner {
                 flushRun()
                 cachedRow.blockCursorCol = (blockCursorCell?.row == row) ? blockCursorCell?.col : nil
                 cachedRow.selectedColumns = selected
-                cachedRow.packedRowData = cells.rowData(for: row)
+                cachedRow.packedRowData = rowData
                 cachedRow.graphemes = rowGraphemes
                 cachedRow.isPopulated = true
                 rowCache[row] = cachedRow
@@ -189,6 +200,7 @@ extension TerminalMetalFramePlanner {
         stats.visitedCells = visited
         stats.skippedGlyphs = skippedGlyphs
         stats.replannedRows = replannedRows
+        stats.shiftedRows = shiftedRows
         stats.replannedCells = replannedCells
         cachedPackedCells = cells.packedData
     }

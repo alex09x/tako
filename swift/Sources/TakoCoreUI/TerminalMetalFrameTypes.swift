@@ -95,6 +95,9 @@ public struct TerminalMetalFrameStatistics: Equatable, Sendable {
     public var visitedCells: Int = 0
     public var replannedRows: Int = 0
     public var replannedCells: Int = 0
+    /// Rows taken from last frame's plan at another row: output scrolled
+    /// them, and they were moved rather than laid out again.
+    public var shiftedRows: Int = 0
     /// Packed bytes compared exactly before an advisory damage list was
     /// allowed to reuse a cached row. This makes the full-frame safety cost
     /// observable and bounded in tests.

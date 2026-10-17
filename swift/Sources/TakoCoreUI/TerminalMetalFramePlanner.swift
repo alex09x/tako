@@ -44,6 +44,8 @@ public final class TerminalMetalFramePlanner {
     /// P3 coordinates, drawn as they are into a P3 target instead of being
     /// converted from sRGB -- so they come out more saturated, as intended.
     public var cellColorsAreDisplayP3 = false
+    /// Off only to measure what moving scrolled rows saves.
+    var rowShiftEnabled = true
 
     public internal(set) var viewport = TerminalMetalViewport(drawableWidth: 0, drawableHeight: 0)
     public internal(set) var backgroundInstances: [TerminalMetalBackgroundInstance] = []
