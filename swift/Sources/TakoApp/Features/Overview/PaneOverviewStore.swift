@@ -250,6 +250,18 @@ final class PaneOverviewStore: ObservableObject {
                     }
             )
 
+            // A live program's activity, passed in for the same reason: a
+            // quiet one publishes once a minute, so a card that read the old
+            // value here would show it for that long.
+            subs.append(
+                surface.crab.$live
+                    .dropFirst()
+                    .sink { [weak self, weak surface] newLive in
+                        guard let self, let surface else { return }
+                        self.updateItem(for: sid, surface: surface, live: .some(newLive))
+                    }
+            )
+
             // Crab state / elapsed updates
             subs.append(
                 surface.crab.objectWillChange
@@ -282,7 +294,10 @@ final class PaneOverviewStore: ObservableObject {
         return (crabUnread ?? surface.crab.unread) || notifications.unreadCount(for: surface.id) > 0
     }
 
-    private func updateItem(for sid: UUID, surface: Tako.SurfaceView, newStatus: Tako.PaneStatus? = nil, unread: Bool? = nil) {
+    /// `live` is the crab's new activity when called from its publisher:
+    /// `.some(nil)` when the program ended, nil to read the crab.
+    private func updateItem(for sid: UUID, surface: Tako.SurfaceView, newStatus: Tako.PaneStatus? = nil,
+                            unread: Bool? = nil, live: Tako.LiveActivity?? = nil) {
         guard let index = items.firstIndex(where: { $0.id == sid }) else { return }
         let current = items[index]
         let status = newStatus ?? surface.crab.paneStatus
@@ -303,7 +318,7 @@ final class PaneOverviewStore: ObservableObject {
             progressState: surface.activeProgressState,
             progressValue: surface.activeProgressValue,
             elapsed: surface.crab.elapsedLabel,
-            live: surface.crab.live,
+            live: live ?? surface.crab.live,
             isFocused: current.isFocused,
             isKeyWindow: current.isKeyWindow,
             hasUnread: hasUnread(surface, crabUnread: unread),

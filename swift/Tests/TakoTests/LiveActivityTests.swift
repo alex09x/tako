@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import Combine
 import Foundation
 import Testing
@@ -169,5 +170,36 @@ struct LiveActivityLabelTests {
                                         status: .error, crabState: .failed(code: 1))
         #expect(failed.metaDisplayText == "exit 1")
         #expect(failed.metaStyle == .exitCode)
+    }
+}
+
+@Suite(.serialized) @MainActor
+struct OverviewLiveTests {
+    private final class Lines { var next = 0 }
+
+    @Test func aCardFollowsAStreamThatGoesQuiet() {
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let controller = BaseTerminalController(Tako.App(), surfaceTree: SplitTree<Tako.SurfaceView>(view: surface))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.windowController = controller
+        controller.window = window
+        let store = PaneOverviewStore()
+        store.refresh(fromControllers: [controller])
+
+        let lines = Lines()
+        surface.crab.commandStarted(kind: .quiet, probe: Tako.LiveProbe(
+            takeOutputLines: { defer { lines.next = 0 }; return lines.next }, program: "tail"))
+        lines.next = 40
+        surface.crab.sampleLive()
+        #expect(store.items.first?.surfaceState == .live(flowing: true))
+
+        // Quiet: the crab publishes this once, and not again for a minute.
+        for _ in 0..<3 { surface.crab.sampleLive() }
+        #expect(store.items.first?.surfaceState == .live(flowing: false))
+        #expect(store.items.first?.metaDisplayText == "quiet")
+
+        surface.crab.commandEnded(exitCode: 0)
+        #expect(store.items.first?.live == nil)
     }
 }

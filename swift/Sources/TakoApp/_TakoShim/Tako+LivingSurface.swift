@@ -356,7 +356,9 @@ struct StatusRingView: View {
                     .stroke(Color(nsColor: T.faint), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
 
             case .live(let flowing):
-                if flowing && !reduceMotion {
+                // Mounted while quiet too, at rest: a ripple mounted with the
+                // first burst would miss it, as a new view sees no change.
+                if !reduceMotion {
                     LiveRingRipple(pulses: pulses, diameter: d)
                 }
                 Circle().inset(by: 0.75)
