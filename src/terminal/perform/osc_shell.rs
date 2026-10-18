@@ -75,7 +75,11 @@ impl Terminal {
             }
             b'C' => {
                 self.semantic_content = SemanticContent::Output;
-                let id = self.command_output_started();
+                let line = params
+                    .iter()
+                    .skip(2)
+                    .find_map(|p| p.strip_prefix(b"cmdline_url="));
+                let id = self.command_output_started(line.map(percent_decoded));
                 self.events.push(TerminalEvent::CommandStart { id });
                 if self.cursor.col == 0 {
                     let row = self.cursor.row;
@@ -235,4 +239,27 @@ impl Terminal {
             }
         }
     }
+}
+
+/// `cmdline_url=`'s value: fish sends the command line URL-escaped, since
+/// the line itself may hold `;` or a BEL.
+fn percent_decoded(text: &[u8]) -> String {
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        if text[i] == b'%'
+            && let (Some(hi), Some(lo)) = (
+                text.get(i + 1).copied().and_then(hex),
+                text.get(i + 2).copied().and_then(hex),
+            )
+        {
+            bytes.push(hi << 4 | lo);
+            i += 3;
+        } else {
+            bytes.push(text[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
 }

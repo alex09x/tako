@@ -77,6 +77,27 @@ struct SessionShellTests {
 
     @Test func aProcessThatIsGoneHasNoTerminal() {
         #expect(SessionShell.terminal(ofShell: 999_999) == nil)
+        #expect(SessionShell.commandLine(ofProcess: 999_999) == nil)
+    }
+
+    @Test func theCommandInFrontOfTheShellIsReadBack() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory()))
+        defer { pty.terminate() }
+        #expect(waitUntil { pty.foregroundPID != nil })
+        #expect(SessionShell.runningCommand(ofShell: pty.child) == nil)
+        pty.write(Array("sleep 30\r".utf8))
+        #expect(waitUntil(timeout: 10) { SessionShell.runningCommand(ofShell: pty.child) != nil })
+        #expect(SessionShell.runningCommand(ofShell: pty.child) == "sleep 30")
+    }
+
+    @Test func argumentsAreQuotedAsTheShellWouldNeed() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 30; true", "x", "it's"]
+        try process.run()
+        defer { process.terminate() }
+        #expect(SessionShell.commandLine(ofProcess: process.processIdentifier)
+            == #"/bin/sh -c 'sleep 30; true' x 'it'\''s'"#)
     }
 }
 

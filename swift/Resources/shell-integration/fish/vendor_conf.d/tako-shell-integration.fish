@@ -151,9 +151,11 @@ function __tako_setup --on-event fish_prompt -d "Setup tako integration"
         echo -en $__tako_prompt_start_mark
     end
 
+    # The command line goes with the mark: fish marks no input region, so
+    # the line is not on the screen between two marks for Tako to read.
     function __tako_mark_output_start --on-event fish_preexec
         set --global __tako_prompt_state pre-exec
-        echo -en "\e]133;C\a"
+        printf '\e]133;C;cmdline_url=%s\a' (string escape --style=url -- $argv[1])
     end
 
     function __tako_mark_output_end --on-event fish_postexec

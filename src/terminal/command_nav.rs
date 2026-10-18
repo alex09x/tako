@@ -37,14 +37,18 @@ impl Terminal {
     }
 
     /// `133;C`: open a record and claim what is written from here on for
-    /// it. `None` on the alternate screen or once ids ran out.
-    pub(crate) fn command_output_started(&mut self) -> Option<u64> {
+    /// it. `None` on the alternate screen or once ids ran out. The shell's
+    /// own `line` (`cmdline_url=`) wins over what the screen shows between
+    /// `B` and `C`: fish marks no `B`.
+    pub(crate) fn command_output_started(&mut self, line: Option<String>) -> Option<u64> {
         if self.active != ScreenBuffer::Primary {
             return None;
         }
-        let (input, truncated) = match self.input_start.take() {
-            Some(start) => self.command_line_text(start),
-            None => (None, false),
+        let start = self.input_start.take();
+        let (input, truncated) = match (line, start) {
+            (Some(line), _) => Self::reported_line(&line),
+            (None, Some(start)) => self.command_line_text(start),
+            (None, None) => (None, false),
         };
         let prompt_line = self.last_prompt_line.take();
         let id = self
@@ -52,6 +56,19 @@ impl Terminal {
             .start(self.last_cwd.clone(), input, truncated, prompt_line);
         self.primary.set_pen_owner(id);
         id
+    }
+
+    /// A command line the shell reported, trimmed and cut to
+    /// `MAX_INPUT_CHARS` as one read off the screen is.
+    fn reported_line(line: &str) -> (Option<String>, bool) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return (None, false);
+        }
+        match trimmed.char_indices().nth(MAX_INPUT_CHARS) {
+            Some((cut, _)) => (Some(trimmed[..cut].to_string()), true),
+            None => (Some(trimmed.to_string()), false),
+        }
     }
 
     /// The text from `start` up to the cursor: the command line just

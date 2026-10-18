@@ -48,16 +48,32 @@ extension Tako.SurfaceView {
     }
 
     /// Asks the runtime which process the session's shell is, once it is
-    /// attached.
-    func learnShellPID(_ session: SurfaceSession) {
+    /// attached. A session reattached may have a command running that
+    /// another Tako saw start: `adoptingItsCommand` takes it on.
+    func learnShellPID(_ session: SurfaceSession, adoptingItsCommand: Bool = false) {
         let runtime = session.runtime, name = session.name, env = session.environment
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let pid = RuntimeCommand.sessionPID(runtime, name: name, environment: env)
+            let running = adoptingItsCommand ? pid.flatMap(SessionShell.runningCommand(ofShell:)) : nil
             DispatchQueue.main.async {
                 guard let self, self.persistence === session else { return }
                 session.shellPID = pid
+                if let running { self.adoptRunningCommand(running) }
             }
         }
+    }
+
+    /// A quiet program -- ssh, `tail -f`, an agent -- runs on as it did
+    /// before Tako restarted, and its tab shows it live again. A job is
+    /// left alone: its clock would start now, not when it did.
+    func adoptRunningCommand(_ line: String) {
+        guard !isCommandRunning else { return }
+        let kind = commandKind(of: line)
+        guard kind != .batch else { return }
+        crab.isFocused = isBeingLookedAt
+        crab.commandStarted(kind: kind, probe: liveProbe(for: line))
+        commandStarted()
+        Tako.TabBarController.refreshAll()
     }
 
     /// A line from Tako, not from the shell, in the terminal itself.
@@ -290,7 +306,7 @@ extension Tako.SurfaceView {
         session.attempt = nil
         switch outcome {
         case .live:
-            learnShellPID(session)
+            learnShellPID(session, adoptingItsCommand: true)
             do {
                 try session.save(.attached)
             } catch {

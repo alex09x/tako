@@ -274,3 +274,32 @@ fn continuation_prompts_keep_the_whole_command_line() {
     let rec = t.commands().get(command_of(&t, "listed").unwrap()).unwrap();
     assert_eq!(rec.input.as_deref(), Some("ls"));
 }
+
+#[test]
+fn a_command_line_the_shell_reports_wins_over_the_screen() {
+    // fish marks no B: the line comes URL-escaped with C.
+    let mut t = Terminal::new(40, 8);
+    t.feed(A);
+    t.feed(b"~ > tail -f a.log | grep x\r\n");
+    t.feed(b"\x1b]133;C;cmdline_url=tail%20-f%20a.log%20%7C%20grep%20%22x%3By%22\x07");
+    t.feed(b"streamed\r\n");
+    let rec = t
+        .commands()
+        .get(command_of(&t, "streamed").unwrap())
+        .unwrap();
+    assert_eq!(rec.input.as_deref(), Some(r#"tail -f a.log | grep "x;y""#));
+    t.feed(&d(0));
+
+    // Even after a B, and a stray % stays as it is.
+    t.feed(A);
+    t.feed(b"$ ");
+    t.feed(B);
+    t.feed(b"what the screen says\r\n");
+    t.feed(b"\x1b]133;C;cmdline_url=printf%20100%\x07");
+    t.feed(b"printed\r\n");
+    let rec = t
+        .commands()
+        .get(command_of(&t, "printed").unwrap())
+        .unwrap();
+    assert_eq!(rec.input.as_deref(), Some("printf 100%"));
+}
