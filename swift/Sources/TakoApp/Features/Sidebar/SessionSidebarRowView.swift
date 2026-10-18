@@ -221,7 +221,7 @@ struct SessionSidebarRowView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onPress(perform: onSelect)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
     }
@@ -306,7 +306,7 @@ struct SessionSidebarRowView: View {
         )
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onPress(perform: onSelect)
         .padding(.leading, 36)
         .padding(.trailing, 8)
         .padding(.vertical, 1)
@@ -413,5 +413,33 @@ struct SessionSidebarRowView: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+}
+
+private extension View {
+    /// Selects on the press, as a sidebar in Finder does: a tap waits for
+    /// the release, and the row lagged the click.
+    func onPress(perform action: @escaping () -> Void) -> some View {
+        modifier(SidebarPressAction(action: action))
+    }
+}
+
+private struct SidebarPressAction: ViewModifier {
+    let action: () -> Void
+    /// Reset by SwiftUI when the press ends or is cancelled -- also when the
+    /// press switched tabs and this window went away under the mouse.
+    @GestureState private var isPressed = false
+
+    func body(content: Content) -> some View {
+        content.gesture(
+            DragGesture(minimumDistance: 0)
+                .updating($isPressed) { _, pressed, _ in
+                    guard !pressed else { return }
+                    pressed = true
+                    // Not inside the gesture's update: selecting a tab
+                    // changes the views this one is part of.
+                    DispatchQueue.main.async(execute: action)
+                }
+        )
     }
 }

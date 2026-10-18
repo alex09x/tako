@@ -234,6 +234,17 @@ class TerminalWindow: NSWindow {
             }
         }
 
+        if !isKeyWindow || !NSApp.isActive, SessionSidebarFirstClick.wants(event, in: self) {
+            super.sendEvent(event)
+            SessionSidebarFirstClick.redeliver(event, to: self) { [weak self] in self?.deliver($0) }
+            return
+        }
+
+        super.sendEvent(event)
+    }
+
+    /// An event past this window's own handling, straight to AppKit's.
+    private func deliver(_ event: NSEvent) {
         super.sendEvent(event)
     }
 

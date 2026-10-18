@@ -27,6 +27,10 @@ struct SessionSidebarView: View {
     private typealias T = Tako.LivingTokens
 
     @State private var selectedIndex: Int = 0
+    /// Whether the arrow-key cursor is drawn: only while the keys move it. A
+    /// click selects the tab itself, and a cursor left on another row would
+    /// read as a second selection.
+    @State private var showsArrowCursor = false
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
     @FocusState private var isSearchFocused: Bool
@@ -308,12 +312,13 @@ struct SessionSidebarView: View {
                             ForEach(wsGroup.items) { item in
                                 let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
                                 SessionSidebarRowView(
-                                    item: item, index: flatIdx, selectedIndex: selectedIndex,
+                                    item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
                                     targetWindow: targetWindow, editingItemId: $editingItemId,
                                     editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
                                     reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
                                     onSelect: {
                                         selectedIndex = flatIdx
+                                        showsArrowCursor = false
                                         store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
                                     }
                                 )
@@ -323,13 +328,20 @@ struct SessionSidebarView: View {
                 }
             }
             .focusable()
+            // The keys go to the list, but it is no text field: no blue ring
+            // around the whole sidebar on a click.
+            .focusEffectDisabled()
             .focused($isListFocused)
             .onKeyPress(.upArrow) {
-                if selectedIndex > 0 { selectedIndex -= 1; proxy.scrollTo(items[selectedIndex].id) }
+                if selectedIndex > 0 { selectedIndex -= 1 }
+                showsArrowCursor = true
+                if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.downArrow) {
-                if selectedIndex < items.count - 1 { selectedIndex += 1; proxy.scrollTo(items[selectedIndex].id) }
+                if selectedIndex < items.count - 1 { selectedIndex += 1 }
+                showsArrowCursor = true
+                if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.leftArrow) {
@@ -365,6 +377,7 @@ struct SessionSidebarView: View {
 
     /// Puts the arrow-key cursor on the active tab's row.
     private func followActiveTab() {
+        showsArrowCursor = false
         if let activeIndex = SessionSidebarSelection.activeIndex(in: items) {
             selectedIndex = activeIndex
         }
