@@ -68,6 +68,7 @@ struct ControlLiveTests {
         window.contentView = surface
         let tab = ControlCommands.tabJSON(for: surface)
         #expect(tab["state"]?.string == "live")
+        #expect(tab["index"]?.number == 1, "counted from 1, as tree counts")
         #expect(tab["live"]?.object?["summary"]?.string == "tail · quiet")
 
         // An agent's own status outranks it, as on the tab.

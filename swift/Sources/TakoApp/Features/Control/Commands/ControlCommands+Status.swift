@@ -38,7 +38,8 @@ extension ControlCommands {
         let live = report.state == "idle" ? liveActivity(in: win) : nil
         var dict: [String: JSON] = [
             "title": .string(report.title),
-            "index": .number(Double(report.index)),
+            // From 1, as `tree` and the tab bar count.
+            "index": .number(Double(report.index + 1)),
             "selected": .bool(report.selected),
             "dot": .string(report.dot),
             "color": .string(report.color),

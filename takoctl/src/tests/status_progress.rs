@@ -418,3 +418,19 @@ fn a_quiet_program_reads_live_and_a_failure_its_exit_code() {
         "tab 1 \"ram11\" (inactive): dot gray (dim, #8a7f76), state live · ssh · 38/s\n"
     );
 }
+
+/// `--pane` names the pane as `--target` does: `status tab --pane ID` used
+/// to report the current pane's tab instead. `events` keeps it as a filter.
+#[test]
+fn pane_names_the_target_except_for_events() {
+    let opts = parse(&args(&["status", "tab", "--pane", "fd5c"])).unwrap();
+    assert_eq!(opts.args["target"], "fd5c");
+    assert!(opts.args.get("pane").is_none());
+
+    let err = parse(&args(&["status", "--pane", "a", "--target", "b"])).unwrap_err();
+    assert!(err.contains("--pane and --target"), "{err}");
+
+    let events = parse(&args(&["events", "--pane", "1234"])).unwrap();
+    assert_eq!(events.args["pane"], "1234");
+    assert!(events.args.get("target").is_none());
+}

@@ -342,6 +342,16 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         }
     }
     let cmd = cmd.ok_or_else(String::new)?;
+    // Only `events` filters by `--pane`; everywhere else it names the pane,
+    // as `--target` does, rather than being dropped.
+    if cmd != "events"
+        && let Some(pane) = args.remove("pane")
+    {
+        if args.contains_key("target") {
+            return Err("--pane and --target both name the pane; give one".into());
+        }
+        args.insert("target".into(), pane);
+    }
 
     if !bundle_id_explicit && socket.is_none() {
         if client.is_none() {

@@ -127,7 +127,8 @@ commands:
                           (--out PATH, --stdout, --include-terminal, --benchmark)
 
 options:
-  --target ID|PREFIX|self|active   the pane (default: this pane, or the active one)
+  --target ID|PREFIX|self|active   the pane (default: this pane, or the active one);
+                          --pane ID says the same, except for events
   --window ID             session export: target specific window ID
   --panes P1,P2,...       broadcast: comma-separated list of target panes
   --client NAME           client name for identity and attribution (send, type, key; default: takoctl)
