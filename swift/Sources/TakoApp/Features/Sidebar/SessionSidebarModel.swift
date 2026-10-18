@@ -37,6 +37,8 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let progress: Double?
     let progressState: TakoTerminalNSView.ProgressState
     let elapsed: String?
+    /// A quiet program's activity (Sessions UI 5a), nil while none runs.
+    let live: Tako.LiveActivity?
     let workingDirectory: String?
     /// The session row's directory, for a pane row: its own is shown only
     /// when it differs (Spec 4a).
@@ -97,6 +99,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         progress: Double? = nil,
         progressState: TakoTerminalNSView.ProgressState = .none,
         elapsed: String? = nil,
+        live: Tako.LiveActivity? = nil,
         workingDirectory: String? = nil,
         parentWorkingDirectory: String? = nil,
         gitBranch: String? = nil,
@@ -130,6 +133,7 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.progress = progress
         self.progressState = progressState
         self.elapsed = elapsed
+        self.live = live
         self.workingDirectory = workingDirectory
         self.parentWorkingDirectory = parentWorkingDirectory
         self.gitBranch = gitBranch

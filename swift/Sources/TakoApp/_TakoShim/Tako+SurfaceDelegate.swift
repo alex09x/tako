@@ -44,6 +44,7 @@ extension Tako.SurfaceView {
         /// report. This is the only path from input to the shell.
         public func terminalView(_ view: TakoTerminalNSView, sendInputData data: Data) {
             guard !isInputLocked else { return }
+            outputMeter.noteInput()
             writeToShell([UInt8](data))
 
             // Track C8: Broadcast input to other selected panes if active

@@ -278,6 +278,13 @@ extension Tako.SurfaceView {
 
 
         func setupAttentionObservation() {
+            // A live ring's pill redraws for each second of output, and
+            // once a minute while quiet: the rest of the strip is cheap.
+            // On the next turn: a publisher fires before the value is set.
+            crab.$live.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { _ in
+                Tako.TabBarController.refreshAll()
+            }.store(in: &attentionCancellables)
+
             crab.$paneStatus.dropFirst().sink { [weak self] status in
                 guard let self else { return }
                 if status == .error || status == .needsApproval || status == .waitingForInput {

@@ -22,6 +22,8 @@ extension Tako {
         private var lastSize: CGSize = .zero
         private var lastReduceMotion: Bool = false
         private var isLayerPaused: Bool = false
+        /// The live ring's last ripple: a new count ripples it once.
+        var lastPulses = 0
 
         private let clippedInnerContainer = CALayer()
         private let failedLineLayer = CAShapeLayer()
@@ -37,7 +39,7 @@ extension Tako {
         private let breatheGlowLayer = CAShapeLayer()
         private let breatheLayer = CAShapeLayer()
         private let offlineBorderLayer = CAShapeLayer()
-        private let ringContainer = CALayer()
+        let ringContainer = CALayer()
 
         override init() { super.init(); setupSublayers() }
         override init(layer: Any) { super.init(layer: layer) }
@@ -91,7 +93,9 @@ extension Tako {
             addSublayer(ringContainer)
         }
 
-        func apply(state: SurfaceState, in pillRect: CGRect, hideRing: Bool, reduceMotion: Bool, paused: Bool, allowFrameAnimation: Bool = false) {
+        func apply(state: SurfaceState, in pillRect: CGRect, hideRing: Bool, reduceMotion: Bool, paused: Bool,
+                   allowFrameAnimation: Bool = false, pulses: Int = 0) {
+            defer { rippleIfPulsed(pulses, state: state, reduceMotion: reduceMotion, paused: paused) }
             let previousState = currentState
             let didChangeState = (previousState != nil && previousState != state)
             let isFirstApply = (previousState == nil)
@@ -257,6 +261,13 @@ extension Tako {
 
             case .offline:
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 0.75, color: T.faint.cgColor, width: 1.5, dash: [2, 2]))
+
+            case .live(let flowing):
+                let ripple = makeStrokeCircle(rBounds, inset: 0.75, color: T.claw.cgColor, width: 1.5)
+                ripple.name = "liveRipple"; ripple.opacity = 0
+                ringContainer.addSublayer(ripple)
+                let alpha = flowing ? 1 : CGFloat(LiveRingStyle.quietOpacity)
+                ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 0.75, color: T.ember.withAlphaComponent(alpha).cgColor, width: 1.5))
             }
             ringContainer.sublayers?.forEach { $0.contentsScale = 2.0 }
         }
@@ -314,7 +325,7 @@ extension Tako {
                     shake.timingFunctions = [eio, eio, eio, eio, eio, eio]; shake.duration = 0.448
                     add(shake, forKey: "failedShake")
                 }
-            case .idle, .progress, .offline:
+            case .idle, .progress, .offline, .live:
                 break
             }
         }

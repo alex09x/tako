@@ -95,10 +95,17 @@ extension Tako {
         private var startedAt: Date?
         /// What the running command is; nil when none runs.
         private(set) var commandKind: CommandKind?
-        /// Whether the terminal shows its alternate screen now: a job that
-        /// turns full-screen (`git log` paging, `make menuconfig`) is one
-        /// the user is inside, whatever its name said.
-        private var isAlternateScreen: (() -> Bool)?
+        /// The pane, as the running command's tracking reads it: whether it
+        /// shows its alternate screen -- a job that turns full-screen (`git
+        /// log` paging, `make menuconfig`) is one the user is inside,
+        /// whatever its name said -- and what it prints.
+        var liveProbe: LiveProbe?
+        /// What a quiet program is doing (Sessions UI 5a); nil while none
+        /// runs. See Tako+CrabLive.swift.
+        @Published var live: LiveActivity?
+        var liveTimer: Timer?
+        var liveSamples: [Int] = []
+        var liveQuietSeconds: TimeInterval = 0
         private var ticker: Timer?
         private var successTimer: Timer?
 
@@ -117,6 +124,7 @@ extension Tako {
             ticker?.invalidate()
             successTimer?.invalidate()
             ttlTimer?.invalidate()
+            liveTimer?.invalidate()
         }
 
         func promptMark() {
@@ -126,10 +134,11 @@ extension Tako {
             recomputeEffectiveStatus()
         }
 
-        func commandStarted(kind: CommandKind = .batch, isAlternateScreen: (() -> Bool)? = nil) {
+        func commandStarted(kind: CommandKind = .batch, probe: LiveProbe? = nil) {
             startedAt = now()
             commandKind = kind
-            self.isAlternateScreen = isAlternateScreen
+            liveProbe = probe
+            stopLive()
             elapsed = nil
             progress = nil
             successTimer?.invalidate()
@@ -144,7 +153,10 @@ extension Tako {
             // long enough to be worth showing. A quiet one never does.
             ticker?.invalidate()
             ticker = nil
-            guard kind == .batch else { return }
+            guard kind == .batch else {
+                startLive()
+                return
+            }
             ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
@@ -160,7 +172,8 @@ extension Tako {
             if startedAt == nil && (exitCode == nil || exitCode == 0) { return }
             let kind = commandKind ?? .batch
             commandKind = nil
-            isAlternateScreen = nil
+            stopLive()
+            liveProbe = nil
             ticker?.invalidate()
             ticker = nil
             let ran = startedAt.map { now().timeIntervalSince($0) }
@@ -268,6 +281,7 @@ extension Tako {
         }
 
         func connectionLost() {
+            stopLive()
             progress = nil
             progressState = .none
             signalStatus = .disconnected
@@ -407,7 +421,7 @@ extension Tako {
         /// waiting on a real timer.
         func tick() {
             guard let startedAt else { return }
-            if commandKind == .batch, isAlternateScreen?() == true { settleQuiet() }
+            if commandKind == .batch, liveProbe?.isAlternateScreen() == true { settleQuiet() }
             let ran = now().timeIntervalSince(startedAt)
             guard ran >= Self.minimumVisibleDuration else { return }
             // An agent's own status keeps its clock whatever its kind.
@@ -430,6 +444,7 @@ extension Tako {
                 ticker = nil
                 elapsed = nil
             }
+            startLive()
             if state == .running { state = .idle }
             signalStatus = .idle
         }

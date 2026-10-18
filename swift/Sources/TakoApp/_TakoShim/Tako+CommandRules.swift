@@ -131,16 +131,33 @@ extension Tako {
             return arg.dropFirst().prefix { $0.isLetter }.contains { $0 == "f" || $0 == "F" }
         }
 
+        /// The host a connection goes to: the first word that is neither an
+        /// option nor an option's value.
+        static func destination(_ args: [String]) -> String? {
+            var i = 0
+            while i < args.count {
+                let arg = args[i]
+                if arg.hasPrefix("-") && arg.count > 1 {
+                    if arg.count == 2, let flag = arg.last, sshOptionsWithValue.contains(flag) { i += 1 }
+                } else {
+                    return arg
+                }
+                i += 1
+            }
+            return nil
+        }
+
+        private static let sshOptionsWithValue = Set("BbcDEeFIiJLlmOoPpQRSWw")
+
         /// `ssh host` is a connection; `ssh host make` runs a job there.
         private static func sshRunsCommand(_ args: [String]) -> Bool {
-            let takesValue = Set("BbcDEeFIiJLlmOoPpQRSWw")
             var i = 0
             var host: String?
             while i < args.count {
                 let arg = args[i]
                 if host != nil { return true }
                 if arg.hasPrefix("-") && arg.count > 1 {
-                    if arg.count == 2, let flag = arg.last, takesValue.contains(flag) { i += 1 }
+                    if arg.count == 2, let flag = arg.last, sshOptionsWithValue.contains(flag) { i += 1 }
                 } else {
                     host = arg
                 }

@@ -48,7 +48,8 @@ struct PaneOverviewCard: View, Equatable {
                     now: now,
                     elapsedInState: elapsedInState,
                     reduceMotion: reduceMotion || !showsAnimatedEffects,
-                    shakeRingOnly: true
+                    shakeRingOnly: true,
+                    pulses: item.live?.pulses ?? 0
                 )
 
                 Text(item.title)
@@ -59,20 +60,28 @@ struct PaneOverviewCard: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
-                    Text(meta)
-                        .font(Font(T.monoFont(size: 10, weight: .regular)))
-                        .foregroundColor(Color(nsColor: T.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                    SessionSidebarMetaLabel(text: meta, style: state.isLive && meta == item.live?.rateLabel ? .ember : .dim)
                 }
             }
             .frame(height: 18)
 
             // Row 2 (gap 7): Status Chip -> statusText mono 10.5 #8A7F76
             HStack(spacing: 7) {
-                LivingStatusChipView(status: item.status)
+                if state.isLive, let live = item.live {
+                    // A live program: its name, Ember-outlined, and where it runs.
+                    LiveProgramChip(program: live.program ?? "live")
+                    if let place = live.detail ?? item.pwd.map(Tako.formatCompactDirectory) {
+                        Text(place)
+                            .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                            .foregroundColor(Color(nsColor: T.dim))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                } else {
+                    LivingStatusChipView(status: item.status)
+                }
 
-                if let text = item.statusText, !text.isEmpty {
+                if !state.isLive, let text = item.statusText, !text.isEmpty {
                     Text(text)
                         .font(Font(T.monoFont(size: 10.5, weight: .regular)))
                         .foregroundColor(Color(nsColor: T.dim))

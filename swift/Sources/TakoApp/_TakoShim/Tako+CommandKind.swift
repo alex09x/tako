@@ -66,6 +66,24 @@ extension Tako {
             return result
         }
 
+        /// The program a command line is about -- the one its kind came
+        /// from -- and, for a connection, where it goes: `ssh alex@ram11`
+        /// is `ssh` on `alex@ram11`.
+        static func describe(_ line: String) -> (program: String?, detail: String?) {
+            var best: (kind: CommandKind, program: String, args: [String])?
+            for segment in ShellLine.segments(of: line) {
+                let words = ShellLine.unwrapped(segment)
+                guard let first = words.first else { continue }
+                let program = ShellLine.programName(first)
+                let args = Array(words.dropFirst())
+                let kind = CommandRules.kind(of: program, arguments: args)
+                if best == nil || kind.quietness > best!.kind.quietness { best = (kind, program, args) }
+            }
+            guard let best else { return (nil, nil) }
+            let detail = best.kind == .connection ? CommandRules.destination(best.args) : nil
+            return (best.program, detail)
+        }
+
         private var quietness: Int {
             switch self {
             case .batch: return 0

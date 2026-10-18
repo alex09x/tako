@@ -22,7 +22,8 @@ enum LivingMotion {
         case .working, .progress, .waiting: return nil
         case .done: return 1.0      // glint 0.96 s, pop 0.704 s
         case .failed: return 0.5    // shake 0.448 s
-        case .idle, .offline: return 0
+        // A live ring ripples on output by itself, without frames.
+        case .idle, .offline, .live: return 0
         }
     }
 

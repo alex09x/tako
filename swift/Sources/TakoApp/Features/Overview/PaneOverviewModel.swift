@@ -37,6 +37,8 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
     let progressState: TakoTerminalNSView.ProgressState
     let progressValue: Int?
     let elapsed: String?
+    /// A quiet program's activity (Sessions UI 5a), nil while none runs.
+    let live: Tako.LiveActivity?
     let isFocused: Bool
     let isKeyWindow: Bool
     /// The pane rang the bell or has an unread notification the user has
@@ -60,6 +62,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         progressState: TakoTerminalNSView.ProgressState = .none,
         progressValue: Int? = nil,
         elapsed: String? = nil,
+        live: Tako.LiveActivity? = nil,
         isFocused: Bool = false,
         isKeyWindow: Bool = false,
         hasUnread: Bool = false,
@@ -79,6 +82,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         self.progressState = progressState
         self.progressValue = progressValue
         self.elapsed = elapsed
+        self.live = live
         self.isFocused = isFocused
         self.isKeyWindow = isKeyWindow
         self.hasUnread = hasUnread
@@ -114,19 +118,26 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
             if let progressValue { return min(1.0, max(0.0, Double(progressValue) / 100.0)) }
             return progressState == .indeterminate ? 0.35 : nil
         }()
-        let state = status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
-        if state == .idle, hasUnread {
+        let state = status.surfaceState(
+            progressState: progressState, progressFraction: frac, crabState: crabState, live: live)
+        if state == .idle || state.isLive, hasUnread {
             return .waiting
         }
         return state
     }
 
-    /// Meta text shown on the right of Row 1: `"NN%"` when progress is active, otherwise `elapsed`.
+    /// Meta text shown on the right of Row 1: `"NN%"` when progress is
+    /// active; for a live program its rate while dense, how long it has
+    /// been quiet while quiet (Sessions UI 5a); otherwise `elapsed`.
     var metaDisplayText: String? {
-        if case .progress(let p) = surfaceState {
+        switch surfaceState {
+        case .progress(let p):
             return "\(Int((p * 100).rounded()))%"
+        case .live(let flowing):
+            return flowing ? live?.rateLabel : live?.quietLabel
+        default:
+            return elapsed
         }
-        return elapsed
     }
 
     /// Provenance string `"Workspace › N"` for the card footer and modal footer (§6).

@@ -129,7 +129,8 @@ extension Tako {
             progressState: TakoTerminalNSView.ProgressState = .none,
             progressFraction: Double? = nil,
             elapsedSeconds: TimeInterval? = nil,
-            crabState: Tako.CrabState? = nil
+            crabState: Tako.CrabState? = nil,
+            live: Tako.LiveActivity? = nil
         ) -> Tako.SurfaceState {
             switch self {
             case .disconnected:
@@ -158,6 +159,7 @@ extension Tako {
                 if progressState != .none, let p = progressFraction {
                     return .progress(min(1.0, max(0.0, p)))
                 }
+                if let live { return .live(flowing: live.isFlowing) }
                 return .idle
             }
         }
@@ -168,21 +170,31 @@ extension Tako {
         case idle
         case working
         case progress(Double /* 0...1 */)
+        /// A quiet program runs -- ssh, vim, a stream, a server -- and
+        /// `flowing` while its output arrives (Sessions UI 5a).
+        case live(flowing: Bool)
         case waiting
         case done
         case failed
         case offline
 
+        /// A quiet program runs, whether or not its output is arriving.
+        public var isLive: Bool {
+            if case .live = self { return true }
+            return false
+        }
+
         /// Priority when aggregating across split panes, tabs, or workspaces:
-        /// offline > failed > waiting > working > progress > done > idle
+        /// offline > failed > waiting > working > progress > done > live > idle
         public var priority: Int {
             switch self {
-            case .offline: return 6
-            case .failed: return 5
-            case .waiting: return 4
-            case .working: return 3
-            case .progress: return 2
-            case .done: return 1
+            case .offline: return 7
+            case .failed: return 6
+            case .waiting: return 5
+            case .working: return 4
+            case .progress: return 3
+            case .done: return 2
+            case .live: return 1
             case .idle: return 0
             }
         }

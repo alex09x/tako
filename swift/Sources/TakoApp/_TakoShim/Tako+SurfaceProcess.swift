@@ -26,6 +26,17 @@ extension Tako.SurfaceView {
         /// written -- so an answer leaves out exactly that line and no line
         /// of the program's that happens to look like it.
 
+        /// How the crab reads this pane while the command `line` runs.
+        func liveProbe(for line: String) -> Tako.LiveProbe {
+            let meter = outputMeter
+            let named = Tako.CommandKind.describe(line)
+            return Tako.LiveProbe(
+                takeOutputLines: { meter.take() },
+                isAlternateScreen: { [weak self] in self?.isAlternateScreen ?? false },
+                program: named.program,
+                detail: named.detail)
+        }
+
         /// What the command line the shell reported runs, by the built-in
         /// rules and the user's `quiet-commands` and `busy-commands`.
         func commandKind(of line: String) -> Tako.CommandKind {
@@ -140,6 +151,7 @@ extension Tako.SurfaceView {
                     let printable = String(data.map { ($0 >= 0x20 && $0 < 0x7f) ? Character(UnicodeScalar($0)) : "." })
                     TakoLog.feed.debug("pty hex: \(hex)  [\(printable)]")
                 }
+                self.outputMeter.noteOutput(data)
                 let outcome = self.core.feedWithOutcome(bytes: data)
                 // The engine has no clock: a command's start time is when its
                 // start reached us, stamped against the engine it belongs to.
@@ -242,7 +254,7 @@ extension Tako.SurfaceView {
                                 self.crab.isFocused = self.isBeingLookedAt
                                 self.crab.commandStarted(
                                     kind: self.commandKind(of: cmdText),
-                                    isAlternateScreen: { [weak self] in self?.isAlternateScreen ?? false })
+                                    probe: self.liveProbe(for: cmdText))
                                 self.commandStarted()
                                 self.publishEvent(
                                     type: "command_start",

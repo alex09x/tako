@@ -224,7 +224,7 @@ extension Tako {
                 let title = titleFor(window)
                 let titleWidth = TabText.width(of: title, font: titleFont)
                 let metaText = pillMetaText(for: window)
-                let metaExtra = metaText.map { 7 + TabText.width(of: $0, font: Fonts.timer) } ?? 0
+                let metaExtra = metaText.map { 7 + pillMetaWidth($0, style: pillMetaStyle(for: window)) } ?? 0
                 let state = pillSurfaceState(for: window)
                 let rightExtra: CGFloat = isSelected
                     ? (7 + 10)

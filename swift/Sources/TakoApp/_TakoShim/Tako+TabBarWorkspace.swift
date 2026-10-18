@@ -224,15 +224,9 @@ extension Tako.TabBarView {
             return .done
         default:
             if let pFraction { return .progress(pFraction) }
+            if let live = liveActivity(for: window) { return .live(flowing: live.isFlowing) }
             return .idle
         }
-    }
-
-    func pillMetaText(for window: NSWindow) -> String? {
-        if case .progress(let p) = pillSurfaceState(for: window) {
-            return "\(Int((p * 100).rounded()))%"
-        }
-        return elapsedFor(window)
     }
 
     func hasUnreadInWindow(_ window: NSWindow) -> Bool {
@@ -266,7 +260,8 @@ extension Tako.TabBarView {
             hideRing: hideRing,
             reduceMotion: animState.reduceMotion,
             paused: animState.isTimelinePaused,
-            allowFrameAnimation: isTabDragging
+            allowFrameAnimation: isTabDragging,
+            pulses: liveActivity(for: window)?.pulses ?? 0
         )
         if let t = animState.fixedTimeOverride {
             statusLayer.applySnapshotPhase(at: t, doneElapsed: t, failedElapsed: t)

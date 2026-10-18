@@ -137,14 +137,17 @@ extension Tako.TabBarView {
 
         // Right-side affordance: ✕ on active/hovered tab, or Ø5 Claw unread dot on background tabs with unread notifications
         let showsClose = (tab.isActive || hovering) && rect.width >= Metrics.pillCloseMinWidth
-        let showsUnreadDot = !showsClose && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive))
+        let metaStyle = pillMetaStyle(for: tab.window)
+        // A failure that shows its exit code needs no dot to be noticed.
+        let showsUnreadDot = !showsClose
+            && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive && metaStyle != .exitCode))
         let rightExtra: CGFloat = showsClose ? (7 + 6) : (showsUnreadDot ? (7 + 5) : 0)
 
         let titleFont = tab.isActive ? Fonts.pillActiveTitle : Fonts.pillTitle
         let rawTitle = titleFor(tab.window)
         let fullTitleWidth = Tako.TabText.width(of: rawTitle, font: titleFont)
         let metaText = pillMetaText(for: tab.window)
-        let metaWidth = metaText.map { Tako.TabText.width(of: $0, font: Fonts.timer) } ?? 0
+        let metaWidth = metaText.map { pillMetaWidth($0, style: metaStyle) } ?? 0
         let titleStartX = rect.minX + 29 + borderInset // (8 + border) + 14 (ring S) + 7 (gap)
         let availableForTitleAndMeta = rect.width - (29 + borderInset) - (9 + borderInset) - rightExtra
         let includesMeta = metaText != nil && (availableForTitleAndMeta - (metaWidth + 7) >= fullTitleWidth - 1.5)
@@ -172,14 +175,7 @@ extension Tako.TabBarView {
 
         if includesMeta, let metaText {
             let metaX = rect.maxX - 9 - rightExtra - metaWidth
-            Tako.TabText.draw(
-                metaText,
-                atX: metaX,
-                centeredAtY: rect.midY,
-                font: Fonts.timer,
-                color: Palette.dim,
-                context: ctx
-            )
+            drawPillMeta(metaText, style: metaStyle, atX: metaX, centeredAtY: rect.midY, in: ctx)
         }
 
         if showsClose {

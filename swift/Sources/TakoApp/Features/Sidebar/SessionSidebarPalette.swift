@@ -42,7 +42,8 @@ extension SessionSidebarItem {
             if let progress { return min(1.0, max(0.0, progress)) }
             return progressState == .indeterminate ? 0.35 : nil
         }()
-        let state = status.surfaceState(progressState: progressState, progressFraction: frac, crabState: crabState)
+        let state = status.surfaceState(
+            progressState: progressState, progressFraction: frac, crabState: crabState, live: live)
         if state == .idle, needsAttention {
             return .waiting
         }
@@ -64,10 +65,19 @@ extension SessionSidebarItem {
         return cleaned.isEmpty ? raw : cleaned
     }
 
-    /// Meta text shown on the right of Line 1: `"NN%"` when progress is active, otherwise `elapsed`.
+    /// Meta text shown on the right of Line 1: `"NN%"` when progress is
+    /// active, `"exit N"` for a failure that has a code, a live program's
+    /// rate or name (Sessions UI 5a), otherwise `elapsed`.
     var metaDisplayText: String? {
-        if case .progress(let p) = surfaceState {
+        switch surfaceState {
+        case .progress(let p):
             return "\(Int((p * 100).rounded()))%"
+        case .failed:
+            if let code = exitCode { return "exit \(code)" }
+        case .live:
+            if let label = live?.metaLabel { return label }
+        default:
+            break
         }
         if let elapsed, !elapsed.isEmpty {
             return elapsed
@@ -76,5 +86,21 @@ extension SessionSidebarItem {
             return ":\(port)"
         }
         return nil
+    }
+
+    /// The code a failed command exited with, when it reported one.
+    var exitCode: Int32? {
+        if case .failed(let code?) = crabState { return code }
+        return nil
+    }
+
+    /// How Line 1's meta text is drawn: a red chip for an exit code, Ember
+    /// for a live rate, dim otherwise.
+    var metaStyle: Tako.TabBarView.PillMetaStyle {
+        switch surfaceState {
+        case .failed where exitCode != nil: return .exitCode
+        case .live where live?.rateLabel != nil: return .ember
+        default: return .dim
+        }
     }
 }

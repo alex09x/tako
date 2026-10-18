@@ -267,6 +267,8 @@ struct StatusRingView: View {
     var elapsedInState: TimeInterval = 10.0
     var reduceMotion: Bool = false
     var shakeRingOnly: Bool = false
+    /// For a live ring: bumped once for each second that brought output.
+    var pulses: Int = 0
 
     private typealias T = Tako.LivingTokens
 
@@ -352,6 +354,13 @@ struct StatusRingView: View {
             case .offline:
                 Circle().inset(by: 0.75)
                     .stroke(Color(nsColor: T.faint), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+
+            case .live(let flowing):
+                if flowing && !reduceMotion {
+                    LiveRingRipple(pulses: pulses, diameter: d)
+                }
+                Circle().inset(by: 0.75)
+                    .stroke(Color(nsColor: T.ember).opacity(flowing ? 1 : LiveRingStyle.quietOpacity), lineWidth: 1.5)
             }
         }
         .frame(width: d, height: d)
@@ -381,3 +390,4 @@ struct StatusRingView: View {
         return path
     }
 }
+

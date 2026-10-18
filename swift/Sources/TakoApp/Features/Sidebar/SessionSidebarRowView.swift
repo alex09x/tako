@@ -134,7 +134,8 @@ struct SessionSidebarRowView: View {
                     size: .small,
                     now: now,
                     elapsedInState: elapsedInState,
-                    reduceMotion: reduceMotion
+                    reduceMotion: reduceMotion,
+                    pulses: item.live?.pulses ?? 0
                 )
                 .help("Status: \(item.status.rawValue)")
 
@@ -146,14 +147,10 @@ struct SessionSidebarRowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
-                    Text(meta)
-                        .font(Font(T.monoFont(size: 10, weight: .regular)))
-                        .foregroundColor(Color(nsColor: T.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                    SessionSidebarMetaLabel(text: meta, style: item.metaStyle)
                 }
 
-                if item.unreadCount > 0 || (state == .failed && !isTabActive) {
+                if item.unreadCount > 0 || (state == .failed && !isTabActive && item.exitCode == nil) {
                     Circle()
                         .fill(Color(nsColor: T.claw))
                         .frame(width: 5, height: 5)
@@ -244,7 +241,8 @@ struct SessionSidebarRowView: View {
                     size: .small,
                     now: now,
                     elapsedInState: elapsedInState,
-                    reduceMotion: reduceMotion
+                    reduceMotion: reduceMotion,
+                    pulses: item.live?.pulses ?? 0
                 )
 
                 Text(item.title)
@@ -255,14 +253,10 @@ struct SessionSidebarRowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
-                    Text(meta)
-                        .font(Font(T.monoFont(size: 10, weight: .regular)))
-                        .foregroundColor(Color(nsColor: T.dim))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                    SessionSidebarMetaLabel(text: meta, style: item.metaStyle)
                 }
 
-                if item.unreadCount > 0 || (state == .failed && !isTabActive) {
+                if item.unreadCount > 0 || (state == .failed && !isTabActive && item.exitCode == nil) {
                     Circle()
                         .fill(Color(nsColor: T.claw))
                         .frame(width: 5, height: 5)
@@ -352,6 +346,15 @@ struct SessionSidebarRowView: View {
                 ?? item.userDescription
                 ?? (item.status == .needsApproval ? "Approval required" : "Waiting for input…")
             return (prompt, Color(nsColor: T.claw), .tail)
+        }
+
+        // Sessions UI 5a: a live program says where it runs while its
+        // output arrives, and how long it has been quiet otherwise.
+        if case .live(let flowing) = state, let live = item.live {
+            guard flowing else { return (live.quietLabel, Color(nsColor: T.dim), .tail) }
+            let place = live.detail ?? item.workingDirectory.map(Tako.formatCompactDirectory)
+            let text = [live.program, place].compactMap { $0 }.joined(separator: " · ")
+            if !text.isEmpty { return (text, Color(nsColor: T.dim), .middle) }
         }
 
         // §5.5: For failed session, show error message / exit info in #D54E53 if available

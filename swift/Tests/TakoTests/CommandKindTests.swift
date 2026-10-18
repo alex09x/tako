@@ -137,7 +137,7 @@ struct CrabCommandKindTests {
         var now = Date(timeIntervalSince1970: 0)
         var alternate = false
         let crab = tracker { now }
-        crab.commandStarted(kind: .batch, isAlternateScreen: { alternate })
+        crab.commandStarted(kind: .batch, probe: Tako.LiveProbe(takeOutputLines: { 0 }, isAlternateScreen: { alternate }))
         now = now.addingTimeInterval(5)
         crab.tick()
         #expect(crab.state == .running)

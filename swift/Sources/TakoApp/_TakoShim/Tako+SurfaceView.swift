@@ -286,6 +286,9 @@ extension Tako {
         /// indicator draws.
         public let crab = Tako.CrabTracker()
 
+        /// The lines this pane prints, for a quiet program's live ring.
+        let outputMeter = Tako.OutputActivityMeter()
+
         /// Keeps the crab in this surface's tab. Held here so it lives as
         /// long as the surface does.
         private var crabBinding: Tako.CrabTabBinding?

@@ -180,7 +180,7 @@ struct LivingSurfaceEffectsOverlay: View {
                     Color(nsColor: T.ghostBorder),
                     style: StrokeStyle(lineWidth: 1.0, dash: [3, 3])
                 )
-        case .idle, .done, .failed:
+        case .idle, .done, .failed, .live:
             EmptyView()
         }
     }
