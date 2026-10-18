@@ -84,9 +84,22 @@ pub fn progress_report(result: &Value) -> String {
 
 pub fn status_report(result: &Value) -> String {
     let status = result["status"].as_str().unwrap_or("unknown");
-    let mut out = status.to_string();
+    // A quiet program running is live, not idle (Sessions UI 5a).
+    let mut out = match result["live"]["summary"].as_str() {
+        Some(summary) if status == "idle" || status == "unknown" => {
+            if summary.is_empty() {
+                "live".to_string()
+            } else {
+                format!("live {summary}")
+            }
+        }
+        _ => status.to_string(),
+    };
     if let Some(text) = result["text"].as_str() {
         out += &format!(" ({text})");
+    }
+    if let Some(code) = result["exitCode"].as_i64() {
+        out += &format!(" · exit {code}");
     }
     if let Some(ttl) = result["ttl"].as_f64() {
         if ttl < 60.0 {
@@ -122,6 +135,12 @@ pub fn tab_status_report(result: &Value) -> String {
     let idx = tab["index"].as_u64().unwrap_or(0);
     let sel_str = if selected { "active" } else { "inactive" };
     let mut out = format!("tab {idx} \"{title}\" ({sel_str}): dot {color} ({dot}, {hex}), state {state}");
+    if let Some(summary) = tab["live"]["summary"].as_str().filter(|s| !s.is_empty()) {
+        out += &format!(" · {summary}");
+    }
+    if let Some(code) = tab["exitCode"].as_i64() {
+        out += &format!(" · exit {code}");
+    }
     if let Some(text) = result.get("text").and_then(Value::as_str) {
         out += &format!(" ({text})");
     }

@@ -93,6 +93,34 @@ pub fn layout_report(result: &Value) -> String {
 }
 
 
+/// What a pane's bracket says: its status and text, a quiet program's live
+/// state in place of a plain idle (`live ssh alex@ram11 · 38/s`, `live tail ·
+/// quiet 4m`), and a failure's exit code (`error · exit 1`).
+pub fn pane_status(pane: &Value) -> Option<String> {
+    let status = pane["status"].as_str()?;
+    let live = pane["live"]["summary"]
+        .as_str()
+        .filter(|_| status == "idle" || status == "unknown");
+    if let Some(summary) = live {
+        return Some(if summary.is_empty() {
+            "live".to_string()
+        } else {
+            format!("live {summary}")
+        });
+    }
+    if status == "unknown" {
+        return None;
+    }
+    let mut out = status.to_string();
+    if let Some(text) = pane["statusText"].as_str() {
+        out += &format!(": {text}");
+    }
+    if let Some(code) = pane["exitCode"].as_i64() {
+        out += &format!(" · exit {code}");
+    }
+    Some(out)
+}
+
 pub fn pane_line(pane: &Value, depth: usize) -> String {
     let mark = if pane["focused"].as_bool() == Some(true) {
         "*"
@@ -109,14 +137,8 @@ pub fn pane_line(pane: &Value, depth: usize) -> String {
     if let Some(label) = pane["label"].as_str() {
         line += &format!("  [{label}]");
     }
-    if let Some(status) = pane["status"].as_str() {
-        if status != "unknown" {
-            line += &format!("  [{status}");
-            if let Some(text) = pane["statusText"].as_str() {
-                line += &format!(": {text}");
-            }
-            line.push(']');
-        }
+    if let Some(status) = pane_status(pane) {
+        line += &format!("  [{status}]");
     }
     if let Some(summary) = pane["childrenStatus"].as_str() {
         line += &format!("  ({summary})");

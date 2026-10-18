@@ -372,3 +372,49 @@ fn render_dispatches_status_tab_and_restored_commands() {
     let last_out = render("last", &cmd_val);
     assert!(last_out.contains("cargo build"));
 }
+
+/// Sessions UI 5a in the terminal: a quiet program reads `live` with what its
+/// tab shows, not `idle`, and a failure carries its exit code.
+#[test]
+fn a_quiet_program_reads_live_and_a_failure_its_exit_code() {
+    let pane = |id: &str, status: &str, extra: serde_json::Value| {
+        let mut p =
+            json!({"id": id, "cwd": "/tmp", "title": id, "status": status, "focused": false});
+        p.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        p
+    };
+    let tree = json!({"windows": [{"id": "w", "tabs": [
+        {"id": "t1", "index": 1, "title": "ram11", "layout": {"pane": "ssh"},
+         "panes": [pane("ssh", "idle", json!({"live": {"program": "ssh", "detail": "alex@ram11",
+            "flowing": true, "linesPerSecond": 38, "rate": "38/s", "summary": "ssh alex@ram11 · 38/s"}}))]},
+        {"id": "t2", "index": 2, "title": "log", "layout": {"pane": "tail"},
+         "panes": [pane("tail", "idle", json!({"live": {"program": "tail", "flowing": false,
+            "quiet": "quiet 4m", "summary": "tail · quiet 4m"}}))]},
+        {"id": "t3", "index": 3, "title": "dev", "layout": {"pane": "npm"},
+         "panes": [pane("npm", "error", json!({"exitCode": 1}))]},
+        {"id": "t4", "index": 4, "title": "~", "layout": {"pane": "sh"},
+         "panes": [pane("sh", "idle", json!({}))]},
+    ]}]});
+    let out = render("tree", &tree);
+    assert!(out.contains("[live ssh alex@ram11 · 38/s]"), "{out}");
+    assert!(out.contains("[live tail · quiet 4m]"), "{out}");
+    assert!(out.contains("[error · exit 1]"), "{out}");
+    assert!(out.contains("sh  /tmp  sh  [idle]"), "{out}");
+
+    let status = json!({"status": "idle", "unread": false,
+        "live": {"program": "tail", "flowing": false, "summary": "tail · quiet 4m"}});
+    assert_eq!(status_report(&status), "live tail · quiet 4m\n");
+    let failed = json!({"status": "error", "unread": true, "exitCode": 255});
+    assert_eq!(status_report(&failed), "error · exit 255 [unread]\n");
+
+    let tab = json!({"action": "tab", "status": "idle", "tab": {
+        "title": "ram11", "index": 1, "selected": false, "dot": "dim", "color": "gray",
+        "hex": "#8a7f76", "state": "live", "style": "pill", "panes": 1, "progress": null,
+        "live": {"program": "ssh", "flowing": true, "rate": "38/s", "summary": "ssh · 38/s"}}});
+    assert_eq!(
+        tab_status_report(&tab),
+        "tab 1 \"ram11\" (inactive): dot gray (dim, #8a7f76), state live · ssh · 38/s\n"
+    );
+}

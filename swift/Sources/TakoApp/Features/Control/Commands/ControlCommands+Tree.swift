@@ -59,6 +59,7 @@ extension ControlCommands {
             if let ttl = surface.crab.remainingTTL {
                 node["statusTTL"] = .number(ttl)
             }
+            addLive(surface.crab.live, exitCode: exitCode(of: surface.crab), to: &node)
             if let parent = SubagentHierarchyStore.shared.parent(of: surface.id) {
                 node["parent"] = .string(parent.uuidString.lowercased())
             }

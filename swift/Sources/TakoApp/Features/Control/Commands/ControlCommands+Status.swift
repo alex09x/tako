@@ -13,23 +13,29 @@ import AppKit
 
 extension ControlCommands {
     /// Resolves detailed visual tab status for a pane's window.
+    /// A tab whose quiet program runs and wants nothing else is `live`
+    /// (Sessions UI 5a), with what its tab shows under `live`.
     static func tabJSON(for surface: Tako.SurfaceView) -> [String: JSON] {
         guard let win = surface.window else {
             let working = surface.crab.paneStatus == .working || surface.crab.paneStatus == .running
-            return [
+            let live = surface.crab.paneStatus == .idle ? surface.crab.live : nil
+            var dict: [String: JSON] = [
                 "title": .string(surface.title.isEmpty ? "~" : surface.title),
                 "index": .number(0),
                 "selected": .bool(true),
                 "dot": .string(working ? "ember" : "ok"),
                 "color": .string(working ? "orange" : "green"),
                 "hex": .string(working ? "#f4581c" : "#7bd88f"),
-                "state": .string(surface.crab.paneStatus.rawValue),
+                "state": .string(live != nil ? "live" : surface.crab.paneStatus.rawValue),
                 "style": .string("pill"),
                 "panes": .number(1),
                 "progress": .null,
             ]
+            addLive(live, exitCode: exitCode(of: surface.crab), to: &dict)
+            return dict
         }
         let report = Tako.tabVisualStatus(for: win, targetSurface: surface)
+        let live = report.state == "idle" ? liveActivity(in: win) : nil
         var dict: [String: JSON] = [
             "title": .string(report.title),
             "index": .number(Double(report.index)),
@@ -37,7 +43,7 @@ extension ControlCommands {
             "dot": .string(report.dot),
             "color": .string(report.color),
             "hex": .string(report.hex),
-            "state": .string(report.state),
+            "state": .string(live != nil ? "live" : report.state),
             "style": .string(report.style),
             "panes": .number(Double(report.panesCount)),
         ]
@@ -50,6 +56,7 @@ extension ControlCommands {
         } else {
             dict["progress"] = .null
         }
+        addLive(live, exitCode: Tako.aggregateCrab(for: win).flatMap(exitCode(of:)), to: &dict)
         return dict
     }
 
@@ -77,6 +84,7 @@ extension ControlCommands {
             if let ttl = surface.crab.remainingTTL {
                 dict["ttl"] = .number(ttl)
             }
+            addLive(surface.crab.live, exitCode: exitCode(of: surface.crab), to: &dict)
             dict["tab"] = .object(tabJSON(for: surface))
             return dict
         case "tab":
