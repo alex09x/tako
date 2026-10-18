@@ -65,6 +65,16 @@ extension SessionSidebarItem {
         return cleaned.isEmpty ? raw : cleaned
     }
 
+    /// A live program's second line (Sessions UI 5a): the program and where
+    /// it runs while its output arrives, how long it has been quiet otherwise.
+    var liveSecondLine: String? {
+        guard case .live(let flowing) = surfaceState, let live else { return nil }
+        guard flowing else { return live.quietLabel }
+        let place = live.detail ?? workingDirectory.map(Tako.formatCompactDirectory)
+        let text = [live.program, place].compactMap { $0 }.joined(separator: " · ")
+        return text.isEmpty ? nil : text
+    }
+
     /// Meta text shown on the right of Line 1: `"NN%"` when progress is
     /// active, `"exit N"` for a failure that has a code, a live program's
     /// rate or name (Sessions UI 5a), otherwise `elapsed`.

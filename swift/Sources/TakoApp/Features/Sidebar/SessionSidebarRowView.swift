@@ -350,11 +350,8 @@ struct SessionSidebarRowView: View {
 
         // Sessions UI 5a: a live program says where it runs while its
         // output arrives, and how long it has been quiet otherwise.
-        if case .live(let flowing) = state, let live = item.live {
-            guard flowing else { return (live.quietLabel, Color(nsColor: T.dim), .tail) }
-            let place = live.detail ?? item.workingDirectory.map(Tako.formatCompactDirectory)
-            let text = [live.program, place].compactMap { $0 }.joined(separator: " · ")
-            if !text.isEmpty { return (text, Color(nsColor: T.dim), .middle) }
+        if let text = item.liveSecondLine {
+            return (text, Color(nsColor: T.dim), state == .live(flowing: true) ? .middle : .tail)
         }
 
         // §5.5: For failed session, show error message / exit info in #D54E53 if available
