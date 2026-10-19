@@ -70,35 +70,57 @@ extension DoneGlint {
     }
 }
 
+extension DoneGlint {
+    /// The band over a `size` surface at `progress`, as unit end points of one
+    /// gradient filling the surface, or nil while none is over it. Tiles are
+    /// 2.5 widths apart and a band is one wide, so at most one is in view.
+    static func visibleBand(progress k: CGFloat, size: CGSize) -> (start: UnitPoint, end: UnitPoint)? {
+        let w = size.width, h = size.height
+        guard w > 0, h > 0 else { return nil }
+        let g = tileScale * w
+        let ends = unitEndpoints(tileWidth: g, height: h)
+        let origin = tileOrigin(progress: k, width: w)
+        for i in -1...1 {
+            let x = origin + CGFloat(i) * g
+            let s = CGPoint(x: x + ends.start.x * g, y: ends.start.y * h)
+            let e = CGPoint(x: x + ends.end.x * g, y: ends.end.y * h)
+            let d = CGPoint(x: e.x - s.x, y: e.y - s.y)
+            let length = d.x * d.x + d.y * d.y
+            // Gradient location is linear, so the corners bound the surface's.
+            let corners = [CGPoint.zero, CGPoint(x: w, y: 0), CGPoint(x: 0, y: h), CGPoint(x: w, y: h)]
+                .map { (($0.x - s.x) * d.x + ($0.y - s.y) * d.y) / length }
+            guard corners.max()! > locations[0], corners.min()! < locations[2] else { continue }
+            return (UnitPoint(x: s.x / w, y: s.y / h), UnitPoint(x: e.x / w, y: e.y / h))
+        }
+        return nil
+    }
+}
+
 /// The glint over a SwiftUI surface; the caller clips it to the surface's shape
 /// and puts it behind the surface's content, as `::before` is.
+///
+/// One gradient the surface's size, its end points where the tile's are. As
+/// three `LinearGradient` tiles slid with `.offset`, macOS 15 drew every
+/// tile in view where the surface is: the band stood still in the middle of
+/// a sidebar row while the pill tabs' layers swept. A Canvas drew it right
+/// but waited on a Metal surface every frame.
 struct DoneGlintView: View {
     let progress: CGFloat
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let g = DoneGlint.tileScale * w
-            let ends = DoneGlint.unitEndpoints(tileWidth: g, height: h)
-            let origin = DoneGlint.tileOrigin(progress: progress, width: w)
-            let green = Color(nsColor: Tako.LivingTokens.ok).opacity(DoneGlint.peakAlpha)
-            let none = Color(nsColor: Tako.LivingTokens.ok).opacity(0)
-            ZStack(alignment: .topLeading) {
-                ForEach(-1...1, id: \.self) { i in
-                    LinearGradient(
-                        stops: [
-                            .init(color: none, location: DoneGlint.locations[0]),
-                            .init(color: green, location: DoneGlint.locations[1]),
-                            .init(color: none, location: DoneGlint.locations[2]),
-                        ],
-                        startPoint: UnitPoint(x: ends.start.x, y: ends.start.y),
-                        endPoint: UnitPoint(x: ends.end.x, y: ends.end.y)
-                    )
-                    .frame(width: g, height: h)
-                    .offset(x: origin + CGFloat(i) * g)
-                }
+            if let band = DoneGlint.visibleBand(progress: progress, size: geo.size) {
+                let green = Color(nsColor: Tako.LivingTokens.ok)
+                LinearGradient(
+                    stops: [
+                        .init(color: green.opacity(0), location: DoneGlint.locations[0]),
+                        .init(color: green.opacity(DoneGlint.peakAlpha), location: DoneGlint.locations[1]),
+                        .init(color: green.opacity(0), location: DoneGlint.locations[2]),
+                    ],
+                    startPoint: band.start,
+                    endPoint: band.end
+                )
             }
-            .frame(width: w, height: h, alignment: .topLeading)
         }
         .allowsHitTesting(false)
     }
