@@ -117,6 +117,7 @@ final class SurfaceSession {
         Ending.settleBeforeQuit(within: 0.15)
         for surface in surfaces {
             guard let session = surface.persistence else { continue }
+            session.record.quietSince = surface.crab.live == nil ? nil : surface.crab.liveLastOutputAt
             if !session.ended { try? session.save(.detached) }
             let client = surface.pty
             surface.currentProcess = nil
@@ -125,6 +126,16 @@ final class SurfaceSession {
     }
 
     var environment: [String: String] { namespace.environment }
+
+    /// Keeps when the quiet program last printed. Not while quitting: the
+    /// clients end then, and what they leave is recorded on the way out.
+    func saveQuietSince(_ date: Date?) {
+        guard !Self.appIsDetaching, !ended, record.quietSince != date else { return }
+        var next = record
+        next.quietSince = date
+        guard (try? records.write(next)) != nil else { return }
+        record = next
+    }
 
     func save(_ state: SessionRecord.State) throws {
         var next = record

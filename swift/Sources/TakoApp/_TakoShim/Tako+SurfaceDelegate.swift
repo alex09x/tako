@@ -67,6 +67,7 @@ extension Tako.SurfaceView {
         /// The grid changed shape, so the process on the other end has to be
         /// told or it keeps formatting for the old size.
         public func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
+            outputMeter.noteResize()
             pty?.resize(cols: UInt16(max(cols, 1)), rows: UInt16(max(rows, 1)))
             scheduleSearchHitRefresh()
         }

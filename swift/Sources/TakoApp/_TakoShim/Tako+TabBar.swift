@@ -237,9 +237,6 @@ extension Tako {
             let title = titleFor(window)
             var width = Metrics.tabPaddingLeft + Metrics.crabSize + Metrics.contentGap
             width += TabText.width(of: title, font: Fonts.title)
-            if let timer = elapsedFor(window) {
-                width += Metrics.contentGap + TabText.width(of: timer, font: Fonts.timer)
-            }
             width += Metrics.tabPaddingRight
             return min(Metrics.maxTabWidth, max(Metrics.minTabWidth, width))
         }

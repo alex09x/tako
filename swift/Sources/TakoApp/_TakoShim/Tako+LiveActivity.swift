@@ -63,23 +63,33 @@ extension Tako {
     /// Counts the lines a pane prints, on the queue that parses them. The
     /// echo of the user's own typing is not output: a line that arrives
     /// within `echoWindow` of a keystroke is not counted, or every key in
-    /// ssh or vim would ripple the ring.
+    /// ssh or vim would ripple the ring. Nor is a program drawing itself
+    /// again because the pane changed size: Tako asked for that, and a
+    /// quiet agent redrawn is still quiet.
     final class OutputActivityMeter: @unchecked Sendable {
         static let echoWindow: TimeInterval = 0.15
+        static let redrawWindow: TimeInterval = 1
 
         private let lock = NSLock()
         private var lines = 0
         private var lastInputAt: TimeInterval = -.infinity
+        private var redrawUntil: TimeInterval = -.infinity
 
         func noteInput(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             lock.withLock { lastInputAt = now }
+        }
+
+        /// The pane changed size: what the program prints in the next
+        /// `redrawWindow` is its redraw.
+        func noteResize(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            lock.withLock { redrawUntil = now + Self.redrawWindow }
         }
 
         func noteOutput(_ data: Data, at now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             let newlines = Self.countNewlines(data)
             guard newlines > 0 else { return }
             lock.withLock {
-                guard now - lastInputAt > Self.echoWindow else { return }
+                guard now - lastInputAt > Self.echoWindow, now >= redrawUntil else { return }
                 lines += newlines
             }
         }

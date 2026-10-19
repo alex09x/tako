@@ -172,6 +172,7 @@ extension Tako {
             // Without this every keystroke, mouse report and scroll report is
             // computed and then dropped on the floor.
             delegate = self
+            crab.onQuietSince = { [weak self] in self?.persistence?.saveQuietSince($0) }
             if let app {
                 applySurfaceConfig(app.config)
             }

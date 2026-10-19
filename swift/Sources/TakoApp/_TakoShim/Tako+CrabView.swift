@@ -161,7 +161,7 @@ extension Tako {
     @MainActor
     final class CrabTabBinding {
         private let crabView = CrabView()
-        private let elapsedLabel: NSTextField = {
+        private let progressLabel: NSTextField = {
             let label = NSTextField(labelWithString: "")
             label.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
             label.textColor = .secondaryLabelColor
@@ -217,22 +217,22 @@ extension Tako {
             if let prog = Self.aggregateProgress(for: surfaces) {
                 switch prog.state {
                 case .none:
-                    elapsedLabel.stringValue = dominant.crab.elapsedLabel ?? ""
+                    progressLabel.stringValue = ""
                 case .normal:
-                    elapsedLabel.stringValue = prog.progress.map { "\($0)%" } ?? ""
+                    progressLabel.stringValue = prog.progress.map { "\($0)%" } ?? ""
                 case .error:
-                    elapsedLabel.stringValue = prog.progress.map { "\($0)% !" } ?? "error"
+                    progressLabel.stringValue = prog.progress.map { "\($0)% !" } ?? "error"
                 case .paused:
-                    elapsedLabel.stringValue = prog.progress.map { "\($0)% ||" } ?? "paused"
+                    progressLabel.stringValue = prog.progress.map { "\($0)% ||" } ?? "paused"
                 case .indeterminate:
-                    elapsedLabel.stringValue = "..."
+                    progressLabel.stringValue = "..."
                 }
             } else if let progress = dominant.crab.progress {
-                elapsedLabel.stringValue = "\(progress)%"
+                progressLabel.stringValue = "\(progress)%"
             } else {
-                elapsedLabel.stringValue = dominant.crab.elapsedLabel ?? ""
+                progressLabel.stringValue = ""
             }
-            elapsedLabel.isHidden = elapsedLabel.stringValue.isEmpty
+            progressLabel.isHidden = progressLabel.stringValue.isEmpty
         }
 
         /// Puts the crab at the head of upstream's tab accessory stack.
@@ -243,13 +243,13 @@ extension Tako {
         init?(surface: SurfaceView, window: NSWindow) {
             guard let stack = window.tab.accessoryView as? NSStackView else { return nil }
             for existing in stack.arrangedSubviews {
-                if existing is CrabView || existing === elapsedLabel {
+                if existing is CrabView || existing === progressLabel {
                     stack.removeArrangedSubview(existing)
                     existing.removeFromSuperview()
                 }
             }
             stack.insertArrangedSubview(crabView, at: 0)
-            stack.insertArrangedSubview(elapsedLabel, at: 1)
+            stack.insertArrangedSubview(progressLabel, at: 1)
             crabView.widthAnchor.constraint(equalToConstant: 16).isActive = true
             crabView.heightAnchor.constraint(equalToConstant: 16).isActive = true
 
@@ -265,7 +265,7 @@ extension Tako {
                     .receive(on: RunLoop.main)
                     .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
                     .store(in: &cancellables)
-                s.crab.$elapsed
+                s.crab.$state
                     .receive(on: RunLoop.main)
                     .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
                     .store(in: &cancellables)

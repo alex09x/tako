@@ -19,7 +19,6 @@ import TakoKit
 /// - `title`: Sourced from `SurfaceView.title`, `window.title`, or directory-derived name.
 /// - `status`: Sourced from Track B1 `Tako.PaneStatus` (OSC 133 / OSC 1337 / `takoctl status`).
 /// - `progress`: Sourced from Track B2 progress reporting (OSC 9;4 or `takoctl progress`).
-/// - `elapsed`: Sourced from command mark timer (`CrabTracker.elapsedLabel`).
 /// - `workingDirectory`: Sourced from shell integration OSC 7 (`SurfaceView.pwd`).
 /// - `gitBranch` & `gitDirty`: Sourced locally from `.git` repository metadata (opt-in, off until enabled).
 /// - `latestNotification`: Sourced from Track B4 notification records (`NotificationStore.shared`).
@@ -36,7 +35,6 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
     let crabState: Tako.CrabState
     let progress: Double?
     let progressState: TakoTerminalNSView.ProgressState
-    let elapsed: String?
     /// A quiet program's activity (Sessions UI 5a), nil while none runs.
     let live: Tako.LiveActivity?
     let workingDirectory: String?
@@ -98,7 +96,6 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         crabState: Tako.CrabState = .idle,
         progress: Double? = nil,
         progressState: TakoTerminalNSView.ProgressState = .none,
-        elapsed: String? = nil,
         live: Tako.LiveActivity? = nil,
         workingDirectory: String? = nil,
         parentWorkingDirectory: String? = nil,
@@ -132,7 +129,6 @@ struct SessionSidebarItem: Identifiable, Equatable, Sendable {
         self.crabState = crabState
         self.progress = progress
         self.progressState = progressState
-        self.elapsed = elapsed
         self.live = live
         self.workingDirectory = workingDirectory
         self.parentWorkingDirectory = parentWorkingDirectory

@@ -45,7 +45,7 @@ struct CrabTrackerCoverageTests {
         now = now.addingTimeInterval(1)
         tracker.commandEnded(exitCode: 0)
         #expect(tracker.state == .idle)
-        #expect(tracker.elapsedLabel == nil)
+        #expect(tracker.elapsed == nil)
     }
 
     @Test @MainActor func commandLongerThanThresholdSucceedsAndLingers() {
@@ -55,11 +55,11 @@ struct CrabTrackerCoverageTests {
         now = now.addingTimeInterval(5)
         tracker.tick()
         #expect(tracker.state == .running)
-        #expect(tracker.elapsedLabel != nil)
+        #expect(tracker.elapsed != nil)
 
         tracker.commandEnded(exitCode: 0)
         #expect(tracker.state == .succeeded)
-        #expect(tracker.elapsedLabel == nil)
+        #expect(tracker.elapsed == nil)
     }
 
     @Test @MainActor func failedCommandHoldsUntilFocused() {
@@ -103,14 +103,6 @@ struct CrabTrackerCoverageTests {
 
         tracker.reconnecting()
         #expect(tracker.state == .reconnecting)
-    }
-
-    @Test @MainActor func durationLabelFormatting() {
-        #expect(Tako.CrabTracker.durationLabel(1.2) == "1.2s")
-        #expect(Tako.CrabTracker.durationLabel(9.5) == "9.5s")
-        #expect(Tako.CrabTracker.durationLabel(45) == "45s")
-        #expect(Tako.CrabTracker.durationLabel(65) == "1m 05s")
-        #expect(Tako.CrabTracker.durationLabel(125) == "2m 05s")
     }
 
     @Test @MainActor func tickBeforeThresholdDoesNotSetElapsedOrState() {

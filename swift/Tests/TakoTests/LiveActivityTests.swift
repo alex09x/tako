@@ -88,12 +88,18 @@ struct CrabLiveTests {
     }
 
     @Test func aQuietProgramPublishesOnlyOnceAMinute() {
-        let crab = liveCrab(Lines())
+        var now = Date(timeIntervalSince1970: 0)
+        let crab = Tako.CrabTracker(now: { now })
+        crab.commandStarted(kind: .quiet, probe: Tako.LiveProbe(takeOutputLines: { 0 }, program: "tail"))
         var published = 0
         let sink = crab.$live.dropFirst().sink { _ in published += 1 }
         defer { sink.cancel() }
-        for _ in 0..<59 { crab.sampleLive() }
+        for _ in 0..<59 {
+            now += 1
+            crab.sampleLive()
+        }
         #expect(published == 0)
+        now += 1
         crab.sampleLive()
         #expect(published == 1)
         #expect(crab.live?.quietLabel == "quiet 1m")

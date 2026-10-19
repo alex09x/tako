@@ -130,7 +130,6 @@ final class PaneOverviewStore: ObservableObject {
                 let statusText = surface.crab.statusText
                 let progressState = surface.activeProgressState
                 let progressValue = surface.activeProgressValue
-                let elapsed = surface.crab.elapsedLabel
                 let isFocused = controller.focusedSurface === surface
                 let isKey = win?.isKeyWindow == true
                 let lines = surfacePreviewLines(for: surface, maxRows: 10)
@@ -148,7 +147,6 @@ final class PaneOverviewStore: ObservableObject {
                     statusText: statusText,
                     progressState: progressState,
                     progressValue: progressValue,
-                    elapsed: elapsed,
                     live: surface.crab.live,
                     isFocused: isFocused,
                     isKeyWindow: isKey,
@@ -317,7 +315,6 @@ final class PaneOverviewStore: ObservableObject {
             statusText: surface.crab.statusText,
             progressState: surface.activeProgressState,
             progressValue: surface.activeProgressValue,
-            elapsed: surface.crab.elapsedLabel,
             live: live ?? surface.crab.live,
             isFocused: current.isFocused,
             isKeyWindow: current.isKeyWindow,

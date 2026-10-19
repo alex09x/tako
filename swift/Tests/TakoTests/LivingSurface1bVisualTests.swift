@@ -157,8 +157,8 @@ struct LivingSurface1bVisualTests {
         #expect(bar.paintedRingStates[ObjectIdentifier(w4)] == .done)
         #expect(bar.paintedRingStates[ObjectIdentifier(w5)] == .failed)
         #expect(bar.paintedRingStates[ObjectIdentifier(w6)] == .offline)
-        #expect(bar.pillMetaText(for: w1) == "1m 14s")
-        #expect(bar.pillMetaText(for: w2) == "42s")
+        #expect(bar.pillMetaText(for: w1) == nil)
+        #expect(bar.pillMetaText(for: w2) == nil)
         #expect(bar.pillMetaText(for: w3) == "68%")
         #expect(bar.workspaceAttentionCount(for: backendWs) == 1)
 
@@ -210,33 +210,33 @@ struct LivingSurface1bVisualTests {
             PaneOverviewItem(
                 id: s1a.id, workspaceName: "Default", tabTitle: "claude", tabIndex: 0,
                 title: "claude · auth", pwd: "/Users/alex09x/Projects/tako",
-                status: .working, statusText: "Editing Tako+TabBar.swift", elapsed: "1m 14s",
+                status: .working, statusText: "Editing Tako+TabBar.swift",
                 isFocused: true, isKeyWindow: true,
                 thumbnailLines: ["$ claude \"implement style 1b living surface\"", "● Reading Tako+TabBarDrawing.swift…", "● Applying conic comet gradient (2.2s)", "✓ Updated TabStatusLayer.swift (+368 -0)"]
             ),
             PaneOverviewItem(
                 id: s2.id, workspaceName: "Default", tabTitle: "codex", tabIndex: 1,
                 title: "codex · db-mig", pwd: "/Users/alex09x/Projects/tako/db",
-                status: .needsApproval, statusText: "Allow psql -f 004_drop_legacy.sql?", elapsed: "42s",
+                status: .needsApproval, statusText: "Allow psql -f 004_drop_legacy.sql?",
                 thumbnailLines: ["$ codex \"migrate staging schema\"", "? Tool Permission Request: bash", "  Command: psql -f 004_drop_legacy.sql", "  [y] Approve   [n] Reject"]
             ),
             PaneOverviewItem(
                 id: s3.id, workspaceName: "Default", tabTitle: "build", tabIndex: 2,
                 title: "release build", pwd: "/Users/alex09x/Projects/tako",
                 status: .working, statusText: "Compiling ghostty-vt",
-                progressState: .normal, progressValue: 68, elapsed: "68%",
+                progressState: .normal, progressValue: 68,
                 thumbnailLines: ["$ zig build -Doptimize=ReleaseFast", "[142/208] Compiling src/terminal/PageList.zig", "[143/208] Compiling src/terminal/Screen.zig", "OSC 9;4;1;68 progress active…"]
             ),
             PaneOverviewItem(
                 id: s4.id, workspaceName: "frontend", tabTitle: "vite", tabIndex: 3,
                 title: "vite dev-server", pwd: "/Users/alex09x/Projects/web",
-                status: .done, statusText: "Built in 1.42s", elapsed: "1s",
+                status: .done, statusText: "Built in 1.42s",
                 thumbnailLines: ["$ pnpm run build", "vite v6.1.0 building for production...", "✓ 418 modules transformed.", "dist/assets/index-D8a91F.js  184.20 kB │ gzip: 58.10 kB"]
             ),
             PaneOverviewItem(
                 id: s5.id, workspaceName: "frontend", tabTitle: "e2e", tabIndex: 4,
                 title: "e2e · auth_flow", pwd: "/Users/alex09x/Projects/web/e2e",
-                status: .error, statusText: "exit 101 · auth_flow_spec", elapsed: "19s",
+                status: .error, statusText: "exit 101 · auth_flow_spec",
                 thumbnailLines: ["$ cargo test --test auth_flow_spec", "thread 'auth_token_refresh' panicked at src/auth.rs:84:", "assertion `left == right` failed: 401 != 200", "error: test failed, to rerun pass `--test auth_flow_spec`"]
             ),
             PaneOverviewItem(

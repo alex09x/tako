@@ -58,20 +58,21 @@ extension Tako.SurfaceView {
             DispatchQueue.main.async {
                 guard let self, self.persistence === session else { return }
                 session.shellPID = pid
-                if let running { self.adoptRunningCommand(running) }
+                if let running { self.adoptRunningCommand(running, quietSince: session.record.quietSince) }
             }
         }
     }
 
     /// A quiet program -- ssh, `tail -f`, an agent -- runs on as it did
-    /// before Tako restarted, and its tab shows it live again. A job is
-    /// left alone: its clock would start now, not when it did.
-    func adoptRunningCommand(_ line: String) {
+    /// before Tako restarted, and its tab shows it live again, quiet since
+    /// `quietSince` -- when the last Tako saw it print -- not since now. A
+    /// job is left alone: its clock would start now, not when it did.
+    func adoptRunningCommand(_ line: String, quietSince: Date? = nil) {
         guard !isCommandRunning else { return }
         let kind = commandKind(of: line)
         guard kind != .batch else { return }
         crab.isFocused = isBeingLookedAt
-        crab.commandStarted(kind: kind, probe: liveProbe(for: line))
+        crab.commandStarted(kind: kind, probe: liveProbe(for: line), quietSince: quietSince)
         commandStarted()
         Tako.TabBarController.refreshAll()
     }

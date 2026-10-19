@@ -18,7 +18,6 @@ import TakoKit
 /// - `statusText`: Custom status text reported via OSC 1337 / OSC 9;5.
 /// - `progressState`: Live progress bar state (`TakoTerminalNSView.ProgressState` from Track B2).
 /// - `progressValue`: Progress percentage 0...100.
-/// - `elapsed`: Formatted duration of running command (`CrabTracker.elapsedLabel`).
 /// - `isFocused`: Whether this pane is the focused split in its window.
 /// - `isKeyWindow`: Whether this pane's window is currently the key window.
 /// - `thumbnailLines`: Recent visible lines extracted from the active grid buffer.
@@ -36,7 +35,6 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
     let statusText: String?
     let progressState: TakoTerminalNSView.ProgressState
     let progressValue: Int?
-    let elapsed: String?
     /// A quiet program's activity (Sessions UI 5a), nil while none runs.
     let live: Tako.LiveActivity?
     let isFocused: Bool
@@ -61,7 +59,6 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         statusText: String? = nil,
         progressState: TakoTerminalNSView.ProgressState = .none,
         progressValue: Int? = nil,
-        elapsed: String? = nil,
         live: Tako.LiveActivity? = nil,
         isFocused: Bool = false,
         isKeyWindow: Bool = false,
@@ -81,7 +78,6 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         self.statusText = statusText
         self.progressState = progressState
         self.progressValue = progressValue
-        self.elapsed = elapsed
         self.live = live
         self.isFocused = isFocused
         self.isKeyWindow = isKeyWindow
@@ -128,7 +124,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
 
     /// Meta text shown on the right of Row 1: `"NN%"` when progress is
     /// active; for a live program its rate while dense, how long it has
-    /// been quiet while quiet (Sessions UI 5a); otherwise `elapsed`.
+    /// been quiet while quiet (Sessions UI 5a). Never a timer.
     var metaDisplayText: String? {
         switch surfaceState {
         case .progress(let p):
@@ -136,7 +132,7 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
         case .live(let flowing):
             return flowing ? live?.rateLabel : live?.quietLabel
         default:
-            return elapsed
+            return nil
         }
     }
 

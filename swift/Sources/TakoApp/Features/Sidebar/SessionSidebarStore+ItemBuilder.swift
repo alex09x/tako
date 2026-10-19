@@ -41,7 +41,6 @@ extension SessionSidebarStore {
             let crab = aggregateCrab(for: win)
             let status = crab?.paneStatus ?? .idle
             let crabState = crab?.state ?? .idle
-            let elapsed = crab?.elapsedLabel
             let prog = aggregateProgress(for: win)
             let pwd = surface?.pwd
 
@@ -191,7 +190,6 @@ extension SessionSidebarStore {
                 crabState: crabState,
                 progress: prog?.progress.map { Double($0) / 100.0 },
                 progressState: prog?.state ?? .none,
-                elapsed: elapsed,
                 live: winSurfaces.compactMap { $0.crab.live }.sorted { $0.isFlowing && !$1.isFlowing }.first,
                 workingDirectory: pwd,
                 gitBranch: gitBranch,
@@ -235,7 +233,6 @@ extension SessionSidebarStore {
                     let cTitle = cSurface?.title ?? cLabel ?? "subagent"
                     let cStatus = cSurface?.crab.paneStatus ?? .idle
                     let cCrabState = cSurface?.crab.state ?? .idle
-                    let cElapsed = cSurface?.crab.elapsedLabel
                     let cPwd = cSurface?.pwd
                     let cIsSelected = isSelected && (focused?.id == cid)
                     let cNeedsAttention = cSurface != nil && (
@@ -253,7 +250,6 @@ extension SessionSidebarStore {
                         title: cTitle,
                         status: cStatus,
                         crabState: cCrabState,
-                        elapsed: cElapsed,
                         live: cSurface?.crab.live,
                         workingDirectory: cPwd,
                         parentWorkingDirectory: pwd,

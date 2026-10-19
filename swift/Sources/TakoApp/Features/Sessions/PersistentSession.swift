@@ -136,6 +136,10 @@ struct SessionRecord: Codable, Equatable {
     var generation: String
     var state: State
     var createdAt: Date
+    /// When the quiet program running in it last printed, so a relaunched
+    /// Tako says how long it has really been quiet, not since the relaunch.
+    /// Nil while none runs; absent from records an older Tako wrote.
+    var quietSince: Date?
 
     static func newGeneration() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()

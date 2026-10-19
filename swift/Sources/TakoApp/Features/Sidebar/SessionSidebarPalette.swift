@@ -77,7 +77,7 @@ extension SessionSidebarItem {
 
     /// Meta text shown on the right of Line 1: `"NN%"` when progress is
     /// active, `"exit N"` for a failure that has a code, a live program's
-    /// rate or name (Sessions UI 5a), otherwise `elapsed`.
+    /// rate or name (Sessions UI 5a). Never a timer.
     var metaDisplayText: String? {
         switch surfaceState {
         case .progress(let p):
@@ -88,9 +88,6 @@ extension SessionSidebarItem {
             if let label = live?.metaLabel { return label }
         default:
             break
-        }
-        if let elapsed, !elapsed.isEmpty {
-            return elapsed
         }
         if isChild, let port = listeningPorts?.first {
             return ":\(port)"

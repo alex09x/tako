@@ -244,19 +244,8 @@ extension Tako.TabBarView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let titleFont = tab.isActive ? Fonts.activeTitle : Fonts.title
         let titleColor = tab.isActive ? Palette.activeText : Palette.inactiveText
-        let timer = elapsedFor(tab.window)
-        let timerWidth = timer.map { Tako.TabText.width(of: $0, font: Fonts.timer) + Metrics.contentGap } ?? 0
-
-        let title = Tako.TabText.truncate(titleFor(tab.window), to: width - timerWidth, font: titleFont)
-        let titleWidth = Tako.TabText.draw(
-            title, atX: x, centeredAtY: tab.frame.midY, font: titleFont, color: titleColor, context: ctx
-        )
-        if let timer {
-            Tako.TabText.draw(
-                timer, atX: x + titleWidth + Metrics.contentGap, centeredAtY: tab.frame.midY,
-                font: Fonts.timer, color: Palette.dim, context: ctx
-            )
-        }
+        let title = Tako.TabText.truncate(titleFor(tab.window), to: width, font: titleFont)
+        Tako.TabText.draw(title, atX: x, centeredAtY: tab.frame.midY, font: titleFont, color: titleColor, context: ctx)
     }
 
     /// The badge sits over the crab, so it costs no width.

@@ -10,8 +10,9 @@
 
 import AppKit
 
-/// What a pill shows right of its title: the timer or progress, a live
-/// program's rate or name, or a failure's exit code (Sessions UI 5a).
+/// What a pill shows right of its title: progress, a live program's rate
+/// or name, or a failure's exit code (Sessions UI 5a). Never a timer: how
+/// long something has run says nothing the ring does not.
 extension Tako.TabBarView {
     /// A quiet program's activity in this tab (Sessions UI 5a): of several
     /// panes, one whose output is arriving.
@@ -41,7 +42,7 @@ extension Tako.TabBarView {
         default:
             break
         }
-        return elapsedFor(window)
+        return nil
     }
 
     func pillMetaStyle(for window: NSWindow) -> PillMetaStyle {
@@ -66,7 +67,7 @@ extension Tako.TabBarView {
         return Tako.TabText.width(of: text, font: Self.exitChipFont) + 2 * Self.exitChipPadding
     }
 
-    /// The timer, a live program's rate or name, or a failure's exit code
+    /// Progress, a live program's rate or name, or a failure's exit code
     /// in a red chip: 9.5pt semibold on Error at 12%, a 30% hairline, r4.
     func drawPillMeta(_ text: String, style: PillMetaStyle, atX x: CGFloat, centeredAtY midY: CGFloat, in ctx: CGContext) {
         switch style {

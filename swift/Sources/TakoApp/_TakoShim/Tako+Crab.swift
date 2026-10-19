@@ -105,12 +105,19 @@ extension Tako {
         @Published var live: LiveActivity?
         var liveTimer: Timer?
         var liveSamples: [Int] = []
-        var liveQuietSeconds: TimeInterval = 0
+        /// When the quiet program last printed, or started: a moment on the
+        /// clock, not a count of ticks, so a timer App Nap holds back or a
+        /// Mac asleep does not make the quiet look shorter than it is.
+        var liveLastOutputAt: Date?
+        /// Told that moment, at most once a minute while output arrives, so
+        /// it outlives a restart of Tako; told nil when the program ends.
+        var onQuietSince: ((Date?) -> Void)?
+        var liveQuietSinceToldAt: Date?
         private var ticker: Timer?
         private var successTimer: Timer?
 
         /// Injected so tests can run without a real clock.
-        private let now: () -> Date
+        let now: () -> Date
 
         init(now: @escaping () -> Date = Date.init) {
             self.now = now
@@ -134,7 +141,9 @@ extension Tako {
             recomputeEffectiveStatus()
         }
 
-        func commandStarted(kind: CommandKind = .batch, probe: LiveProbe? = nil) {
+        /// `quietSince`: for a quiet program Tako finds running after a
+        /// restart, when it last printed, as the last Tako recorded it.
+        func commandStarted(kind: CommandKind = .batch, probe: LiveProbe? = nil, quietSince: Date? = nil) {
             startedAt = now()
             commandKind = kind
             liveProbe = probe
@@ -154,7 +163,7 @@ extension Tako {
             ticker?.invalidate()
             ticker = nil
             guard kind == .batch else {
-                startLive()
+                startLive(quietSince: quietSince)
                 return
             }
             ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -451,19 +460,6 @@ extension Tako {
 
         func setElapsed(_ seconds: TimeInterval?) {
             elapsed = seconds
-        }
-
-        /// The one duration format: a tenth under ten seconds, whole
-        /// seconds up to a minute, minutes and seconds beyond. The prompt
-        /// uses the same one.
-        static func durationLabel(_ seconds: TimeInterval) -> String {
-            if seconds < 10 { return String(format: "%.1fs", seconds) }
-            if seconds < 60 { return "\(Int(seconds))s" }
-            return String(format: "%dm %02ds", Int(seconds) / 60, Int(seconds) % 60)
-        }
-
-        var elapsedLabel: String? {
-            elapsed.map(Self.durationLabel)
         }
     }
 }

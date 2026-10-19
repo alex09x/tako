@@ -357,10 +357,6 @@ extension Tako.TabBarView {
         Tako.aggregateCrab(for: window)
     }
 
-    func elapsedFor(_ window: NSWindow) -> String? {
-        aggregateCrab(for: window)?.elapsedLabel
-    }
-
     func crabColor(for window: NSWindow) -> NSColor {
         aggregateCrab(for: window)?.state.color ?? Tako.Brand.ember
     }
