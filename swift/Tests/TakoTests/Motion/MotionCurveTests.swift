@@ -151,14 +151,15 @@ struct MotionCurveTests {
         }
     }
 
-    @Test func failedTabShakesAsTheSidebarsRowDoes() throws {
-        let clock = AnimationClock()
+    @Test func aFailedTabAddsNoShakeOfItsOwnTheStripShakesTheWholePill() {
+        // The strip moves the pill -- background, title and this layer --
+        // with setShake; a layer animation would move the ring alone.
         let layer = tab(.failed, after: .working)
-        let shake = try #require(layer.animationInTree(forKey: "failedShake")).animation
-        let ts = times(over: 0.6)
-        for (t, p) in zip(ts, clock.sample(shake, at: ts)) {
-            #expect(near(number(p, "transform.translation.x"), Double(L.failedShakeOffset(elapsed: t)), 0.03), "shake at \(t)")
-        }
+        #expect(layer.animationInTree(forKey: "failedShake") == nil)
+        layer.setShake(-2)
+        #expect(layer.transform.m41 == -2)
+        layer.setShake(0)
+        #expect(CATransform3DIsIdentity(layer.transform))
     }
 
     @Test func aLiveRippleGrowsAndFadesWithEaseOutIn300ms() throws {

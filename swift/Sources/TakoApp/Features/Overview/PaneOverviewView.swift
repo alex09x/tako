@@ -22,6 +22,8 @@ struct PaneOverviewView: View {
     @ObservedObject private var store: PaneOverviewStore
     @ObservedObject private var animState = LivingAnimationState.shared
     @State private var isInitialFrameComplete = false
+    /// Bumped when the last one-off motion comes to rest (PaneOverviewMotion.swift).
+    @State private var oneOffRest = 0
 
     private static let staticDate = Date(timeIntervalSinceReferenceDate: 1.1)
     private typealias T = Tako.LivingTokens
@@ -90,7 +92,10 @@ struct PaneOverviewView: View {
                 .accessibilityHidden(true)
 
                 // Single TimelineView for the entire Overview modal (§7)
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
+                let _ = oneOffRest
+                let oneOff = Self.oneOffRemaining(of: store.items, reduceMotion: animState.reduceMotion)
+                TimelineView(.animation(minimumInterval: Self.minimumFrameInterval(oneOffRemaining: oneOff),
+                                        paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
                     let now = nowOverride ?? animState.effectiveDate(isInitialFrameComplete ? context.date : Self.staticDate)
                     VStack(spacing: 0) {
                         headerView
@@ -99,6 +104,12 @@ struct PaneOverviewView: View {
                         Divider().background(Color(nsColor: T.hairline))
                         footerLegendView
                     }
+                }
+                .task(id: oneOff.map { Int((Date().timeIntervalSinceReferenceDate + $0) * 20) }) {
+                    // Back to 30 a second once the last one-off has played.
+                    guard let oneOff else { return }
+                    try? await Task.sleep(nanoseconds: UInt64(oneOff * 1_000_000_000))
+                    if !Task.isCancelled { oneOffRest += 1 }
                 }
                 .frame(
                     maxWidth: 1100,

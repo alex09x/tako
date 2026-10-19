@@ -163,3 +163,16 @@ func accessibilityFrames(pid: pid_t, role: String, _ matches: ((String) -> Bool)
     walk(AXUIElementCreateApplication(pid), 0)
     return found
 }
+
+/// Presses `item` in the app's `menu` through the accessibility tree: no key
+/// reaches any other app.
+@discardableResult
+func pressMenuItem(pid: pid_t, menu: String, item: String) -> Bool {
+    let app = AXUIElementCreateApplication(pid)
+    guard let bar = attribute(app, kAXMenuBarAttribute).map({ $0 as! AXUIElement }),
+          let top = (attribute(bar, kAXChildrenAttribute) as? [AXUIElement])?.first(where: { (attribute($0, kAXTitleAttribute) as? String) == menu }),
+          let list = (attribute(top, kAXChildrenAttribute) as? [AXUIElement])?.first,
+          let entry = (attribute(list, kAXChildrenAttribute) as? [AXUIElement])?.first(where: { (attribute($0, kAXTitleAttribute) as? String) == item })
+    else { return false }
+    return AXUIElementPerformAction(entry, kAXPressAction as CFString) == .success
+}

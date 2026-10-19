@@ -122,6 +122,12 @@ extension Tako {
         var paintedRingStates: [ObjectIdentifier: SurfaceState] = [:]
         var statusLayers: [ObjectIdentifier: TabStatusLayer] = [:]
 
+        // What moves frame by frame (Tako+TabBarMotion.swift).
+        var chipWidthTarget: CGFloat?
+        var chipSlide: (from: CGFloat, to: CGFloat, start: CFTimeInterval)?
+        var failedSince: [ObjectIdentifier: CFTimeInterval] = [:]
+        var motionLink: CADisplayLink?
+
         override var isFlipped: Bool { false }
 
         override func viewDidMoveToSuperview() {
@@ -177,7 +183,8 @@ extension Tako {
             let attention = workspaceAttentionCount(for: ws)
             let badgeExtra: CGFloat = attention > 0 ? 20 : 0
             let pillWidth = min(140, max(54, round(8 + 7 + 6 + titleWidth + badgeExtra + 9)))
-            return CGRect(x: 100, y: Metrics.buttonY, width: pillWidth, height: Metrics.buttonSize)
+            // Drawn at the width it is sliding to, not jumping by the badge.
+            return CGRect(x: 100, y: Metrics.buttonY, width: displayedChipWidth(target: pillWidth), height: Metrics.buttonSize)
         }
 
         var effectiveFirstTabX: CGFloat {

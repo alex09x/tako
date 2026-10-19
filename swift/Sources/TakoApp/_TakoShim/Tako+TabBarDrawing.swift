@@ -69,10 +69,15 @@ extension Tako.TabBarView {
         guard baseRect.width > 0 else { return }
 
         let state = pillSurfaceState(for: tab.window)
+        let tabKey = ObjectIdentifier(tab.window)
+        // The whole pill shakes, as a sidebar row does: snapshots at their
+        // fixed time, the live strip from the moment the tab failed.
         let shakeDX: CGFloat = {
-            guard state == .failed, !LivingAnimationState.shared.reduceMotion,
-                  let t = LivingAnimationState.shared.fixedTimeOverride else { return 0 }
-            return LivingAnimationState.failedShakeOffset(elapsed: t)
+            if let t = LivingAnimationState.shared.fixedTimeOverride {
+                guard state == .failed, !LivingAnimationState.shared.reduceMotion else { return 0 }
+                return LivingAnimationState.failedShakeOffset(elapsed: t)
+            }
+            return shakeOffset(for: tabKey, state: state, previous: paintedRingStates[tabKey])
         }()
         let rect = baseRect.offsetBy(dx: shakeDX, dy: 0)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
@@ -103,10 +108,10 @@ extension Tako.TabBarView {
         // Status Ring S=14 via TabStatusLayer or Command-number badge when Command is held
         let showNumberBadge = showingBadges && tab.index < 9 && windows.count > 1
         let dotColor = pillIndicatorColor(for: tab)
-        let tabKey = ObjectIdentifier(tab.window)
         paintedPillDots[tabKey] = Tako.Brand.hexString(for: dotColor)
         paintedRingStates[tabKey] = state
         updateStatusLayer(for: tab.window, rect: baseRect, state: state, hideRing: showNumberBadge)
+        if LivingAnimationState.shared.fixedTimeOverride == nil { statusLayers[tabKey]?.setShake(shakeDX) }
 
         let borderInset: CGFloat = (state == .working || state == .offline) ? 1.0 : 0.0
 

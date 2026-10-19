@@ -52,7 +52,8 @@ extension Tako.TabBarView {
 
         // Workspace title: mono 11 medium #B7ACA1 (hover #FAF7F2)
         let wsFont = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
-        let maxTitleWidth = rect.width - 24 - (attention > 0 ? 22 : 0)
+        // Cut to the width the chip is growing to: not re-cut every frame of the slide.
+        let maxTitleWidth = (chipWidthTarget ?? rect.width) - 24 - (attention > 0 ? 22 : 0)
         let title = Tako.TabText.truncate(ws.name, to: maxTitleWidth, font: wsFont)
         let textColor = workspaceHovered ? Palette.activeText : Palette.inactiveText
         Tako.TabText.draw(title, atX: dotRect.maxX + 6, centeredAtY: rect.midY,
@@ -65,6 +66,11 @@ extension Tako.TabBarView {
             let textW = Tako.TabText.width(of: countStr, font: badgeFont)
             let badgeW = max(14, ceil(textW + 8))
             let badgeRect = CGRect(x: rect.maxX - 9 - badgeW, y: rect.midY - 6.5, width: badgeW, height: 13)
+            // While the chip grows to make room, the badge comes in with it.
+            let room = rect.width - ((chipWidthTarget ?? rect.width) - 20)
+            ctx.saveGState()
+            defer { ctx.restoreGState() }
+            ctx.setAlpha(min(1, max(0, room / 20)))
             ctx.setFillColor(Tako.LivingTokens.claw.cgColor)
             ctx.addPath(CGPath(roundedRect: badgeRect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()

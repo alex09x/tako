@@ -112,10 +112,14 @@ func spinRate(_ frames: [Frame], _ region: String, centre: CGPoint, in window: C
     return den > 0 ? num / den : nil
 }
 
-/// Where the done glint's band is, at each redraw that shows one.
+/// Where the done glint's band is, at each redraw that shows its peak: a
+/// peak against either end of the search is a band still coming in or
+/// already leaving, whose real peak lies outside.
 func bandTrack(_ frames: [Frame], _ region: String, skip: CGFloat, in window: ClosedRange<Double>) -> [(ms: Double, x: CGFloat)] {
     changes(frames, region, in: window).compactMap { f in
-        f.crops[region]?.peakColumn(Crop.green, skip: skip, floor: 0.01).map { (f.ms, $0) }
+        guard let crop = f.crops[region], let x = crop.peakColumn(Crop.green, skip: skip, floor: 0.01),
+              x > skip + 3, x < CGFloat(crop.width) / crop.scale - 3 else { return nil }
+        return (f.ms, x)
     }
 }
 
@@ -127,19 +131,24 @@ func discs(_ frames: [Frame], _ region: String, _ weight: @escaping (CGFloat, CG
     }
 }
 
-/// Where the failed ring's disc sits at each redraw: its centre x, or its
-/// centre less the title's left edge when `fromTitle`. The thin failed line
-/// along the surface's foot is left out by taking only rows near the disc's top.
-func shakeTrack(_ frames: [Frame], _ region: String, fromTitle: Bool, in window: ClosedRange<Double>) -> [CGFloat] {
+/// Where the failed ring's disc sits at each redraw, and the centre of the
+/// title's first 34 pt right of it, if the crop holds them. The thin failed
+/// line along the surface's foot is left out by taking only rows near the
+/// disc's top.
+func shakeTrack(_ frames: [Frame], _ region: String, discLeftOf limit: CGFloat = .infinity,
+                in window: ClosedRange<Double>) -> [(ms: Double, disc: CGFloat, title: CGFloat?)] {
     changes(frames, region, in: window).compactMap { f in
         guard let crop = f.crops[region] else { return nil }
-        let red = crop.points(over: 0.15, Crop.red)
+        // Left of `limit`: a failed pill also shows a red unread dot at its far end.
+        let red = crop.points(over: 0.15, Crop.red).filter { $0.p.x < limit }
         guard let top = red.map(\.p.y).min(),
               let disc = boundingBox(red.filter { $0.p.y < top + 13 }), disc.width > 8 else { return nil }
-        guard fromTitle else { return disc.midX }
-        // The title: light, unsaturated pixels right of the disc.
-        let light = crop.points(over: 0.55) { r, g, b in min(r, g, b) }.filter { $0.p.x > disc.maxX + 2 }
-        guard let title = light.map(\.p.x).min() else { return nil }
-        return disc.midX - title
+        // The title: light, unsaturated pixels just right of the disc,
+        // weighed by how light -- its edge alone moves with antialiasing.
+        let light = crop.points(over: 0.3) { r, g, b in min(r, g, b) }
+            .filter { $0.p.x > disc.maxX + 2 && $0.p.x < disc.maxX + 36 }
+        let weight = light.map { $0.w - 0.3 }.reduce(0, +)
+        let title = weight > 1 ? zip(light, light.map { $0.w - 0.3 }).map { $0.p.x * $1 }.reduce(0, +) / weight : nil
+        return (f.ms, disc.midX, title)
     }
 }

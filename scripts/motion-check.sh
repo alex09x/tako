@@ -58,4 +58,4 @@ pane="$("$CTL" --bundle-id "$BUNDLE" tab-new --target "$first" --no-select | tai
 "$CTL" --bundle-id "$BUNDLE" title --target "$pane" "$TITLE"
 sleep 1
 
-MOTION_PANE="$pane" python3 scripts/gui_lock.py -- target/motion-check "$BUNDLE" "$CTL" "$TITLE" ${MOTION_FRAMES:+"$MOTION_FRAMES"}
+MOTION_PANE="$pane" MOTION_OTHER_PANE="$first" python3 scripts/gui_lock.py -- target/motion-check "$BUNDLE" "$CTL" "$TITLE" ${MOTION_FRAMES:+"$MOTION_FRAMES"}

@@ -317,14 +317,9 @@ extension Tako {
                     flashLayer.add(sweep, forKey: "doneFlash")
                 }
             case .failed:
-                if triggerOneShot && !reduceMotion {
-                    let eio = CAMediaTimingFunction(name: .easeInEaseOut)
-                    let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
-                    shake.values = [0, -2, 2, -2, 2, -1, 0]
-                    shake.keyTimes = [0.0, 1.0 / 7.0, 2.0 / 7.0, 3.0 / 7.0, 4.0 / 7.0, 5.0 / 7.0, 1.0].map { NSNumber(value: $0) }
-                    shake.timingFunctions = [eio, eio, eio, eio, eio, eio]; shake.duration = 0.448
-                    add(shake, forKey: "failedShake")
-                }
+                // The shake moves the whole pill, title too: the strip drives
+                // it frame by frame (setShake), not this layer alone.
+                break
             case .idle, .progress, .offline, .live:
                 break
             }
@@ -381,6 +376,15 @@ extension Tako {
             default:
                 break
             }
+            CATransaction.commit()
+        }
+
+        /// Off its place by `dx` with the rest of a shaking pill.
+        func setShake(_ dx: CGFloat) {
+            guard transform.m41 != dx || !CATransform3DIsAffine(transform) else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            transform = dx == 0 ? CATransform3DIdentity : CATransform3DMakeTranslation(dx, 0, 0)
             CATransaction.commit()
         }
 
