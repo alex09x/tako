@@ -348,6 +348,16 @@ struct LivingMotionTests {
         #expect(LivingAnimationState.failedShakeOffset(elapsed: 0.5) == 0)
     }
 
+    /// "в табах плавно пролетает, а в сайдбаре нет": a one-off motion takes
+    /// every frame, as the tabs' layers do; a lasting one 60 a second.
+    @Test func oneOffMotionsTakeEveryFrameLastingOnesSixtyASecond() {
+        #expect(LivingMotion.minimumFrameInterval(for: .done) == nil)
+        #expect(LivingMotion.minimumFrameInterval(for: .failed) == nil)
+        for state in [Tako.SurfaceState.working, .progress(0.4), .waiting, .idle, .live(flowing: true)] {
+            #expect(LivingMotion.minimumFrameInterval(for: state) == 1.0 / 60.0, "\(state)")
+        }
+    }
+
     @Test func idleOfflineAndReducedMotionNeverMove() {
         #expect(!LivingMotion.isMoving(.idle, elapsed: 0, reduceMotion: false))
         #expect(!LivingMotion.isMoving(.offline, elapsed: 0, reduceMotion: false))

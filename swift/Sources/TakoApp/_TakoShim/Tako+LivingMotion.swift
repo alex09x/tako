@@ -27,6 +27,15 @@ enum LivingMotion {
         }
     }
 
+    /// Seconds between the frames a moving surface asks for, nil for every
+    /// frame the display shows. A motion that plays once -- the done glint
+    /// and pop, the failed shake -- takes every frame, as the pill tabs'
+    /// layers do; one that lasts as long as its state takes 60 a second.
+    static func minimumFrameInterval(for state: Tako.SurfaceState) -> TimeInterval? {
+        guard let duration = duration(of: state), duration > 0 else { return 1.0 / 60.0 }
+        return nil
+    }
+
     static func isMoving(_ state: Tako.SurfaceState, elapsed: TimeInterval, reduceMotion: Bool) -> Bool {
         guard !reduceMotion else { return false }
         guard let duration = duration(of: state) else { return true }
