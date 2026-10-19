@@ -11,6 +11,7 @@
 import AppKit
 import QuartzCore
 import SwiftUI
+import Testing
 @testable import Tako
 
 /// A SwiftUI view drawn the way its window draws it -- an NSHostingView into
@@ -119,11 +120,16 @@ final class AnimationClock {
         running.fillMode = .both
         probe.add(running, forKey: "sampled")
         CATransaction.flush()
-        return times.compactMap { t in
+        let frames = times.compactMap { t -> CALayer? in
             probe.timeOffset = t
             CATransaction.flush()
             return probe.presentation()
         }
+        // A missing frame would shorten every zip over these without a word.
+        if frames.count != times.count {
+            Issue.record("\(times.count - frames.count) of \(times.count) times had no presentation")
+        }
+        return frames
     }
 }
 
