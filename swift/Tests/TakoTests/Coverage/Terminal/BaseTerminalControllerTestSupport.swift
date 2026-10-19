@@ -41,6 +41,7 @@ func makeControllerWithWindow(view: Tako.SurfaceView? = nil) -> (BaseTerminalCon
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
         backing: .buffered,
         defer: false)
+    window.isReleasedWhenClosed = false
     controller.window = window
     return (controller, window)
 }

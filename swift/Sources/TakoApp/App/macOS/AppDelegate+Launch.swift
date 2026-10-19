@@ -70,6 +70,10 @@ extension AppDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LayoutRecorder.finishLaunching(app: tako)
+        // The tabs are back, each with its own id: the workspaces keep those
+        // and forget the rest. With nothing restored there is nothing to keep.
+        let restored = Set(TerminalController.all.compactMap { $0.window?.stableTabIdentifier })
+        if !restored.isEmpty { WorkspaceStore.shared.pruneTabs(keeping: restored) }
         sessionSaver.start(
             settings: { [unowned self] in self.sessionSaveSettings() },
             surfaces: { Self.restorableSurfaces() })

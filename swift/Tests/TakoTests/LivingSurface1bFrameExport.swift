@@ -143,6 +143,7 @@ extension LivingSurface1bVisualTests {
         // 1. Setup Strip (1074×44 pt -> 2148×88 px)
         let stripView = Strip1bFixtureView(frame: NSRect(x: 0, y: 0, width: 1074, height: 44))
         let stripWin = NSWindow(contentRect: stripView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        stripWin.isReleasedWhenClosed = false
         stripWin.contentView = stripView
         defer { stripWin.close() }
 

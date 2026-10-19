@@ -28,7 +28,31 @@ extension Tako {
     enum TabText {
         static let replacement = "?"
 
+        /// Titles change rarely and the strip measures each many times a
+        /// draw: what a title measured to is kept, for a few hundred of them.
+        private struct Key: Hashable {
+            let text: String
+            let font: String
+            let size: CGFloat
+        }
+        private static var shown: [Key: String] = [:]
+        private static var runs: [Key: GlyphRun] = [:]
+        private static let remembered = 512
+
+        private static func key(_ text: String, _ font: NSFont) -> Key {
+            Key(text: text, font: font.fontName, size: font.pointSize)
+        }
+
         static func displayText(_ text: String, font: NSFont) -> String {
+            let key = key(text, font)
+            if let known = shown[key] { return known }
+            let result = resolvedText(text, font: font)
+            if shown.count >= remembered { shown.removeAll(keepingCapacity: true) }
+            shown[key] = result
+            return result
+        }
+
+        private static func resolvedText(_ text: String, font: NSFont) -> String {
             var result = ""
             text.enumerateSubstrings(
                 in: text.startIndex..<text.endIndex,
@@ -51,17 +75,26 @@ extension Tako {
         static func truncate(_ text: String, to maxWidth: CGFloat, font: NSFont) -> String {
             guard maxWidth > 0 else { return "" }
             let safe = displayText(text, font: font)
-            guard width(of: safe, font: font) > maxWidth else { return safe }
+            let run = glyphRun(for: safe, font: font)
+            guard run.width > maxWidth else { return safe }
 
             let ellipsis = hasGlyphs(for: "\u{2026}", font: font) ? "\u{2026}" : "..."
             let ellipsisWidth = width(of: ellipsis, font: font)
             guard ellipsisWidth <= maxWidth else { return "" }
 
+            // One advance per UTF-16 unit, so a prefix is as wide as its
+            // advances: one pass, not a measuring of every prefix.
             var result = ""
+            var used: CGFloat = 0
+            var unit = 0
             for character in safe {
-                let candidate = result + String(character)
-                if width(of: candidate, font: font) + ellipsisWidth > maxWidth { break }
-                result = candidate
+                let units = character.utf16.count
+                guard unit + units <= run.advances.count else { break }
+                let advance = run.advances[unit..<unit + units].reduce(CGFloat.zero) { $0 + $1.width }
+                if used + advance + ellipsisWidth > maxWidth { break }
+                used += advance
+                unit += units
+                result.append(character)
             }
             return result + ellipsis
         }
@@ -118,6 +151,15 @@ extension Tako {
         }
 
         private static func glyphRun(for text: String, font: NSFont) -> GlyphRun {
+            let key = key(text, font)
+            if let known = runs[key] { return known }
+            let run = measuredRun(for: text, font: font)
+            if runs.count >= remembered { runs.removeAll(keepingCapacity: true) }
+            runs[key] = run
+            return run
+        }
+
+        private static func measuredRun(for text: String, font: NSFont) -> GlyphRun {
             let safe = displayText(text, font: font)
             let characters = Array(safe.utf16)
             guard !characters.isEmpty else {

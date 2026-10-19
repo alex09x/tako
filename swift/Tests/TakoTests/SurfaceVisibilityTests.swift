@@ -26,6 +26,15 @@ struct SurfaceVisibilityTests {
         #expect(!Tako.SurfaceVisibilityWatch.isShowing(makeWindow()))
     }
 
+    @Test func aTabMadeKeyDrawsBeforeItsOcclusionIsKnown() {
+        #expect(Tako.SurfaceVisibilityWatch.shows(visible: true, miniaturized: false, unoccluded: false, key: true))
+        #expect(Tako.SurfaceVisibilityWatch.shows(visible: true, miniaturized: false, unoccluded: true, key: false))
+        // Covered, ordered out or in the Dock: nobody sees it.
+        #expect(!Tako.SurfaceVisibilityWatch.shows(visible: true, miniaturized: false, unoccluded: false, key: false))
+        #expect(!Tako.SurfaceVisibilityWatch.shows(visible: false, miniaturized: false, unoccluded: false, key: true))
+        #expect(!Tako.SurfaceVisibilityWatch.shows(visible: true, miniaturized: true, unoccluded: true, key: true))
+    }
+
     @Test func drawingPausesWhileHiddenAndResumesWhenShown() {
         let window = makeWindow()
         let view = TakoTerminalNSView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))

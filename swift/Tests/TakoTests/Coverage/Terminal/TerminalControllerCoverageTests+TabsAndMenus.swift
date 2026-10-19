@@ -225,6 +225,7 @@ struct TerminalControllerDefaultSizeTests {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
             styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         defer { window.orderOut(nil) }
         let size = TerminalController.DefaultSize.frame(NSRect(x: 0, y: 0, width: 100, height: 100))
         #expect(size.isChanged(for: window))

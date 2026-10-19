@@ -126,6 +126,7 @@ struct BaseTerminalControllerNotificationTests {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
+        window.isReleasedWhenClosed = false
         controller.window = window
         defer { window.orderOut(nil) }
         NotificationCenter.default.post(name: Tako.Notification.didToggleSplitZoom, object: created)
@@ -175,6 +176,7 @@ struct BaseTerminalControllerNotificationTests {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
+        window.isReleasedWhenClosed = false
         controller.window = window
         defer { window.orderOut(nil) }
         NotificationCenter.default.post(name: Tako.Notification.takoPresentTerminal, object: surface)

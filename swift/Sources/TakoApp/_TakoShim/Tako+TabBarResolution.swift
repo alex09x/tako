@@ -26,7 +26,12 @@ extension Tako {
         public let progressValue: Int?
     }
 
+    /// A tab's panes. Its controller holds them: the tab bar asks for every
+    /// tab several times a draw, and walking every view of the window -- the
+    /// sidebar's too -- each time took most of the main thread. The walk is
+    /// left for a window whose controller does not hold what it shows.
     public static func surfaces(in window: NSWindow) -> [Tako.SurfaceView] {
+        if let panes = panes(of: window) { return panes }
         func collect(_ view: NSView, into list: inout [Tako.SurfaceView]) {
             if let surface = view as? Tako.SurfaceView {
                 list.append(surface)
@@ -43,6 +48,7 @@ extension Tako {
     }
 
     public static func surface(in window: NSWindow) -> Tako.SurfaceView? {
+        if let panes = panes(of: window) { return panes.first }
         func find(_ view: NSView) -> Tako.SurfaceView? {
             if let surface = view as? Tako.SurfaceView { return surface }
             for sub in view.subviews {
@@ -51,6 +57,14 @@ extension Tako {
             return nil
         }
         return window.contentView.flatMap(find)
+    }
+
+    /// The controller's panes, when every one of them is in `window`.
+    private static func panes(of window: NSWindow) -> [Tako.SurfaceView]? {
+        guard let tree = (window.windowController as? BaseTerminalController)?.surfaceTree else { return nil }
+        let panes = Array(tree)
+        guard !panes.isEmpty, panes.allSatisfy({ $0.window === window }) else { return nil }
+        return panes
     }
 
     public static func titleFor(_ window: NSWindow) -> String {
@@ -79,18 +93,50 @@ extension Tako {
         return Tako.CrabTabBinding.aggregateProgress(for: all)
     }
 
+    /// The state a tab shows, and nothing else of its report: the tab bar
+    /// asks for every tab several times a draw.
+    public static func tabVisualState(for window: NSWindow) -> String {
+        guard let crab = aggregateCrab(for: window) else { return "idle" }
+        func hasUnread() -> Bool {
+            surfaces(in: window).contains { !$0.isAttentionMuted && NotificationStore.shared.unreadCount(for: $0.id) > 0 }
+        }
+        switch crab.paneStatus {
+        case .running, .working: return "working"
+        case .error: return "error"
+        case .done: return "done"
+        case .waitingForInput: return "waiting_for_input"
+        case .needsApproval: return "needs_approval"
+        case .disconnected: return "disconnected"
+        case .idle: return hasUnread() ? "attention" : "idle"
+        case .unknown:
+            if hasUnread() { return "attention" }
+            switch crab.state {
+            case .running: return "running"
+            case .failed: return "error"
+            case .succeeded: return "succeeded"
+            case .attention: return "attention"
+            case .ghost: return "disconnected"
+            case .reconnecting: return "reconnecting"
+            case .idle: return "idle"
+            }
+        }
+    }
+
+    /// The dot a tab's state is drawn with.
+    static func tabStatusDot(for state: String) -> String {
+        switch state {
+        case "working", "running", "reconnecting": return "ember"
+        case "error": return "error"
+        case "done", "succeeded": return "ok"
+        case "waiting_for_input", "needs_approval", "attention": return "claw"
+        default: return "dim"
+        }
+    }
+
     public static func tabVisualStatus(for window: NSWindow, targetSurface: Tako.SurfaceView? = nil) -> TabVisualReport {
-        let allSurfaces = surfaces(in: window)
         let group = Tako.CustomTabGroup.group(for: window)
-        let visibleWindows = group.visibleWindows
         let selectedWindow = group.selectedWindow ?? window
-        let isSelected = (window === selectedWindow)
-        let tabIndex = visibleWindows.firstIndex { $0 === window } ?? 0
-        let title = titleFor(window)
-
         let appConfig = (NSApp?.delegate as? AppDelegate)?.tako.config
-        let tabStyleStr = (appConfig?.tabStyle == .classic) ? "classic" : "pill"
-
         let (progressState, progressValue) = { () -> (String?, Int?) in
             guard let (pState, pVal) = aggregateProgress(for: window) else {
                 return (nil, nil)
@@ -103,240 +149,21 @@ extension Tako {
             case .none: return (nil, nil)
             }
         }()
-
-        guard let crab = aggregateCrab(for: window) else {
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "dim",
-                color: Tako.tabStatusColorName(for: "dim"),
-                hex: Tako.tabStatusHex(for: "dim"),
-                state: "idle",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        }
-
-        switch crab.paneStatus {
-        case .running, .working:
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "ember",
-                color: Tako.tabStatusColorName(for: "ember"),
-                hex: Tako.tabStatusHex(for: "ember"),
-                state: "working",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .error:
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "error",
-                color: Tako.tabStatusColorName(for: "error"),
-                hex: Tako.tabStatusHex(for: "error"),
-                state: "error",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .done:
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "ok",
-                color: Tako.tabStatusColorName(for: "ok"),
-                hex: Tako.tabStatusHex(for: "ok"),
-                state: "done",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .needsApproval, .waitingForInput:
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "claw",
-                color: Tako.tabStatusColorName(for: "claw"),
-                hex: Tako.tabStatusHex(for: "claw"),
-                state: crab.paneStatus == .waitingForInput ? "waiting_for_input" : "needs_approval",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .disconnected:
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "dim",
-                color: Tako.tabStatusColorName(for: "dim"),
-                hex: Tako.tabStatusHex(for: "dim"),
-                state: "disconnected",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .idle:
-            if allSurfaces.contains(where: { !$0.isAttentionMuted && NotificationStore.shared.unreadCount(for: $0.id) > 0 }) {
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "claw",
-                    color: Tako.tabStatusColorName(for: "claw"),
-                    hex: Tako.tabStatusHex(for: "claw"),
-                    state: "attention",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            }
-            return TabVisualReport(
-                title: title,
-                index: tabIndex,
-                selected: isSelected,
-                dot: "dim",
-                color: Tako.tabStatusColorName(for: "dim"),
-                hex: Tako.tabStatusHex(for: "dim"),
-                state: "idle",
-                style: tabStyleStr,
-                panesCount: allSurfaces.count,
-                progressState: progressState,
-                progressValue: progressValue
-            )
-        case .unknown:
-            if allSurfaces.contains(where: { !$0.isAttentionMuted && NotificationStore.shared.unreadCount(for: $0.id) > 0 }) {
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "claw",
-                    color: Tako.tabStatusColorName(for: "claw"),
-                    hex: Tako.tabStatusHex(for: "claw"),
-                    state: "attention",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            }
-            switch crab.state {
-            case .running:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "ember",
-                    color: Tako.tabStatusColorName(for: "ember"),
-                    hex: Tako.tabStatusHex(for: "ember"),
-                    state: "running",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .failed:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "error",
-                    color: Tako.tabStatusColorName(for: "error"),
-                    hex: Tako.tabStatusHex(for: "error"),
-                    state: "error",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .succeeded:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "ok",
-                    color: Tako.tabStatusColorName(for: "ok"),
-                    hex: Tako.tabStatusHex(for: "ok"),
-                    state: "succeeded",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .attention:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "claw",
-                    color: Tako.tabStatusColorName(for: "claw"),
-                    hex: Tako.tabStatusHex(for: "claw"),
-                    state: "attention",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .ghost:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "dim",
-                    color: Tako.tabStatusColorName(for: "dim"),
-                    hex: Tako.tabStatusHex(for: "dim"),
-                    state: "disconnected",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .reconnecting:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "ember",
-                    color: Tako.tabStatusColorName(for: "ember"),
-                    hex: Tako.tabStatusHex(for: "ember"),
-                    state: "reconnecting",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            case .idle:
-                return TabVisualReport(
-                    title: title,
-                    index: tabIndex,
-                    selected: isSelected,
-                    dot: "dim",
-                    color: Tako.tabStatusColorName(for: "dim"),
-                    hex: Tako.tabStatusHex(for: "dim"),
-                    state: "idle",
-                    style: tabStyleStr,
-                    panesCount: allSurfaces.count,
-                    progressState: progressState,
-                    progressValue: progressValue
-                )
-            }
-        }
+        let state = tabVisualState(for: window)
+        let dot = tabStatusDot(for: state)
+        return TabVisualReport(
+            title: titleFor(window),
+            index: group.visibleWindows.firstIndex { $0 === window } ?? 0,
+            selected: window === selectedWindow,
+            dot: dot,
+            color: Tako.tabStatusColorName(for: dot),
+            hex: Tako.tabStatusHex(for: dot),
+            state: state,
+            style: (appConfig?.tabStyle == .classic) ? "classic" : "pill",
+            panesCount: surfaces(in: window).count,
+            progressState: progressState,
+            progressValue: progressValue
+        )
     }
 }
 

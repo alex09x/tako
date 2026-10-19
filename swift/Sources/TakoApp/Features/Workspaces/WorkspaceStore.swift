@@ -56,12 +56,17 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public private(set) var recentTransitions: [WorkspaceTransition] = []
-    public private(set) var recentTabTransitions: [TabTransition] = []
-    private var nextTransitionSequence: Int64 = 0
-    private let maxTransitionHistory = 50
+    public internal(set) var recentTabTransitions: [TabTransition] = []
+    var nextTransitionSequence: Int64 = 0
+    let maxTransitionHistory = 50
 
     private var isLoading: Bool = false
-    @Published public private(set) var workspaces: [Workspace] = []
+    @Published public internal(set) var workspaces: [Workspace] = [] {
+        didSet { indexTabs() }
+    }
+    /// Each tab's workspace and place in its order, kept with `workspaces`:
+    /// the tab bar asks for every tab on every draw.
+    var tabPlaces: [String: TabPlace] = [:]
     @Published public var activeWorkspaceId: UUID {
         didSet {
             guard !isLoading else { return }
@@ -120,7 +125,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func workspace(forTab tabIdentifier: String) -> Workspace? {
-        workspaces.first { $0.tabIdentifiers.contains(tabIdentifier) }
+        tabPlaces[tabIdentifier].flatMap { workspace(for: $0.workspace) }
     }
 
     // MARK: - Workspace Operations
@@ -218,97 +223,15 @@ public final class WorkspaceStore: ObservableObject {
         activeWorkspaceId = workspaces[prevIndex].id
     }
 
-    // MARK: - Tab Management
-
-    public func assignTab(tabIdentifier: String, to workspaceId: UUID, at index: Int? = nil) {
-        guard workspace(for: workspaceId) != nil else { return }
-
-        for i in 0..<workspaces.count {
-            workspaces[i].tabIdentifiers.removeAll { $0 == tabIdentifier }
-            if workspaces[i].activeTabIdentifier == tabIdentifier {
-                workspaces[i].activeTabIdentifier = workspaces[i].tabIdentifiers.first
-            }
-        }
-
-        if let targetIndex = workspaces.firstIndex(where: { $0.id == workspaceId }) {
-            if let index, index >= 0, index <= workspaces[targetIndex].tabIdentifiers.count {
-                workspaces[targetIndex].tabIdentifiers.insert(tabIdentifier, at: index)
-            } else {
-                workspaces[targetIndex].tabIdentifiers.append(tabIdentifier)
-            }
-            if workspaces[targetIndex].activeTabIdentifier == nil {
-                workspaces[targetIndex].activeTabIdentifier = tabIdentifier
-            }
-        }
-
-        save()
-        NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
-    }
-
-    public func removeTab(tabIdentifier: String) {
-        var changed = false
-        for i in 0..<workspaces.count {
-            if let idx = workspaces[i].tabIdentifiers.firstIndex(of: tabIdentifier) {
-                workspaces[i].tabIdentifiers.remove(at: idx)
-                if workspaces[i].activeTabIdentifier == tabIdentifier {
-                    workspaces[i].activeTabIdentifier = workspaces[i].tabIdentifiers.first
-                }
-                changed = true
-            }
-        }
-        if changed {
-            save()
-            NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
-        }
-    }
-
-    public func reorderTabs(in workspaceId: UUID, newOrder: [String]) {
-        guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
-        var ordered: [String] = []
-        for id in newOrder {
-            if !ordered.contains(id) {
-                ordered.append(id)
-            }
-        }
-        // Append any unmentioned tabs to the end
-        for id in workspaces[index].tabIdentifiers where !ordered.contains(id) {
-            ordered.append(id)
-        }
-        workspaces[index].tabIdentifiers = ordered
-        save()
-        NotificationCenter.default.post(name: .takoTabsDidChange, object: self)
-    }
-
-    public func setActiveTab(tabIdentifier: String, in workspaceId: UUID) {
-        guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
-        let oldTab = workspaces[index].activeTabIdentifier
-        workspaces[index].activeTabIdentifier = tabIdentifier
-        if oldTab != tabIdentifier {
-            nextTransitionSequence += 1
-            recentTabTransitions.append(TabTransition(
-                sequence: nextTransitionSequence,
-                workspaceId: workspaceId,
-                fromId: oldTab ?? "",
-                toId: tabIdentifier,
-                timestamp: ProcessInfo.processInfo.systemUptime
-            ))
-            if recentTabTransitions.count > maxTransitionHistory {
-                recentTabTransitions.removeFirst(recentTabTransitions.count - maxTransitionHistory)
-            }
-        }
-        save()
-    }
-
     // MARK: - Attention Count
 
     /// Aggregates attention count for the workspace across all open surfaces.
     public func attentionCount(for workspace: Workspace) -> Int {
         var count = 0
-        let tabIds = Set(workspace.tabIdentifiers)
         let controllers = TerminalController.all
         for controller in controllers {
             guard let window = controller.window,
-                  tabIds.contains(window.stableTabIdentifier) else { continue }
+                  tabPlaces[window.stableTabIdentifier]?.workspace == workspace.id else { continue }
             for surface in controller.surfaceTree {
                 if AttentionManager.shared.hasUnseenAttention(surface: surface) {
                     count += 1

@@ -159,7 +159,10 @@ final class SessionSidebarStore: ObservableObject {
                     self.surfaceSubscriptions.removeValue(forKey: s.id)
                     self.surfaceLastStatus.removeValue(forKey: s.id)
                 }
-                let group = Tako.CustomTabGroup.group(for: win)
+                // Only a tab's window has a group. Asking `group(for:)` about a
+                // closing tooltip or panel made it a tab: a group of its own
+                // and a tab id in the workspace, for every one that closed.
+                guard let group = Tako.CustomTabGroup.existingGroup(for: win) else { return }
                 if group.windows.allSatisfy({ $0 === win }) {
                     self.groupFilterTexts.removeValue(forKey: ObjectIdentifier(group))
                     self.groupNeedsAttention.removeValue(forKey: ObjectIdentifier(group))

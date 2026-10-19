@@ -198,6 +198,7 @@ struct LivingSurface1bVisualTests {
         )
         sidebarHost.frame = NSRect(x: 0, y: 0, width: 260, height: 680)
         let sidebarWin = NSWindow(contentRect: sidebarHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        sidebarWin.isReleasedWhenClosed = false
         sidebarWin.contentView = sidebarHost
         defer { sidebarWin.close() }
         sidebarHost.layoutSubtreeIfNeeded()
@@ -256,6 +257,7 @@ struct LivingSurface1bVisualTests {
         )
         overviewHost.frame = NSRect(x: 0, y: 0, width: 1180, height: 820)
         let overviewWin = NSWindow(contentRect: overviewHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        overviewWin.isReleasedWhenClosed = false
         overviewWin.contentView = overviewHost
         defer { overviewWin.close() }
         overviewHost.layoutSubtreeIfNeeded()
@@ -314,6 +316,7 @@ struct LivingSurface1bVisualTests {
         let animHost = NSHostingView(rootView: AnyView(EmptyView()))
         animHost.frame = NSRect(x: 0, y: 0, width: 980, height: 360)
         let animWin = NSWindow(contentRect: animHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        animWin.isReleasedWhenClosed = false
         animWin.contentView = animHost
         defer { animWin.close() }
 

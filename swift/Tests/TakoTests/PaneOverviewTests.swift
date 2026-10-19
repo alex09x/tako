@@ -42,6 +42,7 @@ struct PaneOverviewTests {
         }
         let controller = BaseTerminalController(Tako.App(), surfaceTree: tree)
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        win.isReleasedWhenClosed = false
         win.windowController = controller
         controller.window = win
         return controller
@@ -394,6 +395,7 @@ struct PaneOverviewTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         defer {
             store.stopObserving()
             window.contentView = nil

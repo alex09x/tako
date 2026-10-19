@@ -118,6 +118,7 @@ struct SessionSidebarVisualTreeTests {
 
         // Tab 1 (Backend): 2 split panes (API Server = working, DB Migration = needsApproval)
         let win1 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        win1.isReleasedWhenClosed = false
         let container1 = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         let surf1a = makeSurface(title: "API Server", pwd: "/Users/dev/backend/api", status: .working, frame: NSRect(x: 0, y: 0, width: 300, height: 400))
         let surf1b = makeSurface(title: "DB Migration", pwd: "/Users/dev/backend/db", status: .needsApproval, frame: NSRect(x: 300, y: 0, width: 300, height: 400))
@@ -127,11 +128,13 @@ struct SessionSidebarVisualTreeTests {
 
         // Tab 2 (Backend): 1 pane (Worker Queue = idle)
         let win2 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        win2.isReleasedWhenClosed = false
         let surf2 = makeSurface(title: "Worker Queue", pwd: "/Users/dev/backend/worker", status: .idle)
         win2.contentView = surf2
 
         // Tab 3 (Frontend): 2 split panes (Vite Dev = done, Playwright = error)
         let win3 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        win3.isReleasedWhenClosed = false
         let container3 = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         let surf3a = makeSurface(title: "Vite Dev", pwd: "/Users/dev/frontend/web", status: .done, frame: NSRect(x: 0, y: 0, width: 300, height: 400))
         let surf3b = makeSurface(title: "Playwright E2E", pwd: "/Users/dev/frontend/e2e", status: .error, frame: NSRect(x: 300, y: 0, width: 300, height: 400))
@@ -206,6 +209,7 @@ struct SessionSidebarVisualTreeTests {
         let frontendWs = wsStore.createWorkspace(name: "Frontend", color: "green")
 
         let win1 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        win1.isReleasedWhenClosed = false
         let container1 = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         let surf1a = makeSurface(title: "API Server", status: .working, frame: NSRect(x: 0, y: 0, width: 300, height: 400))
         let surf1b = makeSurface(title: "DB Migration", status: .needsApproval, frame: NSRect(x: 300, y: 0, width: 300, height: 400))
@@ -214,6 +218,7 @@ struct SessionSidebarVisualTreeTests {
         win1.contentView = container1
 
         let win2 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        win2.isReleasedWhenClosed = false
         let container2 = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         let surf2a = makeSurface(title: "Vite Dev", status: .idle, frame: NSRect(x: 0, y: 0, width: 300, height: 400))
         let surf2b = makeSurface(title: "Playwright E2E", status: .error, frame: NSRect(x: 300, y: 0, width: 300, height: 400))
@@ -288,6 +293,7 @@ struct SessionSidebarVisualTreeTests {
         tree1 = (try? tree1.inserting(view: surf2, at: surf1, direction: .right)) ?? tree1
         let ctrl1 = BaseTerminalController(Tako.App(), surfaceTree: tree1)
         let win1 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        win1.isReleasedWhenClosed = false
         win1.windowController = ctrl1
         ctrl1.window = win1
         let container1 = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
@@ -298,6 +304,7 @@ struct SessionSidebarVisualTreeTests {
         let surf3 = makeSurface(title: "Vite Frontend", pwd: "/Users/dev/frontend", status: .done)
         let ctrl2 = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: surf3))
         let win2 = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        win2.isReleasedWhenClosed = false
         win2.windowController = ctrl2
         ctrl2.window = win2
         win2.contentView = surf3
@@ -308,6 +315,7 @@ struct SessionSidebarVisualTreeTests {
 
         // Mount SessionSidebarView in an offscreen host window and verify rendered pixels across live status transitions
         let renderWin = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        renderWin.isReleasedWhenClosed = false
         let sidebarHosting = NSHostingView(
             rootView: SessionSidebarView(
                 isPresented: .constant(true),

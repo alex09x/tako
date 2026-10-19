@@ -14,21 +14,12 @@ extension Tako.TabBarView {
     func workspaceAttentionCount(for ws: Workspace) -> Int {
         let store = effectiveWorkspaceStore
         let liveWs = store.workspace(for: ws.id) ?? ws
-        let baseCount = store.attentionCount(for: liveWs)
-        let assignedIds = Set(liveWs.tabIdentifiers)
         let selected = group?.selectedWindow ?? window
         var tabCount = 0
         for w in windows {
-            let tabId = w.stableTabIdentifier
-            let belongsToWs: Bool
-            if assignedIds.contains(tabId) {
-                belongsToWs = true
-            } else if liveWs.id == WorkspaceStore.defaultWorkspaceId {
-                belongsToWs = store.workspace(forTab: tabId) == nil
-            } else {
-                belongsToWs = false
-            }
-            guard belongsToWs else { continue }
+            // A tab of no workspace counts toward the default one.
+            let owner = store.workspace(forTab: w.stableTabIdentifier)?.id
+            guard owner == liveWs.id || (owner == nil && liveWs.id == WorkspaceStore.defaultWorkspaceId) else { continue }
             let isSelected = (w === selected)
             let state = pillSurfaceState(for: w)
             if state == .waiting || state == .failed || (!isSelected && hasUnreadInWindow(w)) {
@@ -205,8 +196,7 @@ extension Tako.TabBarView {
             return pState == .indeterminate ? 0.35 : nil
         }()
 
-        let report = Tako.tabVisualStatus(for: window)
-        switch report.state {
+        switch Tako.tabVisualState(for: window) {
         case "disconnected":
             return .offline
         case "error":

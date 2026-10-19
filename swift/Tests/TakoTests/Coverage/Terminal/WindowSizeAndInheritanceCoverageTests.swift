@@ -30,6 +30,7 @@ struct WindowSizeAndInheritanceCoverageTests {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
+        window.isReleasedWhenClosed = false
         controller.window = window
         controller.windowDidLoad()
         defer { TerminalTestSupport.tearDown(controller, window) }
@@ -105,6 +106,7 @@ struct WindowSizeAndInheritanceCoverageTests {
         NSApplication.shared.activate(ignoringOtherApps: true)
         let window = NSWindow(
             contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = view
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(view)
@@ -125,6 +127,7 @@ struct WindowSizeAndInheritanceCoverageTests {
         let zoomed = focused.theme.fontSize
         let window = NSWindow(
             contentRect: focused.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = focused
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -146,6 +149,7 @@ struct WindowSizeAndInheritanceCoverageTests {
         focused.changeFontSize(.increase(6))
         let window = NSWindow(
             contentRect: focused.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = focused
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.activate(ignoringOtherApps: true)

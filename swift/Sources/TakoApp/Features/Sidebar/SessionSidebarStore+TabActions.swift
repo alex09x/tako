@@ -92,29 +92,10 @@ extension SessionSidebarStore {
     }
 
     func surface(in window: NSWindow) -> Tako.SurfaceView? {
-        func find(_ view: NSView) -> Tako.SurfaceView? {
-            if let s = view as? Tako.SurfaceView { return s }
-            for sub in view.subviews {
-                if let found = find(sub) { return found }
-            }
-            return nil
-        }
-        return window.contentView.flatMap(find)
+        Tako.surface(in: window)
     }
 
     func surfaces(in window: NSWindow) -> [Tako.SurfaceView] {
-        func collect(_ view: NSView, into list: inout [Tako.SurfaceView]) {
-            if let surface = view as? Tako.SurfaceView {
-                list.append(surface)
-            }
-            for sub in view.subviews {
-                collect(sub, into: &list)
-            }
-        }
-        var list: [Tako.SurfaceView] = []
-        if let content = window.contentView {
-            collect(content, into: &list)
-        }
-        return list
+        Tako.surfaces(in: window)
     }
 }

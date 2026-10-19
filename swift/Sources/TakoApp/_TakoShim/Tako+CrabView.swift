@@ -170,19 +170,7 @@ extension Tako {
         private var cancellables: Set<AnyCancellable> = []
 
         private static func surfaces(in window: NSWindow) -> [SurfaceView] {
-            func collect(_ view: NSView, into list: inout [SurfaceView]) {
-                if let surface = view as? SurfaceView {
-                    list.append(surface)
-                }
-                for sub in view.subviews {
-                    collect(sub, into: &list)
-                }
-            }
-            var list: [SurfaceView] = []
-            if let content = window.contentView {
-                collect(content, into: &list)
-            }
-            return list
+            Tako.surfaces(in: window)
         }
 
         static func aggregateProgress(for surfaces: [SurfaceView]) -> (state: ProgressState, progress: Int?)? {

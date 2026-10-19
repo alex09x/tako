@@ -49,7 +49,16 @@ extension Tako {
 
         /// Whether `window` shows its content to anyone now.
         static func isShowing(_ window: NSWindow) -> Bool {
-            window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+            shows(visible: window.isVisible, miniaturized: window.isMiniaturized,
+                  unoccluded: window.occlusionState.contains(.visible), key: window.isKeyWindow)
+        }
+
+        /// A window just made key was ordered in to be looked at, and shows
+        /// from its next frame on; the window server tells its occlusion only
+        /// later. Waiting for that kept a selected tab's terminal blank for
+        /// 140 ms after its tab bar and sidebar were already on screen.
+        static func shows(visible: Bool, miniaturized: Bool, unoccluded: Bool, key: Bool) -> Bool {
+            visible && !miniaturized && (unoccluded || key)
         }
 
         func update() {

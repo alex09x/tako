@@ -218,6 +218,7 @@ extension TerminalWindowCoverageTests {
         let other = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
             styleMask: [.borderless], backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
         defer { other.orderOut(nil) }
         #expect(!window.tabTitleEditor(window.tabTitleEditor, canRenameTabFor: other))
         #expect(window.tabTitleEditor(window.tabTitleEditor, titleFor: other) == other.title)

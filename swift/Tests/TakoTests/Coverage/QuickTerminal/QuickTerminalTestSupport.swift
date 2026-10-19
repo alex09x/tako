@@ -48,6 +48,7 @@ enum QTTestSupport {
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false)
+        window.isReleasedWhenClosed = false
         controller.window = window
         return (controller, window)
     }

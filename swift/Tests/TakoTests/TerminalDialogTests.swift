@@ -20,6 +20,7 @@ struct TerminalDialogTests {
     private func window() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
                               styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
         window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         return window
     }
@@ -156,6 +157,7 @@ struct TerminalDialogTests {
     @Test func anUpdateNoticeGoesToATerminalWindowNotSettings() {
         let settings = NSWindow(contentRect: .init(x: 0, y: 0, width: 200, height: 200), styleMask: [.titled],
                                 backing: .buffered, defer: true)
+        settings.isReleasedWhenClosed = false
         let (controller, terminal) = TerminalTestSupport.makeController()
         defer { TerminalTestSupport.tearDown(controller, terminal) }
         terminal.orderFront(nil)

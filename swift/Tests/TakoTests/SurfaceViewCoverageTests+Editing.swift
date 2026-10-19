@@ -209,6 +209,7 @@ extension SurfaceViewCoverageTests {
         defer { view.close() }
         let window = NSWindow(
             contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
 
         window.contentView = view
         #expect(!view.isFirstResponderSurface)
@@ -219,6 +220,7 @@ extension SurfaceViewCoverageTests {
         // the binding. Neither must crash.
         let otherWindow = NSWindow(
             contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        otherWindow.isReleasedWhenClosed = false
         otherWindow.contentView = view
         view.removeFromSuperview()
     }

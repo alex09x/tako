@@ -108,12 +108,12 @@ extension Tako {
 
         /// The windows belonging to the active workspace in this group, ordered by the workspace's tab order.
         var visibleWindows: [NSWindow] {
-            let activeWs = WorkspaceStore.shared.activeWorkspace
-            let activeTabIds = activeWs.tabIdentifiers
+            let store = WorkspaceStore.shared
+            let activeWs = store.activeWorkspace
 
             // Any window in this group assigned to the active workspace (or default if unassigned)
             let matching = windows.filter { win in
-                let ws = WorkspaceStore.shared.workspace(forTab: win.stableTabIdentifier)
+                let ws = store.workspace(forTab: win.stableTabIdentifier)
                 if let ws {
                     return ws.id == activeWs.id
                 }
@@ -121,18 +121,16 @@ extension Tako {
                 return activeWs.id == WorkspaceStore.defaultWorkspaceId
             }
 
-            if activeTabIds.isEmpty {
+            if activeWs.tabIdentifiers.isEmpty {
                 return matching
             }
 
-            return matching.sorted { a, b in
-                let idxA = activeTabIds.firstIndex(of: a.stableTabIdentifier) ?? Int.max
-                let idxB = activeTabIds.firstIndex(of: b.stableTabIdentifier) ?? Int.max
-                if idxA != idxB { return idxA < idxB }
-                let origA = windows.firstIndex(of: a) ?? 0
-                let origB = windows.firstIndex(of: b) ?? 0
-                return origA < origB
-            }
+            // In the workspace's order, then the group's: each place looked
+            // up once, not searched for in every comparison.
+            return matching.enumerated()
+                .map { (rank: store.rank(ofTab: $1.stableTabIdentifier, in: activeWs.id) ?? Int.max, order: $0, window: $1) }
+                .sorted { ($0.rank, $0.order) < ($1.rank, $1.order) }
+                .map(\.window)
         }
 
         private static func ensureWorkspaceObserver() {

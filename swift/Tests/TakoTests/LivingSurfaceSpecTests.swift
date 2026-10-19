@@ -241,6 +241,7 @@ struct LivingSurfaceLiveFindingsTests {
         surface.title = "~"
         let controller = BaseTerminalController(Tako.App(), surfaceTree: SplitTree(view: surface))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.windowController = controller
         controller.window = window
         window.contentView = surface

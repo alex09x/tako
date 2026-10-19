@@ -170,6 +170,7 @@ struct BaseTerminalControllerWindowDelegateTests {
         let dummyWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
             styleMask: [.borderless], backing: .buffered, defer: false)
+        dummyWindow.isReleasedWhenClosed = false
         defer { dummyWindow.orderOut(nil) }
         #expect(controller.windowWillReturnUndoManager(dummyWindow) == nil)
     }
@@ -180,6 +181,7 @@ struct BaseTerminalControllerWindowDelegateTests {
         let dummyWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
             styleMask: [.borderless], backing: .buffered, defer: false)
+        dummyWindow.isReleasedWhenClosed = false
         defer { dummyWindow.orderOut(nil) }
         #expect(controller.windowShouldClose(dummyWindow))
     }

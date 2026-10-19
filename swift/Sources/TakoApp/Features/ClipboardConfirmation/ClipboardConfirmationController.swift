@@ -59,6 +59,8 @@ class ClipboardConfirmationController: NSWindowController {
             backing: .buffered,
             defer: false
         )
+        // As in the nib: the controller owns the window, closing it does not.
+        window.isReleasedWhenClosed = false
         self.window = window
     }
 
