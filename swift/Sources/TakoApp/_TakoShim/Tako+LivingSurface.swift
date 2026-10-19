@@ -105,7 +105,6 @@ final class LivingAnimationState: ObservableObject {
     @Published private(set) var isOccludedOrIdle: Bool = false
 
     private var entries: [String: (state: Tako.SurfaceState, enteredAt: Date)] = [:]
-    private var inactivityTimer: Timer?
 
     private init() {
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -126,23 +125,14 @@ final class LivingAnimationState: ObservableObject {
                 self?.recomputeOcclusion()
             }
         }
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.scheduleInactivityPause()
-            }
-        }
+        // Another app in front is no reason to stop: a window that is still
+        // on screen keeps moving. Only a window nobody can see pauses.
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.inactivityTimer?.invalidate()
-                self?.inactivityTimer = nil
                 self?.recomputeOcclusion()
             }
         }
@@ -159,18 +149,10 @@ final class LivingAnimationState: ObservableObject {
             return
         }
         let anyVisible = visibleWindows.contains { $0.occlusionState.contains(.visible) }
+        guard isOccludedOrIdle == anyVisible else { return }
         isOccludedOrIdle = !anyVisible
-    }
-
-    private func scheduleInactivityPause() {
-        inactivityTimer?.invalidate()
-        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                if !(NSApp?.isActive ?? true) {
-                    self?.isOccludedOrIdle = true
-                }
-            }
-        }
+        // The tab rings are layers, not a timeline: they learn of the pause on a redraw.
+        Tako.TabBarController.refreshAll()
     }
 
     /// Optional deterministic time override (in seconds) for frame-by-frame visual verification.

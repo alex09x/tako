@@ -58,28 +58,14 @@ extension Tako {
     /// them a window keeps the placeholder title forever.
     struct InspectableSurface: View {
         @ObservedObject var surfaceView: SurfaceView
-        @ObservedObject var notificationStore: NotificationStore = .shared
         @ObservedObject var attentionManager: AttentionManager = .shared
-        @ObservedObject private var crab: CrabTracker
         @ObservedObject var overlayStore: OverlayStore = .shared
         @ObservedObject var diffReviewStore: DiffReviewStore = .shared
         var isSplit: Bool = false
 
         init(surfaceView: SurfaceView, isSplit: Bool = false) {
             self.surfaceView = surfaceView
-            self._crab = ObservedObject(wrappedValue: surfaceView.crab)
             self.isSplit = isSplit
-        }
-
-        public var needsAttention: Bool {
-            !surfaceView.isAttentionMuted &&
-            !surfaceView.isBeingLookedAt && (
-                notificationStore.unreadCount(for: surfaceView.id) > 0 ||
-                crab.unread ||
-                crab.state == .attention ||
-                crab.paneStatus == .needsApproval ||
-                crab.paneStatus == .waitingForInput
-            )
         }
 
         var body: some View {
@@ -116,13 +102,6 @@ extension Tako {
                     DiffReviewView(session: reviewSession, surfaceView: surfaceView)
                         .id("diff_review_\(surfaceView.id)_\(reviewSession.comments.count)_\(reviewSession.selectedFile ?? "")")
                         .transition(.opacity)
-                }
-            }
-            .overlay {
-                if needsAttention {
-                    RoundedRectangle(cornerRadius: isSplit ? 4 : 0)
-                        .strokeBorder(Color(nsColor: Tako.Brand.ember), lineWidth: 2)
-                        .allowsHitTesting(false)
                 }
             }
             .focusedValue(\.takoSurfaceView, surfaceView)

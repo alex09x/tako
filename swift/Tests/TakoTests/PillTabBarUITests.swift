@@ -324,7 +324,7 @@ struct PillTabBarUITests {
         let midX = Int(pill.midX)
 
         // Active pill in Spec 1b (§4) uses surfaceActive #241C16 (R=0.141) with hairline #2A211B (R=0.165)
-        // on bar #14100E (R=0.078), plus a 2px Ember #F4581C bar at the bottom of the bar.
+        // on bar #14100E (R=0.078). No Ember bar under it: the pill alone says which tab is open.
         var pillYRows: [Int] = []
         var hasEmberBottomBar = false
         for y in 0..<rep.pixelsHigh {
@@ -337,7 +337,7 @@ struct PillTabBarUITests {
             }
         }
         #expect(!pillYRows.isEmpty)
-        #expect(hasEmberBottomBar)
+        #expect(!hasEmberBottomBar)
         if let minY = pillYRows.min(), let maxY = pillYRows.max() {
             let renderedHeight = maxY - minY + 1
             let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))

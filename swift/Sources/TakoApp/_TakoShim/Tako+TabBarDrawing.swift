@@ -91,13 +91,6 @@ extension Tako.TabBarView {
                 ctx.setLineWidth(1)
                 ctx.strokePath()
             }
-
-            // Active 2px Ember bar flush with the bottom of the 38pt bar (x: minX+10 ..< maxX-10, y: 0..<2)
-            let barW = max(4, rect.width - 20)
-            let emberBarRect = CGRect(x: rect.minX + 10, y: 0, width: barW, height: 2)
-            ctx.setFillColor(Tako.LivingTokens.ember.cgColor)
-            ctx.addPath(CGPath(roundedRect: emberBarRect, cornerWidth: 1, cornerHeight: 1, transform: nil))
-            ctx.fillPath()
         } else if hovering {
             ctx.addPath(path)
             ctx.setFillColor(Palette.hoverTab.cgColor)
