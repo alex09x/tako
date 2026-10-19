@@ -158,7 +158,11 @@ struct TabBarControllerCoverageTests {
         if bar.effectiveTabStyle == .pill {
             #expect(bar.tabs.count == 1)
             #expect(bar.tabs[0].isActive == true)
-            #expect(bar.pillIndicatorColor(for: bar.tabs[0]) == Tako.Brand.ok)
+            // The indicator follows the tab's state, not its selection, as
+            // its painted ring does: an idle tab is idle chosen or not. (The
+            // "active means green" rule left the code in e749c17e, which
+            // wrote this test against it.)
+            #expect(bar.pillIndicatorColor(for: bar.tabs[0]) == Tako.tabStatusColor(for: "dim"))
         }
     }
 }

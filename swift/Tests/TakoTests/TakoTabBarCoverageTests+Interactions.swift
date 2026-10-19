@@ -60,10 +60,13 @@ extension TabBarViewCoverageTests {
         #expect(recorder.splitInvoked)
     }
 
+    /// The ⓘ About button is the classic strip's: the pill design
+    /// (Sessions v2, be4820bd) has only ◫ and + on the right.
     @Test func clickingTheAboutButtonSendsTheAction() {
         let window = makeWindow(title: "solo")
         defer { Tako.CustomTabGroup.leave(window) }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = .classic
         mount(bar, in: window)
 
         Tako.CustomTabGroup.join(makeWindow(title: "b"), to: window, select: false)
@@ -78,10 +81,12 @@ extension TabBarViewCoverageTests {
         #expect(recorder.aboutInvoked)
     }
 
-    @Test func buttonsAreClickableInLoneWindowMode() {
+    @Test(arguments: [Tako.Config.TabStyle.pill, .classic])
+    func buttonsAreClickableInLoneWindowMode(style: Tako.Config.TabStyle) {
         let window = makeWindow(title: "lone")
         defer { Tako.CustomTabGroup.leave(window) }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = style
         mount(bar, in: window)
         draw(bar)
 
@@ -90,8 +95,9 @@ extension TabBarViewCoverageTests {
         NSApplication.shared.delegate = recorder
         defer { NSApplication.shared.delegate = originalDelegate }
 
+        // ⓘ where the classic strip has it; nothing there on the pill strip.
         click(bar, at: NSPoint(x: 314, y: 19), in: window)
-        #expect(recorder.aboutInvoked)
+        #expect(recorder.aboutInvoked == (style == .classic))
 
         click(bar, at: NSPoint(x: 346, y: 19), in: window)
         #expect(recorder.splitInvoked)
@@ -100,10 +106,12 @@ extension TabBarViewCoverageTests {
         #expect(recorder.newTabInvoked)
     }
 
-    @Test func toolTipsReportCorrectLabels() {
+    @Test(arguments: [Tako.Config.TabStyle.pill, .classic])
+    func toolTipsReportCorrectLabels(style: Tako.Config.TabStyle) {
         let window = makeWindow(title: "tooltips")
         defer { Tako.CustomTabGroup.leave(window) }
         let bar = Tako.TabBarView(frame: .zero)
+        bar.styleOverride = style
         mount(bar, in: window)
         draw(bar)
 
@@ -122,7 +130,7 @@ extension TabBarViewCoverageTests {
         }
 
         move(to: NSPoint(x: 314, y: 19))
-        #expect(bar.toolTip?.contains("About Tako") == true)
+        #expect((bar.toolTip?.contains("About Tako") == true) == (style == .classic))
 
         move(to: NSPoint(x: 346, y: 19))
         #expect(bar.toolTip?.contains("Split Terminal") == true)

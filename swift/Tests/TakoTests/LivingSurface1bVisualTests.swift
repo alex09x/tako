@@ -162,15 +162,28 @@ struct LivingSurface1bVisualTests {
         #expect(bar.pillMetaText(for: w3) == "68%")
         #expect(bar.workspaceAttentionCount(for: backendWs) == 1)
 
-        // Verify #483C32 is never present anywhere in the rendered TabBar bitmap (§8.6)
-        for y in 0..<barRep.pixelsHigh {
-            for x in stride(from: 0, to: barRep.pixelsWide, by: 4) {
-                if let c = barRep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) {
-                    let isLegacyBrown = abs(c.redComponent - (0x48 / 255.0)) < 0.015
-                        && abs(c.greenComponent - (0x3C / 255.0)) < 0.015
-                        && abs(c.blueComponent - (0x32 / 255.0)) < 0.015
-                    #expect(!isLegacyBrown, "Legacy #483C32 must not appear in Pill Tab Bar")
-                }
+        // Verify #483C32 is never present anywhere in the rendered TabBar bitmap (§8.6).
+        // Read through CoreGraphics into sRGB: the snapshot is tagged calibrated
+        // RGB (gamma 1.8), and NSColor's conversion from it lifted the progress
+        // track (#3A2E26) and the offline border (#3A2F27) into this very brown.
+        let barWidth = barRep.pixelsWide, barHeight = barRep.pixelsHigh
+        var barPixels = [UInt8](repeating: 0, count: barWidth * barHeight * 4)
+        barPixels.withUnsafeMutableBytes { buffer in
+            let context = CGContext(data: buffer.baseAddress, width: barWidth, height: barHeight, bitsPerComponent: 8,
+                                    bytesPerRow: barWidth * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(barRep.cgImage!, in: CGRect(x: 0, y: 0, width: barWidth, height: barHeight))
+        }
+        // Painted means a fill or a stroke of 1 pt or more: a 2x2 block. A lone
+        // antialiased pixel at a glyph's edge can blend into it by chance.
+        func brown(_ x: Int, _ y: Int) -> Bool {
+            let i = (y * barWidth + x) * 4
+            return abs(Int(barPixels[i]) - 0x48) <= 3 && abs(Int(barPixels[i + 1]) - 0x3C) <= 3 && abs(Int(barPixels[i + 2]) - 0x32) <= 3
+        }
+        for y in 0..<(barHeight - 1) {
+            for x in stride(from: 0, to: barWidth - 1, by: 2) {
+                let isLegacyBrown = brown(x, y) && brown(x + 1, y) && brown(x, y + 1) && brown(x + 1, y + 1)
+                #expect(!isLegacyBrown, "Legacy #483C32 must not appear in Pill Tab Bar (at \(x), \(y))")
             }
         }
 
