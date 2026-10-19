@@ -232,7 +232,16 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
             NotificationCenter.default.removeObserver(observer)
             windowObserver = nil
         }
+        let window = self.window
         super.removeFromSuperview()
+        // The tab strip under it clears the titlebar's background and redraws
+        // on key and main changes; a question answered in a window that was
+        // never key -- one restored in the background -- left it hidden until
+        // the window was clicked.
+        if let window, let bar = Tako.TabBarController.bar(for: window) {
+            Tako.TabBarController.clearTitlebarBackground(in: window)
+            bar.needsDisplay = true
+        }
         pending?(cancelIndex)
     }
 

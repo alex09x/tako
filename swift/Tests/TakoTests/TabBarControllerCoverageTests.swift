@@ -85,6 +85,30 @@ struct TabBarControllerCoverageTests {
         }
     }
 
+    /// Restored in the background, a window is never key; a question
+    /// answered in it ("Install the takoctl command?") left the strip hidden
+    /// under the titlebar's background until the window was clicked.
+    @Test func aDialogClosingInAWindowThatIsNotKeyBringsTheStripBack() async throws {
+        let window = makeWindow(title: "dialog-closed")
+        defer { window.close() }
+        Tako.TabBarController.install(in: window)
+        let themeFrame = try #require(window.contentView?.superview)
+        let titlebarContainer = try #require(themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView"))
+        let asked = Task {
+            await TerminalDialogView.choose(in: window, title: "Install?", lines: [],
+                                            choices: [.init(title: "Not Now", kind: .primary)], cancelIndex: 0, theme: nil)
+        }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        // What AppKit does meanwhile: paints the titlebar's background again.
+        titlebarContainer.wantsLayer = true
+        titlebarContainer.layer?.backgroundColor = NSColor.red.cgColor
+        TerminalDialogView.pending(in: window)?.removeFromSuperview()
+        _ = await asked.value
+
+        #expect(!window.isKeyWindow)
+        #expect(titlebarContainer.layer?.backgroundColor == NSColor.clear.cgColor)
+    }
+
     @Test func becomeMainNotificationClearsBackgroundAndResetsOpaque() throws {
         let window = makeWindow(title: "main-notified")
         defer { window.close() }
