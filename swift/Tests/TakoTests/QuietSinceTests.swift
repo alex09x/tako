@@ -62,6 +62,23 @@ struct QuietSinceTests {
         #expect(crab.live?.rateLabel == "10/s")
     }
 
+    @Test func outputAfterALongNapShowsItsRateAtOnce() {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        var printed = 0
+        let crab = quietCrab({ now }, lines: { defer { printed = 0 }; return printed })
+        // Ten silent minutes in one held-back sample, then 20 lines a second.
+        now += 600
+        crab.sampleLive()
+        now += 1
+        printed = 20
+        crab.sampleLive()
+        #expect(crab.live?.rateLabel == "10/s")
+        now += 2
+        printed = 40
+        crab.sampleLive()
+        #expect(crab.live?.rateLabel == "20/s")
+    }
+
     // MARK: - Across a restart
 
     @Test func aProgramFoundAfterARestartIsQuietSinceItLastPrinted() {

@@ -54,7 +54,11 @@ extension Tako.CrabTracker {
         guard let current = live else { return }
         let at = now()
         let lines = liveProbe?.takeOutputLines() ?? 0
-        liveSamples.append((from: liveSampledAt ?? at, to: at, lines: lines))
+        // A sample that waited out a nap or a sleep does not bring that time
+        // into the rate: one that found nothing covers a second at most,
+        // one that found lines no more than the window.
+        let earliest = at - TimeInterval(lines > 0 ? Self.liveWindow : 1)
+        liveSamples.append((from: max(liveSampledAt ?? at, earliest), to: at, lines: lines))
         liveSampledAt = at
         // The last few seconds of the clock, and no more samples than the
         // timer takes in them.
