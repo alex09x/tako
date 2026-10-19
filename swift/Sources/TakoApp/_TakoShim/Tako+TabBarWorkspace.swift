@@ -188,13 +188,10 @@ extension Tako.TabBarView {
         let style = progressStyle(for: window)
         let progPair = style.showsInTab ? aggregateProgress(for: window) : nil
         let pState = progPair?.state ?? .none
-        let pFraction: Double? = {
-            guard pState != .none else { return nil }
-            if let v = progPair?.progress {
-                return min(1.0, max(0.0, Double(v) / 100.0))
-            }
-            return pState == .indeterminate ? 0.35 : nil
-        }()
+        // A program that cannot say how far it is shows as working, not as
+        // a made-up percentage.
+        let pFraction: Double? = pState == .none
+            ? nil : progPair?.progress.map { min(1.0, max(0.0, Double($0) / 100.0)) }
 
         switch Tako.tabVisualState(for: window) {
         case "disconnected":
@@ -205,6 +202,7 @@ extension Tako.TabBarView {
             return .waiting
         case "working", "running", "reconnecting":
             if let pFraction { return .progress(pFraction) }
+            if pState == .indeterminate { return .working }
             // Spec 1b: a shell command shows as working only after 3 s.
             if let crab = Tako.aggregateCrab(for: window), crab.paneStatus == .running, crab.state != .running {
                 return .idle
@@ -214,6 +212,7 @@ extension Tako.TabBarView {
             return .done
         default:
             if let pFraction { return .progress(pFraction) }
+            if pState == .indeterminate { return .working }
             if let live = liveActivity(for: window) { return .live(flowing: live.isFlowing) }
             return .idle
         }

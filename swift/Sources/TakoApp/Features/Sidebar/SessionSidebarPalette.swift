@@ -37,11 +37,7 @@ enum SessionSidebarPalette {
 extension SessionSidebarItem {
     /// Unified `Tako.SurfaceState` for this sidebar row per Spec 1b (§1).
     var surfaceState: Tako.SurfaceState {
-        let frac: Double? = {
-            guard progressState != .none else { return nil }
-            if let progress { return min(1.0, max(0.0, progress)) }
-            return progressState == .indeterminate ? 0.35 : nil
-        }()
+        let frac: Double? = progressState == .none ? nil : progress.map { min(1.0, max(0.0, $0)) }
         let state = status.surfaceState(
             progressState: progressState, progressFraction: frac, crabState: crabState, live: live)
         if state == .idle, needsAttention {

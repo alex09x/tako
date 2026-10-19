@@ -143,6 +143,7 @@ extension Tako {
                 if progressState != .none, let p = progressFraction {
                     return .progress(min(1.0, max(0.0, p)))
                 }
+                if progressState == .indeterminate { return .working }
                 if self == .running, let elapsedSeconds, elapsedSeconds < 3.0 {
                     return .idle
                 }
@@ -159,6 +160,9 @@ extension Tako {
                 if progressState != .none, let p = progressFraction {
                     return .progress(min(1.0, max(0.0, p)))
                 }
+                // Busy for as long as it takes: working, not a made-up
+                // percentage -- it used to be drawn as 35%.
+                if progressState == .indeterminate { return .working }
                 if let live { return .live(flowing: live.isFlowing) }
                 return .idle
             }

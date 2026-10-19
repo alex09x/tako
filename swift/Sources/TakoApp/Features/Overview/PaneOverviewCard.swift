@@ -203,7 +203,9 @@ struct PaneOverviewCard: View, Equatable {
             .allowsHitTesting(false)
 
             // 3px Progress bar inside preview (§3.5): left 10, right 10, bottom 8, r 1.5, track #2A211B, fill Rust->Ember
-            if item.progressState != .none {
+            // Only a progress that has a number: one without is drawn as
+            // working, not as a bar of made-up length.
+            if item.progressState != .none, item.progressState != .indeterminate {
                 progressBarView(state: item.progressState, value: item.progressValue)
                     .frame(height: 3)
                     .padding(.horizontal, 10)
@@ -276,7 +278,7 @@ struct PaneOverviewCard: View, Equatable {
     private func progressBarView(state: TakoTerminalNSView.ProgressState, value: Int?) -> some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let fraction = min(max(Double(value ?? (state == .indeterminate ? 40 : 0)) / 100.0, 0.05), 1.0)
+            let fraction = min(max(Double(value ?? 0) / 100.0, 0.05), 1.0)
 
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 1.5)

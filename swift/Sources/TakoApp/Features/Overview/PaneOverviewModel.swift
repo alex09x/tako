@@ -109,11 +109,8 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
 
     /// Unified `Tako.SurfaceState` for this overview card per Spec 1b (§1).
     var surfaceState: Tako.SurfaceState {
-        let frac: Double? = {
-            guard progressState != .none else { return nil }
-            if let progressValue { return min(1.0, max(0.0, Double(progressValue) / 100.0)) }
-            return progressState == .indeterminate ? 0.35 : nil
-        }()
+        let frac: Double? = progressState == .none
+            ? nil : progressValue.map { min(1.0, max(0.0, Double($0) / 100.0)) }
         let state = status.surfaceState(
             progressState: progressState, progressFraction: frac, crabState: crabState, live: live)
         if state == .idle || state.isLive, hasUnread {
