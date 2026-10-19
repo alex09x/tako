@@ -48,6 +48,20 @@ struct QuietSinceTests {
         #expect(crab.live?.quietLabel == "quiet 5m")
     }
 
+    @Test func aHeldBackTimerDoesNotInflateTheRate() {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        var printed = 0
+        let crab = quietCrab({ now }, lines: { defer { printed = 0 }; return printed })
+        // Ten lines a second, sampled every two seconds: twenty a sample.
+        for _ in 0..<3 {
+            now += 2
+            printed = 20
+            crab.sampleLive()
+        }
+        #expect(crab.live?.linesPerSecond == 10)
+        #expect(crab.live?.rateLabel == "10/s")
+    }
+
     // MARK: - Across a restart
 
     @Test func aProgramFoundAfterARestartIsQuietSinceItLastPrinted() {

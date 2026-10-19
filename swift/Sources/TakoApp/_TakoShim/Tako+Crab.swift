@@ -104,11 +104,14 @@ extension Tako {
         /// runs. See Tako+CrabLive.swift.
         @Published var live: LiveActivity?
         var liveTimer: Timer?
-        var liveSamples: [Int] = []
+        /// The last few samples: the lines that arrived between `from` and `to`.
+        var liveSamples: [(from: Date, to: Date, lines: Int)] = []
         /// When the quiet program last printed, or started: a moment on the
         /// clock, not a count of ticks, so a timer App Nap holds back or a
         /// Mac asleep does not make the quiet look shorter than it is.
         var liveLastOutputAt: Date?
+        /// When the last sample was taken: where the next one starts.
+        var liveSampledAt: Date?
         /// Told that moment, at most once a minute while output arrives, so
         /// it outlives a restart of Tako; told nil when the program ends.
         var onQuietSince: ((Date?) -> Void)?
