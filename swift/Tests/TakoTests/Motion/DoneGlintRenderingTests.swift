@@ -26,31 +26,11 @@ struct DoneGlintRenderingTests {
     /// A sidebar row's surface.
     private let size = CGSize(width: 264, height: 46)
 
-    /// Green over black in each column of the glint drawn at `progress`, in
-    /// points from the surface's left edge.
-    private func greenColumns(at progress: CGFloat) throws -> [(x: CGFloat, green: CGFloat)] {
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-        let view = NSHostingView(rootView: DoneGlintView(progress: progress).background(Color.black))
-        window.contentView = view
-        view.layoutSubtreeIfNeeded()
-        let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: rep)
-        let scale = CGFloat(rep.pixelsWide) / size.width
-        return (0..<rep.pixelsWide).map { x in
-            var green: CGFloat = 0
-            for y in 0..<rep.pixelsHigh {
-                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                green += max(0, c.greenComponent - max(c.redComponent, c.blueComponent))
-            }
-            return ((CGFloat(x) + 0.5) / scale, green / CGFloat(rep.pixelsHigh))
-        }
-    }
-
     /// Where the band is brightest, or nil when no band shows.
     private func band(at progress: CGFloat) throws -> CGFloat? {
-        let columns = try greenColumns(at: progress)
-        let peak = try #require(columns.max { $0.green < $1.green })
-        return peak.green > 0.005 ? peak.x : nil
+        let snap = WindowSnapshot(DoneGlintView(progress: progress).background(Color.black), size: size)
+        let peak = try #require(snap.columns(WindowSnapshot.greenExcess).max { $0.sum < $1.sum })
+        return peak.sum > 0.005 ? peak.x : nil
     }
 
     @Test func theBandCrossesTheSurfaceWhereTheDesignPutsIt() throws {
