@@ -83,6 +83,7 @@ extension Tako {
         static func resetForTesting() {
             lastActiveWindowFrame = nil
             groupsByWindow.removeAll()
+            closedWindows.removeAllObjects()
             if ProcessInfo.processInfo.environment["TAKO_ENABLE_LIVE_WINDOW_TESTS"] == "1" {
                 suppressWindowOrderingForTesting = false
             } else {
@@ -342,12 +343,35 @@ extension Tako {
             groupsByWindow[ObjectIdentifier(window)]
         }
 
+        /// Tabs whose windows closed. A closed window can outlive its close
+        /// and still be asked about -- by its own tab bar redrawing as it
+        /// goes, by a script naming its pane -- and it used to become a
+        /// group again, which the next workspace switch put on screen: an
+        /// empty window with nothing in it.
+        private static let closedWindows = NSHashTable<NSWindow>.weakObjects()
+
+        static func isClosed(_ window: NSWindow) -> Bool {
+            closedWindows.contains(window)
+        }
+
+        /// A tab's window closing: it leaves its group for good.
+        static func close(_ window: NSWindow) {
+            closedWindows.add(window)
+            leave(window)
+        }
+
         /// The group a window belongs to, creating a fresh single-window
-        /// group the first time a window is asked about.
+        /// group the first time a window is asked about. A closed window is
+        /// a group of its own that nothing lists or shows.
         static func group(for window: NSWindow) -> CustomTabGroup {
             ensureWorkspaceObserver()
             if let existing = groupsByWindow[ObjectIdentifier(window)] {
                 return existing
+            }
+            if closedWindows.contains(window) {
+                let alone = CustomTabGroup()
+                alone.windows = [window]
+                return alone
             }
             let group = CustomTabGroup()
             group.windows = [window]
@@ -539,7 +563,7 @@ extension Tako {
         }
 
         func select(_ window: NSWindow) {
-            guard windows.contains(window) else { return }
+            guard windows.contains(window), !Self.closedWindows.contains(window) else { return }
             // Selecting the tab that is already chosen starts nothing new, so
             // it must not cancel the pending order-out of the one it replaced:
             // a sidebar click selects, then presenting the pane selects again,

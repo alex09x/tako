@@ -30,7 +30,7 @@ extension TerminalController {
             $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController })
         }
         let isLastWindow = controllers.count >= TerminalController.all.count || otherTerminalGroups.isEmpty
-        if isLastWindow && tako.config.shouldQuitAfterLastWindowClosed {
+        if isLastWindow && quitsAfterLastWindow {
             NSApp.terminate(nil)
             return
         }
@@ -45,7 +45,7 @@ extension TerminalController {
             window.close()
         }
 
-        if tako.config.shouldQuitAfterLastWindowClosed {
+        if quitsAfterLastWindow {
             let remaining = Tako.CustomTabGroup.allGroups.filter {
                 $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController && $0.isVisible })
             }

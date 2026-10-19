@@ -10,7 +10,15 @@
 
 import AppKit
 import Foundation
+import ObjectiveC
 @testable import Tako
+
+extension NSApplication {
+    /// `terminate(_:)` in the test host, once `TerminalTestSupport.preventQuitting()` ran.
+    @objc func takoTestHostTerminate(_ sender: Any?) {
+        TerminalTestSupport.quitsPrevented += 1
+    }
+}
 
 /// Shared helpers for the Terminal feature's behavioural coverage suites.
 ///
@@ -30,6 +38,27 @@ enum TerminalTestSupport {
         return true
     }
 
+    /// Closing the last window quits (`quit-after-last-window-closed` is on
+    /// by default), and in the test host a quit ends the whole run with the
+    /// tests after it never run. It went unnoticed while closed tabs lingered
+    /// as groups of their own, so no window was ever the last. Every helper
+    /// that makes a terminal window turns that off first -- the last window
+    /// then just closes -- and turns any quit that still comes, AppKit's own
+    /// included, into a count.
+    @MainActor static var quitsPrevented = 0
+    @MainActor private static let quittingPrevented: Void = {
+        guard let quit = class_getInstanceMethod(NSApplication.self, #selector(NSApplication.terminate(_:))),
+              let count = class_getInstanceMethod(
+                NSApplication.self, #selector(NSApplication.takoTestHostTerminate(_:)))
+        else { return }
+        method_exchangeImplementations(quit, count)
+    }()
+
+    @MainActor static func preventQuitting() {
+        TerminalController.lastWindowQuits = false
+        _ = quittingPrevented
+    }
+
     /// Builds a `TerminalController` with a real, manually constructed
     /// `TerminalWindow` attached directly (bypassing nib loading).
     @MainActor
@@ -37,6 +66,7 @@ enum TerminalTestSupport {
         baseConfig: Tako.SurfaceConfiguration? = nil,
         surfaceTree: SplitTree<Tako.SurfaceView>? = nil
     ) -> (controller: TerminalController, window: TerminalWindow) {
+        preventQuitting()
         let app = Tako.App()
         let controller = TerminalController(app, withBaseConfig: baseConfig, withSurfaceTree: surfaceTree)
         let window = TerminalWindow(
@@ -74,7 +104,8 @@ enum TerminalTestSupport {
     /// be permanently unreachable in this test host.
     @MainActor
     static func injectedWindowSystem() -> TerminalController.System {
-        .init(attachWindow: { controller in
+        preventQuitting()
+        return .init(attachWindow: { controller in
             let window = TerminalWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 400, height: 400),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],

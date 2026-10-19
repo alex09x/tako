@@ -15,10 +15,12 @@ import TakoKit
 extension TerminalController {
     // MARK: Terminal Creation
 
-    /// Returns all the available terminal controllers present in the app currently.
+    /// Returns all the available terminal controllers present in the app
+    /// currently. A closed tab's window can outlive its close; its panes are
+    /// gone, and no script may name them.
     static var all: [TerminalController] {
         return NSApplication.shared.windows.compactMap {
-            $0.windowController as? TerminalController
+            Tako.CustomTabGroup.isClosed($0) ? nil : $0.windowController as? TerminalController
         }
     }
 
@@ -39,11 +41,21 @@ extension TerminalController {
         }
     }
 
-    // The preferred parent terminal controller.
+    // The preferred parent terminal controller. The last main one only
+    // while its window is open: a closed tab's controller can outlive it.
     static var preferredParent: TerminalController? {
         all.first {
             $0.window?.isMainWindow ?? false
-        } ?? lastMain ?? all.last
+        } ?? all.first { $0 === lastMain } ?? all.last
+    }
+
+    /// Whether closing the last window may quit the app, as
+    /// `quit-after-last-window-closed` asks. Off in the test host, where a
+    /// quit ends the whole run: there the last window just closes.
+    static var lastWindowQuits = true
+
+    var quitsAfterLastWindow: Bool {
+        Self.lastWindowQuits && tako.config.shouldQuitAfterLastWindowClosed
     }
 
     // The last controller to be main. We use this when paired with "preferredParent"

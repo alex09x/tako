@@ -76,7 +76,7 @@ extension Tako {
                     if let bar = installed[key], bar.draggingTabIndex != nil || bar.draggingWindow === window {
                         setDragState(in: nil, index: nil, start: nil, isDragging: false)
                     }
-                    Tako.CustomTabGroup.leave(window)
+                    Tako.CustomTabGroup.close(window)
                     installed.removeValue(forKey: key)
                     refreshAll()
                 }

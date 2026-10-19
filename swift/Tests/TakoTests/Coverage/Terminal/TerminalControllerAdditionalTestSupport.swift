@@ -48,6 +48,7 @@ func withInjectedWindowSystem<T>(_ body: () async throws -> T) async rethrows ->
 
 @MainActor
 func withRealAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
+    TerminalTestSupport.preventQuitting()
     let appDelegate = AppDelegate()
     let originalDelegate = NSApplication.shared.delegate
     NSApplication.shared.delegate = appDelegate
@@ -57,6 +58,7 @@ func withRealAppDelegate<T>(_ body: (AppDelegate) throws -> T) rethrows -> T {
 
 @MainActor
 func withRealAppDelegate<T>(_ body: (AppDelegate) async throws -> T) async rethrows -> T {
+    TerminalTestSupport.preventQuitting()
     let appDelegate = AppDelegate()
     let originalDelegate = NSApplication.shared.delegate
     NSApplication.shared.delegate = appDelegate
