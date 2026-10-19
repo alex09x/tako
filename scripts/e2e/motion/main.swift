@@ -158,14 +158,15 @@ Task {
         let swing = track.filter { $0.ms > start + 170 && $0.ms < start + 460 }.map { $0.disc - rest }
         let reach = (swing.max() ?? 0, swing.min() ?? 0)
         let step = zip(track, track.dropFirst()).map { abs($1.disc - $0.disc) }.max() ?? 0
-        let apart = track.compactMap { t in t.title.map { t.disc - $0 } }
-        let together = (apart.max() ?? 0) - (apart.min() ?? 0)
-        // Ring and title measured apart wander ~1 pt with antialiasing; a
-        // ring shaking alone would wander the full 4.
-        let whole = surface != "tab" || (apart.count > 10 && together < 2)
+        // The title swings with the ring, read the same way; a ring
+        // shaking alone leaves it still.
+        let titleRest = track.last?.title ?? 0
+        let titleSwing = track.filter { $0.ms > start + 170 && $0.ms < start + 460 }.compactMap { $0.title.map { $0 - titleRest } }
+        let title = (titleSwing.max() ?? 0, titleSwing.min() ?? 0)
+        let whole = surface != "tab" || (title.0 > 1.2 && title.1 < -1.2)
         check("failed", surface, reach.0 > 1.4 && reach.1 < -1.4 && step < 8 && whole,
               String(format: "shake %+.1f / %+.1f pt (design ±2), largest step %.1f pt%@", reach.1, reach.0, step,
-                     surface == "tab" ? String(format: ", ring and title %.1f pt apart at most", together) : ""))
+                     surface == "tab" ? String(format: ", title %+.1f / %+.1f pt", title.1, title.0) : ""))
     }
 
     // Waiting: the halo, the dot and the border never stop. Judged on the

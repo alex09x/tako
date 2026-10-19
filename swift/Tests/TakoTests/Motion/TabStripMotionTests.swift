@@ -55,6 +55,32 @@ struct TabStripMotionTests {
         #expect(bar.displayedChipWidth(target: 80, now: 30.2) == 80)
     }
 
+    /// Every tab is a window; those behind the selected one are laid out on
+    /// every refresh but never drawn, so a slide there would never end.
+    @Test func aHiddenTabWindowTakesTheNewWidthAtOnceAndRunsNoFrames() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let bar = Tako.TabBarView(frame: .zero)
+        window.contentView?.addSubview(bar)
+        #expect(!window.isVisible)
+        _ = bar.displayedChipWidth(target: 80, now: 0)
+        #expect(bar.displayedChipWidth(target: 100, now: 1) == 100)
+        #expect(bar.chipSlide == nil)
+        _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 2)
+        #expect(bar.motionLink == nil)
+    }
+
+    @Test func motionThatRanItsTimeEndsUndrawn() {
+        let bar = Tako.TabBarView(frame: .zero)
+        _ = bar.displayedChipWidth(target: 80, now: 0)
+        _ = bar.displayedChipWidth(target: 100, now: 1)
+        _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 1)
+        #expect(bar.expireMotion(now: 1.1))
+        #expect(!bar.expireMotion(now: 1.5))
+        #expect(bar.chipSlide == nil && bar.failedSince.isEmpty)
+    }
+
     @Test func aChangeMidSlideStartsFromWhereTheChipIs() {
         let bar = Tako.TabBarView(frame: .zero)
         _ = bar.displayedChipWidth(target: 80, now: 0)

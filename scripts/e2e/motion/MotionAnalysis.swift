@@ -41,13 +41,19 @@ extension Crop {
     }
 
     /// The column where `weight` summed down the column is largest, past `skip` points, or nil when it is all dark.
+    /// Smoothed over 9 px first: a glint's band is broad and flat-topped, and its
+    /// raw maximum wanders a few pixels from frame to frame.
     func peakColumn(_ weight: (CGFloat, CGFloat, CGFloat) -> CGFloat, skip: CGFloat, floor: CGFloat) -> CGFloat? {
+        var sums = [CGFloat](repeating: 0, count: width)
+        for x in 0..<width {
+            for y in 0..<height { let c = rgb(x, y); sums[x] += weight(c.r, c.g, c.b) }
+            sums[x] /= CGFloat(height)
+        }
         var best: (x: CGFloat, sum: CGFloat)?
         for x in 0..<width where point(x, 0).x > skip {
-            var sum: CGFloat = 0
-            for y in 0..<height { let c = rgb(x, y); sum += weight(c.r, c.g, c.b) }
-            sum /= CGFloat(height)
-            if sum > (best?.sum ?? floor) { best = (point(x, 0).x, sum) }
+            let window = sums[max(0, x - 4)...min(width - 1, x + 4)]
+            let smooth = window.reduce(0, +) / CGFloat(window.count)
+            if smooth > (best?.sum ?? floor) { best = (point(x, 0).x, smooth) }
         }
         return best?.x
     }

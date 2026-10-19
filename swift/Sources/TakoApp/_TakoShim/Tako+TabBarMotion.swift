@@ -25,7 +25,9 @@ extension Tako.TabBarView {
     func displayedChipWidth(target: CGFloat, now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {
         defer { chipWidthTarget = target }
         if let last = chipWidthTarget, last != target {
-            if LivingAnimationState.shared.reduceMotion {
+            // A tab's window hidden behind the selected one is laid out too,
+            // but never drawn: it takes its new width at once.
+            if LivingAnimationState.shared.reduceMotion || (window != nil && window?.isVisible != true) {
                 chipSlide = nil
             } else {
                 let from = chipSlide.map { Self.slid($0, at: now) } ?? last
@@ -57,16 +59,25 @@ extension Tako.TabBarView {
         return LivingAnimationState.failedShakeOffset(elapsed: now - since)
     }
 
-    /// Redraw every frame while something above moves.
+    /// Redraw every frame while something above moves, in a window on screen.
     func runMotion() {
-        guard motionLink == nil, window != nil else { return }
+        guard motionLink == nil, window?.isVisible == true else { return }
         let link = displayLink(target: self, selector: #selector(motionFrame(_:)))
         link.add(to: .main, forMode: .common)
         motionLink = link
     }
 
+    /// Lets go of a slide or a shake that has run its time, drawn or not --
+    /// a window ordered out or closed mid-motion is never drawn again to end
+    /// it. True while something still moves.
+    func expireMotion(now: CFTimeInterval = CACurrentMediaTime()) -> Bool {
+        if let slide = chipSlide, now - slide.start >= Self.chipSlideDuration { chipSlide = nil }
+        failedSince = failedSince.filter { now - $0.value < Self.shakeDuration }
+        return chipSlide != nil || !failedSince.isEmpty
+    }
+
     @objc func motionFrame(_ link: CADisplayLink) {
-        guard chipSlide != nil || !failedSince.isEmpty else {
+        guard expireMotion(), window?.isVisible == true else {
             link.invalidate()
             motionLink = nil
             return
