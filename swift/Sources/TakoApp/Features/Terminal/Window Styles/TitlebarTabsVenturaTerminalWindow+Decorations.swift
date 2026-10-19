@@ -69,6 +69,9 @@ extension TitlebarTabsVenturaTerminalWindow {
 
     func generateToolbar() {
         let terminalToolbar = TerminalToolbar(identifier: "Toolbar")
+        // Tako's own tab strip fills this row and names every tab; the
+        // toolbar's centred title would be drawn over it, in bold.
+        terminalToolbar.titleIsHidden = true
 
         toolbar = terminalToolbar
         toolbarStyle = .unifiedCompact
@@ -109,10 +112,8 @@ extension TitlebarTabsVenturaTerminalWindow {
         // Hide the window drag handle.
         windowDragHandle?.isHidden = true
 
-        // Re-enable the main toolbar title
-        if let toolbar = toolbar as? TerminalToolbar {
-            toolbar.titleIsHidden = false
-        }
+        // The toolbar title stays hidden: Tako's tab strip shows the titles
+        // (see `generateToolbar`).
     }
 
     func pushTabsToTitlebar(_ tabBarController: NSTitlebarAccessoryViewController) {

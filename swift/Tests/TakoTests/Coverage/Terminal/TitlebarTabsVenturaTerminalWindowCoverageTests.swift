@@ -33,6 +33,26 @@ struct TitlebarTabsVenturaTerminalWindowCoverageTests {
         }
     }
 
+    /// Tako's tab strip fills the titlebar row; the toolbar's own title,
+    /// centred and bold, was drawn over it whenever nothing had hidden it --
+    /// after the window became key alone, or restored in the background.
+    @Test func theToolbarTitleNeverShowsOverTheTabStrip() throws {
+        try withAppDelegate { _ in
+            let window = makeVenturaWindow()
+            defer { window.orderOut(nil) }
+            window.awakeFromNib()
+            let toolbar = try #require(window.toolbar as? TerminalToolbar)
+            #expect(toolbar.titleIsHidden)
+            window.title = "alex09x@ram11: /solana/hl-order-book-server"
+            #expect(toolbar.titleIsHidden)
+            window.resetCustomTabBarViews()
+            #expect(toolbar.titleIsHidden)
+            window.titlebarTabs = false
+            window.titlebarTabs = true
+            #expect((window.toolbar as? TerminalToolbar)?.titleIsHidden == true)
+        }
+    }
+
     @Test func becomeKeyAndResignKeyDoNotCrash() {
         withAppDelegate { _ in
             let window = makeVenturaWindow()
