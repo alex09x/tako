@@ -271,6 +271,24 @@ struct MotionCrabTests {
         #expect(bar.crabLayers.isEmpty, "pills have rings, not crabs")
     }
 
+    @Test func theClassicStripDrawsEachTabWithItsCrabInItsSlot() throws {
+        let scene = StripScene(tabs: 2, style: .classic)
+        defer { scene.close() }
+        let bar = scene.shown
+        bar.display()
+        #expect(bar.tabs.count == 2)
+        #expect(bar.crabLayers.count == bar.tabs.count, "\(bar.crabLayers.count) crabs for \(bar.tabs.count) tabs")
+        for tab in bar.tabs {
+            let crab = try #require(bar.crabLayers[ObjectIdentifier(tab.window)])
+            #expect(crab.superlayer === bar.layer && !crab.isHidden)
+            let slotX = (tab.frame.minX + Tako.TabBarView.Metrics.tabPaddingLeft).rounded() + Tako.TabBarView.Metrics.crabSize / 2
+            #expect(abs(crab.position.x - slotX) <= 1 && abs(crab.position.y - tab.frame.midY) <= 1, "crab at \(crab.position)")
+        }
+        bar.styleOverride = .pill
+        bar.display()
+        #expect(bar.crabLayers.isEmpty, "pills have rings, not crabs")
+    }
+
     @Test func aLiftedTabTurnsItsCrabWithIt() {
         let crab = crab(.idle)
         let slot = CGRect(x: 8, y: 11, width: 16, height: 16)
