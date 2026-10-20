@@ -82,6 +82,14 @@ extension Tako.TabBarView {
         let rect = baseRect.offsetBy(dx: shakeDX, dy: 0)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
 
+        // A new tab grows first; its content comes once it has its width.
+        guard tab.showsContent else {
+            ctx.addPath(path)
+            ctx.setFillColor((tab.isActive ? Palette.activeTab : Palette.hoverTab).cgColor)
+            ctx.fillPath()
+            return
+        }
+
         // Background (§4): inactive transparent, hover #1F1915, progress #1A1512, active #241C16 + 1px #2A211B inset border
         if tab.isActive {
             ctx.addPath(path)
@@ -111,7 +119,9 @@ extension Tako.TabBarView {
         paintedPillDots[tabKey] = Tako.Brand.hexString(for: dotColor)
         paintedRingStates[tabKey] = state
         updateStatusLayer(for: tab.window, rect: baseRect, state: state, hideRing: showNumberBadge)
-        if LivingAnimationState.shared.fixedTimeOverride == nil { statusLayers[tabKey]?.setShake(shakeDX) }
+        if LivingAnimationState.shared.fixedTimeOverride == nil {
+            statusLayers[tabKey]?.setPose(dx: shakeDX, tiltDegrees: liftTilt(for: tab))
+        }
 
         let borderInset: CGFloat = (state == .working || state == .offline) ? 1.0 : 0.0
 
@@ -213,11 +223,8 @@ extension Tako.TabBarView {
             drawProgressBar(in: tab.frame, progress: prog, context: ctx)
         }
 
-        if tab.isActive {
-            ctx.setFillColor(Tako.Brand.ember.cgColor)
-            ctx.fill(CGRect(x: tab.frame.minX, y: tab.frame.minY,
-                            width: tab.frame.width, height: Metrics.activeBarHeight))
-        }
+        // The active tab's Ember bar is drawn over the row by drawActiveBar:
+        // after a change it travels from the tab chosen before.
 
         let crabRect = CGRect(
             x: (tab.frame.minX + Metrics.tabPaddingLeft).rounded(),
@@ -281,9 +288,10 @@ extension Tako.TabBarView {
         ctx.strokePath()
     }
 
-    func drawButton(_ rect: CGRect, hovered: Bool, in ctx: CGContext, draw glyph: (CGContext, CGRect) -> Void) {
-        if hovered {
-            ctx.setFillColor(Palette.activeTab.cgColor)
+    func drawButton(_ rect: CGRect, key: String, hovered: Bool, in ctx: CGContext, draw glyph: (CGContext, CGRect) -> Void) {
+        let fill = buttonHoverAlpha(key, hovered: hovered)
+        if fill > 0 {
+            ctx.setFillColor(Palette.activeTab.withAlphaComponent(fill).cgColor)
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: Metrics.buttonRadius, cornerHeight: Metrics.buttonRadius, transform: nil))
             ctx.fillPath()
         }
@@ -292,7 +300,7 @@ extension Tako.TabBarView {
 
     func drawButtons(in ctx: CGContext) {
         if infoRect.width > 0 {
-            drawButton(infoRect, hovered: infoHovered, in: ctx) { ctx, rect in
+            drawButton(infoRect, key: "info", hovered: infoHovered, in: ctx) { ctx, rect in
                 let r: CGFloat = Metrics.infoGlyphSize / 2
                 ctx.setStrokeColor(Palette.dim.cgColor)
                 ctx.setLineWidth(1.2)
@@ -305,12 +313,12 @@ extension Tako.TabBarView {
                 ctx.strokePath()
             }
         }
-        drawButton(splitRect, hovered: splitHovered, in: ctx) { ctx, rect in
+        drawButton(splitRect, key: "split", hovered: splitHovered, in: ctx) { ctx, rect in
             let font = Tako.LivingTokens.monoFont(size: 15)
             let w = Tako.TabText.width(of: "◫", font: font)
             Tako.TabText.draw("◫", atX: rect.midX - w / 2, centeredAtY: rect.midY, font: font, color: Palette.dim, context: ctx)
         }
-        drawButton(plusRect, hovered: plusHovered, in: ctx) { ctx, rect in
+        drawButton(plusRect, key: "plus", hovered: plusHovered, in: ctx) { ctx, rect in
             let font = Tako.LivingTokens.monoFont(size: 15)
             let w = Tako.TabText.width(of: "+", font: font)
             Tako.TabText.draw("+", atX: rect.midX - w / 2, centeredAtY: rect.midY, font: font, color: Palette.dim, context: ctx)

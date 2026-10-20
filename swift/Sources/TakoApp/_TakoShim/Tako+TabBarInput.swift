@@ -33,7 +33,10 @@ extension Tako.TabBarView {
         if tabs.isEmpty || tabs.count != windows.count {
             layoutTabs()
         }
-        return tabs.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }
+        // A click aims where a tab lies at rest, not where it is drawn on
+        // its way there: a tab still growing in takes its click and its ✕.
+        let laid = restingTabs.count == tabs.count ? restingTabs : tabs
+        return laid.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -161,30 +164,37 @@ extension Tako.TabBarView {
             layoutTabs()
         }
         let currentPoint = convert(event.locationInWindow, from: nil)
+        // Where the tabs lie at rest decides the reorder, not where they are
+        // drawn on their way there, or the lifted tab under the pointer.
+        let laid = restingTabs.count == tabs.count ? restingTabs : tabs
         if !isTabDragging {
             let dx = currentPoint.x - dragStart.x
             let dy = currentPoint.y - dragStart.y
             if hypot(dx, dy) > 4 {
                 Tako.TabBarController.setDragState(in: group, draggedWindow: draggingWindow, index: fromIndex, start: dragStart, isDragging: true)
+                if fromIndex < laid.count { dragGrabOffset = dragStart.x - laid[fromIndex].frame.minX }
             }
         }
         guard isTabDragging else { return }
+        // The lifted tab follows the pointer.
+        dragPointX = currentPoint.x
+        needsDisplay = true
 
         let targetIndex: Int?
-        if let first = tabs.first, currentPoint.x < first.frame.minX {
+        if let first = laid.first, currentPoint.x < first.frame.minX {
             targetIndex = first.index
-        } else if let last = tabs.last, currentPoint.x > last.frame.maxX {
+        } else if let last = laid.last, currentPoint.x > last.frame.maxX {
             targetIndex = last.index
         } else {
-            targetIndex = tabs.first(where: { $0.frame.minX <= currentPoint.x && currentPoint.x <= $0.frame.maxX })?.index
+            targetIndex = laid.first(where: { $0.frame.minX <= currentPoint.x && currentPoint.x <= $0.frame.maxX })?.index
         }
 
         if let toIndex = targetIndex {
             let visible = group.visibleWindows
             if toIndex != fromIndex && toIndex >= 0 && toIndex < visible.count && fromIndex < visible.count,
-               fromIndex < tabs.count && toIndex < tabs.count {
-                let fromTab = tabs[fromIndex]
-                let toTab = tabs[toIndex]
+               fromIndex < laid.count && toIndex < laid.count {
+                let fromTab = laid[fromIndex]
+                let toTab = laid[toIndex]
                 let crossesThreshold: Bool
                 if toIndex > fromIndex {
                     crossesThreshold = currentPoint.x > max(toTab.frame.minX, fromTab.frame.minX + toTab.frame.width)
@@ -197,6 +207,9 @@ extension Tako.TabBarView {
                         Tako.TabBarController.setDragState(in: nil, index: nil, start: nil, isDragging: false)
                         return
                     }
+                    // The neighbours make room from where they are drawn now.
+                    reorderFrom = (Dictionary(tabs.map { (ObjectIdentifier($0.window), $0.frame) }, uniquingKeysWith: { a, _ in a }),
+                                   Tako.TabStripTransitions.clock())
                     Tako.CustomTabGroup.move(draggedWin, to: toIndex, in: group)
                     Tako.TabBarController.setDragState(in: group, draggedWindow: draggedWin, index: toIndex, start: dragStart, isDragging: true)
                     needsDisplay = true
@@ -207,6 +220,12 @@ extension Tako.TabBarView {
 
     override func mouseUp(with event: NSEvent) {
         let wasDragging = isTabDragging
+        // Let go, the lifted tab springs from where it is into its place.
+        if wasDragging, let dragged = draggingWindow, let shown = tabs.first(where: { $0.window === dragged }) {
+            drop = (ObjectIdentifier(dragged), shown.frame.minX, Tako.TabStripTransitions.clock())
+            runMotion()
+        }
+        dragPointX = nil
         Tako.TabBarController.setDragState(in: nil, index: nil, start: nil, isDragging: false)
         if wasDragging {
             LayoutRecorder.record()

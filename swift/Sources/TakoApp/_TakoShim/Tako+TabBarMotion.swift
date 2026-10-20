@@ -73,7 +73,12 @@ extension Tako.TabBarView {
     func expireMotion(now: CFTimeInterval = CACurrentMediaTime()) -> Bool {
         if let slide = chipSlide, now - slide.start >= Self.chipSlideDuration { chipSlide = nil }
         failedSince = failedSince.filter { now - $0.value < Self.shakeDuration }
-        return chipSlide != nil || !failedSince.isEmpty
+        // The tab strip's transitions run on their own clock (a test's, or this one).
+        let stripNow = Tako.TabStripTransitions.clock()
+        group?.transitions.expire(now: stripNow)
+        if let reorder = reorderFrom, stripNow - reorder.at >= Tako.TabStripTransitions.reorderDuration { reorderFrom = nil }
+        if let drop, stripNow - drop.at >= Tako.TabStripTransitions.springSettle { self.drop = nil }
+        return chipSlide != nil || !failedSince.isEmpty || stripMoves(now: stripNow)
     }
 
     @objc func motionFrame(_ link: CADisplayLink) {

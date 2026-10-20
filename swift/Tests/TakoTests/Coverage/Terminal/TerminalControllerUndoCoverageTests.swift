@@ -198,11 +198,12 @@ struct TerminalControllerCloseWindowUndoTests {
                 bar.draw(bar.bounds)
                 image.unlockFocus()
 
-                // Tab 0 (aWindow) is active and sits at x: 90...195.
-                // Its close glyph is centered near x: 195.
+                // Tab 0 (aWindow) is the active one: its ✕, wherever the strip lays it.
+                let close = bar.closeRect(of: try #require(bar.restingTabs.first { $0.window === aWindow }))
+                try #require(!close.isNull, "tab 0 has no close button")
                 let clickEvent = NSEvent.mouseEvent(
                     with: .leftMouseDown,
-                    location: NSPoint(x: 195, y: 14),
+                    location: bar.convert(NSPoint(x: close.midX, y: close.midY), to: nil),
                     modifierFlags: [],
                     timestamp: 0,
                     windowNumber: aWindow.windowNumber,
@@ -244,11 +245,13 @@ struct TerminalControllerCloseWindowUndoTests {
                 bar.draw(bar.bounds)
                 image.unlockFocus()
 
-                // Tab 1 (bWindow) is in the background and sits at x: 210...330.
-                // Its close glyph is centered near x: 314.
+                // Tab 1 (bWindow) is in the background: its ✕, wherever the strip lays it
+                // (where it lies at rest, as clicks aim: it may still be growing in).
+                let close = bar.closeRect(of: try #require(bar.restingTabs.first { $0.window === bWindow }))
+                try #require(!close.isNull, "tab 1 has no close button")
                 let clickEvent = NSEvent.mouseEvent(
                     with: .leftMouseDown,
-                    location: NSPoint(x: 314, y: 14),
+                    location: bar.convert(NSPoint(x: close.midX, y: close.midY), to: nil),
                     modifierFlags: [],
                     timestamp: 0,
                     windowNumber: aWindow.windowNumber,

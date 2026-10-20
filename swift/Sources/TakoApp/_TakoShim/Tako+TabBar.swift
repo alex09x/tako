@@ -92,9 +92,11 @@ extension Tako {
         /// One drawn tab and the window behind it.
         struct Tab {
             let window: NSWindow
-            let frame: CGRect
+            var frame: CGRect
             let isActive: Bool
             let index: Int
+            /// False while a new tab is still growing: its content comes after.
+            var showsContent = true
         }
 
         var tabs: [Tab] = []
@@ -118,6 +120,21 @@ extension Tako {
         weak var draggingWindow: NSWindow?
         var dragStartPoint: CGPoint?
         var isTabDragging: Bool = false
+
+        // What the strip's transitions keep in this bar (Tako+TabStripTransitions.swift).
+        /// The tabs as laid out at rest, before anything moves them.
+        var restingTabs: [Tab] = []
+        /// Where the pointer drags the lifted tab, and where on it the tab was taken.
+        var dragPointX: CGFloat?
+        var dragGrabOffset: CGFloat = 0
+        /// The tabs' frames before the last reorder, and when it happened.
+        var reorderFrom: (frames: [ObjectIdentifier: CGRect], at: CFTimeInterval)?
+        /// A dropped tab springing from where it was let go into its place.
+        var drop: (id: ObjectIdentifier, fromX: CGFloat, at: CFTimeInterval)?
+        /// The active tab's bar, on its way to it after a change.
+        var activeBarFrame: CGRect?
+        var buttonHoverSince: [String: CFTimeInterval] = [:]
+        var buttonWasHovered: [String: Bool] = [:]
         var paintedPillDots: [ObjectIdentifier: String] = [:]
         var paintedRingStates: [ObjectIdentifier: SurfaceState] = [:]
         var statusLayers: [ObjectIdentifier: TabStatusLayer] = [:]
@@ -296,6 +313,7 @@ extension Tako {
                     index: index))
                 x += width + gap
             }
+            tabs = applyTransitions(to: tabs, gap: gap)
         }
 
         /// How far the row scrolls left so the selected tab is in view: none
@@ -335,9 +353,15 @@ extension Tako {
             ctx.saveGState()
             ctx.clip(to: stripRect)
             var visibleTabIds: Set<ObjectIdentifier> = []
-            for tab in tabs where tab.frame.intersects(stripRect) {
-                visibleTabIds.insert(ObjectIdentifier(tab.window))
+            let lifted = isTabDragging ? draggingWindow : nil
+            for tab in tabs where tab.frame.intersects(stripRect) && tab.window !== lifted {
+                if tab.showsContent { visibleTabIds.insert(ObjectIdentifier(tab.window)) }
                 drawTab(tab, in: ctx)
+            }
+            drawActiveBar(in: ctx)
+            if let lifted, let tab = tabs.first(where: { $0.window === lifted }) {
+                visibleTabIds.insert(ObjectIdentifier(tab.window))
+                drawLifted(tab, in: ctx)
             }
             ctx.restoreGState()
             syncStatusLayers(visibleTabIds: visibleTabIds)

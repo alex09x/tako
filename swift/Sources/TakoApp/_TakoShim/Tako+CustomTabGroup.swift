@@ -29,6 +29,8 @@ extension Tako {
     final class CustomTabGroup {
         private(set) var windows: [NSWindow] = []
         private(set) var selectedWindow: NSWindow?
+        /// What the group's tab strips are moving (Tako+TabStripTransitions.swift).
+        let transitions = TabStripTransitions()
         private weak var pendingOrderOutWindow: NSWindow?
         private var lastSelectedWindowByWorkspace: [UUID: NSWindow] = [:]
         private(set) var focusGeneration: Int = 0
@@ -414,6 +416,7 @@ extension Tako {
             // position, not the group's.
             window.setFrame(anchor.frame, display: false)
             target.windows.append(window)
+            if target.windows.count > 1 { target.transitions.tabAppeared(window) }
             if select {
                 target.select(window)
             } else {
@@ -437,6 +440,7 @@ extension Tako {
             guard !target.windows.contains(window) else { return }
             window.setFrame(anchor.frame, display: false)
             target.windows.insert(window, at: clamped)
+            if target.windows.count > 1 { target.transitions.tabAppeared(window) }
             if select {
                 target.select(window)
             } else {
@@ -453,7 +457,9 @@ extension Tako {
             groupsByWindow.removeValue(forKey: ObjectIdentifier(window))
 
             guard let index = group.windows.firstIndex(of: window) else { return }
+            let shownIndex = group.visibleWindows.firstIndex(of: window)
             group.windows.remove(at: index)
+            if let shownIndex { group.transitions.tabClosed(window, at: shownIndex) }
 
             let isSelected = group.selectedWindow === window
             let visible = group.visibleWindows
@@ -595,6 +601,7 @@ extension Tako {
                 return
             }
             let previous = selectedWindow
+            transitions.selectionMoved(from: previous)
             selectedWindow = window
             pendingOrderOutWindow = previous
             Self.lastActiveWindowFrame = window.frame

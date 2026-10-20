@@ -64,6 +64,27 @@ enum MotionSpec {
     /// 5a: a quiet program's ring, Ember at 45%; 100% while output flows.
     static let liveQuietAlpha: CGFloat = 0.45
 
+    // MARK: The tab strip (Terminal UI «Вкладки: анатомия, состояния, переходы»)
+
+    /// "новая вкладка ⌘T 160ms ease-out": width 0 → full, content after.
+    static let tabAppear: CFTimeInterval = 0.16
+    /// "закрытие ⌘W 140ms ease-in": collapses, neighbours close up.
+    static let tabClose: CFTimeInterval = 0.14
+    /// "переключение ⌃Tab 120ms, только полоса": the content changes at once.
+    static let tabBarSlide: CFTimeInterval = 0.12
+    /// "перестановка drag 120ms, соседи раздвигаются".
+    static let tabReorder: CFTimeInterval = 0.12
+    /// "отпустил — вкладка «пружинит» на позицию (spring 300/24)".
+    static let dropSpring = (stiffness: 300.0, damping: 24.0)
+    /// "drag подняли: тень 0 14px 30px rgba(0,0,0,.55), наклон −3°".
+    static let liftShadow = (offset: CGFloat(14), blur: CGFloat(30), alpha: CGFloat(0.55))
+    static let liftTilt: CGFloat = -3
+    /// "ховер фон #241C16 … появление 80ms", "тултипы через 800ms".
+    static let buttonHover: CFTimeInterval = 0.08
+    static let tooltipDelayMs = 800
+    static let cssEaseOut = CSSTiming.cubicBezier(0, 0, 0.58, 1)
+    static let cssEaseIn = CSSTiming.cubicBezier(0.42, 0, 1, 1)
+
     // MARK: Shapes
 
     static let ringSide: CGFloat = 14

@@ -18,6 +18,7 @@ extension AppDelegate {
     // MARK: - NSApplicationDelegate
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        Tako.registerTooltipDelay()
         // Before any window is restored: each terminal's shell is told where
         // the control socket is.
         ControlCommands.apply(mode: tako.config.remoteControl,

@@ -477,10 +477,19 @@ extension Tako {
 
         /// Off its place by `dx` with the rest of a shaking pill.
         func setShake(_ dx: CGFloat) {
-            guard transform.m41 != dx || !CATransform3DIsAffine(transform) else { return }
+            setPose(dx: dx, tiltDegrees: 0)
+        }
+
+        /// Off its place by `dx` and turned by `tiltDegrees` (CSS sense,
+        /// negative anticlockwise) with the rest of its pill: shaking, or
+        /// lifted by a drag.
+        func setPose(dx: CGFloat, tiltDegrees: CGFloat) {
+            var pose = CATransform3DMakeTranslation(dx, 0, 0)
+            if tiltDegrees != 0 { pose = CATransform3DRotate(pose, -tiltDegrees * .pi / 180, 0, 0, 1) }
+            guard !CATransform3DEqualToTransform(transform, pose) else { return }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            transform = dx == 0 ? CATransform3DIdentity : CATransform3DMakeTranslation(dx, 0, 0)
+            transform = pose
             CATransaction.commit()
         }
 
