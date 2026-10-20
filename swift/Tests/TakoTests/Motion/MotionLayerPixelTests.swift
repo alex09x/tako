@@ -190,6 +190,8 @@ struct MotionLayerPixelTests {
             .filter { let s = frame.sample($0); return Weights.warm(s.r, s.g, s.b) > 0.2 }
         let first = try #require(lit.first), last = try #require(lit.last)
         let inset = surface == .row ? first.x - scene.rect.minX : 0
+        // 4a: a row's progress line starts 8 pt in (`.pfill` left: 8px).
+        #expect(surface == .pill || (7...10).contains(inset), "the row's line starts \(inset) pt in")
         let span = scene.size.width - 2 * inset
         // A pill's corner hides the first couple of points of a line that starts at its edge.
         #expect(abs((last.x - first.x) - span * 0.4) < 4, "line \(last.x - first.x) of \(span)")

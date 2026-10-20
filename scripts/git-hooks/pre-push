@@ -1,0 +1,40 @@
+#!/bin/bash
+# tako — Terminal emulator
+# Copyright (c) 2026 Alexander Panasenko
+#
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
+# Before a push that changes the Swift app, the motion gate runs on the test
+# Mac (scripts/motion-gate.sh): a push that breaks an animation, an effect, a
+# state or a transition of the design does not leave the machine.
+#
+#   git config core.hooksPath scripts/git-hooks     # turn it on
+#   TAKO_MAC=user@test-mac.local git push           # the gate needs the test Mac
+#   git push --no-verify                            # skip it once
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+zero=0000000000000000000000000000000000000000
+changed=""
+while read -r _ local_sha _ remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue
+    if [ "$remote_sha" = "$zero" ]; then
+        files=$(git log --name-only --format= "$local_sha" --not --remotes)
+    else
+        files=$(git diff --name-only "$remote_sha" "$local_sha")
+    fi
+    changed+="$files"$'\n'
+done
+
+if ! grep -qE '^swift/' <<<"$changed"; then
+    exit 0
+fi
+if [ -z "${TAKO_MAC:-}" ]; then
+    echo "pre-push: the motion gate needs TAKO_MAC (the test Mac); not run" >&2
+    exit 0
+fi
+echo "pre-push: motion gate on the test Mac" >&2
+exec scripts/motion-gate.sh

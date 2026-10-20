@@ -244,6 +244,8 @@ extension Tako {
 
         /// Whether a fade is armed, for tests.
         var isFadePending: Bool { successTimer?.isValid == true }
+        /// When the armed fade goes off, for tests.
+        var fadeDue: Date? { isFadePending ? successTimer?.fireDate : nil }
 
         /// What the fade does when it fires. Internal so a test can fire it
         /// without waiting on a real timer.

@@ -214,6 +214,10 @@ extension Tako.TabBarView {
         super.mouseUp(with: event)
     }
 
+    /// How long ⌘ is held before the tab numbers show (Terminal UI: "задержка 150ms"),
+    /// so a ⌘ shortcut typed at speed does not flash them.
+    static let commandBadgeDelay: TimeInterval = 0.15
+
     /// Show the command-number badges while the key is held, provided multiple tabs exist.
     func commandKeyChanged(held: Bool) {
         badgeWork?.cancel()
@@ -230,6 +234,6 @@ extension Tako.TabBarView {
             self.needsDisplay = true
         }
         badgeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandBadgeDelay, execute: work)
     }
 }

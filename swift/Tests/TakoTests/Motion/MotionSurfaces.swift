@@ -21,6 +21,9 @@ final class MotionSurfaceHarness {
     let reduceMotion: Bool
     static let pillSize = CGSize(width: 140, height: 28)
 
+    /// Set once a sidebar row showed no status layer where it must have one.
+    private static var rowsDrawNoLayer = false
+
     private var pill: Tako.TabStatusLayer?
     private var pulses = 0
     private let model = RowModel()
@@ -51,7 +54,12 @@ final class MotionSurfaceHarness {
             model.item = Self.item(state, isChild: surface != .row, pulses: self.pulses)
             if window == nil { makeWindow() }
             hosting?.layoutSubtreeIfNeeded()
-            TerminalTestSupport.waitUntil(timeout: 1) { self.settled(on: state) }
+            // Rows that draw no layer at all fail every case at once rather
+            // than each waiting its second out: hundreds of cases would keep
+            // the gate from failing for minutes.
+            guard !Self.rowsDrawNoLayer else { return }
+            let settled = TerminalTestSupport.waitUntil(timeout: 1) { self.settled(on: state) }
+            if !settled && hosts.isEmpty && surface != .paneSurface { Self.rowsDrawNoLayer = true }
         }
     }
 
