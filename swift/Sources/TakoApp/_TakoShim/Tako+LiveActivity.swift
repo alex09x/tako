@@ -13,8 +13,8 @@ import Foundation
 extension Tako {
     /// What a quiet program -- ssh, vim, `tail -f`, a dev server -- is doing
     /// for its tab (Sessions UI 5a). It is not working, so it shows the data
-    /// instead: a ring that answers each burst of output, the rate while the
-    /// output is dense, how long it has been quiet otherwise.
+    /// instead: a ring that answers each burst of output, how long it has
+    /// been quiet otherwise. Never a number that changes every second.
     struct LiveActivity: Equatable, Sendable {
         /// The program, as the command line names it: `ssh`, `tail`, `npm`.
         var program: String?
@@ -33,13 +33,14 @@ extension Tako {
         /// Below this the rate is noise and the program's name says more.
         static let rateThreshold = 2
 
-        /// The rate while the output is dense: "38/s".
+        /// The rate while the output is dense: "38/s". For takoctl only: in
+        /// a tab it was one more number changing every second, as the timer was.
         var rateLabel: String? {
             isFlowing && linesPerSecond >= Self.rateThreshold ? "\(linesPerSecond)/s" : nil
         }
 
-        /// What stands where a timer would: the rate, else the program.
-        var metaLabel: String? { rateLabel ?? program }
+        /// What stands where a timer would: the program.
+        var metaLabel: String? { program }
 
         /// How long it has been quiet, in whole minutes: "quiet 4m".
         var quietLabel: String {

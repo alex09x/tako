@@ -60,7 +60,7 @@ struct PaneOverviewCard: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {
-                    SessionSidebarMetaLabel(text: meta, style: state.isLive && meta == item.live?.rateLabel ? .ember : .dim)
+                    SessionSidebarMetaLabel(text: meta, style: .dim)
                 }
             }
             .frame(height: 18)

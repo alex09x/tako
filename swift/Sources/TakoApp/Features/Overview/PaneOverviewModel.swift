@@ -120,14 +120,14 @@ struct PaneOverviewItem: Identifiable, Equatable, Sendable {
     }
 
     /// Meta text shown on the right of Row 1: `"NN%"` when progress is
-    /// active; for a live program its rate while dense, how long it has
-    /// been quiet while quiet (Sessions UI 5a). Never a timer.
+    /// active; for a live program how long it has been quiet, nothing while
+    /// it prints -- its chip names it (Sessions UI 5a). Never a timer or a rate.
     var metaDisplayText: String? {
         switch surfaceState {
         case .progress(let p):
             return "\(Int((p * 100).rounded()))%"
         case .live(let flowing):
-            return flowing ? live?.rateLabel : live?.quietLabel
+            return flowing ? nil : live?.quietLabel
         default:
             return nil
         }

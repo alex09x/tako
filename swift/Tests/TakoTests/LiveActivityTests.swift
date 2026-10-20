@@ -157,14 +157,14 @@ struct LiveActivityLabelTests {
         #expect(Tako.CommandKind.describe("").program == nil)
     }
 
-    @Test func aSidebarRowShowsTheRateTheProgramOrTheExitCode() {
+    @Test func aSidebarRowShowsTheProgramOrTheExitCodeNeverARate() {
         var live = Tako.LiveActivity(program: "tail")
         live.isFlowing = true
         live.linesPerSecond = 38
         let flowing = SessionSidebarItem(id: "a", index: 0, isSelected: false, title: "log", live: live)
         #expect(flowing.surfaceState == .live(flowing: true))
-        #expect(flowing.metaDisplayText == "38/s")
-        #expect(flowing.metaStyle == .ember)
+        #expect(flowing.metaDisplayText == "tail")
+        #expect(flowing.metaStyle == .dim)
 
         live.isFlowing = false
         live.linesPerSecond = 0

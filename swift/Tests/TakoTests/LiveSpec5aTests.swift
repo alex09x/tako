@@ -51,7 +51,8 @@ struct LiveSpec5aTests {
         #expect(bar.pillMetaStyle(for: window) == .dim)
     }
 
-    @Test func denseOutputShowsTheRateInEmber() {
+    /// A rate changed every second, as the timer did: neither is shown.
+    @Test func denseOutputShowsTheProgramNotARate() {
         let lines = Lines()
         let surface = liveSurface(lines, program: "ssh", detail: "alex@ram11")
         let window = window(with: surface)
@@ -59,8 +60,8 @@ struct LiveSpec5aTests {
         surface.crab.sampleLive()
         let bar = Tako.TabBarView(frame: .zero)
         #expect(bar.pillSurfaceState(for: window) == .live(flowing: true))
-        #expect(bar.pillMetaText(for: window) == "38/s")
-        #expect(bar.pillMetaStyle(for: window) == .ember)
+        #expect(bar.pillMetaText(for: window) == "ssh")
+        #expect(bar.pillMetaStyle(for: window) == .dim)
     }
 
     @Test func aRareLineFlowsButShowsTheProgramNotARate() {
@@ -85,7 +86,7 @@ struct LiveSpec5aTests {
         busy.crab.sampleLive()
         let bar = Tako.TabBarView(frame: .zero)
         #expect(bar.pillSurfaceState(for: window) == .live(flowing: true))
-        #expect(bar.pillMetaText(for: window) == "12/s")
+        #expect(bar.pillMetaText(for: window) == "tail")
     }
 
     @Test func aFailureShowsItsExitCodeInARedChip() {
@@ -273,13 +274,13 @@ struct LiveSpec5aTests {
 
     // MARK: - Overview
 
-    @Test func anOverviewCardShowsTheRateOrHowLongItHasBeenQuiet() {
+    @Test func anOverviewCardShowsHowLongItHasBeenQuietNeverARate() {
         var live = Tako.LiveActivity(program: "ssh")
         live.isFlowing = true
         live.linesPerSecond = 38
         let flowing = PaneOverviewItem(id: UUID(), title: "ram11", live: live)
         #expect(flowing.surfaceState == .live(flowing: true))
-        #expect(flowing.metaDisplayText == "38/s")
+        #expect(flowing.metaDisplayText == nil)
 
         live.isFlowing = false
         live.linesPerSecond = 0

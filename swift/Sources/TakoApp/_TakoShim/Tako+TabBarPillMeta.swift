@@ -24,8 +24,6 @@ extension Tako.TabBarView {
     /// How the text right of a pill's title is drawn.
     enum PillMetaStyle: Equatable {
         case dim
-        /// A live program's rate: "38/s".
-        case ember
         /// A failure's exit code: "exit 1" in a red chip.
         case exitCode
     }
@@ -49,8 +47,6 @@ extension Tako.TabBarView {
         switch pillSurfaceState(for: window) {
         case .failed:
             if case .failed(_?) = aggregateCrab(for: window)?.state { return .exitCode }
-        case .live:
-            if liveActivity(for: window)?.rateLabel != nil { return .ember }
         default:
             break
         }
@@ -67,13 +63,12 @@ extension Tako.TabBarView {
         return Tako.TabText.width(of: text, font: Self.exitChipFont) + 2 * Self.exitChipPadding
     }
 
-    /// Progress, a live program's rate or name, or a failure's exit code
+    /// Progress, a live program's name, or a failure's exit code
     /// in a red chip: 9.5pt semibold on Error at 12%, a 30% hairline, r4.
     func drawPillMeta(_ text: String, style: PillMetaStyle, atX x: CGFloat, centeredAtY midY: CGFloat, in ctx: CGContext) {
         switch style {
-        case .dim, .ember:
-            Tako.TabText.draw(text, atX: x, centeredAtY: midY, font: Fonts.timer,
-                              color: style == .ember ? Tako.LivingTokens.ember : Palette.dim, context: ctx)
+        case .dim:
+            Tako.TabText.draw(text, atX: x, centeredAtY: midY, font: Fonts.timer, color: Palette.dim, context: ctx)
         case .exitCode:
             let error = Tako.LivingTokens.error
             let chip = CGRect(x: x, y: midY - 7, width: pillMetaWidth(text, style: .exitCode), height: 14)

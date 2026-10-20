@@ -73,7 +73,7 @@ extension SessionSidebarItem {
 
     /// Meta text shown on the right of Line 1: `"NN%"` when progress is
     /// active, `"exit N"` for a failure that has a code, a live program's
-    /// rate or name (Sessions UI 5a). Never a timer.
+    /// name (Sessions UI 5a). Never a timer or a rate.
     var metaDisplayText: String? {
         switch surfaceState {
         case .progress(let p):
@@ -97,12 +97,11 @@ extension SessionSidebarItem {
         return nil
     }
 
-    /// How Line 1's meta text is drawn: a red chip for an exit code, Ember
-    /// for a live rate, dim otherwise.
+    /// How Line 1's meta text is drawn: a red chip for an exit code, dim
+    /// otherwise.
     var metaStyle: Tako.TabBarView.PillMetaStyle {
         switch surfaceState {
         case .failed where exitCode != nil: return .exitCode
-        case .live where live?.rateLabel != nil: return .ember
         default: return .dim
         }
     }

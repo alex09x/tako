@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 
 /// The text right of a sidebar row's title, drawn like the pill's: the
-/// timer dim, a live rate in Ember, an exit code in a red chip
+/// timer dim, a live program's name dim, an exit code in a red chip
 /// (Sessions UI 5a).
 struct SessionSidebarMetaLabel: View {
     let text: String
@@ -22,10 +22,10 @@ struct SessionSidebarMetaLabel: View {
 
     var body: some View {
         switch style {
-        case .dim, .ember:
+        case .dim:
             Text(text)
                 .font(Font(T.monoFont(size: 10, weight: .regular)))
-                .foregroundColor(Color(nsColor: style == .ember ? T.ember : T.dim))
+                .foregroundColor(Color(nsColor: T.dim))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         case .exitCode:
