@@ -85,10 +85,26 @@ extension TitlebarTabsVenturaTerminalWindow {
 
     // For titlebar tabs, we want to hide the separator view so that we get rid
     // of an aesthetically unpleasing shadow.
+    //
+    // AppKit asks for constraints every display cycle, so this runs every
+    // frame anything in the window animates; walking the titlebar's views
+    // each time took a fifth of the main thread. The separators found are
+    // kept; the titlebar is searched again once one of them is gone, and,
+    // while none was found, at most once a second.
     func hideTitleBarSeparators() {
+        let known = titleBarSeparators.allObjects
+        if !known.isEmpty, known.allSatisfy({ $0.superview != nil }) {
+            for v in known where !v.isHidden { v.isHidden = true }
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if known.isEmpty, now - titleBarSeparatorsSearched < 1 { return }
+        titleBarSeparatorsSearched = now
         guard let titlebarContainer else { return }
+        titleBarSeparators.removeAllObjects()
         for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
             v.isHidden = true
+            titleBarSeparators.add(v)
         }
     }
 

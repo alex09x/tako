@@ -223,6 +223,11 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
 
     var windowButtonsBackdrop: WindowButtonsBackdropView?
 
+    /// The titlebar separators hidden so far, and when the titlebar was last
+    /// searched for them (TitlebarTabsVenturaTerminalWindow+Decorations.swift).
+    let titleBarSeparators = NSHashTable<NSView>.weakObjects()
+    var titleBarSeparatorsSearched: TimeInterval = 0
+
     var windowDragHandle: WindowDragView?
 
     // Used by the window controller to enable/disable titlebar tabs.
