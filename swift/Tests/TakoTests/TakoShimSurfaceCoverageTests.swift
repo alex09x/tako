@@ -18,8 +18,7 @@ import Testing
 // Coverage for the two _TakoShim files this task's acceptance gate singles
 // out as under the line-coverage floor: Tako+CrabView.swift's
 // `CrabTabBinding` (the Combine glue between a surface's `CrabTracker` and
-// its drawn crab, entirely untouched by TakoShimCoverageTests.swift's
-// CrabView-drawing tests) and Tako+SurfaceUI.swift's SwiftUI plumbing
+// its tab's progress label) and Tako+SurfaceUI.swift's SwiftUI plumbing
 // (`SurfaceWrapper`, `InspectableSurface`, and the FocusedValues round trip).
 
 
@@ -62,7 +61,7 @@ struct CrabTabBindingCoverageTests {
         #expect(Tako.CrabTabBinding(surface: view, window: window) == nil)
     }
 
-    @Test func initInsertsTheCrabAndTimerLabelAtTheHeadOfTheStack() {
+    @Test func initInsertsTheProgressLabelAtTheHeadOfTheStack() {
         let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         defer { view.close() }
         let window = makeWindow()
@@ -72,12 +71,12 @@ struct CrabTabBindingCoverageTests {
 
         let binding = Tako.CrabTabBinding(surface: view, window: window)
         #expect(binding != nil)
-        #expect(stack.arrangedSubviews.count == 3)
-        #expect(stack.arrangedSubviews[0] is Tako.CrabView)
-        #expect(stack.arrangedSubviews[1] is NSTextField)
+        #expect(stack.arrangedSubviews.count == 2)
+        #expect(stack.arrangedSubviews[0] is NSTextField)
+        #expect(stack.arrangedSubviews[0].identifier == Tako.CrabTabBinding.labelIdentifier)
     }
 
-    @Test func reInitOnTheSameStackRemovesThePreviousCrabView() {
+    @Test func reInitOnTheSameStackRemovesThePreviousLabel() {
         let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         defer { view.close() }
         let window = makeWindow()
@@ -86,36 +85,11 @@ struct CrabTabBindingCoverageTests {
 
         let first = Tako.CrabTabBinding(surface: view, window: window)
         #expect(first != nil)
-        #expect(stack.arrangedSubviews.filter { $0 is Tako.CrabView }.count == 1)
-
         let second = Tako.CrabTabBinding(surface: view, window: window)
         #expect(second != nil)
-        // The stale crab from `first` is removed before `second`'s is
-        // inserted, so the stack never accumulates more than one crab per
-        // window -- the whole point of the re-add guard in `init?`.
-        #expect(stack.arrangedSubviews.filter { $0 is Tako.CrabView }.count == 1)
-    }
-
-    @Test func stateAndUnreadPublishThroughToTheCrabView() {
-        let view = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
-        defer { view.close() }
-        let window = makeWindow()
-        let stack = NSStackView()
-        window.tab.accessoryView = stack
-
-        let binding = Tako.CrabTabBinding(surface: view, window: window)
-        #expect(binding != nil)
-        guard let crabView = stack.arrangedSubviews.first as? Tako.CrabView else {
-            Issue.record("expected the crab view at index 0")
-            return
-        }
-
-        view.crab.reconnecting()
-        #expect(waitUntil { crabView.state == .reconnecting })
-
-        view.crab.connectionLost()
-        #expect(waitUntil { crabView.state == .ghost })
-        #expect(waitUntil { crabView.unread })
+        // The stale label from `first` is removed before `second`'s is
+        // inserted, so the stack never collects one per call.
+        #expect(stack.arrangedSubviews.filter { $0.identifier == Tako.CrabTabBinding.labelIdentifier }.count == 1)
     }
 
     @Test func progressReportedUpdatesTheLabelAndHidesWhenCleared() {
@@ -127,8 +101,8 @@ struct CrabTabBindingCoverageTests {
 
         let binding = Tako.CrabTabBinding(surface: view, window: window)
         #expect(binding != nil)
-        guard let label = stack.arrangedSubviews.dropFirst().first as? NSTextField else {
-            Issue.record("expected the elapsed/progress label at index 1")
+        guard let label = stack.arrangedSubviews.first as? NSTextField else {
+            Issue.record("expected the progress label at index 0")
             return
         }
 

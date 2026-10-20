@@ -36,10 +36,10 @@ extension Tako {
             static let tabHeight: CGFloat = 28
             static let minTabWidth: CGFloat = 120
             /// Narrowest a tab can be and still show its close button beside
-            /// the crab.
+            /// its status ring.
             static let compactTabWidth: CGFloat = tabPaddingLeft + crabSize + contentGap + closeSize + tabPaddingRight
-            /// Narrowest a tab ever gets: its crab, whole, with its padding.
-            /// Below this the crab and its badge would spill into the next tab.
+            /// Narrowest a tab ever gets: its status slot, whole, with its padding.
+            /// Below this the ring and its badge would spill into the next tab.
             static let iconTabWidth: CGFloat = tabPaddingLeft + crabSize + tabPaddingRight
             static let maxTabWidth: CGFloat = 220
             static let firstTabX: CGFloat = 90
@@ -138,8 +138,6 @@ extension Tako {
         var paintedPillDots: [ObjectIdentifier: String] = [:]
         var paintedRingStates: [ObjectIdentifier: SurfaceState] = [:]
         var statusLayers: [ObjectIdentifier: TabStatusLayer] = [:]
-        /// A classic tab's crab, a layer of its own (Tako+TabBarCrab.swift).
-        var crabLayers: [ObjectIdentifier: CrabLayer] = [:]
 
         // What moves frame by frame (Tako+TabBarMotion.swift).
         var chipWidthTarget: CGFloat?

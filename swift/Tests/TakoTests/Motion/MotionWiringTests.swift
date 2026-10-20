@@ -144,4 +144,16 @@ struct MotionWiringTests {
         bar.commandKeyChanged(held: false)
         #expect(!bar.showingBadges, "the numbers stayed after ⌘ was let go")
     }
+
+    /// Alex, 2026-10-20: everything keeps moving without focus -- Tako in
+    /// the background still breathes and spins. Only a window nobody can
+    /// see pauses (occluded or hidden).
+    @Test func anAppInTheBackgroundKeepsMoving() {
+        let motion = LivingAnimationState.shared
+        let before = motion.isTimelinePaused
+        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(motion.isTimelinePaused == before, "Tako losing focus changed whether it moves")
+    }
+
 }

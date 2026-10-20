@@ -11,7 +11,7 @@
 # and transitions to the design (Sessions UI 1b/4a/4b/5a, Terminal UI), in one
 # run on the test Mac -- the status layer's states and changes on every
 # surface, frames of each drawn by Core Animation and by SwiftUI, the tab
-# strip's shake and slide, a classic tab's crab, priorities, the rules behind
+# strip's shake and slide, a classic tab's ring, priorities, the rules behind
 # the states, the cost of moving, the cursor's blink, and the ledger that
 # ties every line of the design to its tests. scripts/motion-mutants.py proves it fails
 # when any of that is broken.
@@ -36,8 +36,6 @@ SUITES=(
     PaneStatusTests
     TabStatusLifecycleTests
     CrabTrackerCoverageTests    # the crab's states, priority, the 3 s and 2 s rules
-    CrabViewCoverageTests       # the crab in upstream's tab accessory
-    CrabPainterCoverageTests    # the crab's cells on whole pixels
     CrabTabBindingCoverageTests
     QuietSinceTests
     QuietChromeTests

@@ -111,36 +111,3 @@ struct CrabTrackerCoverageTests {
         #expect(tracker.state == .idle)
     }
 }
-
-// MARK: - CrabView: the classic strip's crab layer in the tab accessory
-
-@Suite @MainActor
-struct CrabViewCoverageTests {
-    @Test func intrinsicContentSizeIsSixteenBySixteen() {
-        let view = Tako.CrabView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
-        #expect(view.intrinsicContentSize == NSSize(width: 16, height: 16))
-        #expect(!view.isFlipped)
-    }
-
-    @Test func itHostsACrabLayerThatFollowsItsStateAndUnreadDot() {
-        let view = Tako.CrabView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
-        #expect(view.crab.superlayer === view.layer)
-        #expect(view.crab.shownState == .idle)
-        #expect(view.crab.unreadDot.isHidden)
-        view.unread = true
-        #expect(!view.crab.unreadDot.isHidden)
-        view.state = .reconnecting
-        #expect(view.crab.shownState == .reconnecting)
-        #expect(view.crab.glyph.animation(forKey: Tako.CrabLayer.Key.pulse) != nil || LivingAnimationState.shared.reduceMotion)
-    }
-
-    @Test func settingTheSameStateAgainLeavesItsMotionRunning() throws {
-        let view = Tako.CrabView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
-        view.state = .running
-        guard !LivingAnimationState.shared.reduceMotion else { return }
-        let scuttle = try #require(view.crab.glyph.animation(forKey: Tako.CrabLayer.Key.scuttle))
-        view.state = .running
-        view.layout()
-        #expect(view.crab.glyph.animation(forKey: Tako.CrabLayer.Key.scuttle) === scuttle)
-    }
-}

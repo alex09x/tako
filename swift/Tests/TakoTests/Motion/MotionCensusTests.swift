@@ -14,8 +14,8 @@ import Testing
 @testable import Tako
 
 /// Every animation in the app, where it is, what it does and what tests it.
-/// Timers count too: the classic tab's crab moved on timers no other scan
-/// saw, so each timer is entered, as motion or as what it does instead.
+/// Timers count too: a crab once moved on timers no other scan saw, so each
+/// timer is entered, as motion or as what it does instead.
 /// The census reads the sources: a new animation that is not entered here,
 /// an entry whose code -- duration, curve, values -- changed, or a test it
 /// names that is gone fails the gate. "pinned" marks motion no spec gives
@@ -62,14 +62,6 @@ struct MotionCensusTests {
              what: "live ripple fades from .95", coveredBy: ["aBurstRipplesTheLiveRingOutAndAway"]),
         Site(file: "Tako+TabStatusLayer+Live.swift", code: "let group = CAAnimationGroup()",
              what: "live ripple, 0.3 s ease-out", coveredBy: ["aLiveRingRipplesOncePerNewBurstWhileItFlows", "aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),
-        // The crab of a classic tab (Terminal UI «Краб во вкладке»).
-        Site(file: "Tako+CrabLayer.swift", code: #"let scuttle = CAKeyframeAnimation(keyPath: "transform")"#,
-             what: "a running crab scurries through four poses in 0.8 s",
-             coveredBy: ["aRunningCrabScurriesThroughFourPosesEach200ms", "itsPixelsMoveAsTheKeyframesSay"]),
-        Site(file: "Tako+CrabLayer.swift", code: "let keyframes = CAKeyframeAnimation(keyPath: keyPath)",
-             what: "the crab hops 1.4 s or 2 s, shivers 0.4 s, pulses every 1.1 s",
-             coveredBy: ["aCrabHopsOnceWhenACommandSucceedsOrTheBellRings", "aFailedCrabShiversOnceFor400ms",
-                         "aReconnectingCrabPulsesTo35PercentEvery1100ms", "underReduceMotionTheCrabOnlyChangesColour"]),
         // SwiftUI's side: snapshots, exports and the Overview's cards.
         Site(file: "Tako+LiveRing.swift", code: "withAnimation(.easeOut(duration: LiveRingStyle.rippleDuration)) { phase = 1 }",
              what: "SwiftUI live ripple, 0.3 s ease-out", coveredBy: ["aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),

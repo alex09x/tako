@@ -2,63 +2,15 @@ import AppKit
 import Combine
 import Foundation
 
-// Drawing the crab, and getting it into the tab.
-//
-// Upstream already puts a horizontal stack in `tab.accessoryView` for the
-// key-equivalent label and the zoom button, so the crab joins that stack
-// instead of replacing the tab bar.
+// A tab's progress in upstream's tab accessory stack, beside the
+// key-equivalent label and the zoom button. The crab that sat here is gone:
+// tabs show the 1b ring (Tako.TabStatusLayer), in pills and classic tabs.
 
 extension Tako {
-    /// The crab in upstream's tab accessory stack: the classic strip's
-    /// `CrabLayer`, so it looks and moves as the brand sheet has it.
-    final class CrabView: NSView {
-        var state: CrabState = .idle {
-            didSet { if state != oldValue { refresh() } }
-        }
-
-        /// Set when something happened in this tab that the user has not
-        /// seen; drawn as a dot beside the crab.
-        var unread = false {
-            didSet { if unread != oldValue { refresh() } }
-        }
-
-        let crab = CrabLayer()
-
-        override init(frame frameRect: NSRect) {
-            super.init(frame: frameRect)
-            wantsLayer = true
-            layer?.addSublayer(crab)
-            refresh()
-        }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-        // Whole pixels only: the mark is a pixel grid and any fractional
-        // size turns it to mush.
-        override var intrinsicContentSize: NSSize { NSSize(width: 16, height: 16) }
-        override var isFlipped: Bool { false }
-
-        override func layout() {
-            super.layout()
-            refresh()
-        }
-
-        override func viewDidChangeBackingProperties() {
-            super.viewDidChangeBackingProperties()
-            refresh()
-        }
-
-        private func refresh() {
-            let motion = LivingAnimationState.shared
-            crab.apply(state: state, in: bounds, unread: unread, reduceMotion: motion.reduceMotion,
-                       paused: motion.isTimelinePaused, scale: window?.backingScaleFactor ?? 2)
-        }
-    }
-
-    /// Binds one surface's crab to the tab of the window it lives in.
+    /// Binds one surface's progress to the tab of the window it lives in.
     @MainActor
     final class CrabTabBinding {
-        private let crabView = CrabView()
+        static let labelIdentifier = NSUserInterfaceItemIdentifier("tako.tabProgress")
         private let progressLabel: NSTextField = {
             let label = NSTextField(labelWithString: "")
             label.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
@@ -98,8 +50,6 @@ extension Tako {
         private func refresh(for surfaces: [SurfaceView]) {
             guard !surfaces.isEmpty else { return }
             let dominant = surfaces.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority }) ?? surfaces[0]
-            crabView.state = dominant.crab.state
-            crabView.unread = surfaces.contains(where: { $0.crab.unread })
             if let prog = Self.aggregateProgress(for: surfaces) {
                 switch prog.state {
                 case .none:
@@ -121,37 +71,25 @@ extension Tako {
             progressLabel.isHidden = progressLabel.stringValue.isEmpty
         }
 
-        /// Puts the crab at the head of upstream's tab accessory stack.
+        /// Puts the progress at the head of upstream's tab accessory stack.
         ///
         /// A view can be re-added to the same window (splits, tab moves), so
-        /// any crab already in this stack is removed first -- otherwise the
-        /// tab collects one crab per call.
+        /// a label an earlier binding put there is removed first -- otherwise
+        /// the tab collects one label per call.
         init?(surface: SurfaceView, window: NSWindow) {
             guard let stack = window.tab.accessoryView as? NSStackView else { return nil }
-            for existing in stack.arrangedSubviews {
-                if existing is CrabView || existing === progressLabel {
-                    stack.removeArrangedSubview(existing)
-                    existing.removeFromSuperview()
-                }
+            for existing in stack.arrangedSubviews where existing.identifier == Self.labelIdentifier {
+                stack.removeArrangedSubview(existing)
+                existing.removeFromSuperview()
             }
-            stack.insertArrangedSubview(crabView, at: 0)
-            stack.insertArrangedSubview(progressLabel, at: 1)
-            crabView.widthAnchor.constraint(equalToConstant: 16).isActive = true
-            crabView.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            progressLabel.identifier = Self.labelIdentifier
+            stack.insertArrangedSubview(progressLabel, at: 0)
 
             let allSurfaces = Self.surfaces(in: window)
             let surfacesToWatch = allSurfaces.contains(where: { $0 === surface }) ? allSurfaces : (allSurfaces + [surface])
 
             for s in surfacesToWatch {
                 s.crab.$paneStatus
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
-                    .store(in: &cancellables)
-                s.crab.$unread
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
-                    .store(in: &cancellables)
-                s.crab.$state
                     .receive(on: RunLoop.main)
                     .sink { [weak self] _ in self?.refresh(for: surfacesToWatch) }
                     .store(in: &cancellables)

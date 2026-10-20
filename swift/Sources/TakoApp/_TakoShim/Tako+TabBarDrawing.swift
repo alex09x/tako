@@ -70,15 +70,7 @@ extension Tako.TabBarView {
 
         let state = pillSurfaceState(for: tab.window)
         let tabKey = ObjectIdentifier(tab.window)
-        // The whole pill shakes, as a sidebar row does: snapshots at their
-        // fixed time, the live strip from the moment the tab failed.
-        let shakeDX: CGFloat = {
-            if let t = LivingAnimationState.shared.fixedTimeOverride {
-                guard state == .failed, !LivingAnimationState.shared.reduceMotion else { return 0 }
-                return LivingAnimationState.failedShakeOffset(elapsed: t)
-            }
-            return shakeOffset(for: tabKey, state: state, previous: paintedRingStates[tabKey])
-        }()
+        let shakeDX = stripShake(for: tab, state: state)
         let rect = baseRect.offsetBy(dx: shakeDX, dy: 0)
         let path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
 
@@ -197,6 +189,18 @@ extension Tako.TabBarView {
         }
     }
 
+    /// How far a failed tab sits off its place: the whole tab shakes, as a
+    /// sidebar row does -- snapshots at their fixed time, the live strip
+    /// from the moment the tab failed.
+    func stripShake(for tab: Tab, state: Tako.SurfaceState) -> CGFloat {
+        if let t = LivingAnimationState.shared.fixedTimeOverride {
+            guard state == .failed, !LivingAnimationState.shared.reduceMotion else { return 0 }
+            return LivingAnimationState.failedShakeOffset(elapsed: t)
+        }
+        let key = ObjectIdentifier(tab.window)
+        return shakeOffset(for: key, state: state, previous: paintedRingStates[key])
+    }
+
     func drawTab(_ tab: Tab, in ctx: CGContext) {
         if effectiveTabStyle == .pill {
             drawPillTab(tab, in: ctx)
@@ -204,6 +208,11 @@ extension Tako.TabBarView {
         }
 
         let hovering = hovered == tab.index
+        let state = pillSurfaceState(for: tab.window)
+        let shakeDX = stripShake(for: tab, state: state)
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.translateBy(x: shakeDX, y: 0)
 
         if tab.isActive || hovering {
             // Rounded on top only: a tab sits on the bar, it does not
@@ -226,19 +235,22 @@ extension Tako.TabBarView {
         // The active tab's Ember bar is drawn over the row by drawActiveBar:
         // after a change it travels from the tab chosen before.
 
-        let crabRect = CGRect(
+        // The status slot, left of the title, where the crab was.
+        let slot = CGRect(
             x: (tab.frame.minX + Metrics.tabPaddingLeft).rounded(),
             y: (tab.frame.midY - Metrics.crabSize / 2).rounded(),
             width: Metrics.crabSize, height: Metrics.crabSize)
-        drawCrab(for: tab, in: crabRect, ctx: ctx)
+        drawClassicStatus(for: tab, state: state, in: slot, shakeDX: shakeDX, ctx: ctx)
 
         // "✕ — только на ховере и на активной": the close glyph shows on
         // whichever tab is hovered, plus always on the active tab (not
         // just on hover of the active tab specifically).
-        // A tab too narrow for both keeps the crab and drops the close.
+        // A tab too narrow for both keeps the ring and drops the close.
         let showsClose = (hovering || tab.isActive) && tab.frame.width >= Metrics.compactTabWidth
-        let textX = crabRect.maxX + Metrics.contentGap
-        let closeWidth = showsClose ? Metrics.closeSize + Metrics.contentGap : 0
+        // Where there is no ✕, a Claw dot of 5 pt says something is unseen, as on a pill.
+        let showsUnreadDot = !showsClose && (hasUnreadInWindow(tab.window) || (state == .failed && !tab.isActive))
+        let textX = slot.maxX + Metrics.contentGap
+        let closeWidth = showsClose ? Metrics.closeSize + Metrics.contentGap : (showsUnreadDot ? 5 + Metrics.contentGap : 0)
         let textWidth = tab.frame.maxX - Metrics.tabPaddingRight - closeWidth - textX
         if textWidth > 8 {
             drawLabel(for: tab, x: textX, width: textWidth)
@@ -248,6 +260,9 @@ extension Tako.TabBarView {
                                  y: tab.frame.midY - Metrics.closeSize / 2,
                                  width: Metrics.closeSize, height: Metrics.closeSize),
                       ctx: ctx)
+        } else if showsUnreadDot {
+            ctx.setFillColor(Tako.LivingTokens.claw.cgColor)
+            ctx.fillEllipse(in: CGRect(x: tab.frame.maxX - Metrics.tabPaddingRight - 5, y: tab.frame.midY - 2.5, width: 5, height: 5))
         }
     }
 
@@ -259,22 +274,27 @@ extension Tako.TabBarView {
         Tako.TabText.draw(title, atX: x, centeredAtY: tab.frame.midY, font: titleFont, color: titleColor, context: ctx)
     }
 
-    /// The badge sits over the crab, so it costs no width.
-    func drawCrab(for tab: Tab, in rect: CGRect, ctx: CGContext) {
-        guard !(showingBadges && tab.index < 9 && windows.count > 1) else {
-            crabLayers[ObjectIdentifier(tab.window)]?.setShown(false)
-            ctx.setFillColor(Palette.badge.cgColor)
-            ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4, transform: nil))
-            ctx.fillPath()
-            let label = "\(tab.index + 1)"
-            let width = Tako.TabText.width(of: label, font: Fonts.badge)
-            Tako.TabText.draw(label, atX: rect.midX - width / 2, centeredAtY: rect.midY, font: Fonts.badge, color: Palette.activeText, context: ctx)
-            return
+    /// A classic tab's status: the pills' 1b ring alone, 14 pt in the slot,
+    /// with all its motion; a failed tab's ring shakes with the tab. The ⌘
+    /// badge sits over it, so it costs no width.
+    func drawClassicStatus(for tab: Tab, state: Tako.SurfaceState, in slot: CGRect, shakeDX: CGFloat, ctx: CGContext) {
+        let key = ObjectIdentifier(tab.window)
+        let showsBadge = showingBadges && tab.index < 9 && windows.count > 1
+        paintedRingStates[key] = state
+        if tab.showsContent {
+            let ring = CGPoint(x: slot.midX - 7 - tab.frame.minX, y: slot.midY - 7 - tab.frame.minY)
+            updateStatusLayer(for: tab.window, rect: tab.frame, state: state, hideRing: showsBadge, ringAt: ring)
+            if LivingAnimationState.shared.fixedTimeOverride == nil {
+                statusLayers[key]?.setPose(dx: shakeDX, tiltDegrees: liftTilt(for: tab))
+            }
         }
-        let unread = surfaces(in: tab.window).contains(where: {
-            !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
-        })
-        updateCrabLayer(for: tab, rect: rect, unread: unread)
+        guard showsBadge else { return }
+        ctx.setFillColor(Palette.badge.cgColor)
+        ctx.addPath(CGPath(roundedRect: slot, cornerWidth: 4, cornerHeight: 4, transform: nil))
+        ctx.fillPath()
+        let label = "\(tab.index + 1)"
+        let width = Tako.TabText.width(of: label, font: Fonts.badge)
+        Tako.TabText.draw(label, atX: slot.midX - width / 2, centeredAtY: slot.midY, font: Fonts.badge, color: Palette.activeText, context: ctx)
     }
 
     func drawClose(in rect: CGRect, color: NSColor? = nil, ctx: CGContext) {

@@ -230,7 +230,10 @@ extension Tako.TabBarView {
         }
     }
 
-    func updateStatusLayer(for window: NSWindow, rect: CGRect, state: Tako.SurfaceState, hideRing: Bool) {
+    /// `ringAt`, a classic tab's ring slot from the tab's corner, shows the
+    /// ring alone there; nil is a pill, its ring and its living surface.
+    func updateStatusLayer(for window: NSWindow, rect: CGRect, state: Tako.SurfaceState, hideRing: Bool,
+                           ringAt ringOrigin: CGPoint? = nil) {
         if !wantsLayer {
             wantsLayer = true
             layer?.masksToBounds = false
@@ -248,6 +251,12 @@ extension Tako.TabBarView {
         if statusLayer.superlayer == nil {
             layer?.addSublayer(statusLayer)
         }
+        statusLayer.drawsSurface = ringOrigin == nil
+        if statusLayer.geometry.ringOrigin != ringOrigin {
+            var geometry = statusLayer.geometry
+            geometry.ringOrigin = ringOrigin
+            statusLayer.geometry = geometry
+        }
         let animState = LivingAnimationState.shared
         statusLayer.apply(
             state: state,
@@ -263,13 +272,8 @@ extension Tako.TabBarView {
         }
     }
 
+    /// Pills and classic tabs alike keep a status layer for each tab drawn.
     func syncStatusLayers(visibleTabIds: Set<ObjectIdentifier>) {
-        syncCrabLayers(visibleTabIds: effectiveTabStyle == .classic ? visibleTabIds : [])
-        guard effectiveTabStyle == .pill else {
-            for (_, l) in statusLayers { l.removeFromSuperlayer() }
-            statusLayers.removeAll()
-            return
-        }
         for (id, l) in statusLayers where !visibleTabIds.contains(id) {
             l.removeFromSuperlayer()
             statusLayers.removeValue(forKey: id)
