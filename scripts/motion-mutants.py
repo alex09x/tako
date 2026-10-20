@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+# tako — Terminal emulator
+# Copyright (c) 2026 Alexander Panasenko
+#
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+"""Proves the motion gate catches broken motion.
+
+Each mutant breaks one thing the design asks of Tako's animations, effects,
+states or transitions -- a duration, a direction, a colour, a one-off, a
+priority, a rule -- in a scratch worktree of HEAD, and runs
+scripts/motion-gate.sh there. A mutant the gate passes is a hole in it.
+
+    export TAKO_MAC=user@test-mac.local
+    scripts/motion-mutants.py              # every mutant
+    scripts/motion-mutants.py --list       # what they break
+    scripts/motion-mutants.py spinner-slow comet-backwards
+
+The worktree builds in a directory of its own on the test Mac
+(TAKO_MAC_DIR, ci/tako-mutants by default), so a run does not hold up
+checks of the main checkout. Its first build is a cold one.
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+LAYER = "swift/Sources/TakoApp/_TakoShim/Tako+TabStatusLayer.swift"
+SURFACE = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurface.swift"
+EFFECTS = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurfaceEffects.swift"
+ROW = "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowView.swift"
+
+# name, what the design asks, file, text, replacement
+MUTANTS = [
+    ("spinner-slow", "the spinner turns once in 0.9 s", LAYER,
+     "makeSpinAnimation(duration: 0.9)", "makeSpinAnimation(duration: 1.3)"),
+    ("comet-slow", "the comet goes round once in 2.2 s", LAYER,
+     "makeSpinAnimation(duration: 2.2)", "makeSpinAnimation(duration: 3.0)"),
+    ("layer-spin-backwards", "the spinner and comet turn clockwise", LAYER,
+     "spin.toValue = -Double.pi * 2.0", "spin.toValue = Double.pi * 2.0"),
+    ("breathe-shallow", "the waiting border breathes from 40 %", LAYER,
+     "fromValue = T.claw.withAlphaComponent(0.40)", "fromValue = T.claw.withAlphaComponent(0.80)"),
+    ("no-glow", "the waiting glow grows to 30 %", LAYER,
+     "shadowAnim.toValue = 0.30", "shadowAnim.toValue = 0.0"),
+    ("halo-stuck", "the halo grows to 2.1", LAYER,
+     "scaleAnim.toValue = 2.1", "scaleAnim.toValue = 1.0"),
+    ("no-blink", "the waiting dot blinks to a quarter", LAYER,
+     "blink.toValue = 0.25", "blink.toValue = 1.0"),
+    ("no-pop", "a done ring pops to .55 and 1.25", LAYER,
+     "pop.values = [1.0, 0.55, 1.25, 1.0]", "pop.values = [1.0, 1.0, 1.0, 1.0]"),
+    ("no-glint", "a done surface glints once", LAYER,
+     'flashLayer.add(sweep, forKey: "doneFlash")', "_ = sweep"),
+    ("no-failed-line", "a failed surface has a red baseline", LAYER,
+     "failedLineLayer.isHidden = (state != .failed)", "failedLineLayer.isHidden = true"),
+    ("reduce-motion-stub", "Reduce Motion: a still Ember border all round", LAYER,
+     "cometGradient.colors = reduceMotion ? Self.stillBorderColors : Self.cometColors",
+     "cometGradient.colors = Self.cometColors"),
+    ("progress-rebuilds", "a new percentage moves the arc and rebuilds nothing", LAYER,
+     "if case .progress = previousState, case .progress = state { return true }", ""),
+    ("arc-one-colour", "the progress arc shades Rust to Ember", LAYER,
+     "shade.colors = [T.ember.cgColor, T.ember.cgColor, T.rust.cgColor]",
+     "shade.colors = [T.ember.cgColor, T.ember.cgColor, T.ember.cgColor]"),
+    ("offline-solid", "the offline border is dashed", LAYER,
+     "lineDashPattern = [3, 3]", "lineDashPattern = nil"),
+    ("reduced-glow-off", "Reduce Motion keeps a 20 % glow", LAYER,
+     "breatheGlowLayer.shadowOpacity = 0.20", "breatheGlowLayer.shadowOpacity = 0.0"),
+    ("no-progress-line", "progress runs a line along the bottom", LAYER,
+     "progressLineLayer.isHidden = false", "progressLineLayer.isHidden = true"),
+    ("quiet-ring-bright", "a quiet live ring is Ember at 45 %", "swift/Sources/TakoApp/_TakoShim/Tako+LiveRing.swift",
+     "quietOpacity: Double = 0.45", "quietOpacity: Double = 1.0"),
+    ("no-ripple", "a burst ripples the live ring out to 1.7", "swift/Sources/TakoApp/_TakoShim/Tako+LiveRing.swift",
+     "rippleScale: CGFloat = 1.7", "rippleScale: CGFloat = 1.0"),
+    ("sidebar-on-swiftui-clock", "live sidebar rows run on Core Animation", ROW,
+     "private var layered: Bool { now == nil }", "private var layered: Bool { false }"),
+    ("pane-rows-waiting-border", "pane rows draw only working and failed", ROW,
+     "let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle",
+     "let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed || state == .waiting) ? state : .idle"),
+    ("progress-outranks-working", "a pane at work outranks another's progress",
+     "swift/Sources/TakoApp/_TakoShim/Tako+TabBarResolution.swift",
+     "guard !all.isEmpty, !all.contains(where: worksWithoutProgress) else { return nil }",
+     "guard !all.isEmpty else { return nil }"),
+    ("ranks-tied", "every state has a rank of its own", "swift/Sources/TakoApp/_TakoShim/Tako+PaneStatus.swift",
+     "case .progress: return 3", "case .progress: return 4"),
+    ("cursor-half-lit", "the cursor is lit 60 % of its 1.2 s blink", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Drawing.swift",
+     "public static let litShare = 0.6", "public static let litShare = 0.5"),
+    ("strip-no-shake", "a failed pill shakes for 0.448 s", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarMotion.swift",
+     "static let shakeDuration: CFTimeInterval = 0.448", "static let shakeDuration: CFTimeInterval = 0"),
+    ("chip-jumps", "the workspace chip slides over 150 ms", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarMotion.swift",
+     "static let chipSlideDuration: CFTimeInterval = 0.15", "static let chipSlideDuration: CFTimeInterval = 0"),
+    ("echo-counts", "output within 150 ms of a key is its echo", "swift/Sources/TakoApp/_TakoShim/Tako+LiveActivity.swift",
+     "static let echoWindow: TimeInterval = 0.15", "static let echoWindow: TimeInterval = 0"),
+    ("working-at-once", "working shows after 3 s", "swift/Sources/TakoApp/_TakoShim/Tako+Crab.swift",
+     "static let minimumVisibleDuration: TimeInterval = 3", "static let minimumVisibleDuration: TimeInterval = 0"),
+    ("done-lingers", "a focused tab's done fades after 2 s", "swift/Sources/TakoApp/_TakoShim/Tako+Crab.swift",
+     "static let successLinger: TimeInterval = 2", "static let successLinger: TimeInterval = 6"),
+    ("swiftui-comet-backwards", "the cards' comet turns clockwise", SURFACE,
+     "return (ms / 2200.0) * 360.0", "return -(ms / 2200.0) * 360.0"),
+    ("swiftui-spinner-slow", "the cards' spinner turns once in 0.9 s", SURFACE,
+     "let ms = CSSTiming.positiveMod(t * 1000.0, 900.0)\n        return (ms / 900.0) * 360.0",
+     "let ms = CSSTiming.positiveMod(t * 1000.0, 1300.0)\n        return (ms / 1300.0) * 360.0"),
+    ("swiftui-arc-one-colour", "the cards' progress arc shades Rust to Ember", SURFACE,
+     "stops: [.init(color: Color(nsColor: T.rust), location: 0),",
+     "stops: [.init(color: Color(nsColor: T.ember), location: 0),"),
+    ("swiftui-shake-flat", "a failed card's ring shakes on the design's beats", SURFACE,
+     "[(0, 0), (64, -2), (128, 2), (192, -2), (256, 2), (320, -1), (448, 0)]",
+     "[(0, 0), (64, 0), (128, 0), (192, 0), (256, 0), (320, 0), (448, 0)]"),
+    ("swiftui-pop-flat", "a done card's ring pops", SURFACE,
+     "[(0, 1.0), (192, 0.55), (448, 1.25), (704, 1.0)]", "[(0, 1.0), (192, 1.0), (448, 1.0), (704, 1.0)]"),
+    ("selected-card-thin", "a selected card has a 2 pt Ember border", EFFECTS,
+     ".strokeBorder(borderColor, lineWidth: 2.0)", ".strokeBorder(borderColor, lineWidth: 1.0)"),
+    ("swiftui-breathe-shallow", "the cards' waiting border breathes from 40 %", EFFECTS,
+     "let alpha = reduceMotion ? 0.90 : (0.40 + 0.55 * s)", "let alpha = reduceMotion ? 0.90 : (0.80 + 0.15 * s)"),
+]
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STEP_LIMIT = int(os.environ.get("MOTION_MUTANT_TIMEOUT", "240"))
+BASELINE_LIMIT = int(os.environ.get("MOTION_BASELINE_TIMEOUT", "1200"))
+
+
+def gate(worktree, limit):
+    """Runs the gate in `worktree`; returns (verdict, seconds, tail of output)."""
+    env = dict(os.environ)
+    env.setdefault("TAKO_MAC_DIR", "ci/tako-mutants")
+    started = time.monotonic()
+    try:
+        done = subprocess.run(["scripts/motion-gate.sh"], cwd=worktree, env=env, capture_output=True,
+                              text=True, timeout=limit)
+        out = done.stdout + done.stderr
+        if "build failed" in out:
+            verdict = "build failed"
+        elif done.returncode == 0:
+            verdict = "passed"
+        else:
+            verdict = "failed"
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        verdict = "timed out"
+    return verdict, time.monotonic() - started, out
+
+
+def main(argv):
+    names = [a for a in argv if not a.startswith("--")]
+    if "--list" in argv:
+        for name, what, path, _, _ in MUTANTS:
+            print(f"{name:28} {what}  ({os.path.basename(path)})")
+        return 0
+    if not os.environ.get("TAKO_MAC"):
+        print("set TAKO_MAC to user@host of the test Mac", file=sys.stderr)
+        return 2
+    chosen = [m for m in MUTANTS if not names or m[0] in names]
+    unknown = set(names) - {m[0] for m in MUTANTS}
+    if unknown:
+        print(f"no such mutant: {', '.join(sorted(unknown))}", file=sys.stderr)
+        return 2
+
+    worktree = tempfile.mkdtemp(prefix="tako-mutants-")
+    os.rmdir(worktree)
+    subprocess.run(["git", "worktree", "add", "--detach", worktree, "HEAD"], cwd=ROOT, check=True,
+                   capture_output=True)
+    results = []
+    try:
+        verdict, took, out = gate(worktree, BASELINE_LIMIT)
+        print(f"baseline: {verdict} in {took:.0f} s", flush=True)
+        if verdict != "passed":
+            print(out[-3000:])
+            return 1
+        for name, what, path, text, replacement in chosen:
+            file = os.path.join(worktree, path)
+            original = open(file, encoding="utf-8").read()
+            if original.count(text) != 1:
+                results.append((name, what, f"invalid: found {original.count(text)} times", 0))
+                continue
+            open(file, "w", encoding="utf-8").write(original.replace(text, replacement))
+            try:
+                verdict, took, out = gate(worktree, STEP_LIMIT)
+            finally:
+                open(file, "w", encoding="utf-8").write(original)
+            outcome = {"failed": "caught", "passed": "MISSED"}.get(verdict, f"invalid: {verdict}")
+            results.append((name, what, outcome, took))
+            print(f"{name:28} {outcome:10} {took:4.0f} s  {what}", flush=True)
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", worktree], cwd=ROOT, capture_output=True)
+        shutil.rmtree(worktree, ignore_errors=True)
+
+    caught = sum(1 for r in results if r[2] == "caught")
+    print(f"\n{caught} of {len(results)} mutants caught")
+    for name, what, outcome, _ in results:
+        if outcome != "caught":
+            print(f"  {outcome}: {name} -- {what}")
+    return 0 if caught == len(results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
