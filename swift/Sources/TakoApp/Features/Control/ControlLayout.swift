@@ -62,23 +62,19 @@ enum ControlLayout {
         }
         let config = try config(args)
         let select = args["select"] != .bool(false)
-        let front = NSApp.keyWindow
         guard !(try controller(of: beside) is QuickTerminalController) else {
             throw ControlError(.invalid, "the Quick Terminal has no tabs")
         }
-        guard let created = TerminalController.newTab(app.tako, from: beside.window, withBaseConfig: config),
+        // Unselected, the tab joins hidden and is never shown: showing it and
+        // handing the front back afterwards left it on screen under the
+        // chosen tab, and with no key window (Tako in the background) left
+        // it chosen -- and brought Tako forward over the user's app.
+        guard let created = TerminalController.newTab(app.tako, from: beside.window, withBaseConfig: config, select: select),
               let pane = created.surfaceTree.first else {
             throw ControlError(.internalError, "the tab was not created")
         }
         if let creator = client ?? args["client"]?.string {
             InputOwnershipStore.shared.setCreatorClient(paneId: pane.id, client: creator)
-        }
-        if !select, let front {
-            // The new tab takes the front once AppKit has shown it; give the
-            // front back after that, not before.
-            DispatchQueue.main.async {
-                DispatchQueue.main.async { front.makeKeyAndOrderFront(nil) }
-            }
         }
         return pane
     }

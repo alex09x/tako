@@ -251,10 +251,14 @@ extension TerminalController {
         return c
     }
 
+    /// A new tab in `parent`'s window group. Without `select` it joins the
+    /// group hidden, as a tab behind the chosen one: never shown, never made
+    /// key, the app not brought forward (`takoctl tab-new --no-select`).
     static func newTab(
         _ tako: Tako.App,
         from parent: NSWindow? = nil,
-        withBaseConfig baseConfig: Tako.SurfaceConfiguration? = nil
+        withBaseConfig baseConfig: Tako.SurfaceConfiguration? = nil,
+        select: Bool = true
     ) -> TerminalController? {
         // Making sure that we're dealing with a TerminalController. If not,
         // then we just create a new window.
@@ -315,42 +319,45 @@ extension TerminalController {
             // If we already have a group and we want the new tab to open at the end,
             // then we use the last window in the group as the anchor.
             if let last = group.windows.last {
-                Tako.CustomTabGroup.join(window, to: last, select: true)
+                Tako.CustomTabGroup.join(window, to: last, select: select)
             } else {
-                Tako.CustomTabGroup.join(window, to: parent, select: true)
+                Tako.CustomTabGroup.join(window, to: parent, select: select)
             }
 
         case "current": fallthrough
         default:
             if let currentIdx = group.visibleWindows.firstIndex(of: parent) {
-                Tako.CustomTabGroup.insert(window, into: parent, at: currentIdx + 1, select: true)
+                Tako.CustomTabGroup.insert(window, into: parent, at: currentIdx + 1, select: select)
             } else {
                 WorkspaceStore.shared.assignTab(
                     tabIdentifier: window.stableTabIdentifier,
                     to: WorkspaceStore.shared.activeWorkspaceId
                 )
-                Tako.CustomTabGroup.join(window, to: parent, select: true)
+                Tako.CustomTabGroup.join(window, to: parent, select: select)
             }
         }
 
+        // A tab behind the chosen one stays as the group left it: ordered out.
         // We're dispatching this async because otherwise the lastCascadePoint doesn't
         // take effect. Our best theory is there is some next-event-loop-tick logic
         // that Cocoa is doing that we need to be after.
-        controller.scheduleInitialPresentation {
-            // Only cascade if we aren't fullscreen and are alone in the group --
-            // `join` above already positioned a grouped window to match its
-            // neighbor, so cascading it here would immediately undo that.
-            if !window.styleMask.contains(.fullScreen) && group.windows.count == 1 {
-                let hasFixedPos = controller.derivedConfig.windowPositionX != nil && controller.derivedConfig.windowPositionY != nil
-                Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
+        if select {
+            controller.scheduleInitialPresentation {
+                // Only cascade if we aren't fullscreen and are alone in the group --
+                // `join` above already positioned a grouped window to match its
+                // neighbor, so cascading it here would immediately undo that.
+                if !window.styleMask.contains(.fullScreen) && group.windows.count == 1 {
+                    let hasFixedPos = controller.derivedConfig.windowPositionX != nil && controller.derivedConfig.windowPositionY != nil
+                    Self.applyCascade(to: window, hasFixedPos: hasFixedPos)
+                }
+
+                controller.showWindow(self)
+                window.makeKeyAndOrderFront(self)
+
+                // We also activate our app so that it becomes front. This may be
+                // necessary for the dock menu.
+                NSApp.activate(ignoringOtherApps: true)
             }
-
-            controller.showWindow(self)
-            window.makeKeyAndOrderFront(self)
-
-            // We also activate our app so that it becomes front. This may be
-            // necessary for the dock menu.
-            NSApp.activate(ignoringOtherApps: true)
         }
 
         // It takes an event loop cycle until the macOS tabGroup state becomes
