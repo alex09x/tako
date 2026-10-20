@@ -85,6 +85,49 @@ enum MotionSpec {
     static let cssEaseOut = CSSTiming.cubicBezier(0, 0, 0.58, 1)
     static let cssEaseIn = CSSTiming.cubicBezier(0.42, 0, 1, 1)
 
+    // MARK: The crab of a classic tab (Terminal UI «Краб во вкладке: 7 состояний», CSS keyframes, SVGs)
+
+    /// `crab-scuttle 0.8s steps(1)`: 0% translateX(-2px) rotate(-8deg), 25% (1, 5°), 50% (3, -5°), 75% (1, 8°).
+    static let crabScuttleCycle: CFTimeInterval = 0.8
+    static let crabScuttlePoses: [(dx: CGFloat, clockwiseDegrees: CGFloat)] = [(-2, -8), (1, 5), (3, -5), (1, 8)]
+    /// `crab-hop`: translateY 0, -4px at 30%, 0 at 55%, -2px at 70%, 0 at 85%, ease-in-out each step;
+    /// 1.4 s after exit 0 ("зелёный + подпрыг"), 2 s on a bell ("подпрыгивает один раз").
+    static let crabHopStops: [(at: Double, up: Double)] = [(0, 0), (0.30, 4), (0.55, 0), (0.70, 2), (0.85, 0), (1, 0)]
+    static let crabHopSuccess: CFTimeInterval = 1.4
+    static let crabHopBell: CFTimeInterval = 2
+    /// "дрожь один раз (0.4s)": `crab-shake` x 0, -2px at 20%, 2, -2, 2, 0, ease-in-out each step.
+    static let crabShakeDuration: CFTimeInterval = 0.4
+    static let crabShakeStops: [(at: Double, dx: Double)] = [(0, 0), (0.2, -2), (0.4, 2), (0.6, -2), (0.8, 2), (1, 0)]
+    /// "реконнект — пульсирует": `crab-pulse 1.1s ease-in-out infinite`, opacity 1, .35 at 50%, 1.
+    static let crabPulseCycle: CFTimeInterval = 1.1
+    static let crabPulseStops: [(at: Double, opacity: Double)] = [(0, 1), (0.5, 0.35), (1, 1)]
+    /// "призрак": the SVG at `opacity:0.45`, still.
+    static let crabGhostOpacity: Float = 0.45
+    /// Each state's SVG fills: the claws' group, then the body's.
+    static let crabStates: [Tako.CrabState] = [.idle, .running, .succeeded, .failed(code: 1), .attention, .reconnecting, .ghost]
+    static func crabColors(_ state: Tako.CrabState) -> (claws: Int, body: Int) {
+        switch state {
+        case .idle, .attention, .ghost: return (claw, ember)
+        case .running, .reconnecting: return (claw, claw)
+        case .succeeded: return (ok, ok)
+        case .failed: return (error, error)
+        }
+    }
+    /// The SVGs' rects in their 120 box, a cell every 11 from (5, 21): the
+    /// claws, the body, the eyes (drawn in the tab's colour: holes).
+    static let crabClawRects = [(5, 21), (16, 21), (5, 32), (93, 21), (104, 21), (104, 32)]
+    static let crabBodyRects = [(16, 43), (93, 43), (27, 54), (38, 54), (49, 54), (60, 54), (71, 54), (82, 54), (27, 65), (49, 65),
+                                (60, 65), (82, 65), (27, 76), (38, 76), (49, 76), (60, 76), (71, 76), (82, 76), (16, 87), (38, 87),
+                                (71, 87), (93, 87)]
+    static let crabEyeRects = [(38, 65), (71, 65)]
+    static let ghostBodyRects = [(16, 43), (93, 43), (27, 43), (38, 43), (49, 43), (60, 43), (71, 43), (82, 43), (27, 54), (49, 54),
+                                 (60, 54), (82, 54), (27, 65), (38, 65), (49, 65), (60, 65), (71, 65), (82, 65), (27, 76), (38, 76),
+                                 (49, 76), (60, 76), (71, 76), (82, 76), (27, 87), (49, 87), (60, 87), (82, 87)]
+    static let ghostEyeRects = [(38, 54), (71, 54)]
+    /// A rect of the SVG as (column, row) of the crab's 10 x 7 grid, row 0 at the top.
+    static func crabCell(_ rect: (Int, Int)) -> CrabCell { CrabCell(column: (rect.0 - 5) / 11, row: (rect.1 - 21) / 11) }
+    struct CrabCell: Hashable { let column: Int, row: Int }
+
     // MARK: Shapes
 
     static let ringSide: CGFloat = 14

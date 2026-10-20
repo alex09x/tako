@@ -264,6 +264,7 @@ extension Tako.TabBarView {
     }
 
     func syncStatusLayers(visibleTabIds: Set<ObjectIdentifier>) {
+        syncCrabLayers(visibleTabIds: effectiveTabStyle == .classic ? visibleTabIds : [])
         guard effectiveTabStyle == .pill else {
             for (_, l) in statusLayers { l.removeFromSuperlayer() }
             statusLayers.removeAll()

@@ -14,6 +14,8 @@ import Testing
 @testable import Tako
 
 /// Every animation in the app, where it is, what it does and what tests it.
+/// Timers count too: the classic tab's crab moved on timers no other scan
+/// saw, so each timer is entered, as motion or as what it does instead.
 /// The census reads the sources: a new animation that is not entered here,
 /// an entry whose code -- duration, curve, values -- changed, or a test it
 /// names that is gone fails the gate. "pinned" marks motion no spec gives
@@ -30,6 +32,8 @@ struct MotionCensusTests {
     }
 
     static let pinned = "pinned"
+    /// A timer that moves nothing on screen: it polls, saves or expires.
+    static let notMotion = "not motion"
 
     static let census: [Site] = [
         // The status layer: rings and surfaces of pills and live sidebar rows (Sessions UI 1b, 4a, 5a).
@@ -58,6 +62,14 @@ struct MotionCensusTests {
              what: "live ripple fades from .95", coveredBy: ["aBurstRipplesTheLiveRingOutAndAway"]),
         Site(file: "Tako+TabStatusLayer+Live.swift", code: "let group = CAAnimationGroup()",
              what: "live ripple, 0.3 s ease-out", coveredBy: ["aLiveRingRipplesOncePerNewBurstWhileItFlows", "aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),
+        // The crab of a classic tab (Terminal UI «Краб во вкладке»).
+        Site(file: "Tako+CrabLayer.swift", code: #"let scuttle = CAKeyframeAnimation(keyPath: "transform")"#,
+             what: "a running crab scurries through four poses in 0.8 s",
+             coveredBy: ["aRunningCrabScurriesThroughFourPosesEach200ms", "itsPixelsMoveAsTheKeyframesSay"]),
+        Site(file: "Tako+CrabLayer.swift", code: "let keyframes = CAKeyframeAnimation(keyPath: keyPath)",
+             what: "the crab hops 1.4 s or 2 s, shivers 0.4 s, pulses every 1.1 s",
+             coveredBy: ["aCrabHopsOnceWhenACommandSucceedsOrTheBellRings", "aFailedCrabShiversOnceFor400ms",
+                         "aReconnectingCrabPulsesTo35PercentEvery1100ms", "underReduceMotionTheCrabOnlyChangesColour"]),
         // SwiftUI's side: snapshots, exports and the Overview's cards.
         Site(file: "Tako+LiveRing.swift", code: "withAnimation(.easeOut(duration: LiveRingStyle.rippleDuration)) { phase = 1 }",
              what: "SwiftUI live ripple, 0.3 s ease-out", coveredBy: ["aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),
@@ -130,11 +142,51 @@ struct MotionCensusTests {
              what: "iOS kinetic scrolling's step", coveredBy: ["testKineticDecelerationVelocityThreshold", "testKineticDecelerationMaxVelocityClamping"]),
         Site(file: "SshFormScreen.swift", code: "withAnimation(.easeOut(duration: 0.2)) {",
              what: "the iOS SSH form reveals its fields in 0.2 s", coveredBy: [pinned]),
+        // Timers: what moves on a timer, and what a timer does instead.
+        Site(file: "TakoTerminalNSView+Drawing.swift",
+             code: "blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),",
+             what: "the cursor is lit 0.72 s, out 0.48 s", coveredBy: ["testTheCursorIsLitFor720msThenOutFor480ms"]),
+        Site(file: "TakoTerminalView+Display.swift",
+             code: "blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),",
+             what: "the iOS cursor blinks as the Mac's", coveredBy: ["testTheIOSCursorIsLitFor720msThenOutFor480ms"]),
+        Site(file: "AboutViewModel.swift", code: "timerCancellable = Timer.publish(every: 3, on: .main, in: .common)",
+             what: "About's icon changes every 3 s", coveredBy: [pinned, "advanceToNextIconWrapsWithinTheSingleIconOfficialSet"]),
+        Site(file: "Tako+Crab.swift", code: "ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true)",
+             what: "a command shows as running once it has run 3 s",
+             coveredBy: ["commandShorterThanThresholdEndsIdleWithoutFlashingGreen", "tickBeforeThresholdDoesNotSetElapsedOrState"]),
+        Site(file: "Tako+Crab.swift", code: "successTimer = Timer.scheduledTimer(withTimeInterval: Self.successLinger, repeats: false)",
+             what: "done and failed go out 2 s after they show in the focused tab",
+             coveredBy: ["aCommandsOutcomeInTheFocusedTabFadesAfterTwoSeconds", "anAgentsOutcomeInTheFocusedTabFadesAfterTwoSeconds"]),
+        Site(file: "Tako+CrabLive.swift", code: "liveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true)",
+             what: "a quiet program sampled once a second: a ripple at most once a second, flowing for 3 s",
+             coveredBy: ["aRippleIsASecondOfOutputNotALine", "threeSilentSecondsMakeItQuietAgain"]),
+        Site(file: "Tako+Crab.swift", code: "ttlTimer = Timer.scheduledTimer(withTimeInterval: ttl, repeats: false)",
+             what: "an agent's status expires after its TTL", coveredBy: [notMotion]),
+        Site(file: "Tako+SurfaceCommandStart.swift", code: "Timer.scheduledTimer(withTimeInterval: delay, repeats: false)",
+             what: "asks again which command started", coveredBy: [notMotion]),
+        Site(file: "GlobalEventTap.swift", code: "enableTimer = Timer.scheduledTimer(withTimeInterval: system.pollInterval, repeats: true)",
+             what: "polls whether the global event tap is still on", coveredBy: [notMotion]),
+        Site(file: "AppUpdater.swift", code: "let timer = Timer(timeInterval: interval, repeats: true)",
+             what: "checks for updates", coveredBy: [notMotion]),
+        Site(file: "LayoutRecorder.swift", code: "timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true)",
+             what: "records the window layout", coveredBy: [notMotion]),
+        Site(file: "SessionSnapshots.swift", code: "timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true)",
+             what: "saves session snapshots", coveredBy: [notMotion]),
+        Site(file: "ControlCommand.swift", code: "Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true)",
+             what: "a takoctl command polls for its outcome", coveredBy: [notMotion]),
+        Site(file: "PromptManager.swift", code: "let timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true)",
+             what: "polls for a prompt's answer", coveredBy: [notMotion]),
+        Site(file: "ControlCommands+Dialog.swift", code: "Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true)",
+             what: "waits for a dialog to close", coveredBy: [notMotion]),
+        Site(file: "ExpiringUndoManager.swift", code: "self.timer = Timer.scheduledTimer(",
+             what: "an undo expires (⌘Z within 5 s)", coveredBy: [notMotion]),
+        Site(file: "TabGroupCloseCoordinator.swift", code: "debounceTimer = Timer.scheduledTimer(",
+             what: "debounces closing a tab group", coveredBy: [notMotion]),
     ]
 
     /// What the census counts as an animation.
     static let animationAPI = try! NSRegularExpression(pattern:
-        #"withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
+        #"Timer\.scheduledTimer\(|Timer\(timeInterval|Timer\.publish\(|withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
 
     /// The package's `swift` directory, from this file's place in it.
     static var swiftRoot: URL {
@@ -182,7 +234,7 @@ struct MotionCensusTests {
     @Test func everyTestTheCensusNamesExists() {
         let tests = Self.swiftFiles(under: "Tests").map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }.joined()
         for site in Self.census {
-            for name in site.coveredBy where name != Self.pinned && !tests.contains("func \(name)(") {
+            for name in site.coveredBy where name != Self.pinned && name != Self.notMotion && !tests.contains("func \(name)(") {
                 Issue.record("\(site.file): \(site.what) names a test that is gone: \(name)")
             }
         }

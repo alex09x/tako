@@ -138,6 +138,8 @@ extension Tako {
         var paintedPillDots: [ObjectIdentifier: String] = [:]
         var paintedRingStates: [ObjectIdentifier: SurfaceState] = [:]
         var statusLayers: [ObjectIdentifier: TabStatusLayer] = [:]
+        /// A classic tab's crab, a layer of its own (Tako+TabBarCrab.swift).
+        var crabLayers: [ObjectIdentifier: CrabLayer] = [:]
 
         // What moves frame by frame (Tako+TabBarMotion.swift).
         var chipWidthTarget: CGFloat?

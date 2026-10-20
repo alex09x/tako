@@ -40,15 +40,7 @@ extension Tako {
             }
         }
 
-        /// Ember by default; success and failure recolour it.
-        var color: NSColor {
-            switch self {
-            case .succeeded: return Tako.Brand.ok
-            case .failed: return Tako.Brand.error
-            case .ghost: return Tako.Brand.dim
-            default: return Tako.Brand.ember
-            }
-        }
+        // Its colours, figure and motion: Tako.CrabPainter and Tako.CrabLayer.
     }
 
     /// Tracks one surface's command lifecycle and turns it into a crab state,

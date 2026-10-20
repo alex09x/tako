@@ -270,36 +270,20 @@ extension TabBarViewCoverageTests {
 
 @Suite
 struct CrabPainterCoverageTests {
-    @MainActor
-    @Test func drawsTheBrandMarkAtVariousSizes() {
-        for size: CGFloat in [0.5, 4, 16, 40] {
-            let image = NSImage(size: NSSize(width: size, height: size))
-            image.lockFocus()
-            if let ctx = NSGraphicsContext.current?.cgContext {
-                Tako.CrabPainter.draw(
-                    in: CGRect(x: 0, y: 0, width: size, height: size),
-                    color: .orange,
-                    context: ctx)
-            }
-            image.unlockFocus()
-
-            guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else {
-                Issue.record("could not rasterize the \(size)pt mark")
-                continue
-            }
-            let hasColoredPixel = (0..<bitmap.pixelsWide).contains { x in
-                (0..<bitmap.pixelsHigh).contains { y in
-                    (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
-                }
-            }
-            // step = floor(min(width/10, height/7)); for a square rect that's
-            // floor(size/10), which only reaches 1 once size >= 10 -- below
-            // that the early-return guard leaves the image blank.
-            if size >= 10 {
-                #expect(hasColoredPixel)
-            } else {
-                #expect(!hasColoredPixel)
-            }
+    /// The cells of the mark on whole device pixels: none below a pixel a
+    /// cell, ten across and seven down once there is room.
+    @Test(arguments: [(CGFloat(0.5), CGFloat(1)), (4, 2), (16, 1), (16, 2), (40, 2)])
+    func theMarksCellsSitOnWholePixels(_ size: CGFloat, _ scale: CGFloat) {
+        let cells = Tako.CrabPainter.cells(Tako.CrabPainter.rows, in: CGRect(x: 0, y: 0, width: size, height: size), scale: scale)
+        let all = cells.claws.boundingBoxOfPath.union(cells.body.boundingBoxOfPath)
+        guard size * scale >= 10 else {
+            #expect(cells.claws.isEmpty && cells.body.isEmpty)
+            return
+        }
+        let step = (min(size / 10, size / 7) * scale).rounded(.down) / scale
+        #expect(abs(all.width - (step * 10 - (step * scale >= 4 ? 1 / scale : 0))) < 0.001, "\(all)")
+        for edge in [all.minX, all.minY, all.maxX, all.maxY] {
+            #expect(abs((edge * scale).rounded() - edge * scale) < 0.001, "\(edge) off the pixel grid at \(scale)x")
         }
     }
 }

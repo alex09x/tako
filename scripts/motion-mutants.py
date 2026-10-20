@@ -36,6 +36,8 @@ SURFACE = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurface.swift"
 EFFECTS = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurfaceEffects.swift"
 ROW = "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowView.swift"
 STRIP = "swift/Sources/TakoApp/_TakoShim/Tako+TabStripTransitions.swift"
+CRAB = "swift/Sources/TakoApp/_TakoShim/Tako+CrabLayer.swift"
+PAINTER = "swift/Sources/TakoApp/_TakoShim/Tako+CrabPainter.swift"
 
 # name, what the design asks, file, text, replacement
 MUTANTS = [
@@ -88,7 +90,7 @@ MUTANTS = [
      "guard !all.isEmpty else { return nil }"),
     ("ranks-tied", "every state has a rank of its own", "swift/Sources/TakoApp/_TakoShim/Tako+PaneStatus.swift",
      "case .progress: return 3", "case .progress: return 4"),
-    ("cursor-half-lit", "the cursor is lit 60 % of its 1.2 s blink", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Drawing.swift",
+    ("cursor-half-lit", "the cursor is lit 60 % of its 1.2 s blink", "swift/Sources/TakoCoreUI/CursorBlink.swift",
      "public static let litShare = 0.6", "public static let litShare = 0.5"),
     ("strip-no-shake", "a failed pill shakes for 0.448 s", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarMotion.swift",
      "static let shakeDuration: CFTimeInterval = 0.448", "static let shakeDuration: CFTimeInterval = 0"),
@@ -211,6 +213,40 @@ MUTANTS = [
     ("animation-not-in-census", "every animation is in the census", "swift/Sources/TakoApp/Features/About/CyclingIconView.swift",
      ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)",
      ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)\n            .transition(.scale)"),
+    ("crab-scuttle-slow", "a running crab scurries through its poses in 0.8 s", CRAB,
+     "static let scuttleCycle: CFTimeInterval = 0.8", "static let scuttleCycle: CFTimeInterval = 1.2"),
+    ("crab-scuttle-smooth", "the scurry jumps from pose to pose (steps)", CRAB,
+     "scuttle.calculationMode = .discrete", "scuttle.calculationMode = .linear"),
+    ("crab-turns-backwards", "the crab turns as CSS does, clockwise for a positive angle", CRAB,
+     "CATransform3DMakeTranslation(dx, 0, 0), -degrees * .pi / 180, 0, 0, 1)",
+     "CATransform3DMakeTranslation(dx, 0, 0), degrees * .pi / 180, 0, 0, 1)"),
+    ("crab-hop-low", "the crab hops 4 pt, then 2", CRAB,
+     "static let hopRise: [CGFloat] = [0, 4, 0, 2, 0, 0]", "static let hopRise: [CGFloat] = [0, 2, 0, 1, 0, 0]"),
+    ("crab-hop-slow", "the crab hops in 1.4 s after a success", CRAB,
+     "static let successHop: CFTimeInterval = 1.4", "static let successHop: CFTimeInterval = 2"),
+    ("crab-hops-when-first-seen", "a crab first seen done does not hop", CRAB,
+     "case .succeeded where entered:", "case .succeeded:"),
+    ("crab-shake-slow", "the crab shivers once in 0.4 s", CRAB,
+     "static let shakeDuration: CFTimeInterval = 0.4", "static let shakeDuration: CFTimeInterval = 0.8"),
+    ("crab-no-pulse", "a reconnecting crab pulses to 35 %", CRAB,
+     "static let pulseOpacity: [Float] = [1, 0.35, 1]", "static let pulseOpacity: [Float] = [1, 1, 1]"),
+    ("crab-moves-under-reduce-motion", "Reduce Motion: the crab only changes colour", CRAB,
+     "guard !reduceMotion else { return }", "_ = reduceMotion"),
+    ("crab-lift-turns-wrong-way", "a lifted tab turns its crab with it", CRAB,
+     "let angle = -degrees * .pi / 180", "let angle = degrees * .pi / 180"),
+    ("crab-one-colour", "the crab at rest is Claw claws on an Ember body", PAINTER,
+     "case .idle, .attention, .ghost: return (Brand.claw, Brand.ember)", "case .idle, .attention, .ghost: return (Brand.ember, Brand.ember)"),
+    ("crab-ghost-opaque", "a ghost is the crab at 45 %", PAINTER,
+     "state == .ghost ? 0.45 : 1", "state == .ghost ? 1 : 1"),
+    ("crab-ghost-shape", "a ghost has its own figure", PAINTER,
+     "state == .ghost ? ghostRows : rows", "state == .ghost ? rows : rows"),
+    ("crab-not-in-strip", "a classic tab shows its crab layer", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarDrawing.swift",
+     "updateCrabLayer(for: tab, rect: rect, unread: unread)", "_ = unread"),
+    ("ios-blink-even", "the phone's cursor blinks as the Mac's", "swift/Sources/TakoCoreUI/TakoTerminalView+Display.swift",
+     "withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),", "withTimeInterval: 0.5,"),
+    ("timer-not-in-census", "every timer is in the census", "swift/Sources/TakoApp/Features/Terminal/LayoutRecorder.swift",
+     "timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true)",
+     "timer = Timer.scheduledTimer(withTimeInterval: interval * 2, repeats: true)"),
     ("done-not-green", "done is #7BD88F", SURFACE,
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1)",
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xB8 / 255, blue: 0x8F / 255, alpha: 1)"),

@@ -262,6 +262,7 @@ extension Tako.TabBarView {
     /// The badge sits over the crab, so it costs no width.
     func drawCrab(for tab: Tab, in rect: CGRect, ctx: CGContext) {
         guard !(showingBadges && tab.index < 9 && windows.count > 1) else {
+            crabLayers[ObjectIdentifier(tab.window)]?.setShown(false)
             ctx.setFillColor(Palette.badge.cgColor)
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 4, cornerHeight: 4, transform: nil))
             ctx.fillPath()
@@ -273,7 +274,7 @@ extension Tako.TabBarView {
         let unread = surfaces(in: tab.window).contains(where: {
             !$0.isAttentionMuted && ($0.crab.unread || NotificationStore.shared.unreadCount(for: $0.id) > 0)
         })
-        Tako.CrabPainter.draw(in: rect, color: crabColor(for: tab.window), unread: unread, context: ctx)
+        updateCrabLayer(for: tab, rect: rect, unread: unread)
     }
 
     func drawClose(in rect: CGRect, color: NSColor? = nil, ctx: CGContext) {

@@ -194,10 +194,6 @@ extension Tako.TabBarView {
         Tako.aggregateCrab(for: window)
     }
 
-    func crabColor(for window: NSWindow) -> NSColor {
-        aggregateCrab(for: window)?.state.color ?? Tako.Brand.ember
-    }
-
     func progressStyle(for window: NSWindow) -> Tako.Config.ProgressStyle {
         if let app = (NSApp?.delegate as? AppDelegate)?.tako {
             return app.config.progressStyle

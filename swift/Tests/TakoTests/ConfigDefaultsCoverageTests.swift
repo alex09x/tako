@@ -192,10 +192,13 @@ struct ConfigDefaultsCoverageTests {
     }
 
     /// Dropping the modifier it does not know would bind the action to a bare
-    /// `z`, which then fires on every z typed.
+    /// `z`, which then fires on every z typed. Skipped, the line leaves the
+    /// action as it was: on its default (⌥⌘↓).
     @Test func keybindWithUnrecognizedModifierIsSkipped() throws {
         let config = try TemporaryConfig("keybind=fn+z=goto_split:down")
-        #expect(config.keyboardShortcut(for: "goto_split:down") == nil)
+        let untouched = try TemporaryConfig("")
+        #expect(config.keyboardShortcut(for: "goto_split:down") != .init("z", modifiers: []))
+        #expect(config.keyboardShortcut(for: "goto_split:down") == untouched.keyboardShortcut(for: "goto_split:down"))
     }
 
     /// Upstream's own quick-terminal recipe. The prefix used to be read as a
