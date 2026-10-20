@@ -200,6 +200,22 @@ public class TakoTerminalView: UIView, UIKeyInput {
         self.core.setColorScheme(from: theme)
     }
 
+    /// `setNeedsDisplay` is the one redraw entry point every call site
+    /// already uses, so the Metal path hangs off it rather than adding a
+    /// second, parallel one. (Lost in 5d001fa6's split of this file: from
+    /// then on damage, the blink and scrolling drew nothing on the phone.)
+    override public func setNeedsDisplay() {
+        scheduleRedraw()
+        // With Metal owning the pixels the CoreGraphics backing store is
+        // dead weight; only the fallback marks it dirty.
+        if metalLayer == nil { super.setNeedsDisplay() }
+    }
+
+    override public func setNeedsDisplay(_ rect: CGRect) {
+        scheduleRedraw()
+        if metalLayer == nil { super.setNeedsDisplay(rect) }
+    }
+
     deinit {
         NotificationCenter.default.removeObserver(self)
         // The blinker goes with the view; its last timer finds nobody and stops.

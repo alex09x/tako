@@ -32,6 +32,7 @@ final class PresentationSurfaceVisibilityGateTests: XCTestCase {
         "PresentationClock.swift",
         "MetalTerminalRenderer.swift",
         "TakoTerminalNSView.swift",
+        "TakoTerminalNSView+Metal.swift",
         "TakoTerminalView.swift",
     ]
 
@@ -58,7 +59,7 @@ final class PresentationSurfaceVisibilityGateTests: XCTestCase {
     /// The immutable reading, on the other hand, must stay public -- that is
     /// the whole consumer contract.
     func testTheImmutableReadingStaysPublic() throws {
-        for file in ["TakoTerminalNSView.swift", "TakoTerminalView.swift"] {
+        for file in ["TakoTerminalNSView+Metal.swift", "TakoTerminalView.swift"] {
             let text = try source(file)
             XCTAssertTrue(
                 text.contains("public var presentationCadence: TerminalPresentationCadence"),

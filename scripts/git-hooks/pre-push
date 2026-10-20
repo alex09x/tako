@@ -9,7 +9,8 @@
 #
 # Before a push that changes the Swift app, the motion gate runs on the test
 # Mac (scripts/motion-gate.sh): a push that breaks an animation, an effect, a
-# state or a transition of the design does not leave the machine. Once it
+# state or a transition of the design does not leave the machine. A change
+# to the terminal view runs the iOS simulator suite as well. Once it
 # passes, if what moves changed, the mutants (scripts/motion-mutants.py) run
 # in the background to prove the gate still catches every broken spec item,
 # and say how many they caught in a notification.
@@ -43,6 +44,13 @@ fi
 export TAKO_MAC
 echo "pre-push: motion gate on the test Mac" >&2
 scripts/motion-gate.sh
+
+# The phone's terminal: its view, renderer and their tests run only on the
+# simulator, so a change to them runs that suite too (about 70 s).
+if grep -qE '^swift/(Sources/(TakoCoreUI|iOSApp)|Tests/TakoCoreUITests)/|^scripts/test-ios-surface' <<<"$changed"; then
+    echo "pre-push: iOS terminal tests on the simulator" >&2
+    scripts/check.sh ios
+fi
 
 # What moves: the status layers and surfaces, the strip, the sidebar, the
 # Overview, the crab's rules, the cursor, and the motion tests themselves.
