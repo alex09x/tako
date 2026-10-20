@@ -68,6 +68,12 @@ extension Tako {
             self.isSplit = isSplit
         }
 
+        /// Which of the overlays that cover the pane show: a file's, a review's.
+        private var coveringOverlays: [Bool] {
+            [overlayStore.overlay(for: surfaceView.id).map { $0.splitDirection == nil } ?? false,
+             diffReviewStore.session(for: surfaceView.id) != nil]
+        }
+
         var body: some View {
             ZStack(alignment: .top) {
                 SurfaceWrapper(surfaceView: surfaceView, isSplit: isSplit)
@@ -104,6 +110,9 @@ extension Tako {
                         .transition(.opacity)
                 }
             }
+            // Their .transition(.opacity) plays only inside an animation:
+            // the overlays that cover the pane fade in and out over 0.15 s.
+            .animation(.easeInOut(duration: 0.15), value: coveringOverlays)
             .focusedValue(\.takoSurfaceView, surfaceView)
             .focusedValue(\.takoSurfacePwd, surfaceView.pwd ?? "")
             .focusedValue(\.takoSurfaceCellSize, surfaceView.cellSize)

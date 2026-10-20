@@ -32,11 +32,26 @@ public struct InputOwnershipHeaderView: View {
         store.state(for: paneId)
     }
 
-    public var body: some View {
+    private var showsBar: Bool {
         let state = inputState
-        let showBar = state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType
+        return state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType
+    }
 
-        if showBar {
+    /// 0 no bar, 1 a bar, 2 a locked bar.
+    private var barKey: Int { showsBar ? (inputState.isLocked ? 2 : 1) : 0 }
+
+    /// The bar comes in from the top and goes over 0.15 s, and locking
+    /// restyles it over the same: animated where the bar is put in or taken
+    /// out, so its transition plays; animated on the bar itself, it never did.
+    public var body: some View {
+        VStack(spacing: 0) { bar }
+            .animation(.easeInOut(duration: 0.15), value: barKey)
+    }
+
+    @ViewBuilder private var bar: some View {
+        let state = inputState
+
+        if showsBar {
             HStack(spacing: 8) {
                 if state.isLocked {
                     Label {
@@ -138,7 +153,6 @@ public struct InputOwnershipHeaderView: View {
             .padding(.horizontal, 8)
             .padding(.top, 4)
             .transition(.move(edge: .top).combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.15), value: state.isLocked)
         }
     }
 

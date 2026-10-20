@@ -22,7 +22,21 @@ public struct BroadcastInputBannerView: View {
         self.paneId = paneId
     }
 
+    /// Who this pane is in a broadcast: 0 not in one, 1 receiving, 2 leading.
+    private var role: Int {
+        guard let session = store.activeSession, session.selectedPaneIds.contains(paneId) else { return 0 }
+        return session.leaderPaneId == paneId ? 2 : 1
+    }
+
+    /// The banner comes in from the top and goes over 0.15 s. The change of
+    /// role is animated where the banner is put in or taken out, so its
+    /// transition plays; animated on the banner itself, it never did.
     public var body: some View {
+        VStack(spacing: 0) { banner }
+            .animation(.easeInOut(duration: 0.15), value: role)
+    }
+
+    @ViewBuilder private var banner: some View {
         if let session = store.activeSession, session.selectedPaneIds.contains(paneId) {
             let isLeader = session.leaderPaneId == paneId
             let count = session.selectedPaneIds.count
@@ -74,7 +88,6 @@ public struct BroadcastInputBannerView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(isLeader ? "Broadcasting input to \(count) panes" : "Receiving broadcast input")
             .transition(.move(edge: .top).combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.15), value: isLeader)
         }
     }
 }
