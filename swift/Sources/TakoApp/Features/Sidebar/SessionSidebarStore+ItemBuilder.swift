@@ -300,9 +300,8 @@ extension SessionSidebarStore {
         return all.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority })?.crab
     }
 
+    /// As the tab bar has it: a pane working with no report outranks another's progress.
     private func aggregateProgress(for window: NSWindow) -> (state: TakoTerminalNSView.ProgressState, progress: Int?)? {
-        let all = surfaces(in: window)
-        guard !all.isEmpty else { return nil }
-        return Tako.CrabTabBinding.aggregateProgress(for: all)
+        Tako.aggregateProgress(for: window)
     }
 }

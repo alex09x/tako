@@ -87,10 +87,20 @@ extension Tako {
         return all.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority })?.crab
     }
 
+    /// The progress a tab shows: its panes' reports together -- unless a
+    /// pane works with no report of its own. Working outranks progress (1b),
+    /// so that tab shows working, not another pane's percentage.
     public static func aggregateProgress(for window: NSWindow) -> (state: ProgressState, progress: Int?)? {
         let all = surfaces(in: window)
-        guard !all.isEmpty else { return nil }
+        guard !all.isEmpty, !all.contains(where: worksWithoutProgress) else { return nil }
         return Tako.CrabTabBinding.aggregateProgress(for: all)
+    }
+
+    /// A pane at work that reports no progress: it shows as working.
+    static func worksWithoutProgress(_ surface: Tako.SurfaceView) -> Bool {
+        let crab = surface.crab
+        guard crab.progressState == .none, surface.activeProgressState == .none else { return false }
+        return crab.paneStatus.surfaceState(crabState: crab.state) == .working
     }
 
     /// The state a tab shows, and nothing else of its report: the tab bar

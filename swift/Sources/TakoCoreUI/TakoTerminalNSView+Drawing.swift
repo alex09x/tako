@@ -364,15 +364,36 @@ extension TakoTerminalNSView {
         blinkTimer = nil
         blinkStateVisible = true
         guard theme.cursorBlink, !isPresentationPaused else { return }
-        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        scheduleBlinkPhase()
+    }
+
+    /// The cursor's next change, a phase of `CursorBlink` from now: lit
+    /// for 0.72 s, out for 0.48 s.
+    private func scheduleBlinkPhase() {
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),
+                                          repeats: false) { [weak self] fired in
             guard let self else { return }
             Task { @MainActor in
-                guard self.theme.cursorBlink, !self.isPresentationPaused else { return }
-                guard !self.core.isSynchronizedOutputActive() else { return }
-                self.blinkStateVisible.toggle()
-                self.scheduleRedraw()
+                // A timer replaced or stopped meanwhile is not this blink's.
+                guard self.blinkTimer === fired, self.theme.cursorBlink, !self.isPresentationPaused else { return }
+                if !self.core.isSynchronizedOutputActive() {
+                    self.blinkStateVisible.toggle()
+                    self.scheduleRedraw()
+                }
+                self.scheduleBlinkPhase()
             }
         }
+    }
+}
+
+/// The cursor's blink (Terminal UI: "мигание 1.2s", lit 60% of it).
+public enum CursorBlink {
+    public static let period: TimeInterval = 1.2
+    public static let litShare = 0.6
+
+    /// How long the cursor stays lit, or out, before it changes.
+    public static func phaseDuration(lit: Bool) -> TimeInterval {
+        lit ? period * litShare : period * (1 - litShare)
     }
 }
 #endif
