@@ -100,14 +100,8 @@ extension SessionSidebarStore {
             surfaceLastStatus[sid] = s.crab.paneStatus
             var subs: [AnyCancellable] = []
             subs.append(
-                s.objectWillChange
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] _ in self?.objectWillChange.send() }
-            )
-            subs.append(
-                s.crab.objectWillChange
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] _ in self?.objectWillChange.send() }
+                Self.rowChanges(of: s)
+                    .sink { [weak self] in self?.objectWillChange.send() }
             )
             subs.append(
                 s.crab.$paneStatus
@@ -133,5 +127,54 @@ extension SessionSidebarStore {
             )
             surfaceSubscriptions[sid] = subs
         }
+    }
+}
+
+extension SessionSidebarStore {
+    /// A pane's changes that its row shows. A working pane's clock ticks
+    /// twice a second and its output streams; passed on as they came, each
+    /// rebuilt every row of the sidebar.
+    static func rowChanges(of s: Tako.SurfaceView) -> AnyPublisher<Void, Never> {
+        s.objectWillChange.map { _ in () }
+            .merge(with: s.crab.objectWillChange.map { _ in () })
+            .receive(on: RunLoop.main)
+            .compactMap { [weak s] _ in MainActor.assumeIsolated { s.map(SidebarPaneSignature.init) } }
+            .prepend(SidebarPaneSignature(s))
+            .removeDuplicates()
+            .dropFirst()
+            .map { _ in () }
+            .eraseToAnyPublisher()
+    }
+}
+
+/// What a sidebar row shows of one pane. The sidebar shows no timer, so a
+/// crab's elapsed time is not part of it, nor is the pane's output.
+struct SidebarPaneSignature: Equatable {
+    let title: String
+    let pwd: String?
+    let muted: Bool
+    let progressState: TakoTerminalNSView.ProgressState
+    let progressValue: Int?
+    let paneStatus: Tako.PaneStatus
+    let crabState: Tako.CrabState
+    let crabProgressState: TakoTerminalNSView.ProgressState
+    let crabProgress: Int?
+    let unread: Bool
+    let statusText: String?
+    let live: Tako.LiveActivity?
+
+    @MainActor init(_ s: Tako.SurfaceView) {
+        title = s.title
+        pwd = s.pwd
+        muted = s.isAttentionMuted
+        progressState = s.activeProgressState
+        progressValue = s.activeProgressValue
+        paneStatus = s.crab.paneStatus
+        crabState = s.crab.state
+        crabProgressState = s.crab.progressState
+        crabProgress = s.crab.progress
+        unread = s.crab.unread
+        statusText = s.crab.statusText
+        live = s.crab.live
     }
 }

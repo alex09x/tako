@@ -253,16 +253,16 @@ struct SessionSidebarView: View {
                 } content: {
                     HStack(spacing: 6) {
                         // It pulses only while something waits for you; with
-                        // nothing waiting it rests, and draws no frames.
+                        // nothing waiting it rests. Core Animation runs it, as
+                        // a pill's ring: a SwiftUI clock in this row laid the
+                        // sidebar out every frame -- in every tab's window --
+                        // whenever a tab in the background was at work.
                         let ringRests = animState.reduceMotion || attentionCount == 0
-                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionPaused || ringRests)) { context in
-                            StatusRingView(
-                                state: .waiting,
-                                size: .extraSmall,
-                                now: animState.effectiveDate(context.date),
-                                reduceMotion: ringRests
-                            )
-                        }
+                        SidebarStatusLayerView(
+                            state: .waiting, ringCenter: nil, cornerRadius: 0,
+                            reduceMotion: ringRests, paused: motionPaused, pulses: 0,
+                            ringOnly: StatusRingSize.extraSmall.rawValue)
+                            .frame(width: StatusRingSize.extraSmall.rawValue, height: StatusRingSize.extraSmall.rawValue)
                         Text("Needs you · \(attentionCount)")
                             .font(Font(T.monoFont(size: 10, weight: .regular)))
                             .lineLimit(1)

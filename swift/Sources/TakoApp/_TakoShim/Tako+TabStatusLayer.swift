@@ -25,6 +25,30 @@ extension Tako {
         /// The live ring's last ripple: a new count ripples it once.
         var lastPulses = 0
 
+        /// The surface's corners and where its ring sits: a pill's by default,
+        /// a sidebar row's for `SidebarStatusLayerView`.
+        struct Geometry: Equatable {
+            var cornerRadius: CGFloat = 6
+            /// The ring's origin, y up; nil puts it 8-9 pt in, centred.
+            var ringOrigin: CGPoint?
+            /// How far in from each side the progress line runs.
+            var progressInset: CGFloat = 0
+            /// A sidebar row in progress runs the comet too, its line 1 pt up.
+            var cometForProgress = false
+        }
+
+        var geometry = Geometry() {
+            didSet { if geometry != oldValue { lastSize = .zero } }
+        }
+
+        /// False draws the ring alone: no border, glow, glint or line.
+        var drawsSurface = true
+
+        private func ringFrame(in size: CGSize, ringX: CGFloat) -> CGRect {
+            let origin = geometry.ringOrigin ?? CGPoint(x: ringX, y: ((size.height - 14) / 2).rounded())
+            return CGRect(origin: origin, size: CGSize(width: 14, height: 14))
+        }
+
         private let clippedInnerContainer = CALayer()
         private let failedLineLayer = CAShapeLayer()
         private let progressLineLayer = CAGradientLayer()
@@ -108,7 +132,7 @@ extension Tako {
             let savedRingTransform = ringContainer.transform; ringContainer.transform = CATransform3DIdentity
             ringContainer.isHidden = hideRing
             let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
-            ringContainer.frame = CGRect(x: ringX, y: ((pillRect.height - 14) / 2).rounded(), width: 14, height: 14)
+            ringContainer.frame = ringFrame(in: pillRect.size, ringX: ringX)
             if sizeChanged { lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX) }
             ringContainer.transform = savedRingTransform
             CATransaction.commit()
@@ -126,17 +150,19 @@ extension Tako {
 
         private func layoutGeometries(for size: CGSize, ringX: CGFloat = 8) {
             let b = CGRect(origin: .zero, size: size)
+            let r = geometry.cornerRadius
             clippedInnerContainer.frame = b
+            clippedInnerContainer.cornerRadius = r
             failedLineLayer.frame = b
             let errPath = CGMutablePath()
             errPath.addRect(b)
-            errPath.addRoundedRect(in: b.offsetBy(dx: 0, dy: 2), cornerWidth: 6, cornerHeight: 6)
+            errPath.addRoundedRect(in: b.offsetBy(dx: 0, dy: 2), cornerWidth: r, cornerHeight: r)
             failedLineLayer.path = errPath
             flashLayer.layout(for: size)
 
             cometContainer.frame = b
             let insetRect = b.insetBy(dx: 0.5, dy: 0.5)
-            let borderPath = CGPath(roundedRect: insetRect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+            let borderPath = CGPath(roundedRect: insetRect, cornerWidth: r, cornerHeight: r, transform: nil)
             cometMask.frame = b; cometMask.path = borderPath
 
             let diag = hypot(size.width, size.height)
@@ -148,13 +174,13 @@ extension Tako {
             let inner = CGRect(x: pad, y: pad, width: size.width, height: size.height)
             breatheGlowContainer.frame = CGRect(x: -pad, y: -pad, width: outer.width, height: outer.height)
             breatheGlowMask.frame = outer
-            let mp = CGMutablePath(); mp.addRect(outer); mp.addRoundedRect(in: inner, cornerWidth: 6, cornerHeight: 6)
+            let mp = CGMutablePath(); mp.addRect(outer); mp.addRoundedRect(in: inner, cornerWidth: r, cornerHeight: r)
             breatheGlowMask.path = mp
-            breatheGlowLayer.frame = outer; breatheGlowLayer.path = CGPath(roundedRect: inner, cornerWidth: 6, cornerHeight: 6, transform: nil)
-            breatheGlowLayer.shadowPath = CGPath(roundedRect: inner.insetBy(dx: -1, dy: -1), cornerWidth: 7, cornerHeight: 7, transform: nil)
+            breatheGlowLayer.frame = outer; breatheGlowLayer.path = CGPath(roundedRect: inner, cornerWidth: r, cornerHeight: r, transform: nil)
+            breatheGlowLayer.shadowPath = CGPath(roundedRect: inner.insetBy(dx: -1, dy: -1), cornerWidth: r + 1, cornerHeight: r + 1, transform: nil)
             breatheLayer.frame = b; breatheLayer.path = borderPath
             offlineBorderLayer.frame = b; offlineBorderLayer.path = borderPath
-            ringContainer.frame = CGRect(x: ringX, y: ((size.height - 14) / 2).rounded(), width: 14, height: 14)
+            ringContainer.frame = ringFrame(in: size, ringX: ringX)
         }
 
         private func makeStrokeCircle(_ rect: CGRect, inset: CGFloat, color: CGColor, width: CGFloat, dash: [NSNumber]? = nil) -> CAShapeLayer {
@@ -273,7 +299,19 @@ extension Tako {
         }
 
         private func rebuildSurfaceEffects(for state: SurfaceState, size: CGSize, reduceMotion: Bool, triggerOneShot: Bool) {
-            cometContainer.isHidden = (state != .working); cometGradient.removeAllAnimations()
+            guard drawsSurface else {
+                for l: CALayer in [cometContainer, breatheGlowContainer, breatheLayer, failedLineLayer, offlineBorderLayer, progressLineLayer] {
+                    l.isHidden = true
+                }
+                flashLayer.opacity = 0
+                return
+            }
+            let comet: Bool = {
+                if case .progress = state { return geometry.cometForProgress }
+                return state == .working
+            }()
+            cometContainer.isHidden = !comet; cometGradient.removeAllAnimations()
+            if comet && !reduceMotion { cometGradient.add(makeSpinAnimation(duration: 2.2), forKey: "cometSpin") }
             breatheGlowContainer.isHidden = (state != .waiting); breatheGlowLayer.removeAllAnimations()
             breatheLayer.isHidden = (state != .waiting); breatheLayer.removeAllAnimations()
             failedLineLayer.isHidden = (state != .failed); offlineBorderLayer.isHidden = (state != .offline)
@@ -285,8 +323,6 @@ extension Tako {
             }
 
             switch state {
-            case .working:
-                if !reduceMotion { cometGradient.add(makeSpinAnimation(duration: 2.2), forKey: "cometSpin") }
             case .waiting:
                 if reduceMotion {
                     breatheLayer.strokeColor = T.claw.withAlphaComponent(0.90).cgColor
@@ -320,14 +356,16 @@ extension Tako {
                 // The shake moves the whole pill, title too: the strip drives
                 // it frame by frame (setShake), not this layer alone.
                 break
-            case .idle, .progress, .offline, .live:
+            case .working, .idle, .progress, .offline, .live:
                 break
             }
         }
 
         private func updateProgressValue(_ p: Double, in size: CGSize) {
             let clamped = CGFloat(min(1.0, max(0.0, p)))
-            progressLineLayer.frame = CGRect(x: 0, y: 0, width: max(2, size.width * clamped), height: 2)
+            let inset = geometry.progressInset
+            progressLineLayer.frame = CGRect(x: inset, y: geometry.cometForProgress ? 1 : 0,
+                                             width: max(2, (size.width - inset * 2) * clamped), height: 2)
             if let arc = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAShapeLayer { arc.strokeEnd = clamped }
         }
 

@@ -53,49 +53,93 @@ struct SessionSidebarRowView: View {
 
     @ViewBuilder
     var body: some View {
-        if let now {
-            row(at: now)
+        if now != nil {
+            shakingRow(moving: true)
         } else {
             let elapsed = LivingAnimationState.shared.elapsedInState(for: animationKey, state: state, now: Date())
             let moving = LivingMotion.isMoving(state, elapsed: elapsed, reduceMotion: reduceMotion)
             let _ = restCount
-            TimelineView(.animation(minimumInterval: LivingMotion.minimumFrameInterval(for: state), paused: motionPaused || !moving)) { context in
-                // A paused timeline keeps the date of its last frame, which
-                // can fall inside a glint or a shake: a row at rest is drawn
-                // at the time it is now, past its motion.
-                row(at: LivingAnimationState.shared.effectiveDate(moving ? context.date : Date()))
+            shakingRow(moving: moving)
+                .task(id: LivingMotion.RestKey(state: state, reduceMotion: reduceMotion)) {
+                    guard let wait = LivingMotion.remaining(state, elapsed: elapsed, reduceMotion: reduceMotion) else { return }
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    if !Task.isCancelled { restCount += 1 }
+                }
+        }
+    }
+
+    /// The parts of the row that move take frames of their own
+    /// (`SidebarRowClock`); the rest is drawn once per change.
+    private func clock<Content: View>(moving: Bool, @ViewBuilder _ content: @escaping (Date, TimeInterval) -> Content) -> SidebarRowClock<Content> {
+        SidebarRowClock(fixed: now, key: animationKey, state: state, moving: moving, paused: motionPaused, content: content)
+    }
+
+    /// Who draws a row's ring: SwiftUI, at a snapshot's moment; the row's
+    /// status layer, as a pill's draws its own; or a layer of its own, for a
+    /// pane row, whose border shows another state than its ring.
+    private enum RingPainter { case swiftUI, rowLayer, ownLayer }
+
+    /// The status ring: a fixed 14 pt place in the row's layout, the ring
+    /// drawn over it. In the layout itself, every frame of the ring had the
+    /// whole list laid out again.
+    private func ring(moving: Bool, painter: RingPainter) -> some View {
+        Color.clear
+            .frame(width: StatusRingSize.small.rawValue, height: StatusRingSize.small.rawValue)
+            .anchorPreference(key: SidebarRingAnchorKey.self, value: .bounds) { $0 }
+            .overlay {
+                switch painter {
+                case .swiftUI:
+                    clock(moving: moving) { now, elapsedInState in
+                        StatusRingView(
+                            state: state,
+                            size: .small,
+                            now: now,
+                            elapsedInState: elapsedInState,
+                            reduceMotion: reduceMotion,
+                            pulses: item.live?.pulses ?? 0
+                        )
+                    }
+                case .ownLayer:
+                    SidebarStatusLayerView(state: state, ringCenter: nil, cornerRadius: 0, reduceMotion: reduceMotion,
+                                           paused: motionPaused, pulses: item.live?.pulses ?? 0,
+                                           ringOnly: StatusRingSize.small.rawValue)
+                case .rowLayer:
+                    EmptyView()
+                }
             }
-            .task(id: LivingMotion.RestKey(state: state, reduceMotion: reduceMotion)) {
-                guard let wait = LivingMotion.remaining(state, elapsed: elapsed, reduceMotion: reduceMotion) else { return }
-                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-                if !Task.isCancelled { restCount += 1 }
+    }
+
+    /// A live row's status is drawn by Core Animation, as a pill tab's is
+    /// (`SidebarStatusLayerView`): the render server runs it, and SwiftUI
+    /// draws the row again only when what it shows changes. A snapshot's, at
+    /// its fixed moment, is drawn by SwiftUI.
+    private var layered: Bool { now == nil }
+
+    /// A failure shakes the whole row: the one motion with a clock around all
+    /// of it, for its half second.
+    @ViewBuilder
+    private func shakingRow(moving: Bool) -> some View {
+        if state == .failed && !reduceMotion && moving {
+            clock(moving: moving) { _, elapsed in
+                rowContent(moving: moving).offset(x: LivingAnimationState.failedShakeOffset(elapsed: elapsed))
             }
+        } else {
+            rowContent(moving: moving)
         }
     }
 
     @ViewBuilder
-    private func row(at now: Date) -> some View {
-        let elapsedInState = LivingAnimationState.shared.elapsedInState(
-            for: animationKey,
-            state: state,
-            now: now
-        )
-        let shouldShake = (state == .failed) && !reduceMotion
-        let shakeX = shouldShake ? LivingAnimationState.failedShakeOffset(elapsed: elapsedInState) : 0
-
-        Group {
-            if item.isChild {
-                paneChildRow(elapsedInState: elapsedInState, now: now)
-            } else {
-                sessionParentRow(elapsedInState: elapsedInState, now: now)
-            }
+    private func rowContent(moving: Bool) -> some View {
+        if item.isChild {
+            paneChildRow(moving: moving)
+        } else {
+            sessionParentRow(moving: moving)
         }
-        .offset(x: shakeX)
     }
 
     // MARK: - Level 1: Session Row (§5.5)
 
-    private func sessionParentRow(elapsedInState: TimeInterval, now: Date) -> some View {
+    private func sessionParentRow(moving: Bool) -> some View {
         let radius: CGFloat = 7
         let hasBorderBox1px: Bool = {
             if state == .working || state == .offline { return true }
@@ -129,15 +173,8 @@ struct SessionSidebarRowView: View {
                     Color.clear.frame(width: 10, height: 14)
                 }
 
-                StatusRingView(
-                    state: state,
-                    size: .small,
-                    now: now,
-                    elapsedInState: elapsedInState,
-                    reduceMotion: reduceMotion,
-                    pulses: item.live?.pulses ?? 0
-                )
-                .help("Status: \(item.status.rawValue)")
+                ring(moving: moving, painter: layered ? .rowLayer : .swiftUI)
+                    .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
                     .font(Font(T.monoFont(size: 12, weight: isTabActive ? .medium : .regular)))
@@ -179,36 +216,66 @@ struct SessionSidebarRowView: View {
         }
         .padding(.horizontal, hasBorderBox1px ? 9 : 8)
         .padding(.vertical, vPad)
-        .background(
-            DoneGlintBackground(state: state, cornerRadius: radius, elapsedInState: elapsedInState, reduceMotion: reduceMotion)
-        )
-        .background(
-            LivingSurfaceOuterGlow(
-                state: state,
-                cornerRadius: radius,
-                backingColor: glowBacking,
-                now: now,
-                reduceMotion: reduceMotion
-            )
-        )
+        // Behind the text, over the row's fill, as the glint is in the design;
+        // the ring, the border, the line and the glow do not reach the text.
+        .backgroundPreferenceValue(SidebarRingAnchorKey.self) { anchor in
+            if layered {
+                GeometryReader { geo in
+                    SidebarStatusLayerView(
+                        state: state,
+                        ringCenter: anchor.map { CGPoint(x: geo[$0].midX, y: geo[$0].midY) },
+                        cornerRadius: radius,
+                        reduceMotion: reduceMotion,
+                        paused: motionPaused,
+                        pulses: item.live?.pulses ?? 0,
+                        progressInset: hasBorderBox1px ? 9 : 8,
+                        cometForProgress: true
+                    )
+                }
+            }
+        }
+        .background {
+            if !layered {
+                clock(moving: moving) { _, elapsedInState in
+                    DoneGlintBackground(state: state, cornerRadius: radius, elapsedInState: elapsedInState, reduceMotion: reduceMotion)
+                }
+            }
+        }
+        .background {
+            if !layered {
+                clock(moving: moving) { now, _ in
+                    LivingSurfaceOuterGlow(
+                        state: state,
+                        cornerRadius: radius,
+                        backingColor: glowBacking,
+                        now: now,
+                        reduceMotion: reduceMotion
+                    )
+                }
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: radius)
                 .fill(rowBackgroundColor)
         )
-        .overlay(
-            LivingSurfaceEffectsOverlay(
-                state: state,
-                cornerRadius: radius,
-                cometLineWidth: 1.0,
-                showsCometForProgress: true,
-                showsBottomProgressLine: true,
-                progressInsetLeft: hasBorderBox1px ? 9 : 8,
-                drawsDoneGlint: false,
-                now: now,
-                elapsedInState: elapsedInState,
-                reduceMotion: reduceMotion
-            )
-        )
+        .overlay {
+            if !layered {
+                clock(moving: moving) { now, elapsedInState in
+                    LivingSurfaceEffectsOverlay(
+                        state: state,
+                        cornerRadius: radius,
+                        cometLineWidth: 1.0,
+                        showsCometForProgress: true,
+                        showsBottomProgressLine: true,
+                        progressInsetLeft: hasBorderBox1px ? 9 : 8,
+                        drawsDoneGlint: false,
+                        now: now,
+                        elapsedInState: elapsedInState,
+                        reduceMotion: reduceMotion
+                    )
+                }
+            }
+        }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .overlay(alignment: .leading) {
             // Active row left 2pt Ember bar at sidebar left edge (x = 0, i.e. -8pt from row minX)
@@ -228,7 +295,7 @@ struct SessionSidebarRowView: View {
 
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
 
-    private func paneChildRow(elapsedInState: TimeInterval, now: Date) -> some View {
+    private func paneChildRow(moving: Bool) -> some View {
         let radius: CGFloat = 6
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
         let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4
@@ -236,14 +303,7 @@ struct SessionSidebarRowView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
-                StatusRingView(
-                    state: state,
-                    size: .small,
-                    now: now,
-                    elapsedInState: elapsedInState,
-                    reduceMotion: reduceMotion,
-                    pulses: item.live?.pulses ?? 0
-                )
+                ring(moving: moving, painter: layered ? .ownLayer : .swiftUI)
 
                 Text(item.title)
                     .font(Font(T.monoFont(size: 11, weight: .regular)))
@@ -294,16 +354,23 @@ struct SessionSidebarRowView: View {
             SidebarPaneTreeConnectorShape()
                 .stroke(Color(nsColor: T.badge), lineWidth: 1.0)
         )
-        .overlay(
-            LivingSurfaceEffectsOverlay(
-                state: paneEffectState,
-                cornerRadius: radius,
-                cometLineWidth: 1.0,
-                now: now,
-                elapsedInState: elapsedInState,
-                reduceMotion: reduceMotion
-            )
-        )
+        .overlay {
+            if !layered {
+                clock(moving: moving) { now, elapsedInState in
+                    LivingSurfaceEffectsOverlay(
+                        state: paneEffectState,
+                        cornerRadius: radius,
+                        cometLineWidth: 1.0,
+                        now: now,
+                        elapsedInState: elapsedInState,
+                        reduceMotion: reduceMotion
+                    )
+                }
+            } else if paneEffectState != .idle {
+                SidebarStatusLayerView(state: paneEffectState, ringCenter: nil, cornerRadius: radius,
+                                       reduceMotion: reduceMotion, paused: motionPaused, pulses: 0, drawsRing: false)
+            }
+        }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
         .onPress(perform: onSelect)
