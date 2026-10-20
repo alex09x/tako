@@ -36,8 +36,6 @@ SURFACE = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurface.swift"
 EFFECTS = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurfaceEffects.swift"
 ROW = "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowView.swift"
 STRIP = "swift/Sources/TakoApp/_TakoShim/Tako+TabStripTransitions.swift"
-CRAB = "swift/Sources/TakoApp/_TakoShim/Tako+CrabLayer.swift"
-PAINTER = "swift/Sources/TakoApp/_TakoShim/Tako+CrabPainter.swift"
 
 # name, what the design asks, file, text, replacement
 MUTANTS = [
@@ -200,8 +198,6 @@ MUTANTS = [
     ("clicks-on-drawn-tabs", "clicks aim where a tab lies at rest", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarInput.swift",
      "return laid.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }",
      "return tabs.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }"),
-    ("banner-slower", "the broadcast banner moves in 0.15 s", "swift/Sources/TakoApp/Features/BroadcastInput/BroadcastInputBannerView.swift",
-     ".animation(.easeInOut(duration: 0.15), value: isLeader)", ".animation(.easeInOut(duration: 0.4), value: isLeader)"),
     ("overview-scroll-slow", "the Overview scrolls to its choice in 0.15 s", "swift/Sources/TakoApp/Features/Overview/PaneOverviewView.swift",
      "withAnimation(.easeInOut(duration: 0.15)) {", "withAnimation(.easeInOut(duration: 0.4)) {"),
     ("grip-fade-slow", "the resize edge lights in 0.12 s", "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarResize.swift",
@@ -275,6 +271,14 @@ def gate(worktree, limit):
 
 def main(argv):
     names = [a for a in argv if not a.startswith("--")]
+    if "--check" in argv:
+        # Every mutant still finds its text, once: one whose code moved would only say "invalid" an hour into a run.
+        stale = [(name, open(os.path.join(ROOT, path), encoding="utf-8").read().count(text))
+                 for name, _, path, text, _ in MUTANTS]
+        stale = [(name, n) for name, n in stale if n != 1]
+        for name, n in stale:
+            print(f"mutant {name}: its text is found {n} times", file=sys.stderr)
+        return 1 if stale else 0
     if "--list" in argv:
         for name, what, path, _, _ in MUTANTS:
             print(f"{name:28} {what}  ({os.path.basename(path)})")

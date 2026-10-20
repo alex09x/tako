@@ -59,4 +59,5 @@ if [ "${1:-}" = "--filter" ]; then
     echo "$FILTER"
     exit 0
 fi
+python3 scripts/motion-mutants.py --check
 exec scripts/check.sh "swift:$FILTER"
