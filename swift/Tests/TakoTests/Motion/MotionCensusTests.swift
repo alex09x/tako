@@ -75,8 +75,7 @@ struct MotionCensusTests {
              what: "the Overview's 30 frames a second, every frame for a one-off",
              coveredBy: ["aCardPlayingAOneOffTakesEveryFrameUntilItRests", "lastingMotionsRestAndReducedMotionStayAtThirty"]),
         Site(file: "PaneOverviewView.swift", code: "withAnimation(.easeInOut(duration: 0.15)) {",
-             what: "the Overview scrolls to the chosen card in 0.15 s (no design numbers; a frame of the Overview takes longer to draw off screen than the scroll does, so its code is held)",
-             coveredBy: [pinned]),
+             what: "the Overview scrolls to the chosen card in 0.15 s", coveredBy: ["theOverviewScrollsToItsChoiceOverAMoment"]),
         // The tab strip, drawn frame by frame (Terminal UI).
         Site(file: "Tako+TabBar.swift", code: "var motionLink: CADisplayLink?",
              what: "the strip's display link", coveredBy: ["aPillThatFailsShakesOnTheDesignsCurveFromThatMoment"]),

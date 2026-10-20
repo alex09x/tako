@@ -229,6 +229,8 @@ MUTANTS = [
      ".animation(.easeInOut(duration: 0.15), value: barKey)", ".animation(nil, value: barKey)"),
     ("overlay-pops-in", "a pane's covering overlay fades in", "swift/Sources/TakoApp/_TakoShim/Tako+SurfaceUI.swift",
      ".animation(.easeInOut(duration: 0.15), value: coveringOverlays)", ".animation(nil, value: coveringOverlays)"),
+    ("overview-scroll-jumps", "the Overview scrolls to its choice over a moment", "swift/Sources/TakoApp/Features/Overview/PaneOverviewView.swift",
+     "withAnimation(.easeInOut(duration: 0.15)) {\n                        proxy.scrollTo", "withAnimation(nil) {\n                        proxy.scrollTo"),
     ("phone-blink-even", "the phone's cursor blinks as the Mac's", "swift/Sources/TakoCoreUI/CursorBlink.swift",
      "withTimeInterval: CursorBlink.phaseDuration(lit: isLit), repeats: false", "withTimeInterval: 0.5, repeats: false"),
     ("phone-blink-never-toggles", "the phone's cursor goes out between its lit phases", "swift/Sources/TakoCoreUI/CursorBlink.swift",

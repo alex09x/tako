@@ -90,6 +90,33 @@ struct MotionOverlayTests {
         try expectAnimated(going, from: shown, "a file overlay going")
     }
 
+    /// The Overview scrolls to the card chosen from the keyboard over
+    /// 0.15 s. Its frames take longer to draw off screen than the scroll
+    /// does, so the scroll is read where it happens: the offset of the
+    /// scroll view under the grid, every few milliseconds.
+    @Test func theOverviewScrollsToItsChoiceOverAMoment() throws {
+        let store = PaneOverviewStore()
+        store.items = (0..<30).map { PaneOverviewItem(id: UUID(), title: "pane \($0)", status: .idle) }
+        let probe = SwiftUIMotionProbe(PaneOverviewView(isPresented: .constant(true), showsBackdrop: false, store: store),
+                                       size: CGSize(width: 520, height: 360))
+        defer { probe.close() }
+        probe.settle(0.6)
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        let scroll = try #require(scrollViews(probe.host).max { $0.documentView?.frame.height ?? 0 < $1.documentView?.frame.height ?? 0 })
+        let offset = { Double(scroll.contentView.bounds.origin.y) }
+        let start = offset()
+        store.selectedIndex = 20
+        let began = Date()
+        var frames: [(t: TimeInterval, value: Double)] = []
+        while Date().timeIntervalSince(began) < 0.6 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.004))
+            frames.append((Date().timeIntervalSince(began), offset()))
+        }
+        try expectAnimated(frames, from: start, "the Overview scrolling")
+    }
+
     final class Toggle: ObservableObject { @Published var on = false }
     struct Control: View {
         @ObservedObject var toggle: Toggle
