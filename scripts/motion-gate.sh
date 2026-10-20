@@ -41,6 +41,14 @@ SUITES=(
     UnreportedCommandTests
     CursorBlinkCadenceTests
     UnfocusedDrawsAnOutline     # the unfocused cursor's 1 pt outline
+    TabBar                      # the strip's states and drawing (pill, classic, controller)
+    QuickTerminalPositionTests  # where the quick terminal slides from and to
+    SecureInputOverlayTests
+    AboutCoverageTests
+    InputOwnershipTests
+    TerminalTouchScrollTests    # kinetic scrolling (iOS)
+    TabBarClose                 # closing from the strip's ✕
+    clickingTheTabBarCloseButton
 )
 FILTER=$(IFS='|'; echo "${SUITES[*]}")
 

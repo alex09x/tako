@@ -16,6 +16,7 @@ scripts/motion-gate.sh there. A mutant the gate passes is a hole in it.
     export TAKO_MAC=user@test-mac.local
     scripts/motion-mutants.py              # every mutant
     scripts/motion-mutants.py --list       # what they break
+    scripts/motion-mutants.py --notify     # and say how it went in a notification
     scripts/motion-mutants.py spinner-slow comet-backwards
 
 The worktree builds in a directory of its own on the test Mac
@@ -34,6 +35,7 @@ LAYER = "swift/Sources/TakoApp/_TakoShim/Tako+TabStatusLayer.swift"
 SURFACE = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurface.swift"
 EFFECTS = "swift/Sources/TakoApp/_TakoShim/Tako+LivingSurfaceEffects.swift"
 ROW = "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowView.swift"
+STRIP = "swift/Sources/TakoApp/_TakoShim/Tako+TabStripTransitions.swift"
 
 # name, what the design asks, file, text, replacement
 MUTANTS = [
@@ -164,6 +166,51 @@ MUTANTS = [
      "case .failed: return 6", "case .failed: return 8"),
     ("cursor-outline-thick", "an unfocused cursor is a 1 pt outline", "swift/Sources/TakoCoreUI/TerminalMetalFramePlanner+Overlays.swift",
      "?? max(1, Float(metrics.scale).rounded())", "?? max(1, (2 * Float(metrics.scale)).rounded())"),
+    ("strip-appear-slow", "a new tab grows in over 160 ms", STRIP,
+     "static let appearDuration: CFTimeInterval = 0.16", "static let appearDuration: CFTimeInterval = 0.3"),
+    ("strip-close-slow", "a closed tab collapses over 140 ms", STRIP,
+     "static let closeDuration: CFTimeInterval = 0.14", "static let closeDuration: CFTimeInterval = 0.3"),
+    ("strip-close-ease-out", "a closed tab collapses ease-in", STRIP,
+     "static let easeIn: (Double) -> Double = CSSTiming.cubicBezier(0.42, 0, 1, 1)",
+     "static let easeIn: (Double) -> Double = CSSTiming.cubicBezier(0, 0, 0.58, 1)"),
+    ("strip-bar-slow", "the active bar travels in 120 ms", STRIP,
+     "static let barDuration: CFTimeInterval = 0.12", "static let barDuration: CFTimeInterval = 0.3"),
+    ("strip-reorder-slow", "neighbours make room in 120 ms", STRIP,
+     "static let reorderDuration: CFTimeInterval = 0.12", "static let reorderDuration: CFTimeInterval = 0.3"),
+    ("strip-neighbours-jump", "neighbours move, they do not jump", STRIP,
+     "out[i].frame.origin.x = from.minX + (out[i].frame.minX - from.minX) * k", "_ = (from, k)"),
+    ("strip-hover-slow", "a button's hover comes in over 80 ms", STRIP,
+     "static let hoverDuration: CFTimeInterval = 0.08", "static let hoverDuration: CFTimeInterval = 0.3"),
+    ("strip-spring-loose", "a dropped tab springs at 300/24", STRIP,
+     "static let springDamping = 24.0", "static let springDamping = 8.0"),
+    ("strip-no-spring", "a dropped tab springs, it does not jump", STRIP,
+     "guard elapsed > 0 else { return x0 }", "guard elapsed > 1e9 else { return 0 }"),
+    ("strip-no-tilt", "a lifted tab is tilted 3°", STRIP,
+     "static let liftTiltDegrees: CGFloat = -3", "static let liftTiltDegrees: CGFloat = 0"),
+    ("strip-content-early", "a new tab's content comes after it has grown", STRIP,
+     "moved.showsContent = factor >= 1", "moved.showsContent = true"),
+    ("strip-hidden-animates", "a strip nobody sees takes changes at once", STRIP,
+     "LivingAnimationState.shared.reduceMotion || window?.isVisible != true", "LivingAnimationState.shared.reduceMotion"),
+    ("tooltip-slow", "tooltips show after 800 ms", STRIP,
+     "static let tooltipDelayMilliseconds = 800", "static let tooltipDelayMilliseconds = 1500"),
+    ("drag-does-not-follow", "a lifted tab follows the pointer", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarInput.swift",
+     "dragPointX = currentPoint.x", "dragPointX = nil"),
+    ("clicks-on-drawn-tabs", "clicks aim where a tab lies at rest", "swift/Sources/TakoApp/_TakoShim/Tako+TabBarInput.swift",
+     "return laid.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }",
+     "return tabs.first { $0.frame.minX <= point.x && point.x <= $0.frame.maxX }"),
+    ("banner-slower", "the broadcast banner moves in 0.15 s", "swift/Sources/TakoApp/Features/BroadcastInput/BroadcastInputBannerView.swift",
+     ".animation(.easeInOut(duration: 0.15), value: isLeader)", ".animation(.easeInOut(duration: 0.4), value: isLeader)"),
+    ("overview-scroll-slow", "the Overview scrolls to its choice in 0.15 s", "swift/Sources/TakoApp/Features/Overview/PaneOverviewView.swift",
+     "withAnimation(.easeInOut(duration: 0.15)) {", "withAnimation(.easeInOut(duration: 0.4)) {"),
+    ("grip-fade-slow", "the resize edge lights in 0.12 s", "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarResize.swift",
+     "fade.duration = 0.12", "fade.duration = 0.5"),
+    ("quick-terminal-ease-out", "the quick terminal slides ease-in",
+     "swift/Sources/TakoApp/Features/QuickTerminal/QuickTerminalController+Animation.swift",
+     "context.timingFunction = .init(name: .easeIn)\n            position.setFinal(",
+     "context.timingFunction = .init(name: .easeOut)\n            position.setFinal("),
+    ("animation-not-in-census", "every animation is in the census", "swift/Sources/TakoApp/Features/About/CyclingIconView.swift",
+     ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)",
+     ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)\n            .transition(.scale)"),
     ("done-not-green", "done is #7BD88F", SURFACE,
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1)",
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xB8 / 255, blue: 0x8F / 255, alpha: 1)"),
@@ -241,10 +288,23 @@ def main(argv):
 
     caught = sum(1 for r in results if r[2] == "caught")
     print(f"\n{caught} of {len(results)} mutants caught")
+    holes = [f"{name} ({outcome})" for name, _, outcome, _ in results if outcome != "caught"]
     for name, what, outcome, _ in results:
         if outcome != "caught":
             print(f"  {outcome}: {name} -- {what}")
+    if "--notify" in argv:
+        notify(f"{caught} of {len(results)} broken spec items caught" + (f"; holes: {', '.join(holes)}" if holes else ""))
     return 0 if caught == len(results) else 1
+
+
+def notify(text):
+    """A notification on this Mac, for a run nobody is watching."""
+    script = f'display notification {applescript_string(text)} with title "Tako motion mutants"'
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+
+
+def applescript_string(text):
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 if __name__ == "__main__":

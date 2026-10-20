@@ -338,9 +338,12 @@ struct PillTabBarUITests {
         }
         #expect(!pillYRows.isEmpty)
         #expect(!hasEmberBottomBar)
-        if let minY = pillYRows.min(), let maxY = pillYRows.max() {
+        // The bar's 1 pt bottom border (#2A211B, Terminal UI `.tbar`) is in
+        // the same colour range five points below the pill, and is not it.
+        let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
+        let run = pillYRows.filter { $0 < rep.pixelsHigh - scale }
+        if let minY = run.min(), let maxY = run.max() {
             let renderedHeight = maxY - minY + 1
-            let scale = max(1, rep.pixelsHigh / Int(bar.bounds.height))
             let expectedPixels = Int(Tako.TabBarView.Metrics.buttonSize) * scale
             #expect(abs(renderedHeight - expectedPixels) <= 1)
         }
