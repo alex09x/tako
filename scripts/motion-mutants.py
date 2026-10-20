@@ -252,6 +252,8 @@ def gate(worktree, limit):
     """Runs the gate in `worktree`; returns (verdict, seconds, tail of output)."""
     env = dict(os.environ)
     env.setdefault("TAKO_MAC_DIR", "ci/tako-mutants")
+    # A mutant's own text is gone from the tree: the gate's --check would fail every one.
+    env["MOTION_MUTANT_RUN"] = "1"
     started = time.monotonic()
     try:
         done = subprocess.run(["scripts/motion-gate.sh"], cwd=worktree, env=env, capture_output=True,
@@ -261,6 +263,9 @@ def gate(worktree, limit):
             verdict = "build failed"
         elif done.returncode == 0:
             verdict = "passed"
+        elif "== targeted checks" not in out:
+            # Caught means a test failed: a gate that stopped before its tests ran caught nothing.
+            verdict = "no tests ran"
         else:
             verdict = "failed"
     except subprocess.TimeoutExpired as e:

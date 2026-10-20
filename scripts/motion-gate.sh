@@ -59,5 +59,6 @@ if [ "${1:-}" = "--filter" ]; then
     echo "$FILTER"
     exit 0
 fi
-python3 scripts/motion-mutants.py --check
+# Every mutant still finds its code (not inside a mutant run, where one is applied).
+[ -n "${MOTION_MUTANT_RUN:-}" ] || python3 scripts/motion-mutants.py --check
 exec scripts/check.sh "swift:$FILTER"
