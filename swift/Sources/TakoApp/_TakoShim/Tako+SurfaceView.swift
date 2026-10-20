@@ -341,6 +341,11 @@ extension Tako {
         var runProgram: [String]?
         var runEndNote: String?
         var activeRunningCommandText: String?
+        /// The command in front of the shell, read off its process; nil
+        /// while the shell is. A test puts its own here.
+        lazy var frontCommand: () -> String? = { [weak self] in
+            self?.shellProcessID.flatMap { SessionShell.runningCommand(ofShell: pid_t($0)) }
+        }
         var onPtyReply: ((String) -> Void)?
         var sessionRetry: (() -> Void)?
         var hadPersistentSession = false

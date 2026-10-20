@@ -448,9 +448,18 @@ extension Tako {
             }
         }
 
+        /// The running job turned out to be quiet, read off its process --
+        /// `tail -f`, ssh -- the shell having named none: it goes live as it
+        /// would have from its start had the shell named it.
+        func commandIdentified(as kind: CommandKind, probe: LiveProbe) {
+            guard kind != .batch, commandKind == .batch, startedAt != nil else { return }
+            liveProbe = probe
+            settleQuiet(as: kind)
+        }
+
         /// The running job turned out to be one the user is inside.
-        private func settleQuiet() {
-            commandKind = .quiet
+        private func settleQuiet(as kind: CommandKind = .quiet) {
+            commandKind = kind
             if explicitStatus == nil {
                 ticker?.invalidate()
                 ticker = nil

@@ -251,11 +251,7 @@ extension Tako.SurfaceView {
                                     cmdText = info.input ?? ""
                                     cmdRef = "\(info.id)@\(info.epoch)"
                                 }
-                                self.crab.isFocused = self.isBeingLookedAt
-                                self.crab.commandStarted(
-                                    kind: self.commandKind(of: cmdText),
-                                    probe: self.liveProbe(for: cmdText))
-                                self.commandStarted()
+                                self.shellStartedCommand(cmdText)
                                 self.publishEvent(
                                     type: "command_start",
                                     payload: [
