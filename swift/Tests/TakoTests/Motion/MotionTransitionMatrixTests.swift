@@ -55,13 +55,14 @@ struct MotionTransitionMatrixTests {
         defer { surface.close() }
         surface.show(.progress(0.2))
         let layer = try #require(surface.layer)
-        let arc = try #require(layer.ringContainer.sublayers?.first { $0.name == "progressArc" } as? CAShapeLayer)
+        let shade = try #require(layer.ringContainer.sublayers?.first { $0.name == "progressArc" })
+        let arc = try #require(shade.mask as? CAShapeLayer)
         let line = try #require(layer.named(Tako.TabStatusLayer.LayerName.progressLine))
         let narrow = line.frame.width
         #expect(abs(arc.strokeEnd - 0.2) < 0.001)
 
         surface.show(.progress(0.7))
-        #expect(layer.ringContainer.sublayers?.first { $0.name == "progressArc" } === arc, "the ring was rebuilt")
+        #expect(layer.ringContainer.sublayers?.first { $0.name == "progressArc" } === shade, "the ring was rebuilt")
         #expect(abs(arc.strokeEnd - 0.7) < 0.001)
         #expect(line.frame.width > narrow * 3, "line \(narrow) -> \(line.frame.width)")
         // The line spans the surface less its insets, in proportion.
@@ -129,10 +130,10 @@ struct MotionTransitionMatrixTests {
 
     // MARK: - Reduce Motion turned on and off mid-state
 
-    @Test(arguments: MotionSpec.Surface.allCases.flatMap { s in MotionSpec.states.map { (s, $0) } })
-    func turningReduceMotionOnAndOffMidStateFollowsIt(_ surfaceAndState: (MotionSpec.Surface, Tako.SurfaceState)) {
-        let (kind, state) = surfaceAndState
-        guard kind == .pill else { return }   // the row takes Reduce Motion at creation; the pill's layer is driven live
+    /// A pill's layer is told Reduce Motion at every draw; a row takes it
+    /// when SwiftUI makes it again, which the state matrix covers.
+    @Test(arguments: MotionSpec.states)
+    func turningReduceMotionOnAndOffMidStateFollowsIt(_ state: Tako.SurfaceState) {
         let layer = Tako.TabStatusLayer()
         let rect = CGRect(origin: .zero, size: MotionSurfaceHarness.pillSize)
         layer.apply(state: state, in: rect, hideRing: false, reduceMotion: false, paused: false)
@@ -142,5 +143,24 @@ struct MotionTransitionMatrixTests {
         layer.apply(state: state, in: rect, hideRing: false, reduceMotion: false, paused: false)
         #expect(StatusLayerInventory.effects(of: layer)
             == MotionSpec.effects(on: .pill, state, reduceMotion: false, entered: false), "\(state.specName) with motion back")
+    }
+}
+
+/// The one-offs end by themselves: Core Animation takes them off when they
+/// have run, and what stays is the state at rest.
+@Suite(.serialized) @MainActor
+struct MotionOneOffEndTests {
+    @Test func thePopAndTheGlintAreTakenOffWhenTheyHaveRun() throws {
+        let layer = Tako.TabStatusLayer()
+        let rect = CGRect(origin: .zero, size: MotionSurfaceHarness.pillSize)
+        layer.apply(state: .working, in: rect, hideRing: false, reduceMotion: false, paused: false)
+        layer.apply(state: .done, in: rect, hideRing: false, reduceMotion: false, paused: false)
+        let pop = try #require(layer.ringContainer.animation(forKey: "donePop"))
+        let glint = try #require(layer.named(Tako.TabStatusLayer.LayerName.doneGlint)?.animation(forKey: "doneFlash"))
+        #expect(pop.isRemovedOnCompletion)
+        #expect(glint.isRemovedOnCompletion)
+        #expect(abs(pop.duration - MotionSpec.popDuration) < 0.001)
+        #expect(abs(glint.duration - MotionSpec.glintDuration) < 0.001)
+        #expect(pop.repeatCount == 0 && glint.repeatCount == 0, "a one-off repeats")
     }
 }

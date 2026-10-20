@@ -107,6 +107,9 @@ final class LayerFrames {
             for key in layer.animationKeys() ?? [] {
                 guard let animation = layer.animation(forKey: key)?.copy() as? CAAnimation else { continue }
                 animation.beginTime = start
+                // By the real clock a one-off at `start` ended long ago, and
+                // a commit would take it off before it was drawn.
+                animation.isRemovedOnCompletion = false
                 layer.removeAnimation(forKey: key)
                 layer.add(animation, forKey: key)
             }
@@ -117,19 +120,30 @@ final class LayerFrames {
     }
 
     /// `layer` drawn over black at `t` seconds after `start`, `size` points
-    /// at `scale` pixels a point. The layer is moved under a root of the
-    /// renderer's own and stays there.
-    func render(_ layer: CALayer, size: CGSize, scale: CGFloat = 2, at t: CFTimeInterval) -> LayerFrame {
-        let w = Int((size.width * scale).rounded()), h = Int((size.height * scale).rounded())
+    /// at `scale` pixels a point, with `padding` points round it for what
+    /// it draws outside itself (a glow, a halo). The layer is moved under a
+    /// root of the renderer's own and stays there; the frame's points are
+    /// the layer's own moved by `padding`.
+    func render(_ layer: CALayer, size: CGSize, padding: CGFloat = 0, scale: CGFloat = 2, at t: CFTimeInterval) -> LayerFrame {
+        let full = CGSize(width: size.width + 2 * padding, height: size.height + 2 * padding)
+        let w = Int((full.width * scale).rounded()), h = Int((full.height * scale).rounded())
         let root: CALayer
-        if let existing = layer.superlayer, existing.name == "LayerFrames.root" {
-            root = existing
+        let shift: CALayer
+        if let existing = layer.superlayer, existing.name == "LayerFrames.shift", let top = existing.superlayer {
+            root = top
+            shift = existing
         } else {
             root = CALayer()
             root.name = "LayerFrames.root"
+            shift = CALayer()
+            shift.name = "LayerFrames.shift"
+            root.addSublayer(shift)
             layer.removeFromSuperlayer()
-            root.addSublayer(layer)
+            shift.addSublayer(layer)
         }
+        shift.anchorPoint = .zero
+        shift.bounds = CGRect(origin: .zero, size: size)
+        shift.position = CGPoint(x: padding, y: padding)
         root.anchorPoint = .zero
         root.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         root.position = .zero

@@ -255,13 +255,20 @@ extension Tako {
 
             case .progress(let p):
                 ringContainer.addSublayer(makeStrokeCircle(rBounds, inset: 1.25, color: T.progressTrack.cgColor, width: 2.5))
+                // `.r-prog`: conic-gradient(Rust 0%, Ember p%) -- the arc
+                // shades from Rust at the top to Ember where it stops.
+                let shade = CAGradientLayer()
+                shade.name = "progressArc"; shade.type = .conic; shade.frame = rBounds
+                shade.startPoint = CGPoint(x: 0.5, y: 0.5); shade.endPoint = CGPoint(x: 0.5, y: 1.0)
                 let arc = CAShapeLayer()
-                arc.name = "progressArc"; arc.frame = rBounds
+                arc.frame = rBounds
                 let arcPath = CGMutablePath()
                 arcPath.addArc(center: CGPoint(x: 7, y: 7), radius: 5.75, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2, clockwise: true)
-                arc.path = arcPath; arc.fillColor = nil; arc.strokeColor = T.ember.cgColor
-                arc.lineWidth = 2.5; arc.lineCap = .butt; arc.strokeEnd = CGFloat(min(1.0, max(0.0, p)))
-                ringContainer.addSublayer(arc)
+                arc.path = arcPath; arc.fillColor = nil; arc.strokeColor = NSColor.black.cgColor
+                arc.lineWidth = 2.5; arc.lineCap = .butt
+                shade.mask = arc
+                ringContainer.addSublayer(shade)
+                setProgressArc(shade, to: CGFloat(min(1.0, max(0.0, p))))
 
             case .waiting:
                 if !reduceMotion {
@@ -403,7 +410,21 @@ extension Tako {
             let inset = geometry.progressInset
             progressLineLayer.frame = CGRect(x: inset, y: geometry.cometForProgress ? 1 : 0,
                                              width: max(2, (size.width - inset * 2) * clamped), height: 2)
-            if let arc = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAShapeLayer { arc.strokeEnd = clamped }
+            if let shade = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAGradientLayer {
+                setProgressArc(shade, to: clamped)
+            }
+        }
+
+        /// The arc to `p` of the turn, Rust at its start and Ember at its end.
+        private func setProgressArc(_ shade: CAGradientLayer, to p: CGFloat) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            (shade.mask as? CAShapeLayer)?.strokeEnd = p
+            // The conic runs anticlockwise from the top in a layer that is y
+            // up; the arc runs clockwise, so it is the conic's last `p`.
+            shade.locations = [0, NSNumber(value: Double(1 - max(0.0001, p))), 1]
+            shade.colors = [T.ember.cgColor, T.ember.cgColor, T.rust.cgColor]
+            CATransaction.commit()
         }
 
         /// Steps model-layer properties for deterministic offscreen snapshots/GIF capture.

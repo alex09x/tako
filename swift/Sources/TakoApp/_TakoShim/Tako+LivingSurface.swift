@@ -308,7 +308,11 @@ struct StatusRingView: View {
                     .trim(from: 0, to: clamped)
                     .rotation(.degrees(-90))
                     .stroke(
-                        LinearGradient(colors: [Color(nsColor: T.rust), Color(nsColor: T.ember)], startPoint: .top, endPoint: .bottom),
+                        // `.r-prog`: conic-gradient(Rust 0%, Ember p%), clockwise from the top.
+                        AngularGradient(
+                            stops: [.init(color: Color(nsColor: T.rust), location: 0),
+                                    .init(color: Color(nsColor: T.ember), location: max(0.0001, clamped))],
+                            center: .center, startAngle: .degrees(-90), endAngle: .degrees(270)),
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .butt)
                     )
                     .animation(.easeOut(duration: 0.25), value: clamped)
