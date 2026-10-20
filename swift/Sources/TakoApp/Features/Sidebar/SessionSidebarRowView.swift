@@ -116,15 +116,14 @@ struct SessionSidebarRowView: View {
     private var layered: Bool { now == nil }
 
     /// A failure shakes the whole row: the one motion with a clock around all
-    /// of it, for its half second.
-    @ViewBuilder
+    /// of it, running for its half second and still otherwise. The row is
+    /// always inside it: a row that left a wrapper of its own was a new row,
+    /// with a new status layer -- a failure fixed while it shook lost the
+    /// done pop and glint, and every row was rebuilt as its shake ended.
     private func shakingRow(moving: Bool) -> some View {
-        if state == .failed && !reduceMotion && moving {
-            clock(moving: moving) { _, elapsed in
-                rowContent(moving: moving).offset(x: LivingAnimationState.failedShakeOffset(elapsed: elapsed))
-            }
-        } else {
-            rowContent(moving: moving)
+        let shakes = state == .failed && !reduceMotion && moving
+        return clock(moving: shakes) { _, elapsed in
+            rowContent(moving: moving).offset(x: shakes ? LivingAnimationState.failedShakeOffset(elapsed: elapsed) : 0)
         }
     }
 

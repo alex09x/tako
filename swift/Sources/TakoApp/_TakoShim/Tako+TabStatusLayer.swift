@@ -71,8 +71,22 @@ extension Tako {
         override init(layer: Any) { super.init(layer: layer) }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+        /// Each effect's layer by name, as a test or a debugger finds it.
+        enum LayerName {
+            static let failedLine = "failedLine", progressLine = "progressLine", doneGlint = "doneGlint"
+            static let comet = "comet", cometGradient = "cometGradient"
+            static let breatheGlow = "breatheGlow", breatheGlowShadow = "breatheGlowShadow", breathe = "breathe"
+            static let offlineBorder = "offlineBorder", ring = "ring"
+        }
+
         private func setupSublayers() {
             contentsScale = 2.0; masksToBounds = false
+            failedLineLayer.name = LayerName.failedLine; progressLineLayer.name = LayerName.progressLine
+            flashLayer.name = LayerName.doneGlint
+            cometContainer.name = LayerName.comet; cometGradient.name = LayerName.cometGradient
+            breatheGlowContainer.name = LayerName.breatheGlow; breatheGlowLayer.name = LayerName.breatheGlowShadow
+            breatheLayer.name = LayerName.breathe; offlineBorderLayer.name = LayerName.offlineBorder
+            ringContainer.name = LayerName.ring
             for l: CALayer in [clippedInnerContainer, failedLineLayer, progressLineLayer, flashLayer, cometContainer, cometMask, cometGradient, breatheGlowContainer, breatheGlowMask, breatheGlowLayer, breatheLayer, offlineBorderLayer, ringContainer] {
                 l.contentsScale = 2.0
             }
@@ -95,7 +109,7 @@ extension Tako {
 
             cometGradient.type = .conic
             cometGradient.startPoint = CGPoint(x: 0.5, y: 0.5); cometGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
-            cometGradient.colors = [NSColor.clear.cgColor, T.claw.cgColor, T.rust.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
+            cometGradient.colors = Self.cometColors
             cometGradient.locations = [0.0, 0.12, 0.22, 0.38, 1.0]
             cometContainer.addSublayer(cometGradient)
             addSublayer(cometContainer)
@@ -123,7 +137,14 @@ extension Tako {
                    allowFrameAnimation: Bool = false, pulses: Int = 0) {
             defer { rippleIfPulsed(pulses, state: state, reduceMotion: reduceMotion, paused: paused) }
             let previousState = currentState
-            let didChangeState = (previousState != nil && previousState != state)
+            // A new percentage is the same state: the arc and the line move
+            // and nothing is rebuilt -- a rebuild started a sidebar row's
+            // comet over at every progress report.
+            let sameState: Bool = {
+                if case .progress = previousState, case .progress = state { return true }
+                return previousState == state
+            }()
+            let didChangeState = (previousState != nil && !sameState)
             let isFirstApply = (previousState == nil)
             let sizeChanged = (lastSize != pillRect.size)
             let reduceMotionChanged = (lastReduceMotion != reduceMotion)
@@ -147,6 +168,7 @@ extension Tako {
             // that finishes loses a point of padding in the same pass, and a
             // rebuild took its pop off before it was drawn.
             guard isFirstApply || didChangeState || reduceMotionChanged else {
+                currentState = state
                 if case .progress(let p) = state { updateProgressValue(p, in: pillRect.size) }
                 return
             }
@@ -190,6 +212,11 @@ extension Tako {
             offlineBorderLayer.frame = b; offlineBorderLayer.path = borderPath
             ringContainer.frame = ringFrame(in: size, ringX: ringX)
         }
+
+        /// The comet: Claw into Rust over a quarter of the turn, the rest clear.
+        private static let cometColors = [NSColor.clear.cgColor, T.claw.cgColor, T.rust.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
+        /// The working border that does not move: Ember all round, as the sidebar's SwiftUI rows draw it.
+        private static let stillBorderColors = Array(repeating: T.ember.withAlphaComponent(0.8).cgColor, count: 5)
 
         private func makeStrokeCircle(_ rect: CGRect, inset: CGFloat, color: CGColor, width: CGFloat, dash: [NSNumber]? = nil) -> CAShapeLayer {
             let l = CAShapeLayer()
@@ -319,6 +346,8 @@ extension Tako {
                 return state == .working
             }()
             cometContainer.isHidden = !comet; cometGradient.removeAllAnimations()
+            // Reduce Motion: a still Ember border all round, not a comet stopped mid-turn (1b).
+            cometGradient.colors = reduceMotion ? Self.stillBorderColors : Self.cometColors
             if comet && !reduceMotion { cometGradient.add(makeSpinAnimation(duration: 2.2), forKey: "cometSpin") }
             breatheGlowContainer.isHidden = (state != .waiting); breatheGlowLayer.removeAllAnimations()
             breatheLayer.isHidden = (state != .waiting); breatheLayer.removeAllAnimations()
