@@ -158,29 +158,7 @@ extension TakoTerminalView {
     }
 
     func updateBlinkTimer() {
-        blinkTimer?.invalidate()
-        blinkTimer = nil
-        blinkStateVisible = true
-        guard theme.cursorBlink else { return }
-        scheduleBlinkPhase()
-    }
-
-    /// The cursor's next change, a phase of `CursorBlink` from now: lit
-    /// for 0.72 s, out for 0.48 s, as on the Mac.
-    private func scheduleBlinkPhase() {
-        blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),
-                                          repeats: false) { [weak self] fired in
-            guard let self else { return }
-            Task { @MainActor in
-                // A timer replaced or stopped meanwhile is not this blink's.
-                guard self.blinkTimer === fired, self.theme.cursorBlink else { return }
-                if !self.core.isSynchronizedOutputActive() {
-                    self.blinkStateVisible.toggle()
-                    self.setNeedsDisplay()
-                }
-                self.scheduleBlinkPhase()
-            }
-        }
+        blinker.restart()
     }
 }
 #endif

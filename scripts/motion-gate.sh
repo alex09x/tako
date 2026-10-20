@@ -44,6 +44,7 @@ SUITES=(
     NoTimerTests
     UnreportedCommandTests
     CursorBlinkCadenceTests
+    CursorBlinkerTests          # the phone's blink, run on the Mac
     UnfocusedDrawsAnOutline     # the unfocused cursor's 1 pt outline
     TabBar                      # the strip's states and drawing (pill, classic, controller)
     QuickTerminalPositionTests  # where the quick terminal slides from and to

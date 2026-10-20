@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+// The Mac's view: the iOS surface run (scripts/test-ios-surface.sh) leaves it out.
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
 import Carbon
 import XCTest
@@ -138,4 +140,5 @@ class SubclassedTerminalView: TakoTerminalNSView {
         titleChangedNotifications += 1
     }
 }
+#endif
 #endif

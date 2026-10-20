@@ -62,10 +62,11 @@ public class TakoTerminalView: UIView, UIKeyInput {
 
     // MARK: - Metal State
 
-    public private(set) var metalRenderer: MetalTerminalRenderer?
-    public private(set) var metalLayer: CAMetalLayer?
-    public private(set) var metalUnavailableReason: String?
-    public private(set) var lastFrameStatistics: TerminalMetalFrameStatistics?
+    // Set by TakoTerminalView+Metal.swift: read-only outside the module.
+    public internal(set) var metalRenderer: MetalTerminalRenderer?
+    public internal(set) var metalLayer: CAMetalLayer?
+    public internal(set) var metalUnavailableReason: String?
+    public internal(set) var lastFrameStatistics: TerminalMetalFrameStatistics?
     public var customShaderErrors: [String] { metalRenderer?.customShaderErrors ?? [] }
 
     var metalContentScale: CGFloat = 1
@@ -86,8 +87,13 @@ public class TakoTerminalView: UIView, UIKeyInput {
     public static var metalLibraryProviderForTesting: ((MTLDevice) -> MTLLibrary?)?
 
     // Cursor blink state
-    var blinkTimer: Timer?
-    var blinkStateVisible: Bool = true
+    /// The cursor's blink: lit 0.72 s, out 0.48 s (CursorBlink.swift).
+    lazy var blinker = CursorBlinker(
+        shouldBlink: { [unowned self] in self.theme.cursorBlink },
+        holdsStill: { [unowned self] in self.core.isSynchronizedOutputActive() },
+        changed: { [unowned self] in self.setNeedsDisplay() })
+    var blinkTimer: Timer? { blinker.timer }
+    var blinkStateVisible: Bool { blinker.isLit }
 
     var pasteStringProvider: () -> String? = { UIPasteboard.general.string }
     var copyStringConsumer: (String) -> Void = { UIPasteboard.general.string = $0 }
@@ -196,7 +202,7 @@ public class TakoTerminalView: UIView, UIKeyInput {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        blinkTimer?.invalidate()
+        // The blinker goes with the view; its last timer finds nobody and stops.
         displayLink?.invalidate()
         kineticDisplayLink?.invalidate()
         kineticDisplayLink = nil

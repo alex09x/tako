@@ -146,9 +146,11 @@ struct MotionCensusTests {
         Site(file: "TakoTerminalNSView+Drawing.swift",
              code: "blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),",
              what: "the cursor is lit 0.72 s, out 0.48 s", coveredBy: ["testTheCursorIsLitFor720msThenOutFor480ms"]),
-        Site(file: "TakoTerminalView+Display.swift",
-             code: "blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),",
-             what: "the iOS cursor blinks as the Mac's", coveredBy: ["testTheIOSCursorIsLitFor720msThenOutFor480ms"]),
+        Site(file: "CursorBlink.swift",
+             code: "timer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: isLit), repeats: false)",
+             what: "the phone's cursor blinks as the Mac's, on CursorBlinker",
+             coveredBy: ["testItIsLit720msThenOut480msThenLitAgain", "testATimerReplacedMeanwhileChangesNothing",
+                         "thePhonesViewBlinksOnTheSharedBlinker", "testTheIOSCursorIsLitFor720msThenOutFor480ms"]),
         Site(file: "AboutViewModel.swift", code: "timerCancellable = Timer.publish(every: 3, on: .main, in: .common)",
              what: "About's icon changes every 3 s", coveredBy: [pinned, "advanceToNextIconWrapsWithinTheSingleIconOfficialSet"]),
         Site(file: "Tako+Crab.swift", code: "ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true)",
@@ -241,6 +243,20 @@ struct MotionCensusTests {
     }
 
     // MARK: - Motion with no other test
+
+    /// The phone's view is built only for the phone, so the Mac cannot run
+    /// it: it blinks on `CursorBlinker`, which the Mac does run.
+    @Test func thePhonesViewBlinksOnTheSharedBlinker() throws {
+        let ui = Self.swiftRoot.appendingPathComponent("Sources/TakoCoreUI")
+        let view = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView.swift"), encoding: .utf8)
+        let display = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView+Display.swift"), encoding: .utf8)
+        let metal = try String(contentsOf: ui.appendingPathComponent("TakoTerminalView+Metal.swift"), encoding: .utf8)
+        #expect(view.contains("lazy var blinker = CursorBlinker("))
+        #expect(view.contains("var blinkStateVisible: Bool { blinker.isLit }"))
+        #expect(display.contains("blinker.restart()"))
+        #expect(metal.contains("cursorBlinkPhaseOn = theme.cursorBlink ? blinkStateVisible : true"), "the drawn cursor follows the blink")
+        #expect(!display.contains("Timer.") && !view.contains("Timer.scheduledTimer"), "the phone's view times no blink of its own")
+    }
 
     @Test func theResizeEdgeLightsAndGoesOutIn120ms() throws {
         let grip = SessionSidebarGripView(frame: NSRect(x: 0, y: 0, width: 12, height: 300))

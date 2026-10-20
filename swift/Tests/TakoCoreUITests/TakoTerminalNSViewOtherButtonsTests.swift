@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+// The Mac's view: the iOS surface run (scripts/test-ios-surface.sh) leaves it out.
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import XCTest
 @testable import TakoCoreUI
 
@@ -78,3 +80,4 @@ final class TakoTerminalNSViewOtherButtonsTests: XCTestCase {
         XCTAssertTrue(delegate.inputDataReceived.isEmpty)
     }
 }
+#endif

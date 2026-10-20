@@ -169,7 +169,9 @@ struct MotionSpecLedgerTests {
                  "denseOutputShowsTheProgramNotARate", "aSidebarRowShowsTheProgramOrTheExitCodeNeverARate"),
 
         // Mobile UI.
-        item(mobile, "курсор блок, мигание 1.2s (60% on / 40% off)", "testTheIOSCursorIsLitFor720msThenOutFor480ms"),
+        item(mobile, "курсор блок, мигание 1.2s (60% on / 40% off)", "testItIsLit720msThenOut480msThenLitAgain",
+             "testATimerReplacedMeanwhileChangesNothing", "testHeldOutputKeepsThePhaseAndTheChainGoesOn",
+             "thePhonesViewBlinksOnTheSharedBlinker", "testTheIOSCursorIsLitFor720msThenOutFor480ms"),
         notBuilt(mobile, "шит «Новая сессия»: появление 300ms spring (damping 0.85)",
                  because: "the phone shows it as the system sheet, whose spring iOS sets"),
         notBuilt(mobile, "iOS: тот же краб в шапке сессии; в списке сессий — вместо цветной точки",

@@ -9,6 +9,8 @@
  */
 
 import Foundation
+// TerminalRegexTrigger is the Mac's (TerminalRegexTypes.swift); the phone builds without it.
+#if canImport(AppKit)
 
 extension TerminalRegexTrigger {
     /// Validates whether a regex pattern is safe from catastrophic backtracking (ReDoS).
@@ -153,3 +155,4 @@ extension TerminalRegexTrigger {
         return (true, nil)
     }
 }
+#endif

@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+// The Mac's view: the iOS surface run (scripts/test-ios-surface.sh) leaves it out.
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
 import Carbon
 import XCTest
@@ -271,3 +273,4 @@ extension TakoTerminalNSViewCoverageTests {
     // MARK: - 12. Copy, Paste, Select All
 
 }
+#endif

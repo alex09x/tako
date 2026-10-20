@@ -21,3 +21,51 @@ public enum CursorBlink {
         lit ? period * litShare : period * (1 - litShare)
     }
 }
+
+/// The cursor's blink as one-shot timers, a phase each: lit for 0.72 s, out
+/// for 0.48 s. A timer replaced or stopped meanwhile changes nothing; while
+/// output is held (synchronized output) the cursor keeps its phase and the
+/// chain goes on. The phone's view blinks with it; the Mac's view runs the
+/// same chain of its own.
+@MainActor
+public final class CursorBlinker {
+    public private(set) var isLit = true
+    public private(set) var timer: Timer?
+    private let shouldBlink: @MainActor () -> Bool
+    private let holdsStill: @MainActor () -> Bool
+    private let changed: @MainActor () -> Void
+
+    public init(shouldBlink: @escaping @MainActor () -> Bool, holdsStill: @escaping @MainActor () -> Bool = { false },
+                changed: @escaping @MainActor () -> Void) {
+        self.shouldBlink = shouldBlink
+        self.holdsStill = holdsStill
+        self.changed = changed
+    }
+
+    /// Lit now, and blinking from here if it should.
+    public func restart() {
+        timer?.invalidate()
+        timer = nil
+        isLit = true
+        guard shouldBlink() else { return }
+        scheduleNextPhase()
+    }
+
+    public func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func scheduleNextPhase() {
+        timer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: isLit), repeats: false) { [weak self] fired in
+            MainActor.assumeIsolated {
+                guard let self, self.timer === fired, self.shouldBlink() else { return }
+                if !self.holdsStill() {
+                    self.isLit.toggle()
+                    self.changed()
+                }
+                self.scheduleNextPhase()
+            }
+        }
+    }
+}

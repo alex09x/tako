@@ -9,6 +9,8 @@
  */
 
 import Foundation
+// TerminalRegexTrigger is the Mac's (TerminalRegexTypes.swift); the phone builds without it.
+#if canImport(AppKit)
 
 extension TerminalRegexTrigger {
     static func hasTopLevelAlternation(chars: [Character], range: Range<Int>) -> Bool {
@@ -281,3 +283,4 @@ extension TerminalRegexTrigger {
         return (RegexAtom(kind: kind, raw: raw + qStr, isBranching: isBranching, isNullable: isNullable), p)
     }
 }
+#endif

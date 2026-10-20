@@ -104,10 +104,13 @@ if observer.failureCount > 0 || observer.totalCount == 0 {
 }
 EOF
 
-SWIFT_TEST_FILES="$(find "$ROOT_DIR/swift/Tests/TakoCoreUITests" -name "*.swift")"
+# The runner is XCTest's: Swift Testing suites run on the Mac (swift test).
+SWIFT_TEST_FILES="$(find "$ROOT_DIR/swift/Tests/TakoCoreUITests" -name "*.swift" -print0 | xargs -0 grep -L '^import Testing')"
 
 echo "Compiling XCTest runner binary for iOS 17+ Simulator..."
+# Every file's errors at once, not just the first failing file's.
 swiftc -target arm64-apple-ios17.0-simulator \
+    -continue-building-after-errors \
     -sdk "$SDK_PATH" \
     -F "$PLATFORM_PATH/Developer/Library/Frameworks" \
     -I "$PLATFORM_PATH/Developer/usr/lib" \

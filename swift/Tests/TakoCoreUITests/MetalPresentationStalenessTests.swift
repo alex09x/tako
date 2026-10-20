@@ -85,7 +85,7 @@ final class MetalPresentationStalenessTests: XCTestCase {
 
     /// The standalone Simulator XCTest runner links no metallib, so the
     /// shader source is compiled here the same way `MetalPixelTests` does it.
-    private func makeLibrary(device: MTLDevice) throws -> MTLLibrary {
+    func makeLibrary(device: MTLDevice) throws -> MTLLibrary {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -112,11 +112,11 @@ final class MetalPresentationStalenessTests: XCTestCase {
     /// keeps vending forever no matter how small `maximumDrawableCount` is,
     /// so the refusal is injected instead of waited for. Everything else --
     /// the planning, the encoding, the pixels -- stays on the real path.
-    private func drainPool(of renderer: MetalTerminalRenderer) {
+    func drainPool(of renderer: MetalTerminalRenderer) {
         renderer.nextDrawableProvider = { _ in nil }
     }
 
-    private func refillPool(of renderer: MetalTerminalRenderer) {
+    func refillPool(of renderer: MetalTerminalRenderer) {
         renderer.nextDrawableProvider = { $0.nextDrawable() }
     }
 

@@ -11,6 +11,7 @@
 #if canImport(UIKit)
 import QuartzCore
 import UIKit
+@testable import TakoCoreUI
 
 /// A long press whose state a test can set. A real recognizer only takes a
 /// state inside UIKit's recognition cycle; set from a test, it stays
