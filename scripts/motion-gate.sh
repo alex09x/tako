@@ -40,6 +40,7 @@ SUITES=(
     NoTimerTests
     UnreportedCommandTests
     CursorBlinkCadenceTests
+    UnfocusedDrawsAnOutline     # the unfocused cursor's 1 pt outline
 )
 FILTER=$(IFS='|'; echo "${SUITES[*]}")
 

@@ -325,6 +325,10 @@ extension MetalTerminalRendererTests {
         XCTAssertTrue(planner.cursorInstances.allSatisfy {
             $0.shape == TerminalMetalCursorShape.hollowBlock.rawValue
         })
+        // Terminal UI: unfocused, a 1 px outline -- a point, not the bar's two.
+        let point = max(1, Float(planner.metrics.scale).rounded())
+        XCTAssertEqual(planner.cursorInstances[0].rect.w, point, "top edge")
+        XCTAssertEqual(planner.cursorInstances[2].rect.z, point, "left edge")
     }
 
 

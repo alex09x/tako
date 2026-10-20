@@ -63,8 +63,11 @@ struct MotionSidebarLookTests {
 
     @Test func aWaitingSessionAsksItsQuestionInClaw() {
         let question = "Allow cargo test --package auth?"
-        let lowerHalf = CGRect(x: 30, y: 0, width: 240, height: Self.size.height / 2)
-        let claw = { (f: WindowSnapshot) in f.mass(in: lowerHalf, Weights.near(MotionSpec.claw)) }
+        // The second line's text alone, clear of the row's edges: a waiting
+        // row's border is Claw too, and it was the border that a test of
+        // the whole lower half saw.
+        let text = CGRect(x: 40, y: 6, width: 200, height: Self.size.height / 2 - 8)
+        let claw = { (f: WindowSnapshot) in f.mass(in: text, Weights.near(MotionSpec.claw)) }
         let waiting = claw(snapshot(item(status: .needsApproval, notification: question)))
         let idle = claw(snapshot(item(status: .idle, notification: question)))
         #expect(waiting > 3, "no Claw text on the second line: \(waiting)")

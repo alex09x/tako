@@ -168,11 +168,15 @@ extension TerminalMetalFramePlanner {
         switch snapshot.cursorStyle.shape {
         case .block:
             guard isFocused else {
-                append(SIMD4<Float>(x, y, width, thickness), .hollowBlock)
-                append(SIMD4<Float>(x, y + height - thickness, width, thickness), .hollowBlock)
-                append(SIMD4<Float>(x, y + thickness, thickness, height - 2 * thickness), .hollowBlock)
+                // Terminal UI: "в расфокусе — контур 1px", a point thick
+                // unless the cursor's thickness is set.
+                let edge = cursorThickness.map { max(1, Float($0) * Float(metrics.scale)) }
+                    ?? max(1, Float(metrics.scale).rounded())
+                append(SIMD4<Float>(x, y, width, edge), .hollowBlock)
+                append(SIMD4<Float>(x, y + height - edge, width, edge), .hollowBlock)
+                append(SIMD4<Float>(x, y + edge, edge, height - 2 * edge), .hollowBlock)
                 append(
-                    SIMD4<Float>(x + width - thickness, y + thickness, thickness, height - 2 * thickness),
+                    SIMD4<Float>(x + width - edge, y + edge, edge, height - 2 * edge),
                     .hollowBlock
                 )
                 return

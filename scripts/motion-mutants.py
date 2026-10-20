@@ -162,6 +162,8 @@ MUTANTS = [
      "case .done: return 1.0", "case .done: return 0.2"),
     ("failed-over-offline", "offline outranks failed", "swift/Sources/TakoApp/_TakoShim/Tako+PaneStatus.swift",
      "case .failed: return 6", "case .failed: return 8"),
+    ("cursor-outline-thick", "an unfocused cursor is a 1 pt outline", "swift/Sources/TakoCoreUI/TerminalMetalFramePlanner+Overlays.swift",
+     "?? max(1, Float(metrics.scale).rounded())", "?? max(1, (2 * Float(metrics.scale)).rounded())"),
     ("done-not-green", "done is #7BD88F", SURFACE,
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xD8 / 255, blue: 0x8F / 255, alpha: 1)",
      "static let ok = NSColor(srgbRed: 0x7B / 255, green: 0xB8 / 255, blue: 0x8F / 255, alpha: 1)"),
