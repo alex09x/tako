@@ -99,8 +99,8 @@ extension TitlebarTabsVenturaTerminalWindow {
         }
         let now = ProcessInfo.processInfo.systemUptime
         if known.isEmpty, now - titleBarSeparatorsSearched < 1 { return }
-        titleBarSeparatorsSearched = now
         guard let titlebarContainer else { return }
+        titleBarSeparatorsSearched = now
         titleBarSeparators.removeAllObjects()
         for v in titlebarContainer.descendants(withClassName: "NSTitlebarSeparatorView") {
             v.isHidden = true
@@ -175,6 +175,9 @@ extension TitlebarTabsVenturaTerminalWindow {
             accessoryView.needsLayout = true
 
             self?.hideToolbarOverflowButton()
+            // The accessory and its separator are in place now: search, even
+            // if a display cycle searched a moment before they were.
+            self?.titleBarSeparatorsSearched = 0
             self?.hideTitleBarSeparators()
         }
     }

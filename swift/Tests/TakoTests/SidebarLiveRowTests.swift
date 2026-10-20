@@ -36,6 +36,24 @@ struct SidebarLiveRowTests {
         return (window, hosting)
     }
 
+    private final class RowStatus: ObservableObject {
+        @Published var status: Tako.PaneStatus
+        init(_ status: Tako.PaneStatus) { self.status = status }
+    }
+
+    /// A live row whose status the test changes.
+    private struct LiveRow: View {
+        @ObservedObject var model: RowStatus
+        var body: some View {
+            SessionSidebarRowView(
+                item: SessionSidebarItem(id: "live-row", index: 0, isSelected: false, title: "psql", status: model.status,
+                                         workingDirectory: "/tmp", indentationLevel: 1, workspaceId: UUID(), tabId: "live-tab"),
+                index: 0, selectedIndex: -1, targetWindow: nil, editingItemId: .constant(nil),
+                editingDescriptionText: .constant(""), isPresented: .constant(true), now: nil, reduceMotion: false, onSelect: {})
+            .frame(width: 280)
+        }
+    }
+
     private func layerViews(in view: NSView) -> [StatusLayerHostView] {
         view.subviews.flatMap { ($0 as? StatusLayerHostView).map { [$0] } ?? layerViews(in: $0) }
     }
@@ -60,6 +78,28 @@ struct SidebarLiveRowTests {
         defer { window.close() }
         TerminalTestSupport.waitUntil(timeout: 0.2) { false }
         #expect(layerViews(in: hosting).isEmpty)
+    }
+
+    /// A working row has 1 pt more padding than a done one: the row's layer
+    /// is resized, and its ring moved, in the same pass that makes it done.
+    /// That pass rebuilt the ring and took the pop off before it was drawn.
+    @Test func aRowThatFinishesKeepsItsPopThroughTheLayoutAfter() throws {
+        let model = RowStatus(.working)
+        let hosting = NSHostingView(rootView: LiveRow(model: model))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 60),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        defer { window.close() }
+        TerminalTestSupport.waitUntil(timeout: 1) { layerViews(in: hosting).first?.statusLayer.currentState == .working }
+        let host = try #require(layerViews(in: hosting).first)
+        let working = host.bounds.size
+
+        model.status = .done
+        TerminalTestSupport.waitUntil(timeout: 1) { host.statusLayer.currentState == .done && host.bounds.size != working }
+        hosting.layoutSubtreeIfNeeded()
+        #expect(host.bounds.size != working, "the padding did not change: \(working)")
+        #expect(host.statusLayer.ringContainer.animation(forKey: "donePop") != nil)
     }
 
     /// The "Needs you" ring is a pill's ring alone, scaled to its place; a
@@ -101,5 +141,10 @@ struct SidebarLiveRowTests {
         surface.crab.setStatus(.working, text: nil)
         TerminalTestSupport.waitUntil(timeout: 1) { changes > 0 }
         #expect(changes == 1)
+
+        // Focus picks a split tab's title, directory and chosen pane row.
+        surface.focused.toggle()
+        TerminalTestSupport.waitUntil(timeout: 1) { changes > 1 }
+        #expect(changes == 2)
     }
 }

@@ -42,7 +42,9 @@ extension Tako {
         }
 
         /// False draws the ring alone: no border, glow, glint or line.
-        var drawsSurface = true
+        var drawsSurface = true {
+            didSet { if drawsSurface != oldValue { currentState = nil } }
+        }
 
         private func ringFrame(in size: CGSize, ringX: CGFloat) -> CGRect {
             let origin = geometry.ringOrigin ?? CGPoint(x: ringX, y: ((size.height - 14) / 2).rounded())
@@ -123,7 +125,8 @@ extension Tako {
             let previousState = currentState
             let didChangeState = (previousState != nil && previousState != state)
             let isFirstApply = (previousState == nil)
-            let sizeChanged = (lastSize != pillRect.size) || (lastReduceMotion != reduceMotion)
+            let sizeChanged = (lastSize != pillRect.size)
+            let reduceMotionChanged = (lastReduceMotion != reduceMotion)
 
             CATransaction.begin()
             CATransaction.setDisableActions(!allowFrameAnimation)
@@ -133,12 +136,17 @@ extension Tako {
             ringContainer.isHidden = hideRing
             let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
             ringContainer.frame = ringFrame(in: pillRect.size, ringX: ringX)
-            if sizeChanged { lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX) }
+            if sizeChanged || reduceMotionChanged {
+                lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX)
+            }
             ringContainer.transform = savedRingTransform
             CATransaction.commit()
             setLayerPaused(paused)
 
-            guard isFirstApply || didChangeState || sizeChanged else {
+            // A new size or place is laid out above, not rebuilt: a sidebar row
+            // that finishes loses a point of padding in the same pass, and a
+            // rebuild took its pop off before it was drawn.
+            guard isFirstApply || didChangeState || reduceMotionChanged else {
                 if case .progress(let p) = state { updateProgressValue(p, in: pillRect.size) }
                 return
             }

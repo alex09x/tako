@@ -148,9 +148,13 @@ extension SessionSidebarStore {
 }
 
 /// What a sidebar row shows of one pane. The sidebar shows no timer, so a
-/// crab's elapsed time is not part of it, nor is the pane's output.
+/// crab's elapsed time is not part of it, nor is the pane's output. Focus
+/// picks a split tab's title, directory and chosen pane row; a bell can
+/// prefix the window's title.
 struct SidebarPaneSignature: Equatable {
     let title: String
+    let focused: Bool
+    let bell: Bool
     let pwd: String?
     let muted: Bool
     let progressState: TakoTerminalNSView.ProgressState
@@ -165,6 +169,8 @@ struct SidebarPaneSignature: Equatable {
 
     @MainActor init(_ s: Tako.SurfaceView) {
         title = s.title
+        focused = s.focused
+        bell = s.bell
         pwd = s.pwd
         muted = s.isAttentionMuted
         progressState = s.activeProgressState
