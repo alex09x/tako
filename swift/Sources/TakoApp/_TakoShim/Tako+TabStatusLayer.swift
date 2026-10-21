@@ -408,8 +408,13 @@ extension Tako {
         private func updateProgressValue(_ p: Double, in size: CGSize) {
             let clamped = CGFloat(min(1.0, max(0.0, p)))
             let inset = geometry.progressInset
+            // At once, as the arc moves: the line eased a quarter second
+            // behind the arc it stands for.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             progressLineLayer.frame = CGRect(x: inset, y: geometry.cometForProgress ? 1 : 0,
                                              width: max(2, (size.width - inset * 2) * clamped), height: 2)
+            CATransaction.commit()
             if let shade = ringContainer.sublayers?.first(where: { $0.name == "progressArc" }) as? CAGradientLayer {
                 setProgressArc(shade, to: clamped)
             }

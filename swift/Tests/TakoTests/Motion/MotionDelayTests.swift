@@ -110,4 +110,45 @@ struct MotionDelayTests {
         await wait(0.1)
         #expect(!flash.shown, "Copied! stayed")
     }
+
+    /// Search hits are recounted once output pauses for 150 ms; output that
+    /// never pauses stops postponing it after 350 ms.
+    @Test func searchHitsAreRecountedOnceOutputPausesAndAtLeastEvery350ms() async {
+        _ = NSApplication.shared
+        let surface = Tako.SurfaceView(frame: .zero)
+        let board = NSPasteboard(name: NSPasteboard.Name("tako-test-find-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        surface.searchState = Tako.OSSurfaceView.SearchState(from: Tako.Action.StartSearch(needle: "line"), pasteboard: board)
+        surface.scheduleSearchHitRefresh()
+        #expect(surface.searchHitDebounceItem != nil)
+        await wait(0.08)
+        #expect(surface.searchHitDebounceItem != nil, "recounted before the output paused")
+        await wait(0.15)
+        #expect(surface.searchHitDebounceItem == nil, "not recounted 150 ms after the output paused")
+        // Output that never pauses: still recounted within 350 ms.
+        let began = Date()
+        var firstRecount: TimeInterval?
+        while Date().timeIntervalSince(began) < 0.7, firstRecount == nil {
+            surface.scheduleSearchHitRefresh()
+            await wait(0.04)
+            if surface.searchHitDebounceItem == nil { firstRecount = Date().timeIntervalSince(began) }
+        }
+        // The last postponement lands before 350 ms and fires 150 ms later:
+        // at most 0.5 s. Without the ceiling it never fires while output runs.
+        #expect((firstRecount ?? 9) < 0.6, "busy output held the recount back: \(String(describing: firstRecount))")
+    }
+
+    /// The search across tabs waits for typing to pause (150 ms) before it searches.
+    @Test func searchingAcrossTabsWaitsForTypingToPause() async {
+        let search = CrossSessionSearch()
+        search.targets = { [] }
+        #expect(search.debounce == .milliseconds(150))
+        search.query = "panic"
+        #expect(search.status == .searching)
+        await wait(0.08)
+        #expect(search.status == .searching, "searched before typing paused")
+        await wait(0.3)
+        #expect(search.status != .searching, "never searched once typing paused")
+    }
+
 }

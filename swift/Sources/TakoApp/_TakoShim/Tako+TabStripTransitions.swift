@@ -165,10 +165,10 @@ extension Tako {
 extension Tako.TabBarView {
     private typealias Transitions = Tako.TabStripTransitions
 
-    /// Whether this strip takes its changes at once: Reduce Motion, or a
-    /// strip in a window nobody sees.
+    /// Whether this strip takes its changes at once: Reduce Motion, a strip
+    /// in a window not shown, or Tako covered where nobody can see it.
     var takesChangesAtOnce: Bool {
-        LivingAnimationState.shared.reduceMotion || window?.isVisible != true
+        LivingAnimationState.shared.isTimelinePaused || window?.isVisible != true
     }
 
     /// `resting`, the tabs as they lie once nothing moves, moved by what is

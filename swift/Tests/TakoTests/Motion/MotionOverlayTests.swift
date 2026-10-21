@@ -117,6 +117,33 @@ struct MotionOverlayTests {
         try expectAnimated(frames, from: start, "the Overview scrolling")
     }
 
+    /// A diff review over the pane fades in as the file overlay does; a
+    /// comment rebuilds it (its .id carries the count) at once, not by a fade.
+    @Test func aDiffReviewFadesInAndACommentRebuildsItAtOnce() throws {
+        _ = NSApplication.shared
+        let store = DiffReviewStore.shared
+        store.resetForTesting()
+        defer { store.resetForTesting() }
+        let surface = Tako.SurfaceView(frame: .zero)
+        let probe = SwiftUIMotionProbe(Tako.InspectableSurface(surfaceView: surface), size: CGSize(width: 240, height: 140))
+        defer { probe.close() }
+        probe.settle(0.8)
+        let before = SwiftUIMotionProbe.light(probe.snapshot())
+        let coming = probe.frames(after: {
+            _ = try? store.openReview(paneId: surface.id, taskName: "fade", projectPath: NSTemporaryDirectory(), baseBranch: "main")
+        }, for: 0.5, measure: SwiftUIMotionProbe.light)
+        #expect(store.hasSession(paneId: surface.id))
+        try expectAnimated(coming, from: before, "a diff review coming in")
+        let shown = try #require(coming.last).value
+        let commented = probe.frames(after: {
+            _ = try? store.addComment(paneId: surface.id, file: "a.swift", line: 1, text: "a note")
+        }, for: 0.3, measure: SwiftUIMotionProbe.light)
+        let end = try #require(commented.last).value
+        let span = max(abs(end - shown), 1)
+        #expect(!commented.dropFirst().contains { abs($0.value - shown) > span * 0.1 && abs($0.value - end) > span * 0.1 },
+                "a comment faded the review instead of redrawing it")
+    }
+
     final class Toggle: ObservableObject { @Published var on = false }
     struct Control: View {
         @ObservedObject var toggle: Toggle

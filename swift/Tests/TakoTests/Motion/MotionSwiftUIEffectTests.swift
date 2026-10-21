@@ -107,3 +107,21 @@ struct MotionSwiftUIEffectTests {
         #expect(moved > noise * 3 + 5, "secure input's ring stood still (\(moved) against noise \(noise))")
     }
 }
+
+/// About's icon cross-fades only when its picture changes. The set has one
+/// icon, drawn as the app's own: the first tap cross-faded it into itself and
+/// dimmed it to three quarters for half a second.
+@Suite(.serialized) @MainActor
+struct MotionAboutIconTests {
+    @Test func tappingAboutsIconDoesNotDimIt() {
+        let model = AboutViewModel()
+        let probe = SwiftUIMotionProbe(CyclingIconView().environmentObject(model), size: CGSize(width: 160, height: 140))
+        defer { probe.close() }
+        probe.settle(0.3)
+        let before = SwiftUIMotionProbe.light(probe.snapshot())
+        let frames = probe.frames(after: { model.advanceToNextIcon() }, for: 0.6, measure: SwiftUIMotionProbe.light)
+        let dimmest = frames.map(\.value).min() ?? 0
+        #expect(before > 100, "no icon drawn")
+        #expect(dimmest > before * 0.98, "the icon dimmed to \(dimmest) of \(before) on a tap that changes no picture")
+    }
+}

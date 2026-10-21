@@ -45,6 +45,7 @@ SUITES=(
     CursorBlinkerTests          # the phone's blink, run on the Mac
     testPresentationPauseTransitionsAreIdempotent  # the terminal's display link
     ResizeSettleTests           # the grid follows a resize once it settles; the presentation throttle
+    InstantLayerChangeTests     # what a pane changes at once, not over an implicit quarter second
     CustomShaderConfigAndAnimationTests  # a custom shader's own clock
     UnfocusedDrawsAnOutline     # the unfocused cursor's 1 pt outline
     TabBar                      # the strip's states and drawing (pill, classic, controller)

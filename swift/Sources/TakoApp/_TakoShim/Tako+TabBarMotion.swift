@@ -26,8 +26,9 @@ extension Tako.TabBarView {
         defer { chipWidthTarget = target }
         if let last = chipWidthTarget, last != target {
             // A tab's window hidden behind the selected one is laid out too,
-            // but never drawn: it takes its new width at once.
-            if LivingAnimationState.shared.reduceMotion || (window != nil && window?.isVisible != true) {
+            // but never drawn: it takes its new width at once -- as it does
+            // under Reduce Motion and while nobody can see Tako.
+            if LivingAnimationState.shared.isTimelinePaused || (window != nil && window?.isVisible != true) {
                 chipSlide = nil
             } else {
                 let from = chipSlide.map { Self.slid($0, at: now) } ?? last
@@ -50,7 +51,7 @@ extension Tako.TabBarView {
     func shakeOffset(for key: ObjectIdentifier, state: Tako.SurfaceState, previous: Tako.SurfaceState?,
                      now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {
         guard state == .failed else { failedSince[key] = nil; return 0 }
-        if let previous, previous != .failed, !LivingAnimationState.shared.reduceMotion {
+        if let previous, previous != .failed, !LivingAnimationState.shared.isTimelinePaused {
             failedSince[key] = now
             runMotion()
         }
@@ -61,7 +62,7 @@ extension Tako.TabBarView {
 
     /// Redraw every frame while something above moves, in a window on screen.
     func runMotion() {
-        guard motionLink == nil, window?.isVisible == true else { return }
+        guard motionLink == nil, window?.isVisible == true, !LivingAnimationState.shared.isOccludedOrIdle else { return }
         let link = displayLink(target: self, selector: #selector(motionFrame(_:)))
         link.add(to: .main, forMode: .common)
         motionLink = link

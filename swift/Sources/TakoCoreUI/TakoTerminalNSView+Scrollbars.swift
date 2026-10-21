@@ -35,11 +35,12 @@ extension TakoTerminalNSView {
         guard trackHeight > 0 else { return }
         
         let scrollerWidth = TerminalScrollbarStyle.trackWidth
+        // The track follows a resize at once, as the thumb does.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         scrollbarLayer.frame = CGRect(x: bounds.width - scrollerWidth - 2.0, y: 2.0, width: scrollerWidth, height: trackHeight - 4.0)
         
         let maxScroll = scrollbackLength
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         scrollbarLayer.opacity = 1.0
         
         let usableHeight = scrollbarLayer.bounds.height

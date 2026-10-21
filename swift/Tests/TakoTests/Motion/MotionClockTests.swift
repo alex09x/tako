@@ -58,6 +58,60 @@ struct MotionClockTests {
         #expect((20...40).contains(after), "after the one-off \(after) frames a second, not 30")
     }
 
+    /// The Overview opens on a frame of five cards; 0.05 s later its clock
+    /// starts and the rest of the cards come in.
+    @Test func theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts() async {
+        var n = 0
+        LivingAnimationState.shared.onFrame = { if $0 == "overview" { n += 1 } }
+        defer { LivingAnimationState.shared.onFrame = nil }
+        let store = PaneOverviewStore()
+        store.items = (0..<12).map { _ in PaneOverviewItem(id: UUID(), title: "pane", status: .working) }
+        let probe = SwiftUIMotionProbe(PaneOverviewView(isPresented: .constant(true), showsBackdrop: false, store: store),
+                                       size: CGSize(width: 1100, height: 760))
+        defer { probe.close() }
+        let firstRep = probe.snapshot()
+        let still = n
+        await wait(0.4)
+        #expect(n - still >= 4, "the Overview's clock never started: \(n - still) frames")
+        // Three to a row: the sixth card is the second row's third, there
+        // only once the clock runs.
+        func sixthCard(_ r: NSBitmapImageRep) -> Double {
+            var sum = 0.0
+            for y in stride(from: 2 * r.pixelsHigh / 6, to: 3 * r.pixelsHigh / 6, by: 3) {
+                for x in stride(from: 2 * r.pixelsWide / 3, to: r.pixelsWide, by: 3) {
+                    let c = r.colorAt(x: x, y: y); sum += Double((c?.redComponent ?? 0) + (c?.greenComponent ?? 0))
+                }
+            }
+            return sum
+        }
+        let before = sixthCard(firstRep), after = sixthCard(probe.snapshot())
+        #expect(after > before * 1.12, "the sixth card was there in the first frame: \(before) -> \(after)")
+    }
+
+    /// Nobody can see Tako: the Overview takes no frames until it is seen.
+    @Test func aCoveredOverviewTakesNoFrames() async {
+        let motion = LivingAnimationState.shared
+        let covered = MotionPauseTests.Window(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: true)
+        covered.isReleasedWhenClosed = false
+        covered.seen = []
+        let saved = motion.windowsToWatch
+        motion.windowsToWatch = { [covered] }
+        motion.recomputeOcclusion()
+        defer {
+            motion.windowsToWatch = saved
+            motion.recomputeOcclusion()
+        }
+        let (probe, _) = overview([.working])
+        defer { probe.close() }
+        await wait(0.3)
+        let n = await frames("overview", over: 0.6)
+        #expect(n <= 2, "a covered Overview took \(n) frames")
+        covered.seen = .visible
+        motion.recomputeOcclusion()
+        let seen = await frames("overview", over: 0.5)
+        #expect(seen >= 8, "the Overview did not go on once seen: \(seen) frames")
+    }
+
     @Test func aPausedOverviewTakesNoFrames() async {
         let motion = LivingAnimationState.shared
         let saved = motion.reduceMotionSource

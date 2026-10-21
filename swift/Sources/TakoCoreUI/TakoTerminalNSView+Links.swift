@@ -153,7 +153,11 @@ extension TakoTerminalNSView {
     func updateLinkHUD(link: TerminalLink?) {
         guard let link, bounds.width > 0, bounds.height > 0 else {
             hasPresentedMatchingPreview = false
+            // At once, as it came: a hidden layer otherwise fades for 0.25 s.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             linkHUDLayer.isHidden = true
+            CATransaction.commit()
             return
         }
         hasPresentedMatchingPreview = true
@@ -264,7 +268,10 @@ extension TakoTerminalNSView {
             return
         }
 
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         linkUnderlineLayer.isHidden = true
+        CATransaction.commit()
         NSCursor.arrow.set()
     }
 

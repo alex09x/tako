@@ -18,8 +18,10 @@ import Testing
 /// timer is entered, as motion or as what it does instead.
 /// The census reads the sources: a new animation that is not entered here,
 /// an entry whose code -- duration, curve, values -- changed, or a test it
-/// names that is gone fails the gate. "pinned" marks motion no spec gives
-/// numbers for and no other test can see, held to the exact code here.
+/// names that is gone fails the gate.
+/// It sees the calls that start motion. What decides whether they run --
+/// Reduce Motion, the pause, a layer set at once -- is held where it is
+/// taken: MotionReduceMotionTests, MotionPauseTests, MotionInstantTests.
 @Suite(.serialized) @MainActor
 struct MotionCensusTests {
     struct Site: CustomTestStringConvertible, Sendable {
@@ -31,13 +33,13 @@ struct MotionCensusTests {
         var testDescription: String { "\(file): \(what)" }
     }
 
-    static let pinned = "pinned"
     /// A timer that moves nothing on screen: it polls, saves or expires.
     static let notMotion = "not motion"
     /// When a dialog shows or focus moves: a delay in what Tako does, not
     /// motion the design draws.
     static let delayedAction = "delayed action"
-    /// The phone's app: no test target builds it.
+    /// The phone's app: its targets are in ios/project.yml, built and run
+    /// by xcodebuild on a simulator, not by the package's tests.
     static let phoneApp = "phone app"
 
     static let census: [Site] = [
@@ -69,30 +71,30 @@ struct MotionCensusTests {
              what: "live ripple, 0.3 s ease-out", coveredBy: ["aLiveRingRipplesOncePerNewBurstWhileItFlows", "aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),
         // SwiftUI's side: snapshots, exports and the Overview's cards.
         Site(file: "Tako+LiveRing.swift", code: "withAnimation(.easeOut(duration: LiveRingStyle.rippleDuration)) { phase = 1 }",
-             what: "SwiftUI live ripple, 0.3 s ease-out", coveredBy: ["aLiveCardsRippleGrowsAndFadesOncePerBurst", "aLiveRippleGrowsAndFadesWithEaseOutIn300ms"]),
+             what: "SwiftUI live ripple, 0.3 s ease-out", coveredBy: ["aLiveCardsRippleGrowsAndFadesOncePerBurst"]),
         Site(file: "Tako+LivingSurface.swift", code: ".animation(.easeOut(duration: 0.25), value: clamped)",
              what: "a card's arc eases to a new percentage in 0.25 s (no spec; the layer's arc moves at once)",
-             coveredBy: ["aCardsArcEasesToItsNewShareOverAQuarterSecond", "aCardsArcShadesRustToEmber"]),
+             coveredBy: ["aCardsArcEasesToItsNewShareOverAQuarterSecond"]),
         Site(file: "SessionSidebarRowClock.swift", code: "TimelineView(.animation(minimumInterval: LivingMotion.minimumFrameInterval(for: state), paused: paused || !moving))",
              what: "a row's clock: frames only while it moves (the failed shake, snapshots)",
              coveredBy: ["aFailedRowShakesOnItsLiveClockAndStops", "aFailedRowShakesAsAWhole", "movingSidebarRowsLayNothingOutWhileTheyMove", "aRowThatFinishesKeepsItsPopThroughTheLayoutAfter"]),
         Site(file: "PaneOverviewView.swift", code: "TimelineView(.animation(minimumInterval: Self.minimumFrameInterval(oneOffRemaining: oneOff),",
-             what: "the Overview's 30 frames a second, every frame for a one-off",
-             coveredBy: ["aCardPlayingAOneOffTakesEveryFrameUntilItRests", "lastingMotionsRestAndReducedMotionStayAtThirty"]),
+             what: "the Overview's 30 frames a second, every frame for a one-off, none when paused",
+             coveredBy: ["theOverviewTakesThirtyFramesASecondAtRest", "aOneOffTakesEveryFrameUntilItRestsThenThirtyAgain",
+                         "aPausedOverviewTakesNoFrames", "aCoveredOverviewTakesNoFrames"]),
         Site(file: "PaneOverviewView.swift", code: "withAnimation(.easeInOut(duration: 0.15)) {",
              what: "the Overview scrolls to the chosen card in 0.15 s", coveredBy: ["theOverviewScrollsToItsChoiceOverAMoment"]),
         // The tab strip, drawn frame by frame (Terminal UI).
         Site(file: "Tako+TabBar.swift", code: "var motionLink: CADisplayLink?",
-             what: "the strip's display link", coveredBy: ["aPillThatFailsShakesOnTheDesignsCurveFromThatMoment"]),
+             what: "the strip's display link", coveredBy: ["theStripsDisplayLinkRunsWhileSomethingMovesAndStops"]),
         Site(file: "Tako+TabBarMotion.swift", code: "let link = displayLink(target: self, selector: #selector(motionFrame(_:)))",
              what: "frames while a pill shakes, the chip slides or tabs move",
-             coveredBy: ["aPillThatFailsShakesOnTheDesignsCurveFromThatMoment", "theChipSlidesToItsNewWidthInsteadOfJumping",
-                         "aNewTabGrowsFromNothingIn160msAndItsContentComesAfter", "aClosedTabCollapsesIn140msAndItsNeighboursCloseUp",
+             coveredBy: ["theStripsDisplayLinkRunsWhileSomethingMovesAndStops", "aNewTabGrowsFromNothingIn160msAndItsContentComesAfter", "aClosedTabCollapsesIn140msAndItsNeighboursCloseUp",
                          "choosingATabMovesOnlyTheBarIn120ms", "neighboursMakeRoomIn120msAndTheDroppedTabSpringsHome",
                          "aButtonsHoverComesInOver80ms"]),
         Site(file: "Tako+TabBarMotion.swift", code: "@objc func motionFrame(_ link: CADisplayLink) {",
              what: "the strip stops its frames once nothing moves",
-             coveredBy: ["aHiddenTabWindowTakesTheNewWidthAtOnceAndRunsNoFrames", "motionThatRanItsTimeEndsUndrawn"]),
+             coveredBy: ["theStripsDisplayLinkRunsWhileSomethingMovesAndStops"]),
         // The sidebar's edge.
         Site(file: "SessionSidebarResize.swift", code: #"let fade = CABasicAnimation(keyPath: "opacity")"#,
              what: "the resize edge lights and goes out in 0.12 s", coveredBy: ["theResizeEdgeLightsAndGoesOutIn120ms"]),
@@ -105,35 +107,40 @@ struct MotionCensusTests {
              what: "the input-ownership header slides in from the top", coveredBy: ["theInputOwnershipHeaderComesInOverAMomentAndGoes"]),
         Site(file: "InputOwnershipHeaderView.swift", code: ".animation(.easeInOut(duration: 0.15), value: barKey)",
              what: "the input-ownership header's 0.15 s, where it is put in",
-             coveredBy: ["theInputOwnershipHeaderComesInOverAMomentAndGoes", "testLockAndUnlock"]),
+             coveredBy: ["theInputOwnershipHeaderComesInOverAMomentAndGoes"]),
         Site(file: "SecureInputOverlay.swift", code: "withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: false)) {",
              what: "secure input's ring turns every 2 s", coveredBy: ["secureInputsRingTurnsAndItsGlowPulses"]),
         Site(file: "SecureInputOverlay.swift", code: "withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: true)) {",
              what: "secure input's glow pulses every 2 s", coveredBy: ["secureInputsRingTurnsAndItsGlowPulses"]),
         Site(file: "Tako+SurfaceUI.swift", code: ".transition(.opacity)",
-             what: "a pane's overlays fade in and out", coveredBy: ["aFileOverlayFadesInOverThePaneAndOut"]),
+             what: "a pane's overlays fade in and out: the file overlay and the diff review",
+             coveredBy: ["aFileOverlayFadesInOverThePaneAndOut", "aDiffReviewFadesInAndACommentRebuildsItAtOnce"]),
         Site(file: "Tako+SurfaceUI.swift", code: ".animation(.easeInOut(duration: 0.15), value: coveringOverlays)",
-             what: "a pane's covering overlays fade over 0.15 s", coveredBy: ["aFileOverlayFadesInOverThePaneAndOut"]),
-        Site(file: "CyclingIconView.swift", code: ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)",
-             what: "About's icon eases 0.5 s to the next -- of a set of one (.official): it never changes", coveredBy: [notMotion]),
+             what: "a pane's covering overlays fade over 0.15 s", coveredBy: ["aFileOverlayFadesInOverThePaneAndOut", "aDiffReviewFadesInAndACommentRebuildsItAtOnce"]),
+        Site(file: "CyclingIconView.swift", code: ".animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon?.assetName)",
+             what: "About's icon cross-fades 0.5 s only when its picture changes: a tap that changes none does not dim it",
+             coveredBy: ["tappingAboutsIconDoesNotDimIt"]),
         // The quick terminal: slides in and out on its configured time, ease-in.
         Site(file: "QuickTerminalController+Animation.swift", code: "NSAnimationContext.runAnimationGroup({ context in",
              what: "the quick terminal slides on quick-terminal-animation-duration (0.2 s), ease-in",
              coveredBy: ["initialOriginForEachPosition", "finalOriginForEachPosition", "theQuickTerminalSlidesOnItsConfiguredTimeEaseIn"]),
         Site(file: "QuickTerminalController+Animation.swift", code: "in: window.animator(),",
-             what: "the quick terminal's frame, animated", coveredBy: ["setInitialMakesWindowInvisibleAndUsesConfiguredSizeWhenNoClosedFrame",
-                                                                     "setFinalMakesWindowVisibleAndUsesConfiguredSizeWhenNoClosedFrame"]),
+             what: "the quick terminal's frame and alpha, animated: it comes in and fades up together",
+             coveredBy: ["theQuickTerminalComesInAndFadesUpThroughItsPosition", "setInitialMakesWindowInvisibleAndUsesConfiguredSizeWhenNoClosedFrame",
+                         "setFinalMakesWindowVisibleAndUsesConfiguredSizeWhenNoClosedFrame"]),
         // The terminal's own frames.
         Site(file: "TakoTerminalNSView+Presentation.swift", code: "let link = self.displayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick))",
-             what: "the terminal's frames on macOS", coveredBy: ["testPresentationPauseTransitionsAreIdempotent"]),
+             what: "the terminal's frames on macOS: asleep until a redraw, parked off its window",
+             coveredBy: ["testTheTerminalsDisplayLinkSleepsWakesAndIsParkedOffWindow"]),
         Site(file: "TakoTerminalNSView.swift", code: "var displayLink: CADisplayLink?",
-             what: "the terminal's display link", coveredBy: ["testPresentationPauseTransitionsAreIdempotent"]),
+             what: "the terminal's display link", coveredBy: ["testTheTerminalsDisplayLinkSleepsWakesAndIsParkedOffWindow", "testPresentationPauseTransitionsAreIdempotent"]),
         Site(file: "TakoTerminalView+Metal.swift", code: "let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick))",
              what: "the terminal's frames on iOS (scripts/check.sh ios)",
-             coveredBy: ["testRedrawRequestsCoalesceIntoOnePendingFrame", "testNoDuplicateTimersDisplayLinksOrLayers"]),
+             coveredBy: ["testADroppedFrameIsRetriedByTheDisplayLinkWithoutNewDamage",
+                         "testATailRestoredWhileMode2026HeldTheRedrawIsTheFrameThatEndsUpOnTheLayer"]),
         Site(file: "TakoTerminalView.swift", code: "var displayLink: CADisplayLink?",
              what: "the iOS terminal's display link (scripts/check.sh ios)",
-             coveredBy: ["testThemeChangeRebuildsRendererStateWithoutDuplicates", "testCPUFallbackWhenMetalIsUnavailable"]),
+             coveredBy: ["testADroppedFrameIsRetriedByTheDisplayLinkWithoutNewDamage", "testThemeChangeRebuildsRendererStateWithoutDuplicates"]),
         Site(file: "TakoTerminalView.swift", code: "var kineticDisplayLink: CADisplayLink?",
              what: "iOS kinetic scrolling", coveredBy: ["testKineticDecelerationMonotonicDecay", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "TakoTerminalView+Gestures.swift", code: "let link = CADisplayLink(target: proxy, selector: #selector(KineticDisplayLinkProxy.tick(_:)))",
@@ -152,11 +159,12 @@ struct MotionCensusTests {
              code: "timer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: isLit), repeats: false)",
              what: "the phone's cursor blinks as the Mac's, on CursorBlinker",
              coveredBy: ["testItIsLit720msThenOut480msThenLitAgain", "testATimerReplacedMeanwhileChangesNothing",
-                         "thePhonesViewBlinksOnTheSharedBlinker", "testTheIOSCursorIsLitFor720msThenOutFor480ms"]),
+                         "testTheIOSCursorIsLitFor720msThenOutFor480ms"]),
         Site(file: "AboutViewModel.swift", code: "timerCancellable = Timer.publish(every: 3, on: .main, in: .common)",
-             what: "About's icon cycles every 3 s -- through a set of one (.official): nothing changes on screen", coveredBy: [notMotion]),
+             what: "About's icon would cycle every 3 s: nothing starts it (startCyclingIcons has no caller), and a tick changes no picture",
+             coveredBy: [notMotion]),
         Site(file: "Tako+Crab.swift", code: "ticker = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true)",
-             what: "a command shows as running once it has run 3 s",
+             what: "a command shows as running once it has run 3 s; an agent's ticker (the same line) only counts elapsed, which nothing draws",
              coveredBy: ["aCommandTurnsWorkingWhenItsTickerFindsItHasRun3s", "theClocksAreTheSpecs"]),
         Site(file: "Tako+Crab.swift", code: "successTimer = Timer.scheduledTimer(withTimeInterval: linger, repeats: false)",
              what: "done and failed go out 2 s after they show in the focused tab",
@@ -229,7 +237,7 @@ struct MotionCensusTests {
         Site(file: "SessionEnding.swift", code: #"try? await Task.sleep(nanoseconds: 300_000_000)"#,
              what: "the leftovers dialog waits for a window", coveredBy: [delayedAction]),
         Site(file: "CrossSessionSearch.swift", code: #"try? await Task.sleep(for: debounce)"#,
-             what: "search across tabs waits for typing to pause", coveredBy: [delayedAction]),
+             what: "search across tabs waits 150 ms for typing to pause before its list changes", coveredBy: ["searchingAcrossTabsWaitsForTypingToPause"]),
         Site(file: "CrossSessionSearch.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in"#,
              what: "the chosen hit is selected once focus settles", coveredBy: [delayedAction]),
         Site(file: "InputOwnershipHeaderView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in"#,
@@ -253,11 +261,13 @@ struct MotionCensusTests {
         Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in"#,
              what: "a system notification is taken back after its time", coveredBy: [delayedAction]),
         Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + debounceDelay, execute: item)"#,
-             what: "search hits are recounted after output pauses", coveredBy: [delayedAction]),
+             what: "the search-hit marks are redrawn 150 ms after output pauses, at least every 350 ms",
+             coveredBy: ["searchHitsAreRecountedOnceOutputPausesAndAtLeastEvery350ms"]),
         Site(file: "Tako+SurfaceModels.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: move)"#,
              what: "focus moves to another pane after a delay", coveredBy: [delayedAction]),
         Site(file: "Tako+SurfaceWatchdog.swift", code: #"DispatchQueue.main.asyncAfter("#,
-             what: "a synchronized frame left open is drawn after 200 ms", coveredBy: ["aSynchronizedFrameLeftOpenIsDrawnAfter200ms", "aSynchronizedFrameClosedInTimeIsNotForced"]),
+             what: "a synchronized frame left open is drawn after 200 ms; output redraws come together into one",
+             coveredBy: ["aSynchronizedFrameLeftOpenIsDrawnAfter200ms", "aSynchronizedFrameClosedInTimeIsNotForced", "outputRedrawsComeTogetherIntoOne"]),
         Site(file: "Tako+TabBarInput.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandBadgeDelay, execute: work)"#,
              what: "the tab numbers show after ⌘ is held 150 ms", coveredBy: ["theTabNumbersShowAfterCommandIsHeld150ms"]),
         Site(file: "Tako+TabBarMotion.swift", code: #"func displayedChipWidth(target: CGFloat, now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {"#,
@@ -289,14 +299,40 @@ struct MotionCensusTests {
         Site(file: "PaneOverviewView.swift", code: #"try? await Task.sleep(nanoseconds: UInt64(oneOff * 1_000_000_000))"#,
              what: "the Overview goes back to 30 a second once a one-off has played", coveredBy: ["aOneOffTakesEveryFrameUntilItRestsThenThirtyAgain"]),
         Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {"#,
-             what: "the Overview's first frame is still, its clock starts 0.05 s later", coveredBy: ["theOverviewTakesThirtyFramesASecondAtRest"]),
+             what: "the Overview's first frame is still and holds five cards, its clock starts 0.05 s later",
+             coveredBy: ["theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts"]),
+        // Changes made at once, which would otherwise ease a quarter second.
+        Site(file: "SessionSidebarResize.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the resize edge follows the sidebar at once", coveredBy: ["theResizeEdgeFollowsTheSidebarAtOnce"]),
+        Site(file: "SidebarStatusLayerView.swift", code: "CATransaction.setDisableActions(true)",
+             what: "a ring-only row takes its scale at once", coveredBy: ["aRingOnlyRowTakesItsScaleAtOnce"]),
+        Site(file: "Tako+TabStatusLayer.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the progress arc and line, an exported pose, a shake or lean: set at once", coveredBy: ["theProgressArcAndLineMoveAtOnce", "anExportedPoseIsSetAtOnce", "aShakeOrALeanIsSetAtOnce"]),
+        Site(file: "TabTitleEditor.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the native tab bar's title editor, which Tako never shows", coveredBy: [notMotion]),
+        Site(file: "TakoTerminalNSView+ContextHierarchy.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the context breadcrumbs change at once", coveredBy: ["testTheContextBreadcrumbsGoAtOnce"]),
+        Site(file: "TakoTerminalNSView+Links.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the link HUD and underline come and go at once", coveredBy: ["testTheLinkHUDComesChangesAndGoesAtOnce", "testTheLinkUnderlineComesAndGoesAtOnce"]),
+        Site(file: "TakoTerminalNSView+Metal.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the Metal layer takes a resize at once", coveredBy: ["testAResizedPaneTakesItsNewSizeAtOnce"]),
+        Site(file: "TakoTerminalNSView+ProgressBar.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the pane progress bar comes, moves and goes at once", coveredBy: ["testTheProgressBarComesMovesAndGoesAtOnce"]),
+        Site(file: "TakoTerminalNSView+Scrollbars.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the scroller and gutter marks move at once", coveredBy: ["testTheScrollerAndTheGutterMarksMoveAtOnce", "testAResizedPaneTakesItsNewSizeAtOnce"]),
+        Site(file: "TakoTerminalNSView+StickyHeader.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the sticky header and its hover change at once", coveredBy: ["testTheStickyHeaderAndItsHoverChangeAtOnce"]),
+        Site(file: "TakoTerminalNSView+Triggers.swift", code: "CATransaction.setDisableActions(true)",
+             what: "trigger highlights come and move at once", coveredBy: ["testTriggerHighlightsComeAndMoveAtOnce"]),
+        Site(file: "TakoTerminalView+Metal.swift", code: "CATransaction.setDisableActions(true)",
+             what: "the phone's Metal layer takes a resize at once (scripts/check.sh ios)", coveredBy: ["testThePhonesMetalLayerTakesANewSizeAtOnce"]),
         Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { isSearchFieldFocused = true }"#,
              what: "the Overview's search field takes focus", coveredBy: [delayedAction]),
     ]
 
     /// What the census counts as an animation.
     static let animationAPI = try! NSRegularExpression(pattern:
-        #"asyncAfter\(|Task\.sleep|CACurrentMediaTime\(\)|setDisableActions\(!|ProgressView\(|Timer\.scheduledTimer\(|Timer\(timeInterval|Timer\.publish\(|withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
+        #"asyncAfter\(|Task\.sleep|CACurrentMediaTime\(\)|setDisableActions\(!|setDisableActions\(true\)|ProgressView\(|Timer\.scheduledTimer\(|Timer\(timeInterval|Timer\.publish\(|withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
 
     /// The package's `swift` directory, from this file's place in it.
     static var swiftRoot: URL {
@@ -344,7 +380,7 @@ struct MotionCensusTests {
     @Test func everyTestTheCensusNamesExists() {
         let tests = Self.swiftFiles(under: "Tests").map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }.joined()
         for site in Self.census {
-            for name in site.coveredBy where ![Self.pinned, Self.notMotion, Self.delayedAction, Self.phoneApp].contains(name)
+            for name in site.coveredBy where ![Self.notMotion, Self.delayedAction, Self.phoneApp].contains(name)
                 && !tests.contains("func \(name)(") {
                 Issue.record("\(site.file): \(site.what) names a test that is gone: \(name)")
             }
@@ -380,6 +416,37 @@ struct MotionCensusTests {
         grip.mouseExited(with: event)
         let dimming = try #require(edge.animation(forKey: "opacity"))
         #expect(edge.opacity == 0 && abs(dimming.duration - 0.12) < 0.001)
+    }
+
+    /// As the app slides it: from where setInitial leaves the window (out
+    /// of view, transparent) to where setFinal puts it, through the window's
+    /// animator -- it comes in and fades up together.
+    @Test func theQuickTerminalComesInAndFadesUpThroughItsPosition() async throws {
+        let screen = try #require(NSScreen.main)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        // As the app has it: a level above the menu bar lets it lie off screen.
+        window.level = .popUpMenu
+        let position = QuickTerminalPosition.top
+        position.setInitial(in: window, on: screen, terminalSize: QuickTerminalSize())
+        window.orderFrontRegardless()
+        let start = window.frame
+        #expect(window.alphaValue == 0)
+        QuickTerminalController.slide(over: 0.3, {
+            position.setFinal(in: window.animator(), on: screen, terminalSize: QuickTerminalSize())
+        }, completion: {})
+        let began = Date()
+        var alphas: [CGFloat] = [], frames: [CGRect] = []
+        while Date().timeIntervalSince(began) < 0.5 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            alphas.append(window.alphaValue)
+            frames.append(window.frame)
+        }
+        #expect(alphas.contains { $0 > 0.05 && $0 < 0.95 }, "the quick terminal did not fade up: \(alphas.prefix(6))")
+        #expect(alphas.last == 1)
+        #expect(frames.contains { $0.minY != start.minY && $0.minY != frames.last!.minY }, "it jumped instead of sliding in")
     }
 
     @Test func theQuickTerminalSlidesOnItsConfiguredTimeEaseIn() async throws {

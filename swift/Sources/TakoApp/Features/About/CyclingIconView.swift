@@ -8,10 +8,13 @@ struct CyclingIconView: View {
 
     var body: some View {
         ZStack {
+            // Keyed by the picture, not the choice: an icon drawn as the app's
+            // own (.official has no asset) cross-faded into itself, dimming
+            // it for half a second on the first tap.
             iconView(for: viewModel.currentIcon)
-                .id(viewModel.currentIcon)
+                .id(viewModel.currentIcon?.assetName)
         }
-        .animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon)
+        .animation(.easeInOut(duration: 0.5), value: viewModel.currentIcon?.assetName)
         .frame(height: 128)
         .onHover { viewModel.isHovering = $0 }
         .onTapGesture { viewModel.advanceToNextIcon() }

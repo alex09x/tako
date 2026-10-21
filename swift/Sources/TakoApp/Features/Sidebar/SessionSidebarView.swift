@@ -95,6 +95,12 @@ struct SessionSidebarView: View {
         Self.motionPaused(timelinePaused: animState.isTimelinePaused, isPresented: isPresented)
     }
 
+    /// The header's "Needs you" ring breathes only while something waits,
+    /// and never under Reduce Motion.
+    static func headerRingRests(reduceMotion: Bool, waiting: Int) -> Bool {
+        reduceMotion || waiting == 0
+    }
+
     /// The rows and the header ring stand still while nobody can see Tako,
     /// Reduce Motion is on, or the sidebar is closed.
     static func motionPaused(timelinePaused: Bool, isPresented: Bool) -> Bool {
@@ -263,7 +269,7 @@ struct SessionSidebarView: View {
                         // a pill's ring: a SwiftUI clock in this row laid the
                         // sidebar out every frame -- in every tab's window --
                         // whenever a tab in the background was at work.
-                        let ringRests = animState.reduceMotion || attentionCount == 0
+                        let ringRests = Self.headerRingRests(reduceMotion: animState.reduceMotion, waiting: attentionCount)
                         SidebarStatusLayerView(
                             state: .waiting, ringCenter: nil, cornerRadius: 0,
                             reduceMotion: ringRests, paused: motionPaused, pulses: 0,

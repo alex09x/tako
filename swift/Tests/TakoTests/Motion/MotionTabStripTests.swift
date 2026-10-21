@@ -20,7 +20,28 @@ final class StripScene {
     let windows: [NSWindow]
     private(set) var bars: [Tako.TabBarView] = []
 
-    init(tabs: Int, style: Tako.Config.TabStyle = .pill) {
+    /// What the scene found and set aside to force motion on, put back on close.
+    private var restore: (() -> Void)?
+
+    /// With `motionOn` (the default) the strip moves whatever the host says
+    /// -- Reduce Motion off, no window counted as covered -- so a test of its
+    /// motion never passes or fails by the test Mac's own screen. A test of
+    /// Reduce Motion or of the pause sets those itself and passes false.
+    init(tabs: Int, style: Tako.Config.TabStyle = .pill, motionOn: Bool = true) {
+        if motionOn {
+            let motion = LivingAnimationState.shared
+            let (reduce, watched) = (motion.reduceMotionSource, motion.windowsToWatch)
+            motion.reduceMotionSource = { false }
+            motion.windowsToWatch = { [] }
+            motion.refreshReduceMotion()
+            motion.recomputeOcclusion()
+            restore = {
+                motion.reduceMotionSource = reduce
+                motion.windowsToWatch = watched
+                motion.refreshReduceMotion()
+                motion.recomputeOcclusion()
+            }
+        }
         windows = (0..<tabs).map { makeWindow(title: "tab \($0)") }
         Tako.TabStripTransitions.clock = { [unowned self] in self.now }
         for window in windows.dropFirst() { Tako.CustomTabGroup.join(window, to: windows[0], select: false) }
@@ -62,6 +83,8 @@ final class StripScene {
             window.close()
         }
         Tako.TabStripTransitions.clock = { CACurrentMediaTime() }
+        restore?()
+        restore = nil
     }
 
     static func event(_ type: NSEvent.EventType, at point: CGPoint, in bar: Tako.TabBarView) -> NSEvent {
@@ -312,6 +335,36 @@ struct MotionTabStripTests {
         scene.now = t0 + MotionSpec.buttonHover
         #expect(bar.buttonHoverAlpha("plus", hovered: true) > 0.99)
         #expect(bar.buttonHoverAlpha("plus", hovered: false) == 0, "the hover goes at once")
+    }
+
+    /// The hover as drawn: the split button's fill is #241C16 once it has
+    /// come in, and the strip's own colour there without the hover.
+    @Test func aHoveredButtonIsDrawnFilledWithTheDesigns241C16() throws {
+        let scene = StripScene(tabs: 2)
+        defer { scene.close() }
+        let bar = scene.shown
+        func pixel() throws -> NSColor {
+            let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bar.bounds.width), pixelsHigh: Int(bar.bounds.height),
+                                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            bar.draw(bar.bounds)
+            NSGraphicsContext.restoreGraphicsState()
+            // Inside the button, clear of its glyph: a few points in from its left side.
+            let r = bar.splitRect
+            return try #require(rep.colorAt(x: Int(r.minX + 3), y: rep.pixelsHigh - 1 - Int(r.midY)))
+        }
+        #expect(bar.splitRect.width > 0)
+        let plain = try pixel()
+        bar.splitHovered = true
+        _ = try pixel()   // the hover begins
+        scene.now += MotionSpec.buttonHover + 0.01
+        let hovered = try pixel()
+        let rgb = [hovered.redComponent, hovered.greenComponent, hovered.blueComponent].map { Int(($0 * 255).rounded()) }
+        #expect(zip(rgb, [0x24, 0x1C, 0x16]).allSatisfy { abs($0 - $1) <= 3 }, "the hovered button is drawn \(rgb)")
+        #expect(abs(plain.redComponent - hovered.redComponent) > 0.01 || abs(plain.greenComponent - hovered.greenComponent) > 0.01,
+                "the button looks the same with the pointer off it")
     }
 
     @Test func tooltipsShowAfter800ms() throws {

@@ -13,6 +13,7 @@ import XCTest
 
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
+import Metal
 
 /// A window dragged to a new size settles before the grid follows: the
 /// Mac's terminal takes the last size 50 ms after the drag stops, once.
@@ -31,6 +32,34 @@ final class ResizeSettleTests: XCTestCase {
         XCTAssertEqual(view.rows, 35)
         XCTAssertNil(view.pendingResizeWorkItem)
         XCTAssertEqual(TakoTerminalNSView.resizeSettleDelay, 0.05)
+    }
+
+    /// The terminal's frames on the Mac: a view put in a window gets its
+    /// display link asleep, a redraw wakes it, and a view leaving its window
+    /// parks it.
+    @MainActor
+    func testTheTerminalsDisplayLinkSleepsWakesAndIsParkedOffWindow() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "no Metal device")
+        let shaders = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/TakoCoreUI/Resources/TerminalShaders.metal")
+        let library = try device.makeLibrary(source: String(contentsOf: shaders, encoding: .utf8), options: nil)
+        TakoTerminalNSView.metalLibraryProviderForTesting = { _ in library }
+        defer { TakoTerminalNSView.metalLibraryProviderForTesting = nil }
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        XCTAssertNil(view.displayLink, "a view with no window has no frames to take")
+        window.contentView = view
+        window.orderFrontRegardless()
+        view.layoutSubtreeIfNeeded()
+        let link = try XCTUnwrap(view.displayLink, "a view in a window got no display link")
+        XCTAssertNotNil(view.metalRenderer, "no Metal renderer: the link has nothing to drive")
+        view.scheduleRedraw()
+        XCTAssertFalse(link.isPaused, "a redraw did not wake the link")
+        view.removeFromSuperview()
+        XCTAssertTrue(link.isPaused, "the link kept running off its window")
     }
 
     /// A capped surface waits out its throttle on the main queue, then
