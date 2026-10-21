@@ -67,6 +67,10 @@ struct MotionClassicTabTests {
     }
 
     @Test func aClassicTabShowsItsPanesStateAndShakesWholeWhenItFails() throws {
+        try withMotionOn { try classicTabShakes() }
+    }
+
+    private func classicTabShakes() throws {
         _ = NSApplication.shared
         let surface = Tako.SurfaceView(frame: .zero)
         let window = makeWindow(title: "classic")
@@ -92,7 +96,7 @@ struct MotionClassicTabTests {
         surface.crab.setStatus(.error, text: nil)
         draw()
         #expect(layer.currentState == .failed)
-        guard !LivingAnimationState.shared.reduceMotion else { return }
+        #expect(!LivingAnimationState.shared.reduceMotion && !LivingAnimationState.shared.isTimelinePaused, "motion is off: the test would see nothing")
         // The strip shakes it frame by frame from the moment it failed.
         var moved: CGFloat = 0
         let until = Date().addingTimeInterval(MotionSpec.shakeDuration)

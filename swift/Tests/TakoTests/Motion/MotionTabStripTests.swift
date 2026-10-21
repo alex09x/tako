@@ -207,6 +207,57 @@ struct MotionTabStripTests {
         #expect(abs(atan2(ring.transform.m12, ring.transform.m11)) < 0.001, "the ring stayed turned after the drop")
     }
 
+    /// Drawn while lifted, the tab casts its shadow below it and leans:
+    /// "тень 0 14px 30px rgba(0,0,0,.55), наклон −3°".
+    @Test func aLiftedTabCastsItsShadowAndLeans() throws {
+        let scene = StripScene(tabs: 3)
+        defer { scene.close() }
+        let bar = scene.shown
+        func drawn() -> NSBitmapImageRep {
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bar.bounds.width), pixelsHigh: Int(bar.bounds.height),
+                                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            bar.draw(bar.bounds)
+            NSGraphicsContext.restoreGraphicsState()
+            return rep
+        }
+        func light(_ rep: NSBitmapImageRep, x: Int, cgY: Int) -> CGFloat {
+            guard let c = rep.colorAt(x: x, y: rep.pixelsHigh - 1 - cgY) else { return 0 }
+            return c.redComponent + c.greenComponent + c.blueComponent
+        }
+        let resting = try #require(scene.frame(of: scene.windows[0]))
+        let still = drawn()
+        let grab = CGPoint(x: resting.minX + 20, y: resting.midY)
+        bar.mouseDown(with: StripScene.event(.leftMouseDown, at: grab, in: bar))
+        bar.mouseDragged(with: StripScene.event(.leftMouseDragged, at: CGPoint(x: grab.x + 30, y: grab.y), in: bar))
+        defer { bar.mouseUp(with: StripScene.event(.leftMouseUp, at: CGPoint(x: grab.x + 30, y: grab.y), in: bar)) }
+        let lifted = try #require(scene.frame(of: scene.windows[0]))
+        let up = drawn()
+        // The shadow: the strip just below the lifted tab is darker than at rest.
+        let below = max(1, Int(lifted.minY) - 2)
+        let xs = stride(from: Int(lifted.minX) + 10, to: Int(lifted.maxX) - 10, by: 4)
+        let shaded = xs.map { light(up, x: $0, cgY: below) }.reduce(0, +)
+        let plain = xs.map { light(still, x: $0, cgY: below) }.reduce(0, +)
+        #expect(shaded < plain - 0.05, "no shadow under the lifted tab: \(shaded) vs \(plain)")
+        // The lean: the tab's top edge is lower at one end than the other.
+        func isFill(_ rep: NSBitmapImageRep, x: Int, cgY: Int) -> Bool {
+            guard let c = rep.colorAt(x: x, y: rep.pixelsHigh - 1 - cgY) else { return false }
+            return abs(c.redComponent - 0x24 / 255) < 0.03 && abs(c.greenComponent - 0x1C / 255) < 0.03 && abs(c.blueComponent - 0x16 / 255) < 0.03
+        }
+        func top(_ rep: NSBitmapImageRep, x: Int) -> Int {
+            (Int(lifted.minY) - 4...min(rep.pixelsHigh - 1, Int(lifted.maxY) + 8)).last { isFill(rep, x: x, cgY: $0) } ?? -1
+        }
+        let left = top(up, x: Int(lifted.minX) + 12), right = top(up, x: Int(lifted.maxX) - 12)
+        #expect(abs(left - right) >= 3, "the lifted tab does not lean: its top at \(left) and \(right)")
+    }
+
+    @Test func aButtonsHoverFillIsTheDesigns241C16() {
+        let c = Tako.TabBarView.Palette.activeTab.usingColorSpace(.sRGB)!
+        #expect([c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) } == [0x24, 0x1C, 0x16])
+    }
+
     @Test func neighboursMakeRoomIn120msAndTheDroppedTabSpringsHome() throws {
         let scene = StripScene(tabs: 3)
         defer { scene.close() }

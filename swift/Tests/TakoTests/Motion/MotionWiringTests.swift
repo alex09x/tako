@@ -24,6 +24,10 @@ struct MotionWiringTests {
     }
 
     @Test func theTabBarHandsAPillsLayerEachNewBurst() throws {
+        try withMotionOn { try pillLayerTakesBursts() }
+    }
+
+    private func pillLayerTakesBursts() throws {
         _ = NSApplication.shared
         var lines = 0
         let surface = Tako.SurfaceView(frame: .zero)
@@ -43,7 +47,7 @@ struct MotionWiringTests {
         let layer = try #require(bar.statusLayers[ObjectIdentifier(window)])
         let ripple = try #require(layer.ringContainer.sublayers?.first { $0.name == "liveRipple" })
         ripple.removeAllAnimations()
-        guard !LivingAnimationState.shared.isTimelinePaused else { return }
+        #expect(!LivingAnimationState.shared.reduceMotion && !LivingAnimationState.shared.isTimelinePaused, "motion is off: the test would see nothing")
 
         draw()
         #expect(ripple.animation(forKey: "liveRipple") == nil, "a redraw with no new burst rippled")

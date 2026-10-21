@@ -152,3 +152,23 @@ extension CALayer {
         return nil
     }
 }
+
+/// Motion on for the length of `body`, whatever the host says: Reduce Motion
+/// off and no window counted as hidden, so a test of motion never passes
+/// by skipping it on a host set to Reduce Motion.
+@MainActor
+func withMotionOn<T>(_ body: () throws -> T) rethrows -> T {
+    let motion = LivingAnimationState.shared
+    let (reduce, windows) = (motion.reduceMotionSource, motion.windowsToWatch)
+    motion.reduceMotionSource = { false }
+    motion.windowsToWatch = { [] }
+    motion.refreshReduceMotion()
+    motion.recomputeOcclusion()
+    defer {
+        motion.reduceMotionSource = reduce
+        motion.windowsToWatch = windows
+        motion.refreshReduceMotion()
+        motion.recomputeOcclusion()
+    }
+    return try body()
+}
