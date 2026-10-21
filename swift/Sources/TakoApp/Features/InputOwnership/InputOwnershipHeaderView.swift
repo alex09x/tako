@@ -178,7 +178,7 @@ public struct PaneActivityLogView: View {
     var isSecureInput: Bool = false
     @ObservedObject var store: InputOwnershipStore = .shared
     @ObservedObject var secureInput: SecureInput = .shared
-    @State private var copied: Bool = false
+    @StateObject private var copied = CopiedFlash()
 
     public init(paneId: UUID, isSecureInput: Bool = false) {
         self.paneId = paneId
@@ -206,16 +206,13 @@ public struct PaneActivityLogView: View {
                 }
                 Spacer()
                 if !effectiveSecure {
-                    Button(copied ? "Copied!" : "Copy JSON") {
+                    Button(copied.shown ? "Copied!" : "Copy JSON") {
                         guard !effectiveSecure else { return }
                         let json = store.exportLog(for: paneId, isSecureInput: effectiveSecure)
                         guard !json.isEmpty && json != "[]" else { return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(json, forType: .string)
-                        copied = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            copied = false
-                        }
+                        copied.flash()
                     }
                     .controlSize(.small)
                     .buttonStyle(.bordered)
@@ -297,5 +294,24 @@ public struct PaneActivityLogView: View {
             }
         }
         .frame(width: 380, height: 260)
+    }
+}
+
+/// "Copied!" for a moment after a copy, then the button's own words again.
+@MainActor
+final class CopiedFlash: ObservableObject {
+    @Published private(set) var shown = false
+    var hold: TimeInterval = 1.5
+    private var mark = 0
+
+    func flash() {
+        shown = true
+        mark += 1
+        let this = mark
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
+            // A copy made meanwhile keeps its own moment.
+            guard let self, self.mark == this else { return }
+            self.shown = false
+        }
     }
 }

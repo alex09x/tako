@@ -72,4 +72,19 @@ final class SwiftUIMotionProbe {
         return sum
     }
 
+
+    /// Where the frame's light sits, left to right, in pixels.
+    static func centroidX(_ rep: NSBitmapImageRep) -> Double {
+        var sum = 0.0, weighed = 0.0
+        for y in stride(from: 0, to: rep.pixelsHigh, by: 2) {
+            for x in 0..<rep.pixelsWide {
+                guard let c = rep.colorAt(x: x, y: y) else { continue }
+                let w = Double(max(c.redComponent, c.greenComponent, c.blueComponent))
+                sum += w
+                weighed += w * Double(x)
+            }
+        }
+        return sum > 0 ? weighed / sum : 0
+    }
+
 }
