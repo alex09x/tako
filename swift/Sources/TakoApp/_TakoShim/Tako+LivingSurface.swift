@@ -113,7 +113,7 @@ final class LivingAnimationState: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                self?.refreshReduceMotion()
             }
         }
         NotificationCenter.default.addObserver(
@@ -142,15 +142,29 @@ final class LivingAnimationState: ObservableObject {
         reduceMotion || isOccludedOrIdle
     }
 
-    private func recomputeOcclusion() {
-        let visibleWindows = NSApp?.windows.filter { $0.isVisible } ?? []
-        if visibleWindows.isEmpty {
-            isOccludedOrIdle = false
-            return
-        }
-        let anyVisible = visibleWindows.contains { $0.occlusionState.contains(.visible) }
-        guard isOccludedOrIdle == anyVisible else { return }
-        isOccludedOrIdle = !anyVisible
+    /// Where the windows and the Reduce Motion setting are read from: the
+    /// app's own, or a test's.
+    var windowsToWatch: () -> [NSWindow] = { NSApp?.windows ?? [] }
+    var reduceMotionSource: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    func refreshReduceMotion() {
+        let now = reduceMotionSource()
+        guard reduceMotion != now else { return }
+        reduceMotion = now
+        Tako.TabBarController.refreshAll()
+    }
+
+    /// Nobody can see Tako: it has windows on screen and every one of them
+    /// is covered. Being in the background is not that.
+    static func nobodySees(_ windows: [NSWindow]) -> Bool {
+        let shown = windows.filter { $0.isVisible }
+        return !shown.isEmpty && !shown.contains { $0.occlusionState.contains(.visible) }
+    }
+
+    func recomputeOcclusion() {
+        let hidden = Self.nobodySees(windowsToWatch())
+        guard isOccludedOrIdle != hidden else { return }
+        isOccludedOrIdle = hidden
         // The tab rings are layers, not a timeline: they learn of the pause on a redraw.
         Tako.TabBarController.refreshAll()
     }

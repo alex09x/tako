@@ -31,7 +31,7 @@ extension Tako.SurfaceView {
         Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.commandStartedAt == started else { return }
-                guard let line = self.frontCommand() else {
+                guard let line = self.frontCommandProbe?() ?? self.frontCommand() else {
                     self.identifyUnreportedCommand(tries: tries - 1, every: delay)
                     return
                 }

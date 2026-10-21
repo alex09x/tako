@@ -31,7 +31,7 @@ extension Tako.CrabTracker {
         _ = liveProbe?.takeOutputLines()
         tellQuietSince(at: start)
         liveTimer?.invalidate()
-        liveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        liveTimer = Timer.scheduledTimer(withTimeInterval: liveSampleInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sampleLive() }
         }
     }

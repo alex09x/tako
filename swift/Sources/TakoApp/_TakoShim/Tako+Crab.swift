@@ -56,6 +56,12 @@ extension Tako {
         /// tab, and hold until focus on a background one).
         static let successLinger: TimeInterval = 2
 
+        /// The tracker's own clocks, the spec's by default; a test runs them
+        /// faster to watch them fire.
+        var tickInterval: TimeInterval = 0.5
+        var linger: TimeInterval = successLinger
+        var liveSampleInterval: TimeInterval = 1
+
         @Published private(set) var state: CrabState = .idle
         public typealias ProgressState = TakoTerminalNSView.ProgressState
 
@@ -161,7 +167,7 @@ extension Tako {
                 startLive(quietSince: quietSince)
                 return
             }
-            ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            ticker = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
         }
@@ -228,7 +234,7 @@ extension Tako {
         /// something newer replaced it or the tab lost focus meanwhile.
         private func fadeWhileFocused() {
             successTimer?.invalidate()
-            successTimer = Timer.scheduledTimer(withTimeInterval: Self.successLinger, repeats: false) {
+            successTimer = Timer.scheduledTimer(withTimeInterval: linger, repeats: false) {
                 [weak self] _ in
                 MainActor.assumeIsolated { self?.fadeSeenOutcome() }
             }
@@ -323,7 +329,7 @@ extension Tako {
                     unread = !isFocused
                     if startedAt == nil { startedAt = now() }
                     if ticker == nil {
-                        ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                        ticker = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
                             MainActor.assumeIsolated { self?.tick() }
                         }
                     }
