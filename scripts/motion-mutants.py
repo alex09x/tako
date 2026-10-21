@@ -255,7 +255,7 @@ MUTANTS = [
      "paused: paused || !moving))", "paused: true))"),
     ("secure-input-still", "secure input's ring turns and its glow pulses", "swift/Sources/TakoApp/Features/Secure Input/SecureInputOverlay.swift",
      "        .onAppear {\n            withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: false)) {",
-     "        .onAppear {\n            return\n            withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: false)) {"),
+     "        .onAppear {\n            if true { return }\n            withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: false)) {"),
     ("phone-blink-even", "the phone's cursor blinks as the Mac's", "swift/Sources/TakoCoreUI/CursorBlink.swift",
      "withTimeInterval: CursorBlink.phaseDuration(lit: isLit), repeats: false", "withTimeInterval: 0.5, repeats: false"),
     ("phone-blink-never-toggles", "the phone's cursor goes out between its lit phases", "swift/Sources/TakoCoreUI/CursorBlink.swift",

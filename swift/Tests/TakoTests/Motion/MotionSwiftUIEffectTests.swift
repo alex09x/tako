@@ -84,17 +84,26 @@ struct MotionSwiftUIEffectTests {
         #expect(frames.filter { $0.t > MotionSpec.shakeDuration + 0.15 }.allSatisfy { abs($0.value - rest) < 0.2 }, "the row shook past 0.448 s")
     }
 
+    private func difference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> Double {
+        var sum = 0.0
+        for y in 0..<a.pixelsHigh {
+            for x in 0..<a.pixelsWide {
+                guard let p = a.colorAt(x: x, y: y), let q = b.colorAt(x: x, y: y) else { continue }
+                sum += abs(Double(p.redComponent - q.redComponent)) + abs(Double(p.greenComponent - q.greenComponent))
+                    + abs(Double(p.blueComponent - q.blueComponent))
+            }
+        }
+        return sum
+    }
+
     @Test func secureInputsRingTurnsAndItsGlowPulses() throws {
         let probe = SwiftUIMotionProbe(SecureInputOverlay(), size: CGSize(width: 120, height: 60))
         defer { probe.close() }
-        probe.settle(0.3)
-        let a = probe.snapshot()
+        probe.settle(1.5)
+        let a = probe.snapshot(), again = probe.snapshot()
         probe.settle(0.5)
         let b = probe.snapshot()
-        var differing = 0
-        for y in stride(from: 0, to: a.pixelsHigh, by: 2) {
-            for x in stride(from: 0, to: a.pixelsWide, by: 2) where a.colorAt(x: x, y: y) != b.colorAt(x: x, y: y) { differing += 1 }
-        }
-        #expect(differing > 10, "secure input's ring stood still")
+        let noise = difference(a, again), moved = difference(a, b)
+        #expect(moved > noise * 3 + 5, "secure input's ring stood still (\(moved) against noise \(noise))")
     }
 }
