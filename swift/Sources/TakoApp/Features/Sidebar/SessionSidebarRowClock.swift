@@ -34,6 +34,7 @@ struct SidebarRowClock<Content: View>: View {
                 // can fall inside a glint or a shake: a part at rest is drawn
                 // at the time it is now, past its motion.
                 let now = LivingAnimationState.shared.effectiveDate(moving ? context.date : Date())
+                let _ = LivingAnimationState.shared.onFrame?("row")
                 content(now, LivingAnimationState.shared.elapsedInState(for: key, state: state, now: now))
             }
         }

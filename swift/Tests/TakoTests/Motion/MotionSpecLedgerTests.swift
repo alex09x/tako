@@ -140,7 +140,8 @@ struct MotionSpecLedgerTests {
              "aWorkingCardsCometRunsClockwiseRoundItOnceIn2200ms", "aDoneCardPopsItsRingAndGlintsOnce",
              "aCardInProgressRunsTheCometAndFillsItsArc"),
         item(sessions, "4b: 30 кадров в секунду в покое, каждый кадр на время «один раз»",
-             "aCardPlayingAOneOffTakesEveryFrameUntilItRests", "lastingMotionsRestAndReducedMotionStayAtThirty"),
+             "theOverviewTakesThirtyFramesASecondAtRest", "aOneOffTakesEveryFrameUntilItRestsThenThirtyAgain",
+             "aPausedOverviewTakesNoFrames", "aCardPlayingAOneOffTakesEveryFrameUntilItRests"),
         // 5a, plain sessions: the live ring.
         item(sessions, "5a: кольцо Ember 100 % пока идут данные, 45 % в тишине",
              "aQuietLiveRingIsEmberAtFortyFivePercentOfAFlowingOne", "theRingIsDimEmberInSilenceAndFullWhileOutputArrives"),

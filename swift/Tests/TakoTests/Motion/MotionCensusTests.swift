@@ -34,6 +34,11 @@ struct MotionCensusTests {
     static let pinned = "pinned"
     /// A timer that moves nothing on screen: it polls, saves or expires.
     static let notMotion = "not motion"
+    /// When a dialog shows or focus moves: a delay in what Tako does, not
+    /// motion the design draws.
+    static let delayedAction = "delayed action"
+    /// The phone's app: no test target builds it.
+    static let phoneApp = "phone app"
 
     static let census: [Site] = [
         // The status layer: rings and surfaces of pills and live sidebar rows (Sessions UI 1b, 4a, 5a).
@@ -138,7 +143,7 @@ struct MotionCensusTests {
         Site(file: "TakoTerminalView+Gestures.swift", code: "func kineticDisplayLinkFired(_ link: CADisplayLink) {",
              what: "iOS kinetic scrolling's step", coveredBy: ["testKineticDecelerationVelocityThreshold", "testKineticDecelerationMaxVelocityClamping"]),
         Site(file: "SshFormScreen.swift", code: "withAnimation(.easeOut(duration: 0.2)) {",
-             what: "the iOS SSH form reveals its fields in 0.2 s", coveredBy: [pinned]),
+             what: "the iOS SSH form scrolls to the passphrase in 0.2 s once a key is pasted", coveredBy: [phoneApp]),
         // Timers: what moves on a timer, and what a timer does instead.
         Site(file: "TakoTerminalNSView+Drawing.swift",
              code: "blinkTimer = Timer.scheduledTimer(withTimeInterval: CursorBlink.phaseDuration(lit: blinkStateVisible),",
@@ -184,11 +189,114 @@ struct MotionCensusTests {
              what: "an undo expires (⌘Z within 5 s)", coveredBy: [notMotion]),
         Site(file: "TabGroupCloseCoordinator.swift", code: "debounceTimer = Timer.scheduledTimer(",
              what: "debounces closing a tab group", coveredBy: [notMotion]),
+        // Delays and clocks: asyncAfter, Task.sleep, the display's clock, implicit animation, spinners.
+        Site(file: "HostKeyPrompt.swift", code: #"try await Task.sleep(nanoseconds: 1_000_000_000)"#,
+             what: "the phone: a new host key's buttons arm after 1 s", coveredBy: [phoneApp]),
+        Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {"#,
+             what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
+        Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {"#,
+             what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
+        Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + stepPause) {"#,
+             what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
+        Site(file: "SessionListScreen.swift", code: #"try? await Task.sleep(nanoseconds: 750_000_000)"#,
+             what: "the phone: the host-key prompt waits 750 ms after connect", coveredBy: [phoneApp]),
+        Site(file: "SessionListScreen.swift", code: #"ProgressView().tint(Brand.ember)"#,
+             what: "the phone: a spinner while connecting", coveredBy: [phoneApp]),
+        Site(file: "TerminalScreen.swift", code: #"ProgressView().controlSize(.small).tint(Brand.claw)"#,
+             what: "the phone: a spinner while connecting", coveredBy: [phoneApp]),
+        Site(file: "AppDelegate+Events.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {"#,
+             what: "turns the global event tap on again", coveredBy: [notMotion]),
+        Site(file: "AppDelegate+Launch.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {"#,
+             what: "checks for updates after launch", coveredBy: [notMotion]),
+        Site(file: "SessionSidebarRowView.swift", code: #"try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))"#,
+             what: "a row rests once its one-off has played", coveredBy: ["aFailedRowTakesFramesWhileItShakesAndNoneOnceItRests"]),
+        Site(file: "ConfigurationErrorsNotice.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay) {"#,
+             what: "the config-errors dialog waits for a window", coveredBy: [delayedAction]),
+        Site(file: "AppUpdater+Install.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {"#,
+             what: "quits for the installer", coveredBy: [notMotion]),
+        Site(file: "TerminalController+Creation.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {"#,
+             what: "relabels native tabs, which Tako never shows", coveredBy: [notMotion]),
+        Site(file: "TerminalRestorable.swift", code: #"DispatchQueue.main.asyncAfter(deadline: after) {"#,
+             what: "restores focus once a view has its window", coveredBy: [delayedAction]),
+        Site(file: "TerminalWindow.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in"#,
+             what: "relabels native tabs, which Tako never shows", coveredBy: [notMotion]),
+        Site(file: "TitlebarTabsVenturaTerminalWindow.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { controller.relabelTabs() }"#,
+             what: "relabels native tabs, which Tako never shows", coveredBy: [notMotion]),
+        Site(file: "TransparentTitlebarTerminalWindow.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in"#,
+             what: "the transparent titlebar takes its colours again", coveredBy: [delayedAction]),
+        Site(file: "WhatsNewNotice.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {"#,
+             what: "What's New shows 0.8 s after launch", coveredBy: [delayedAction]),
+        Site(file: "SessionEnding.swift", code: #"try? await Task.sleep(nanoseconds: 300_000_000)"#,
+             what: "the leftovers dialog waits for a window", coveredBy: [delayedAction]),
+        Site(file: "CrossSessionSearch.swift", code: #"try? await Task.sleep(for: debounce)"#,
+             what: "search across tabs waits for typing to pause", coveredBy: [delayedAction]),
+        Site(file: "CrossSessionSearch.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in"#,
+             what: "the chosen hit is selected once focus settles", coveredBy: [delayedAction]),
+        Site(file: "InputOwnershipHeaderView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in"#,
+             what: "Copied! shows 1.5 s", coveredBy: ["copiedShowsForAMomentAndAnotherCopyKeepsItsOwn"]),
+        Site(file: "AgentHooksTool.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 1.5 : 0.4)) {"#,
+             what: "the agent hooks offer shows after launch", coveredBy: [delayedAction]),
+        Site(file: "CommandLineTool.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {"#,
+             what: "the takoctl offer shows after launch", coveredBy: [delayedAction]),
+        Site(file: "ControlLayout.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { check() }"#,
+             what: "a takoctl layout question polls for its answer", coveredBy: [notMotion]),
+        Site(file: "ControlLayout.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { check() }"#,
+             what: "a takoctl layout question polls for its answer", coveredBy: [notMotion]),
+        Site(file: "QuickTerminalController+Animation.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {"#,
+             what: "the quick terminal takes focus after it slides", coveredBy: [delayedAction]),
+        Site(file: "QuickTerminalController+Animation.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(25)) {"#,
+             what: "the quick terminal takes focus after it slides", coveredBy: [delayedAction]),
+        Site(file: "Tako+App.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {"#,
+             what: "the app's self-test starts", coveredBy: [notMotion]),
+        Site(file: "Tako+AppSelfTest.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {"#,
+             what: "the app's self-test reads the screen", coveredBy: [notMotion]),
+        Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in"#,
+             what: "a system notification is taken back after its time", coveredBy: [delayedAction]),
+        Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + debounceDelay, execute: item)"#,
+             what: "search hits are recounted after output pauses", coveredBy: [delayedAction]),
+        Site(file: "Tako+SurfaceModels.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: move)"#,
+             what: "focus moves to another pane after a delay", coveredBy: [delayedAction]),
+        Site(file: "Tako+SurfaceWatchdog.swift", code: #"DispatchQueue.main.asyncAfter("#,
+             what: "a synchronized frame left open is drawn after 200 ms", coveredBy: ["aSynchronizedFrameLeftOpenIsDrawnAfter200ms", "aSynchronizedFrameClosedInTimeIsNotForced"]),
+        Site(file: "Tako+TabBarInput.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandBadgeDelay, execute: work)"#,
+             what: "the tab numbers show after ⌘ is held 150 ms", coveredBy: ["theTabNumbersShowAfterCommandIsHeld150ms"]),
+        Site(file: "Tako+TabBarMotion.swift", code: #"func displayedChipWidth(target: CGFloat, now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {"#,
+             what: "the strip's chip slide and pill shake run on the display's clock", coveredBy: ["theChipSlidesToItsNewWidthInsteadOfJumping", "aPillThatFailsShakesOnTheDesignsCurveFromThatMoment", "motionThatRanItsTimeEndsUndrawn"]),
+        Site(file: "Tako+TabBarMotion.swift", code: #"now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {"#,
+             what: "the strip's chip slide and pill shake run on the display's clock", coveredBy: ["theChipSlidesToItsNewWidthInsteadOfJumping", "aPillThatFailsShakesOnTheDesignsCurveFromThatMoment", "motionThatRanItsTimeEndsUndrawn"]),
+        Site(file: "Tako+TabBarMotion.swift", code: #"func expireMotion(now: CFTimeInterval = CACurrentMediaTime()) -> Bool {"#,
+             what: "the strip's chip slide and pill shake run on the display's clock", coveredBy: ["theChipSlidesToItsNewWidthInsteadOfJumping", "aPillThatFailsShakesOnTheDesignsCurveFromThatMoment", "motionThatRanItsTimeEndsUndrawn"]),
+        Site(file: "Tako+TabBarWorkspace.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in"#,
+             what: "the new-workspace dialog and a workspace switch wait for a menu to close", coveredBy: [delayedAction]),
+        Site(file: "Tako+TabBarWorkspace.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {"#,
+             what: "the new-workspace dialog and a workspace switch wait for a menu to close", coveredBy: [delayedAction]),
+        Site(file: "Tako+TabStatusLayer.swift", code: #"CATransaction.setDisableActions(!allowFrameAnimation)"#,
+             what: "a dragged pill's layer follows it smoothly", coveredBy: ["aDraggedPillsLayerFollowsItSmoothlyAndOtherwiseAtOnce"]),
+        Site(file: "Tako+TabStatusLayer.swift", code: #"let pausedTime = convertTime(CACurrentMediaTime(), from: nil)"#,
+             what: "a paused layer holds its frame and goes on where it stopped", coveredBy: ["aPausedPillShowsTheSameFrameWhateverTheClock", "aHiddenSurfaceStandsStillAndGoesOnWhereItStopped"]),
+        Site(file: "Tako+TabStatusLayer.swift", code: #"beginTime = convertTime(CACurrentMediaTime(), from: nil) - pausedTime"#,
+             what: "a paused layer holds its frame and goes on where it stopped", coveredBy: ["aPausedPillShowsTheSameFrameWhateverTheClock", "aHiddenSurfaceStandsStillAndGoesOnWhereItStopped"]),
+        Site(file: "Tako+TabStripTransitions.swift", code: #"static var clock: () -> CFTimeInterval = { CACurrentMediaTime() }"#,
+             what: "the strip's transitions run on the display's clock", coveredBy: ["aNewTabGrowsFromNothingIn160msAndItsContentComesAfter", "theDropSpringOvershootsAFewPercentAndSettles"]),
+        Site(file: "MetalTerminalRenderer.swift", code: #"var customShaderClock: () -> CFTimeInterval = { CACurrentMediaTime() }"#,
+             what: "a custom shader animates on its own clock", coveredBy: ["testAlwaysAnimatesUnfocused", "testTrueAnimatesOnlyWhileFocused", "testNoShaderOrABrokenOneNeverAnimates"]),
+        Site(file: "TakoTerminalNSView+Drawing.swift", code: #"DispatchQueue.main.asyncAfter("#,
+             what: "the grid takes the last size once a resize settles", coveredBy: ["testTheGridTakesTheLastSizeOnceTheResizeSettles"]),
+        Site(file: "TakoTerminalNSView+Presentation.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)"#,
+             what: "a capped surface lets its next frame through after its throttle", coveredBy: ["testAPresentationThrottleLetsTheNextFrameThroughAfterItsDelay"]),
+        Site(file: "TakoTerminalView+Display.swift", code: #"DispatchQueue.main.asyncAfter("#,
+             what: "the phone's grid takes the last size once a resize settles (scripts/check.sh ios)", coveredBy: ["testThePhonesGridTakesTheLastSizeOnceTheResizeSettles"]),
+        Site(file: "PaneOverviewView.swift", code: #"try? await Task.sleep(nanoseconds: UInt64(oneOff * 1_000_000_000))"#,
+             what: "the Overview goes back to 30 a second once a one-off has played", coveredBy: ["aOneOffTakesEveryFrameUntilItRestsThenThirtyAgain"]),
+        Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {"#,
+             what: "the Overview's first frame is still, its clock starts 0.05 s later", coveredBy: ["theOverviewTakesThirtyFramesASecondAtRest"]),
+        Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { isSearchFieldFocused = true }"#,
+             what: "the Overview's search field takes focus", coveredBy: [delayedAction]),
     ]
 
     /// What the census counts as an animation.
     static let animationAPI = try! NSRegularExpression(pattern:
-        #"Timer\.scheduledTimer\(|Timer\(timeInterval|Timer\.publish\(|withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
+        #"asyncAfter\(|Task\.sleep|CACurrentMediaTime\(\)|setDisableActions\(!|ProgressView\(|Timer\.scheduledTimer\(|Timer\(timeInterval|Timer\.publish\(|withAnimation\(|\.animation\(|\.transition\(|NSAnimationContext\.runAnimationGroup|\.animator\(\)|CABasicAnimation\(|CAKeyframeAnimation\(|CAAnimationGroup\(|CASpringAnimation\(|CATransition\(|TimelineView\(|repeatForever|displayLink\(|CADisplayLink|phaseAnimator|keyframeAnimator|matchedGeometryEffect"#)
 
     /// The package's `swift` directory, from this file's place in it.
     static var swiftRoot: URL {
@@ -236,7 +344,8 @@ struct MotionCensusTests {
     @Test func everyTestTheCensusNamesExists() {
         let tests = Self.swiftFiles(under: "Tests").map { (try? String(contentsOf: $0, encoding: .utf8)) ?? "" }.joined()
         for site in Self.census {
-            for name in site.coveredBy where name != Self.pinned && name != Self.notMotion && !tests.contains("func \(name)(") {
+            for name in site.coveredBy where ![Self.pinned, Self.notMotion, Self.delayedAction, Self.phoneApp].contains(name)
+                && !tests.contains("func \(name)(") {
                 Issue.record("\(site.file): \(site.what) names a test that is gone: \(name)")
             }
         }

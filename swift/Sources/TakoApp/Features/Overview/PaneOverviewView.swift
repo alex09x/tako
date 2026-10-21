@@ -97,6 +97,7 @@ struct PaneOverviewView: View {
                 TimelineView(.animation(minimumInterval: Self.minimumFrameInterval(oneOffRemaining: oneOff),
                                         paused: animState.isTimelinePaused || !isPresented || !isInitialFrameComplete)) { context in
                     let now = nowOverride ?? animState.effectiveDate(isInitialFrameComplete ? context.date : Self.staticDate)
+                    let _ = animState.onFrame?("overview")
                     VStack(spacing: 0) {
                         headerView
                         Divider().background(Color(nsColor: T.hairline))

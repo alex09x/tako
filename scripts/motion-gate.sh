@@ -44,6 +44,8 @@ SUITES=(
     CursorBlinkCadenceTests
     CursorBlinkerTests          # the phone's blink, run on the Mac
     testPresentationPauseTransitionsAreIdempotent  # the terminal's display link
+    ResizeSettleTests           # the grid follows a resize once it settles; the presentation throttle
+    CustomShaderConfigAndAnimationTests  # a custom shader's own clock
     UnfocusedDrawsAnOutline     # the unfocused cursor's 1 pt outline
     TabBar                      # the strip's states and drawing (pill, classic, controller)
     QuickTerminalPositionTests  # where the quick terminal slides from and to

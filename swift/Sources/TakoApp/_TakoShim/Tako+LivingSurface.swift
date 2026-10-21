@@ -169,6 +169,10 @@ final class LivingAnimationState: ObservableObject {
         Tako.TabBarController.refreshAll()
     }
 
+    /// Told of each frame a SwiftUI clock draws ("overview", "row"): how a
+    /// test counts the frames a second the Overview and the sidebar take.
+    var onFrame: ((String) -> Void)?
+
     /// Optional deterministic time override (in seconds) for frame-by-frame visual verification.
     var fixedTimeOverride: TimeInterval?
 

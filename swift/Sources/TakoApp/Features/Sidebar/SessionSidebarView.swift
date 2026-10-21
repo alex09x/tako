@@ -92,7 +92,13 @@ struct SessionSidebarView: View {
 
     /// No animation frames anywhere: the window is hidden or the app away.
     private var motionPaused: Bool {
-        animState.isTimelinePaused || !isPresented
+        Self.motionPaused(timelinePaused: animState.isTimelinePaused, isPresented: isPresented)
+    }
+
+    /// The rows and the header ring stand still while nobody can see Tako,
+    /// Reduce Motion is on, or the sidebar is closed.
+    static func motionPaused(timelinePaused: Bool, isPresented: Bool) -> Bool {
+        timelinePaused || !isPresented
     }
 
     // The list is built once per change, not per animation frame: only the
