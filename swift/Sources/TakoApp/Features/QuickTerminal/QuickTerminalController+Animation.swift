@@ -148,15 +148,13 @@ extension QuickTerminalController {
 
         // Run the animation that moves our window into the proper place and makes
         // it visible.
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = derivedConfig.quickTerminalAnimationDuration
-            context.timingFunction = .init(name: .easeIn)
+        Self.slide(over: derivedConfig.quickTerminalAnimationDuration, {
             position.setFinal(
                 in: window.animator(),
                 on: screen,
                 terminalSize: derivedConfig.quickTerminalSize,
                 closedFrame: closedFrame)
-        }, completionHandler: {
+        }, completion: {
             // There is a very minor delay here so waiting at least an event loop tick
             // keeps us safe from the view not being on the window.
             DispatchQueue.main.async {
@@ -270,15 +268,13 @@ extension QuickTerminalController {
         // and lets us render off screen.
         window.level = .popUpMenu
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = derivedConfig.quickTerminalAnimationDuration
-            context.timingFunction = .init(name: .easeIn)
+        Self.slide(over: derivedConfig.quickTerminalAnimationDuration, {
             position.setInitial(
                 in: window.animator(),
                 on: screen,
                 terminalSize: derivedConfig.quickTerminalSize,
                 closedFrame: window.frame)
-        }, completionHandler: {
+        }, completion: {
             // This causes the window to be removed from the screen list and macOS
             // handles what should be focused next.
             window.orderOut(self)
@@ -289,4 +285,13 @@ extension QuickTerminalController {
         })
     }
 
+    /// The quick terminal slides in and out on its configured time, ease-in:
+    /// what `move` does to a window's animator is animated.
+    static func slide(over duration: TimeInterval, _ move: () -> Void, completion: @escaping () -> Void) {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = duration
+            context.timingFunction = .init(name: .easeIn)
+            move()
+        }, completionHandler: completion)
+    }
 }

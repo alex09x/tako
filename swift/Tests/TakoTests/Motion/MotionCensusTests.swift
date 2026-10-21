@@ -135,13 +135,13 @@ struct MotionCensusTests {
              what: "the iOS terminal's display link (scripts/check.sh ios)",
              coveredBy: ["testThemeChangeRebuildsRendererStateWithoutDuplicates", "testCPUFallbackWhenMetalIsUnavailable"]),
         Site(file: "TakoTerminalView.swift", code: "var kineticDisplayLink: CADisplayLink?",
-             what: "iOS kinetic scrolling", coveredBy: ["testKineticDecelerationMonotonicDecay"]),
+             what: "iOS kinetic scrolling", coveredBy: ["testKineticDecelerationMonotonicDecay", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "TakoTerminalView+Gestures.swift", code: "let link = CADisplayLink(target: proxy, selector: #selector(KineticDisplayLinkProxy.tick(_:)))",
-             what: "iOS kinetic scrolling decelerates", coveredBy: ["testKineticDecelerationMonotonicDecay", "testKineticDecelerationTerminalStopAndZeroResidual"]),
+             what: "iOS kinetic scrolling decelerates", coveredBy: ["testKineticDecelerationMonotonicDecay", "testKineticDecelerationTerminalStopAndZeroResidual", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "TakoTerminalView+Gestures.swift", code: "@objc func tick(_ link: CADisplayLink) {",
-             what: "iOS kinetic scrolling's frames", coveredBy: ["testKineticDecelerationCancellation"]),
+             what: "iOS kinetic scrolling's frames", coveredBy: ["testKineticDecelerationCancellation", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "TakoTerminalView+Gestures.swift", code: "func kineticDisplayLinkFired(_ link: CADisplayLink) {",
-             what: "iOS kinetic scrolling's step", coveredBy: ["testKineticDecelerationVelocityThreshold", "testKineticDecelerationMaxVelocityClamping"]),
+             what: "iOS kinetic scrolling's step", coveredBy: ["testKineticDecelerationVelocityThreshold", "testKineticDecelerationMaxVelocityClamping", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "SshFormScreen.swift", code: "withAnimation(.easeOut(duration: 0.2)) {",
              what: "the iOS SSH form scrolls to the passphrase in 0.2 s once a key is pasted", coveredBy: [phoneApp]),
         // Timers: what moves on a timer, and what a timer does instead.
@@ -382,12 +382,32 @@ struct MotionCensusTests {
         #expect(edge.opacity == 0 && abs(dimming.duration - 0.12) < 0.001)
     }
 
-    @Test func theQuickTerminalSlidesOnItsConfiguredTimeEaseIn() throws {
+    @Test func theQuickTerminalSlidesOnItsConfiguredTimeEaseIn() async throws {
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderFrontRegardless()
+        defer { window.close() }
+        var done = false
+        let duration = 0.3
+        QuickTerminalController.slide(over: duration, {
+            window.animator().setFrame(NSRect(x: 100, y: 400, width: 300, height: 200), display: true)
+        }, completion: { done = true })
+        let began = Date()
+        var frames: [(t: TimeInterval, y: CGFloat)] = []
+        while Date().timeIntervalSince(began) < duration + 0.2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            frames.append((Date().timeIntervalSince(began), window.frame.minY))
+        }
+        #expect(frames.contains { $0.y > 110 && $0.y < 390 }, "the window jumped instead of sliding")
+        let half = frames.filter { abs($0.t - duration / 2) < 0.03 }.map { ($0.y - 100) / 300 }
+        #expect(half.allSatisfy { $0 < 0.5 }, "ease-in starts slow: at half its time it was \(half) of the way")
+        #expect(frames.filter { $0.t > duration + 0.08 }.allSatisfy { abs($0.y - 400) < 1 }, "it had not arrived after its time")
+        #expect(done)
+        // Both ways the app slides on the configured time, 0.2 s by default.
         let file = Self.swiftFiles(under: "Sources").first { $0.lastPathComponent == "QuickTerminalController+Animation.swift" }
         let source = try String(contentsOf: try #require(file), encoding: .utf8)
-        // Both ways, in and out: the configured duration (0.2 s by default) on ease-in.
-        #expect(source.components(separatedBy: "context.duration = derivedConfig.quickTerminalAnimationDuration").count - 1 == 2)
-        #expect(source.components(separatedBy: "context.timingFunction = .init(name: .easeIn)").count - 1 == 2)
+        #expect(source.components(separatedBy: "Self.slide(over: derivedConfig.quickTerminalAnimationDuration").count - 1 == 2)
         #expect(try TemporaryConfig("").quickTerminalAnimationDuration == 0.2)
     }
 }
