@@ -149,7 +149,7 @@ struct MotionCensusTests {
              what: "iOS kinetic scrolling's frames", coveredBy: ["testKineticDecelerationCancellation", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
         Site(file: "TakoTerminalView+Gestures.swift", code: "func kineticDisplayLinkFired(_ link: CADisplayLink) {",
              what: "iOS kinetic scrolling's step", coveredBy: ["testKineticDecelerationVelocityThreshold", "testKineticDecelerationMaxVelocityClamping", "testAFlickCoastsOnTheDisplayLinkAndItSleepsOnceStill"]),
-        Site(file: "SshFormScreen.swift", code: "withAnimation(.easeOut(duration: 0.2)) {",
+        Site(file: "SshFormScreen.swift", code: "withAnimation(Self.revealAnimation) {",
              what: "the iOS SSH form scrolls to the passphrase in 0.2 s once a key is pasted", coveredBy: [phoneApp]),
         // Timers: what moves on a timer, and what a timer does instead.
         Site(file: "TakoTerminalNSView+Drawing.swift",
@@ -206,7 +206,7 @@ struct MotionCensusTests {
              what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
         Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + stepPause) {"#,
              what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
-        Site(file: "SessionListScreen.swift", code: #"try? await Task.sleep(nanoseconds: 750_000_000)"#,
+        Site(file: "SessionListScreen.swift", code: #"try? await Task.sleep(nanoseconds: Self.hostKeyMountDelay)"#,
              what: "the phone: the host-key prompt waits 750 ms after connect", coveredBy: [phoneApp]),
         Site(file: "SessionListScreen.swift", code: #"ProgressView().tint(Brand.ember)"#,
              what: "the phone: a spinner while connecting", coveredBy: [phoneApp]),

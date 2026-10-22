@@ -76,13 +76,13 @@ struct SshFormScreen: View {
             .scrollDismissesKeyboard(.interactively)
             .scrollPosition(id: $formScrollPosition, anchor: .center)
             .onChange(of: draft.privateKeyPEM.isEmpty) { wasEmpty, isEmpty in
-                guard wasEmpty && !isEmpty else { return }
+                guard Self.revealsPassphrase(wasEmpty: wasEmpty, isEmpty: isEmpty) else { return }
                 // The passphrase row is inserted below the focused key
                 // editor. SwiftUI keeps that editor visible, which used to
                 // leave the new row entirely behind the keyboard and submit
                 // inset. Reveal the credential as soon as a key appears.
                 DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(Self.revealAnimation) {
                         formScrollPosition = .passphrase
                     }
                 }
@@ -287,4 +287,12 @@ struct SshFormScreen: View {
                 .foregroundColor(Brand.dim)
         }
     }
+}
+
+extension SshFormScreen {
+    /// The passphrase row slides into view when a key appears, not when it goes.
+    static func revealsPassphrase(wasEmpty: Bool, isEmpty: Bool) -> Bool { wasEmpty && !isEmpty }
+
+    /// How the form scrolls to the passphrase.
+    static let revealAnimation = Animation.easeOut(duration: 0.2)
 }

@@ -97,3 +97,18 @@ final class ConnectingSpinnerTests: XCTestCase {
         XCTAssertEqual(SessionListScreen.hostKeyMountDelay, 750_000_000)
     }
 }
+
+/// The form scrolls to the passphrase when a key is pasted.
+@MainActor
+final class PassphraseRevealTests: XCTestCase {
+    func testAPastedKeyRevealsThePassphraseAndAClearedOneDoesNot() {
+        XCTAssertTrue(SshFormScreen.revealsPassphrase(wasEmpty: true, isEmpty: false))
+        XCTAssertFalse(SshFormScreen.revealsPassphrase(wasEmpty: false, isEmpty: true))
+        XCTAssertFalse(SshFormScreen.revealsPassphrase(wasEmpty: false, isEmpty: false))
+        XCTAssertFalse(SshFormScreen.revealsPassphrase(wasEmpty: true, isEmpty: true))
+    }
+
+    func testTheRevealEasesOutOverTwoTenthsOfASecond() {
+        XCTAssertEqual(SshFormScreen.revealAnimation, Animation.easeOut(duration: 0.2))
+    }
+}
