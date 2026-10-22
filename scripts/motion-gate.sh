@@ -25,6 +25,7 @@ cd "$(dirname "$0")/.."
 SUITES=(
     Motion                      # the spec matrices, frames, cards, priorities, cost, tab strip
     DoneGlintRenderingTests
+    ControlCloseWithdrawTests
     OverviewFrameRateTests
     LivingSurface               # 1b spec rules and the frame export
     LiveSpec5aTests
