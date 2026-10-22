@@ -34,7 +34,7 @@ public struct InputOwnershipHeaderView: View {
 
     private var showsBar: Bool {
         let state = inputState
-        return state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil) || state.automationMayType
+        return state.isLocked || state.previousAgent != nil || (!effectiveSecure && state.lastActivityMark != nil)
     }
 
     /// 0 no bar, 1 a bar, 2 a locked bar.
@@ -93,25 +93,6 @@ public struct InputOwnershipHeaderView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .help("Hand input control back to \(prevAgent) and lock keyboard typing")
-                }
-
-                // Pane-level "automation may type here" switch (G1)
-                if state.automationMayType {
-                    Button {
-                        store.setAutomationMayType(paneId: paneId, allowed: false)
-                        restorePaneFocus()
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 9))
-                            Text("Auto-type on")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .controlSize(.mini)
-                    .help("Automation may type into this pane. Click to revoke.")
                 }
 
                 // Automated activity attribution mark & popover (Track G2)

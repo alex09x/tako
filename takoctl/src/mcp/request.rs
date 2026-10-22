@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use serde_json::{Map, Value};
 
-use crate::mcp::capabilities::Capabilities;
 use crate::socket;
 
 pub fn parse_timeout_seconds(s: &str) -> Result<f64, String> {
@@ -49,9 +48,7 @@ pub fn determine_timeout(name: &str, args: &Value) -> Duration {
 }
 
 pub fn build_socket_request(
-    capabilities: &Capabilities,
     surface_id: Option<&str>,
-    token: Option<&str>,
     name: &str,
     args: &Value,
 ) -> Result<Value, String> {
@@ -341,28 +338,9 @@ pub fn build_socket_request(
     req.insert("cmd".into(), Value::String(cmd.into()));
     req.insert("args".into(), Value::Object(req_args));
     req.insert("client".into(), Value::String("mcp".into()));
-    let mut scopes_list: Vec<&'static str> = capabilities
-        .scopes()
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
-    scopes_list.sort();
-    req.insert(
-        "scopes".into(),
-        Value::Array(scopes_list.into_iter().map(|s| Value::String(s.into())).collect()),
-    );
     if let Some(s) = surface_id {
         req.insert("from".into(), Value::String(s.to_string()));
     }
-    let resolved_token = token.map(String::from).or_else(|| {
-        std::env::var("TAKO_CONTROL_TOKEN")
-            .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
-            .ok()
-    });
-    if let Some(tok) = resolved_token {
-        req.insert("token".into(), Value::String(tok));
-    }
-
     Ok(Value::Object(req))
 }
 

@@ -16,10 +16,6 @@ pub fn parse(
     cmd: &str,
     args: &mut Map<String, Value>,
     positional: &mut Vec<String>,
-    client: Option<&str>,
-    scopes: Option<&[String]>,
-    description: Option<&str>,
-    token: Option<&str>,
 ) -> Result<Option<()>, String> {
     match cmd {
         "triggers" => {
@@ -277,73 +273,6 @@ pub fn parse(
                         args.insert("action".into(), Value::String("get".into()));
                         args.insert("target".into(), Value::String(target_candidate.to_string()));
                     }
-                }
-            }
-            if !positional.is_empty() {
-                return Err(format!("unexpected argument {}", positional[0]));
-            }
-            Ok(Some(()))
-        }
-        "grant" => {
-            let sub = if positional.is_empty() {
-                "list".to_string()
-            } else {
-                positional.remove(0)
-            };
-            match sub.as_str() {
-                "request" => {
-                    args.insert("subcommand".into(), Value::String(sub));
-                    if let Some(c) = client {
-                        args.insert("client".into(), Value::String(c.to_string()));
-                    } else if !positional.is_empty() {
-                        args.insert("client".into(), Value::String(positional.remove(0)));
-                    } else {
-                        args.insert("client".into(), Value::String("takoctl".into()));
-                    }
-                    if let Some(sc) = scopes {
-                        args.insert(
-                            "scopes".into(),
-                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
-                        );
-                    }
-                    if let Some(d) = description {
-                        args.insert("description".into(), Value::String(d.to_string()));
-                    }
-                }
-                "create" => {
-                    args.insert("subcommand".into(), Value::String(sub));
-                    if let Some(c) = client {
-                        args.insert("client".into(), Value::String(c.to_string()));
-                    } else if !positional.is_empty() {
-                        args.insert("client".into(), Value::String(positional.remove(0)));
-                    }
-                    if let Some(sc) = scopes {
-                        args.insert(
-                            "scopes".into(),
-                            Value::Array(sc.iter().map(|s| Value::String(s.clone())).collect()),
-                        );
-                    }
-                    if let Some(d) = description {
-                        args.insert("description".into(), Value::String(d.to_string()));
-                    }
-                }
-                "revoke" => {
-                    args.insert("subcommand".into(), Value::String(sub));
-                    if !positional.is_empty() {
-                        args.insert("token".into(), Value::String(positional.remove(0)));
-                    } else if let Some(t) = token {
-                        args.insert("token".into(), Value::String(t.to_string()));
-                    } else {
-                        return Err("grant revoke requires a token to revoke".into());
-                    }
-                }
-                "list" => {
-                    args.insert("subcommand".into(), Value::String(sub));
-                }
-                other => {
-                    return Err(format!(
-                        "unknown grant action \"{other}\"; use request, create, revoke, or list"
-                    ));
                 }
             }
             if !positional.is_empty() {

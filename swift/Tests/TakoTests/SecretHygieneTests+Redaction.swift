@@ -130,8 +130,6 @@ extension SecretHygieneTests {
 
         let pane = ControlCommands.Pane(surface: surface, windowID: "win-1", tabID: "tab-1", stableTabID: "tab-1")
         let all = [pane]
-        let allScopes = Set(ControlScope.allCases)
-
         let req = ControlRequest(
             cmd: "resume",
             args: [
@@ -140,8 +138,7 @@ extension SecretHygieneTests {
                 "argv": .array([.string("sh"), .string("-c"), .string("echo secret")]),
                 "cwd": .string("/tmp"),
             ],
-            from: nil,
-            scopes: allScopes
+            from: nil
         )
 
         let res = ControlCommands.handle(req, all: all)

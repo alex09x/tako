@@ -58,10 +58,6 @@ public struct PaneInputState: Equatable, Sendable {
     public var lastCleared: InputActivityRecord?
     /// The client identity that created this pane, if created by an automated client (Track G1).
     public var creatorClient: String?
-    /// Whether external automation is permitted to type into this pane ("automation may type here" switch, Track G1).
-    public var automationMayType: Bool
-    /// One-time permission to allow automation to type once into this pane without turning the permanent switch on (Track G1).
-    public var oneTimeConfirmation: Bool
     /// Whether secure input is active for this pane (Track G2/G5).
     public var isSecureInput: Bool
 
@@ -73,8 +69,6 @@ public struct PaneInputState: Equatable, Sendable {
         activityLog: [InputActivityRecord] = [],
         lastCleared: InputActivityRecord? = nil,
         creatorClient: String? = nil,
-        automationMayType: Bool = false,
-        oneTimeConfirmation: Bool = false,
         isSecureInput: Bool = false
     ) {
         self.isLocked = isLocked
@@ -84,8 +78,6 @@ public struct PaneInputState: Equatable, Sendable {
         self.activityLog = activityLog
         self.lastCleared = lastCleared
         self.creatorClient = creatorClient
-        self.automationMayType = automationMayType
-        self.oneTimeConfirmation = oneTimeConfirmation
         self.isSecureInput = isSecureInput
     }
 }
@@ -151,30 +143,6 @@ public final class InputOwnershipStore: ObservableObject {
         var current = state(for: paneId)
         current.creatorClient = client
         states[paneId] = current
-    }
-
-    public func automationMayType(for paneId: UUID) -> Bool {
-        states[paneId]?.automationMayType ?? false
-    }
-
-    public func setAutomationMayType(paneId: UUID, allowed: Bool) {
-        var current = state(for: paneId)
-        current.automationMayType = allowed
-        states[paneId] = current
-    }
-
-    public func confirmOneTimeTyping(paneId: UUID) {
-        var current = state(for: paneId)
-        current.oneTimeConfirmation = true
-        states[paneId] = current
-    }
-
-    /// Whether a client may type into this pane (Track G1).
-    /// Panes created by a client are writable by it; typing into a pane it did not create
-    /// needs the "automation may type here" switch or a one-time confirmation.
-    public func canClientType(paneId: UUID, client: String?) -> Bool {
-        // Tako is a local app and the agent already has the user's shell: no per-pane approval.
-        true
     }
 
     /// Locks a pane against accidental keyboard typing (for watching agent execution).

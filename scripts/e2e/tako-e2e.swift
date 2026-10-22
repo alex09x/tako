@@ -3182,78 +3182,6 @@ let scenarios: [Scenario] = [
             throw Failure("recovered focused pane does not match original pane")
         }
     }),
-    ("ctl-grants", "creates scoped authorization grants via takoctl, verifies active grant list with scopes, revokes grant token, tests negative controls, and recovers unassisted keyboard focus", { d in
-        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
-        try d.run("tty > \(d.path("grant_init_tty"))")
-        let initTty = try d.file("grant_init_tty").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let originalPaneId = try d.focusedPaneId() else {
-            throw Failure("failed to discover focused pane ID for grants journey")
-        }
-
-        // 0. Negative control: attempting to create a grant when attenuating away approval scope fails
-        let unauthRes = try? d.exec("\(ctl) grant create --client rogue --scope read,input --json")
-        guard unauthRes == nil || unauthRes?.contains("missingScope") == true || unauthRes?.contains("\"ok\":false") == true || unauthRes?.contains("\"ok\": false") == true else {
-            throw Failure("negative control failed: grant create without approval scope unexpectedly succeeded: \(String(describing: unauthRes))")
-        }
-
-        // 1. Create a scoped authorization grant with approval authority
-        let clientName = "e2e-grant-client"
-        let createJson = try d.exec("\(ctl) grant create --client \(clientName) --scope approval,read,input --desc 'e2e scoped test grant' --json")
-        guard createJson.contains(clientName),
-              createJson.contains("read"),
-              createJson.contains("input") else {
-            throw Failure("grant create failed or missing expected client/scopes: \(createJson)")
-        }
-
-        // Extract grant token
-        guard let tokenMatch = createJson.range(of: "\"token\"\\s*:\\s*\"([^\"]+)\"", options: .regularExpression) else {
-            throw Failure("failed to extract token from grant create response: \(createJson)")
-        }
-        let tokenSubstr = String(createJson[tokenMatch])
-        let grantToken = tokenSubstr.components(separatedBy: "\"")[3]
-
-        // 2. List grants and assert presence
-        let listJson = try d.exec("\(ctl) grant list --json")
-        guard listJson.contains(clientName), listJson.contains("read"), listJson.contains("input") else {
-            throw Failure("grant list does not contain newly created grant: \(listJson)")
-        }
-
-        // 3. Revoke the grant token
-        let revokeJson = try d.exec("\(ctl) grant revoke \(grantToken) --json")
-        guard revokeJson.contains("\"revoked\":true") || revokeJson.contains("\"revoked\": true") else {
-            throw Failure("grant revoke failed to report revoked: true: \(revokeJson)")
-        }
-
-        // 4. Negative control: revoking already revoked token returns revoked: false
-        let reRevokeJson = try d.exec("\(ctl) grant revoke \(grantToken) --json")
-        guard reRevokeJson.contains("\"revoked\":false") || reRevokeJson.contains("\"revoked\": false") else {
-            throw Failure("negative control failed: re-revoking token unexpectedly returned true: \(reRevokeJson)")
-        }
-
-        // 5. Negative control: grant list no longer contains the revoked token
-        let listAfterRevoke = try d.exec("\(ctl) grant list --json")
-        guard !listAfterRevoke.contains(grantToken) else {
-            throw Failure("grant list still contains revoked token: \(listAfterRevoke)")
-        }
-
-        // 6. Unassisted keyboard recovery
-        d.activate()
-        usleep(300_000)
-        let witnessFile = d.path("grant_kb_witness.txt")
-        try d.run("tty > \(d.path("grant_rec_tty")) && echo 'grants_kb_ok' > '\(witnessFile)'")
-        guard d.wait(for: {
-            (try? String(contentsOf: URL(fileURLWithPath: witnessFile), encoding: .utf8)) == "grants_kb_ok\n"
-        }, timeout: 6) else {
-            throw Failure("terminal keyboard input was not functional after grant commands")
-        }
-        let recoveredTty = try d.file("grant_rec_tty").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard recoveredTty == initTty else {
-            throw Failure("recovered TTY (\(recoveredTty)) does not match initial TTY (\(initTty))")
-        }
-        guard let finalFocused = try d.focusedPaneId(), finalFocused == originalPaneId else {
-            throw Failure("recovered focused pane does not match original pane")
-        }
-    }),
     ("ctl-tasks", "creates git worktree task on repo, queries task list and status via takoctl, finishes task, and recovers unassisted keyboard focus", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         try d.run("tty > \(d.path("task_init_tty"))")
@@ -4173,7 +4101,7 @@ let scenarios: [Scenario] = [
     ("attention-jump", "Next Attention and Go Back to Previous Pane navigate unseen attention across tabs and recover unassisted focus", { d in
         try runAttentionJumpScenario(d)
     }),
-    ("input-takeover-confirm", "InputOwnershipHeaderView Take Over, Hand Back, confirm-automation one-time grant, and Auto-type revoke work end-to-end", { d in
+    ("input-takeover-confirm", "InputOwnershipHeaderView Take Over, Hand Back, and unlock work end-to-end", { d in
         try runInputTakeoverConfirmScenario(d)
     }),
 ]

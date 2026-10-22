@@ -828,14 +828,11 @@ deciding whether to schedule an implementation or reject it.
 
 ### [x] G1. Control socket capabilities
 
-- Scopes per client: read (tree, text, last, find, events, screenshot), input (send, type, key),
-  layout (tab-new, split, close, focus), signal (notify, status, progress, ask), overlay.
-- Pane-level switch: "automation may type here". Panes created by a client are writable by it;
-  typing into a pane it did not create needs that switch or a one-time confirmation.
+- Withdrawn: scopes, grants, tokens and the "automation may type here" switch were removed. Tako is
+  local and the agent already has the user's shell, so they only blocked the user (#56).
 - The existing `remote-control` modes stay as the outer switch.
 
-Done when an agent restricted to signal scope can set status and notify but cannot read, stream
-events, take screenshots or type, and every refusal names the missing scope.
+Done when any client on the socket can drive any pane, and the activity log (G2) still says who.
 
 ### [x] G2. Activity log
 

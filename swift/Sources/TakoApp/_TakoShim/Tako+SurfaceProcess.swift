@@ -107,7 +107,6 @@ extension Tako.SurfaceView {
             // Empty when this copy serves no socket: never one inherited
             // from, or owned by, another copy of Tako.
             environment["TAKO_SOCKET"] = ControlCommands.socketPath
-            environment["TAKO_CONTROL_TOKEN"] = ControlGrantStore.shared.primaryToken
             var initialCols = cols
             var initialRows = rows
             let candidateSize = bounds.size.width > 0 && bounds.size.height > 0

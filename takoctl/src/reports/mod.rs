@@ -132,7 +132,6 @@ pub fn render(cmd: &str, result: &Value) -> String {
         "review" => review_report(result),
         "history" => history_report(result),
         "triggers" => triggers_report(result),
-        "grant" => grant_report(result),
         "activity" => activity_report(result),
         _ => format!("{result}\n"),
     }

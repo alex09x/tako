@@ -35,104 +35,6 @@ struct ControlServerTests {
         #expect((bad["error"] as? [String: Any])?["code"] as? String == "invalid")
     }
 
-    @Test func grantRequestBootstrapFlow() async throws {
-        let dir = try privateDir()
-        let path = dir + "/c.sock"
-        ControlCommands.apply(mode: .on)
-        defer {
-            ControlCommands.apply(mode: .off)
-            ControlCommands.userGrantPrompt = nil
-        }
-
-        let server = ControlServer(path: path) { request, reply in
-            ControlCommands.handle(request, all: [], reply: reply)
-        }
-        #expect(try server.start() == .listening)
-        defer { server.stop() }
-
-        // 1. User denies grant request
-        var capturedOrigin = ""
-        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
-            #expect(client == "agent-denied")
-            capturedOrigin = origin
-            reply(false)
-        }
-        let deniedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"agent-denied"}}"#)
-        #expect(deniedAns["ok"] as? Bool == false)
-        let deniedErr = deniedAns["error"] as? [String: Any]
-        #expect(deniedErr?["code"] as? String == "disabled")
-        #expect(!capturedOrigin.isEmpty, "Origin must be resolved by server")
-
-        // 2. Reject spoofed client with newlines or spaces
-        let badClientAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"fake client\nspoof"}}"#)
-        #expect(badClientAns["ok"] as? Bool == false)
-        #expect((badClientAns["error"] as? [String: Any])?["code"] as? String == "invalid")
-
-        // 3. Reject spoofed multiline description
-        let badDescAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","description":"line1\nfake prompt buttons"}}"#)
-        #expect(badDescAns["ok"] as? Bool == false)
-        #expect((badDescAns["error"] as? [String: Any])?["code"] as? String == "invalid")
-
-        // 4. Requesting only approval scope is rejected without prompt
-        var promptCalled = false
-        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
-            promptCalled = true
-            reply(true)
-        }
-        let rogueAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"rogue","scopes":"approval"}}"#)
-        #expect(rogueAns["ok"] as? Bool == false)
-        #expect(!promptCalled, "Should not prompt user when only approval scope is requested")
-
-        // 5. User approves grant request for read,layout (stripping any requested approval)
-        var promptedScopes: Set<ControlScope> = []
-        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
-            #expect(client == "cli-client")
-            #expect(!scopes.contains(.approval), "Approval scope must be stripped from grant request")
-            #expect(desc == "Test CLI")
-            #expect(origin.contains("External process") || origin.contains("PID"))
-            promptedScopes = scopes
-            reply(true)
-        }
-        let approvedAns = try await ask(path, #"{"cmd":"grant","args":{"subcommand":"request","client":"cli-client","scopes":"read,layout,approval","description":"Test CLI"}}"#)
-        #expect(approvedAns["ok"] as? Bool == true)
-        let res = try #require(approvedAns["result"] as? [String: Any])
-        let token = try #require(res["token"] as? String)
-        #expect(res["client"] as? String == "cli-client")
-        let issuedScopes = (res["scopes"] as? [String]) ?? []
-        #expect(issuedScopes == ["layout", "read"])
-        #expect(promptedScopes == [.layout, .read])
-
-        // 6. Token can be used for granted scopes
-        let authedReq = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(token)"}"#.utf8))
-        let authed = ControlCommands.authorize(authedReq)
-        #expect(authed.client == "cli-client")
-        #expect(authed.scopes == [.read, .layout])
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authed) }
-
-        // 7. Token cannot be used for ungranted scopes (e.g. signal)
-        let ungrantedReq = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(token)"}"#.utf8))
-        let ungrantedAuth = ControlCommands.authorize(ungrantedReq)
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: ungrantedAuth) } // approvals are gone
-
-        // 8. Token cannot be used to manage grants (approval scope required)
-        let grantCreateReq = try ControlRequest.parse(Data(#"{"cmd":"grant","token":"\#(token)","args":{"subcommand":"create","client":"sub"}}"#.utf8))
-        let grantCreateAuth = ControlCommands.authorize(grantCreateReq)
-        #expect(throws: Never.self) { try ControlCommands.checkScope(for: grantCreateAuth) } // approvals are gone
-
-        // 9. Grant request with caller-asserted `from` pane does NOT replace verified process origin
-        var promptOrigin = ""
-        ControlCommands.userGrantPrompt = { client, scopes, desc, origin, reply in
-            promptOrigin = origin
-            reply(true)
-        }
-        let fakePaneId = UUID().uuidString.lowercased()
-        let fromAns = try await ask(path, #"{"cmd":"grant","from":"\#(fakePaneId)","args":{"subcommand":"request","client":"caller-with-from","scopes":"read"}}"#)
-        #expect(fromAns["ok"] as? Bool == true)
-        #expect(promptOrigin.contains("PID") || promptOrigin.contains("Process"))
-        #expect(promptOrigin.contains("Claimed Pane Context (unverified"))
-        #expect(promptOrigin.contains(fakePaneId))
-    }
-
     @Test func aSecondCopyLeavesTheSocketToTheFirst() async throws {
         let dir = try privateDir()
         let path = dir + "/c.sock"
@@ -181,16 +83,14 @@ struct ControlServerTests {
 
     @Test func activityLogRecordsActionsAndSupportsExport() throws {
         let paneId = UUID()
-        let grant = ControlGrantStore.shared.issueGrant(client: "test-agent", scopes: [.read, .input, .layout, .signal])
-
         // 1. Direct record via ControlCommands.recordActivity
-        let reqSend = try ControlRequest.parse(Data(#"{"cmd":"send","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        let reqSend = try ControlRequest.parse(Data(#"{"cmd":"send","client":"test-agent"}"#.utf8))
         ControlCommands.recordActivity(for: reqSend, on: paneId, action: "send")
 
-        let reqSplit = try ControlRequest.parse(Data(#"{"cmd":"split","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        let reqSplit = try ControlRequest.parse(Data(#"{"cmd":"split","client":"test-agent"}"#.utf8))
         ControlCommands.recordActivity(for: reqSplit, on: paneId, action: "split")
 
-        let reqNotify = try ControlRequest.parse(Data(#"{"cmd":"notify","token":"\#(grant.token)","client":"test-agent"}"#.utf8))
+        let reqNotify = try ControlRequest.parse(Data(#"{"cmd":"notify","client":"test-agent"}"#.utf8))
         ControlCommands.recordActivity(for: reqNotify, on: paneId, action: "notify")
 
         // 2. Query activity log via InputOwnershipStore
@@ -259,21 +159,19 @@ struct ControlServerTests {
         let idA = surfA.id.uuidString.lowercased()
         let idB = surfB.id.uuidString.lowercased()
 
-        let grant = ControlGrantStore.shared.issueGrant(client: "test-agent", scopes: [.signal, .read])
-        let token = grant.token
 
         // 1. Initially both panes are idle
-        let initA = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
-        let initB = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        let initA = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"get"}}"#)
+        let initB = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idB)","action":"get"}}"#)
         #expect((initA["result"] as? [String: Any])?["status"] as? String == "idle")
         #expect((initB["result"] as? [String: Any])?["status"] as? String == "idle")
 
         // 2. Client sends status set 'working' targeting Pane A over UNIX socket
-        let setWorking = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"set","status":"working","text":"Thinking..."}}"#)
+        let setWorking = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"set","status":"working","text":"Thinking..."}}"#)
         #expect(setWorking["ok"] as? Bool == true)
 
         // Verify Pane A reflects working over socket
-        let getAWorking = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let getAWorking = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"get"}}"#)
         let resA = getAWorking["result"] as? [String: Any]
         #expect(resA?["status"] as? String == "working")
         #expect(resA?["text"] as? String == "Thinking...")
@@ -282,7 +180,7 @@ struct ControlServerTests {
         #expect(tabA?["color"] as? String == "orange")
 
         // Nonrecipient Pane B MUST remain completely untouched (idle/dim/gray)
-        let getBStillIdle = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        let getBStillIdle = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idB)","action":"get"}}"#)
         let resB = getBStillIdle["result"] as? [String: Any]
         #expect(resB?["status"] as? String == "idle")
         #expect(resB?["text"] == nil)
@@ -292,21 +190,21 @@ struct ControlServerTests {
 
         // 3. Client sets Pane A to 'done' over socket
         surfA.crab.isFocused = false
-        let setDone = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"set","status":"done","text":"Turn complete"}}"#)
+        let setDone = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"set","status":"done","text":"Turn complete"}}"#)
         #expect(setDone["ok"] as? Bool == true)
 
-        let getADone = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let getADone = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"get"}}"#)
         let tabADone = (getADone["result"] as? [String: Any])?["tab"] as? [String: Any]
         #expect(tabADone?["dot"] as? String == "ok")
         #expect(tabADone?["color"] as? String == "green")
 
         // Nonrecipient Pane B is STILL untouched
-        let getBStillIdle2 = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idB)","action":"get"}}"#)
+        let getBStillIdle2 = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idB)","action":"get"}}"#)
         #expect((getBStillIdle2["result"] as? [String: Any])?["status"] as? String == "idle")
 
         // 4. Focus acknowledgement: focusing Pane A resets done to idle
         surfA.crab.focused()
-        let getAFocused = try await ask(path, #"{"cmd":"status","token":"\#(token)","args":{"target":"\#(idA)","action":"get"}}"#)
+        let getAFocused = try await ask(path, #"{"cmd":"status","args":{"target":"\#(idA)","action":"get"}}"#)
         let tabAFocused = (getAFocused["result"] as? [String: Any])?["tab"] as? [String: Any]
         #expect(tabAFocused?["dot"] as? String == "dim")
         #expect(tabAFocused?["color"] as? String == "gray")

@@ -43,48 +43,6 @@ pub fn activity_report(result: &Value) -> String {
 }
 
 
-pub fn grant_report(result: &Value) -> String {
-    if let Some(token) = result["token"].as_str() {
-        let client = result["client"].as_str().unwrap_or("unknown");
-        let scopes = result["scopes"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_default();
-        return format!("token: {token}\nclient: {client}\nscopes: [{scopes}]\n");
-    }
-    if let Some(revoked) = result["revoked"].as_bool() {
-        return format!("revoked: {revoked}\n");
-    }
-    if let Some(grants) = result["grants"].as_array() {
-        if grants.is_empty() {
-            return "no grants\n".into();
-        }
-        let mut out = String::new();
-        for g in grants {
-            let id = g["id"].as_str().unwrap_or("");
-            let client = g["client"].as_str().unwrap_or("");
-            let scopes = g["scopes"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
-            out += &format!("{id} {client} [{scopes}]\n");
-        }
-        return out;
-    }
-    format!("{result}\n")
-}
-
-
 pub fn triggers_report(result: &Value) -> String {
     if let Some(id) = result.get("id").and_then(Value::as_str) {
         let pattern = result["pattern"].as_str().unwrap_or("");
@@ -171,19 +129,6 @@ pub fn input_report(result: &Value) -> String {
         return out;
     }
 
-    if let Some(allowed) = result.get("automation_may_type").and_then(Value::as_bool) {
-        let id = result["id"].as_str().unwrap_or("");
-        if result.get("owner").is_none() {
-            let state = if allowed { "allowed" } else { "disallowed" };
-            return format!("Automation typing {state} for pane {id}.\n");
-        }
-    }
-
-    if result.get("confirmed") == Some(&Value::Bool(true)) {
-        let id = result["id"].as_str().unwrap_or("");
-        return format!("One-time automation typing confirmed for pane {id}.\n");
-    }
-
     let mut out = String::new();
     let locked = result["locked"].as_bool().unwrap_or(false);
     let owner = result["owner"].as_str().unwrap_or("human");
@@ -195,9 +140,6 @@ pub fn input_report(result: &Value) -> String {
         out += &format!("Pane {id}: unlocked (owner: {owner})\n");
     }
 
-    if let Some(allowed) = result["automation_may_type"].as_bool() {
-        out += &format!("Automation may type: {}\n", if allowed { "yes" } else { "no" });
-    }
     if let Some(creator) = result["creator_client"].as_str() {
         out += &format!("Creator client: {creator}\n");
     }

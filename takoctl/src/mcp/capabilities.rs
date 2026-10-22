@@ -19,7 +19,6 @@ pub enum CapabilityScope {
     Layout,
     Signal,
     Overlay,
-    Approval,
 }
 
 impl CapabilityScope {
@@ -30,7 +29,6 @@ impl CapabilityScope {
             Self::Layout => "layout",
             Self::Signal => "signal",
             Self::Overlay => "overlay",
-            Self::Approval => "approval",
         }
     }
 
@@ -41,9 +39,8 @@ impl CapabilityScope {
             "layout" => Ok(Self::Layout),
             "signal" => Ok(Self::Signal),
             "overlay" => Ok(Self::Overlay),
-            "approval" => Ok(Self::Approval),
             other => Err(format!(
-                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay, approval"
+                "unknown capability scope '{other}'; valid scopes are read, input, layout, signal, overlay"
             )),
         }
     }
@@ -55,10 +52,6 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    pub fn scopes(&self) -> &HashSet<CapabilityScope> {
-        &self.scopes
-    }
-
     pub fn all() -> Self {
         let mut scopes = HashSet::new();
         scopes.insert(CapabilityScope::Read);

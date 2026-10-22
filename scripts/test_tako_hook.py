@@ -20,16 +20,9 @@ spec.loader.exec_module(hook)
 
 class DispatcherTests(unittest.TestCase):
     def setUp(self):
-        self.managed = patch.object(hook, "resolve", return_value=None)
-        self.managed.start()
-        self.addCleanup(self.managed.stop)
-        self.bootstrap = patch.object(hook, "bootstrap", return_value=None)
-        self.bootstrap.start()
-        self.addCleanup(self.bootstrap.stop)
         self.env = {
             "TAKO_SOCKET": "/tmp/isolated socket/c.sock",
             "TAKO_SURFACE_ID": "11111111-1111-4111-8111-111111111111",
-            "TAKO_CONTROL_TOKEN": "fixture-restricted-grant",
             "PATH": "/fixture/bin",
         }
 
@@ -38,7 +31,7 @@ class DispatcherTests(unittest.TestCase):
 
     @patch.object(hook.subprocess, "run")
     @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
-    def test_preserves_restricted_grant_socket_spaces_and_target(self, which, run):
+    def test_preserves_socket_spaces_and_target(self, which, run):
         run.return_value = SimpleNamespace(returncode=0)
         self.dispatch()
         self.assertEqual(run.call_count, 2)
@@ -57,7 +50,7 @@ class DispatcherTests(unittest.TestCase):
 
     @patch.object(hook.subprocess, "run")
     def test_incomplete_context_never_falls_back(self, run):
-        for key in ("TAKO_SOCKET", "TAKO_SURFACE_ID", "TAKO_CONTROL_TOKEN"):
+        for key in ("TAKO_SOCKET", "TAKO_SURFACE_ID"):
             env = self.env.copy()
             del env[key]
             self.dispatch(env=env)
@@ -79,8 +72,7 @@ class DispatcherTests(unittest.TestCase):
         run.return_value = SimpleNamespace(returncode=0)
         self.dispatch("done")
         other = {**self.env, "TAKO_SOCKET": "/tmp/second/c.sock",
-                 "TAKO_SURFACE_ID": "22222222-2222-4222-8222-222222222222",
-                 "TAKO_CONTROL_TOKEN": "fixture-second-grant"}
+                 "TAKO_SURFACE_ID": "22222222-2222-4222-8222-222222222222"}
         self.dispatch("done", other)
         for call, expected in zip(run.call_args_list, [self.env, self.env, other, other]):
             self.assertEqual(call.kwargs["env"], expected)
@@ -92,10 +84,6 @@ class DispatcherTests(unittest.TestCase):
         run.side_effect = subprocess.TimeoutExpired("fixture", 5)
         self.dispatch()
         self.assertEqual(run.call_count, 1)
-
-    def test_empty_primary_token_does_not_select_alternate(self):
-        env = {**self.env, "TAKO_CONTROL_TOKEN": "", "TAKO_AUTH_TOKEN": "fixture-other"}
-        self.assertIsNone(hook.recipient(env))
 
     def test_notification_is_explicitly_targeted(self):
         for args in hook.commands("approval", self.env["TAKO_SURFACE_ID"]):

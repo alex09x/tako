@@ -20,43 +20,10 @@ pub fn request(opts: &Options, from: Option<String>) -> Value {
     if let Some(from) = from.filter(|f| !f.is_empty()) {
         req["from"] = Value::String(from);
     }
-    if let Some(token) = &opts.token {
-        req["token"] = Value::String(token.clone());
-    }
     if let Some(client) = &opts.client {
         req["client"] = Value::String(client.clone());
     }
-    if let Some(scopes) = &opts.scopes {
-        let issuing_grant = opts.cmd == "grant" && matches!(opts.args.get("subcommand").and_then(Value::as_str), Some("create" | "request"));
-        if issuing_grant {
-            req["args"]["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
-        } else {
-        req["scopes"] = Value::Array(scopes.iter().map(|s| Value::String(s.clone())).collect());
-        }
-    }
     req
-}
-
-/// Resolves an authentication token for the target control socket: explicit CLI token,
-/// target token file ({path}.token), or ambient environment variables.
-pub fn resolve_token(opts: &Options, path: &str) -> Option<String> {
-    if let Some(tok) = &opts.token {
-        return Some(tok.clone());
-    }
-    let token_from_file = std::fs::read_to_string(format!("{path}.token"))
-        .ok()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty());
-    let token_from_env = std::env::var("TAKO_CONTROL_TOKEN")
-        .or_else(|_| std::env::var("TAKO_AUTH_TOKEN"))
-        .ok()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty());
-    if opts.bundle_id_explicit || opts.socket.is_some() {
-        token_from_file.or(token_from_env)
-    } else {
-        token_from_env.or(token_from_file)
-    }
 }
 
 pub fn answer_limit(opts: &Options) -> std::time::Duration {
@@ -142,19 +109,11 @@ pub fn dispatch_and_validate(
     args: &mut serde_json::Map<String, Value>,
     positional: &mut Vec<String>,
     dashdash: bool,
-    client: Option<&str>,
-    scopes: Option<&[String]>,
-    description: Option<&str>,
-    token: Option<&str>,
 ) -> Result<(), String> {
     let handled = super::control::parse(
         cmd,
         args,
         positional,
-        client,
-        scopes,
-        description,
-        token,
     )?
     .or(super::session::parse(cmd, args, positional)?)
     .or(super::layout::parse(cmd, args, positional)?)

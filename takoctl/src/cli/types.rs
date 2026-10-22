@@ -19,6 +19,4 @@ pub struct Options {
     pub bundle_id: String,
     pub bundle_id_explicit: bool,
     pub client: Option<String>,
-    pub token: Option<String>,
-    pub scopes: Option<Vec<String>>,
 }

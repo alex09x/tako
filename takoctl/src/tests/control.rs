@@ -157,165 +157,24 @@ fn triggers_cli_and_report_tests() {
 }
 
 #[test]
-fn control_capabilities_and_scopes_parsing() {
-    // 1. Parsing --scope and --client
+fn control_client_name_and_input_report() {
     let opts1 = parse(&[
         "text".into(),
-        "--scope".into(),
-        "read,input".into(),
         "--client".into(),
         "agent-alpha".into(),
     ])
     .unwrap();
     assert_eq!(opts1.client.as_deref(), Some("agent-alpha"));
-    assert_eq!(opts1.scopes, Some(vec!["read".into(), "input".into()]));
     let req1 = request(&opts1, None);
     assert_eq!(req1["client"], "agent-alpha");
-    assert_eq!(req1["scopes"], json!(["read", "input"]));
-
-    // 2. Parsing --scopes with spaces and uppercase
-    let opts2 = parse(&[
-        "notify".into(),
-        "hello".into(),
-        "--scopes".into(),
-        "Signal, Layout".into(),
-    ])
-    .unwrap();
-    assert_eq!(opts2.scopes, Some(vec!["signal".into(), "layout".into()]));
-
-    // 3. Unknown scope fails
-    let bad_scope = parse(&[
-        "notify".into(),
-        "hello".into(),
-        "--scope".into(),
-        "invalid_scope".into(),
-    ]);
-    assert!(bad_scope.is_err());
-    assert!(bad_scope
-        .unwrap_err()
-        .contains("unknown capability scope 'invalid_scope'"));
-
-    // 4. Input automation subcommands
-    let allow_opts = parse(&["input".into(), "allow-automation".into()]).unwrap();
-    assert_eq!(allow_opts.args["subcommand"], "allow-automation");
-
-    let disallow_opts = parse(&["input".into(), "disallow-automation".into()]).unwrap();
-    assert_eq!(disallow_opts.args["subcommand"], "disallow-automation");
-
-    let confirm_opts = parse(&["input".into(), "confirm-automation".into()]).unwrap();
-    assert_eq!(confirm_opts.args["subcommand"], "confirm-automation");
-
-    // 5. Input report formatting
-    let allow_report = input_report(&json!({
-        "id": "pane-1",
-        "automation_may_type": true
-    }));
-    assert_eq!(allow_report, "Automation typing allowed for pane pane-1.\n");
-
-    let disallow_report = input_report(&json!({
-        "id": "pane-1",
-        "automation_may_type": false
-    }));
-    assert_eq!(
-        disallow_report,
-        "Automation typing disallowed for pane pane-1.\n"
-    );
-
-    let confirm_report = input_report(&json!({
-        "id": "pane-1",
-        "confirmed": true
-    }));
-    assert_eq!(
-        confirm_report,
-        "One-time automation typing confirmed for pane pane-1.\n"
-    );
+    assert!(req1.get("scopes").is_none() && req1.get("token").is_none());
 
     let status_report = input_report(&json!({
         "id": "pane-1",
         "locked": false,
         "owner": "human",
-        "automation_may_type": true,
         "creator_client": "agent-alpha"
     }));
     assert!(status_report.contains("Pane pane-1: unlocked (owner: human)"));
-    assert!(status_report.contains("Automation may type: yes"));
     assert!(status_report.contains("Creator client: agent-alpha"));
-
-    // 6. Token parsing and grant subcommands
-    let token_opts = parse(&[
-        "text".into(),
-        "--token".into(),
-        "secret_token_123".into(),
-        "--scope".into(),
-        "read,approval".into(),
-    ])
-    .unwrap();
-    assert_eq!(token_opts.token.as_deref(), Some("secret_token_123"));
-    assert_eq!(token_opts.scopes, Some(vec!["read".into(), "approval".into()]));
-    let req_tok = request(&token_opts, None);
-    assert_eq!(req_tok["token"], "secret_token_123");
-    assert_eq!(req_tok["scopes"], json!(["read", "approval"]));
-
-    let grant_create = parse(&[
-        "grant".into(),
-        "create".into(),
-        "--client".into(),
-        "subagent-2".into(),
-        "--scope".into(),
-        "signal".into(),
-    ])
-    .unwrap();
-    assert_eq!(grant_create.args["subcommand"], "create");
-    assert_eq!(grant_create.args["client"], "subagent-2");
-    assert_eq!(grant_create.args["scopes"], json!(["signal"]));
-
-    let grant_revoke = parse(&[
-        "grant".into(),
-        "revoke".into(),
-        "token_to_remove".into(),
-    ])
-    .unwrap();
-    assert_eq!(grant_revoke.args["subcommand"], "revoke");
-    assert_eq!(grant_revoke.args["token"], "token_to_remove");
-
-    let grant_list = parse(&["grant".into(), "list".into()]).unwrap();
-    assert_eq!(grant_list.args["subcommand"], "list");
-
-    let rep_create = grant_report(&json!({
-        "token": "tok_xyz",
-        "client": "subagent-2",
-        "scopes": ["signal"]
-    }));
-    assert!(rep_create.contains("token: tok_xyz"));
-    assert!(rep_create.contains("client: subagent-2"));
-    assert!(rep_create.contains("scopes: [signal]"));
-
-    let grant_req_default = parse(&["grant".into(), "request".into()]).unwrap();
-    assert_eq!(grant_req_default.args["subcommand"], "request");
-    assert_eq!(grant_req_default.args["client"], "takoctl");
-
-    let grant_req_custom = parse(&[
-        "grant".into(),
-        "request".into(),
-        "--client".into(),
-        "my-agent".into(),
-        "--scope".into(),
-        "read,layout".into(),
-        "--desc".into(),
-        "Test description".into(),
-    ])
-    .unwrap();
-    assert_eq!(grant_req_custom.args["subcommand"], "request");
-    assert_eq!(grant_req_custom.args["client"], "my-agent");
-    assert_eq!(grant_req_custom.args["scopes"], json!(["read", "layout"]));
-    assert_eq!(grant_req_custom.args["description"], "Test description");
-
-    let rep_req = grant_report(&json!({
-        "token": "tok_bootstrap",
-        "client": "my-agent",
-        "scopes": ["layout", "read"]
-    }));
-    assert!(rep_req.contains("token: tok_bootstrap"));
-    assert!(rep_req.contains("client: my-agent"));
-    assert!(rep_req.contains("scopes: [layout, read]"));
 }

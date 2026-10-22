@@ -115,9 +115,7 @@ import Testing
         #expect(CommandHistoryStore.shared.search(query: secret).isEmpty)
         #expect(CommandHistoryStore.shared.allEntries().filter { $0.command.contains(secret) }.isEmpty)
 
-        let allScopes = Set(ControlScope.allCases)
-
-        let histReq = ControlRequest(cmd: "history", args: ["query": .string(secret)], from: nil, scopes: allScopes)
+        let histReq = ControlRequest(cmd: "history", args: ["query": .string(secret)], from: nil)
         let histRes = ControlCommands.handle(histReq, all: all)
         guard case .ok(let histDict) = histRes, let entries = histDict["entries"]?.array else {
             Issue.record("history command failed: \(histRes)")
@@ -128,7 +126,7 @@ import Testing
         // ==========================================
         // Place 4: takoctl text
         // ==========================================
-        let textReq = ControlRequest(cmd: "text", args: ["target": .string(surface.id.uuidString)], from: nil, scopes: allScopes)
+        let textReq = ControlRequest(cmd: "text", args: ["target": .string(surface.id.uuidString)], from: nil)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             ControlCommands.handle(textReq, all: all) { res in
                 guard case .failure(let err) = res else {
@@ -145,7 +143,7 @@ import Testing
         // ==========================================
         // Place 5: last (takoctl last)
         // ==========================================
-        let lastReq = ControlRequest(cmd: "last", args: ["target": .string(surface.id.uuidString)], from: nil, scopes: allScopes)
+        let lastReq = ControlRequest(cmd: "last", args: ["target": .string(surface.id.uuidString)], from: nil)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             ControlCommands.handle(lastReq, all: all) { res in
                 guard case .failure(let err) = res else {
@@ -162,7 +160,7 @@ import Testing
         // ==========================================
         // Place 6: Screenshots
         // ==========================================
-        let screenshotReq = ControlRequest(cmd: "screenshot", args: ["target": .string(surface.id.uuidString)], from: nil, scopes: allScopes)
+        let screenshotReq = ControlRequest(cmd: "screenshot", args: ["target": .string(surface.id.uuidString)], from: nil)
         let screenshotRes = ControlCommands.handle(screenshotReq, all: all)
         guard case .failure(let errScreenshot) = screenshotRes else {
             Issue.record("screenshot command should be disabled for secure-input pane")
@@ -183,8 +181,7 @@ import Testing
             cmd: "send",
             args: ["target": .string(surface.id.uuidString), "text": .string("hello")],
             from: nil,
-            client: "companion-device",
-            scopes: allScopes
+            client: "companion-device"
         )
         let companionRes = ControlCommands.handle(companionReq, all: all)
         guard case .failure(let errCompanion) = companionRes else {

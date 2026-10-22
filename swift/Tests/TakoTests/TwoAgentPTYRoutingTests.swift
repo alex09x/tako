@@ -110,12 +110,8 @@ struct TwoAgentPTYRoutingTests {
         let idA = surfA.id.uuidString.lowercased()
         let idB = surfB.id.uuidString.lowercased()
 
-        let grant = ControlGrantStore.shared.issueGrant(client: "test-agent-suite", scopes: [.signal, .read])
-        let token = grant.token
-
         var baseEnv = ProcessInfo.processInfo.environment
         baseEnv["TAKO_SOCKET"] = socketPath
-        baseEnv["TAKO_CONTROL_TOKEN"] = token
         let existingPath = baseEnv["PATH"] ?? "/usr/bin:/bin"
         baseEnv["PATH"] = "\(takoctlDir):\(existingPath)"
 
