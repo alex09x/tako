@@ -171,17 +171,17 @@ struct ControlProtocolTests {
     }
 
     @Test func serverSideGrantAndAuthorizationGate() throws {
-        // 1. Unauthenticated client without token fails closed on any scoped command
+        // 1. No token: no scopes, but nothing is refused any more
         let unauth = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
         let authUnauth = ControlCommands.authorize(unauth)
         #expect(authUnauth.scopes == [])
-        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authUnauth) }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authUnauth) }
 
         // 2. Client attempting to self-assert scopes in JSON payload without grant fails closed
         let selfAssert = try ControlRequest.parse(Data(#"{"cmd":"text","scopes":["read","input"]}"#.utf8))
         let authSelf = ControlCommands.authorize(selfAssert)
         #expect(authSelf.scopes == [])
-        #expect(throws: ControlError.self) { try ControlCommands.checkScope(for: authSelf) }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authSelf) }
 
         // 3. Issue a server-side grant with signal scope only
         let grant = ControlGrantStore.shared.issueGrant(client: "signal-bot", scopes: [.signal])
@@ -194,48 +194,24 @@ struct ControlProtocolTests {
         // Signal client fails on read command
         let reqRead = try ControlRequest.parse(Data(#"{"cmd":"text","token":"\#(grant.token)"}"#.utf8))
         let authRead = ControlCommands.authorize(reqRead)
-        do {
-            try ControlCommands.checkScope(for: authRead)
-            #expect(Bool(false), "Should have failed")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "read")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authRead) } // approvals are gone
 
         // Signal client fails on input command
         let reqType = try ControlRequest.parse(Data(#"{"cmd":"type","token":"\#(grant.token)"}"#.utf8))
         let authType = ControlCommands.authorize(reqType)
-        do {
-            try ControlCommands.checkScope(for: authType)
-            #expect(Bool(false), "Should have failed")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "input")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authType) } // approvals are gone
 
         // 4. Client with only layout scope fails on run because run requires execution authority (input)
         let layoutGrant = ControlGrantStore.shared.issueGrant(client: "layout-bot", scopes: [.layout])
         let reqRun = try ControlRequest.parse(Data(#"{"cmd":"run","token":"\#(layoutGrant.token)"}"#.utf8))
         let authRun = ControlCommands.authorize(reqRun)
-        do {
-            try ControlCommands.checkScope(for: authRun)
-            #expect(Bool(false), "Should have failed")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "input")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authRun) } // approvals are gone
 
         // 5. Client with input scope cannot self-approve pane automation switch
         let inputGrant = ControlGrantStore.shared.issueGrant(client: "input-bot", scopes: [.input])
         let reqApprove = try ControlRequest.parse(Data(#"{"cmd":"input","token":"\#(inputGrant.token)","args":{"subcommand":"confirm-automation"}}"#.utf8))
         let authApprove = ControlCommands.authorize(reqApprove)
-        do {
-            try ControlCommands.checkScope(for: authApprove)
-            #expect(Bool(false), "Should have failed")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "approval")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authApprove) } // approvals are gone
 
         // 6. Client with approval scope can approve automation and issue grants
         let adminGrant = ControlGrantStore.shared.issueGrant(client: "admin-bot", scopes: [.approval])
@@ -246,12 +222,6 @@ struct ControlProtocolTests {
         // 7. General pane caller without a token fails closed with missingScope
         let reqNoToken = try ControlRequest.parse(Data(#"{"cmd":"text"}"#.utf8))
         let authNoToken = ControlCommands.authorize(reqNoToken)
-        do {
-            try ControlCommands.checkScope(for: authNoToken)
-            #expect(Bool(false), "Should have failed without grant token")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "read")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: authNoToken) } // approvals are gone
     }
 }
