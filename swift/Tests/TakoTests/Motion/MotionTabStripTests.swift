@@ -375,6 +375,18 @@ struct MotionTabStripTests {
         #expect(defaults.integer(forKey: "NSInitialToolTipDelay") == MotionSpec.tooltipDelayMs)
     }
 
+    @Test func launchingTheAppRegistersTheTooltipDelay() {
+        // Take the delay out of the registration domain first, so only the launch can put it back.
+        let key = "NSInitialToolTipDelay"
+        var registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        registered.removeValue(forKey: key)
+        UserDefaults.standard.setVolatileDomain(registered, forName: UserDefaults.registrationDomain)
+        defer { Tako.registerTooltipDelay() }
+        #expect(UserDefaults.standard.object(forKey: key) == nil, "the delay is already set: the test sees nothing")
+        AppDelegate().applicationWillFinishLaunching(Notification(name: NSApplication.willFinishLaunchingNotification))
+        #expect(UserDefaults.standard.integer(forKey: key) == MotionSpec.tooltipDelayMs, "the app launched without the tooltip delay")
+    }
+
     @Test func aStripNobodySeesTakesEveryChangeAtOnce() throws {
         let scene = StripScene(tabs: 2)
         let new = makeWindow(title: "new")

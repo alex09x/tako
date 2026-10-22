@@ -298,6 +298,8 @@ MUTANTS = [
      "if let dialog { dialog.withdraw() } else if let sheet", "if dialog != nil { } else if let sheet"),
     ("close-answers-early", "takoctl hears nothing while the close question is still up", "swift/Sources/TakoApp/Features/Control/ControlLayout.swift",
      "guard Date() < deadline else {", "guard Date() < deadline.addingTimeInterval(-10) else {"),
+    ("launch-no-tooltip-delay", "the app registers the 800 ms tooltip delay at launch", "swift/Sources/TakoApp/App/macOS/AppDelegate+Launch.swift",
+     "        Tako.registerTooltipDelay()\n        // Before any window", "        // Before any window"),
     ("link-kept-off-window", "the terminal's display link is parked off its window", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Drawing.swift",
      "        if window == nil {\n            displayLink?.isPaused = true\n            cancelPresentationThrottle()", "        if window == nil {\n            cancelPresentationThrottle()"),
     ("link-never-wakes", "a redraw wakes the terminal's display link", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Presentation.swift",
