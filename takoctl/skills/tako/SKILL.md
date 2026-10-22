@@ -12,6 +12,10 @@ When running inside a Tako pane, the environment automatically provides:
 
 All Tako tools and commands automatically use these variables to target the current pane or create child splits linked to it.
 
+> **Pitfall.** `tako` on your PATH is the GUI app, not a command line. The CLI is **`takoctl`**.
+> Use `takoctl --help` to see every command. There is no login, grant or token: any process the
+> user runs can drive Tako, so do not ask the user for access.
+
 ---
 
 ## Capabilities & Toolset
@@ -173,3 +177,60 @@ Or via MCP:
 - `tako_overlay_close()`
 
 Overlays run in a strict, sandboxed WebKit environment restricted to the pane's working directory, inherit Tako's theme colors via CSS variables, and automatically reload when the underlying file is rewritten.
+
+---
+
+### 6. Finding the Other Agents
+
+`takoctl --json tree` lists every window, tab and pane with its `id`, `title`, `cwd`, `workspace` and `program`:
+
+```bash
+takoctl --json tree
+```
+Tell the agents apart by `program` (`claude`, `codex`, `agy`/`gemini`), then by `title` and `cwd`.
+`program` can be `null` (Codex has shown up that way). In that case read the pane: `takoctl text --target <id>`
+and look for the agent's own prompt or banner. Never guess a pane from the directory alone: two agents often
+share one.
+
+---
+
+### 7. Naming and Grouping Panes
+
+Give every agent pane a stable name so the others can find it, and put related panes in a workspace:
+
+```bash
+takoctl title "<project> · <agent>" --target <id>     # e.g. "Legal · Codex"; empty text restores the program's title
+takoctl workspace create "Legal" --root ~/work/legal
+takoctl workspace assign <tab-id> --workspace "Legal"
+takoctl workspace list
+```
+
+---
+
+### 8. Messaging Another Agent's Pane
+
+```bash
+takoctl send --target <id> "one line of task text"          # types it and presses Return
+takoctl send --target <id> --no-enter "draft, not sent"     # types without Return (check `takoctl --help` for flags)
+takoctl key  --target <id> ctrl+c                           # a key chord
+takoctl text --target <id>                                  # read the reply on the screen
+```
+Rules: show the user the exact text before you type it into another agent's prompt; one request per message;
+do not type into a pane the user is working in (`takoctl input status --target <id>` says whether it is locked).
+Wait for the other agent with `takoctl status --target <id>` (`working` → `done`) instead of polling its screen.
+
+---
+
+### 9. Every Command
+
+All commands work from any pane; nothing needs approval. Run `takoctl --help` for the full flags.
+
+| Area | Commands |
+| :--- | :--- |
+| Look | `tree`, `text`, `last`, `find`, `history`, `screenshot`, `events`, `diagnose` |
+| Type | `send`, `type`, `key`, `broadcast`, `input lock/unlock/takeover/handback/status/log`, `activity` |
+| Panes | `tab-new`, `split`, `focus`, `close`, `title`, `collapse`, `expand`, `run`, `wait` |
+| Workspaces | `workspace list/current/switch/create/delete/assign`, `layout apply/save/status` |
+| Signal | `notify`, `status`, `progress`, `ask`, `dialog` |
+| Display | `overlay open/close/status/reload`, `review open/close/diff/comment/send` |
+| Setup | `hooks list/status/install`, `skills list/status/install [--all]`, `resume`, `triggers`, `session`, `mcp` |

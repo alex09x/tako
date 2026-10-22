@@ -130,3 +130,27 @@ fn test_install_rejects_symlink_and_preserves_target() {
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn an_agent_is_present_when_its_directory_is() {
+    let home = std::env::temp_dir().join(format!("tako-skills-home-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::create_dir_all(home.join(".codex")).unwrap();
+    let present: Vec<&str> = all_adapters()
+        .iter()
+        .filter(|a| a.is_present_under(&home))
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(present, vec!["claude", "codex"]);
+    let _ = fs::remove_dir_all(&home);
+}
+
+#[test]
+fn skills_install_all_parses_without_an_agent() {
+    use crate::cli::parse;
+    let opts = parse(&["skills".into(), "install".into(), "--all".into(), "--yes".into()]).unwrap();
+    assert_eq!(opts.args["all"], true);
+    assert!(opts.args.get("agent").is_none());
+    assert!(parse(&["skills".into(), "install".into()]).is_err());
+}

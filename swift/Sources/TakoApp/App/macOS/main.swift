@@ -26,6 +26,16 @@ if tako_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) != TAKO_SUCCESS {
     }
 }
 
+// `tako` is the app, not a command line: `--help` answers and exits instead of
+// opening a GUI that never prints help (the command line is `takoctl`).
+if CommandLine.arguments.dropFirst().contains(where: { ["--help", "-h", "help"].contains($0) }) {
+    print("""
+    tako is the Tako terminal app; it does not take commands.
+    Control a running Tako with `takoctl` (try `takoctl --help`).
+    """)
+    exit(0)
+}
+
 // This will run the CLI action and exit if one was specified. A CLI
 // action is a command starting with a `+`, such as `tako +boo`.
 tako_cli_try_action()

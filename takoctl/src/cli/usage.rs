@@ -82,7 +82,7 @@ commands:
                           (--yes: skip confirmation; --diff-only: only print diff; --config PATH)
   skills [list]           list supported coding agents and skill installation status
   skills status [AGENT]   show skill installation status for AGENT or all agents
-  skills install AGENT    install Tako skill instructions into AGENT's directory
+  skills install AGENT    install Tako skill instructions into AGENT's directory; --all: every agent found here
                           (--yes: skip confirmation; --diff-only: only print diff; --skill-path PATH)
   skills uninstall AGENT  remove Tako skill instructions from AGENT's directory
                           (--yes: skip confirmation; --diff-only: only print diff; --skill-path PATH)
@@ -98,9 +98,6 @@ commands:
   input handback          hand back input control to the agent (--owner NAME)
   input status            show input lock state, owner, and last activity attribution
   input log               show automated input activity log for the pane
-  input allow-automation  allow external automation to type into this pane
-  input disallow-automation disallow external automation from typing into this pane
-  input confirm-automation allow automation to type once into this pane
   activity [TARGET]       show automated activity log for the pane (--export FILE, --clear)
   broadcast [start]       broadcast keyboard input across selected panes (--panes P1,P2... or all in tab)
   broadcast stop          stop broadcasting input

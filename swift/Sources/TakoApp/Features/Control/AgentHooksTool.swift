@@ -242,7 +242,25 @@ enum AgentHooksTool {
                 report.failed.append(agent.name)
             }
         }
+        // An agent that is hooked but never told about Tako cannot use it: the skill goes in with the hooks.
+        if baseDir == nil { installSkills(for: targets.map(\.id)) }
         return report
+    }
+
+    /// Puts Tako's skill where each agent reads its skills, through the `takoctl` in this app.
+    static func installSkills(for agentIds: [String]) {
+        guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return }
+        let ctl = dir.appendingPathComponent("takoctl")
+        guard FileManager.default.isExecutableFile(atPath: ctl.path) else { return }
+        for id in agentIds {
+            let process = Process()
+            process.executableURL = ctl
+            process.arguments = ["skills", "install", id == "antigravity" ? "gemini" : id, "--yes"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            process.waitUntilExit()
+        }
     }
 
     /// At launch: offers to connect detected AI coding agents if any are unconfigured
