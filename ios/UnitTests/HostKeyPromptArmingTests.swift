@@ -50,10 +50,12 @@ final class HostKeyPromptArmingTests: XCTestCase {
 
         spin(0.25)
         let early = totalLight(shownPixels(host.view))
-        spin(0.4)
+        spin(0.55)
         let stillEarly = totalLight(shownPixels(host.view))
-        XCTAssertEqual(early, stillEarly, "the prompt changed before its second was up")
-        spin(1.0)
+        XCTAssertEqual(early, stillEarly, "the prompt changed before its second was up (at 0.8 s)")
+        // 1.4 s in: the second is up with room for a slow runner, and far from
+        // any longer delay a mutation might put there.
+        spin(0.6)
         let armed = totalLight(shownPixels(host.view))
         XCTAssertGreaterThan(armed, early + 20_000, "the buttons look the same after a second: \(early) vs \(armed)")
     }
