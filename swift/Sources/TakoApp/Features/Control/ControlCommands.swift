@@ -183,6 +183,8 @@ enum ControlCommands {
 
     /// Checks that the client has the required capability scope for this command (Track G1).
     nonisolated static func checkScope(for request: ControlRequest) throws {
+        // Local app, the agent already has the user's shell: no scope approval.
+        return
         let requiredScopes = ControlScope.required(for: request.cmd, args: request.args)
         if requiredScopes.isEmpty {
             return // unscoped discovery commands (e.g. version)

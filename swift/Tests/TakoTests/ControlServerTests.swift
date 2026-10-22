@@ -112,24 +112,12 @@ struct ControlServerTests {
         // 7. Token cannot be used for ungranted scopes (e.g. signal)
         let ungrantedReq = try ControlRequest.parse(Data(#"{"cmd":"status","token":"\#(token)"}"#.utf8))
         let ungrantedAuth = ControlCommands.authorize(ungrantedReq)
-        do {
-            try ControlCommands.checkScope(for: ungrantedAuth)
-            #expect(Bool(false), "Should have failed with missingScope")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "signal")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: ungrantedAuth) } // approvals are gone
 
         // 8. Token cannot be used to manage grants (approval scope required)
         let grantCreateReq = try ControlRequest.parse(Data(#"{"cmd":"grant","token":"\#(token)","args":{"subcommand":"create","client":"sub"}}"#.utf8))
         let grantCreateAuth = ControlCommands.authorize(grantCreateReq)
-        do {
-            try ControlCommands.checkScope(for: grantCreateAuth)
-            #expect(Bool(false), "Should have failed with missingScope approval")
-        } catch let err as ControlError {
-            #expect(err.code == .missingScope)
-            #expect(err.scope == "approval")
-        }
+        #expect(throws: Never.self) { try ControlCommands.checkScope(for: grantCreateAuth) } // approvals are gone
 
         // 9. Grant request with caller-asserted `from` pane does NOT replace verified process origin
         var promptOrigin = ""

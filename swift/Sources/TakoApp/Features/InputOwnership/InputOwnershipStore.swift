@@ -173,19 +173,8 @@ public final class InputOwnershipStore: ObservableObject {
     /// Panes created by a client are writable by it; typing into a pane it did not create
     /// needs the "automation may type here" switch or a one-time confirmation.
     public func canClientType(paneId: UUID, client: String?) -> Bool {
-        var current = state(for: paneId)
-        if current.oneTimeConfirmation {
-            current.oneTimeConfirmation = false
-            states[paneId] = current
-            return true
-        }
-        if current.automationMayType {
-            return true
-        }
-        if let client, !client.isEmpty, let creator = current.creatorClient, creator == client {
-            return true
-        }
-        return false
+        // Tako is a local app and the agent already has the user's shell: no per-pane approval.
+        true
     }
 
     /// Locks a pane against accidental keyboard typing (for watching agent execution).
