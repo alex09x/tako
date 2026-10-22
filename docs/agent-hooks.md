@@ -118,24 +118,12 @@ The source for an existing `tako-hook` installation is `scripts/tako-hook.py`.
 `python3 scripts/install-tako-hook.py` updates only that executable atomically,
 retaining a private backup. It does not edit provider configuration or hook trust.
 
-The dispatcher requires an inherited absolute `TAKO_SOCKET`, a UUID
-`TAKO_SURFACE_ID`, and a nonempty caller grant (`TAKO_CONTROL_TOKEN`, or
-`TAKO_AUTH_TOKEN` when the primary variable is absent). It preserves those values
-when invoking `takoctl`; a denied request is not retried with a different grant.
-All notifications and status/progress commands identify the same recipient.
+The dispatcher requires an inherited absolute `TAKO_SOCKET` and a UUID
+`TAKO_SURFACE_ID`. It preserves those values when invoking `takoctl`. There is no
+grant, token or scope: Tako is local and anything running as the user may drive it.
+All notifications and status/progress commands identify the same recipient; process
+names, shared directories and the active tab are never recipient identities.
 
-Detached Codex events resolve an explicitly enrolled Session ID from their hook
-JSON payload. `scripts/bind-tako-hook.py` enrolls a specifically selected pane and
-process with a signal-only grant stored in macOS Keychain. A direct provider
-context is refreshed only when its inherited grant matches the exact retired
-grant enrolled for that surface/socket. Unregistered session IDs are no-ops;
-process names, shared directories and the active tab are never recipient
-identities. Tako restores enrolled signal grants across application restarts.
-Revoking a grant removes its persisted bindings as well. No provider trust hash
-is seeded or modified by this enrollment.
-
-Fresh terminal contexts enroll a signal-only lifecycle grant using their already
-authorized parent credential. A restricted caller cannot create a broader grant.
 The optional `--codex-wrapper` installer installs `tako-codex` and a Fish
 autoload function: inside Tako, new Codex sessions use the supported
 `--no-daemon` flag so hooks retain their PTY context. Outside Tako, arguments are

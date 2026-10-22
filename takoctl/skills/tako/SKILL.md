@@ -18,21 +18,21 @@ All Tako tools and commands automatically use these variables to target the curr
 
 Tako exposes its capabilities through both a stdio **MCP server** (`takoctl mcp`) and the **`takoctl` CLI**:
 
-| Action | MCP Tool | `takoctl` CLI | G1 Capability Scope |
-| :--- | :--- | :--- | :--- |
-| **Inspect layout** | `tako_tree` | `takoctl tree` | `read` |
-| **Split pane** | `tako_split` | `takoctl split [dir] --child-of self --label <name>` | `layout` |
-| **Run command** | `tako_run` | `takoctl run [--split dir] [--wait] -- PROGRAM ARGS...` | `layout`, `input` |
-| **Wait for command** | `tako_wait` | `takoctl wait [--target ID] [--timeout S]` | `read` |
-| **Last command info** | `tako_last` | `takoctl last [--target ID]` | `read` |
-| **Search open tabs** | `tako_find` | `takoctl find <query>` | `read` |
-| **Send notification** | `tako_notify` | `takoctl notify <text> [--title <title>]` | `signal` |
-| **Set status badge** | `tako_status` | `takoctl status set <status> [--text <text>]` | `signal` |
-| **Update progress** | `tako_progress` | `takoctl progress <0-100\|indeterminate\|error\|pause\|clear>` | `signal` |
-| **Ask question** | `tako_ask` | `takoctl ask <question> [--choices C1,C2] [--confirm]` | `signal` |
-| **Open artifact overlay** | `tako_overlay_open` | `takoctl overlay open <file> [--split dir] [--type type]` | `overlay` |
-| **Close overlay** | `tako_overlay_close` | `takoctl overlay close [--target ID]` | `overlay` |
-| **Overlay status** | `tako_overlay_status` | `takoctl overlay status [--target ID]` | `overlay` |
+| Action | MCP Tool | `takoctl` CLI |
+| :--- | :--- | :--- |
+| **Inspect layout** | `tako_tree` | `takoctl tree` |
+| **Split pane** | `tako_split` | `takoctl split [dir] --child-of self --label <name>` |
+| **Run command** | `tako_run` | `takoctl run [--split dir] [--wait] -- PROGRAM ARGS...` |
+| **Wait for command** | `tako_wait` | `takoctl wait [--target ID] [--timeout S]` |
+| **Last command info** | `tako_last` | `takoctl last [--target ID]` |
+| **Search open tabs** | `tako_find` | `takoctl find <query>` |
+| **Send notification** | `tako_notify` | `takoctl notify <text> [--title <title>]` |
+| **Set status badge** | `tako_status` | `takoctl status set <status> [--text <text>]` |
+| **Update progress** | `tako_progress` | `takoctl progress <0-100\|indeterminate\|error\|pause\|clear>` |
+| **Ask question** | `tako_ask` | `takoctl ask <question> [--choices C1,C2] [--confirm]` |
+| **Open artifact overlay** | `tako_overlay_open` | `takoctl overlay open <file> [--split dir] [--type type]` |
+| **Close overlay** | `tako_overlay_close` | `takoctl overlay close [--target ID]` |
+| **Overlay status** | `tako_overlay_status` | `takoctl overlay status [--target ID]` |
 
 ---
 

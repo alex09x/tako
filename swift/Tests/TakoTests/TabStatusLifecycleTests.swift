@@ -267,10 +267,8 @@ struct TabStatusLifecycleTests {
         #expect(try server.start() == .listening)
         defer { server.stop() }
 
-        let grant = ControlGrantStore.shared.issueGrant(client: "test-4-agents", scopes: [.signal, .read])
         var env = ProcessInfo.processInfo.environment
         env["TAKO_SOCKET"] = socketPath
-        env["TAKO_CONTROL_TOKEN"] = grant.token
         env["TAKO_SURFACE_ID"] = surfB.id.uuidString.lowercased()
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = "\(takoctlDir):\(existingPath)"

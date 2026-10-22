@@ -55,7 +55,6 @@ if __name__ == "__main__":
     parser.add_argument("--codex-wrapper", action="store_true")
     options = parser.parse_args()
     destination = options.destination
-    install(destination.with_name("tako_hook_context.py"), "tako_hook_context.py")
     install(destination)
     if options.codex_wrapper:
         if not destination.with_name("codex").exists():

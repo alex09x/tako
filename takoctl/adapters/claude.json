@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude user_prompt_submit; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude user_prompt_submit; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude permission_request; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set needs_approval --target \"$TAKO_SURFACE_ID\" --text \"Approval requested\" >/dev/null 2>&1 || true; takoctl progress pause --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude permission_request; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set needs_approval --target \"$TAKO_SURFACE_ID\" --text \"Approval requested\" >/dev/null 2>&1 || true; takoctl progress pause --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude question; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set waiting_for_input --target \"$TAKO_SURFACE_ID\" --text \"Question\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude question; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set waiting_for_input --target \"$TAKO_SURFACE_ID\" --text \"Question\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl notify \"$CLAUDE_NOTIFICATION\" --title \"Claude Code\" >/dev/null 2>&1 || true; fi; :",
+            "command": "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl notify \"$CLAUDE_NOTIFICATION\" --title \"Claude Code\" >/dev/null 2>&1 || true; fi; :",
             "timeout": 5
           }
         ]
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude stop; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude stop; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude session_end; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude session_end; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]
@@ -83,7 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if command -v tako-hook >/dev/null 2>&1; then tako-hook claude question_answered; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook claude question_answered; else if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :; fi; :",
             "timeout": 5
           }
         ]

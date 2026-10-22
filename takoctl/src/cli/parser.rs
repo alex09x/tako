@@ -23,9 +23,6 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     let mut bundle_id =
         std::env::var("TAKO_BUNDLE_ID").unwrap_or_else(|_| "com.tako-core.terminal".into());
     let mut client = None;
-    let mut token = None;
-    let mut scopes = None;
-    let mut description: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut dashdash = false;
     let mut it = argv.iter();
@@ -268,41 +265,10 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             "--prefix" => {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
-            "--token" | "--auth-token" => {
-                let val = value(arg.as_str())?;
-                token = Some(val.clone());
-                args.insert("token".into(), Value::String(val));
-            }
             "--client" => {
                 let name = value("--client")?;
                 client = Some(name.clone());
                 args.insert("client".into(), Value::String(name));
-            }
-            "--scope" | "--scopes" => {
-                let val = value(arg.as_str())?;
-                let list: Vec<String> = val
-                    .split(',')
-                    .map(|p| p.trim().to_lowercase())
-                    .filter(|p| !p.is_empty())
-                    .collect();
-                if list.is_empty() {
-                    return Err(format!("{arg} cannot be empty"));
-                }
-                for s in &list {
-                    if !["read", "input", "layout", "signal", "overlay", "approval"]
-                        .contains(&s.as_str())
-                    {
-                        return Err(format!(
-                            "unknown capability scope '{s}'; valid scopes are read, input, layout, signal, overlay, approval"
-                        ));
-                    }
-                }
-                scopes = Some(list);
-            }
-            "--desc" | "--description" => {
-                let d = value(arg.as_str())?;
-                description = Some(d.clone());
-                args.insert("description".into(), Value::String(d));
             }
             "--owner" => {
                 args.insert("owner".into(), Value::String(value("--owner")?));
@@ -359,17 +325,6 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
                 .or_else(|_| std::env::var("TAKO_CLIENT"))
                 .ok();
         }
-        if scopes.is_none() {
-            scopes = std::env::var("TAKO_CONTROL_SCOPES")
-                .or_else(|_| std::env::var("TAKO_SCOPES"))
-                .ok()
-                .map(|s| {
-                    s.split(',')
-                        .map(|p| p.trim().to_lowercase())
-                        .filter(|p| !p.is_empty())
-                        .collect::<Vec<_>>()
-                });
-        }
     }
 
     dispatch_and_validate(
@@ -377,16 +332,9 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         &mut args,
         &mut positional,
         dashdash,
-        client.as_deref(),
-        scopes.as_deref(),
-        description.as_deref(),
-        token.as_deref(),
     )?;
     if client.is_none() {
         client = args.get("client").and_then(Value::as_str).map(String::from);
-    }
-    if token.is_none() && cmd != "grant" {
-        token = args.get("token").and_then(Value::as_str).map(String::from);
     }
     let cmd = if cmd == "tab" {
         "status".to_string()
@@ -401,7 +349,5 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         bundle_id,
         bundle_id_explicit,
         client,
-        token,
-        scopes,
     })
 }

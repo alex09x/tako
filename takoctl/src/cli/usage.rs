@@ -119,10 +119,6 @@ commands:
   review diff [FILE]      show unified diff of all files or specific FILE
   review comment [ACTION] manage review comments (add, list, remove, clear; --file FILE, --line N)
   review send             send collected review comments as feedback to target pane
-  grant request [NAME]    request an authorization grant from user (--client NAME, --scope SCOPES, --desc DESC)
-  grant create            create a scoped authorization grant (--client NAME, --scope SCOPES, --desc DESC)
-  grant revoke TOKEN      revoke an authorization grant
-  grant list              list active authorization grants
   diagnose [PATH]         export self-contained diagnostics bundle with secrets/paths redacted
                           (--out PATH, --stdout, --include-terminal, --benchmark)
 
@@ -165,10 +161,7 @@ options:
   --timeout DURATION      ask, wait, run --wait: timeout (e.g. 30s, 1m, 10)
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
-  --token, --auth-token TOKEN authorization grant token (default: $TAKO_CONTROL_TOKEN or $TAKO_AUTH_TOKEN)
-  --scope, --scopes SCOPES comma-separated capability scopes (read,input,layout,signal,overlay,approval)
-  --description, --desc DESC description of grant or client purpose
-  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,approval; default: read,layout,signal,input)
+  --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay; default: read,layout,signal,input)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer

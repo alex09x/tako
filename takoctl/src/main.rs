@@ -151,9 +151,7 @@ fn run_mcp(opts: &Options) -> Result<(), String> {
         .map(String::from)
         .or_else(|| std::env::var("TAKO_SURFACE_ID").ok());
 
-    let token = resolve_token(opts, &socket_path);
-    let server =
-        mcp::McpServer::new(socket_path, capabilities, surface_id).with_token(token);
+    let server = mcp::McpServer::new(socket_path, capabilities, surface_id);
     server
         .run_stdio()
         .map_err(|e| format!("MCP stdio server error: {e}"))
@@ -212,8 +210,7 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
                 return None;
             }
             let path = socket::resolve_path(&opts.bundle_id, opts.socket.as_deref(), opts.bundle_id_explicit, inherited.as_deref()).ok()?;
-            let mut opts = opts.clone();
-            opts.token = resolve_token(&opts, &path);
+            let opts = opts.clone();
             let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
             let ans = socket::exchange_within(
                 &path,
@@ -259,8 +256,6 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
             return ExitCode::from(3);
         }
     };
-    let mut opts = opts;
-    opts.token = resolve_token(&opts, &path);
     let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
     if opts.cmd == "events" {
         let res = socket::stream_events(&path, &req, |line| {

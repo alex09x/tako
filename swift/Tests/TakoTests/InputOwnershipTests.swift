@@ -162,15 +162,13 @@ import Testing
         #expect(store.activityLog(for: paneId).isEmpty)
     }
 
-    @Test func testAnyClientMayTypeIntoAnyPane() {
-        // No per-pane approval: Tako is local and the agent already has the user's shell.
+    @Test func testCreatorClientIsRemembered() {
         let store = InputOwnershipStore()
         let paneId = UUID()
-        #expect(store.canClientType(paneId: paneId, client: "agent-1") == true)
-        #expect(store.canClientType(paneId: paneId, client: "takoctl") == true)
+        #expect(store.creatorClient(for: paneId) == nil)
         store.setCreatorClient(paneId: paneId, client: "agent-1")
-        #expect(store.canClientType(paneId: paneId, client: "agent-2") == true)
-        store.setAutomationMayType(paneId: paneId, allowed: false)
-        #expect(store.canClientType(paneId: paneId, client: "agent-2") == true)
+        #expect(store.creatorClient(for: paneId) == "agent-1")
+        store.setCreatorClient(paneId: paneId, client: "")
+        #expect(store.creatorClient(for: paneId) == "agent-1")
     }
 }

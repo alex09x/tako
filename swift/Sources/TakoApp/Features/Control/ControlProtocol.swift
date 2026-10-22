@@ -88,10 +88,6 @@ struct ControlError: Error, Equatable {
         /// A wait on the command the request itself is part of: it cannot
         /// end while the request waits.
         case selfWait
-        /// The client is missing a capability scope required for this command (Track G1).
-        case missingScope = "missingScope"
-        /// Automation is not permitted to type into this pane without the switch or confirmation (Track G1).
-        case automationNotPermitted = "automationNotPermitted"
         case internalError = "internal"
     }
 
@@ -99,14 +95,11 @@ struct ControlError: Error, Equatable {
     let message: String
     /// For `ambiguous`: the ids that matched.
     var candidates: [String] = []
-    /// For `missingScope`: the name of the missing scope (Track G1).
-    var scope: String? = nil
 
-    init(_ code: Code, _ message: String, candidates: [String] = [], scope: String? = nil) {
+    init(_ code: Code, _ message: String, candidates: [String] = []) {
         self.code = code
         self.message = message
         self.candidates = candidates
-        self.scope = scope
     }
 }
 
@@ -115,14 +108,8 @@ struct ControlRequest: Equatable {
     let args: [String: JSON]
     /// The pane the client runs in, as it says.
     let from: UUID?
-    /// The client identity (e.g. "takoctl", "agent-123"). Set from server-side grant.
+    /// The client's name (e.g. "takoctl", "agent-123"), as it says; only for the activity log.
     var client: String?
-    /// The authorization token provided by the client, if any.
-    let token: String?
-    /// The effective capability scopes granted to this client session by the server (Track G1).
-    var scopes: Set<ControlScope>?
-    /// The scopes requested by the client in its request payload (for attenuation).
-    let requestedScopes: Set<ControlScope>?
     /// Whether the client has gone -- closed its end -- so work that waits
     /// for something (`wait`) can stop. Set by the server.
     var clientGone: @Sendable () -> Bool = { false }
@@ -135,22 +122,16 @@ struct ControlRequest: Equatable {
         cmd: String,
         args: [String: JSON] = [:],
         from: UUID? = nil,
-        client: String? = nil,
-        token: String? = nil,
-        scopes: Set<ControlScope>? = nil,
-        requestedScopes: Set<ControlScope>? = nil
+        client: String? = nil
     ) {
         self.cmd = cmd
         self.args = args
         self.from = from
         self.client = client
-        self.token = token
-        self.scopes = scopes
-        self.requestedScopes = requestedScopes
     }
 
     static func == (a: Self, b: Self) -> Bool {
-        a.cmd == b.cmd && a.args == b.args && a.from == b.from && a.client == b.client && a.token == b.token && a.scopes == b.scopes && a.requestedScopes == b.requestedScopes
+        a.cmd == b.cmd && a.args == b.args && a.from == b.from && a.client == b.client
     }
 
     /// Parses one request line. A `from` that is present but not a UUID is
@@ -190,15 +171,6 @@ struct ControlRequest: Equatable {
         default: throw ControlError(.invalid, "\"from\" is not a string")
         }
 
-        var token: String?
-        switch object["token"] ?? object["auth"] ?? args["token"] ?? args["auth"] {
-        case nil, .null?: break
-        case .string(let s)?:
-            token = s.isEmpty ? nil : s
-        default:
-            throw ControlError(.invalid, "\"token\" is not a string")
-        }
-
         var client: String?
         switch object["client"] {
         case nil, .null?:
@@ -209,19 +181,11 @@ struct ControlRequest: Equatable {
             throw ControlError(.invalid, "\"client\" is not a string")
         }
 
-        // A grant's args.scopes describe the new credential, not attenuation
-        // of the issuer (which still needs approval to create that grant).
-        let issuingGrant = cmd == "grant" && ["create", "request"].contains(args["subcommand"]?.string ?? "")
-        let requestedScopes = try ControlScope.parseScopes(from: object["scopes"] ?? (issuingGrant ? nil : args["scopes"]))
-
         return ControlRequest(
             cmd: cmd,
             args: args,
             from: from,
-            client: client,
-            token: token,
-            scopes: nil,
-            requestedScopes: requestedScopes
+            client: client
         )
     }
 }
@@ -239,7 +203,6 @@ enum ControlResponse {
         case .failure(let error):
             var body: [String: Any] = ["code": error.code.rawValue, "message": error.message]
             if !error.candidates.isEmpty { body["candidates"] = error.candidates }
-            if let scope = error.scope { body["scope"] = scope }
             object = ["ok": false, "error": body]
         }
         var data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]))

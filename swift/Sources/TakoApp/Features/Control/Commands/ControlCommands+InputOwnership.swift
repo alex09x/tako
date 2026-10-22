@@ -12,6 +12,11 @@ import Foundation
 import AppKit
 
 extension ControlCommands {
+    /// Records automated activity on a target pane.
+    static func recordActivity(for request: ControlRequest, on paneId: UUID, action: String) {
+        let client = request.client ?? request.args["client"]?.string ?? "anonymous"
+        InputOwnershipStore.shared.recordAutomation(paneId: paneId, client: client, action: action)
+    }
     /// `takoctl input`: lock, unlock, takeover, handback, and inspect input ownership (C7).
     static func inputOwnershipCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
@@ -52,33 +57,12 @@ extension ControlCommands {
                 "locked": .bool(state.isLocked),
                 "owner": .string(state.owner.agentName ?? "agent")
             ]
-        case "allow-automation", "enable-automation", "allow-typing":
-            InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: true)
-            let state = InputOwnershipStore.shared.state(for: surface.id)
-            return [
-                "id": .string(surface.id.uuidString.lowercased()),
-                "automation_may_type": .bool(state.automationMayType)
-            ]
-        case "disallow-automation", "disable-automation", "disallow-typing":
-            InputOwnershipStore.shared.setAutomationMayType(paneId: surface.id, allowed: false)
-            let state = InputOwnershipStore.shared.state(for: surface.id)
-            return [
-                "id": .string(surface.id.uuidString.lowercased()),
-                "automation_may_type": .bool(state.automationMayType)
-            ]
-        case "confirm-automation", "confirm-typing":
-            InputOwnershipStore.shared.confirmOneTimeTyping(paneId: surface.id)
-            return [
-                "id": .string(surface.id.uuidString.lowercased()),
-                "confirmed": .bool(true)
-            ]
         case "status":
             let state = InputOwnershipStore.shared.state(for: surface.id)
             var dict: [String: JSON] = [
                 "id": .string(surface.id.uuidString.lowercased()),
                 "locked": .bool(state.isLocked),
                 "owner": .string(state.owner.isAgent ? (state.owner.agentName ?? "agent") : "human"),
-                "automation_may_type": .bool(state.automationMayType),
             ]
             if let creator = state.creatorClient {
                 dict["creator_client"] = .string(creator)
@@ -109,12 +93,6 @@ extension ControlCommands {
     /// `takoctl send` / `takoctl type`: send typed text into a pane, subject to input ownership.
     static func sendCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
-        let client = request.client ?? request.args["client"]?.string ?? "takoctl"
-        guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
-            let state = InputOwnershipStore.shared.state(for: surface.id)
-            let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
-            throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
-        }
         let enter = request.cmd == "send" && request.args["enter"] != .bool(false)
         let text = try ControlInput.text(request.args)
         try ControlInput.send(surface, text: text, enter: enter)
@@ -125,12 +103,6 @@ extension ControlCommands {
     /// `takoctl key`: send a key chord into a pane, subject to input ownership.
     static func keyCommand(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         let surface = try target(request, all)
-        let client = request.client ?? request.args["client"]?.string ?? "takoctl"
-        guard InputOwnershipStore.shared.canClientType(paneId: surface.id, client: client) else {
-            let state = InputOwnershipStore.shared.state(for: surface.id)
-            let creatorDesc = state.creatorClient.map { "pane was created by client '\($0)'" } ?? "pane was created by user"
-            throw ControlError(.automationNotPermitted, "automation is not permitted to type into pane \(surface.id.uuidString.lowercased()): \(creatorDesc) and 'automation may type here' is off")
-        }
         let chord = try ControlInput.text(request.args, "key")
         try ControlInput.key(surface, chord: chord)
         recordActivity(for: request, on: surface.id, action: "key")

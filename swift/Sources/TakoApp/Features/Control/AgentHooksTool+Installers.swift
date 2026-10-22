@@ -47,7 +47,7 @@ extension AgentHooksTool {
         let preHook: [String: Any] = [
             "type": "command",
             "timeout": 5,
-            "command": preferredCommand(agent: "agy", event: "pre_invocation", fallback: "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; fi; echo \"{}\"")
+            "command": preferredCommand(agent: "agy", event: "pre_invocation", fallback: "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; fi; echo \"{}\"")
         ]
         guard let mergedPre = mergeDirectHook(in: takoStatus["PreInvocation"], adding: preHook, commandKey: "takoctl status set working") else {
             return false
@@ -57,7 +57,7 @@ extension AgentHooksTool {
         let stopHook: [String: Any] = [
             "type": "command",
             "timeout": 5,
-            "command": preferredCommand(agent: "agy", event: "stop", fallback: "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; fi; echo \"{}\"")
+            "command": preferredCommand(agent: "agy", event: "stop", fallback: "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1; fi; echo \"{}\"")
         ]
         guard let mergedStop = mergeDirectHook(in: takoStatus["Stop"], adding: stopHook, commandKey: "takoctl status set done") else {
             return false
@@ -107,7 +107,7 @@ extension AgentHooksTool {
             "hooks": [
                 [
                     "type": "command",
-                    "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi",
+                    "command": "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi",
                     "timeout": 5
                 ]
             ]
@@ -122,7 +122,7 @@ extension AgentHooksTool {
             "hooks": [
                 [
                     "type": "command",
-                    "command": "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi",
+                    "command": "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi",
                     "timeout": 5
                 ]
             ]
@@ -141,14 +141,14 @@ extension AgentHooksTool {
         return (try? outData.write(to: URL(fileURLWithPath: settingsPath), options: .atomic)) != nil
     }
 
-    private static let preamble = "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; "
+    private static let preamble = ""
     private static func preferredCommand(agent: String, event: String, fallback: String) -> String {
         "if command -v tako-hook >/dev/null 2>&1; then tako-hook \(agent) \(event); else \(fallback); fi; :"
     }
-    private static let workingHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
-    private static let doneHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
-    private static let needsApprovalHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set needs_approval --target \"$TAKO_SURFACE_ID\" --text \"Approval requested\" >/dev/null 2>&1 || true; takoctl progress pause --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
-    private static let questionHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set waiting_for_input --target \"$TAKO_SURFACE_ID\" --text \"Question\" >/dev/null 2>&1 || true; fi; :"
+    private static let workingHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
+    private static let doneHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
+    private static let needsApprovalHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set needs_approval --target \"$TAKO_SURFACE_ID\" --text \"Approval requested\" >/dev/null 2>&1 || true; takoctl progress pause --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
+    private static let questionHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set waiting_for_input --target \"$TAKO_SURFACE_ID\" --text \"Question\" >/dev/null 2>&1 || true; fi; :"
 
 
     @discardableResult

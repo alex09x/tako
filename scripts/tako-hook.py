@@ -6,10 +6,10 @@
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
 
-"""Dispatch only within an explicitly inherited Tako capability context.
+"""Dispatch only within an explicitly inherited Tako context.
 
-Detached providers must receive the originating session's socket, surface and
-grant from their launcher. Process names, cwd and the current GUI tab are not
+Detached providers must receive the originating session's socket and surface
+from their launcher. Process names, cwd and the current GUI tab are not
 session identities. An unresolved event is deliberately a no-op.
 """
 
@@ -20,17 +20,12 @@ import sys
 import uuid
 import json
 
-from tako_hook_context import resolve, bootstrap
-
 
 def recipient(env):
     """Return an explicit complete binding; never discover other processes."""
     surface = env.get("TAKO_SURFACE_ID", "")
     socket = env.get("TAKO_SOCKET", "")
-    # Match takoctl's inherited token precedence, including an empty primary
-    # value: do not silently substitute another credential in that case.
-    token = env.get("TAKO_CONTROL_TOKEN", env.get("TAKO_AUTH_TOKEN", ""))
-    if not socket or not os.path.isabs(socket) or not token.strip():
+    if not socket or not os.path.isabs(socket):
         return None
     try:
         surface = str(uuid.UUID(surface))
@@ -79,14 +74,6 @@ def dispatch(agent, event, env, payload=None):
         return
     if not commands(event, ""):
         return
-    managed = resolve(agent, env, payload)
-    if managed is None and event in ("user_prompt_submit", "pre_invocation", "start"):
-        managed = bootstrap(agent, env, payload)
-    if managed is not None:
-        env = dict(env)
-        env["TAKO_SOCKET"] = managed["socket"]
-        env["TAKO_SURFACE_ID"] = managed["surface"]
-        env["TAKO_CONTROL_TOKEN"] = managed["token"]
     binding = recipient(env)
     if binding is None:
         return
@@ -96,8 +83,7 @@ def dispatch(agent, event, env, payload=None):
         return
     for args in commands(event, surface):
         try:
-            # Keep inherited targeting and token precedence. In particular do
-            # not pass --socket or strip tokens to defeat a missingScope error.
+            # Keep inherited targeting: do not pass --socket.
             result = subprocess.run(
                 [cli] + args, env=dict(env), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -106,7 +92,7 @@ def dispatch(agent, event, env, payload=None):
         except (OSError, subprocess.TimeoutExpired):
             return
         if result.returncode != 0:
-            # Never retry with another instance, recipient, token or privilege.
+            # Never retry with another instance or recipient.
             return
 
 

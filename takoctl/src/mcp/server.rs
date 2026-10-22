@@ -23,7 +23,6 @@ pub struct McpServer {
     pub socket_path: String,
     pub capabilities: Capabilities,
     pub surface_id: Option<String>,
-    pub token: Option<String>,
 }
 
 impl McpServer {
@@ -32,13 +31,7 @@ impl McpServer {
             socket_path,
             capabilities,
             surface_id,
-            token: None,
         }
-    }
-
-    pub fn with_token(mut self, token: Option<String>) -> Self {
-        self.token = token;
-        self
     }
 
     /// Handles a single incoming JSON-RPC 2.0 message and produces a response if required.
@@ -251,9 +244,7 @@ impl McpServer {
 
     pub fn build_socket_request(&self, name: &str, args: &Value) -> Result<Value, String> {
         request::build_socket_request(
-            &self.capabilities,
             self.surface_id.as_deref(),
-            self.token.as_deref(),
             name,
             args,
         )

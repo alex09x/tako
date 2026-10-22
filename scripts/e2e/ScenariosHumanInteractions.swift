@@ -270,24 +270,8 @@ func runInputTakeoverConfirmScenario(_ d: Driver) throws {
         throw Failure("expected re-locked status for claude-agent after Hand Back, got: \(stRelocked)")
     }
     _ = try d.exec("\(ctl) input unlock --target \(pane0)")
-    guard (try? d.exec("\(ctl) send --target \(pane0) \"echo refused\"")) == nil else {
-        throw Failure("expected takoctl send without allow-automation/confirm-automation to be refused")
-    }
-    _ = try d.exec("\(ctl) input confirm-automation --target \(pane0)")
     _ = try d.exec("\(ctl) send --target \(pane0) \"echo onetime_ok > \(d.path("itc_onetime.txt"))\"")
-    try d.expect("itc_onetime.txt", "onetime_ok\n", "one-time confirmed automation send")
-    guard (try? d.exec("\(ctl) send --target \(pane0) \"echo refused_again\"")) == nil else {
-        throw Failure("confirm-automation should only allow a single automated input operation")
-    }
-    _ = try d.exec("\(ctl) input allow-automation --target \(pane0)")
-    var autoTypeBtn: AXUIElement?
-    guard d.wait(for: { autoTypeBtn = d.button(titled: "Auto-type on"); return autoTypeBtn != nil }, timeout: 5), let autoTypeBtn else {
-        throw Failure("'Auto-type on' button did not appear after allow-automation")
-    }
-    d.press(autoTypeBtn)
-    guard d.wait(for: { d.button(titled: "Auto-type on") == nil }, timeout: 5) else {
-        throw Failure("clicking 'Auto-type on' button did not revoke automationMayType")
-    }
+    try d.expect("itc_onetime.txt", "onetime_ok\n", "an automated send needs no approval")
     usleep(200_000)
     try d.run("tty > \(d.path("itc_rec_tty")) && echo 'itc_recovered' > \(d.path("itc_recovered.txt"))")
     try d.expect("itc_recovered.txt", "itc_recovered\n", "unassisted keyboard input after takeover/confirm journey")

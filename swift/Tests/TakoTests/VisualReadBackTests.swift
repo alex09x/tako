@@ -68,8 +68,7 @@ struct VisualReadBackTests {
         #expect(Array(pngData.prefix(pngHeader.count)) == pngHeader)
 
         // Control command execution
-        let grant = ControlGrantStore.shared.issueGrant(client: "visual-test", scopes: [.read])
-        let req = ControlRequest(cmd: "screenshot", args: [:], from: nil, token: grant.token)
+        let req = ControlRequest(cmd: "screenshot", args: [:], from: nil)
         let res = ControlCommands.handle(req, all: [pane])
         guard case .ok(let dict) = res else {
             Issue.record("screenshot command failed: \(res)")
@@ -101,10 +100,8 @@ struct VisualReadBackTests {
         defer { surface.isSecureInputMode = false }
         #expect(surface.isSecureInput)
 
-        let grant = ControlGrantStore.shared.issueGrant(client: "visual-test", scopes: [.read])
-
         // 1. Screenshot refusal
-        let reqScreenshot = ControlRequest(cmd: "screenshot", args: [:], from: nil, token: grant.token)
+        let reqScreenshot = ControlRequest(cmd: "screenshot", args: [:], from: nil)
         let resScreenshot = ControlCommands.handle(reqScreenshot, all: [pane])
         guard case .failure(let errScreenshot) = resScreenshot else {
             Issue.record("screenshot should be refused for secure-input pane")
@@ -114,7 +111,7 @@ struct VisualReadBackTests {
         #expect(errScreenshot.message.contains("secure-input panes cannot be read"))
 
         // 2. Text read refusal
-        let reqText = ControlRequest(cmd: "text", args: ["styled": .bool(true)], from: nil, token: grant.token)
+        let reqText = ControlRequest(cmd: "text", args: ["styled": .bool(true)], from: nil)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             ControlCommands.handle(reqText, all: [pane]) { resText in
                 guard case .failure(let errText) = resText else {

@@ -89,8 +89,7 @@ struct DiagnosticsTests {
     @MainActor
     func testControlCommandsDiagnose() throws {
         ControlCommands.mode = .on
-        let token = ControlGrantStore.shared.primaryToken
-        let req = ControlRequest(cmd: "diagnose", args: ["include_terminal": .bool(false)], token: token)
+        let req = ControlRequest(cmd: "diagnose", args: ["include_terminal": .bool(false)])
         let response = ControlCommands.handle(req, all: [])
         switch response {
         case .ok(let result):

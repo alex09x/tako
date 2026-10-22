@@ -28,7 +28,7 @@ struct AgentHookDispatcherTests {
         for relative in [".claude/settings.json", ".codex/hooks.json", ".gemini/config/hooks.json"] {
             let contents = try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
             #expect(!contents.contains("eval $("))
-            #expect(!contents.contains("unset TAKO_CONTROL_TOKEN"))
+            #expect(!contents.contains("TAKO_CONTROL_TOKEN"))
             #expect(!contents.contains("ps eww"))
         }
     }
