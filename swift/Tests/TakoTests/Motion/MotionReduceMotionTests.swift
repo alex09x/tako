@@ -181,6 +181,11 @@ struct MotionReduceMotionTests {
         let still = frames(glow, size: CGSize(width: 160, height: 80))
         #expect(same(still.0, still.1), "the glow breathed under Reduce Motion")
         #expect(SwiftUIMotionProbe.light(still.0) > 1, "no glow at all under Reduce Motion")
+        let breathing = frames({ now in
+            LivingSurfaceOuterGlow(state: .waiting, cornerRadius: 6, backingColor: .black, now: now, reduceMotion: false)
+                .frame(width: 120, height: 40).padding(20)
+        }, size: CGSize(width: 160, height: 80))
+        #expect(!same(breathing.0, breathing.1), "the glow stands still with motion on: the comparison sees nothing")
     }
 
     @Test func underReduceMotionACardRingAndARowDoNotShake() {
