@@ -41,6 +41,22 @@ impl SkillAdapter {
         self.mcp_config_path.map(resolve_home_path)
     }
 
+    /// Whether the agent itself is on this machine: the directory its skill
+    /// lives in (`~/.claude`, `~/.codex`...) exists.
+    pub fn is_present(&self) -> bool {
+        std::env::var("HOME")
+            .map(|home| self.is_present_under(Path::new(&home)))
+            .unwrap_or(false)
+    }
+
+    pub fn is_present_under(&self, home: &Path) -> bool {
+        self.skill_path
+            .strip_prefix("~/")
+            .and_then(|rel| Path::new(rel).components().next())
+            .map(|first| home.join(first).is_dir())
+            .unwrap_or(false)
+    }
+
     pub fn is_installed(&self, path: &Path) -> bool {
         if !path.exists() {
             return false;

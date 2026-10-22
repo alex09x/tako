@@ -265,6 +265,9 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             "--prefix" => {
                 args.insert("prefix".into(), Value::String(value("--prefix")?));
             }
+            "--all" => {
+                args.insert("all".into(), Value::Bool(true));
+            }
             "--client" => {
                 let name = value("--client")?;
                 client = Some(name.clone());

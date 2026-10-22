@@ -202,6 +202,21 @@ pub fn install(
     Ok(())
 }
 
+/// Installs the skill for every agent that is on this machine (its config
+/// directory exists), skipping the others.
+pub fn install_all(yes: bool, diff_only: bool, json: bool) -> Result<(), String> {
+    let mut failed = Vec::new();
+    for adapter in all_adapters() {
+        if !adapter.is_present() {
+            continue;
+        }
+        if let Err(e) = install(adapter.name, None, yes, diff_only, json) {
+            failed.push(format!("{}: {e}", adapter.name));
+        }
+    }
+    if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
+}
+
 pub fn uninstall(
     agent_query: &str,
     skill_override: Option<&str>,

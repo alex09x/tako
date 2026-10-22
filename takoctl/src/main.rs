@@ -69,7 +69,14 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
                 .get("agent")
                 .and_then(Value::as_str)
                 .ok_or("hooks install needs an agent name")?;
-            hooks::install(agent, config_override, yes, diff_only, opts.json)
+            hooks::install(agent, config_override, yes, diff_only, opts.json)?;
+            // The agent sees Tako only if it is told: the skill goes in with the hooks.
+            if !diff_only && config_override.is_none() && skills::find_adapter(agent).is_some() {
+                if let Err(e) = skills::install(agent, None, true, false, opts.json) {
+                    eprintln!("takoctl: hooks installed, but the skill was not: {e}");
+                }
+            }
+            Ok(())
         }
         "uninstall" => {
             let agent = opts
@@ -108,6 +115,9 @@ fn run_skills(opts: &Options) -> Result<(), String> {
             skills::status(agent, opts.json)
         }
         "install" => {
+            if opts.args.get("all").and_then(Value::as_bool) == Some(true) {
+                return skills::install_all(yes, diff_only, opts.json);
+            }
             let agent = opts
                 .args
                 .get("agent")

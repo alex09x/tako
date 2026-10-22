@@ -144,10 +144,12 @@ pub fn parse(
                 }
                 "install" => {
                     args.insert("action".into(), Value::String("install".into()));
-                    if positional.is_empty() {
-                        return Err("skills install needs an agent name (e.g. claude, gemini, codex, aider)".into());
+                    if positional.is_empty() && args.get("all") != Some(&Value::Bool(true)) {
+                        return Err("skills install needs an agent name (e.g. claude, gemini, codex, aider) or --all".into());
                     }
-                    args.insert("agent".into(), Value::String(positional.remove(0)));
+                    if !positional.is_empty() {
+                        args.insert("agent".into(), Value::String(positional.remove(0)));
+                    }
                     if !positional.is_empty() {
                         return Err(format!("unexpected argument {}", positional[0]));
                     }
