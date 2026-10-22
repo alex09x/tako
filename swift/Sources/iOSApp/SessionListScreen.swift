@@ -252,7 +252,7 @@ struct SessionListScreen: View {
                 // over. Never mount the security decision underneath that
                 // still-live gesture: discovering and trusting a host must
                 // require two physically separate actions.
-                try? await Task.sleep(nanoseconds: 750_000_000)
+                try? await Task.sleep(nanoseconds: Self.hostKeyMountDelay)
                 let endpoint = port == 22 ? draft.host : "\(draft.host):\(port)"
                 phase = .asking(endpoint, presented)
             case .failed(let why):
@@ -262,20 +262,7 @@ struct SessionListScreen: View {
     }
 
     private func checking(_ host: String) -> some View {
-        ZStack {
-            Brand.scrim.ignoresSafeArea()
-            VStack(spacing: 12) {
-                ProgressView().tint(Brand.ember)
-                Text("connecting to \(host)…")
-                    .font(Mono.font(12))
-                    .foregroundColor(Brand.bodyMuted)
-            }
-            .padding(24)
-            .background(
-                RoundedRectangle(cornerRadius: Metric.Card.radius, style: .continuous)
-                    .fill(Brand.card)
-            )
-        }
+        CheckingOverlay(host: host)
     }
 
     private func open(_ session: Session) {
@@ -394,5 +381,32 @@ struct CrabMark: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+extension SessionListScreen {
+    /// How long a found host key waits before its prompt mounts.
+    static let hostKeyMountDelay: UInt64 = 750_000_000
+}
+
+/// The scrim and spinner shown while the host's key is being looked at.
+struct CheckingOverlay: View {
+    let host: String
+
+    var body: some View {
+        ZStack {
+            Brand.scrim.ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView().tint(Brand.ember)
+                Text("connecting to \(host)…")
+                    .font(Mono.font(12))
+                    .foregroundColor(Brand.bodyMuted)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: Metric.Card.radius, style: .continuous)
+                    .fill(Brand.card)
+            )
+        }
     }
 }

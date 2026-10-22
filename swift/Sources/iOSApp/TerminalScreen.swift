@@ -180,18 +180,7 @@ struct TerminalScreen: View {
         case .connected:
             EmptyView()
         case .connecting:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small).tint(Brand.claw)
-                Text("connecting…")
-            }
-            .font(Mono.font(11))
-            .foregroundColor(Brand.bodyMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Metric.Terminal.inset)
-            .frame(minHeight: 28)
-            .background(Brand.ink)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("session.status")
+            ConnectingNotice()
         case .disconnected(let reason):
             HStack(spacing: 8) {
                 Circle().fill(Brand.error).frame(width: 6, height: 6)
@@ -294,5 +283,24 @@ struct CrabDot: View {
             .fill(state.color)
             .frame(width: 8, height: 8)
             .opacity(state == .idle ? 0.45 : 1)
+    }
+}
+
+/// The strip under the terminal while its session is still connecting: a
+/// spinner and the word, read together as the session's status.
+struct ConnectingNotice: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small).tint(Brand.claw)
+            Text("connecting…")
+        }
+        .font(Mono.font(11))
+        .foregroundColor(Brand.bodyMuted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Metric.Terminal.inset)
+        .frame(minHeight: 28)
+        .background(Brand.ink)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session.status")
     }
 }

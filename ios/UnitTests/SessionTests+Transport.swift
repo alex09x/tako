@@ -188,5 +188,3 @@ extension SessionTests {
         XCTAssertEqual(set.count, 2)
     }
 }
-
-}

@@ -10,6 +10,7 @@ names one check:
     e2e:<a,b,...>    those scenarios of scripts/e2e-macapp.sh on a fresh build
     selftest         the app's self-test on a fresh build
     ios              the iOS terminal surface tests on the simulator
+    iosunit:<A,B,..> those hosted unit-test classes of the phone app (ios/UnitTests) on the simulator
 
 This is not the full CI (scripts/ci.sh): no clippy, no coverage gates, no
 iOS scenarios unless asked. The report says exactly what ran. A check that
@@ -203,6 +204,14 @@ def check_ios():
          (f"{count} tests" if count else "no tests ran") + "; build+run not separated", None, None, secs)
 
 
+def check_iosunit(classes):
+    secs, code, out = run(["scripts/ios-unit-test.sh"] + [c for c in classes.split(",") if c])
+    m = re.findall(r"Executed (\d+) tests?, with (\d+) failures", out)
+    count = int(m[-1][0]) if m else 0
+    note(f"iosunit:{classes}", code == 0 and count > 0 and "TEST SUCCEEDED" in out,
+         f"{count} tests" if count else "no tests ran", None, None, secs)
+
+
 def fmt(v):
     return "-" if v is None else f"{v:.0f}s"
 
@@ -223,6 +232,8 @@ def main(args):
             check_selftest()
         elif arg == "ios":
             check_ios()
+        elif kind == "iosunit" and value:
+            check_iosunit(value)
         else:
             print(f"unknown check: {arg}", file=sys.stderr)
             return 2

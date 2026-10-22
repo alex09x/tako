@@ -274,7 +274,7 @@ extension WalkthroughTests {
         return false
     }
 
-    private struct TerminalSize: Equatable, CustomStringConvertible {
+    struct TerminalSize: Equatable, CustomStringConvertible {
         let cols: Int
         let rows: Int
 
@@ -355,6 +355,4 @@ extension WalkthroughTests {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
-}
-
 }
