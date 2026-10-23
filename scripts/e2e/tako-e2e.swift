@@ -1433,6 +1433,42 @@ let scenarios: [Scenario] = [
         }
         _ = try d.exec("\(ctl) workspace delete E2EWS")
     }),
+    ("workspace-move-keeps-sessions", "a tab moved to another workspace by takoctl, and the switch to it, leave its long-running process alive and listed", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        // A second tab running something long, like a tail -f left open.
+        let pane = try d.exec("\(ctl) tab-new --no-select").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pane.isEmpty else { throw Failure("tab-new printed no pane id") }
+        let pidFile = d.path("moved.pid")
+        // The tab's shell is fish, where $$ means nothing: sh writes its own pid.
+        _ = try d.exec("\(ctl) send \"sh -c 'echo \\$\\$ > \(pidFile); exec sleep 600'\" --target \(pane)")
+        let pid = try d.file("moved.pid").trimmingCharacters(in: .whitespacesAndNewlines)
+        func alive() -> Bool { (try? d.exec("kill -0 \(pid)")) != nil }
+        guard alive() else { throw Failure("the long-running process never started (pid \(pid))") }
+
+        _ = try d.exec("\(ctl) workspace create E2EMove")
+        _ = try d.exec("\(ctl) workspace assign --workspace E2EMove --target \(pane)")
+        let listed = try d.exec("\(ctl) --json workspace list")
+        guard listed.contains("E2EMove") else { throw Failure("no E2EMove in \(listed)") }
+        guard alive() else { throw Failure("assigning the tab ended its process") }
+
+        _ = try d.exec("\(ctl) workspace switch E2EMove")
+        usleep(1_500_000)
+        guard alive() else { throw Failure("switching to the workspace the tab was moved to ended its process") }
+        let tree = try d.exec("\(ctl) tree")
+        guard tree.contains(String(pane.prefix(8))) else {
+            throw Failure("the moved tab is not in the tree after the switch: \(tree)")
+        }
+
+        _ = try d.exec("\(ctl) workspace switch Default")
+        usleep(1_500_000)
+        guard alive() else { throw Failure("switching back ended the process") }
+        _ = try d.exec("\(ctl) workspace switch E2EMove")
+        usleep(1_000_000)
+        guard alive() else { throw Failure("a second switch ended the process") }
+        _ = try d.exec("\(ctl) workspace switch Default")
+        _ = try d.exec("kill \(pid)")
+        _ = try d.exec("\(ctl) workspace delete E2EMove")
+    }),
     ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes with verified non-target execution barrier", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         // Record leader pane TTY and ID before splitting
