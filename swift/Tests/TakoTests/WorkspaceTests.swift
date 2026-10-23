@@ -210,7 +210,8 @@ struct WorkspaceTests {
         #expect(currentResp["name"]?.string == "CLI Workspace")
         #expect(currentResp["id"]?.string == newId)
 
-        // 5. Assign
+        // 5. Assign a tab the store already lists
+        WorkspaceStore.shared.assignTab(tabIdentifier: "test-tab-id", to: WorkspaceStore.defaultWorkspaceId)
         let assignReq = ControlRequest(
             cmd: "workspace",
             args: [
@@ -289,6 +290,38 @@ struct WorkspaceTests {
         #expect(assignByControlResp["tab"]?.string == stableTabId)
         #expect(assignByControlResp["workspace"]?.string == "Alpha")
         #expect(WorkspaceStore.shared.workspace(forTab: stableTabId)?.name == "Alpha")
+    }
+
+    @Test func testAssignResolvesAPaneIdAndRefusesAnUnknownName() throws {
+        WorkspaceStore.shared.resetForTesting()
+        _ = WorkspaceStore.shared.createWorkspace(name: "Legal")
+
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let tree = SplitTree<Tako.SurfaceView>(view: surface)
+        let controller = BaseTerminalController(Tako.App(), surfaceTree: tree)
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        win.windowController = controller
+        controller.window = win
+        let stable = win.stableTabIdentifier
+        let pane = ControlCommands.Pane(surface: surface, windowID: "win-1", tabID: "tab-x", stableTabID: stable, controller: controller)
+        func assign(_ tab: String) throws -> [String: JSON] {
+            try ControlCommands.workspaceCommand(ControlRequest(cmd: "workspace", args: [
+                "action": .string("assign"), "workspace": .string("Legal"), "tab": .string(tab),
+            ], from: nil), all: [pane])
+        }
+
+        // A pane's id, as `tree` prints it, names that pane's tab -- whole or by its first eight.
+        let paneId = surface.id.uuidString.lowercased()
+        #expect(try assign(paneId)["tab"]?.string == stable)
+        WorkspaceStore.shared.assignTab(tabIdentifier: stable, to: WorkspaceStore.defaultWorkspaceId)
+        #expect(try assign(String(paneId.prefix(8)).uppercased())["tab"]?.string == stable)
+        #expect(WorkspaceStore.shared.workspace(forTab: stable)?.name == "Legal")
+
+        // A name that is no tab and no pane stores nothing.
+        let before = WorkspaceStore.shared.workspaces
+        #expect(throws: ControlError.self) { try assign("no-such-tab") }
+        #expect(throws: ControlError.self) { try assign(String(paneId.prefix(4))) }
+        #expect(WorkspaceStore.shared.workspaces == before)
     }
 
     @Test func testWorkspaceAndTabTransitions() throws {
