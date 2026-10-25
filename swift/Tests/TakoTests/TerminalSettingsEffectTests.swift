@@ -238,7 +238,7 @@ struct TerminalSettingsEffectTests {
     // MARK: - Configuration Persistence & Reparsing Tests
 
     /// Verifies that updates written through `KeybindConfigFile` persist to disk, re-parse
-    /// cleanly into `Tako.Config`, and reset to defaults upon removal across all 24 registry settings.
+    /// cleanly into `Tako.Config`, and reset to defaults upon removal across all 25 registry settings.
     @Test func configFileSettingPersistencePropagatesToParsedConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -248,7 +248,7 @@ struct TerminalSettingsEffectTests {
         let configFile = KeybindConfigFile(configPath: configPath)
 
         let allSettings = TerminalSettingRegistry.allSettings
-        #expect(allSettings.count == 24)
+        #expect(allSettings.count == 25)
 
         for setting in allSettings {
             let defaultValue = setting.type.defaultStringValue
@@ -310,7 +310,7 @@ struct TerminalSettingsEffectTests {
 
     @Test func allSettingsInRegistryAreKnownAndHaveDefaults() {
         let all = TerminalSettingRegistry.allSettings
-        #expect(all.count == 24)
+        #expect(all.count == 25)
 
         for setting in all {
             #expect(!setting.id.isEmpty)

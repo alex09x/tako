@@ -10,6 +10,9 @@ struct ClipboardConfirmationView: View {
     enum Action: String {
         case cancel
         case confirm
+        /// Paste this once and turn the paste warning off for good
+        /// (`safe-paste = false`). Only a paste offers it.
+        case confirmAlways
 
         static func text(_ action: Action, _ reason: Tako.ClipboardRequest) -> String {
             switch (action, reason) {
@@ -21,6 +24,10 @@ struct ClipboardConfirmationView: View {
                 return "Paste"
             case (.confirm, .osc_52_read), (.confirm, .osc_52_write):
                 return "Allow"
+            case (.confirmAlways, .paste):
+                return "Always Paste"
+            case (.confirmAlways, .osc_52_read), (.confirmAlways, .osc_52_write):
+                return "Allow"
             }
         }
     }
@@ -30,6 +37,12 @@ struct ClipboardConfirmationView: View {
 
     /// The type of the clipboard request
     let request: Tako.ClipboardRequest
+
+    /// Whether this request offers "Always Paste": only a paste does.
+    static func offersAlways(_ request: Tako.ClipboardRequest) -> Bool {
+        if case .paste = request { return true }
+        return false
+    }
 
     /// Optional delegate to get results. If this is nil, then this view will never close on its own.
     weak var delegate: ClipboardConfirmationViewDelegate?
@@ -59,6 +72,9 @@ struct ClipboardConfirmationView: View {
                 Spacer()
                 Button(Action.text(.cancel, request)) { onCancel() }
                     .keyboardShortcut(.cancelAction)
+                if Self.offersAlways(request) {
+                    Button(Action.text(.confirmAlways, request)) { onPasteAlways() }
+                }
                 Button(Action.text(.confirm, request)) { onPaste() }
                     .keyboardShortcut(.defaultAction)
                 Spacer()
@@ -92,5 +108,9 @@ struct ClipboardConfirmationView: View {
 
     private func onPaste() {
         delegate?.clipboardConfirmationComplete(.confirm, request)
+    }
+
+    private func onPasteAlways() {
+        delegate?.clipboardConfirmationComplete(.confirmAlways, request)
     }
 }
