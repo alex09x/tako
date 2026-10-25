@@ -132,11 +132,7 @@ extension ControlCommands {
             }
             let tabId: String
             if let directTab = request.args["tab"]?.string, !directTab.isEmpty {
-                if let matchedPane = all.first(where: { $0.tabID == directTab || $0.stableTabID == directTab }) {
-                    tabId = matchedPane.stableTabID
-                } else {
-                    tabId = directTab
-                }
+                tabId = try resolveTab(directTab, all: all)
             } else {
                 let surface = try Self.target(request, all)
                 guard let matchedPane = all.first(where: { $0.surface === surface }) else {
@@ -153,5 +149,29 @@ extension ControlCommands {
         default:
             throw ControlError(.invalid, "unknown workspace action: \(action)")
         }
+    }
+
+    /// The tab `name` stands for, as the workspace store knows it: a tab's
+    /// control id, its stable id, a pane's id -- whole or a prefix of eight
+    /// or more characters, as `tree` prints it -- or a tab the store already
+    /// lists though its window is not open. Anything else is refused: an
+    /// unknown name stored as a tab left the workspace with an entry no
+    /// window matches, and the switch to it opened an empty shell while the
+    /// real tabs went out of sight.
+    static func resolveTab(_ name: String, all: [Pane]) throws -> String {
+        if let pane = all.first(where: { $0.tabID == name || $0.stableTabID == name }) {
+            return pane.stableTabID
+        }
+        let wanted = name.lowercased()
+        let byPane = all.filter { pane in
+            let id = pane.surface.id.uuidString.lowercased()
+            return id == wanted || (wanted.count >= 8 && id.hasPrefix(wanted))
+        }
+        if byPane.count == 1 { return byPane[0].stableTabID }
+        if byPane.count > 1 {
+            throw ControlError(.invalid, "\"\(name)\" matches panes of several tabs; give more of the id")
+        }
+        if WorkspaceStore.shared.workspace(forTab: name) != nil { return name }
+        throw ControlError(.notFound, "no tab or pane \"\(name)\" (takoctl tree lists them)")
     }
 }

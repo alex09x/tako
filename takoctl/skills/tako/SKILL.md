@@ -201,7 +201,7 @@ Give every agent pane a stable name so the others can find it, and put related p
 ```bash
 takoctl title "<project> · <agent>" --target <id>     # e.g. "Legal · Codex"; empty text restores the program's title
 takoctl workspace create "Legal" --root ~/work/legal
-takoctl workspace assign <tab-id> --workspace "Legal"
+takoctl workspace assign <pane-id> --workspace "Legal"   # the id from tree --json; an unknown id is refused
 takoctl workspace list
 ```
 
