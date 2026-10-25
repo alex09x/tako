@@ -286,6 +286,13 @@ extension BaseTerminalController {
             window?.endSheet(ccWindow)
         }
 
+        // "Always Paste" pastes this once, then switches the warning off.
+        var action = action
+        if case .confirmAlways = action {
+            if case .paste = request { stopAskingBeforePasting(on: cc.surfaceView) }
+            action = .confirm
+        }
+
         switch request {
         case let .osc_52_write(pasteboard):
             guard case .confirm = action else { break }
@@ -299,7 +306,7 @@ extension BaseTerminalController {
                 if let surface = cc.surface {
                     Tako.App.completeClipboardRequest(surface, data: "", state: cc.state, confirmed: false)
                 }
-            case .confirm:
+            case .confirm, .confirmAlways:
                 if let surfaceView = cc.surfaceView {
                     Tako.App.completeClipboardRequest(surfaceView, data: cc.contents, state: cc.state, confirmed: true)
                 } else if let surface = cc.surface {
@@ -307,6 +314,15 @@ extension BaseTerminalController {
                 }
             }
         }
+    }
+
+    /// Writes `safe-paste = false` to the config and drops the guard on the
+    /// terminal that asked, so the next multi-line paste goes straight in.
+    /// The Settings tab turns it back on.
+    func stopAskingBeforePasting(on surfaceView: Tako.SurfaceView?) {
+        surfaceView?.safePaste = false
+        guard let setting = TerminalSettingRegistry.setting(for: "safe-paste") else { return }
+        (pasteGuardConfigFile ?? KeybindConfigFile.shared).setSettingValue("false", for: setting)
     }
 
 }

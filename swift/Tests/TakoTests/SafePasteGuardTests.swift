@@ -246,4 +246,95 @@ struct SafePasteGuardTests {
         #expect(output.contains("safe"))
         #expect(output.contains("multiline"))
     }
+
+    // MARK: - Always Paste
+
+    private func scratchConfig() throws -> (KeybindConfigFile, String, URL) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("config").path
+        return (KeybindConfigFile(configPath: path), path, dir)
+    }
+
+    @Test func alwaysPastePastesOnceAndTurnsTheGuardOffInTheConfig() throws {
+        let (file, path, dir) = try scratchConfig()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (controller, _, surface) = makeControllerWithWindow()
+        defer { surface.close() }
+        controller.pasteGuardConfigFile = file
+
+        surface.core.feed(bytes: Data("\u{1b}]133;P\u{07}".utf8))
+        surface.handlePaste("one\ntwo\n")
+        #expect(controller.clipboardConfirmation != nil)
+
+        controller.clipboardConfirmationComplete(.confirmAlways, .paste)
+
+        #expect(controller.clipboardConfirmation == nil)
+        #expect(TerminalTestSupport.waitUntil(timeout: 2) { !surface.selfTestBytes.isEmpty })
+        #expect(String(decoding: surface.selfTestBytes, as: UTF8.self).contains("one"))
+        #expect(surface.safePaste == false)
+        #expect(Tako.Config(at: path).safePaste == false)
+        let setting = try #require(TerminalSettingRegistry.setting(for: "safe-paste"))
+        #expect(file.getSettingValue(for: setting) == "false")
+    }
+
+    @Test func afterAlwaysPasteTheNextMultiLinePasteGoesStraightIn() throws {
+        let (file, _, dir) = try scratchConfig()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (controller, _, surface) = makeControllerWithWindow()
+        defer { surface.close() }
+        controller.pasteGuardConfigFile = file
+
+        surface.core.feed(bytes: Data("\u{1b}]133;P\u{07}".utf8))
+        surface.handlePaste("a\nb\n")
+        controller.clipboardConfirmationComplete(.confirmAlways, .paste)
+        _ = TerminalTestSupport.waitUntil(timeout: 2) { !surface.selfTestBytes.isEmpty }
+
+        var asked = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: Tako.Notification.confirmClipboard, object: surface, queue: nil
+        ) { _ in asked = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        surface.handlePaste("c\nd\n")
+        #expect(!asked)
+        #expect(controller.clipboardConfirmation == nil)
+    }
+
+    @Test func plainPasteAndCancelLeaveTheGuardOn() throws {
+        let (file, path, dir) = try scratchConfig()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (controller, _, surface) = makeControllerWithWindow()
+        defer { surface.close() }
+        controller.pasteGuardConfigFile = file
+        surface.core.feed(bytes: Data("\u{1b}]133;P\u{07}".utf8))
+
+        surface.handlePaste("x\ny\n")
+        controller.clipboardConfirmationComplete(.confirm, .paste)
+        surface.handlePaste("x\ny\n")
+        controller.clipboardConfirmationComplete(.cancel, .paste)
+
+        #expect(surface.safePaste == true)
+        #expect(Tako.Config(at: path).safePaste == true)
+        #expect(!FileManager.default.fileExists(atPath: path))
+    }
+
+    @Test func alwaysIsOfferedForAPasteOnly() {
+        #expect(ClipboardConfirmationView.offersAlways(.paste))
+        #expect(!ClipboardConfirmationView.offersAlways(.osc_52_read))
+        #expect(!ClipboardConfirmationView.offersAlways(.osc_52_write(nil)))
+        #expect(ClipboardConfirmationView.Action.text(.confirmAlways, .paste) == "Always Paste")
+    }
+
+    @Test func theSettingsTabListsTheGuardAndFlipsIt() throws {
+        let setting = try #require(TerminalSettingRegistry.setting(for: "safe-paste"))
+        #expect(setting.type == .boolean(defaultValue: true))
+        #expect(setting.type.nextValue(current: "true") == "false")
+        let (file, path, dir) = try scratchConfig()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(file.effectiveSettingValue(for: setting) == "true")
+        #expect(file.setSettingValue("false", for: setting))
+        #expect(Tako.Config(at: path).safePaste == false)
+        #expect(file.setSettingValue("true", for: setting))
+        #expect(Tako.Config(at: path).safePaste == true)
+    }
 }

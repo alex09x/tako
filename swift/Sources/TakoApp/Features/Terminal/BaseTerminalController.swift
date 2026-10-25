@@ -148,6 +148,10 @@ class BaseTerminalController: NSWindowController,
     /// The clipboard confirmation window, if shown.
     var clipboardConfirmation: ClipboardConfirmationController?
 
+    /// The config file "Always Paste" writes to; nil means the user's own.
+    /// Tests point it at a scratch file.
+    var pasteGuardConfigFile: KeybindConfigFile?
+
     /// Fullscreen state management.
     internal(set) var fullscreenStyle: FullscreenStyle?
 

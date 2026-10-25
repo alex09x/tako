@@ -184,6 +184,13 @@ public enum TerminalSettingRegistry {
             description: "Prompt for confirmation before closing tabs (true = when busy, always, false = never)"
         ),
         TerminalSettingItem(
+            id: "safe-paste",
+            title: "Confirm Multi-line Paste",
+            category: "Terminal",
+            type: .boolean(defaultValue: true),
+            description: "Ask before pasting several lines at a shell prompt (off = paste straight in)"
+        ),
+        TerminalSettingItem(
             id: "shell-integration",
             title: "Shell Integration",
             category: "Terminal",

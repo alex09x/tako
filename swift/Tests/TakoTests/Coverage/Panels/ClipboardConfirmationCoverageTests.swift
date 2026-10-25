@@ -88,6 +88,9 @@ struct ClipboardConfirmationViewCoverageTests {
         #expect(ClipboardConfirmationView.Action.text(.confirm, .paste) == "Paste")
         #expect(ClipboardConfirmationView.Action.text(.confirm, .osc_52_read) == "Allow")
         #expect(ClipboardConfirmationView.Action.text(.confirm, .osc_52_write(nil)) == "Allow")
+        #expect(ClipboardConfirmationView.Action.text(.confirmAlways, .paste) == "Always Paste")
+        #expect(ClipboardConfirmationView.Action.text(.confirmAlways, .osc_52_read) == "Allow")
+        #expect(ClipboardConfirmationView.Action.text(.confirmAlways, .osc_52_write(nil)) == "Allow")
     }
 
     @Test func onAppearUnhidesAndOnDisappearRehidesTheCursor() {
