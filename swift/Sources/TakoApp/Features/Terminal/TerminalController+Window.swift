@@ -30,6 +30,11 @@ extension TerminalController {
         // use whatever the latest app-level config is.
         let config = tako.config
 
+        // A tab's window comes and goes as tabs and workspaces switch: the
+        // system's fade on showing a document window held a workspace switch
+        // back by some 300 ms. Tako's own motion is drawn in the window.
+        window.animationBehavior = .none
+
         // Setting all three of these is required for restoration to work.
         window.isRestorable = restorable
         if restorable {
