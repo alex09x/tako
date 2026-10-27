@@ -199,7 +199,7 @@ def check_selftest():
     build = app_build()
     if build is None:
         return note("selftest", False, "app build failed")
-    secs, code, out = run(["scripts/selftest-macapp.sh"])
+    secs, code, out = run(["scripts/selftest-macapp.sh"], env=e2e_env())
     wait = lock_wait(out)
     note("selftest", code == 0, "ok" if code == 0 else "failed", build, wait, secs - (wait or 0))
 

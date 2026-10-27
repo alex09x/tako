@@ -127,7 +127,9 @@ extension SessionSidebarStore {
 
                 let hasSplitChildren = includeSplitPanes && winSurfaces.count > 1
                 let subagentKids = subagentChildrenByTabId[tabId] ?? []
-                let hasAnyChildren = hasSplitChildren || !subagentKids.isEmpty
+                // Folded subagents are not listed, yet the tab still has them:
+                // the chevron stays to unfold them.
+                let hasAnyChildren = hasSplitChildren || !subagentKids.isEmpty || rawTabItem.hasChildren
                 // Folded as either its splits or its subagents are: a split
                 // that is also a subagent is folded by the one chevron.
                 let tabCollapsed = (isTabSplitsCollapsed(tabId) || rawTabItem.isCollapsed) && !hasActiveFilter

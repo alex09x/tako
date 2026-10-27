@@ -58,4 +58,33 @@ struct SidebarSubagentSplitCollapseTests {
         #expect(childTitles(scene) == ["Claude · lead", "sub-worker"])
         #expect(SidebarPixels.differingFraction(unfolded, scene.snapshot()) < 0.002, "unfolded again, drawn as before")
     }
+    /// A one-pane tab whose agent opened a subagent in another tab: folded,
+    /// it keeps its chevron, or it could never be unfolded.
+    @Test func aFoldedSubagentGroupKeepsItsChevron() throws {
+        let scene = WorkspaceSwitchVisualScene()
+        let parent = scene.surface("Claude · lead", .working)
+        let kid = scene.surface("sub-worker", .working)
+        defer {
+            SubagentHierarchyStore.shared.unregister(paneId: kid.id)
+            scene.tearDown()
+        }
+        scene.addTab(parent, to: scene.main)
+        scene.addTab(kid, to: scene.main)
+        SubagentHierarchyStore.shared.registerChild(childId: kid.id, parentId: parent.id, label: "sub-worker")
+        scene.mountSidebar()
+        let row = try #require(tabRow(scene))
+        #expect(row.title == "Claude · lead")
+        #expect(row.hasChildren && !row.isCollapsed)
+
+        scene.store.toggleRowCollapsed(row)
+        scene.settle()
+        let folded = try #require(tabRow(scene))
+        #expect(folded.isCollapsed)
+        #expect(folded.hasChildren, "folded, the tab keeps the chevron that unfolds it")
+
+        scene.store.toggleRowCollapsed(folded)
+        scene.settle()
+        #expect(tabRow(scene)?.isCollapsed == false)
+        #expect(tabRow(scene)?.hasChildren == true)
+    }
 }

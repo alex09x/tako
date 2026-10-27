@@ -94,7 +94,6 @@ impl Failure {
 
 pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, Failure> {
     let unsent = |message: String| Failure { message, sent: false };
-    let sent = |message: String| Failure { message, sent: true };
     let deadline = Instant::now() + limit;
     let mut stream = connect(path, deadline).map_err(unsent)?;
     // While the connection is surely open: once Tako has answered and closed
