@@ -1666,6 +1666,44 @@ let scenarios: [Scenario] = [
             timings.append(String(format: "%@ answered %.0f ms, on screen %.0f ms", target, answered * 1000, shown * 1000))
             usleep(300_000)
         }
+        // The same from the workspace pill at the top of the tab bar: click it,
+        // click the workspace in its menu, as a hand does.
+        for (i, target) in ["E2ESpeed", "Default", "E2ESpeed", "Default"].enumerated() {
+            let want = target == "E2ESpeed" ? speedWindows : defaultWindows
+            d.activate()
+            try d.clickWorkspacePill(in: d.activeOnScreenWindow())
+            guard d.wait(for: { d.openMenuItem(titled: target) != nil }, timeout: 3), let item = d.openMenuItem(titled: target),
+                  let posValue: AXValue = d.attribute(item, kAXPositionAttribute),
+                  let sizeValue: AXValue = d.attribute(item, kAXSizeAttribute) else {
+                throw Failure("pill switch \(i): no \(target) in the workspace menu")
+            }
+            var pos = CGPoint.zero, size = CGSize.zero
+            AXValueGetValue(posValue, .cgPoint, &pos)
+            AXValueGetValue(sizeValue, .cgSize, &size)
+            let started = Date()
+            try d.click(at: CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2))
+            guard d.wait(for: { d.onScreenWindowNumbers() == want }, timeout: 5) else {
+                throw Failure("pill switch \(i) to \(target): its window never came on screen alone")
+            }
+            let shown = Date().timeIntervalSince(started)
+            slowest = max(slowest, shown)
+            timings.append(String(format: "pill %@ on screen %.0f ms", target, shown * 1000))
+            usleep(300_000)
+        }
+        // A second click on the pill closes its list and opens no new one.
+        d.activate()
+        try d.clickWorkspacePill(in: d.activeOnScreenWindow())
+        guard d.wait(for: { d.openMenuItem(titled: "E2ESpeed") != nil }, timeout: 3) else {
+            throw Failure("the workspace list did not open on the pill")
+        }
+        try d.clickWorkspacePill(in: d.activeOnScreenWindow())
+        guard d.wait(for: { d.openMenuItem(titled: "E2ESpeed") == nil }, timeout: 2) else {
+            throw Failure("a second click on the pill left the workspace list open")
+        }
+        usleep(400_000)
+        guard d.openMenuItem(titled: "E2ESpeed") == nil else {
+            throw Failure("a second click on the pill opened the workspace list again")
+        }
         FileHandle.standardError.write(("[timing] workspace switch: " + timings.joined(separator: "; ") + "\n").data(using: .utf8)!)
         guard slowest < 0.3 else {
             throw Failure(String(format: "a workspace switch took %.0f ms to reach the screen: ", slowest * 1000) + timings.joined(separator: "; "))

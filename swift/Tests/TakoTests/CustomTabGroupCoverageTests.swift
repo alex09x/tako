@@ -273,9 +273,14 @@ struct CustomTabGroupCoverageTests {
         WorkspaceStore.shared.resetForTesting()
         Tako.CustomTabGroup.resetForTesting()
 
+        // Two workspaces of the test's own: a window another suite leaves
+        // behind, assigned to none, counts as Default's -- and Default's key
+        // window would be taken for the departing one.
+        let wsA = WorkspaceStore.shared.createWorkspace(name: "Alpha")
         let wsB = WorkspaceStore.shared.createWorkspace(name: "Beta")
-        WorkspaceStore.shared.assignTab(tabIdentifier: a.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+        WorkspaceStore.shared.assignTab(tabIdentifier: a.stableTabIdentifier, to: wsA.id)
         WorkspaceStore.shared.assignTab(tabIdentifier: b.stableTabIdentifier, to: wsB.id)
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsA.id))
 
         // Separate groups (standard multi-workspace topology)
         let groupA = Tako.CustomTabGroup.group(for: a)
@@ -300,7 +305,7 @@ struct CustomTabGroupCoverageTests {
         // 2. When syncWindowFrame is enabled, the transition coordinator captures departing frame
         // from departing groupA's selected window and syncs groupB without manual injection.
         groupB.syncWindowFrameOverride = true
-        #expect(WorkspaceStore.shared.switchWorkspace(to: WorkspaceStore.defaultWorkspaceId))
+        #expect(WorkspaceStore.shared.switchWorkspace(to: wsA.id))
         #expect(groupA.selectedWindow === a)
 
         #expect(WorkspaceStore.shared.switchWorkspace(to: wsB.id))
