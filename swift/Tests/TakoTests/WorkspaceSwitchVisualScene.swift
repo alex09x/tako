@@ -70,7 +70,10 @@ final class WorkspaceSwitchVisualScene {
 
     /// A tab of one pane, or of a split when `split` is given, in `workspace`.
     @discardableResult
-    func addTab(_ first: Tako.SurfaceView, split: Tako.SurfaceView? = nil, to workspace: Workspace) -> Tab {
+    /// `ownWindow`: the tab opens a window of its own, as a workspace's first
+    /// tab does when the workspace had none, instead of joining the others.
+    func addTab(_ first: Tako.SurfaceView, split: Tako.SurfaceView? = nil, to workspace: Workspace,
+                ownWindow: Bool = false) -> Tab {
         var tree = SplitTree<Tako.SurfaceView>(view: first)
         if let split { tree = (try? tree.inserting(view: split, at: first, direction: .right)) ?? tree }
         let controller = BaseTerminalController(Tako.App(), surfaceTree: tree)
@@ -83,7 +86,7 @@ final class WorkspaceSwitchVisualScene {
         content.addSubview(first)
         if let split { content.addSubview(split) }
         window.contentView = content
-        if let anchor = tabs.first?.window { Tako.CustomTabGroup.join(window, to: anchor, select: false) }
+        if !ownWindow, let anchor = tabs.first?.window { Tako.CustomTabGroup.join(window, to: anchor, select: false) }
         workspaces.assignTab(tabIdentifier: window.stableTabIdentifier, to: workspace.id)
         let tab = Tab(window: window, controller: controller, surfaces: [first] + (split.map { [$0] } ?? []),
                       workspace: workspace.id)

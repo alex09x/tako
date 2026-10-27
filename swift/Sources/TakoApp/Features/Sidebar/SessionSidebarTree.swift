@@ -40,9 +40,7 @@ extension SessionSidebarStore {
     ) -> [SessionSidebarWorkspaceGroup] {
         bindSurfaces(for: window)
 
-        let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
-        let windows = group?.windows ?? (window.map { [$0] } ?? [])
-        let selectedWindow = group?.selectedWindow ?? window
+        let (windows, selectedWindow) = sidebarWindows(for: window, workspaceStore: workspaceStore)
 
         let effectiveNeedsAttention = explicitFilterNeedsAttention ?? filterNeedsAttention(for: window)
         let rawQuery = (explicitFilterText ?? filterText(for: window)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,7 +48,24 @@ extension SessionSidebarStore {
         let hasActiveFilter = effectiveNeedsAttention || !query.isEmpty
 
         // Build all uncollapsed base items (without filtering yet so we can group by workspace and expand splits)
-        let baseItems = items(for: window, filterText: "", filterNeedsAttention: false)
+        // Rows of every window the sidebar lists: the own group's, then each
+        // other group's -- built per group, so each knows its own tabs' order.
+        let ownGroup = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
+        var baseItems = items(for: window, filterText: "", filterNeedsAttention: false)
+        var seenGroups: Set<ObjectIdentifier> = ownGroup.map { [ObjectIdentifier($0)] } ?? []
+        for win in windows where !(ownGroup?.windows.contains(win) ?? (win === window)) {
+            let group = Tako.CustomTabGroup.group(for: win)
+            guard seenGroups.insert(ObjectIdentifier(group)).inserted else { continue }
+            let listed = Set(windows.map(\.stableTabIdentifier))
+            // A tab the sidebar lists, and the subagent rows under it.
+            var keeping = false
+            for item in items(for: win, filterText: "", filterNeedsAttention: false) {
+                if !item.isChild { keeping = listed.contains(item.id) }
+                if keeping { baseItems.append(item) }
+            }
+        }
+        /// Whether `win` is in the window the sidebar is in: only there is a tab the selected one.
+        func inOwnGroup(_ win: NSWindow) -> Bool { ownGroup?.windows.contains(win) ?? (win === window) }
         var baseTabById: [String: SessionSidebarItem] = [:]
         var subagentChildrenByTabId: [String: [SessionSidebarItem]] = [:]
 
@@ -147,7 +162,7 @@ extension SessionSidebarStore {
                     surfaceIds: rawTabItem.surfaceIds,
                     index: rawTabItem.index,
                     totalCount: rawTabItem.totalCount,
-                    isSelected: rawTabItem.isSelected,
+                    isSelected: rawTabItem.isSelected && inOwnGroup(win),
                     title: rawTabItem.title,
                     status: rawTabItem.status,
                     crabState: rawTabItem.crabState,
@@ -239,7 +254,7 @@ extension SessionSidebarStore {
                             surfaceIds: kid.surfaceIds,
                             index: kid.index,
                             totalCount: kid.totalCount,
-                            isSelected: kid.isSelected,
+                            isSelected: kid.isSelected && inOwnGroup(win),
                             title: kid.title,
                             status: kid.status,
                             crabState: kid.crabState,

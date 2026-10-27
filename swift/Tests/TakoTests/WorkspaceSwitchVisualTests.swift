@@ -108,6 +108,62 @@ struct WorkspaceSwitchVisualTests {
     }
 }
 
+/// A workspace's tabs may live in a window of their own -- the first tab of
+/// a workspace that had none opens one. The sidebar of another workspace's
+/// window lists them all the same, with their count.
+@Suite(.serialized) @MainActor
+struct WorkspaceTabsInOtherWindowsTests {
+    @Test func theSidebarListsTabsThatLiveInAnotherWindow() throws {
+        let scene = WorkspaceSwitchVisualScene()
+        defer { scene.tearDown() }
+        // The window the user is in: Legal's two agents.
+        scene.addTab(scene.surface("Claude · petition", .working), to: scene.legal)
+        scene.addTab(scene.surface("Codex · review", .needsApproval), to: scene.legal)
+        // Default's one tab, in its own window, and Frontend's, in another.
+        let top = scene.addTab(scene.surface("top", .idle), to: scene.main, ownWindow: true)
+        let vite = scene.addTab(scene.surface("Vite dev", .waitingForInput), to: scene.frontend, ownWindow: true)
+        _ = scene.workspaces.switchWorkspace(to: scene.legal.id)
+        scene.mountSidebar()
+
+        let byName = Dictionary(uniqueKeysWithValues: scene.groups.map { ($0.name, $0) })
+        #expect(byName["Legal"]?.sessionCount == 2)
+        #expect(byName["Default"]?.sessionCount == 1, "Default's tab lives in another window, and counts")
+        #expect(byName["Default"]?.items.map(\.title) == ["top"])
+        #expect(byName["Frontend"]?.items.map(\.title) == ["Vite dev"])
+        #expect(byName["Frontend"]?.attentionCount == 1)
+        let selected = scene.groups.flatMap(\.items).filter(\.isSelected).map(\.title)
+        #expect(selected.count <= 1, "one selected row, the own window's: \(selected)")
+        #expect(!selected.contains("top") && !selected.contains("Vite dev"))
+        scene.export(scene.snapshot(), "other-windows-legal")
+
+        // A click on Default's row goes to its window and its workspace.
+        let row = try #require(byName["Default"]?.items.first)
+        scene.store.selectTab(item: row, in: scene.anchor, workspaceStore: scene.workspaces)
+        #expect(scene.workspaces.activeWorkspaceId == scene.main.id)
+        #expect(Tako.CustomTabGroup.group(for: top.window).selectedWindow === top.window)
+
+        // And a click on Frontend's header to its own.
+        scene.store.selectWorkspace(scene.frontend.id, in: scene.anchor, workspaceStore: scene.workspaces)
+        #expect(scene.workspaces.activeWorkspaceId == scene.frontend.id)
+        #expect(Tako.CustomTabGroup.group(for: vite.window).selectedWindow === vite.window)
+    }
+
+    @Test func aTabOfNoWorkspaceInAnotherWindowIsNotPulledIn() {
+        let scene = WorkspaceSwitchVisualScene()
+        defer { scene.tearDown() }
+        scene.addTab(scene.surface("Claude · petition", .working), to: scene.legal)
+        // A stray window no workspace holds -- another test's, another app's state.
+        let stray = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        stray.isReleasedWhenClosed = false
+        defer { stray.close() }
+        _ = Tako.CustomTabGroup.group(for: stray)
+        _ = scene.workspaces.switchWorkspace(to: scene.legal.id)
+        scene.mountSidebar()
+        let titles = scene.groups.flatMap(\.items).map(\.title)
+        #expect(titles == ["Claude · petition"])
+    }
+}
+
 /// Reading a sidebar frame.
 enum SidebarPixels {
     /// The share of pixels whose colour moved by more than a rounding step.
