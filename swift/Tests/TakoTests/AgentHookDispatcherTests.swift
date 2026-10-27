@@ -43,9 +43,15 @@ struct AgentHookDispatcherTests {
         var hooks: [String: Any] = [
             "UserPromptSubmit": group("/Users/example/.local/bin/tako-hook codex user_prompt_submit"),
             "Stop": group("/Users/example/.local/bin/tako-hook codex stop"),
-            "PermissionRequest": group("/Users/example/.local/bin/tako-hook codex permission_request")]
+            "PermissionRequest": group("/Users/example/.local/bin/tako-hook codex permission_request"),
+            "Interrupt": group("/Users/example/.local/bin/tako-hook codex interrupt")]
         try JSONSerialization.data(withJSONObject: ["hooks": hooks]).write(to: file)
         #expect(AgentHooksTool.isCodexConfigured(filePath: file.path))
+        // An install from before Interrupt is not a complete one: Esc would leave the pane working.
+        let interrupt = hooks.removeValue(forKey: "Interrupt")
+        try JSONSerialization.data(withJSONObject: ["hooks": hooks]).write(to: file)
+        #expect(!AgentHooksTool.isCodexConfigured(filePath: file.path))
+        hooks["Interrupt"] = interrupt
         hooks["Stop"] = group("echo tako-hook codex stop")
         try JSONSerialization.data(withJSONObject: ["hooks": hooks]).write(to: file)
         #expect(!AgentHooksTool.isCodexConfigured(filePath: file.path))

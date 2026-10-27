@@ -44,6 +44,11 @@ def commands(event, surface):
             ["status", "set", "working", "--text", "Thinking..."] + target,
             ["progress", "indeterminate"] + target,
         ]
+    # The user stopped the turn (Codex's Interrupt hook): no Stop follows,
+    # so this is the one event that ends the turn.
+    if event == "interrupt":
+        return [["status", "set", "idle"] + target,
+                ["progress", "clear"] + target]
     if event in ("stop", "done", "post_invocation"):
         return [["status", "set", "done"] + target,
                 ["progress", "clear"] + target]

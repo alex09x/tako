@@ -147,6 +147,7 @@ extension AgentHooksTool {
     }
     private static let workingHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --target \"$TAKO_SURFACE_ID\" --text \"Thinking...\" >/dev/null 2>&1 || true; takoctl progress indeterminate --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
     private static let doneHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set done --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
+    private static let idleHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set idle --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; takoctl progress clear --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
     private static let needsApprovalHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set needs_approval --target \"$TAKO_SURFACE_ID\" --text \"Approval requested\" >/dev/null 2>&1 || true; takoctl progress pause --target \"$TAKO_SURFACE_ID\" >/dev/null 2>&1 || true; fi; :"
     private static let questionHookCmd = preamble + "if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set waiting_for_input --target \"$TAKO_SURFACE_ID\" --text \"Question\" >/dev/null 2>&1 || true; fi; :"
 
@@ -282,6 +283,16 @@ extension AgentHooksTool {
             return false
         }
         hooks["Stop"] = mergedStop
+
+        // Esc or Ctrl+C fires Interrupt and no Stop: it is what ends the turn.
+        let interruptGroup: [String: Any] = [
+            "matcher": "",
+            "hooks": [["type": "command", "command": preferredCommand(agent: "codex", event: "interrupt", fallback: idleHookCmd), "timeout": 5]]
+        ]
+        guard let mergedInterrupt = mergeMatcherGroup(in: hooks["Interrupt"], adding: interruptGroup, commandKey: "takoctl status set idle", replacePattern: "takoctl status") else {
+            return false
+        }
+        hooks["Interrupt"] = mergedInterrupt
 
         let permGroup: [String: Any] = [
             "matcher": "",

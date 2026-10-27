@@ -98,6 +98,16 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[1].args[0][1:3], ["progress", "pause"])
 
     @patch.object(hook.subprocess, "run")
+    @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
+    def test_interrupt_ends_the_turn_idle_and_clears_progress(self, which, run):
+        run.return_value = SimpleNamespace(returncode=0)
+        hook.dispatch("codex", "interrupt", self.env, {"hook_event_name": "Interrupt"})
+        self.assertEqual([c.args[0][1:4] for c in run.call_args_list],
+                         [["status", "set", "idle"], ["progress", "clear", "--target"]])
+        for call in run.call_args_list:
+            self.assertEqual(call.args[0][-2:], ["--target", self.env["TAKO_SURFACE_ID"]])
+
+    @patch.object(hook.subprocess, "run")
     def test_ordinary_tool_is_not_reported_as_question(self, run):
         hook.dispatch("codex", "question", self.env, {"tool_name": "exec_command"})
         run.assert_not_called()

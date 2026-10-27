@@ -133,7 +133,10 @@ enum AgentHooksTool {
                       hasMatcherHook(in: hooks["Stop"], commandKey: "tako-hook codex stop")
         let hasApproval = hasMatcherHook(in: hooks["PermissionRequest"], commandKey: "takoctl status set needs_approval --target") ||
                           hasMatcherHook(in: hooks["PermissionRequest"], commandKey: "tako-hook codex permission_request")
-        return hasPrompt && hasStop && hasApproval
+        // Without Interrupt a turn stopped with Esc stays working forever.
+        let hasInterrupt = hasMatcherHook(in: hooks["Interrupt"], commandKey: "takoctl status set idle --target") ||
+                           hasMatcherHook(in: hooks["Interrupt"], commandKey: "tako-hook codex interrupt")
+        return hasPrompt && hasStop && hasApproval && hasInterrupt
     }
 
     static func isGeminiConfigured(filePath: String) -> Bool {

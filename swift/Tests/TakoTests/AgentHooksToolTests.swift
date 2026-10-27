@@ -208,6 +208,17 @@ struct AgentHooksToolTests {
         #expect(hooks["UserPromptSubmit"] != nil)
         #expect(hooks["Stop"] != nil)
         #expect(hooks["PermissionRequest"] != nil)
+        let interrupt = try #require(hooks["Interrupt"] as? [[String: Any]])
+        let command = try #require((interrupt.first?["hooks"] as? [[String: Any]])?.first?["command"] as? String)
+        #expect(command.contains("tako-hook codex interrupt"))
+        #expect(command.contains("takoctl status set idle"))
+        #expect(AgentHooksTool.isCodexConfigured(filePath: hooksFile.path))
+
+        // A second install replaces the Interrupt handler instead of adding another.
+        #expect(AgentHooksTool.installCodexHooks(baseDir: sandbox.path) == true)
+        let again = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: hooksFile)) as? [String: Any])
+        let againInterrupt = try #require((again["hooks"] as? [String: Any])?["Interrupt"] as? [[String: Any]])
+        #expect(againInterrupt.flatMap { ($0["hooks"] as? [[String: Any]]) ?? [] }.count == 1)
     }
 
     @Test
