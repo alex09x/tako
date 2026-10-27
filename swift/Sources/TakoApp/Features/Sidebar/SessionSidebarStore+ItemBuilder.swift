@@ -38,16 +38,20 @@ extension SessionSidebarStore {
         sidebarWindows(for: window, workspaceStore: workspaceStore).windows.first { $0.stableTabIdentifier == tabId }
     }
 
+    /// `selectable`: false for another window's group, listed in this
+    /// window's sidebar -- none of its tabs is the one the user is in, so none
+    /// is drawn selected, and none has its attention waived for being so.
     func items(
         for window: NSWindow?,
         filterText explicitFilterText: String? = nil,
-        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil
+        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil,
+        selectable: Bool = true
     ) -> [SessionSidebarItem] {
         bindSurfaces(for: window)
 
         let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
         let windows = group?.windows ?? (window.map { [$0] } ?? [])
-        let selected = group?.selectedWindow ?? window
+        let selected = selectable ? (group?.selectedWindow ?? window) : nil
 
         var result: [SessionSidebarItem] = []
         result.reserveCapacity(windows.count)

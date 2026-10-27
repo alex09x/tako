@@ -59,7 +59,7 @@ extension SessionSidebarStore {
             let listed = Set(windows.map(\.stableTabIdentifier))
             // A tab the sidebar lists, and the subagent rows under it.
             var keeping = false
-            for item in items(for: win, filterText: "", filterNeedsAttention: false) {
+            for item in items(for: win, filterText: "", filterNeedsAttention: false, selectable: false) {
                 if !item.isChild { keeping = listed.contains(item.id) }
                 if keeping { baseItems.append(item) }
             }

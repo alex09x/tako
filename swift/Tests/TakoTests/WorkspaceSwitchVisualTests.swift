@@ -122,6 +122,10 @@ struct WorkspaceTabsInOtherWindowsTests {
         // Default's one tab, in its own window, and Frontend's, in another.
         let top = scene.addTab(scene.surface("top", .idle), to: scene.main, ownWindow: true)
         let vite = scene.addTab(scene.surface("Vite dev", .waitingForInput), to: scene.frontend, ownWindow: true)
+        // Frontend's second tab, in the same window: an outcome nobody has looked at.
+        let exhibits = scene.addTab(scene.surface("Claude · exhibits", .done), to: scene.frontend, ownWindow: true)
+        Tako.CustomTabGroup.join(exhibits.window, to: vite.window, select: false)
+        Tako.CustomTabGroup.group(for: vite.window).select(vite.window)
         _ = scene.workspaces.switchWorkspace(to: scene.legal.id)
         scene.mountSidebar()
 
@@ -129,8 +133,12 @@ struct WorkspaceTabsInOtherWindowsTests {
         #expect(byName["Legal"]?.sessionCount == 2)
         #expect(byName["Default"]?.sessionCount == 1, "Default's tab lives in another window, and counts")
         #expect(byName["Default"]?.items.map(\.title) == ["top"])
-        #expect(byName["Frontend"]?.items.map(\.title) == ["Vite dev"])
-        #expect(byName["Frontend"]?.attentionCount == 1)
+        #expect(byName["Frontend"]?.items.map(\.title) == ["Vite dev", "Claude · exhibits"])
+        #expect(byName["Frontend"]?.items.first?.needsAttention == true, "another window's tab waits as any does")
+        #expect(byName["Frontend"]?.attentionCount == 2, "the question, and the unseen outcome")
+        let waiting = scene.store.workspaceGroups(for: scene.anchor, workspaceStore: scene.workspaces, filterNeedsAttention: true)
+            .flatMap(\.items).map(\.title)
+        #expect(waiting.contains("Vite dev") && waiting.contains("Claude · exhibits"), "the Needs-you filter keeps them: \(waiting)")
         let selected = scene.groups.flatMap(\.items).filter(\.isSelected).map(\.title)
         #expect(selected.count <= 1, "one selected row, the own window's: \(selected)")
         #expect(!selected.contains("top") && !selected.contains("Vite dev"))
