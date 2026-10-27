@@ -209,6 +209,14 @@ struct OverlayFormBridgeTests {
         guard case .failure(let closed)? = replies.all.first else { Issue.record("\(replies.all)"); return }
         #expect(closed.message.contains("closed without a submission"))
 
+        // The pane closed under the form (Cmd-W, takoctl close): the wait ends then, not at its timeout.
+        let (surface3, gone, dir3) = try openAndWait(store)
+        defer { try? FileManager.default.removeItem(at: dir3) }
+        surface3.close()
+        guard case .failure(let paneClosed)? = gone.all.first else { Issue.record("\(gone.all)"); return }
+        #expect(paneClosed.message.contains("closed without a submission"))
+        #expect(!store.hasOverlay(paneId: surface3.id))
+
         let (surface2, late, dir2) = try openAndWait(store, timeout: 0.3)
         defer { try? FileManager.default.removeItem(at: dir2); surface2.close() }
         let deadline = Date().addingTimeInterval(3)
