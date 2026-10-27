@@ -23,12 +23,14 @@ extension SessionSidebarStore {
             _ = workspaceStore.switchWorkspace(to: wsId)
             workspaceStore.setActiveTab(tabIdentifier: item.tabId, in: wsId)
         }
-        guard let group = window.flatMap({ Tako.CustomTabGroup.group(for: $0) }) else { return }
-        let target: NSWindow? = group.windows.first(where: { $0.stableTabIdentifier == item.tabId })
-            ?? ((item.index >= 0 && item.index < group.windows.count) ? group.windows[item.index] : nil)
-        guard let target else { return }
-
+        // The tab may be in another window, its workspace's own: it is found
+        // there, selected in its group, and that window comes forward.
+        guard let target = sidebarWindow(tabId: item.tabId, around: window, workspaceStore: workspaceStore) else { return }
+        let group = Tako.CustomTabGroup.group(for: target)
         group.select(target)
+        if target !== window, !Tako.CustomTabGroup.suppressWindowOrderingForTesting {
+            target.makeKeyAndOrderFront(nil)
+        }
         let allTargetSurfaces = surfaces(in: target)
         if let sid = item.surfaceId {
             if let targetController = target.windowController as? BaseTerminalController,
@@ -57,15 +59,16 @@ extension SessionSidebarStore {
         workspaceStore: WorkspaceStore = .shared
     ) {
         _ = workspaceStore.switchWorkspace(to: workspaceId)
-        guard let ws = workspaceStore.workspace(for: workspaceId),
-              let group = window.flatMap({ Tako.CustomTabGroup.group(for: $0) }) else {
+        guard let ws = workspaceStore.workspace(for: workspaceId) else {
             objectWillChange.send()
             return
         }
         let targetId = ws.activeTabIdentifier ?? ws.tabIdentifiers.first
-        if let targetId,
-           let target = group.windows.first(where: { $0.stableTabIdentifier == targetId }) {
-            group.select(target)
+        if let targetId, let target = sidebarWindow(tabId: targetId, around: window, workspaceStore: workspaceStore) {
+            Tako.CustomTabGroup.group(for: target).select(target)
+            if target !== window, !Tako.CustomTabGroup.suppressWindowOrderingForTesting {
+                target.makeKeyAndOrderFront(nil)
+            }
         }
         objectWillChange.send()
     }
@@ -83,12 +86,10 @@ extension SessionSidebarStore {
 
     /// Closes a tab from the sidebar.
     func closeTab(item: SessionSidebarItem, in window: NSWindow?) {
-        guard let group = window.flatMap({ Tako.CustomTabGroup.group(for: $0) }) else { return }
-        if item.index >= 0 && item.index < group.windows.count {
-            let target = group.windows[item.index]
-            target.performClose(nil)
-            objectWillChange.send()
-        }
+        // By its tab, not its place: the row may be a tab of another window.
+        guard let target = sidebarWindow(tabId: item.tabId, around: window) else { return }
+        target.performClose(nil)
+        objectWillChange.send()
     }
 
     func surface(in window: NSWindow) -> Tako.SurfaceView? {

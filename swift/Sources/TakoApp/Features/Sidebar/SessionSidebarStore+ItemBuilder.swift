@@ -13,16 +13,45 @@ import Foundation
 import TakoKit
 
 extension SessionSidebarStore {
+    /// The tab windows the sidebar lists: `window`'s own group first, then the
+    /// tabs of every other group that a workspace holds -- a workspace's tabs
+    /// may live in a window of their own, hidden while another workspace is
+    /// active. Only the own group's selected tab is the selected one.
+    func sidebarWindows(for window: NSWindow?, workspaceStore: WorkspaceStore = .shared) -> (windows: [NSWindow], selected: NSWindow?) {
+        let own = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
+        var result = own?.windows ?? (window.map { [$0] } ?? [])
+        let others = Tako.CustomTabGroup.allGroups
+            .filter { $0 !== own }
+            .sorted { ($0.windows.first?.windowNumber ?? 0) < ($1.windows.first?.windowNumber ?? 0) }
+        for group in others {
+            for win in group.windows where !result.contains(win)
+                && !Tako.CustomTabGroup.isClosed(win)
+                && workspaceStore.workspace(forTab: win.stableTabIdentifier) != nil {
+                result.append(win)
+            }
+        }
+        return (result, own?.selectedWindow ?? window)
+    }
+
+    /// The tab window with `tabId` among those the sidebar lists.
+    func sidebarWindow(tabId: String, around window: NSWindow?, workspaceStore: WorkspaceStore = .shared) -> NSWindow? {
+        sidebarWindows(for: window, workspaceStore: workspaceStore).windows.first { $0.stableTabIdentifier == tabId }
+    }
+
+    /// `selectable`: false for another window's group, listed in this
+    /// window's sidebar -- none of its tabs is the one the user is in, so none
+    /// is drawn selected, and none has its attention waived for being so.
     func items(
         for window: NSWindow?,
         filterText explicitFilterText: String? = nil,
-        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil
+        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil,
+        selectable: Bool = true
     ) -> [SessionSidebarItem] {
         bindSurfaces(for: window)
 
         let group = window.flatMap { Tako.CustomTabGroup.group(for: $0) }
         let windows = group?.windows ?? (window.map { [$0] } ?? [])
-        let selected = group?.selectedWindow ?? window
+        let selected = selectable ? (group?.selectedWindow ?? window) : nil
 
         var result: [SessionSidebarItem] = []
         result.reserveCapacity(windows.count)
