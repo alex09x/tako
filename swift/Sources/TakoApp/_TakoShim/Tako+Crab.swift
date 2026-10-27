@@ -326,7 +326,10 @@ extension Tako {
             } else {
                 explicitStatus = (status: status, text: sanitizedText)
                 if status == .working || status == .running || status == .needsApproval || status == .waitingForInput {
-                    unread = !isFocused
+                    // A question waits for you; work in progress does not. A
+                    // working agent in a tab or workspace you left is no
+                    // "needs you" -- its outcome will be, once it comes.
+                    if status == .needsApproval || status == .waitingForInput { unread = !isFocused }
                     if startedAt == nil { startedAt = now() }
                     if ticker == nil {
                         ticker = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
