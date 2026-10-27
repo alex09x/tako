@@ -178,6 +178,21 @@ Or via MCP:
 
 Overlays run in a strict, sandboxed WebKit environment restricted to the pane's working directory, inherit Tako's theme colors via CSS variables, and automatically reload when the underlying file is rewritten.
 
+**Asking for structured input with a form.** Write an HTML file with a plain `<form action="tako-submit:">` (method GET, the default; no script runs in overlays) and open it with `--wait`. The command returns when the person submits: each field as a `name=value` line in the form's order, a line per value for checkboxes that share a name, and the pressed button's own `name=value`. Closing the overlay unsent, or `--timeout`, fails the command.
+
+```bash
+cat > deploy.html <<'HTML'
+<h1>Deploy to production?</h1>
+<form action="tako-submit:">
+  <input name="note" placeholder="Note for the log">
+  <label><input type="checkbox" name="notify" value="team" checked> Tell the team</label>
+  <button name="action" value="cancel">Cancel</button>
+  <button name="action" value="deploy">Deploy</button>
+</form>
+HTML
+takoctl overlay open deploy.html --wait --timeout 10m   # -> note=...  notify=team  action=deploy
+```
+
 ---
 
 ### 6. Finding the Other Agents

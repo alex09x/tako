@@ -56,7 +56,7 @@ public enum DocumentRenderer {
 
     /// Strict Content-Security-Policy blocking all network access, script execution,
     /// and disallowing direct file: subresource access in favor of sandboxed tako-asset: and data: URIs.
-    public static let defaultCSP = "default-src 'none'; img-src 'self' tako-asset: data:; style-src 'unsafe-inline' tako-asset:; font-src tako-asset: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action 'none';"
+    public static let defaultCSP = "default-src 'none'; img-src 'self' tako-asset: data:; style-src 'unsafe-inline' tako-asset:; font-src tako-asset: data:; connect-src 'none'; script-src 'none'; media-src 'none'; object-src 'none'; form-action tako-submit:;"
 
     /// Wraps markdown content into an HTML document styled with terminal theme variables.
     public static func renderMarkdownHTML(_ markdownText: String, theme: TerminalTheme?) -> String {

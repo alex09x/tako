@@ -26,6 +26,12 @@ public final class OverlayStore: ObservableObject {
     /// Reload tokens changed on file modification to trigger SwiftUI view refreshes.
     @Published public private(set) var reloadTokens: [UUID: UUID] = [:]
 
+    /// What a form in each pane's overlay last sent, kept after the overlay closes.
+    @Published public private(set) var lastSubmissions: [UUID: OverlaySubmission] = [:]
+
+    /// Who waits on each pane's overlay (`takoctl overlay open --wait`).
+    private var waiters: [UUID: (OverlayOutcome) -> Void] = [:]
+
     /// Active file watchers keyed by pane ID.
     private var fileWatchers: [UUID: DispatchSourceFileSystemObject] = [:]
     private var fileDescriptors: [UUID: Int32] = [:]
@@ -41,6 +47,50 @@ public final class OverlayStore: ObservableObject {
         }
         overlays.removeAll()
         reloadTokens.removeAll()
+        lastSubmissions.removeAll()
+        let pending = waiters.values
+        waiters.removeAll()
+        pending.forEach { $0(.closed) }
+    }
+
+    // MARK: - Form submissions
+
+    /// Calls `completion` once, when the pane's overlay is submitted, closed
+    /// or replaced. A second waiter on the same pane ends the first.
+    public func awaitOutcome(paneId: UUID, _ completion: @escaping (OverlayOutcome) -> Void) {
+        resolve(paneId: paneId, .closed)
+        waiters[paneId] = completion
+    }
+
+    /// Whether someone waits on the pane's overlay.
+    public func isAwaited(paneId: UUID) -> Bool {
+        waiters[paneId] != nil
+    }
+
+    /// Stops waiting without an outcome: the waiter gave up (a timeout, or
+    /// its client went away).
+    public func abandonWait(paneId: UUID) {
+        waiters.removeValue(forKey: paneId)
+    }
+
+    /// A form in the pane's overlay sent `url`: keep what it sent, give it to
+    /// whoever waits, and close the overlay -- the form has done its work.
+    public func submit(paneId: UUID, url: URL) {
+        guard overlays[paneId] != nil else { return }
+        switch OverlaySubmission.parse(url) {
+        case .success(let submission):
+            lastSubmissions[paneId] = submission
+            resolve(paneId: paneId, .submitted(submission))
+            closeOverlay(paneId: paneId)
+        case .failure(.tooLarge):
+            resolve(paneId: paneId, .refused("the form sent more than \(OverlaySubmission.maxBytes / 1024) KB or \(OverlaySubmission.maxFields) fields"))
+        case .failure(.notASubmission):
+            break
+        }
+    }
+
+    private func resolve(paneId: UUID, _ outcome: OverlayOutcome) {
+        waiters.removeValue(forKey: paneId)?(outcome)
     }
 
     /// Retrieves the active overlay for a pane, if any.
@@ -135,6 +185,12 @@ public final class OverlayStore: ObservableObject {
             lastModified: modDate
         )
 
+        // Over an open overlay: the old one's watcher goes, and whoever
+        // waited on it is told it closed.
+        if overlays[paneId] != nil {
+            stopWatching(paneId: paneId)
+            resolve(paneId: paneId, .closed)
+        }
         overlays[paneId] = state
         reloadTokens[paneId] = UUID()
 
@@ -151,6 +207,7 @@ public final class OverlayStore: ObservableObject {
         stopWatching(paneId: paneId)
         overlays.removeValue(forKey: paneId)
         reloadTokens.removeValue(forKey: paneId)
+        resolve(paneId: paneId, .closed)
         return true
     }
 

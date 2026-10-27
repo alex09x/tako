@@ -357,6 +357,15 @@ public struct SandboxedWebView: NSViewRepresentable {
                 return
             }
 
+            // A form submitted to tako-submit: is the page's answer, never a
+            // page to go to: its fields go to the store, the navigation nowhere.
+            if url.scheme?.lowercased() == OverlaySubmission.scheme {
+                decisionHandler(.cancel)
+                let paneId = overlay.paneId
+                Task { @MainActor in OverlayStore.shared.submit(paneId: paneId, url: url) }
+                return
+            }
+
             // Strictly allow about:blank for initial HTML loads
             if url.absoluteString == "about:blank" {
                 decisionHandler(.allow)

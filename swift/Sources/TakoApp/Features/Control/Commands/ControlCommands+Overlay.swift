@@ -103,4 +103,54 @@ extension ControlCommands {
             throw ControlError(.invalid, "unknown overlay subcommand: \(sub)")
         }
     }
+
+    /// `takoctl overlay open FILE --wait [--timeout S]`: opens the overlay,
+    /// then answers once a form in it is submitted -- with its fields -- or
+    /// fails when it closes first, the time runs out, or the client leaves.
+    static func overlayOpenAndWait(_ request: ControlRequest, all: [Pane],
+                                   reply: @escaping @Sendable (ControlResponse) -> Void) throws {
+        let opened = try overlayCommand(request, all: all)
+        guard case .string(let idString)? = opened["id"], let paneId = UUID(uuidString: idString) else {
+            throw ControlError(.internalError, "the overlay opened on no pane")
+        }
+        let timeout: TimeInterval? = {
+            if case .number(let n)? = request.args["timeout"], n > 0 { return n }
+            return nil
+        }()
+        let started = Date()
+        let store = OverlayStore.shared
+        var timer: Timer?
+        store.awaitOutcome(paneId: paneId) { outcome in
+            timer?.invalidate()
+            switch outcome {
+            case .submitted(let submission):
+                var answer = opened
+                answer["open"] = .bool(false)
+                answer["submitted"] = .bool(true)
+                answer["fields"] = .object(submission.json)
+                // JSON objects keep no order; the form's is here.
+                answer["order"] = .array(submission.names.map { .string($0) })
+                reply(.ok(answer))
+            case .closed:
+                reply(.failure(ControlError(.invalid, "the overlay closed without a submission")))
+            case .refused(let why):
+                reply(.failure(ControlError(.invalid, why)))
+            }
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { t in
+            MainActor.assumeIsolated {
+                guard store.isAwaited(paneId: paneId) else { t.invalidate(); return }
+                let gone = request.clientGone()
+                let late = timeout.map { Date().timeIntervalSince(started) >= $0 } ?? false
+                guard gone || late else { return }
+                t.invalidate()
+                // Nobody will read what the form sends: it goes with the wait.
+                store.abandonWait(paneId: paneId)
+                store.closeOverlay(paneId: paneId)
+                reply(.failure(gone
+                    ? ControlError(.timeout, "client disconnected")
+                    : ControlError(.timeout, "no submission within \(Int(timeout ?? 0)) s")))
+            }
+        }
+    }
 }
