@@ -469,6 +469,11 @@ extension Tako {
                     return
                 }
             }
+            if Tako.InterruptKeystroke.isInterrupt(keyCode: event.keyCode,
+                                                   character: event.charactersIgnoringModifiers,
+                                                   modifiers: event.modifierFlags) {
+                crab.userInterrupted()
+            }
             super.keyDown(with: event)
         }
     }

@@ -361,6 +361,21 @@ extension Tako {
             recomputeEffectiveStatus()
         }
 
+        /// The user pressed Escape or Ctrl-C in this pane. An agent its hooks
+        /// left working, or waiting on a question, has been stopped: nothing
+        /// else says so for Claude Code or Antigravity. If it goes on after
+        /// all, its next hook sets working again.
+        func userInterrupted() {
+            guard let explicit = explicitStatus else { return }
+            switch explicit.status {
+            case .working, .running, .needsApproval, .waitingForInput:
+                setStatus(.idle, text: nil)
+                progressReported(state: 0, value: nil)
+            default:
+                break
+            }
+        }
+
         /// Clears explicit status, reverting to signal-derived state.
         func clearStatus() {
             ttlTimer?.invalidate()
