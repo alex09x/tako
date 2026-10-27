@@ -152,14 +152,7 @@ struct SessionSidebarRowView: View {
             // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
             HStack(spacing: 7) {
                 if item.hasChildren {
-                    Button(action: {
-                        if item.paneCount > 1 {
-                            store.toggleTabSplitsCollapsed(item.tabId)
-                        }
-                        if let pid = item.surfaceId, SubagentHierarchyStore.shared.hasChildren(pid) {
-                            SubagentHierarchyStore.shared.toggleCollapsed(pid)
-                        }
-                    }) {
+                    Button(action: { store.toggleRowCollapsed(item) }) {
                         Text(item.isCollapsed ? "▸" : "▾")
                             .font(Font(T.monoFont(size: 9, weight: .regular)))
                             .foregroundColor(Color(nsColor: T.faint))

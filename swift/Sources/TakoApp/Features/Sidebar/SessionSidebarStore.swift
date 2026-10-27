@@ -235,5 +235,17 @@ final class SessionSidebarStore: ObservableObject {
             collapsedTabSplits.remove(tabId)
         }
     }
+
+    /// The row's chevron: folds or unfolds what is under the tab -- its split
+    /// panes and its subagents -- to the opposite of what the row shows. A
+    /// split opened as a subagent (`split --child-of`) is both, and the two
+    /// are set alike: toggled each on its own, they ended up cancelling out.
+    func toggleRowCollapsed(_ item: SessionSidebarItem) {
+        let collapse = !item.isCollapsed
+        if item.paneCount > 1 { setTabSplitsCollapsed(item.tabId, collapsed: collapse) }
+        if let pid = item.surfaceId, SubagentHierarchyStore.shared.hasChildren(pid) {
+            SubagentHierarchyStore.shared.setCollapsed(pid, collapsed: collapse)
+        }
+    }
 }
 
