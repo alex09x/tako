@@ -32,6 +32,18 @@
         ]
       }
     ],
+    "Interrupt": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v tako-hook >/dev/null 2>&1; then tako-hook codex interrupt; else /Users/alex09x/.local/bin/tako-hook codex interrupt; fi; :",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "matcher": "",

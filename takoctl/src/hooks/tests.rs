@@ -96,6 +96,9 @@ fn codex_adapter_injects_and_removes_hooks() {
     assert!(modified.contains("UserPromptSubmit"));
     assert!(modified.contains("Stop"));
     assert!(modified.contains("PermissionRequest"));
+    // Esc in Codex fires Interrupt and no Stop: without it the pane stays working.
+    assert!(modified.contains("\"Interrupt\""));
+    assert!(modified.contains("tako-hook codex interrupt"));
     assert!(modified.contains("\"matcher\": \"\""));
 
     let restored = adapter.remove_hooks(&modified).unwrap();
