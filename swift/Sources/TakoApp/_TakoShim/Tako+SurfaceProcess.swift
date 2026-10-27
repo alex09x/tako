@@ -383,6 +383,9 @@ extension Tako.SurfaceView {
         public func close() {
             BroadcastInputStore.shared.paneClosed(id)
             InputOwnershipStore.shared.remove(paneId: id)
+            // Its overlay goes with it: whoever waits on a form there is told,
+            // and the file watcher stops.
+            OverlayStore.shared.closeOverlay(paneId: id)
             SecureInput.shared.removeScoped(ObjectIdentifier(self))
             pty?.terminate()
         }

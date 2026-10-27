@@ -29,7 +29,8 @@ pub fn request(opts: &Options, from: Option<String>) -> Value {
 pub fn answer_limit(opts: &Options) -> std::time::Duration {
     let waits = opts.cmd == "wait"
         || opts.cmd == "ask"
-        || (opts.cmd == "run" && opts.args.get("wait") == Some(&Value::Bool(true)));
+        || (opts.cmd == "run" && opts.args.get("wait") == Some(&Value::Bool(true)))
+        || (opts.cmd == "overlay" && opts.args.get("wait") == Some(&Value::Bool(true)));
     if !waits {
         return socket::TIMEOUT;
     }

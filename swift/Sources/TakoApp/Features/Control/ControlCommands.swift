@@ -227,6 +227,8 @@ enum ControlCommands {
                 let surface = try target(request, all)
                 recordActivity(for: request, on: surface.id, action: "ask")
                 try PromptManager.shared.ask(request: request, surface: surface, reply: reply)
+            case "overlay" where request.args["wait"] == .bool(true) && request.args["subcommand"] == .string("open"):
+                try overlayOpenAndWait(request, all: all, reply: reply)
             default:
                 reply(handle(request, all: all))
             }

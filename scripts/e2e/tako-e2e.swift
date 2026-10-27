@@ -2156,6 +2156,74 @@ let scenarios: [Scenario] = [
         try d.run("echo 'overlay_ok' > \(d.path("overlay_witness"))")
         try d.expect("overlay_witness", "overlay_ok\n", "terminal keyboard input after overlay closed")
     }),
+    ("overlay-form", "a form in an overlay answers takoctl overlay open --wait: typed text, a checkbox and the pressed button come back as name=value lines; closing it unsent fails the wait", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        let form = d.path("tako_form.html")
+        try """
+        <h1>Deploy?</h1>
+        <form action="tako-submit:">
+          <input name="who" aria-label="Who">
+          <label><input type="checkbox" name="tags" value="court" checked> court</label>
+          <label><input type="checkbox" name="tags" value="urgent"> urgent</label>
+          <button name="action" value="reject">Reject</button>
+          <button name="action" value="approve">Approve</button>
+        </form>
+        """.write(toFile: form, atomically: true, encoding: .utf8)
+        d.activate()
+        try d.run("cd '\(d.work.path)' && pwd > \(d.path("form_cwd.txt"))")
+        guard d.wait(for: { ((try? d.file("form_cwd.txt")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == d.work.path },
+                     timeout: 5) else { throw Failure("the pane did not move into the run's directory") }
+
+        // takoctl waits in the background; its output and exit code land in files.
+        func waitInBackground(_ tag: String) throws {
+            _ = try d.exec("( \(ctl) overlay open \"\(form)\" --wait --timeout 60 > \(d.path("\(tag).out")) 2>&1; "
+                + "echo $? > \(d.path("\(tag).code")) ) > /dev/null 2>&1 &")
+        }
+        try waitInBackground("submitted")
+        guard d.wait(for: { d.button(titled: "Approve") != nil }, timeout: 8) else {
+            throw Failure("the form's Approve button never showed in the overlay")
+        }
+        // A person's way through it: click the field, type, tick a box, press Approve.
+        guard let field = d.onScreenWindows().flatMap({ d.descendants(of: $0, role: kAXTextFieldRole as String) })
+            .first(where: { ((d.attribute($0, kAXDescriptionAttribute) as String?) ?? (d.attribute($0, kAXTitleAttribute) as String?) ?? "").contains("Who") })
+            ?? d.onScreenWindows().flatMap({ d.descendants(of: $0, role: kAXTextFieldRole as String) }).first else {
+            throw Failure("no text field in the overlay's form")
+        }
+        try d.clickElement(field)
+        usleep(200_000)
+        try d.type("Alex")
+        if let urgent = d.onScreenWindows().flatMap({ d.descendants(of: $0, role: kAXCheckBoxRole as String) })
+            .first(where: { ((d.attribute($0, kAXTitleAttribute) as String?) ?? (d.attribute($0, kAXDescriptionAttribute) as String?) ?? "").contains("urgent") }) {
+            try d.clickElement(urgent)
+            usleep(150_000)
+        }
+        try d.clickButton(titled: "Approve")
+        let code = try d.file("submitted.code", timeout: 10).trimmingCharacters(in: .whitespacesAndNewlines)
+        let out = try d.file("submitted.out")
+        guard code == "0" else { throw Failure("overlay open --wait exited \(code): \(out)") }
+        let lines = out.split(separator: "\n").map(String.init)
+        guard lines.first == "who=Alex", lines.contains("tags=court"), lines.last == "action=approve" else {
+            throw Failure("the form's answer is not what was typed and pressed: \(lines)")
+        }
+        guard d.wait(for: { !d.hasText(containing: "Deploy?") }, timeout: 5) else {
+            throw Failure("the overlay stayed open after its form was submitted")
+        }
+
+        // Closed unsent: the wait fails, and says so.
+        try waitInBackground("closed")
+        guard d.wait(for: { d.button(titled: "Approve") != nil }, timeout: 8) else {
+            throw Failure("the form did not open a second time")
+        }
+        d.activate()
+        d.key(Key.escape)
+        let closedCode = try d.file("closed.code", timeout: 10).trimmingCharacters(in: .whitespacesAndNewlines)
+        let closedOut = try d.file("closed.out")
+        guard closedCode != "0", closedOut.contains("closed without a submission") else {
+            throw Failure("closing the overlay unsent did not fail the wait (exit \(closedCode)): \(closedOut)")
+        }
+        try d.run("echo 'form_ok' > \(d.path("form_witness"))")
+        try d.expect("form_witness", "form_ok\n", "terminal keyboard input after the form overlay")
+    }),
     ("ask-prompt", "takoctl ask opens interactive modal dialogs for confirmation, choices, and text input, returning structured answers with unassisted focus recovery", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl"
         let witness = d.path("ask_witness")

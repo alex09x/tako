@@ -191,6 +191,8 @@ struct MotionCensusTests {
              what: "a takoctl command polls for its outcome", coveredBy: [notMotion]),
         Site(file: "PromptManager.swift", code: "let timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true)",
              what: "polls for a prompt's answer", coveredBy: [notMotion]),
+        Site(file: "ControlCommands+Overlay.swift", code: "timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true)",
+             what: "polls an overlay form's wait for its timeout and a client that left", coveredBy: [notMotion]),
         Site(file: "ControlCommands+Dialog.swift", code: "Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true)",
              what: "waits for a dialog to close", coveredBy: [notMotion]),
         Site(file: "ExpiringUndoManager.swift", code: "self.timer = Timer.scheduledTimer(",

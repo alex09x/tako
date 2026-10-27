@@ -219,3 +219,34 @@ fn test_screenshot_temp_refuses_symlink_overwrite() {
     let _ = std::fs::remove_file(&link_path);
     let _ = std::fs::remove_file(&target_file);
 }
+
+/// `overlay open FILE --wait` waits on a person: the socket waits as long
+/// as the command does, the timeout plus the usual answer time.
+#[test]
+fn overlay_open_wait_waits_as_long_as_its_timeout() {
+    let opts = parse(&super::args(&["overlay", "open", "/tmp/form.html", "--wait", "--timeout", "90s"])).unwrap();
+    assert_eq!(opts.args["subcommand"], "open");
+    assert_eq!(opts.args["wait"], true);
+    assert_eq!(answer_limit(&opts), std::time::Duration::from_secs(90) + socket::TIMEOUT);
+
+    let unbounded = parse(&super::args(&["overlay", "open", "/tmp/form.html", "--wait"])).unwrap();
+    assert_eq!(answer_limit(&unbounded), std::time::Duration::from_secs(24 * 3600));
+
+    let plain = parse(&super::args(&["overlay", "open", "/tmp/form.html"])).unwrap();
+    assert_eq!(answer_limit(&plain), socket::TIMEOUT);
+}
+
+/// What the form sent prints as name=value lines in the form's order, a
+/// line per value of a repeated name.
+#[test]
+fn a_submitted_form_prints_its_fields_in_the_forms_order() {
+    let result = json!({
+        "submitted": true,
+        "fields": {"who": "Alex", "tags": ["court", "urgent"], "action": "approve"},
+        "order": ["who", "tags", "action"],
+    });
+    assert_eq!(
+        crate::reports::overlay_report(&result),
+        "who=Alex\ntags=court\ntags=urgent\naction=approve\n"
+    );
+}

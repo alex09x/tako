@@ -11,6 +11,29 @@
 use serde_json::Value;
 
 pub fn overlay_report(result: &Value) -> String {
+    // `overlay open --wait`: what the form sent, a `name=value` line per value,
+    // in the form's order -- read by a script line by line.
+    if let Some(true) = result.get("submitted").and_then(Value::as_bool) {
+        let mut out = String::new();
+        if let Some(fields) = result.get("fields").and_then(Value::as_object) {
+            let order: Vec<String> = match result.get("order").and_then(Value::as_array) {
+                Some(names) => names.iter().filter_map(|n| n.as_str().map(str::to_string)).collect(),
+                None => fields.keys().cloned().collect(),
+            };
+            for name in &order {
+                let Some(value) = fields.get(name) else { continue };
+                match value {
+                    Value::Array(values) => {
+                        for v in values {
+                            out.push_str(&format!("{name}={}\n", v.as_str().unwrap_or("")));
+                        }
+                    }
+                    other => out.push_str(&format!("{name}={}\n", other.as_str().unwrap_or(""))),
+                }
+            }
+        }
+        return out;
+    }
     if let Some(true) = result.get("closed").and_then(Value::as_bool) {
         let id = result["id"].as_str().unwrap_or("pane");
         return format!("Closed overlay for pane {id}.\n");

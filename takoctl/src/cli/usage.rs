@@ -105,7 +105,9 @@ commands:
   session export FILE     export window or workspace session to FILE (--window ID)
   session import FILE     import session from FILE (untrusted: dropped escapes, no auto-run)
   session info FILE       inspect session FILE format version and summary
-  overlay open FILE       open an artifact/document overlay in pane (--split right|down|left|up, --type html|markdown|image|pdf|diff)
+  overlay open FILE       open an artifact/document overlay in pane (--split right|down|left|up, --type html|markdown|image|pdf|diff);
+                          --wait: until a <form action=\"tako-submit:\"> in it is submitted, then print
+                          its fields as name=value lines (--timeout S); closing it first fails
   overlay close           close active overlay in target pane
   overlay status          show overlay state for target pane
   overlay reload          reload document in active overlay
