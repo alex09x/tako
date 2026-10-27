@@ -48,6 +48,22 @@ struct AgentStopQuietsLiveTests {
         #expect(crab.live?.isFlowing == false)
     }
 
+    /// Lines printed after the last sample and before the stop -- a turn
+    /// shorter than the 1 s sampler -- are the agent's, not new output.
+    @Test func linesNotYetSampledWhenItStopsDoNotLightItUp() {
+        let lines = Lines()
+        let crab = Tako.CrabTracker()
+        crab.commandStarted(kind: .quiet, probe: Tako.LiveProbe(
+            takeOutputLines: { defer { lines.next = 0 }; return lines.next }, program: "codex"))
+        crab.setStatus(.working, text: "Thinking...")
+        #expect(crab.live?.isFlowing == false)
+        lines.next = 9
+        crab.setStatus(.idle, text: nil)
+        crab.sampleLive()
+        #expect(crab.live?.isFlowing == false)
+        #expect(crab.live?.linesPerSecond == 0)
+    }
+
     @Test func outputAfterTheStopFlowsAgain() {
         let lines = Lines()
         let crab = streamingAgent(lines)

@@ -90,7 +90,7 @@ extension Tako.CrabTracker {
     /// Forgets the output already counted: the program is quiet from now,
     /// though its last line stays the quiet's start.
     func quietLive() {
-        guard var next = live, next.isFlowing || !liveSamples.isEmpty else { return }
+        guard var next = live else { return }
         liveSamples = []
         liveSampledAt = now()
         _ = liveProbe?.takeOutputLines()
