@@ -341,6 +341,11 @@ extension Tako {
                 if status == .error && isFocused { fadeWhileFocused() }
             }
             statusText = sanitizedText
+            // An agent that stopped prints no more, whatever it printed the
+            // moment before: its live ring starts quiet instead of glowing
+            // through the rest of the window (a turn stopped with Esc kept
+            // it bright for 3 s).
+            if status == .idle || status == .done { quietLive() }
 
             if let ttl, ttl > 0 {
                 let expires = now().addingTimeInterval(ttl)
