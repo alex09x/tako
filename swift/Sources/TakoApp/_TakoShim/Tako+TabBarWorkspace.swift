@@ -104,26 +104,6 @@ extension Tako.TabBarView {
         Tako.WorkspacePicker.show(rows: rows, below: window.convertToScreen(pill), in: window)
     }
 
-    @objc func handleWorkspaceSelected(_ sender: NSMenuItem) {
-        if let id = sender.representedObject as? UUID {
-            WorkspaceStore.shared.switchWorkspace(to: id)
-        } else {
-            _ = WorkspaceStore.shared.switchWorkspace(named: sender.title)
-        }
-    }
-
-    @objc func handleNextWorkspace() {
-        WorkspaceStore.shared.nextWorkspace()
-    }
-
-    @objc func handlePreviousWorkspace() {
-        WorkspaceStore.shared.previousWorkspace()
-    }
-
-    @objc func handleNewWorkspace() {
-        presentNewWorkspaceDialog()
-    }
-
     private func presentNewWorkspaceDialog() {
         NSApp.activate(ignoringOtherApps: true)
         guard let window = self.window

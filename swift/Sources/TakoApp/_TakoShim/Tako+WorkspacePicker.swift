@@ -41,6 +41,9 @@ extension Tako {
         /// keyboard and clicks elsewhere reach it through these.
         private var monitors: [Any] = []
         private var observers: [NSObjectProtocol] = []
+        /// The pill it opened under, on screen: a click there closes the list
+        /// and goes no further -- or the pill would open it again.
+        private(set) var anchor: NSRect = .zero
 
         init(rows: [Row], width: CGFloat) {
             self.rows = rows
@@ -81,6 +84,7 @@ extension Tako {
             let font = Tako.LivingTokens.monoFont(size: 12, weight: .medium)
             let widest = rows.map { Tako.TabText.width(of: $0.title, font: font) + ($0.attention > 0 ? 30 : 0) }.max() ?? 120
             let picker = WorkspacePicker(rows: rows, width: max(190, ceil(widest) + 60))
+            picker.anchor = anchor
             picker.setFrameTopLeftPoint(NSPoint(x: anchor.minX, y: anchor.minY - 4))
             parent.addChildWindow(picker, ordered: .above)
             picker.orderFront(nil)
@@ -103,8 +107,9 @@ extension Tako {
             if let clicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] event in
                 MainActor.assumeIsolated {
                     guard let self, event.window !== self else { return event }
+                    let onScreen = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? NSEvent.mouseLocation
                     self.dismiss()
-                    return event
+                    return self.closesOnly(clickAt: onScreen) ? nil : event
                 }
             }) { monitors.append(clicks) }
             let center = NotificationCenter.default
@@ -140,6 +145,11 @@ extension Tako {
         func highlight(_ index: Int?) {
             highlighted = index
             for view in rowViews { view.isHighlighted = view.index == index }
+        }
+
+        /// Whether a click at `point` (screen) only closes the list: one on its pill.
+        func closesOnly(clickAt point: NSPoint) -> Bool {
+            anchor.contains(point)
         }
 
         /// Up, down, return and escape act on the list; other keys go on.

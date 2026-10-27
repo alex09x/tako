@@ -1690,6 +1690,20 @@ let scenarios: [Scenario] = [
             timings.append(String(format: "pill %@ on screen %.0f ms", target, shown * 1000))
             usleep(300_000)
         }
+        // A second click on the pill closes its list and opens no new one.
+        d.activate()
+        try d.clickWorkspacePill(in: d.activeOnScreenWindow())
+        guard d.wait(for: { d.openMenuItem(titled: "E2ESpeed") != nil }, timeout: 3) else {
+            throw Failure("the workspace list did not open on the pill")
+        }
+        try d.clickWorkspacePill(in: d.activeOnScreenWindow())
+        guard d.wait(for: { d.openMenuItem(titled: "E2ESpeed") == nil }, timeout: 2) else {
+            throw Failure("a second click on the pill left the workspace list open")
+        }
+        usleep(400_000)
+        guard d.openMenuItem(titled: "E2ESpeed") == nil else {
+            throw Failure("a second click on the pill opened the workspace list again")
+        }
         FileHandle.standardError.write(("[timing] workspace switch: " + timings.joined(separator: "; ") + "\n").data(using: .utf8)!)
         guard slowest < 0.3 else {
             throw Failure(String(format: "a workspace switch took %.0f ms to reach the screen: ", slowest * 1000) + timings.joined(separator: "; "))

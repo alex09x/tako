@@ -94,6 +94,16 @@ struct WorkspacePickerTests {
         #expect(picks.all == ["new"])
     }
 
+    @Test func aClickOnItsPillOnlyCloses() {
+        let window = parent()
+        defer { window.close() }
+        let anchor = NSRect(x: 220, y: 560, width: 90, height: 22)
+        let picker = Tako.WorkspacePicker.show(rows: rows(Picks()), below: anchor, in: window)
+        defer { picker.dismiss() }
+        #expect(picker.closesOnly(clickAt: NSPoint(x: anchor.midX, y: anchor.midY)), "the pill would open it again")
+        #expect(!picker.closesOnly(clickAt: NSPoint(x: anchor.maxX + 40, y: anchor.midY)), "a click elsewhere goes on")
+    }
+
     @Test func oneListAtATime() {
         let window = parent()
         defer { window.close() }
