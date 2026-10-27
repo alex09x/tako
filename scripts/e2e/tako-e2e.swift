@@ -1469,6 +1469,164 @@ let scenarios: [Scenario] = [
         _ = try d.exec("kill \(pid)")
         _ = try d.exec("\(ctl) workspace delete E2EMove")
     }),
+    ("workspace-tabs-stay-visible", "agent tabs and terminals in three workspaces stay listed in the open session sidebar, keep their processes and statuses, and show only their own windows through switches by takoctl and by sidebar clicks", { d in
+        let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+        func trimmed(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        // One tab per entry: a long-running process, and for agents the status their hooks would set.
+        struct Spec { let title: String; let workspace: String; let status: String?; let command: String }
+        let log = d.path("ws-visible.log")
+        try "start\n".write(toFile: log, atomically: true, encoding: .utf8)
+        let specs = [
+            Spec(title: "E2E Claude agent", workspace: "Default", status: "working", command: "exec sleep 600"),
+            Spec(title: "E2E tail log", workspace: "Default", status: nil, command: "exec tail -f \(log)"),
+            Spec(title: "E2E Codex agent", workspace: "E2ELegal", status: "needs_approval", command: "exec sleep 600"),
+            Spec(title: "E2E Antigravity agent", workspace: "E2ELegal", status: "working", command: "exec sleep 600"),
+            Spec(title: "E2E Vite server", workspace: "E2EFront", status: "waiting_for_input", command: "exec sleep 600"),
+            Spec(title: "E2E front shell", workspace: "E2EFront", status: nil, command: "exec tail -f \(log)"),
+        ]
+        // A run that failed before its cleanup leaves its workspaces behind, and
+        // creating one whose name is taken adds a number ("E2ELegal 2").
+        func deleteOurWorkspaces() {
+            _ = try? d.exec("\(ctl) workspace switch Default")
+            for ws in (try? d.workspaceList()) ?? [] {
+                guard let name = ws["name"] as? String, name.hasPrefix("E2ELegal") || name.hasPrefix("E2EFront") else { continue }
+                _ = try? d.exec("\(ctl) workspace delete \"\(name)\"")
+            }
+        }
+        deleteOurWorkspaces()
+        _ = try d.exec("\(ctl) workspace create E2ELegal")
+        _ = try d.exec("\(ctl) workspace create E2EFront")
+        var panes: [String: String] = [:], pids: [String: String] = [:]
+        var sidebarWasOpen = true
+        defer {
+            for pid in pids.values { _ = try? d.exec("kill \(pid)") }
+            _ = try? d.exec("\(ctl) workspace switch Default")
+            for pane in panes.values { _ = try? d.exec("\(ctl) close --target \(pane)") }
+            deleteOurWorkspaces()
+            if !sidebarWasOpen { d.key(Key.s, [.maskCommand, .maskAlternate]) }
+        }
+        for (i, spec) in specs.enumerated() {
+            let pane = trimmed(try d.exec("\(ctl) tab-new --no-select"))
+            guard !pane.isEmpty else { throw Failure("tab-new printed no pane id for \(spec.title)") }
+            let pidFile = d.path("ws-visible-\(i).pid")
+            _ = try d.exec("\(ctl) send \"sh -c 'echo \\$\\$ > \(pidFile); \(spec.command)'\" --target \(pane)")
+            pids[spec.title] = trimmed(try d.file("ws-visible-\(i).pid"))
+            _ = try d.exec("\(ctl) title \"\(spec.title)\" --target \(pane)")
+            if let status = spec.status { _ = try d.exec("\(ctl) status set \(status) --target \(pane)") }
+            if spec.workspace != "Default" {
+                _ = try d.exec("\(ctl) workspace assign --workspace \(spec.workspace) --target \(pane)")
+            }
+            panes[spec.title] = pane
+        }
+        // Room for the whole list: a row scrolled out of sight is not "shown".
+        d.setPosition(CGPoint(x: 60, y: 40))
+        d.setSize(CGSize(width: 1100, height: 900))
+        // The sidebar, open in the window the user is in. Its visibility is
+        // app-wide and kept, so it may be open already.
+        d.activate()
+        sidebarWasOpen = d.hasText(containing: "Sessions")
+        if !sidebarWasOpen { d.key(Key.s, [.maskCommand, .maskAlternate]) }
+        guard d.wait(for: { d.hasText(containing: "Sessions") }, timeout: 5) else {
+            throw Failure("the session sidebar did not open (\(d.debugFocusState()))")
+        }
+
+        var windowsOf: [String: Set<CGWindowID>] = [:]
+        /// The element whose text is `text`, if it lies inside the on-screen window it belongs to.
+        func visibleElement(_ text: String) -> (element: AXUIElement, frame: CGRect)? {
+            for window in d.onScreenWindows() {
+                guard let windowFrame = d.windowFrame(window) else { continue }
+                for role in [kAXStaticTextRole as String, kAXButtonRole as String] {
+                    for element in d.descendants(of: window, role: role) {
+                        let value: String? = d.attribute(element, kAXValueAttribute)
+                        let title: String? = d.attribute(element, kAXTitleAttribute)
+                        guard let shown = value ?? title, shown.caseInsensitiveCompare(text) == .orderedSame || shown.contains(text),
+                              let posValue: AXValue = d.attribute(element, kAXPositionAttribute),
+                              let sizeValue: AXValue = d.attribute(element, kAXSizeAttribute) else { continue }
+                        var pos = CGPoint.zero, size = CGSize.zero
+                        AXValueGetValue(posValue, .cgPoint, &pos)
+                        AXValueGetValue(sizeValue, .cgSize, &size)
+                        let frame = CGRect(origin: pos, size: size)
+                        if size.width > 0, size.height > 0, windowFrame.contains(frame) { return (element, frame) }
+                    }
+                }
+            }
+            return nil
+        }
+        func check(_ workspace: String, how: String) throws {
+            let current = try d.workspaceCurrent()?["name"] as? String
+            guard current == workspace else { throw Failure("\(how): current workspace is \(current ?? "none"), not \(workspace)") }
+            guard d.wait(for: { d.hasText(containing: "Sessions") }, timeout: 4) else {
+                throw Failure("\(how): the session sidebar is not on screen after switching to \(workspace)")
+            }
+            // Each workspace keeps its own window frame: give this one the room too.
+            if let window = d.activeOnScreenWindow() {
+                d.setPosition(CGPoint(x: 60, y: 40), for: window)
+                d.setSize(CGSize(width: 1100, height: 900), for: window)
+                usleep(300_000)
+            }
+            for spec in specs {
+                guard d.wait(for: { visibleElement(spec.title) != nil }, timeout: 4) else {
+                    throw Failure("\(how): the sidebar on screen does not show \(spec.title) (\(spec.workspace)) while in \(workspace)")
+                }
+                guard let pid = pids[spec.title], (try? d.exec("kill -0 \(pid)")) != nil else {
+                    throw Failure("\(how): the process of \(spec.title) ended after switching to \(workspace)")
+                }
+                if let status = spec.status, let pane = panes[spec.title] {
+                    let got = try d.exec("\(ctl) status get --target \(pane)")
+                    guard got.hasPrefix(status) else {
+                        throw Failure("\(how): \(spec.title) lost its status \(status) after switching to \(workspace): \(trimmed(got))")
+                    }
+                }
+            }
+            let tree = try d.exec("\(ctl) tree")
+            for (title, pane) in panes where !tree.contains(String(pane.prefix(8))) {
+                throw Failure("\(how): \(title)'s pane is missing from the tree in \(workspace)")
+            }
+            func titles(_ ids: Set<CGWindowID>) -> String {
+                d.windows().compactMap { w -> String? in
+                    guard let id = d.windowID(for: w), ids.contains(id) else { return nil }
+                    return "\(id):\((d.attribute(w, kAXTitleAttribute) as String?) ?? "?")"
+                }.joined(separator: ", ")
+            }
+            // Windows of other workspaces leave the screen; give a fade its time.
+            var onScreen = d.onScreenWindowNumbers()
+            let deadline = Date().addingTimeInterval(3)
+            while Date() < deadline,
+                  windowsOf.contains(where: { $0.key != workspace && !$0.value.isDisjoint(with: onScreen) }) {
+                usleep(100_000)
+                onScreen = d.onScreenWindowNumbers()
+            }
+            guard !onScreen.isEmpty else { throw Failure("\(how): no window of \(workspace) is on screen") }
+            if let seen = windowsOf[workspace], seen != onScreen {
+                throw Failure("\(how): \(workspace) came back with other windows on screen: [\(titles(onScreen))] vs [\(titles(seen))]")
+            }
+            for (other, theirs) in windowsOf where other != workspace && !theirs.isDisjoint(with: onScreen) {
+                throw Failure("\(how): 3 s after switching to \(workspace), a window of \(other) is still on screen: on screen [\(titles(onScreen))], \(other) had [\(titles(theirs))]")
+            }
+            windowsOf[workspace] = onScreen
+        }
+
+        try check("Default", how: "start")
+        for target in ["E2ELegal", "E2EFront", "Default", "E2EFront", "E2ELegal", "Default"] {
+            _ = try d.exec("\(ctl) workspace switch \(target)")
+            usleep(800_000)
+            try check(target, how: "takoctl switch")
+        }
+        // A click on the workspace's header in the sidebar switches too.
+        func clickSidebarText(_ text: String) throws {
+            guard let (_, frame) = visibleElement(text) else { throw Failure("no \(text) header in the sidebar on screen") }
+            try d.click(at: CGPoint(x: frame.midX, y: frame.midY))
+        }
+        for target in ["E2EFront", "E2ELegal", "Default"] {
+            try clickSidebarText(target)
+            guard d.wait(for: { (try? d.workspaceCurrent()?["name"] as? String) == target }, timeout: 4) else {
+                throw Failure("clicking the \(target) header in the sidebar did not switch to it")
+            }
+            usleep(500_000)
+            try check(target, how: "sidebar click")
+        }
+
+    }),
     ("broadcast", "takoctl broadcast starts and stops synchronized typing across panes with verified non-target execution barrier", { d in
         let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
         // Record leader pane TTY and ID before splitting

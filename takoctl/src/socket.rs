@@ -94,9 +94,11 @@ impl Failure {
 
 pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, Failure> {
     let unsent = |message: String| Failure { message, sent: false };
-    let sent = |message: String| Failure { message, sent: true };
     let deadline = Instant::now() + limit;
     let mut stream = connect(path, deadline).map_err(unsent)?;
+    // While the connection is surely open: once Tako has answered and closed
+    // its end, macOS refuses to change a socket's timeouts (EINVAL).
+    stream.set_read_timeout(Some(left(deadline).map_err(unsent)?)).map_err(|e| unsent(e.to_string()))?;
     let mut line = serde_json::to_vec(request).map_err(|e| unsent(e.to_string()))?;
     line.push(b'\n');
     let mut written = 0;
@@ -109,10 +111,22 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
             Err(e) => return Err(unsent(timeout_or(e))),
         }
     }
+    read_answer(&mut stream, deadline, max)
+}
+
+/// Reads the one-line answer. Tako may have written it and closed its end
+/// before the first read: the answer is still there to read, though the
+/// socket no longer takes a new timeout, so the one set before stands.
+fn read_answer(stream: &mut UnixStream, deadline: Instant, max: usize) -> Result<Value, Failure> {
+    let sent = |message: String| Failure { message, sent: true };
     let mut answer = Vec::new();
     let mut chunk = [0u8; 64 * 1024];
     loop {
-        stream.set_read_timeout(Some(left(deadline).map_err(sent)?)).map_err(|e| sent(e.to_string()))?;
+        if let Err(e) = stream.set_read_timeout(Some(left(deadline).map_err(sent)?)) {
+            if e.kind() != std::io::ErrorKind::InvalidInput {
+                return Err(sent(format!("setting the read timeout: {e}")));
+            }
+        }
         match stream.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
@@ -129,7 +143,7 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(sent(timeout_or(e))),
+            Err(e) => return Err(sent(format!("reading the answer: {}", timeout_or(e)))),
         }
     }
     if answer.is_empty() {
@@ -267,6 +281,28 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         (path, listener)
+    }
+
+    /// Tako answered and closed its end before takoctl read: the answer is
+    /// read, not lost to "unknown outcome: Invalid argument (os error 22)".
+    #[test]
+    fn an_answer_left_by_a_closed_peer_is_still_read() {
+        let (mut ours, mut theirs) = UnixStream::pair().unwrap();
+        ours.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        writeln!(theirs, "{}", serde_json::json!({"ok": true, "result": {"name": "Default"}})).unwrap();
+        drop(theirs);
+        let answer = read_answer(&mut ours, Instant::now() + Duration::from_secs(2), MAX_ANSWER_BYTES).unwrap();
+        assert_eq!(answer["result"]["name"], "Default");
+    }
+
+    /// Why: macOS will not set a timeout on a socket whose peer has closed.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_refuses_a_timeout_once_the_peer_has_closed() {
+        let (ours, theirs) = UnixStream::pair().unwrap();
+        drop(theirs);
+        let err = ours.set_read_timeout(Some(Duration::from_secs(1))).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{err}");
     }
 
     #[test]

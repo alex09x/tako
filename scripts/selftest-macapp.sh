@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="${APP:-target/macapp/Tako.app}"
+APP="${APP:-${TAKO_APP_DIR:-target/macapp}/Tako.app}"
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
 
 # Reports go to a directory of this run's own (the app reads

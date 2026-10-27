@@ -78,8 +78,11 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
 
     // Open Session Sidebar via Cmd+Opt+S
     d.key(Key.s, [.maskCommand, .maskAlternate])
-    guard d.wait(for: { d.hasText(containing: "Sessions") && d.hasText(containing: "[sub-worker]") }, timeout: 5) else {
-        throw Failure("Session Sidebar did not display Sessions header and [sub-worker] row")
+    guard d.wait(for: { d.hasText(containing: "Sessions") && d.hasText(containing: "sub-worker") }, timeout: 5) else {
+        let texts = d.onScreenWindows().flatMap { d.descendants(of: $0, role: kAXStaticTextRole as String) }
+            .compactMap { (d.attribute($0, kAXValueAttribute) as String?) }.filter { !$0.isEmpty }.prefix(40)
+        throw Failure("Session Sidebar did not display Sessions header and sub-worker row "
+            + "(Sessions: \(d.hasText(containing: "Sessions")), texts: \(Array(texts)))")
     }
 
     func findButtonByHelp(_ helpSubstr: String, in root: AXUIElement) -> AXUIElement? {
@@ -89,19 +92,26 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
             return help?.contains(helpSubstr) == true || desc?.contains(helpSubstr) == true
         }
     }
-    guard let win = d.activeWindow(), let collapseBtn = findButtonByHelp("Collapse subagent group", in: win) else {
-        throw Failure("could not find 'Collapse subagent group' button in Session Sidebar")
+    // "sub-worker" is also the split's own label above the pane: count the
+    // sidebar row by what collapsing takes away.
+    func subWorkerTexts() -> Int {
+        d.onScreenWindows().flatMap { d.descendants(of: $0, role: kAXStaticTextRole as String) }
+            .filter { ((d.attribute($0, kAXValueAttribute) as String?) ?? "").contains("sub-worker") }.count
+    }
+    let expanded = subWorkerTexts()
+    guard let win = d.activeWindow(), let collapseBtn = findButtonByHelp("Collapse session panes", in: win) else {
+        throw Failure("could not find 'Collapse session panes' button in Session Sidebar")
     }
     try d.clickElement(collapseBtn)
-    guard d.wait(for: { !d.hasText(containing: "[sub-worker]") }, timeout: 5) else {
-        throw Failure("clicking Collapse subagent group did not hide [sub-worker] child row")
+    guard d.wait(for: { subWorkerTexts() == expanded - 1 }, timeout: 5) else {
+        throw Failure("clicking Collapse session panes did not hide the sub-worker split row (\(expanded) -> \(subWorkerTexts()))")
     }
-    guard let win2 = d.activeWindow(), let expandBtn = findButtonByHelp("Expand subagent group", in: win2) else {
-        throw Failure("could not find 'Expand subagent group' button after collapsing")
+    guard let win2 = d.activeWindow(), let expandBtn = findButtonByHelp("Expand session panes", in: win2) else {
+        throw Failure("could not find 'Expand session panes' button after collapsing")
     }
     try d.clickElement(expandBtn)
-    guard d.wait(for: { d.hasText(containing: "[sub-worker]") }, timeout: 5) else {
-        throw Failure("clicking Expand subagent group did not restore [sub-worker] child row")
+    guard d.wait(for: { subWorkerTexts() == expanded }, timeout: 5) else {
+        throw Failure("clicking Expand session panes did not restore the sub-worker split row (\(subWorkerTexts()) of \(expanded))")
     }
 
     guard let win3 = d.activeWindow(), let filterField = d.descendants(of: win3, role: kAXTextFieldRole as String).first else {
@@ -110,7 +120,7 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
     try d.clickElement(filterField)
     usleep(200_000)
     try d.type("sb_alpha_dir")
-    guard d.wait(for: { !d.hasText(containing: "[sub-worker]") && d.hasText(containing: "sb_alpha_dir") }, timeout: 5) else {
+    guard d.wait(for: { subWorkerTexts() == expanded - 1 && d.hasText(containing: "sb_alpha_dir") }, timeout: 5) else {
         throw Failure("filtering sidebar by 'sb_alpha_dir' did not narrow sidebar rows to 'sb_alpha_dir'")
     }
 
@@ -123,12 +133,10 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
         throw Failure("clicking sb_alpha_dir row in Session Sidebar did not switch active pane to pane0")
     }
 
-    guard let win5 = d.activeWindow(), let closeBtn = findButtonByHelp("Close Session Sidebar", in: win5) else {
-        throw Failure("could not find 'Close Session Sidebar' button in Session Sidebar")
-    }
-    try d.clickElement(closeBtn)
+    // The sidebar has no close button of its own: the shortcut that opened it closes it.
+    d.key(Key.s, [.maskCommand, .maskAlternate])
     guard d.wait(for: { !d.hasText(containing: "Sessions") }, timeout: 5) else {
-        throw Failure("Session Sidebar did not close after clicking Close Session Sidebar button")
+        throw Failure("Session Sidebar did not close on Cmd+Opt+S")
     }
     try d.run("tty > \(d.path("sb_rec_tty")) && echo 'sidebar_human_ok' > \(d.path("sb_witness"))")
     try d.expect("sb_witness", "sidebar_human_ok\n", "unassisted keyboard input after sidebar selection")

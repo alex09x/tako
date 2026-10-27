@@ -131,11 +131,21 @@ def swift_test_count(out):
     return count, finished
 
 
-def app_build():
+# Where the e2e app is built and where scripts/e2e-macapp.sh runs it from:
+# one place. Built into target/macapp while the runner took a target/macapp-e2e
+# left from an older build, every e2e check drove a stale app.
+E2E_APP_DIR = "target/macapp-e2e"
+
+
+def e2e_env():
     env = dict(os.environ)
-    if "TAKO_BUNDLE_ID" not in env:
-        env["TAKO_BUNDLE_ID"] = "com.tako-core.terminal.e2e"
-    secs, code, _ = run(["python3", "scripts/build-macapp.py"], env=env)
+    env.setdefault("TAKO_BUNDLE_ID", "com.tako-core.terminal.e2e")
+    env.setdefault("TAKO_APP_DIR", E2E_APP_DIR)
+    return env
+
+
+def app_build():
+    secs, code, _ = run(["python3", "scripts/build-macapp.py"], env=e2e_env())
     return secs if code == 0 else None
 
 
@@ -164,7 +174,7 @@ def check_e2e(names):
         if build is None:
             return note(f"e2e:{names}", False, "app build failed")
         total_build += build
-        secs, code, out = run(["scripts/e2e-macapp.sh"] + normal_scenarios)
+        secs, code, out = run(["scripts/e2e-macapp.sh"] + normal_scenarios, env=e2e_env())
         total_secs += secs
         total_out += out
         if code != 0:
@@ -189,7 +199,7 @@ def check_selftest():
     build = app_build()
     if build is None:
         return note("selftest", False, "app build failed")
-    secs, code, out = run(["scripts/selftest-macapp.sh"])
+    secs, code, out = run(["scripts/selftest-macapp.sh"], env=e2e_env())
     wait = lock_wait(out)
     note("selftest", code == 0, "ok" if code == 0 else "failed", build, wait, secs - (wait or 0))
 

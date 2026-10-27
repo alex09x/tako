@@ -74,6 +74,16 @@ final class Driver {
 
     func launch(config: String = Driver.defaultConfig) throws {
         quit()
+        // The session sidebar's visibility is kept in the app's defaults: a run
+        // that stopped with it open would start the next one with it open, and
+        // a scenario's Cmd+Opt+S would close it. Every launch starts it closed.
+        let forget = Process()
+        forget.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        forget.arguments = ["delete", bundleID, "tako.session_sidebar_is_showing"]
+        forget.standardError = FileHandle.nullDevice
+        forget.standardOutput = FileHandle.nullDevice
+        try? forget.run()
+        forget.waitUntilExit()
         let configURL = work.appendingPathComponent("config")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
 
