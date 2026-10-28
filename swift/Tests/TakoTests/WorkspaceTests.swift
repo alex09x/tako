@@ -59,6 +59,25 @@ struct WorkspaceTests {
         #expect(!store.switchWorkspace(named: "NonExistent"))
     }
 
+    @Test func switchingWorkspaceDoesNotReplaceItsRememberedTabWithTransientFocus() throws {
+        let (store, dir) = makeTemporaryStore()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = store.createWorkspace(name: "Destination")
+        store.assignTab(tabIdentifier: "remembered", to: destination.id)
+        store.assignTab(tabIdentifier: "transient", to: destination.id)
+        let observer = NotificationCenter.default.addObserver(forName: .takoWorkspaceDidChange, object: nil, queue: nil) { note in
+            MainActor.assumeIsolated {
+                guard note.object as? WorkspaceStore === store else { return }
+                store.setActiveTab(tabIdentifier: "transient", in: destination.id)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        #expect(store.switchWorkspace(to: destination.id))
+        #expect(store.activeWorkspace.activeTabIdentifier == "remembered")
+        store.setActiveTab(tabIdentifier: "transient", in: destination.id)
+        #expect(store.activeWorkspace.activeTabIdentifier == "transient", "a real selection after the switch must still work")
+    }
+
     @Test func testNextAndPreviousWorkspaceCycle() {
         let (store, _) = makeTemporaryStore()
         let w1 = store.createWorkspace(name: "W1")

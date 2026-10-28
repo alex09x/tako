@@ -61,6 +61,9 @@ public final class WorkspaceStore: ObservableObject {
     let maxTransitionHistory = 50
 
     private var isLoading: Bool = false
+    // Window ordering during a workspace change can temporarily make a
+    // different window key before the remembered window is presented.
+    var workspaceSwitchDepth = 0
     @Published public internal(set) var workspaces: [Workspace] = [] {
         didSet { indexTabs() }
     }
@@ -82,6 +85,8 @@ public final class WorkspaceStore: ObservableObject {
                     recentTransitions.removeFirst(recentTransitions.count - maxTransitionHistory)
                 }
                 save()
+                workspaceSwitchDepth += 1
+                defer { workspaceSwitchDepth -= 1 }
                 NotificationCenter.default.post(
                     name: .takoWorkspaceDidChange,
                     object: self,

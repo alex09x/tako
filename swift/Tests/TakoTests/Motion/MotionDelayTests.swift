@@ -77,6 +77,21 @@ struct MotionDelayTests {
         #expect(bar.motionLink == nil, "the link outlived the motion")
     }
 
+    @Test func theStripsDisplayLinkStopsWhenReduceMotionIsEnabled() throws {
+        let scene = StripScene(tabs: 2)
+        defer { scene.close() }
+        let bar = scene.shown
+        bar.failedSince[ObjectIdentifier(NSObject())] = CACurrentMediaTime()
+        bar.runMotion()
+        let link = try #require(bar.motionLink, "a moving strip on screen took no frames")
+        LivingAnimationState.shared.reduceMotionSource = { true }
+        LivingAnimationState.shared.refreshReduceMotion()
+        bar.motionFrame(link)
+        #expect(bar.motionLink == nil, "the display link kept running under Reduce Motion")
+        bar.runMotion()
+        #expect(bar.motionLink == nil, "a new display link started under Reduce Motion")
+    }
+
     @Test func aDraggedPillsLayerFollowsItSmoothlyAndOtherwiseAtOnce() {
         // Implicit animation needs a layer the window has drawn: a layer of its tree, committed.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60), styleMask: .borderless, backing: .buffered, defer: false)

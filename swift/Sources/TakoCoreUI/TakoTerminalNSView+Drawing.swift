@@ -88,6 +88,7 @@ extension TakoTerminalNSView {
             cancelPresentationThrottle()
         } else {
             startDisplayLink()
+            delegate?.terminalViewDidChangePixelMetrics(self)
             if metalRenderer != nil, effectiveContentScale != metalContentScale {
                 rebuildMetalRenderer()
             } else {
@@ -112,6 +113,7 @@ extension TakoTerminalNSView {
 
     override open func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        delegate?.terminalViewDidChangePixelMetrics(self)
         if metalRenderer != nil, effectiveContentScale != metalContentScale {
             rebuildMetalRenderer()
         } else {
@@ -346,6 +348,7 @@ extension TakoTerminalNSView {
                 snapshot.graphicsPlacements,
                 rows: Int(snapshot.rows),
                 imageProvider: { [core] in core.graphicsImage(imageId: $0) },
+                pixelsPerUnit: window?.backingScaleFactor ?? 1,
                 in: context
             )
         }

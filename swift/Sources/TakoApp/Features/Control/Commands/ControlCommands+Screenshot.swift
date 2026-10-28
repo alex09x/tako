@@ -87,6 +87,13 @@ extension ControlCommands {
             selection: nil,
             skipBackgrounds: false
         )
+        renderer.drawImages(
+            snapshot.graphicsPlacements,
+            rows: rows,
+            imageProvider: { surface.core.graphicsImage(imageId: $0) },
+            pixelsPerUnit: surface.window?.backingScaleFactor ?? 1,
+            in: context
+        )
 
         guard let cgImage = context.makeImage() else {
             throw ControlError(.internalError, "failed to create cgImage from bitmap context")

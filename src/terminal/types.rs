@@ -167,6 +167,13 @@ pub struct GraphicsPlacement {
     pub placement_id: u32,
     pub row: usize,
     pub col: usize,
+    pub options: crate::graphics::PlacementOptions,
+    pub screen: ScreenBuffer,
+    /// Signed origin in retained-line coordinates; a region can clip an
+    /// image whose original top has moved above the first retained line.
+    pub line: i64,
+    pub clip_top_rows: u32,
+    pub clip_bottom_rows: u32,
 }
 
 /// The execution state of a recorded command mark.

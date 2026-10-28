@@ -138,6 +138,11 @@ impl Terminal {
                                     placement_id,
                                     row: place_row,
                                     col: place_col,
+                                    options: Default::default(),
+                                    screen: self.active,
+                                    line: self.graphics_live_top().saturating_add(place_row as i64),
+                                    clip_top_rows: 0,
+                                    clip_bottom_rows: 0,
                                 });
                                 for _ in 0..r_span {
                                     self.line_feed();

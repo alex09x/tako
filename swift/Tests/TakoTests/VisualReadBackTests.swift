@@ -86,6 +86,29 @@ struct VisualReadBackTests {
         #expect(Array(data.prefix(pngHeader.count)) == pngHeader)
     }
 
+    @Test func screenshotIncludesKittyImages() throws {
+        let app = Tako.App()
+        let surface = Tako.SurfaceView(app, baseConfig: .init(), uuid: UUID())
+        surface.currentProcess = nil
+        surface.core.resize(cols: 20, rows: 5)
+        let pixels = Data(Array(repeating: [UInt8](arrayLiteral: 255, 0, 255, 255), count: 16 * 16).flatMap { $0 })
+        let command = "\u{1b}[H\u{1b}_Ga=T,q=2,f=32,s=16,v=16,C=1;\(pixels.base64EncodedString())\u{1b}\\"
+        surface.core.feed(bytes: Data(command.utf8))
+        let placement = try #require(surface.core.snapshot().graphicsPlacements.first)
+        let image = try #require(surface.core.graphicsImage(imageId: placement.imageId))
+        #expect(image.pixels == pixels)
+        let (png, width, height) = try ControlCommands.captureScreenshot(surface)
+        let bitmap = try #require(NSBitmapImageRep(data: png))
+        var magenta = 0
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y) else { continue }
+                if color.redComponent > 0.9 && color.greenComponent < 0.1 && color.blueComponent > 0.9 { magenta += 1 }
+            }
+        }
+        #expect(magenta >= 200, "the \(width)×\(height) screenshot omitted the 16×16 image (\(magenta) pixels, placement \(placement), top \(String(describing: bitmap.colorAt(x: 4, y: 4))), bottom \(String(describing: bitmap.colorAt(x: 4, y: height - 4))))")
+    }
+
     @Test func secureInputRefusesTextAndScreenshot() async {
         let oldMode = ControlCommands.mode
         ControlCommands.mode = .on

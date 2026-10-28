@@ -13,8 +13,7 @@ use crate::graphics::GraphicsResponse;
 use super::super::events::TerminalEvent;
 use super::super::state::Terminal;
 use super::super::types::{
-    DcsKind, GraphicsPlacement, MAX_INLINE_IMAGE_PIXEL_DIM, MAX_INLINE_IMAGE_ROW_SPAN,
-    ProtectedMode, SavedCursor,
+    DcsKind, GraphicsPlacement, MAX_INLINE_IMAGE_ROW_SPAN, ProtectedMode, SavedCursor,
 };
 
 impl Terminal {
@@ -189,38 +188,48 @@ impl Terminal {
             } => {
                 let place_row = self.cursor.row;
                 let place_col = self.cursor.col;
+                let options = self
+                    .graphics
+                    .placements()
+                    .last()
+                    .map(|p| p.options)
+                    .unwrap_or_default();
                 self.graphics_placements.push(GraphicsPlacement {
                     image_id,
                     placement_id,
                     row: place_row,
                     col: place_col,
+                    options,
+                    screen: self.active,
+                    line: self.graphics_live_top().saturating_add(place_row as i64),
+                    clip_top_rows: 0,
+                    clip_bottom_rows: 0,
                 });
-                let cmd = crate::graphics::parse_control_data(&control);
-                if cmd.get_u32('C') != Some(1) {
-                    let rows_span = if let Some(r) = cmd.get_u32('r') {
-                        (r as usize).clamp(1, MAX_INLINE_IMAGE_ROW_SPAN)
-                    } else if let Some(img) = self.graphics.image(image_id) {
-                        if img.height > 0 {
-                            let grid_rows = self.active_grid().rows();
-                            let cell_h = if grid_rows > 0 && self.height_px > 0 {
-                                (self.height_px / grid_rows as u32).max(1)
-                            } else {
-                                20
-                            };
-                            let h = img.height.min(MAX_INLINE_IMAGE_PIXEL_DIM);
-                            ((h.saturating_add(cell_h).saturating_sub(1)) / cell_h)
-                                .min(MAX_INLINE_IMAGE_ROW_SPAN as u32)
-                                .max(1) as usize
-                        } else {
-                            1
-                        }
+                if !options.no_cursor_move {
+                    let (cols, rows) = (self.active_grid().cols(), self.active_grid().rows());
+                    let cell_w = if cols > 0 && self.width_px > 0 {
+                        (self.width_px / cols as u32).max(1)
                     } else {
-                        1
+                        10
                     };
+                    let cell_h = if rows > 0 && self.height_px > 0 {
+                        (self.height_px / rows as u32).max(1)
+                    } else {
+                        20
+                    };
+                    let image = self
+                        .graphics
+                        .image(image_id)
+                        .map(|img| (img.width, img.height))
+                        .unwrap_or((1, 1));
+                    let (columns, rows_span) =
+                        super::kitty_geometry::placement_spans(options, image, (cell_w, cell_h));
+                    self.cursor.col = place_col
+                        .saturating_add(columns)
+                        .min(cols.saturating_sub(1));
                     for _ in 0..rows_span.min(MAX_INLINE_IMAGE_ROW_SPAN) {
                         self.line_feed();
                     }
-                    self.cursor.col = 0;
                     self.pending_wrap = false;
                 }
             }
@@ -230,5 +239,6 @@ impl Terminal {
             }
             _ => {}
         }
+        self.refresh_graphics_rows();
     }
 }

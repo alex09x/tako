@@ -45,13 +45,24 @@ pub(crate) fn snapshot_from_terminal(terminal: &mut Terminal) -> FfiSnapshot {
             mode: selection_mode,
         });
     let graphics_placements = terminal
-        .graphics_placements()
-        .iter()
-        .map(|p| FfiGraphicsPlacement {
+        .viewport_graphics_placements()
+        .into_iter()
+        .map(|(p, row_offset)| FfiGraphicsPlacement {
             image_id: p.image_id,
             placement_id: p.placement_id,
             row: p.row as u32,
             col: p.col as u32,
+            columns: p.options.columns,
+            rows: p.options.rows,
+            offset_x: p.options.offset_x,
+            offset_y: p.options.offset_y,
+            source_x: p.options.source_x,
+            source_y: p.options.source_y,
+            source_width: p.options.source_width,
+            source_height: p.options.source_height,
+            row_offset,
+            clip_top_rows: p.clip_top_rows,
+            clip_bottom_rows: p.clip_bottom_rows,
         })
         .collect();
     FfiSnapshot {

@@ -68,8 +68,28 @@ extension Tako.SurfaceView {
         /// told or it keeps formatting for the old size.
         public func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int) {
             outputMeter.noteResize()
-            pty?.resize(cols: UInt16(max(cols, 1)), rows: UInt16(max(rows, 1)))
+            updatePtyPixelSize(cols: cols, rows: rows)
             scheduleSearchHitRefresh()
+        }
+
+        public func terminalViewDidChangePixelMetrics(_ view: TakoTerminalNSView) {
+            updatePtyPixelSize(cols: cols, rows: rows)
+        }
+
+        private func updatePtyPixelSize(cols: Int, rows: Int) {
+            let pixels = ptyPixelSize(cols: cols, rows: rows)
+            core.setPixelSize(widthPx: UInt32(pixels.width), heightPx: UInt32(pixels.height))
+            pty?.resize(cols: UInt16(clamping: max(cols, 1)), rows: UInt16(clamping: max(rows, 1)),
+                        pixelWidth: pixels.width, pixelHeight: pixels.height)
+        }
+
+        /// PTY and engine sizes describe the same text grid in device pixels.
+        func ptyPixelSize(cols: Int, rows: Int) -> (width: UInt16, height: UInt16) {
+            let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+            let width = max(1, (CGFloat(max(cols, 1)) * cellWidth * scale).rounded())
+            let height = max(1, (CGFloat(max(rows, 1)) * cellHeight * scale).rounded())
+            return (UInt16(clamping: Int(min(width, CGFloat(UInt16.max)))),
+                    UInt16(clamping: Int(min(height, CGFloat(UInt16.max)))))
         }
 
         /// Reflow the terminal grid to match target size and notify the PTY.
@@ -88,7 +108,7 @@ extension Tako.SurfaceView {
             )
             guard fitted.cols > 0, fitted.rows > 0 else { return }
             if forcePtyResize {
-                pty?.resize(cols: UInt16(max(fitted.cols, 1)), rows: UInt16(max(fitted.rows, 1)))
+                updatePtyPixelSize(cols: fitted.cols, rows: fitted.rows)
             }
             if fitted.cols != cols || fitted.rows != rows {
                 scheduleGridResize(cols: fitted.cols, rows: fitted.rows, immediate: forcePtyResize)

@@ -104,6 +104,15 @@ fn test_feed_with_outcome_returns_output_and_events_once() {
 }
 
 #[test]
+fn host_pixel_size_reaches_terminal_size_reports() {
+    let core = TakoCore::new(80, 24);
+    core.set_pixel_size(800, 480);
+    core.feed(b"\x1b[14t\x1b[16t".to_vec());
+    assert_eq!(core.take_output(), b"\x1b[4;480;800t\x1b[6;20;10t");
+    assert_eq!((core.cols(), core.rows()), (80, 24));
+}
+
+#[test]
 fn test_feed_with_outcome_has_damage_does_not_drain_rows() {
     let core = TakoCore::new(80, 24);
     let outcome = core.feed_with_outcome(b"hello world\r\n".to_vec());
@@ -169,32 +178,33 @@ fn test_takocore_modes_tracks_alternate_screen_and_alternate_scroll() {
 #[test]
 fn checkpoint_version_negotiation_is_explicit() {
     let core = TakoCore::new(40, 10);
-    assert_eq!(core.checkpoint_version(), 6);
+    assert_eq!(core.checkpoint_version(), 7);
     assert!(core.checkpoint_supports(1));
     assert!(core.checkpoint_supports(2));
     assert!(core.checkpoint_supports(3));
     assert!(core.checkpoint_supports(4));
     assert!(core.checkpoint_supports(5));
     assert!(core.checkpoint_supports(6));
+    assert!(core.checkpoint_supports(7));
     assert!(!core.checkpoint_supports(0));
-    assert!(!core.checkpoint_supports(7));
+    assert!(!core.checkpoint_supports(8));
 
     core.feed(b"negotiate".to_vec());
     let blob = core.checkpoint_export(0, 1 << 20).unwrap();
 
     let mut newer = blob.clone();
-    newer[4..8].copy_from_slice(&7u32.to_le_bytes());
+    newer[4..8].copy_from_slice(&8u32.to_le_bytes());
     let crc = crate::terminal::checkpoint::crc32(&newer[20..]);
     newer[16..20].copy_from_slice(&crc.to_le_bytes());
 
     let dest = TakoCore::new(20, 6);
     assert_eq!(
         dest.checkpoint_import(newer.clone()),
-        Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
+        Err(TakoCheckpointError::UnsupportedVersion { version: 8 })
     );
     assert_eq!(
         dest.checkpoint_inspect(newer),
-        Err(TakoCheckpointError::UnsupportedVersion { version: 7 })
+        Err(TakoCheckpointError::UnsupportedVersion { version: 8 })
     );
 
     let mut corrupt = blob.clone();
@@ -206,7 +216,7 @@ fn checkpoint_version_negotiation_is_explicit() {
     ));
 
     let info = dest.checkpoint_inspect(blob.clone()).unwrap();
-    assert_eq!((info.version, info.cols, info.rows), (6, 40, 10));
+    assert_eq!((info.version, info.cols, info.rows), (7, 40, 10));
     assert_eq!(info.payload_len as usize, blob.len() - 20);
     assert_eq!(dest.checkpoint_import(blob), Ok(()));
 }

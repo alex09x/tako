@@ -24,11 +24,15 @@ extension Tako.TabBarView {
     /// The chip's width as drawn: `target`, reached over a moment when it changes.
     func displayedChipWidth(target: CGFloat, now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {
         defer { chipWidthTarget = target }
+        if LivingAnimationState.shared.isTimelinePaused {
+            chipSlide = nil
+            return target
+        }
         if let last = chipWidthTarget, last != target {
             // A tab's window hidden behind the selected one is laid out too,
             // but never drawn: it takes its new width at once -- as it does
             // under Reduce Motion and while nobody can see Tako.
-            if LivingAnimationState.shared.isTimelinePaused || (window != nil && window?.isVisible != true) {
+            if window != nil && window?.isVisible != true {
                 chipSlide = nil
             } else {
                 let from = chipSlide.map { Self.slid($0, at: now) } ?? last
@@ -50,8 +54,8 @@ extension Tako.TabBarView {
     /// moment it turned failed from another state.
     func shakeOffset(for key: ObjectIdentifier, state: Tako.SurfaceState, previous: Tako.SurfaceState?,
                      now: CFTimeInterval = CACurrentMediaTime()) -> CGFloat {
-        guard state == .failed else { failedSince[key] = nil; return 0 }
-        if let previous, previous != .failed, !LivingAnimationState.shared.isTimelinePaused {
+        guard state == .failed, !LivingAnimationState.shared.isTimelinePaused else { failedSince[key] = nil; return 0 }
+        if let previous, previous != .failed {
             failedSince[key] = now
             runMotion()
         }
@@ -62,10 +66,23 @@ extension Tako.TabBarView {
 
     /// Redraw every frame while something above moves, in a window on screen.
     func runMotion() {
-        guard motionLink == nil, window?.isVisible == true, !LivingAnimationState.shared.isOccludedOrIdle else { return }
+        guard motionLink == nil, window?.isVisible == true, !LivingAnimationState.shared.isTimelinePaused else { return }
         let link = displayLink(target: self, selector: #selector(motionFrame(_:)))
         link.add(to: .main, forMode: .common)
         motionLink = link
+    }
+
+    /// End in-flight motion when the timeline is paused, even if no draw
+    /// happens before it resumes.
+    func finishMotion() {
+        motionLink?.invalidate()
+        motionLink = nil
+        chipSlide = nil
+        failedSince.removeAll()
+        reorderFrom = nil
+        drop = nil
+        buttonHoverSince.removeAll()
+        group?.transitions.finish()
     }
 
     /// Lets go of a slide or a shake that has run its time, drawn or not --
@@ -83,7 +100,7 @@ extension Tako.TabBarView {
     }
 
     @objc func motionFrame(_ link: CADisplayLink) {
-        guard expireMotion(), window?.isVisible == true else {
+        guard !LivingAnimationState.shared.isTimelinePaused, expireMotion(), window?.isVisible == true else {
             link.invalidate()
             motionLink = nil
             return

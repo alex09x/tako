@@ -9,15 +9,42 @@
  */
 
 use super::writer::Writer;
+use crate::graphics::PlacementOptions;
 use crate::terminal::Terminal;
 
-pub(crate) fn encode_graphics(w: &mut Writer, term: &Terminal) {
+fn write_options(w: &mut Writer, options: PlacementOptions) {
+    for value in [
+        options.columns,
+        options.rows,
+        options.offset_x,
+        options.offset_y,
+        options.source_x,
+        options.source_y,
+        options.source_width,
+        options.source_height,
+    ] {
+        w.write_u32(value);
+    }
+    w.write_bool(options.no_cursor_move);
+}
+
+pub(crate) fn encode_graphics(w: &mut Writer, term: &Terminal, version: u32) {
     w.write_u32(term.graphics_placements.len() as u32);
     for p in &term.graphics_placements {
         w.write_u32(p.image_id);
         w.write_u32(p.placement_id);
         w.write_u32(p.row as u32);
         w.write_u32(p.col as u32);
+        if version >= 7 {
+            write_options(w, p.options);
+            w.write_u8(match p.screen {
+                crate::terminal::ScreenBuffer::Primary => 0,
+                crate::terminal::ScreenBuffer::Alternate => 1,
+            });
+            w.write_u64(p.line as u64);
+            w.write_u32(p.clip_top_rows);
+            w.write_u32(p.clip_bottom_rows);
+        }
     }
 
     w.write_u32(term.graphics.next_image_id());
@@ -68,5 +95,12 @@ pub(crate) fn encode_graphics(w: &mut Writer, term: &Terminal) {
         w.write_u32(transfer.width);
         w.write_u32(transfer.height);
         w.write_bytes(&transfer.data);
+        if version >= 7 {
+            w.write_bool(transfer.display);
+            w.write_u32(transfer.placement_id);
+            w.write_u8(transfer.quiet);
+            w.write_bool(transfer.compressed);
+            write_options(w, transfer.options);
+        }
     }
 }

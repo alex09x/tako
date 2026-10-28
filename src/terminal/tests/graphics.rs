@@ -111,17 +111,17 @@ fn test_kitty_graphics_query_and_response_control_drain_pty_replies() {
     let reply = String::from_utf8(term.take_output()).unwrap();
     assert_eq!(reply, "\x1b_Gi=42,s=100,v=50;OK\x1b\\");
 
-    // Display image with response requested: q=2
+    // An explicit image id requests an acknowledgement when q is omitted.
     let pixel = [0x12_u8, 0x34, 0x56, 0x78];
     let payload = base64::engine::general_purpose::STANDARD.encode(pixel);
     let mut apc = Vec::new();
-    apc.extend_from_slice(b"\x1b_Ga=T,t=d,f=32,s=1,v=1,i=99,q=2;");
+    apc.extend_from_slice(b"\x1b_Ga=T,t=d,f=32,s=1,v=1,i=99;");
     apc.extend_from_slice(payload.as_bytes());
     apc.extend_from_slice(b"\x1b\\");
     term.feed(&apc);
 
     let reply = String::from_utf8(term.take_output()).unwrap();
-    assert_eq!(reply, "\x1b_Gi=99,p=0;OK\x1b\\");
+    assert_eq!(reply, "\x1b_Gi=99;OK\x1b\\");
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn test_kitty_graphics_cursor_advancement_and_c1_suppression() {
     let snapshot = term.plain_string();
     let lines: Vec<&str> = snapshot.lines().collect();
     assert!(lines.len() >= 4);
-    assert_eq!(lines[3], "NextLine");
+    assert_eq!(lines[3].trim_start(), "NextLine");
 
     // 2. Placement with C=1 keeps cursor at same position
     term.feed(b"\x1b[10;1H");

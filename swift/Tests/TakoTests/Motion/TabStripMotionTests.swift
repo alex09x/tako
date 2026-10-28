@@ -88,4 +88,55 @@ struct TabStripMotionTests {
         let there = bar.displayedChipWidth(target: 100, now: 1.05)
         #expect(bar.displayedChipWidth(target: 80, now: 1.05) == there)
     }
+
+    @Test func enablingReduceMotionStopsASlideAndShakeAlreadyInProgress() {
+        withMotionOn {
+            let motion = LivingAnimationState.shared
+            let bar = Tako.TabBarView(frame: .zero)
+            _ = bar.displayedChipWidth(target: 80, now: 1)
+            _ = bar.displayedChipWidth(target: 100, now: 2)
+            _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 2)
+            #expect(bar.chipSlide != nil && !bar.failedSince.isEmpty)
+
+            motion.reduceMotionSource = { true }
+            motion.refreshReduceMotion()
+            #expect(bar.displayedChipWidth(target: 100, now: 2.05) == 100)
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 2.05) == 0)
+            #expect(bar.chipSlide == nil && bar.failedSince.isEmpty)
+        }
+    }
+
+    @Test func turningReduceMotionBackOffDoesNotResumeAnInterruptedShake() {
+        withMotionOn {
+            let scene = StripScene(tabs: 1, motionOn: false)
+            defer { scene.close() }
+            let bar = scene.shown
+            _ = bar.shakeOffset(for: key, state: .failed, previous: .working, now: 2)
+            #expect(!bar.failedSince.isEmpty)
+            LivingAnimationState.shared.reduceMotionSource = { true }
+            LivingAnimationState.shared.refreshReduceMotion()
+            LivingAnimationState.shared.reduceMotionSource = { false }
+            LivingAnimationState.shared.refreshReduceMotion()
+            #expect(bar.shakeOffset(for: key, state: .failed, previous: .failed, now: 2.05) == 0)
+        }
+    }
+
+    @Test func turningReduceMotionBackOffDoesNotResumeAnInterruptedTabTransition() throws {
+        try withMotionOn {
+            let scene = StripScene(tabs: 2, motionOn: false)
+            defer { scene.close() }
+            let tab = scene.windows[1]
+            let rest = try #require(scene.frame(of: tab))
+            scene.group.transitions.tabAppeared(tab)
+            scene.now += 0.04
+            let growing = try #require(scene.frame(of: tab))
+            #expect(growing.width < rest.width)
+            LivingAnimationState.shared.reduceMotionSource = { true }
+            LivingAnimationState.shared.refreshReduceMotion()
+            LivingAnimationState.shared.reduceMotionSource = { false }
+            LivingAnimationState.shared.refreshReduceMotion()
+            let after = try #require(scene.frame(of: tab))
+            #expect(abs(after.width - rest.width) < 0.5, "the interrupted transition resumed")
+        }
+    }
 }

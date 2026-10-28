@@ -159,6 +159,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             core.setDefaultCursorStyle(from: theme)
             core.setGraphemeWidthMethod(from: theme)
             core.setColorScheme(from: theme)
+            delegate?.terminalViewDidChangePixelMetrics(self)
             sendQueuedReplies()
             rebuildMetalRenderer()
             updateBlinkTimer()

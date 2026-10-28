@@ -11,7 +11,9 @@
 use std::collections::HashMap;
 
 use super::dimensions::detect_image_dimensions;
-use super::types::{ChunkKey, ImageFormat, PendingTransfer, Placement, StoredImage};
+use super::types::{
+    ChunkKey, ImageFormat, PendingTransfer, Placement, PlacementOptions, StoredImage,
+};
 
 /// Default maximum memory capacity allocated for stored images per terminal pane (64 MiB).
 pub const DEFAULT_MAX_IMAGE_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
@@ -187,6 +189,7 @@ impl GraphicsState {
         self.placements.push(Placement {
             image_id,
             placement_id,
+            options: PlacementOptions::default(),
         });
         Ok((image_id, placement_id))
     }

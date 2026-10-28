@@ -118,6 +118,9 @@ extension WorkspaceStore {
     public func setActiveTab(tabIdentifier: String, in workspaceId: UUID) {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
         let oldTab = workspaces[index].activeTabIdentifier
+        // Preserve a remembered selection while AppKit is ordering windows;
+        // its temporary key-window notifications are not user selections.
+        if workspaceSwitchDepth > 0, let oldTab, workspaces[index].tabIdentifiers.contains(oldTab) { return }
         guard oldTab != tabIdentifier else { return }
         workspaces[index].activeTabIdentifier = tabIdentifier
         nextTransitionSequence += 1

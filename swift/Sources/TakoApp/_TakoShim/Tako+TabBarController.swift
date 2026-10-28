@@ -123,6 +123,7 @@ extension Tako {
         /// window while another is the one being looked at.
         static func refreshAll() {
             for bar in installed.values {
+                if LivingAnimationState.shared.isTimelinePaused { bar.finishMotion() }
                 if let window = bar.window { clearTitlebarBackground(in: window) }
                 bar.layoutTabs()
                 bar.refresh()

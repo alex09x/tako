@@ -80,7 +80,8 @@ final class PTY {
     /// session runtime's client, when the terminal's shell lives in a
     /// persistent session. `environment` is added, and `removing` taken out,
     /// on top of what every shell gets.
-    init?(cols: UInt16, rows: UInt16, workingDirectory: String? = nil, config: Tako.Config? = nil,
+    init?(cols: UInt16, rows: UInt16, pixelWidth: UInt16 = 0, pixelHeight: UInt16 = 0,
+          workingDirectory: String? = nil, config: Tako.Config? = nil,
           program: [String]? = nil, environment: [String: String] = [:], removing: [String] = []) {
         // Everything the child needs -- argv, envp and the working directory
         // -- is built as C strings here, in the parent, before forkpty: after
@@ -132,7 +133,7 @@ final class PTY {
         }
 
         var masterFD: Int32 = 0
-        var size = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
+        var size = winsize(ws_row: rows, ws_col: cols, ws_xpixel: pixelWidth, ws_ypixel: pixelHeight)
         let pid = forkpty(&masterFD, nil, nil, &size)
         if pid < 0 {
             if haveErrorPipe {
@@ -220,8 +221,8 @@ final class PTY {
         _ = bytes.withUnsafeBufferPointer { Darwin.write(master, $0.baseAddress, $0.count) }
     }
 
-    func resize(cols: UInt16, rows: UInt16) {
-        var size = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
+    func resize(cols: UInt16, rows: UInt16, pixelWidth: UInt16 = 0, pixelHeight: UInt16 = 0) {
+        var size = winsize(ws_row: rows, ws_col: cols, ws_xpixel: pixelWidth, ws_ypixel: pixelHeight)
         _ = ioctl(master, TIOCSWINSZ, &size)
     }
 

@@ -33,6 +33,7 @@
 //! [`GraphicsResponse::Unsupported`] rather than treated as an error.
 
 pub mod commands;
+mod compression;
 pub mod dimensions;
 pub mod state;
 pub mod types;

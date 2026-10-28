@@ -66,7 +66,8 @@ fn repeated_reads_do_not_change_generation_or_payload() {
         state.placements(),
         &[Placement {
             image_id: 7,
-            placement_id: 0
+            placement_id: 0,
+            options: Default::default(),
         }]
     );
 }
@@ -101,7 +102,8 @@ fn replacing_and_recreating_an_explicit_id_advance_generation() {
         state.placements(),
         &[Placement {
             image_id: 7,
-            placement_id: 0
+            placement_id: 0,
+            options: Default::default(),
         }]
     );
 
@@ -250,7 +252,8 @@ fn display_existing_image_and_reject_unknown_id() {
         state.placements(),
         &[Placement {
             image_id: 4,
-            placement_id: 11
+            placement_id: 11,
+            options: Default::default(),
         }]
     );
 
@@ -274,7 +277,8 @@ fn delete_single_image_leaves_others_intact() {
         state.placements(),
         &[Placement {
             image_id: 8,
-            placement_id: 0
+            placement_id: 0,
+            options: Default::default(),
         }]
     );
 
@@ -353,7 +357,7 @@ fn unsupported_transmission_medium_is_reported_not_decoded() {
         GraphicsResponse::Unsupported
     );
     assert_eq!(
-        state.handle("a=t,f=32,s=1,v=1,i=1", b"AAAA"),
+        state.handle("a=t,t=s,f=32,s=1,v=1,i=1", b"AAAA"),
         GraphicsResponse::Unsupported
     );
     assert!(state.image(1).is_none());

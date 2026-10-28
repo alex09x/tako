@@ -14,6 +14,7 @@ pub mod cells;
 pub mod command_output;
 pub mod grapheme;
 pub mod reflow;
+mod reflow_line;
 pub mod resize;
 pub mod row;
 pub mod scroll;

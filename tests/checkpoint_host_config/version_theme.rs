@@ -11,11 +11,11 @@
 use super::common::*;
 
 #[test]
-fn this_build_writes_version_6() {
-    assert_eq!(CURRENT_VERSION, 6);
-    assert_eq!(Terminal::checkpoint_version(), 6);
+fn this_build_writes_version_7() {
+    assert_eq!(CURRENT_VERSION, 7);
+    assert_eq!(Terminal::checkpoint_version(), 7);
     let blob = themed_source().export_checkpoint().unwrap();
-    assert_eq!(header_version(&blob), 6);
+    assert_eq!(header_version(&blob), 7);
 }
 
 #[test]

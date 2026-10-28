@@ -36,6 +36,11 @@ impl TakoCore {
         lock_recover(&self.inner).resize(cols as usize, rows as usize);
     }
 
+    /// Sets the drawable dimensions used by terminal size reports and graphics.
+    pub fn set_pixel_size(&self, width_px: u32, height_px: u32) {
+        lock_recover(&self.inner).set_pixel_size(width_px, height_px);
+    }
+
     pub fn cursor_row(&self) -> u32 {
         lock_recover(&self.inner).cursor().0 as u32
     }
@@ -212,14 +217,25 @@ impl TakoCore {
 
     /// Currently live Kitty Graphics placements, in display order.
     pub fn graphics_placements(&self) -> Vec<FfiGraphicsPlacement> {
-        lock_recover(&self.inner)
-            .graphics_placements()
-            .iter()
-            .map(|p| FfiGraphicsPlacement {
+        let term = lock_recover(&self.inner);
+        term.viewport_graphics_placements()
+            .into_iter()
+            .map(|(p, row_offset)| FfiGraphicsPlacement {
                 image_id: p.image_id,
                 placement_id: p.placement_id,
                 row: p.row as u32,
                 col: p.col as u32,
+                columns: p.options.columns,
+                rows: p.options.rows,
+                offset_x: p.options.offset_x,
+                offset_y: p.options.offset_y,
+                source_x: p.options.source_x,
+                source_y: p.options.source_y,
+                source_width: p.options.source_width,
+                source_height: p.options.source_height,
+                row_offset,
+                clip_top_rows: p.clip_top_rows,
+                clip_bottom_rows: p.clip_bottom_rows,
             })
             .collect()
     }

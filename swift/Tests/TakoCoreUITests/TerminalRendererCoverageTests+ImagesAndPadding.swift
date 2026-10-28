@@ -93,6 +93,28 @@ extension TerminalRendererCoverageTests {
         assertColorApprox(rgbaPixel, (255, 255, 255))
     }
 
+    func testDrawImagesHonorsPlacementSizeOffsetAndCrop() {
+        let metrics = TerminalRenderer.Metrics(fontSize: 13, fontName: "Menlo", cellWidth: 10, cellHeight: 20)
+        let renderer = TerminalRenderer(metrics: metrics)
+        let image = FfiStoredImage(format: .rgb, width: 2, height: 2,
+                                   pixels: Data([255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0]))
+        let placement = FfiGraphicsPlacement(imageId: 1, placementId: 1, row: 0, col: 0,
+                                             columns: 1, rows: 1, offsetX: 2, offsetY: 3,
+                                             sourceX: 1, sourceY: 0, sourceWidth: 1, sourceHeight: 1)
+        let bitmap = BitmapContext(width: 40, height: 40)
+        renderer.drawImages([placement], rows: 2, imageProvider: { _ in image }, in: bitmap.context)
+        assertColorApprox(bitmap.pixel(atX: 7, logicalY: 27), (255, 0, 0))
+        XCTAssertEqual(bitmap.pixel(atX: 0, logicalY: 39).a, 0)
+    }
+
+    func testImagePixelOffsetsAndNaturalSizeRespectBackingScale() throws {
+        let placement = FfiGraphicsPlacement(imageId: 1, placementId: 0, row: 0, col: 0, offsetX: 4, offsetY: 6)
+        let layout = try XCTUnwrap(TerminalImageLayout.resolve(placement, image: CGSize(width: 100, height: 50),
+                                                               cell: CGSize(width: 10, height: 20), pixelsPerUnit: 2))
+        XCTAssertEqual(layout.destination, CGRect(x: 2, y: 3, width: 50, height: 25))
+        XCTAssertEqual(layout.source, CGRect(x: 0, y: 0, width: 100, height: 50))
+    }
+
     // MARK: - selection-foreground / selection-invert-fg-bg
 
     func testSelectionForegroundOverridesSelectedTextColorOnly() {

@@ -9,13 +9,13 @@
  */
 
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD};
 
 use super::dimensions::png_dimensions;
 use super::state::GraphicsState;
 use super::types::{
     ChunkKey, GraphicsCommand, GraphicsResponse, ImageFormat, PendingTransfer, Placement,
-    StoredImage, parse_control_data,
+    PlacementOptions, StoredImage, parse_control_data,
 };
 
 impl GraphicsState {
@@ -26,6 +26,20 @@ impl GraphicsState {
     pub fn handle(&mut self, control_data: &str, payload: &[u8]) -> GraphicsResponse {
         self.last_reply = None;
         let cmd = parse_control_data(control_data);
+        let transfer_key = self.transfer_key(&cmd);
+        let pending = self.pending.get(&transfer_key);
+        let quiet = cmd
+            .get_u32('q')
+            .map(|q| q.min(2) as u8)
+            .or_else(|| pending.map(|p| p.quiet))
+            .unwrap_or(0);
+        let requested_id =
+            cmd.get_u32('i')
+                .or_else(|| cmd.get_u32('I'))
+                .or_else(|| match transfer_key {
+                    ChunkKey::Image(id) if pending.is_some() => Some(id),
+                    _ => None,
+                });
 
         let action = match (cmd.get('a'), cmd.get_char('a')) {
             (Some(_), None) => {
@@ -44,33 +58,50 @@ impl GraphicsState {
             other => GraphicsResponse::Error(format!("unsupported action a={other}")),
         };
 
-        if cmd.get_u32('q') == Some(2) {
+        if let GraphicsResponse::Query { reply } = &resp {
+            if quiet == 2 || (quiet == 1 && reply.ends_with(";OK\x1b\\")) {
+                self.last_reply = None;
+            }
+        } else if let Some(id) = requested_id {
+            let more = cmd.get('m').is_some_and(|m| m != "0");
             match &resp {
-                GraphicsResponse::Displayed {
-                    image_id,
-                    placement_id,
-                } => {
-                    self.last_reply = Some(format!("\x1b_Gi={image_id},p={placement_id};OK\x1b\\"));
+                GraphicsResponse::Displayed { placement_id, .. } if quiet == 0 => {
+                    let placement = if *placement_id == 0 {
+                        String::new()
+                    } else {
+                        format!(",p={placement_id}")
+                    };
+                    self.last_reply = Some(format!("\x1b_Gi={id}{placement};OK\x1b\\"));
                 }
-                GraphicsResponse::Stored { image_id } => {
-                    self.last_reply = Some(format!("\x1b_Gi={image_id};OK\x1b\\"));
+                GraphicsResponse::Stored { .. } if quiet == 0 && !more => {
+                    self.last_reply = Some(format!("\x1b_Gi={id};OK\x1b\\"));
                 }
-                GraphicsResponse::Deleted { .. } => {
-                    self.last_reply = Some("\x1b_G;OK\x1b\\".to_string());
+                GraphicsResponse::Error(msg) if quiet < 2 => {
+                    self.last_reply = Some(format!("\x1b_Gi={id};EINVAL:{msg}\x1b\\"));
                 }
-                GraphicsResponse::Error(msg) => {
-                    self.last_reply = Some(format!("\x1b_G;{msg}\x1b\\"));
+                GraphicsResponse::Unsupported if quiet < 2 => {
+                    self.last_reply = Some(format!("\x1b_Gi={id};ENOTSUP\x1b\\"));
                 }
                 _ => {}
             }
-        } else if let GraphicsResponse::Error(ref msg) = resp
-            && cmd.get_u32('q') != Some(1)
-            && action == 'q'
-        {
-            self.last_reply = Some(format!("\x1b_G;{msg}\x1b\\"));
         }
 
         resp
+    }
+
+    /// Kitty continuations contain only m and optional q. The protocol permits
+    /// only one such transfer at a time; preserve explicitly keyed legacy chunks.
+    fn transfer_key(&self, cmd: &GraphicsCommand) -> ChunkKey {
+        if let Some(id) = cmd.get_u32('i').or_else(|| cmd.get_u32('I')) {
+            return ChunkKey::Image(id);
+        }
+        if cmd.get('m').is_some()
+            && cmd.len() == 1 + usize::from(cmd.get('q').is_some())
+            && self.pending.len() == 1
+        {
+            return *self.pending.keys().next().expect("one pending transfer");
+        }
+        ChunkKey::Anonymous
     }
 
     /// `a=t` / `a=T`: receive (possibly one chunk of) an image.
@@ -83,10 +114,18 @@ impl GraphicsState {
         // Only the direct medium carries data in the payload. Anything else
         // (file, temp file, shared memory) is out of scope -- bail out before
         // touching the payload at all.
-        if cmd.get_char('t') != Some('d') {
+        if cmd.get_char('t').unwrap_or('d') != 'd' {
             return GraphicsResponse::Unsupported;
         }
 
+        let key = self.transfer_key(cmd);
+        let compressed = match cmd.get('o') {
+            None => self.pending.get(&key).is_some_and(|p| p.compressed),
+            Some("z") => true,
+            Some(other) => {
+                return GraphicsResponse::Error(format!("unsupported compression o={other}"));
+            }
+        };
         let format = match cmd.get('f') {
             None | Some("32") => ImageFormat::Rgba,
             Some("24") => ImageFormat::Rgb,
@@ -94,13 +133,15 @@ impl GraphicsState {
             Some(other) => return GraphicsResponse::Error(format!("unsupported format f={other}")),
         };
 
-        let explicit_id = cmd.get_u32('i').or_else(|| cmd.get_u32('I'));
-        let key = match explicit_id {
-            Some(id) => ChunkKey::Image(id),
-            None => ChunkKey::Anonymous,
+        let explicit_id = match key {
+            ChunkKey::Image(id) => Some(id),
+            ChunkKey::Anonymous => None,
         };
 
-        let chunk = match BASE64.decode(payload) {
+        let chunk = match BASE64
+            .decode(payload)
+            .or_else(|_| STANDARD_NO_PAD.decode(payload))
+        {
             Ok(bytes) => bytes,
             Err(err) => {
                 // A bad chunk poisons the whole transmission; drop what we had
@@ -169,6 +210,11 @@ impl GraphicsState {
             width: cmd.get_u32('s').unwrap_or(0),
             height: cmd.get_u32('v').unwrap_or(0),
             generation,
+            display,
+            placement_id: cmd.get_u32('p').unwrap_or(0),
+            quiet: cmd.get_u32('q').unwrap_or(0).min(2) as u8,
+            compressed,
+            options: PlacementOptions::from_command(cmd),
             data: Vec::new(),
         });
         entry.generation = generation;
@@ -188,6 +234,22 @@ impl GraphicsState {
             .pending
             .remove(&key)
             .expect("pending entry inserted immediately above");
+        if transfer.compressed {
+            let compressed_capacity = transfer.data.capacity() as u64;
+            if !self.enforce_memory_cap(compressed_capacity) {
+                return GraphicsResponse::Error(
+                    "image transfer exceeds per-pane memory cap".to_string(),
+                );
+            }
+            let available = self.max_memory_bytes.saturating_sub(
+                self.retained_capacity_bytes()
+                    .saturating_add(compressed_capacity),
+            );
+            transfer.data = match super::compression::inflate(&transfer.data, available) {
+                Ok(data) => data,
+                Err(error) => return GraphicsResponse::Error(error),
+            };
+        }
         // A PNG carries its own size, and senders leave `s`/`v` out for it
         // (kitty's `icat` does). Without this the image was stored as 0x0 and
         // never drawn.
@@ -234,11 +296,12 @@ impl GraphicsState {
             },
         );
 
-        if display {
-            let placement_id = cmd.get_u32('p').unwrap_or(0);
+        if transfer.display {
+            let placement_id = transfer.placement_id;
             self.placements.push(Placement {
                 image_id,
                 placement_id,
+                options: transfer.options,
             });
             GraphicsResponse::Displayed {
                 image_id,
@@ -263,6 +326,7 @@ impl GraphicsState {
         self.placements.push(Placement {
             image_id,
             placement_id,
+            options: PlacementOptions::from_command(cmd),
         });
         GraphicsResponse::Displayed {
             image_id,

@@ -219,8 +219,27 @@ pub(crate) fn read_palette(
     Ok((palette, default_fg, default_bg, cursor_color))
 }
 
+fn read_placement_options(
+    r: &mut Reader<'_>,
+) -> Result<crate::graphics::PlacementOptions, CheckpointError> {
+    Ok(crate::graphics::PlacementOptions {
+        columns: r.read_u32()?,
+        rows: r.read_u32()?,
+        offset_x: r.read_u32()?,
+        offset_y: r.read_u32()?,
+        source_x: r.read_u32()?,
+        source_y: r.read_u32()?,
+        source_width: r.read_u32()?,
+        source_height: r.read_u32()?,
+        no_cursor_move: r.read_bool()?,
+    })
+}
+
 pub(crate) fn read_graphics(
     r: &mut Reader<'_>,
+    version: u32,
+    active_screen: crate::terminal::ScreenBuffer,
+    live_top: i64,
 ) -> Result<(Vec<GraphicsPlacement>, crate::graphics::GraphicsState), CheckpointError> {
     let p_count = r.read_u32()? as usize;
     if p_count > 10_000 {
@@ -230,11 +249,39 @@ pub(crate) fn read_graphics(
     r.charge_spine(p_count, PLACEMENT_SPINE)?;
     let mut graphics_placements = Vec::with_capacity(p_count);
     for _ in 0..p_count {
+        let image_id = r.read_u32()?;
+        let placement_id = r.read_u32()?;
+        let row = r.read_u32()? as usize;
+        let col = r.read_u32()? as usize;
+        let options = if version >= 7 {
+            read_placement_options(r)?
+        } else {
+            Default::default()
+        };
+        let screen = if version >= 7 {
+            match r.read_u8()? {
+                0 => crate::terminal::ScreenBuffer::Primary,
+                1 => crate::terminal::ScreenBuffer::Alternate,
+                _ => return Err(CheckpointError::InvalidData("invalid graphics screen")),
+            }
+        } else {
+            active_screen
+        };
+        let (line, clip_top_rows, clip_bottom_rows) = if version >= 7 {
+            (r.read_u64()? as i64, r.read_u32()?, r.read_u32()?)
+        } else {
+            (live_top.saturating_add(row as i64), 0, 0)
+        };
         graphics_placements.push(GraphicsPlacement {
-            image_id: r.read_u32()?,
-            placement_id: r.read_u32()?,
-            row: r.read_u32()? as usize,
-            col: r.read_u32()? as usize,
+            image_id,
+            placement_id,
+            row,
+            col,
+            options,
+            screen,
+            line,
+            clip_top_rows,
+            clip_bottom_rows,
         });
     }
 
@@ -293,6 +340,17 @@ pub(crate) fn read_graphics(
         let width = r.read_u32()?;
         let height = r.read_u32()?;
         let data = r.read_bytes_budgeted()?.to_vec();
+        let (display, placement_id, quiet) = if version >= 7 {
+            (r.read_bool()?, r.read_u32()?, r.read_u8()?)
+        } else {
+            (false, 0, 0)
+        };
+        let compressed = if version >= 7 { r.read_bool()? } else { false };
+        let options = if version >= 7 {
+            read_placement_options(r)?
+        } else {
+            Default::default()
+        };
         pending.insert(
             key,
             crate::graphics::PendingTransfer {
@@ -300,6 +358,11 @@ pub(crate) fn read_graphics(
                 width,
                 height,
                 generation: 0,
+                display,
+                placement_id,
+                quiet,
+                compressed,
+                options,
                 data,
             },
         );
@@ -310,6 +373,7 @@ pub(crate) fn read_graphics(
         .map(|p| crate::graphics::Placement {
             image_id: p.image_id,
             placement_id: p.placement_id,
+            options: p.options,
         })
         .collect();
 

@@ -97,14 +97,56 @@ struct MotionSwiftUIEffectTests {
     }
 
     @Test func secureInputsRingTurnsAndItsGlowPulses() throws {
-        let probe = SwiftUIMotionProbe(SecureInputOverlay(), size: CGSize(width: 120, height: 60))
-        defer { probe.close() }
-        probe.settle(1.5)
-        let a = probe.snapshot(), again = probe.snapshot()
-        probe.settle(0.5)
-        let b = probe.snapshot()
-        let noise = difference(a, again), moved = difference(a, b)
-        #expect(moved > noise * 3 + 5, "secure input's ring stood still (\(moved) against noise \(noise))")
+        withMotionOn {
+            let probe = SwiftUIMotionProbe(SecureInputOverlay(), size: CGSize(width: 120, height: 60))
+            defer { probe.close() }
+            probe.settle(1.5)
+            let a = probe.snapshot(), again = probe.snapshot()
+            probe.settle(0.5)
+            let b = probe.snapshot()
+            let noise = difference(a, again), moved = difference(a, b)
+            #expect(moved > noise * 3 + 5, "secure input's ring stood still (\(moved) against noise \(noise))")
+        }
+    }
+
+    @Test func secureInputStaysStillUnderReduceMotion() {
+        withMotionOn {
+            LivingAnimationState.shared.reduceMotionSource = { true }
+            LivingAnimationState.shared.refreshReduceMotion()
+            let probe = SwiftUIMotionProbe(SecureInputOverlay(), size: CGSize(width: 120, height: 60))
+            defer { probe.close() }
+            probe.settle(1.5)
+            let a = probe.snapshot(), again = probe.snapshot()
+            probe.settle(0.5)
+            let b = probe.snapshot()
+            let noise = difference(a, again), moved = difference(a, b)
+            #expect(moved <= noise * 3 + 5, "secure input moved under Reduce Motion (\(moved) against noise \(noise))")
+        }
+    }
+
+    @Test func secureInputStopsAndResumesWhenReduceMotionChanges() {
+        withMotionOn {
+            let motion = LivingAnimationState.shared
+            let probe = SwiftUIMotionProbe(SecureInputOverlay(), size: CGSize(width: 120, height: 60))
+            defer { probe.close() }
+            probe.settle(0.4)
+            motion.reduceMotionSource = { true }
+            motion.refreshReduceMotion()
+            probe.settle(0.2)
+            let still = probe.snapshot(), again = probe.snapshot()
+            probe.settle(0.5)
+            let paused = probe.snapshot()
+            let noise = difference(still, again)
+            #expect(difference(still, paused) <= noise * 3 + 5, "the animation continued after Reduce Motion was enabled")
+
+            motion.reduceMotionSource = { false }
+            motion.refreshReduceMotion()
+            probe.settle(0.4)
+            let resumed = probe.snapshot(), resumedAgain = probe.snapshot()
+            probe.settle(0.5)
+            #expect(difference(resumed, probe.snapshot()) > difference(resumed, resumedAgain) * 3 + 5,
+                    "the animation did not resume when Reduce Motion was disabled")
+        }
     }
 }
 

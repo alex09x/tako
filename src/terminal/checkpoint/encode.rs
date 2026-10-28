@@ -30,6 +30,25 @@ pub(crate) fn encode(
     if cols == 0 || cols > MAX_DIM || rows == 0 || rows > MAX_DIM {
         return Err(CheckpointError::DimensionOutOfBounds { cols, rows });
     }
+    if version < 7
+        && (term.graphics.pending().values().any(|transfer| {
+            transfer.display
+                || transfer.placement_id != 0
+                || transfer.quiet != 0
+                || transfer.compressed
+                || transfer.options != Default::default()
+        }) || term.graphics_placements.iter().any(|p| {
+            p.options != Default::default()
+                || p.screen != term.active
+                || p.line != term.graphics_live_top().saturating_add(p.row as i64)
+                || p.clip_top_rows != 0
+                || p.clip_bottom_rows != 0
+        }))
+    {
+        return Err(CheckpointError::InvalidData(
+            "graphics placement metadata requires checkpoint version 7",
+        ));
+    }
 
     let cost = allocation_cost(term, version);
     if cost > MAX_IMPORT_ALLOC_BYTES {
@@ -116,7 +135,7 @@ pub(crate) fn encode(
         w.write_u8(f.bits());
     }
 
-    encode_graphics(&mut w, term);
+    encode_graphics(&mut w, term, version);
 
     // Remaining State
     if let Some(ch) = term.last_printed_char {

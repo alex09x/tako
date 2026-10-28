@@ -12,6 +12,7 @@ pub(crate) mod csi;
 pub(crate) mod csi_private;
 pub(crate) mod cursor_left;
 pub(crate) mod execute;
+pub(crate) mod kitty_geometry;
 pub(crate) mod osc;
 pub(crate) mod osc_iterm;
 pub(crate) mod osc_palette;

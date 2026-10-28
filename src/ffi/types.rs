@@ -283,6 +283,28 @@ pub struct FfiGraphicsPlacement {
     pub placement_id: u32,
     pub row: u32,
     pub col: u32,
+    #[uniffi(default)]
+    pub columns: u32,
+    #[uniffi(default)]
+    pub rows: u32,
+    #[uniffi(default)]
+    pub offset_x: u32,
+    #[uniffi(default)]
+    pub offset_y: u32,
+    #[uniffi(default)]
+    pub source_x: u32,
+    #[uniffi(default)]
+    pub source_y: u32,
+    #[uniffi(default)]
+    pub source_width: u32,
+    #[uniffi(default)]
+    pub source_height: u32,
+    #[uniffi(default)]
+    pub row_offset: i32,
+    #[uniffi(default)]
+    pub clip_top_rows: u32,
+    #[uniffi(default)]
+    pub clip_bottom_rows: u32,
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
