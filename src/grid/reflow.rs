@@ -17,6 +17,23 @@ impl Grid {
         new_rows: usize,
         cursor: Option<(usize, usize)>,
     ) -> (Option<(usize, usize)>, Vec<(u64, u64)>) {
+        let (cursor, remaps, _) =
+            self.resize_with_cursor_and_anchors(new_cols, new_rows, cursor, &[]);
+        (cursor, remaps)
+    }
+
+    /// Reflow while mapping external cell anchors to their new positions.
+    pub(crate) fn resize_with_cursor_and_anchors(
+        &mut self,
+        new_cols: usize,
+        new_rows: usize,
+        cursor: Option<(usize, usize)>,
+        anchors: &[(u64, usize)],
+    ) -> (
+        Option<(usize, usize)>,
+        Vec<(u64, u64)>,
+        Vec<(usize, u64, usize)>,
+    ) {
         let new_cols = new_cols.max(1);
         let new_rows = new_rows.max(1);
         let mut active_cursor = cursor.map(|(r, c)| {
@@ -42,7 +59,7 @@ impl Grid {
                 let (_, moved_cursor) = self.resize_rows_only(new_rows, active_cursor);
                 active_cursor = moved_cursor;
             }
-            return (active_cursor, Vec::new());
+            return (active_cursor, Vec::new(), Vec::new());
         }
 
         // Width change: unwrap visible lines into logical lines, then
@@ -64,11 +81,20 @@ impl Grid {
         struct LogicalLine {
             cells: Vec<Cell>,
             prompts: Vec<PromptSpan>,
+            anchors: Vec<(usize, usize)>,
             owner: RowOwner,
             cursor_offset: Option<usize>,
         }
 
         let base_line = (self.history_evicted() + self.scrollback_len()) as u64;
+        let mut anchors_by_line: std::collections::HashMap<u64, Vec<(usize, usize)>> =
+            std::collections::HashMap::new();
+        for (index, &(line, col)) in anchors.iter().enumerate() {
+            anchors_by_line
+                .entry(line)
+                .or_default()
+                .push((index, col.min(self.cols.saturating_sub(1))));
+        }
         let mut logical_lines: Vec<LogicalLine> = Vec::new();
         for row in 0..self.rows {
             let wrapped = self.is_line_wrapped(row);
@@ -81,6 +107,13 @@ impl Grid {
                 let last = logical_lines.last_mut().unwrap();
                 let start_offset = last.cells.len();
                 last.cells.extend_from_slice(row_cells);
+                if let Some(anchors) = anchors_by_line.remove(&(base_line + row as u64)) {
+                    last.anchors.extend(
+                        anchors
+                            .into_iter()
+                            .map(|(index, col)| (index, start_offset + col)),
+                    );
+                }
                 last.owner = last.owner.joined(owner);
                 if is_cursor_row {
                     last.cursor_offset = Some(start_offset + target_cursor_col.unwrap_or(0));
@@ -103,6 +136,9 @@ impl Grid {
                         semantic,
                         original_abs_line: base_line + row as u64,
                     }],
+                    anchors: anchors_by_line
+                        .remove(&(base_line + row as u64))
+                        .unwrap_or_default(),
                     owner,
                     cursor_offset,
                 });
@@ -116,6 +152,7 @@ impl Grid {
                     semantic: SemanticPrompt::Unset,
                     original_abs_line: base_line,
                 }],
+                anchors: Vec::new(),
                 owner: RowOwner::Empty,
                 cursor_offset: if target_cursor_row.is_some() {
                     Some(0)
@@ -138,6 +175,7 @@ impl Grid {
             && logical_lines.last().is_some_and(|l| {
                 l.cells.is_empty()
                     && l.cursor_offset.is_none()
+                    && l.anchors.is_empty()
                     && l.prompts
                         .iter()
                         .all(|p| p.semantic == SemanticPrompt::Unset)
@@ -156,11 +194,13 @@ impl Grid {
         let mut new_rows_data: Vec<NewRow> = Vec::new();
         let mut final_cursor: Option<(usize, usize)> = None;
         let mut line_remaps: Vec<(u64, u64)> = Vec::new();
+        let mut anchor_remaps: Vec<(usize, u64, usize)> = Vec::new();
 
         for line in logical_lines {
             let start_new_row_idx = new_rows_data.len();
-            let offsets: Vec<usize> = line.prompts.iter().map(|p| p.cell_offset).collect();
-            let (mut wrapped_rows, line_cursor, mapped_sub_rows) =
+            let mut offsets: Vec<usize> = line.prompts.iter().map(|p| p.cell_offset).collect();
+            offsets.extend(line.anchors.iter().map(|(_, offset)| *offset));
+            let (mut wrapped_rows, line_cursor, mapped_positions) =
                 Self::rewrap_line_with_cursor(&line.cells, new_cols, line.cursor_offset, &offsets);
             if let Some((sub_r, sub_c)) = line_cursor {
                 while wrapped_rows.len() <= sub_r {
@@ -169,7 +209,7 @@ impl Grid {
                 let global_row = start_new_row_idx + sub_r;
                 final_cursor = Some((global_row, sub_c));
             }
-            for &sub_r in &mapped_sub_rows {
+            for &(sub_r, _) in &mapped_positions {
                 while wrapped_rows.len() <= sub_r {
                     wrapped_rows.push(vec![Cell::default(); new_cols]);
                 }
@@ -177,10 +217,18 @@ impl Grid {
 
             for (p_idx, p) in line.prompts.iter().enumerate() {
                 if p.semantic == SemanticPrompt::Prompt {
-                    let sub_r = mapped_sub_rows[p_idx];
+                    let sub_r = mapped_positions[p_idx].0;
                     let new_abs_line = base_line + (start_new_row_idx + sub_r) as u64;
                     line_remaps.push((p.original_abs_line, new_abs_line));
                 }
+            }
+            for (index, (sub_r, col)) in line
+                .anchors
+                .iter()
+                .map(|(index, _)| *index)
+                .zip(mapped_positions[line.prompts.len()..].iter().copied())
+            {
+                anchor_remaps.push((index, base_line + (start_new_row_idx + sub_r) as u64, col));
             }
 
             let mut sub_row_semantics = vec![SemanticPrompt::Unset; wrapped_rows.len()];
@@ -190,7 +238,7 @@ impl Grid {
             for (r, sem) in sub_row_semantics.iter_mut().enumerate() {
                 let mut matched_prompt = false;
                 while let Some(&(p_idx, p)) = prompt_iter.peek() {
-                    let p_sub_r = mapped_sub_rows[p_idx];
+                    let p_sub_r = mapped_positions[p_idx].0;
                     if p_sub_r <= r {
                         if p.semantic == SemanticPrompt::Prompt {
                             current_semantic = SemanticPrompt::Prompt;
@@ -273,113 +321,6 @@ impl Grid {
             );
         }
 
-        (final_cursor, line_remaps)
-    }
-
-    /// Split one logical line into `new_cols`-wide rows while carrying an
-    /// optional logical cursor offset and a set of cell offsets through the reflow.
-    pub(crate) fn rewrap_line_with_cursor(
-        logical: &[Cell],
-        new_cols: usize,
-        cursor_offset: Option<usize>,
-        offsets: &[usize],
-    ) -> (Vec<Vec<Cell>>, Option<(usize, usize)>, Vec<usize>) {
-        if logical.is_empty() {
-            let cursor_pos = cursor_offset.map(|offset| {
-                let r = offset / new_cols;
-                let c = offset % new_cols;
-                (r, c)
-            });
-            let mapped_offsets = offsets.iter().map(|&offset| offset / new_cols).collect();
-            return (
-                vec![vec![Cell::default(); new_cols]],
-                cursor_pos,
-                mapped_offsets,
-            );
-        }
-        let mut out: Vec<Vec<Cell>> = Vec::new();
-        let mut row: Vec<Cell> = Vec::with_capacity(new_cols);
-        let mut cursor_pos: Option<(usize, usize)> = None;
-        let mut mapped_offsets: Vec<Option<usize>> = vec![None; offsets.len()];
-        let mut i = 0;
-        while i < logical.len() {
-            let paired = !logical[i].is_wide_spacer
-                && matches!(logical.get(i + 1), Some(next) if next.is_wide_spacer);
-            let width = if paired { 2 } else { 1 };
-
-            if width > new_cols {
-                if !row.is_empty() {
-                    row.resize(new_cols, Cell::default());
-                    out.push(std::mem::take(&mut row));
-                }
-                for (idx, &off) in offsets.iter().enumerate() {
-                    if mapped_offsets[idx].is_none() && off <= i {
-                        mapped_offsets[idx] = Some(out.len());
-                    }
-                }
-                if cursor_offset == Some(i) || (paired && cursor_offset == Some(i + 1)) {
-                    cursor_pos = Some((out.len(), 0));
-                }
-                let mut only = vec![logical[i]];
-                only.resize(new_cols, Cell::default());
-                out.push(only);
-                i += width;
-                continue;
-            }
-
-            if row.len() + width > new_cols {
-                row.resize(new_cols, Cell::default());
-                out.push(std::mem::take(&mut row));
-            }
-
-            for (idx, &off) in offsets.iter().enumerate() {
-                if mapped_offsets[idx].is_none() && off <= i {
-                    mapped_offsets[idx] = Some(out.len());
-                }
-            }
-            if cursor_offset == Some(i) {
-                cursor_pos = Some((out.len(), row.len()));
-            } else if paired && cursor_offset == Some(i + 1) {
-                cursor_pos = Some((out.len(), row.len() + 1));
-            }
-
-            row.push(logical[i]);
-            if paired {
-                row.push(logical[i + 1]);
-            }
-            i += width;
-
-            if row.len() == new_cols {
-                out.push(std::mem::take(&mut row));
-            }
-        }
-
-        if let Some(target_offset) = cursor_offset
-            && cursor_pos.is_none()
-        {
-            let extra = target_offset.saturating_sub(logical.len());
-            let current_sub_row = out.len();
-            let current_sub_col = row.len();
-            let total_col = current_sub_col + extra;
-            let sub_row = current_sub_row + total_col / new_cols;
-            let sub_col = total_col % new_cols;
-            cursor_pos = Some((sub_row, sub_col));
-        }
-
-        for (idx, &off) in offsets.iter().enumerate() {
-            if mapped_offsets[idx].is_none() {
-                let extra = off.saturating_sub(logical.len());
-                let total_col = row.len() + extra;
-                let sub_row = out.len() + total_col / new_cols;
-                mapped_offsets[idx] = Some(sub_row);
-            }
-        }
-
-        if !row.is_empty() {
-            row.resize(new_cols, Cell::default());
-            out.push(row);
-        }
-        let mapped = mapped_offsets.into_iter().map(|m| m.unwrap_or(0)).collect();
-        (out, cursor_pos, mapped)
+        (final_cursor, line_remaps, anchor_remaps)
     }
 }

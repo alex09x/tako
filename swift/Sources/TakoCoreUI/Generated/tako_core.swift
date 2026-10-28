@@ -1348,6 +1348,11 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func setMaxImageMemoryBytes(max: UInt64)
 
     /**
+     * Sets the drawable dimensions used by terminal size reports and graphics.
+     */
+    func setPixelSize(widthPx: UInt32, heightPx: UInt32)
+
+    /**
      * Sets how many lines of history the terminal keeps; 0 keeps none.
      */
     func setScrollbackLimit(lines: UInt32)
@@ -2533,6 +2538,19 @@ open func setMaxImageMemoryBytes(max: UInt64)  {try! rustCall() {
 }
 
     /**
+     * Sets the drawable dimensions used by terminal size reports and graphics.
+     */
+open func setPixelSize(widthPx: UInt32, heightPx: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_pixel_size(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(widthPx),
+        FfiConverterUInt32.lower(heightPx),uniffiCallStatus
+    )
+}
+}
+
+    /**
      * Sets how many lines of history the terminal keeps; 0 keeps none.
      */
 open func setScrollbackLimit(lines: UInt32)  {try! rustCall() {
@@ -3352,14 +3370,36 @@ public struct FfiGraphicsPlacement: Equatable, Hashable {
     public var placementId: UInt32
     public var row: UInt32
     public var col: UInt32
+    public var columns: UInt32
+    public var rows: UInt32
+    public var offsetX: UInt32
+    public var offsetY: UInt32
+    public var sourceX: UInt32
+    public var sourceY: UInt32
+    public var sourceWidth: UInt32
+    public var sourceHeight: UInt32
+    public var rowOffset: Int32
+    public var clipTopRows: UInt32
+    public var clipBottomRows: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(imageId: UInt32, placementId: UInt32, row: UInt32, col: UInt32) {
+    public init(imageId: UInt32, placementId: UInt32, row: UInt32, col: UInt32, columns: UInt32 = UInt32(0), rows: UInt32 = UInt32(0), offsetX: UInt32 = UInt32(0), offsetY: UInt32 = UInt32(0), sourceX: UInt32 = UInt32(0), sourceY: UInt32 = UInt32(0), sourceWidth: UInt32 = UInt32(0), sourceHeight: UInt32 = UInt32(0), rowOffset: Int32 = 0, clipTopRows: UInt32 = UInt32(0), clipBottomRows: UInt32 = UInt32(0)) {
         self.imageId = imageId
         self.placementId = placementId
         self.row = row
         self.col = col
+        self.columns = columns
+        self.rows = rows
+        self.offsetX = offsetX
+        self.offsetY = offsetY
+        self.sourceX = sourceX
+        self.sourceY = sourceY
+        self.sourceWidth = sourceWidth
+        self.sourceHeight = sourceHeight
+        self.rowOffset = rowOffset
+        self.clipTopRows = clipTopRows
+        self.clipBottomRows = clipBottomRows
     }
 
 
@@ -3381,7 +3421,18 @@ public struct FfiConverterTypeFfiGraphicsPlacement: FfiConverterRustBuffer {
                 imageId: FfiConverterUInt32.read(from: &buf),
                 placementId: FfiConverterUInt32.read(from: &buf),
                 row: FfiConverterUInt32.read(from: &buf),
-                col: FfiConverterUInt32.read(from: &buf)
+                col: FfiConverterUInt32.read(from: &buf),
+                columns: FfiConverterUInt32.read(from: &buf),
+                rows: FfiConverterUInt32.read(from: &buf),
+                offsetX: FfiConverterUInt32.read(from: &buf),
+                offsetY: FfiConverterUInt32.read(from: &buf),
+                sourceX: FfiConverterUInt32.read(from: &buf),
+                sourceY: FfiConverterUInt32.read(from: &buf),
+                sourceWidth: FfiConverterUInt32.read(from: &buf),
+                sourceHeight: FfiConverterUInt32.read(from: &buf),
+                rowOffset: FfiConverterInt32.read(from: &buf),
+                clipTopRows: FfiConverterUInt32.read(from: &buf),
+                clipBottomRows: FfiConverterUInt32.read(from: &buf)
         )
     }
 
@@ -3390,6 +3441,17 @@ public struct FfiConverterTypeFfiGraphicsPlacement: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.placementId, into: &buf)
         FfiConverterUInt32.write(value.row, into: &buf)
         FfiConverterUInt32.write(value.col, into: &buf)
+        FfiConverterUInt32.write(value.columns, into: &buf)
+        FfiConverterUInt32.write(value.rows, into: &buf)
+        FfiConverterUInt32.write(value.offsetX, into: &buf)
+        FfiConverterUInt32.write(value.offsetY, into: &buf)
+        FfiConverterUInt32.write(value.sourceX, into: &buf)
+        FfiConverterUInt32.write(value.sourceY, into: &buf)
+        FfiConverterUInt32.write(value.sourceWidth, into: &buf)
+        FfiConverterUInt32.write(value.sourceHeight, into: &buf)
+        FfiConverterInt32.write(value.rowOffset, into: &buf)
+        FfiConverterUInt32.write(value.clipTopRows, into: &buf)
+        FfiConverterUInt32.write(value.clipBottomRows, into: &buf)
     }
 }
 
@@ -7323,6 +7385,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_max_image_memory_bytes() != 342) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_set_pixel_size() != 2355) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_set_scrollback_limit() != 9633) {

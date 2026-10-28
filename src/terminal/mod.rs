@@ -22,6 +22,8 @@ pub(crate) mod command_nav;
 pub(crate) mod command_ui;
 pub(crate) mod erase;
 pub(crate) mod events;
+pub(crate) mod graphics_scroll;
+pub(crate) mod graphics_viewport;
 pub(crate) mod osc99;
 pub(crate) mod perform;
 pub(crate) mod query;

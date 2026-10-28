@@ -14,7 +14,7 @@ use crate::terminal::GraphicsPlacement;
 use crate::terminal::commands::CommandRecord;
 
 pub const MAGIC: [u8; 4] = *b"TKCK";
-pub const CURRENT_VERSION: u32 = 6;
+pub const CURRENT_VERSION: u32 = 7;
 /// Lowest version [`export_version`] will write. Version 1 is unwritten
 /// because version 2 is strictly superior (no foreign selection).
 pub const MIN_EXPORT_VERSION: u32 = 2;

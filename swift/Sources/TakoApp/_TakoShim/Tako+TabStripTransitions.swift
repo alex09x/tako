@@ -124,6 +124,13 @@ extension Tako {
             if let move = barMove, now - move.at >= Self.barDuration { barMove = nil }
         }
 
+        /// Finish transitions immediately when animation is disabled.
+        func finish() {
+            appeared.removeAll()
+            closings.removeAll()
+            barMove = nil
+        }
+
         // MARK: Curves
 
         static func appearFactor(elapsed: CFTimeInterval) -> CGFloat {

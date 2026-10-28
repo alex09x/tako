@@ -45,6 +45,7 @@ impl Terminal {
         if self.viewport_offset > retained {
             self.viewport_offset = retained;
         }
+        self.refresh_graphics_rows();
         self.active_grid_mut().mark_all_dirty();
     }
 

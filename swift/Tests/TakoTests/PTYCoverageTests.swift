@@ -71,6 +71,31 @@ struct PTYCoverageTests {
         pty.resize(cols: 120, rows: 40)
     }
 
+    @Test func ptyReportsPixelDimensionsAtLaunchAndResize() throws {
+        let pty = try #require(PTY(cols: 80, rows: 24, pixelWidth: 800, pixelHeight: 480,
+                                   workingDirectory: NSHomeDirectory()))
+        defer { pty.terminate() }
+        var size = winsize()
+        #expect(ioctl(pty.master, TIOCGWINSZ, &size) == 0)
+        #expect(size.ws_col == 80 && size.ws_row == 24 && size.ws_xpixel == 800 && size.ws_ypixel == 480)
+        pty.resize(cols: 100, rows: 30, pixelWidth: 1200, pixelHeight: 720)
+        #expect(ioctl(pty.master, TIOCGWINSZ, &size) == 0)
+        #expect(size.ws_col == 100 && size.ws_row == 30 && size.ws_xpixel == 1200 && size.ws_ypixel == 720)
+    }
+
+    @Test @MainActor func aSurfaceUpdatesPtyAndEngineWhenPixelMetricsChange() throws {
+        let surface = Tako.SurfaceView(Tako.App(), baseConfig: .init(), uuid: UUID())
+        let pty = try #require(surface.pty)
+        defer { pty.terminate() }
+        surface.viewDidChangeBackingProperties()
+        let expected = surface.ptyPixelSize(cols: surface.cols, rows: surface.rows)
+        var size = winsize()
+        #expect(ioctl(pty.master, TIOCGWINSZ, &size) == 0)
+        #expect(size.ws_xpixel == expected.width && size.ws_ypixel == expected.height)
+        surface.core.feed(bytes: Data("\u{1b}[14t".utf8))
+        #expect(surface.core.takeOutput() == Data("\u{1b}[4;\(expected.height);\(expected.width)t".utf8))
+    }
+
     @Test func terminateEndsTheChildAndStopsFutureWrites() throws {
         let pty = try #require(PTY(cols: 80, rows: 24, workingDirectory: NSHomeDirectory()))
         pty.terminate()

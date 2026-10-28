@@ -36,13 +36,13 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
 
     func testCheckpointVersionIsNegotiatedExplicitly() throws {
         let core = TakoCore(cols: 40, rows: 10)
-        XCTAssertEqual(core.checkpointVersion(), 6)
-        // v1 through v5 remain readable; v6 is what this build writes.
-        for v in 1...6 {
+        XCTAssertEqual(core.checkpointVersion(), 7)
+        // v1 through v6 remain readable; v7 is what this build writes.
+        for v in 1...7 {
             XCTAssertTrue(core.checkpointSupports(version: UInt32(v)))
         }
         XCTAssertFalse(core.checkpointSupports(version: 0))
-        XCTAssertFalse(core.checkpointSupports(version: 7))
+        XCTAssertFalse(core.checkpointSupports(version: 8))
         XCTAssertFalse(core.checkpointSupports(version: UInt32.max))
     }
 
@@ -52,7 +52,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
         let blob = try core.checkpointExport(flags: 0, maxBytes: 1 << 20)
 
         var newer = blob
-        newer.replaceSubrange(4..<8, with: withUnsafeBytes(of: UInt32(7).littleEndian) { Data($0) })
+        newer.replaceSubrange(4..<8, with: withUnsafeBytes(of: UInt32(8).littleEndian) { Data($0) })
         let forged = reseal(newer)
 
         let dest = TakoCore(cols: 20, rows: 6)
@@ -60,7 +60,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
             guard case TakoCheckpointError.UnsupportedVersion(let version) = error else {
                 return XCTFail("expected UnsupportedVersion, got \(error)")
             }
-            XCTAssertEqual(version, 7)
+            XCTAssertEqual(version, 8)
         }
         XCTAssertThrowsError(try dest.checkpointInspect(blob: forged)) { error in
             guard case TakoCheckpointError.UnsupportedVersion = error else {
@@ -87,7 +87,7 @@ final class TerminalCheckpointNegotiationTests: XCTestCase {
         // What inspect reports is what this build wrote, not a literal that
         // drifts the next time the container version moves.
         XCTAssertEqual(info.version, core.checkpointVersion())
-        XCTAssertEqual(info.version, 6)
+        XCTAssertEqual(info.version, 7)
         XCTAssertEqual(info.cols, 37)
         XCTAssertEqual(info.rows, 11)
         XCTAssertEqual(Int(info.payloadLen), blob.count - 20)

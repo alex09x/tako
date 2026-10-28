@@ -35,12 +35,10 @@ fn parses_empty_and_malformed_fragments_without_panicking() {
 }
 
 #[test]
-fn missing_or_unknown_action_errors() {
+fn unsupported_medium_or_unknown_action_errors() {
     let mut state = GraphicsState::new();
-    // Since action 'a' defaults to 't' (transmit), omitting 'a' when 't' medium is also omitted
-    // returns Unsupported (transmission without medium is unsupported).
     assert_eq!(
-        state.handle("f=32,s=1,v=1", b""),
+        state.handle("t=f,f=32,s=1,v=1", b""),
         GraphicsResponse::Unsupported
     );
     // Unknown action returns Error.
@@ -91,17 +89,14 @@ fn query_graphics_protocol_replies_ok_and_reflects_keys() {
 }
 
 #[test]
-fn response_control_q2_generates_replies_for_displayed_and_deleted() {
+fn response_control_q2_suppresses_replies_for_displayed_and_deleted() {
     let mut state = GraphicsState::new();
     let pixel = [1_u8, 2, 3, 4];
     state.handle("a=T,t=d,f=32,s=1,v=1,i=5,q=2", b64(&pixel).as_bytes());
-    assert_eq!(
-        state.take_last_reply(),
-        Some("\x1b_Gi=5,p=0;OK\x1b\\".to_string())
-    );
+    assert_eq!(state.take_last_reply(), None);
 
     state.handle("a=d,d=i,i=5,q=2", b"");
-    assert_eq!(state.take_last_reply(), Some("\x1b_G;OK\x1b\\".to_string()));
+    assert_eq!(state.take_last_reply(), None);
 }
 
 #[test]

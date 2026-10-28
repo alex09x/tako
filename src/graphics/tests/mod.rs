@@ -11,5 +11,6 @@
 mod commands;
 mod dimensions;
 mod helpers;
+mod kitty_interop;
 mod memory;
 mod parsing;

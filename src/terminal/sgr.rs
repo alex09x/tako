@@ -192,6 +192,7 @@ impl Terminal {
                         }
                     } else if self.active == ScreenBuffer::Alternate {
                         self.alternate.clear_all();
+                        self.clear_graphics_screen(ScreenBuffer::Alternate);
                         self.switch_screen(ScreenBuffer::Primary);
                     }
                 }
@@ -214,6 +215,7 @@ impl Terminal {
                             });
                             self.switch_screen(ScreenBuffer::Alternate);
                             self.alternate.clear_all();
+                            self.clear_graphics_screen(ScreenBuffer::Alternate);
                         }
                     } else if self.active == ScreenBuffer::Alternate {
                         self.switch_screen(ScreenBuffer::Primary);

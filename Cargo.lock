@@ -4677,6 +4677,7 @@ dependencies = [
  "bytes",
  "criterion",
  "eframe",
+ "flate2",
  "libc",
  "russh",
  "smallvec",

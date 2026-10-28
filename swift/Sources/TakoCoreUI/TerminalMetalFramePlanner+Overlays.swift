@@ -123,11 +123,18 @@ extension TerminalMetalFramePlanner {
                 skipped += 1
                 continue
             }
+            guard let layout = TerminalImageLayout.resolve(placement,
+                    image: CGSize(width: width, height: height),
+                    cell: CGSize(width: CGFloat(metrics.pixelCellWidth), height: CGFloat(metrics.pixelCellHeight))) else {
+                skipped += 1
+                continue
+            }
+            let dest = layout.destination, source = layout.source
             imageInstances.append(TerminalMetalImageInstance(
-                x: Float(col) * metrics.pixelCellWidth,
-                y: Float(row) * metrics.pixelCellHeight,
-                width: Float(width),
-                height: Float(height),
+                x: Float(dest.minX), y: Float(dest.minY),
+                width: Float(dest.width), height: Float(dest.height),
+                uvRect: SIMD4<Float>(Float(source.minX / CGFloat(width)), Float(source.minY / CGFloat(height)),
+                                     Float(source.maxX / CGFloat(width)), Float(source.maxY / CGFloat(height))),
                 imageId: placement.imageId
             ))
         }

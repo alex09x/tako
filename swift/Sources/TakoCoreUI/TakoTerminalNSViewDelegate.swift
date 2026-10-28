@@ -25,6 +25,9 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
     /// Called when the terminal grid dimensions change.
     func terminalView(_ view: TakoTerminalNSView, didResizeCols cols: Int, rows: Int)
 
+    /// Cell metrics or display scale changed without necessarily changing the grid.
+    func terminalViewDidChangePixelMetrics(_ view: TakoTerminalNSView)
+
     /// A checkpoint was restored into the engine, in parser order.
     ///
     /// Deliberately not `didResizeCols:rows:`: the restored grid is the
@@ -84,6 +87,7 @@ public protocol TakoTerminalNSViewDelegate: AnyObject {
 }
 
 public extension TakoTerminalNSViewDelegate {
+    func terminalViewDidChangePixelMetrics(_ view: TakoTerminalNSView) {}
     func terminalView(_ view: TakoTerminalNSView, didRestoreCheckpoint restore: TerminalCheckpointRestore) {}
     func terminalView(_ view: TakoTerminalNSView, didChangeTitle title: String) {}
     func terminalViewDidBell(_ view: TakoTerminalNSView) {}

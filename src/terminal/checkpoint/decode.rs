@@ -87,7 +87,16 @@ pub fn import_traced_reserving(
     let (title, title_stack) = read_title_and_stack(&mut r)?;
     let (mut palette, default_fg, default_bg, cursor_color) = read_palette(&mut r)?;
     let kitty_keyboard = read_kitty_keyboard(&mut r)?;
-    let (graphics_placements, graphics) = read_graphics(&mut r)?;
+    let grid = if active_screen == ScreenBuffer::Primary {
+        &primary
+    } else {
+        &alternate
+    };
+    let live_top = grid
+        .first_retained_line()
+        .saturating_add(grid.scrollback_len() as u64)
+        .min(i64::MAX as u64) as i64;
+    let (graphics_placements, graphics) = read_graphics(&mut r, version, active_screen, live_top)?;
 
     let last_printed_char = if r.read_bool()? {
         char::from_u32(r.read_u32()?)

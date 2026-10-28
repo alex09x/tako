@@ -77,13 +77,19 @@ impl Terminal {
 
     /// Resize with the text area's pixel dimensions.
     pub fn resize_with_pixels(&mut self, cols: usize, rows: usize, width_px: u32, height_px: u32) {
+        self.resize(cols, rows);
+        self.set_pixel_size(width_px, height_px);
+    }
+
+    /// Update the drawable size without changing the text grid.
+    pub fn set_pixel_size(&mut self, width_px: u32, height_px: u32) {
         if width_px > 0 {
             self.width_px = width_px;
         }
         if height_px > 0 {
             self.height_px = height_px;
         }
-        self.resize(cols, rows);
+        self.refresh_graphics_rows();
     }
 
     /// Resize given a cell's pixel size.

@@ -1,12 +1,23 @@
 import SwiftUI
 
 struct SecureInputOverlay: View {
+    @ObservedObject private var motion = LivingAnimationState.shared
+    @State private var isPopover = false
+
+    var body: some View {
+        SecureInputOverlayContent(isPopover: $isPopover, paused: motion.isTimelinePaused)
+            .id(motion.isTimelinePaused)
+    }
+}
+
+private struct SecureInputOverlayContent: View {
     // Animations
     @State private var gradientAngle: Angle = .degrees(0)
     @State private var gradientOpacity: CGFloat = 0.5
 
     // Popover explainer text
-    @State private var isPopover = false
+    @Binding var isPopover: Bool
+    let paused: Bool
 
     var body: some View {
         VStack {
@@ -70,6 +81,7 @@ struct SecureInputOverlay: View {
             Spacer()
         }
         .onAppear {
+            guard !paused else { return }
             withAnimation(Animation.linear(duration: 2).repeatForever(autoreverses: false)) {
                 gradientAngle = .degrees(360)
             }

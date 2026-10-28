@@ -21,22 +21,64 @@ impl Terminal {
         }
         let cols_changed = cols != self.active_grid().cols();
         let cursor_pos = (self.cursor.row, self.cursor.col);
+        let anchors = |screen| {
+            self.graphics_placements
+                .iter()
+                .enumerate()
+                .filter_map(|(index, p)| {
+                    // A region may have clipped the original anchor above row 0;
+                    // map its first remaining row and retain the clipped offset.
+                    let visible_line = p.line.saturating_add(i64::from(p.clip_top_rows));
+                    (p.screen == screen && visible_line >= 0).then_some((
+                        index,
+                        (visible_line as u64, p.col),
+                        p.clip_top_rows,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        };
+        let primary_anchors = anchors(ScreenBuffer::Primary);
+        let alternate_anchors = anchors(ScreenBuffer::Alternate);
         self.input_start = None;
-        let (new_cursor, line_remaps) = if self.modes.autowrap {
+        let (new_cursor, line_remaps, primary_moves, alternate_moves) = if self.modes.autowrap {
+            let primary_positions = primary_anchors
+                .iter()
+                .map(|(_, position, _)| *position)
+                .collect::<Vec<_>>();
+            let alternate_positions = alternate_anchors
+                .iter()
+                .map(|(_, position, _)| *position)
+                .collect::<Vec<_>>();
             match self.active {
                 ScreenBuffer::Primary => {
-                    let (pos, remaps) =
-                        self.primary
-                            .resize_with_cursor_and_remaps(cols, rows, Some(cursor_pos));
-                    self.alternate.resize_with_cursor(cols, rows, None);
-                    (pos, remaps)
+                    let (pos, remaps, p_moves) = self.primary.resize_with_cursor_and_anchors(
+                        cols,
+                        rows,
+                        Some(cursor_pos),
+                        &primary_positions,
+                    );
+                    let (_, _, a_moves) = self.alternate.resize_with_cursor_and_anchors(
+                        cols,
+                        rows,
+                        None,
+                        &alternate_positions,
+                    );
+                    (pos, remaps, p_moves, a_moves)
                 }
                 ScreenBuffer::Alternate => {
-                    let (_, remaps) = self.primary.resize_with_cursor_and_remaps(cols, rows, None);
-                    let pos = self
-                        .alternate
-                        .resize_with_cursor(cols, rows, Some(cursor_pos));
-                    (pos, remaps)
+                    let (_, remaps, p_moves) = self.primary.resize_with_cursor_and_anchors(
+                        cols,
+                        rows,
+                        None,
+                        &primary_positions,
+                    );
+                    let (pos, _, a_moves) = self.alternate.resize_with_cursor_and_anchors(
+                        cols,
+                        rows,
+                        Some(cursor_pos),
+                        &alternate_positions,
+                    );
+                    (pos, remaps, p_moves, a_moves)
                 }
             }
         } else {
@@ -48,8 +90,23 @@ impl Terminal {
                     self.cursor.col.min(cols.saturating_sub(1)),
                 )),
                 Vec::new(),
+                Vec::new(),
+                Vec::new(),
             )
         };
+        for (anchors, moves) in [
+            (&primary_anchors, primary_moves),
+            (&alternate_anchors, alternate_moves),
+        ] {
+            for (index, line, col) in moves {
+                if let Some((placement_index, _, clipped_rows)) = anchors.get(index) {
+                    let placement = &mut self.graphics_placements[*placement_index];
+                    placement.line =
+                        (line.min(i64::MAX as u64) as i64).saturating_sub(i64::from(*clipped_rows));
+                    placement.col = col;
+                }
+            }
+        }
         if !line_remaps.is_empty() {
             self.commands.remap_prompt_lines(&line_remaps);
             let map: std::collections::HashMap<u64, u64> = line_remaps.into_iter().collect();
@@ -82,6 +139,9 @@ impl Terminal {
         self.viewport_offset = self
             .viewport_offset
             .min(self.active_grid().scrollback_len());
+        // Pixel dimensions can still describe the old grid until the host
+        // reports its new cell metrics. Do not prune images using them.
+        self.reindex_graphics_rows();
     }
 
     pub(crate) fn switch_screen(&mut self, to: ScreenBuffer) {
@@ -90,6 +150,7 @@ impl Terminal {
         }
         self.active = to;
         self.viewport_offset = 0;
+        self.refresh_graphics_rows();
     }
 
     pub(crate) fn h_margins(&self) -> (usize, usize) {
@@ -181,8 +242,10 @@ impl Terminal {
 
     pub(crate) fn scroll_region_up(&mut self, n: usize) {
         let pushed_before = self.history_pushed();
+        self.scroll_graphics_region(n, true);
         self.scroll_region_up_inner(n);
         self.keep_viewport_anchored(pushed_before);
+        self.refresh_graphics_rows();
     }
 
     pub(crate) fn scroll_region_up_inner(&mut self, n: usize) {
@@ -270,6 +333,7 @@ impl Terminal {
         let n = n.min(region_height);
         let (left, right) = self.h_margins();
         let full_width = self.h_margins_full();
+        self.scroll_graphics_region(n, false);
         self.input_start = None;
 
         if n < region_height {
@@ -312,5 +376,6 @@ impl Terminal {
             self.remap_screen_rows_down(top, bottom, n);
         }
         self.fix_spacer_heads();
+        self.refresh_graphics_rows();
     }
 }

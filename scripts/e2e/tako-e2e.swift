@@ -3593,6 +3593,18 @@ let scenarios: [Scenario] = [
         }
     }),
     ("workspace-journey", "dragging window, creating tabs, mouse-switching tabs, and switching workspaces work end-to-end", { d in
+        func clickWorkspaceItem(_ title: String) throws {
+            guard d.wait(for: { d.openMenuItem(titled: title) != nil }, timeout: 5),
+                  let item = d.openMenuItem(titled: title),
+                  let position: AXValue = d.attribute(item, kAXPositionAttribute),
+                  let size: AXValue = d.attribute(item, kAXSizeAttribute) else {
+                throw Failure("workspace item '\(title)' has no visible frame")
+            }
+            var origin = CGPoint.zero, extent = CGSize.zero
+            AXValueGetValue(position, .cgPoint, &origin)
+            AXValueGetValue(size, .cgSize, &extent)
+            try d.click(at: CGPoint(x: origin.x + extent.width / 2, y: origin.y + extent.height / 2))
+        }
         // Clean start with pill style config
         d.quit()
         if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -3614,8 +3626,10 @@ let scenarios: [Scenario] = [
         guard let f1 = d.windowFrame() else {
             throw Failure("no window frame discovered for initial window in Default workspace")
         }
-        let dragStart1 = CGPoint(x: f1.origin.x + 250, y: f1.origin.y + 18)
-        let dragEnd1 = CGPoint(x: f1.origin.x + 330, y: f1.origin.y + 58)
+        // The first tab occupies x=250 in pill style. Drag the empty space
+        // between the tabs and the controls at the right edge instead.
+        let dragStart1 = CGPoint(x: f1.maxX - 150, y: f1.origin.y + 18)
+        let dragEnd1 = CGPoint(x: dragStart1.x + 80, y: dragStart1.y + 40)
         try d.drag(from: dragStart1, to: dragEnd1, steps: 12)
         usleep(500_000)
         guard let draggedF1 = d.windowFrame() else {
@@ -3694,11 +3708,12 @@ let scenarios: [Scenario] = [
         guard !ws1_win2.isEmpty, ws1_win2 != ws1_tab0, ws1_win2 != ws1_tab1 else {
             throw Failure("second window in Workspace A did not spawn a distinct TTY (got: \(ws1_win2))")
         }
+        let wsABeforeLeaving = try d.workspaceList()
 
         // --- PHASE 2: Create and Exercise New Workspace (B) ---
         // 6. Create Workspace 2 via real mouse click on the Workspace Pill and popup menu
         try d.clickWorkspacePill()
-        try d.clickOpenMenuItem(titled: "New Workspace")
+        try clickWorkspaceItem("New Workspace...")
 
         // Wait for modal alert and click "Create" button with real mouse click alone (NO fallbacks)
         guard d.wait(for: { d.button(titled: "Create") != nil }, timeout: 5) else {
@@ -3756,11 +3771,13 @@ let scenarios: [Scenario] = [
         }
 
         // 8. Test window dragging on Workspace 2 window by its titlebar
+        // Reserve an empty part of the strip regardless of saved window size.
+        d.setSize(CGSize(width: 800, height: 500))
         guard let preDragF2 = d.windowFrame() else {
             throw Failure("no window frame before dragging Workspace 2 window")
         }
-        let dragStart2 = CGPoint(x: preDragF2.origin.x + 250, y: preDragF2.origin.y + 18)
-        let dragEnd2 = CGPoint(x: preDragF2.origin.x + 350, y: preDragF2.origin.y + 70)
+        let dragStart2 = CGPoint(x: preDragF2.maxX - 150, y: preDragF2.origin.y + 18)
+        let dragEnd2 = CGPoint(x: dragStart2.x + 100, y: dragStart2.y + 52)
         try d.drag(from: dragStart2, to: dragEnd2, steps: 16)
         usleep(500_000)
         guard let draggedF2 = d.windowFrame() else {
@@ -3809,7 +3826,7 @@ let scenarios: [Scenario] = [
         // --- PHASE 3: Complete Roundtrip Switching & State Retention (A -> B -> A -> B) ---
         // 11. Switch back to Default workspace (A) via real mouse click on the Workspace Pill menu
         try d.clickWorkspacePill()
-        try d.clickOpenMenuItem(titled: "Default")
+        try clickWorkspaceItem("Default")
         usleep(1_500_000)
 
         // Verify inactive Workspace B windows are hidden and all Workspace A windows are restored visible
@@ -3827,7 +3844,9 @@ let scenarios: [Scenario] = [
             throw Failure("could not identify active on-screen window after returning to Workspace A")
         }
         guard restoredActiveWid == win2Id else {
-            throw Failure("switching back to Workspace A did not restore remembered active window! (got wid: \(restoredActiveWid), expected wid: \(win2Id))")
+            let workspaces = (try? d.workspaceList()) ?? []
+            let transitions = (try? d.tabTransitions()) ?? []
+            throw Failure("switching back to Workspace A did not restore remembered active window (got wid: \(restoredActiveWid), expected wid: \(win2Id); before: \(wsABeforeLeaving); after: \(workspaces); tab transitions: \(transitions))")
         }
         try d.run("tty > \(d.path("ws1_roundtrip_a.txt"))")
         let restoredTTY_A = try d.file("ws1_roundtrip_a.txt").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3838,7 +3857,7 @@ let scenarios: [Scenario] = [
         // 13. Switch back to Workspace 2 (B) via real mouse click on the Workspace Pill menu
         usleep(500_000)
         try d.clickWorkspacePill()
-        try d.clickOpenMenuItem(titled: ws2Name)
+        try clickWorkspaceItem(ws2Name)
         usleep(1_500_000)
 
         // Verify inactive Workspace A windows are hidden and Workspace B window is visible
@@ -4427,6 +4446,9 @@ let scenarios: [Scenario] = [
     ("tab-status-click", "pill tab status dots transition across working/waiting/done and reset to idle/dim on real mouse click with unassisted focus recovery", { d in
         try runTabStatusClickScenario(d)
     }),
+    ("kitty-icat", "kitten icat detects Tako and displays an image without corrupting terminal input", { d in
+        try runKittyIcatScenario(d)
+    }),
     ("terminal-dialogs", "Rename Tab, multi-window Quit confirmation, and Connect AI Agents use in-terminal TerminalDialogView and recover unassisted focus", { d in
         try runTerminalDialogsScenario(d)
     }),
@@ -4468,7 +4490,8 @@ struct TakoE2E {
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
-    let explicitOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow"]
+    let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow"]
+    let explicitOnly = persistenceOnly.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))
     if !unknown.isEmpty {
@@ -4477,7 +4500,7 @@ struct TakoE2E {
     }
     let previouslyFront = NSWorkspace.shared.frontmostApplication
     var failed = 0
-    if !wanted.isDisjoint(with: explicitOnly) {
+    if !wanted.isDisjoint(with: persistenceOnly) {
         let helper = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Helpers/zmx").path
         guard FileManager.default.isExecutableFile(atPath: helper),
               ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] != nil else {

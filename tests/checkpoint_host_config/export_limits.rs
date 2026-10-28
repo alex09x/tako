@@ -16,7 +16,7 @@ fn export_version_writes_what_was_asked_or_refuses() {
     assert_eq!(MIN_EXPORT_VERSION, 2);
     assert_eq!(
         header_version(&term.export_checkpoint_version(0, 0).unwrap()),
-        6
+        7
     );
     assert_eq!(
         header_version(&term.export_checkpoint_version(3, 0).unwrap()),
@@ -34,7 +34,7 @@ fn export_version_writes_what_was_asked_or_refuses() {
         header_version(&term.export_checkpoint_version(6, 0).unwrap()),
         6
     );
-    for version in [1, 7, u32::MAX] {
+    for version in [1, 8, u32::MAX] {
         assert_eq!(
             term.export_checkpoint_version(version, 0),
             Err(CheckpointError::UnsupportedVersion(version))
@@ -98,7 +98,7 @@ fn ffi_exports_the_version_a_peer_asks_for() {
     assert_eq!(header_version(&v2), 2);
     assert_eq!(
         header_version(&core.checkpoint_export_version(0, 0).unwrap()),
-        6
+        7
     );
     assert!(core.checkpoint_export_version(1, 0).is_err());
 

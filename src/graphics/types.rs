@@ -120,6 +120,38 @@ pub struct StoredImage {
 pub struct Placement {
     pub image_id: u32,
     pub placement_id: u32,
+    pub options: PlacementOptions,
+}
+
+/// Display geometry sent with the first chunk or a placement command.
+/// Zero dimensions mean the client did not specify that dimension.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementOptions {
+    pub columns: u32,
+    pub rows: u32,
+    pub offset_x: u32,
+    pub offset_y: u32,
+    pub source_x: u32,
+    pub source_y: u32,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub no_cursor_move: bool,
+}
+
+impl PlacementOptions {
+    pub(crate) fn from_command(cmd: &GraphicsCommand) -> Self {
+        Self {
+            columns: cmd.get_u32('c').unwrap_or(0),
+            rows: cmd.get_u32('r').unwrap_or(0),
+            offset_x: cmd.get_u32('X').unwrap_or(0),
+            offset_y: cmd.get_u32('Y').unwrap_or(0),
+            source_x: cmd.get_u32('x').unwrap_or(0),
+            source_y: cmd.get_u32('y').unwrap_or(0),
+            source_width: cmd.get_u32('w').unwrap_or(0),
+            source_height: cmd.get_u32('h').unwrap_or(0),
+            no_cursor_move: cmd.get_u32('C') == Some(1),
+        }
+    }
 }
 
 /// Outcome of handling one graphics command.
@@ -168,5 +200,10 @@ pub(crate) struct PendingTransfer {
     pub width: u32,
     pub height: u32,
     pub generation: u64,
+    pub display: bool,
+    pub placement_id: u32,
+    pub quiet: u8,
+    pub compressed: bool,
+    pub options: PlacementOptions,
     pub data: Vec<u8>,
 }

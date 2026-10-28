@@ -38,6 +38,20 @@ extension MetalTerminalRendererTests {
         XCTAssertEqual(instance.imageId, 42)
     }
 
+    func testPlacementCropsOffsetsAndFitsInsideItsCellRectangle() {
+        let planner = planner()
+        let placement = FfiGraphicsPlacement(imageId: 42, placementId: 1, row: 2, col: 3,
+                                             columns: 4, rows: 3, offsetX: 3, offsetY: 4,
+                                             sourceX: 10, sourceY: 5, sourceWidth: 40, sourceHeight: 20)
+        let metadata = FfiGraphicsImageMetadata(format: .rgb, width: 100, height: 50, generation: 1)
+        let stats = planner.plan(frame: frame(cols: 12, rows: 12, placements: [placement]), viewport: viewport,
+                                 imageMetadataProvider: { _ in metadata })
+        XCTAssertEqual(stats.imageInstances, 1)
+        let instance = planner.imageInstances[0]
+        XCTAssertEqual(instance.destRect, SIMD4<Float>(33, 64, 40, 20))
+        XCTAssertEqual(instance.uvRect, SIMD4<Float>(0.1, 0.1, 0.5, 0.5))
+    }
+
     func testMetadataProviderPlansImageWithoutFetchingStoredBytes() {
         let planner = planner()
         var byteFetches = 0

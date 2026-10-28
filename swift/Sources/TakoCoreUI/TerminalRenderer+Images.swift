@@ -17,21 +17,20 @@ extension TerminalRenderer {
         _ placements: [FfiGraphicsPlacement],
         rows: Int,
         imageProvider: (UInt32) -> FfiStoredImage?,
+        pixelsPerUnit: CGFloat = 1,
         in context: CGContext
     ) {
         for placement in placements {
             guard let stored = imageProvider(placement.imageId),
-                  let image = Self.makeImage(stored) else { continue }
-            let x = CGFloat(placement.col) * metrics.cellWidth
-            let topY = CGFloat(rows - 1 - Int(placement.row)) * metrics.cellHeight
-            let height = CGFloat(stored.height)
-            let rect = CGRect(
-                x: x,
-                y: topY + metrics.cellHeight - height,
-                width: CGFloat(stored.width),
-                height: height
-            )
-            context.draw(image, in: rect)
+                  let image = Self.makeImage(stored),
+                  let layout = TerminalImageLayout.resolve(placement,
+                      image: CGSize(width: Int(stored.width), height: Int(stored.height)),
+                      cell: CGSize(width: metrics.cellWidth, height: metrics.cellHeight), pixelsPerUnit: pixelsPerUnit),
+                  let cropped = image.cropping(to: layout.source) else { continue }
+            let dest = layout.destination
+            let rect = CGRect(x: dest.minX, y: CGFloat(rows) * metrics.cellHeight - dest.maxY,
+                              width: dest.width, height: dest.height)
+            context.draw(cropped, in: rect)
         }
     }
 

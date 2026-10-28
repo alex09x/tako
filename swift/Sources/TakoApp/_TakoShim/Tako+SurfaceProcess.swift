@@ -128,7 +128,10 @@ extension Tako.SurfaceView {
                     }
                 }
             }
-            pty = PTY(cols: UInt16(initialCols), rows: UInt16(initialRows), workingDirectory: workingDir, config: owningApp?.config,
+            let pixels = ptyPixelSize(cols: initialCols, rows: initialRows)
+            core.setPixelSize(widthPx: UInt32(pixels.width), heightPx: UInt32(pixels.height))
+            pty = PTY(cols: UInt16(clamping: initialCols), rows: UInt16(clamping: initialRows),
+                      pixelWidth: pixels.width, pixelHeight: pixels.height, workingDirectory: workingDir, config: owningApp?.config,
                       program: program, environment: environment, removing: removing)
             let started = pty
             currentProcess = started

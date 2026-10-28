@@ -62,6 +62,7 @@ impl Terminal {
                 );
             }
             2 | 3 => {
+                self.clear_visible_graphics();
                 self.input_start = None;
                 for r in 0..rows {
                     self.active_grid_mut()
