@@ -272,6 +272,15 @@ extension BaseTerminalController {
             delegate: self
         )
         self.clipboardConfirmation = cc
+        if case .paste = request {
+            Task { @MainActor [weak self] in
+                guard let self, self.clipboardConfirmation === cc else { return }
+                let action = await ClipboardPasteDialog.choose(in: window, contents: str, theme: target.theme)
+                guard self.clipboardConfirmation === cc else { return }
+                self.clipboardConfirmationComplete(action, request)
+            }
+            return
+        }
         guard let ccWindow = cc.window else { return }
         window.beginSheet(ccWindow)
     }
@@ -282,7 +291,9 @@ extension BaseTerminalController {
         self.clipboardConfirmation = nil
 
         // Close the sheet
-        if let ccWindow = cc.window {
+        if case .paste = cc.request {
+            // Paste is presented inside the terminal, so it has no sheet.
+        } else if let ccWindow = cc.window {
             window?.endSheet(ccWindow)
         }
 
