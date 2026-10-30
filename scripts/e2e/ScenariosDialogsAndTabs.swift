@@ -256,7 +256,7 @@ func runTabDragReorderScenario(_ d: Driver) throws {
 }
 
 func runSafePasteGuardScenario(_ d: Driver) throws {
-    _ = try launchCleanPillTabs(d)
+    let ctl = try launchCleanPillTabs(d)
     let pasteboard = NSPasteboard.general
     let saved = pasteboard.string(forType: .string)
     defer {
@@ -278,9 +278,15 @@ func runSafePasteGuardScenario(_ d: Driver) throws {
     var cancelBtn: AXUIElement?
     guard d.wait(for: {
         cancelBtn = d.button(titled: "Cancel")
-        return cancelBtn != nil && d.button(titled: "Paste") != nil && d.hasText(containing: "Pasting this text to the terminal may be dangerous.")
+        return cancelBtn != nil && d.button(titled: "Paste") != nil && d.button(titled: "Always Paste") != nil
+            && d.hasText(containing: "Pasting this text to the terminal may be dangerous.")
     }, timeout: 5), let cancelBtn else {
-        throw Failure("Safe Paste confirmation dialog did not appear on multiline Cmd+V")
+        let state = (try? d.exec("\(ctl) dialog --json")) ?? "unavailable"
+        throw Failure("Safe Paste dialog missing: cancel=\(d.button(titled: "Cancel") != nil), paste=\(d.button(titled: "Paste") != nil), always=\(d.button(titled: "Always Paste") != nil), tui=\(d.element(withIdentifier: "terminal-dialog-view") != nil), text=\(d.hasText(containing: "Pasting this text to the terminal may be dangerous.")); dialog=\(state)")
+    }
+    let dialogState = try d.exec("\(ctl) dialog --json")
+    guard dialogState.contains("\"title\":\"Confirm Paste\"") else {
+        throw Failure("Safe Paste was not an in-terminal dialog: \(dialogState)")
     }
     guard !FileManager.default.fileExists(atPath: leak1) && !FileManager.default.fileExists(atPath: leak2) else {
         throw Failure("multiline paste executed before user confirmed Paste")
