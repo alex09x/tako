@@ -316,3 +316,53 @@ func runSafePasteGuardScenario(_ d: Driver) throws {
     try d.run("echo 'safe_paste_recovered' > \(d.path("sp_recovered.txt"))")
     try d.expect("sp_recovered.txt", "safe_paste_recovered\n", "unassisted keyboard input after safe paste")
 }
+
+/// Closing the only tab in an empty workspace must not quit the other ones.
+func runWorkspaceCloseAndDeleteScenario(_ d: Driver) throws {
+    let ctl = try launchCleanPillTabs(d)
+    _ = try d.exec("\(ctl) workspace switch Default")
+    guard d.wait(for: { ((try? d.exec("\(ctl) workspace current --json")) ?? "").contains("Default") }, timeout: 5) else {
+        throw Failure("could not enter Default workspace")
+    }
+    guard let original = try d.focusedPaneId() else { throw Failure("no original terminal pane") }
+    let workspaceName = "TakoE2E-\(UUID().uuidString)"
+    _ = try d.exec("\(ctl) workspace create \(workspaceName)")
+    _ = try d.exec("\(ctl) workspace switch \(workspaceName)")
+    guard d.wait(for: {
+        ((try? d.exec("\(ctl) workspace current --json")) ?? "").contains(workspaceName)
+            && (try? d.focusedPaneId()) != nil && (try? d.focusedPaneId()) != original
+    }, timeout: 5) else {
+        throw Failure("could not enter the empty workspace")
+    }
+    let beforeClose = (try? d.exec("\(ctl) tree --json")) ?? "unavailable"
+    let workspacesBeforeClose = (try? d.exec("\(ctl) workspace list --json")) ?? "unavailable"
+    d.key(Key.w, .maskCommand)
+    guard d.wait(for: {
+        ((try? d.exec("\(ctl) workspace current --json")) ?? "").contains("Default")
+            && (try? d.focusedPaneId()) == original
+    }, timeout: 8) else {
+        let current = (try? d.exec("\(ctl) workspace current --json")) ?? "unavailable"
+        let focused = (try? d.focusedPaneId()) ?? "none"
+        let alive = NSRunningApplication(processIdentifier: d.pid)?.isTerminated == false
+        throw Failure("closing the temporary workspace's only tab did not return to the original workspace: alive=\(alive), current=\(current), focused=\(focused), original=\(original), tree=\(beforeClose), workspaces=\(workspacesBeforeClose)")
+    }
+
+    _ = try d.exec("\(ctl) workspace switch \(workspaceName)")
+    guard d.wait(for: { (try? d.focusedPaneId()) != nil && (try? d.focusedPaneId()) != original }, timeout: 5),
+          let moved = try d.focusedPaneId() else { throw Failure("temporary workspace did not create its terminal") }
+    try d.clickWorkspacePill()
+    try d.clickOpenMenuItem(titled: "Delete Current Workspace...")
+    guard d.wait(for: { d.button(titled: "Delete") != nil }, timeout: 5), let delete = d.button(titled: "Delete") else {
+        throw Failure("workspace delete confirmation did not appear")
+    }
+    d.press(delete)
+    guard d.wait(for: {
+        let list = (try? d.exec("\(ctl) workspace list --json")) ?? ""
+        return !list.isEmpty && !list.contains(workspaceName)
+    }, timeout: 8) else { throw Failure("workspace remained after confirming delete") }
+    guard (try? d.focusedPaneId()) != nil else { throw Failure("deleting the workspace left no focused terminal") }
+    let treeAfterDelete = try d.exec("\(ctl) tree --json")
+    guard treeAfterDelete.contains(original), treeAfterDelete.contains(moved) else {
+        throw Failure("deleting the workspace lost a terminal: \(treeAfterDelete)")
+    }
+}

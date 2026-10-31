@@ -4458,6 +4458,9 @@ let scenarios: [Scenario] = [
     ("safe-paste-guard", "multiline Cmd+V at prompt opens Safe Paste confirmation, Cancel blocks execution, Paste runs lines, and recovers unassisted focus", { d in
         try runSafePasteGuardScenario(d)
     }),
+    ("workspace-close-delete", "closing an empty workspace returns to existing tabs and deleting it preserves sessions", { d in
+        try runWorkspaceCloseAndDeleteScenario(d)
+    }),
     ("sidebar-interaction", "Session Sidebar collapses/expands subagents, filters tabs, switches active session on click, and recovers unassisted focus", { d in
         try runSidebarInteractionScenario(d)
     }),
