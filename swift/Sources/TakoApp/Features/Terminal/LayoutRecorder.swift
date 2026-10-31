@@ -45,8 +45,22 @@ enum LayoutRecorder {
         }
         let previous = LayoutJournal.readLaunch(in: dir)
         let named = dir.appendingPathComponent(LayoutJournal.journalName(previous.journalGeneration))
-        let (read, journal) = LayoutJournal.check(try? Data(contentsOf: named),
+        let previousData = try? Data(contentsOf: named)
+        let (read, journal) = LayoutJournal.check(previousData,
                                                   expected: previous.journalGeneration)
+        if keepsWindows, let previousData {
+            do {
+                guard previousData.count <= LayoutJournal.maxFileBytes else {
+                    throw LayoutJournal.JournalError("previous layout exceeds the recovery limit")
+                }
+                try LayoutRecoveryArchive.preserve(previousData, generation: previous.journalGeneration, in: dir)
+            } catch {
+                // Do not overwrite the previous layout when its recovery
+                // copy could not be written.
+                AppDelegate.logger.error("layout recovery copy failed: \(String(describing: error), privacy: .public)")
+                return
+            }
+        }
         source = LayoutJournal.decide(previous: previous.state, journal: read, keepsWindows: keepsWindows)
         if source == .appKit, read == .valid { previousLayout = journal }
         if case .invalid(let why) = read, previous.state != .clean {
@@ -141,9 +155,9 @@ enum LayoutRecorder {
 
     // MARK: - Recording
 
-    static func capture() -> LayoutJournal.Journal {
+    static func capture(controllers: [TerminalController] = TerminalController.all) -> LayoutJournal.Journal {
         var groups: [Tako.CustomTabGroup] = []
-        for controller in TerminalController.all {
+        for controller in controllers {
             guard let window = controller.window else { continue }
             let group = Tako.CustomTabGroup.group(for: window)
             if !groups.contains(where: { $0 === group }) { groups.append(group) }
@@ -151,8 +165,10 @@ enum LayoutRecorder {
         let encoder = JSONEncoder()
         var windows: [LayoutJournal.Window] = []
         for group in groups {
-            let visible = group.visibleWindows
-            let controllers = visible.compactMap { $0.windowController as? TerminalController }
+            // Ordered-out tabs in other workspaces are still open and must
+            // be in the journal so their sessions can be restored.
+            let controllers = group.windows.filter { !Tako.CustomTabGroup.isClosed($0) }
+                .compactMap { $0.windowController as? TerminalController }
             let tabs: [Any] = controllers.compactMap { controller in
                 guard let data = try? encoder.encode(TerminalRestorableState(from: controller)) else { return nil }
                 return try? JSONSerialization.jsonObject(with: data)
@@ -209,11 +225,8 @@ enum LayoutRecorder {
             if let anchor {
                 let group = Tako.CustomTabGroup.group(for: anchor)
                 group.setWindowOrder(restoredWindows)
-                let restoredIds = restoredWindows.map(\.stableTabIdentifier)
-                WorkspaceStore.shared.reorderTabs(
-                    in: WorkspaceStore.shared.activeWorkspaceId,
-                    newOrder: restoredIds
-                )
+                // WorkspaceStore already persisted each workspace's order.
+                // The group can contain tabs from several workspaces.
                 if let selected {
                     group.select(selected)
                     if entry.isKey { keyWindow = selected }

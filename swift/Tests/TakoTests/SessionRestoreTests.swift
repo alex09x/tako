@@ -247,6 +247,31 @@ struct SessionRestoreTests {
         #expect(tmp.files() == [a.id.uuidString + ".snapshot"])
     }
 
+    @Test func aSnapshotMissingFromAPartialRestoreIsPreserved() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let missing = UUID()
+        let saved = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000.5), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(saved, id: missing)
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.save([], settings: on)
+        #expect(tmp.store.read(id: missing) == saved)
+    }
+
+    @Test func aRestoredTabClosedBeforeItsFirstSaveIsRemoved() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let saved = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000.5), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(saved, id: surface.id)
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.start(settings: { on }, surfaces: { [surface] })
+        defer { saver.stop() }
+        saver.save([], settings: on)
+        #expect(tmp.store.read(id: surface.id) == nil)
+    }
+
     @Test func aRestoredShellStartsWhereTheOldOneReportedOnlyIfThatStillExists() throws {
         let dir = FileManager.default.temporaryDirectory.path
         #expect(Tako.SurfaceView.restoredWorkingDirectory(dir, fallback: "/fallback") == dir)

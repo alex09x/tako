@@ -50,7 +50,7 @@ run_one() {
         return 1
     fi
     local status=0
-    APP="$APP" TAKO_SESSIONS_HOME="$sessions" scripts/e2e-macapp.sh "$scenario" || status=$?
+    APP="$APP" TAKO_BUNDLE_ID="$bundle" TAKO_SESSIONS_HOME="$sessions" scripts/e2e-macapp.sh "$scenario" || status=$?
     cleanup_one
     trap - EXIT
     return $status
