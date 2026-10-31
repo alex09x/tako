@@ -43,4 +43,17 @@ struct LayoutRecoveryArchiveTests {
         }
         #expect(try Data(contentsOf: dir.appendingPathComponent("recovery-1.json")) == original)
     }
+
+    @Test func retentionKeepsTheNewestThirtyTwoCopies() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for generation in 1...34 {
+            try LayoutRecoveryArchive.preserve(Data("layout \(generation)".utf8), generation: UInt64(generation), in: dir)
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(names.count == 32)
+        #expect(!names.contains("recovery-1.json") && !names.contains("recovery-2.json"))
+        #expect(names.contains("recovery-3.json") && names.contains("recovery-34.json"))
+    }
 }
