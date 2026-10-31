@@ -19,17 +19,13 @@ extension TerminalController {
         cancelPendingInitialPresentation()
 
         let tabGroup = Tako.CustomTabGroup.group(for: window)
-        let windows: [NSWindow] = tabGroup.windows
-        let controllers = windows.compactMap { $0.windowController as? TerminalController }
+        let windows: [NSWindow] = tabGroup.visibleWindows.isEmpty ? [window] : tabGroup.visibleWindows
 
         // When closing the last window with quit-after-last-window-closed enabled,
         // closing the window means closing the application. Routing through NSApp.terminate
         // allows persistent sessions to be safely detached and window layout to be saved
         // so everything restores on next launch, while cleanly terminating the process.
-        let otherTerminalGroups = Tako.CustomTabGroup.allGroups.filter {
-            $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController })
-        }
-        let isLastWindow = controllers.count >= TerminalController.all.count || otherTerminalGroups.isEmpty
+        let isLastWindow = !Self.hasTerminalWindowsOutside(windows)
         if isLastWindow && quitsAfterLastWindow {
             NSApp.terminate(nil)
             return
@@ -45,13 +41,16 @@ extension TerminalController {
             window.close()
         }
 
-        if quitsAfterLastWindow {
-            let remaining = Tako.CustomTabGroup.allGroups.filter {
-                $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController && $0.isVisible })
-            }
-            if remaining.isEmpty {
-                NSApp.terminate(nil)
-            }
+        if let workspace = AppDelegate.workspaceToResume(store: .shared, windows: Tako.CustomTabGroup.allGroups.flatMap(\.windows)) {
+            WorkspaceStore.shared.switchWorkspace(to: workspace)
+        }
+    }
+
+    /// Hidden tabs in other workspaces are still open terminal windows.
+    static func hasTerminalWindowsOutside(_ closing: [NSWindow]) -> Bool {
+        let ids = Set(closing.map(ObjectIdentifier.init))
+        return Tako.CustomTabGroup.allGroups.flatMap(\.windows).contains {
+            !ids.contains(ObjectIdentifier($0)) && !Tako.CustomTabGroup.isClosed($0) && $0.windowController is TerminalController
         }
     }
 
@@ -63,7 +62,8 @@ extension TerminalController {
         // If we don't have a tab group or we don't have multiple tabs, then
         // do a normal single window close.
         let tabGroup = Tako.CustomTabGroup.group(for: window)
-        guard tabGroup.windows.count > 1 else {
+        let workspaceWindows = tabGroup.visibleWindows
+        guard workspaceWindows.count > 1 else {
             // No tabs, just save this window's state
             if let undoState {
                 // Register undo action to restore the window
@@ -88,7 +88,7 @@ extension TerminalController {
 
         // Multiple windows in tab group - collect all undo states in sorted order
         // by tab ordering. Also track which window was key.
-        let undoStates = tabGroup.windows
+        let undoStates = workspaceWindows
             .compactMap { tabWindow -> UndoState? in
                 guard let controller = tabWindow.windowController as? TerminalController,
                       var undoState = controller.undoState else { return nil }
@@ -111,7 +111,7 @@ extension TerminalController {
         // but we only need this for this style of undo so we don't want to add it to
         // UndoState.
         let keyWindowIndex: Int?
-        if let keyWindow = tabGroup.windows.first(where: { $0.isKeyWindow }),
+        if let keyWindow = workspaceWindows.first(where: { $0.isKeyWindow }),
             let keyController = keyWindow.windowController as? TerminalController,
             let keyUndoState = keyController.undoState {
             keyWindowIndex = undoStates.firstIndex {

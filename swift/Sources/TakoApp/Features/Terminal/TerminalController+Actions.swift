@@ -124,17 +124,14 @@ extension TerminalController {
         // We need to check all the windows in our tab group for confirmation
         // if we're closing the window.
         let tabGroup = Tako.CustomTabGroup.group(for: window)
-        let windows: [NSWindow] = tabGroup.windows
+        let windows: [NSWindow] = tabGroup.visibleWindows.isEmpty ? [window] : tabGroup.visibleWindows
         let controllers = windows.compactMap { $0.windowController as? TerminalController }
 
         // When closing the last window with quit-after-last-window-closed enabled,
         // closing the window means closing the application. Routing through NSApp.terminate
         // allows persistent sessions to be safely detached and window layout to be saved
         // so everything restores on next launch, while cleanly terminating the process.
-        let otherTerminalGroups = Tako.CustomTabGroup.allGroups.filter {
-            $0 !== tabGroup && $0.windows.contains(where: { $0.windowController is TerminalController })
-        }
-        let isLastWindow = controllers.count >= TerminalController.all.count || otherTerminalGroups.isEmpty
+        let isLastWindow = !Self.hasTerminalWindowsOutside(windows)
         if isLastWindow && quitsAfterLastWindow {
             NSApp.terminate(sender)
             return

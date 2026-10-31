@@ -13,7 +13,25 @@ import TakoKit
 
 @MainActor extension AppDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        let store = WorkspaceStore.shared
+        let windows = Tako.CustomTabGroup.allGroups.flatMap(\.windows)
+        if let workspace = Self.workspaceToResume(store: store, windows: windows) {
+            store.switchWorkspace(to: workspace)
+            return false
+        }
         return derivedConfig.shouldQuitAfterLastWindowClosed
+    }
+
+    /// AppKit counts visible windows; other workspaces keep theirs ordered out.
+    static func workspaceToResume(store: WorkspaceStore, windows: [NSWindow]) -> UUID? {
+        let live = windows.filter { !Tako.CustomTabGroup.isClosed($0) }
+        if live.contains(where: {
+            (store.workspace(forTab: $0.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId) == store.activeWorkspaceId
+        }) { return nil }
+        let remaining = Set(live.map(\.stableTabIdentifier))
+        return store.workspaces.first {
+            $0.id != store.activeWorkspaceId && $0.tabIdentifiers.contains(where: remaining.contains)
+        }?.id
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

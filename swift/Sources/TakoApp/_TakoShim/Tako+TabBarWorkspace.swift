@@ -100,8 +100,26 @@ extension Tako.TabBarView {
         rows.append(Tako.WorkspacePicker.Row(title: "New Workspace...", color: nil, action: { [weak self] in
             self?.presentNewWorkspaceDialog()
         }))
+        if store.activeWorkspaceId != WorkspaceStore.defaultWorkspaceId {
+            let id = store.activeWorkspaceId
+            rows.append(Tako.WorkspacePicker.Row(title: "Delete Current Workspace...", color: nil, action: { [weak self] in
+                self?.presentDeleteWorkspaceDialog(id: id, store: store)
+            }))
+        }
         let pill = convert(workspacePillRect, to: nil)
         Tako.WorkspacePicker.show(rows: rows, below: window.convertToScreen(pill), in: window)
+    }
+
+    private func presentDeleteWorkspaceDialog(id: UUID, store: WorkspaceStore) {
+        guard let window, let workspace = store.workspace(for: id) else { return }
+        let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
+        Task { @MainActor in
+            let confirmed = await TerminalDialogView.ask(
+                in: window, title: "Delete Workspace?",
+                message: "Delete \(workspace.name)? Its tabs move to Default and their sessions continue running.",
+                confirm: "Delete", theme: theme)
+            if confirmed == true { _ = store.deleteWorkspace(id: id) }
+        }
     }
 
     private func presentNewWorkspaceDialog() {
