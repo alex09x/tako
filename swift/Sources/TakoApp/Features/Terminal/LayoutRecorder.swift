@@ -18,6 +18,7 @@ enum LayoutRecorder {
     /// Where this launch's windows come from; decided once, before AppKit
     /// restores anything.
     private(set) static var source: LayoutJournal.Source = .appKit
+    private(set) static var persistenceAvailable = true
     /// Every write goes through this, on `io` only.
     private static var committer: JournalCommitter?
     private static var pending: LayoutJournal.Journal?
@@ -37,18 +38,34 @@ enum LayoutRecorder {
 
     /// When the app delegate is created, before AppKit restores windows.
     static func begin(bundleID: String, enabled: Bool, keepsWindows: Bool) {
+        timer?.invalidate()
+        timer = nil
+        source = .appKit
+        committer = nil
+        pending = nil
+        previousLayout = nil
+        armed = false
+        persistenceAvailable = true
         guard enabled else { return }
         let dir: URL
         do { dir = try LayoutJournal.directory(bundleID: bundleID) } catch {
             AppDelegate.logger.error("layout journal off: \(String(describing: error), privacy: .public)")
+            persistenceAvailable = false
             return
         }
         let previous = LayoutJournal.readLaunch(in: dir)
         let named = dir.appendingPathComponent(LayoutJournal.journalName(previous.journalGeneration))
-        let previousData = try? Data(contentsOf: named)
+        var canWrite = true
+        let previousData: Data?
+        do { previousData = try LayoutRecoveryArchive.readPrevious(named) }
+        catch {
+            previousData = nil
+            canWrite = false
+            AppDelegate.logger.error("previous layout cannot be preserved: \(String(describing: error), privacy: .public)")
+        }
         let (read, journal) = LayoutJournal.check(previousData,
                                                   expected: previous.journalGeneration)
-        if keepsWindows, let previousData {
+        if let previousData {
             do {
                 guard previousData.count <= LayoutJournal.maxFileBytes else {
                     throw LayoutJournal.JournalError("previous layout exceeds the recovery limit")
@@ -58,15 +75,16 @@ enum LayoutRecorder {
                 // Do not overwrite the previous layout when its recovery
                 // copy could not be written.
                 AppDelegate.logger.error("layout recovery copy failed: \(String(describing: error), privacy: .public)")
-                return
+                canWrite = false
             }
         }
+        persistenceAvailable = canWrite
         source = LayoutJournal.decide(previous: previous.state, journal: read, keepsWindows: keepsWindows)
         if source == .appKit, read == .valid { previousLayout = journal }
         if case .invalid(let why) = read, previous.state != .clean {
             AppDelegate.logger.error("layout journal unusable, AppKit restores instead: \(why, privacy: .public)")
         }
-        let c = JournalCommitter(directory: dir, generation: previous.journalGeneration, state: previous.state)
+        let c = canWrite ? JournalCommitter(directory: dir, generation: previous.journalGeneration, state: previous.state) : nil
         committer = c
         if source == .journal {
             pending = journal
@@ -75,7 +93,10 @@ enum LayoutRecorder {
             var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
             args["ApplePersistenceIgnoreState"] = true
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
-            io.sync { _ = c.setState(.restoring) }
+            if let c, !io.sync(execute: { c.setState(.restoring) }) {
+                persistenceAvailable = false
+                committer = nil
+            }
         }
         // On the AppKit path nothing is written yet: the run becomes `dirty`
         // -- and its journal the one a crash restores -- only once the
@@ -86,7 +107,6 @@ enum LayoutRecorder {
     /// At `applicationDidFinishLaunching`: build the journal's windows, if it
     /// is the source, then start recording.
     static func finishLaunching(app: Tako.App) {
-        guard let c = committer else { return }
         if source == .journal, let journal = pending {
             restore(journal, app: app)
             // AppKit is kept from restoring, not from saving: without this
@@ -95,19 +115,25 @@ enum LayoutRecorder {
             args.removeValue(forKey: "ApplePersistenceIgnoreState")
             UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
             // Still not clean: a crash from here restores from the journal again.
-            io.sync { _ = c.setState(.dirty) }
-            armed = true
+            if let c = committer {
+                armed = io.sync { c.setState(.dirty) }
+                if !armed { persistenceFailed() }
+            }
         } else {
             // AppKit has restored its windows by now -- each tab on its own,
             // where it last stood. Put them back in their groups, then record
             // them, in full, before anything says a crash should come back
             // to the journal.
             if let previous = previousLayout { regroup(previous) }
-            let now = capture()
-            armed = io.sync { arm(c, with: now) }
+            if let c = committer {
+                let now = capture()
+                armed = io.sync { arm(c, with: now) }
+                if !armed { persistenceFailed() }
+            }
         }
         pending = nil
         previousLayout = nil
+        guard persistenceAvailable, committer != nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             MainActor.assumeIsolated { record() }
         }
@@ -117,7 +143,7 @@ enum LayoutRecorder {
     /// `clean` only if the final layout is on disk; otherwise the state
     /// stays dirty and the next launch uses the last journal that was.
     static func finish() {
-        guard let c = committer else { return }
+        guard persistenceAvailable, let c = committer else { return }
         timer?.invalidate()
         timer = nil
         let final = capture()
@@ -130,16 +156,26 @@ enum LayoutRecorder {
     /// Writes the layout if it changed since the last successful write, and
     /// arms crash recovery once a full layout is on disk.
     static func record() {
-        guard let c = committer else { return }
+        guard persistenceAvailable, let c = committer else { return }
         let journal = capture()
         let wasArmed = armed
         io.async {
             if wasArmed {
-                c.commit(journal)
+                if !c.commit(journal) { DispatchQueue.main.async { persistenceFailed() } }
             } else if arm(c, with: journal) {
                 DispatchQueue.main.async { armed = true }
+            } else {
+                DispatchQueue.main.async { persistenceFailed() }
             }
         }
+    }
+
+    private static func persistenceFailed() {
+        guard persistenceAvailable else { return }
+        persistenceAvailable = false
+        timer?.invalidate()
+        timer = nil
+        NotificationCenter.default.post(name: .takoLayoutPersistenceFailed, object: nil)
     }
 
     /// True once the journal holds this run's layout and the run is `dirty`
@@ -159,6 +195,15 @@ enum LayoutRecorder {
         var groups: [Tako.CustomTabGroup] = []
         for controller in controllers {
             guard let window = controller.window else { continue }
+            if WorkspaceStore.shared.persistenceAvailable {
+                let tabID = window.stableTabIdentifier
+                let workspaceID = WorkspaceStore.shared.workspace(forTab: tabID)?.id
+                for surface in controller.surfaceTree {
+                    let privateInput = SecureInput.shared.global || surface.isSecureInput || SecureInput.shared.isSecure(for: surface)
+                    surface.persistence?.rememberPlacement(workspaceID: workspaceID, tabIdentifier: tabID,
+                                                           workingDirectory: privateInput ? nil : surface.pwd)
+                }
+            }
             let group = Tako.CustomTabGroup.group(for: window)
             if !groups.contains(where: { $0 === group }) { groups.append(group) }
         }
@@ -238,7 +283,13 @@ enum LayoutRecorder {
                 }
             }
         }
-        keyWindow?.makeKeyAndOrderFront(nil)
+        for group in Tako.CustomTabGroup.allGroups { group.syncWithActiveWorkspace() }
+        Tako.CustomTabGroup.hideAllInactiveWindows()
+        if let keyWindow,
+           (WorkspaceStore.shared.workspace(forTab: keyWindow.stableTabIdentifier)?.id
+                ?? WorkspaceStore.defaultWorkspaceId) == WorkspaceStore.shared.activeWorkspaceId {
+            keyWindow.makeKeyAndOrderFront(nil)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 

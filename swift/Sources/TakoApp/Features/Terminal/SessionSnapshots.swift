@@ -133,6 +133,7 @@ final class SessionSnapshotStore {
 
     func remove(id: UUID) {
         try? FileManager.default.removeItem(at: url(for: id))
+        removeHistory(id: id)
     }
 
     /// Drops every saved tab not in `ids` -- closed tabs, and windows that
@@ -146,6 +147,7 @@ final class SessionSnapshotStore {
                 try? FileManager.default.removeItem(at: file)
             }
         }
+        removeHistory(except: ids)
     }
 
     func removeAll() {
@@ -172,6 +174,12 @@ final class SessionSnapshotSaver {
     private var activeTokens: [UUID: UInt64] = [:]
     /// Surfaces seen in this run, including restored ones before their first save.
     private var observed: Set<UUID> = []
+    /// Saved screens belonging to sessions that have not been verified.
+    private var protected: Set<UUID> = []
+    /// Archive at most one previous screen per pane in this run.
+    private var preservedBeforeWrite: Set<UUID> = []
+    var onSaveFailure: ((Error) -> Void)?
+    private var reportedFailure = false
     private let writeQueue = DispatchQueue(label: "codes.prod.tako.snapshots.writer", qos: .utility)
     private var timer: Timer?
 
@@ -179,9 +187,18 @@ final class SessionSnapshotSaver {
         self.store = store
     }
 
+    /// A disconnected pane must retain its last saved screen even if it is
+    /// closed before the next snapshot timer fires.
+    func protect(id: UUID) {
+        protected.insert(id)
+        activeTokens[id] = (activeTokens[id] ?? 0) + 1
+    }
+
     func start(settings: @escaping @MainActor () -> Settings, surfaces: @escaping @MainActor () -> [Tako.SurfaceView]) {
         timer?.invalidate()
-        observed = Set(surfaces().map(\.id))
+        let initial = surfaces()
+        observed = Set(initial.map(\.id))
+        protected = Set(initial.filter { $0.hadPersistentSession && !($0.persistence?.confirmedLive ?? false) }.map(\.id))
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.save(surfaces(), settings: settings(), asynchronous: true)
@@ -196,13 +213,23 @@ final class SessionSnapshotSaver {
 
     /// Writes the tabs that changed since their last save and removes the
     /// files of tabs that are gone. With saving off, or while Secure
-    /// Keyboard Entry is on, nothing is written and saved tabs are removed.
+    /// Keyboard Entry is on, saved screen snapshots are removed.
     func save(_ surfaces: [Tako.SurfaceView], settings: Settings, now: Date = Date(), asynchronous: Bool = false) {
+        for surface in surfaces {
+            if let session = surface.persistence, let window = surface.window, WorkspaceStore.shared.persistenceAvailable {
+                let tabID = window.stableTabIdentifier
+                let privateInput = settings.secureInput || surface.isSecureInput || SecureInput.shared.isSecure(for: surface)
+                session.rememberPlacement(workspaceID: WorkspaceStore.shared.workspace(forTab: tabID)?.id,
+                                          tabIdentifier: tabID, workingDirectory: privateInput ? nil : surface.pwd)
+            }
+        }
         guard settings.enabled, !settings.secureInput else {
             store.removeAll()
             written = [:]
             activeTokens = [:]
             observed = []
+            protected = []
+            preservedBeforeWrite = []
             return
         }
         let share = surfaces.isEmpty ? 0 : settings.limit / UInt64(surfaces.count)
@@ -216,6 +243,15 @@ final class SessionSnapshotSaver {
                 continue
             }
             live.insert(surface.id)
+            // A recovery placeholder is not the old session's screen. Never
+            // replace its last saved screen until the live session is verified.
+            if surface.hadPersistentSession && !(surface.persistence?.confirmedLive ?? false) {
+                protected.insert(surface.id)
+                written[surface.id] = nil
+                activeTokens[surface.id] = (activeTokens[surface.id] ?? 0) + 1
+                continue
+            }
+            protected.remove(surface.id)
             // Zero means "no limit" to the engine, never what no room means here.
             // The checkpoint gets what is left after the file's header.
             let budget = share > SessionSnapshotStore.headerSize ? share - SessionSnapshotStore.headerSize : 0
@@ -260,32 +296,49 @@ final class SessionSnapshotSaver {
                                     self.written[surfaceId] = nil
                                     return
                                 }
+                                if s.hadPersistentSession && !(s.persistence?.confirmedLive ?? false) { return }
                             }
                             do {
+                                try self.preservePreviousIfNeeded(id: surfaceId)
                                 try currentStore.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
                                 self.written[surfaceId] = generation
                             } catch {
                                 self.written[surfaceId] = nil
+                                self.reportSaveFailure(error)
                             }
                         }
                     }
                 } else {
                     do {
                         let sanitizedCheckpoint = SessionSnapshotRedactor.shared.redact(checkpoint: checkpoint)
+                        try preservePreviousIfNeeded(id: surfaceId)
                         try store.write(SessionSnapshot(savedAt: now, checkpoint: sanitizedCheckpoint), id: surfaceId)
                         written[surfaceId] = generation
                     } catch {
                         written[surfaceId] = nil
+                        reportSaveFailure(error)
                     }
                 }
             }
         }
         // Only retire files for surfaces this saver actually tracked. A file
         // absent from a partial restore may be the only copy of a session.
-        let retired = observed.union(written.keys).union(activeTokens.keys).subtracting(live)
-        for id in retired { store.remove(id: id) }
+        let retired = observed.union(written.keys).union(activeTokens.keys).subtracting(live).subtracting(protected)
+        for id in retired { store.remove(id: id); preservedBeforeWrite.remove(id) }
         observed = live
         written = written.filter { live.contains($0.key) }
         activeTokens = activeTokens.filter { live.contains($0.key) }
+    }
+
+    private func preservePreviousIfNeeded(id: UUID) throws {
+        guard !preservedBeforeWrite.contains(id) else { return }
+        try store.preservePrevious(id: id)
+        preservedBeforeWrite.insert(id)
+    }
+
+    private func reportSaveFailure(_ error: Error) {
+        guard !reportedFailure else { return }
+        reportedFailure = true
+        onSaveFailure?(error)
     }
 }

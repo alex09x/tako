@@ -40,6 +40,15 @@ extension AppDelegate {
         )
     }
 
+    @IBAction func recoverSessions(_ sender: Any?) {
+        SessionRecoveryPresentation.scanAndPresent(
+            app: tako, openIDs: SessionRecoveryPresentation.protectedSurfaceIDs(Self.restorableSurfaces()), showEmpty: true)
+    }
+
+    @IBAction func agentConversations(_ sender: Any?) {
+        AgentConversationPresentation.show(app: tako)
+    }
+
     @IBAction func closeAllWindows(_ sender: Any?) {
         TerminalController.closeAllWindows()
         AboutController.shared.hide()

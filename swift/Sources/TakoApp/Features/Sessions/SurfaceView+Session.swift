@@ -12,10 +12,12 @@ import AppKit
 import Foundation
 
 extension Tako.SurfaceView {
-    var persistenceEnabled: Bool { app?.config.sessionPersistence ?? false }
+    var persistenceEnabled: Bool { !SessionPlaces.isSelfTest && (app?.config.sessionPersistence ?? false) }
 
     /// Says what happened and waits for Return, which tries the session again.
     func awaitReconnect(_ message: String) {
+        persistence?.confirmedLive = false
+        (NSApp?.delegate as? AppDelegate)?.sessionSaver.protect(id: id)
         let old = pty
         currentProcess = nil
         pty = nil
@@ -51,7 +53,8 @@ extension Tako.SurfaceView {
     /// attached. A session reattached may have a command running that
     /// another Tako saw start: `adoptingItsCommand` takes it on.
     func learnShellPID(_ session: SurfaceSession, adoptingItsCommand: Bool = false) {
-        let runtime = session.runtime, name = session.name, env = session.environment
+        guard let runtime = session.guardedRuntime else { return }
+        let name = session.name, env = session.environment
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let pid = RuntimeCommand.sessionPID(runtime, name: name, environment: env)
             let running = adoptingItsCommand ? pid.flatMap(SessionShell.runningCommand(ofShell:)) : nil
@@ -86,9 +89,7 @@ extension Tako.SurfaceView {
     /// With session-persistence: a new terminal creates its session; a
     /// restored one that had a session checks it before anything of the
     /// user's runs. Whatever cannot be established is said in the terminal
-    /// and nothing starts in its place -- except for a terminal that never
-    /// had a session, which falls back to a plain shell when this Tako has
-    /// no runtime.
+    /// and nothing starts in its place when the runtime is unavailable.
     func launchPersistentSession(workingDir: String?, snapshot: SessionSnapshot?, restored: Bool,
                                  hadPersistentSession: Bool) {
         let records = SessionPlaces.records
@@ -111,25 +112,56 @@ extension Tako.SurfaceView {
             case .record(let r):
                 record = r
             case .none:
-                sessionRetry = { [weak self] in
-                    guard let self else { return }
-                    self.sessionRetry = nil
-                    self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: false,
-                                                 hadPersistentSession: false)
-                }
-                sessionNotice("This terminal had a session, but its record is gone. Press Return to start a new session.")
+                if let snapshot { showSnapshot(snapshot) }
+                sessionNotice("This terminal had a session, but its record is gone. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")
                 return
             case .unreadable:
+                if let snapshot { showSnapshot(snapshot) }
                 sessionNotice("This terminal's session record cannot be read. Nothing was started; the session, if it still runs, is left alone. Press Return to try again.")
                 return
             }
-            guard let opened = openSession(registry: registry, runtimeID: record.runtimeID, name: name) else { return }
-            let session = SurfaceSession(runtime: opened.runtime, namespace: opened.namespace, name: name,
+            guard let opened = openSession(registry: registry, runtimeID: record.runtimeID, name: name, snapshot: snapshot) else {
+                return
+            }
+            let session = SurfaceSession(runtime: opened.runtime, guardedRuntime: opened.guardedRuntime, namespace: opened.namespace, name: name,
                                          owner: opened.owner, records: records, record: record)
             sessionRetry = nil
             persistence = session
             session.register()
             reattach(session, workingDir: workingDir, snapshot: snapshot)
+            return
+        }
+
+        // An older layout may omit the persistent flag even though this pane
+        // already has a session record. Never overwrite that identity.
+        switch records.read(id) {
+        case .record:
+            launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: true,
+                                    hadPersistentSession: true)
+            return
+        case .unreadable:
+            self.hadPersistentSession = true
+            sessionRetry = { [weak self] in
+                guard let self else { return }
+                self.sessionRetry = nil
+                self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: true,
+                                             hadPersistentSession: true)
+            }
+            if let snapshot { showSnapshot(snapshot) }
+            sessionNotice("This terminal has an unreadable session record. Nothing was started. Press Return to try again.")
+            return
+        case .none:
+            break
+        }
+
+        if SessionCollisionGuard.mayContainSession(id: id, home: SessionPlaces.home) {
+            self.hadPersistentSession = true
+            if let snapshot { showSnapshot(snapshot) }
+            sessionRetry = { [weak self] in
+                self?.launchPersistentSession(workingDir: workingDir, snapshot: snapshot,
+                                              restored: restored, hadPersistentSession: false)
+            }
+            sessionNotice("A session with this pane ID may still exist. Nothing was started. Use File → Recover Sessions to review it, or press Return to retry.")
             return
         }
 
@@ -140,19 +172,34 @@ extension Tako.SurfaceView {
             let bundled = try SessionRuntimeRegistry.bundled(in: Bundle.main.bundleURL)
             runtimeID = try registry.install(manifest: bundled.manifest, from: bundled.executable)
         } catch {
-            sessionNotice("session-persistence is on, but this Tako has no usable session runtime (\(error)). This terminal's shell will not outlive Tako.")
+            self.hadPersistentSession = true
             if let snapshot { showSnapshot(snapshot) }
-            startProcess(workingDir: workingDir)
+            sessionRetry = { [weak self] in
+                guard let self else { return }
+                self.sessionRetry = nil
+                self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: restored,
+                                             hadPersistentSession: false)
+            }
+            sessionNotice("Session persistence is on, but its runtime is unavailable (\(error)). Nothing was started. Press Return to try again.")
             return
         }
         self.hadPersistentSession = true
-        guard let opened = openSession(registry: registry, runtimeID: runtimeID, name: name) else { return }
+        sessionRetry = { [weak self] in
+            guard let self else { return }
+            self.sessionRetry = nil
+            self.launchPersistentSession(workingDir: workingDir, snapshot: snapshot, restored: restored,
+                                         hadPersistentSession: false)
+        }
+        guard let opened = openSession(registry: registry, runtimeID: runtimeID, name: name, snapshot: snapshot) else {
+            return
+        }
         let record = SessionRecord(id: id, runtimeID: runtimeID, generation: SessionRecord.newGeneration(),
                                    state: .creating, createdAt: Date())
-        let session = SurfaceSession(runtime: opened.runtime, namespace: opened.namespace, name: name,
+        let session = SurfaceSession(runtime: opened.runtime, guardedRuntime: opened.guardedRuntime, namespace: opened.namespace, name: name,
                                      owner: opened.owner, records: records, record: record)
         persistence = session
         session.register()
+        sessionRetry = nil
         if let snapshot { showSnapshot(snapshot) }
         createSession(session, workingDir: workingDir)
     }
@@ -160,16 +207,19 @@ extension Tako.SurfaceView {
     /// Resolves the runtime by id, opens its namespace and takes the owner
     /// lock -- in that order, before anything touches the session. Nil
     /// (after saying why) when any of it fails.
-    private func openSession(registry: SessionRuntimeRegistry, runtimeID: String, name: String)
-        -> (runtime: URL, namespace: SessionNamespace, owner: SessionOwnerLock)? {
+    private func openSession(registry: SessionRuntimeRegistry, runtimeID: String, name: String, snapshot: SessionSnapshot?)
+        -> (runtime: URL, guardedRuntime: URL, namespace: SessionNamespace, owner: SessionOwnerLock)? {
         do {
-            let runtime = try registry.executable(for: runtimeID)
+            let guardedRuntime = try registry.guardedClient(in: Bundle.main.bundleURL)
+            let runtime = (try? registry.executable(for: runtimeID)) ?? guardedRuntime
             let namespace = try SessionNamespace.open(runtimeID: runtimeID, home: SessionPlaces.home)
             let owner = try SessionOwnerLock(namespace: namespace, name: name)
-            return (runtime, namespace, owner)
+            return (runtime, guardedRuntime, namespace, owner)
         } catch SessionOwnerLock.Failure.heldElsewhere {
+            if let snapshot { showSnapshot(snapshot) }
             sessionNotice("This session is open in another copy of Tako. Close it there, then press Return here.")
         } catch {
+            if let snapshot { showSnapshot(snapshot) }
             sessionNotice("This terminal's session cannot be reached (\(error)). Nothing was started.")
         }
         return nil
@@ -179,37 +229,62 @@ extension Tako.SurfaceView {
     /// nothing runs if that fails; `attached` follows only once the session
     /// answers with its generation.
     private func createSession(_ session: SurfaceSession, workingDir: String?) {
+        session.confirmedLive = false
+        if SessionCollisionGuard.mayContainSession(id: id, home: SessionPlaces.home) {
+            session.ended = true
+            persistence = nil
+            sessionRetry = { [weak self] in
+                self?.launchPersistentSession(workingDir: workingDir, snapshot: nil,
+                                              restored: true, hadPersistentSession: false)
+            }
+            sessionNotice("A session with this pane ID may still exist. Nothing was started. Use File → Recover Sessions to review it, or press Return to retry.")
+            return
+        }
+        guard let guardedRuntime = session.guardedRuntime else {
+            sessionNotice("The guarded session client is unavailable. Nothing was started.")
+            return
+        }
         do {
             try session.save(.creating)
         } catch {
-            sessionNotice("This terminal's session record cannot be written (\(error)). Nothing was started.")
+            sessionRetry = { [weak self, weak session] in
+                guard let self, let session, self.persistence === session else { return }
+                self.sessionRetry = nil
+                self.createSession(session, workingDir: workingDir)
+            }
+            sessionNotice("This terminal's session record cannot be written (\(error)). Nothing was started. Press Return to try again.")
             return
         }
         startProcess(
             workingDir: workingDir,
-            program: [session.runtime.path, "attach", "--labels", "tako-gen=\(session.record.generation)",
-                      session.name, PTY.loginShell, "-l"],
+            program: [guardedRuntime.path] + RuntimeCommand.createOnlyWithGenerationArguments(
+                name: session.name, generation: session.record.generation, command: [PTY.loginShell, "-l"]),
             environment: session.environment,
             removing: SessionNamespace.inheritedVariablesToDrop,
             sessionPreamble: session.name)
         reflowToCurrentBounds(forcePtyResize: true)
         guard let client = pty else {
-            sessionNotice("The session client could not be started. Nothing is running.")
+            awaitReconnect("The session client could not be started. Press Return to check whether the session exists.")
             return
         }
-        let runtime = session.runtime, name = session.name, env = session.environment
+        let runtime = guardedRuntime, name = session.name, env = session.environment
         let generation = session.record.generation
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let deadline = Date().addingTimeInterval(SurfaceSession.reattachTimeout)
+            let deadline = DispatchTime.now() + SurfaceSession.reattachTimeout
             var confirmed = false
-            while !confirmed && Date() < deadline && client.alive {
+            while !confirmed && DispatchTime.now() < deadline && client.alive {
                 let get = RuntimeCommand.run(runtime, ["get", name], environment: env)
                 let labels = get.flatMap { $0.status == 0 ? Reattach.labels(from: $0.output) : nil }
                 confirmed = labels?["tako-gen"] == generation
                 if !confirmed { usleep(150_000) }
             }
             DispatchQueue.main.async {
-                guard let self, self.persistence === session, self.pty === client, confirmed else { return }
+                guard let self, self.persistence === session, self.pty === client else { return }
+                guard confirmed else {
+                    self.awaitReconnect("The new session could not be verified. Press Return to check it again.")
+                    return
+                }
+                session.confirmedLive = true
                 self.learnShellPID(session)
                 do {
                     try session.save(.attached)
@@ -221,25 +296,20 @@ extension Tako.SurfaceView {
         }
     }
 
-    /// Reattach check: the client runs the runtime's attach with a sentinel
-    /// in place of a shell, and the outcome is decided from labels, this
-    /// attempt's marker and whether this attempt's own client still runs.
+    /// Reattach with a verified client. This never creates a replacement
+    /// daemon when an existing session is absent or cannot be verified.
     fileprivate func reattach(_ session: SurfaceSession, workingDir: String?, snapshot: SessionSnapshot?) {
-        let attempt = SessionRecord.newGeneration()
-        session.attempt = attempt
-        let sentinel = session.namespace.directory.appendingPathComponent("tako-sentinel.sh")
-        do {
-            try Data(Reattach.sentinelScript(namespace: session.namespace).utf8).write(to: sentinel, options: .atomic)
-            chmod(sentinel.path, 0o700)
-        } catch {
-            session.attempt = nil
-            sessionNotice("Could not prepare the session check (\(error)). Nothing was started.")
+        session.confirmedLive = false
+        guard let guardedRuntime = session.guardedRuntime else {
+            sessionNotice("The guarded session client is unavailable. Nothing was started.")
             return
         }
+        let attempt = SessionRecord.newGeneration()
+        session.attempt = attempt
         startProcess(
             workingDir: workingDir,
-            program: [session.runtime.path, "attach", "--labels", "tako-attempt=\(attempt)",
-                      session.name, sentinel.path, attempt],
+            program: [guardedRuntime.path] + RuntimeCommand.attachOnlyIfGenerationArguments(
+                name: session.name, generation: session.record.generation, attempt: attempt),
             environment: session.environment,
             removing: SessionNamespace.inheritedVariablesToDrop,
             sessionPreamble: session.name)
@@ -249,27 +319,22 @@ extension Tako.SurfaceView {
             return
         }
 
-        let runtime = session.runtime, name = session.name, env = session.environment
+        let runtime = guardedRuntime, name = session.name, env = session.environment
         let generation = session.record.generation
-        let marker = Reattach.markerPath(namespace: session.namespace, attempt: attempt)
-        let deadline = Date().addingTimeInterval(SurfaceSession.reattachTimeout)
+        let deadline = DispatchTime.now() + SurfaceSession.reattachTimeout
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var outcome = ReattachOutcome.pending
             while case .pending = outcome {
                 let get = RuntimeCommand.run(runtime, ["get", name], environment: env)
                 let labels = get.flatMap { $0.status == 0 ? Reattach.labels(from: $0.output) : nil }
+                let clientRunning = client.alive
                 outcome = Reattach.classify(
                     generation: generation, attempt: attempt, labels: labels,
-                    marker: FileManager.default.fileExists(atPath: marker),
+                    marker: false,
                     // This attempt's own client, by its own record of ending.
-                    clientRunning: client.alive, timedOut: Date() > deadline)
+                    clientRunning: clientRunning, timedOut: !clientRunning || DispatchTime.now() > deadline)
                 if case .pending = outcome { usleep(150_000) }
             }
-            if case .absent = outcome {
-                outcome = Self.waitForTemporarySession(runtime: runtime, name: name, environment: env,
-                                                       marker: marker, client: client)
-            }
-            try? FileManager.default.removeItem(atPath: marker)
             let settled = outcome
             DispatchQueue.main.async {
                 // Only the attempt that is still current may act on its outcome.
@@ -280,33 +345,12 @@ extension Tako.SurfaceView {
         }
     }
 
-    /// The session the runtime made for the sentinel must be gone before a
-    /// new session takes the name: its daemon (the sentinel's parent, which
-    /// the sentinel wrote into the marker) ended, this attempt's client
-    /// ended, and the name no longer listed. Not knowing is an error, never
-    /// "gone".
-    nonisolated private static func waitForTemporarySession(runtime: URL, name: String, environment: [String: String],
-                                                            marker: String, client: PTY) -> ReattachOutcome {
-        guard let text = try? String(contentsOfFile: marker, encoding: .utf8),
-              let daemon = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)), daemon > 1
-        else { return .error("the check could not tell which process held the temporary session") }
-        let deadline = Date().addingTimeInterval(SurfaceSession.reattachTimeout)
-        while Date() < deadline {
-            let daemonGone = kill(daemon, 0) != 0 && errno == ESRCH
-            if daemonGone, !client.alive,
-               RuntimeCommand.isListed(runtime, name: name, environment: environment) == false {
-                return .absent
-            }
-            usleep(100_000)
-        }
-        return .error("the temporary session did not end")
-    }
-
     private func reattachSettled(_ session: SurfaceSession, _ outcome: ReattachOutcome,
                                  workingDir: String?, snapshot: SessionSnapshot?) {
         session.attempt = nil
         switch outcome {
         case .live:
+            session.confirmedLive = true
             learnShellPID(session, adoptingItsCommand: true)
             do {
                 try session.save(.attached)
@@ -315,23 +359,8 @@ extension Tako.SurfaceView {
             }
             reflowToCurrentBounds(forcePtyResize: true)
         case .absent:
-            // The shell did not survive (the Mac restarted, it exited): the
-            // saved screen, then a new session in its place. The old client's
-            // last output is parsed (and dropped) first, so the saved screen
-            // is painted after it, never under it.
-            let old = pty
-            currentProcess = nil
-            pty = nil
-            old?.terminate()
-            afterPendingOutput { [weak self] in
-                DispatchQueue.main.async {
-                    guard let self, self.persistence === session, self.pty == nil else { return }
-                    if let snapshot { self.showSnapshot(snapshot) }
-                    session.shellPID = nil
-                    session.record.generation = SessionRecord.newGeneration()
-                    self.createSession(session, workingDir: workingDir)
-                }
-            }
+            // Absence is not proof that replacing this identity is safe.
+            reattachSettled(session, .error("session is not available"), workingDir: workingDir, snapshot: snapshot)
         case .error(let reason):
             let old = pty
             currentProcess = nil
@@ -348,7 +377,11 @@ extension Tako.SurfaceView {
             afterPendingOutput { [weak self] in
                 DispatchQueue.main.async {
                     guard let self, self.persistence === session, self.pty == nil else { return }
-                    self.sessionNotice("This terminal's session could not be checked (\(reason)). Nothing was started; the session, if it exists, is left running. Press Return to try again.")
+                    if let snapshot {
+                        self.showSnapshot(snapshot)
+                        self.sessionNotice("Saved screen from the previous session.")
+                    }
+                    self.sessionNotice("This session could not be checked (\(reason)). It may still be running. Press Return to retry, or open a new tab for a new shell.")
                 }
             }
         case .pending:

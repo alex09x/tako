@@ -1,0 +1,1750 @@
+diff --git a/src/ipc.zig b/src/ipc.zig
+index c81d15a..dbcb4a2 100644
+--- a/src/ipc.zig
++++ b/src/ipc.zig
+@@ -1,6 +1,7 @@
+ const std = @import("std");
+ const cross = @import("cross.zig");
+ const socket = @import("socket.zig");
++const label = @import("label.zig");
+ const lib_posix = @import("posix.zig");
+ 
+ pub const Tag = enum(u8) {
+@@ -26,6 +27,9 @@ pub const Tag = enum(u8) {
+     EnvGet = 19,
+     EnvSet = 20,
+     EnvData = 21,
++    KillIfLabel = 22,
++    AttachIfLabel = 23,
++    GuardStatus = 24,
+     // Non-exhaustive: this enum comes off the wire via bytesToValue and
+     // @enumFromInt, so out-of-range values are representable
+     // rather than UB. Switches must handle `_` (unknown tag).
+@@ -229,6 +233,10 @@ pub const SocketBuffer = struct {
+         self.head += total;
+         return .{ .header = hdr, .payload = pay };
+     }
++
++    pub fn unreadBytes(self: *const SocketBuffer) usize {
++        return self.buf.items.len - self.head;
++    }
+ };
+ 
+ const ConnectError = error{
+@@ -250,6 +258,7 @@ const SessionProbeError = error{
+     ConnectionRefused,
+     Unexpected,
+     InfoSizeMismatch,
++    UnreadOutputBudgetExceeded,
+ };
+ 
+ const SessionProbeResult = struct {
+@@ -345,9 +354,110 @@ test "Tag wire values are frozen" {
+         .{ Tag.Write, 12 },    .{ Tag.TaskComplete, 13 }, .{ Tag.LabelGet, 14 },
+         .{ Tag.LabelSet, 15 }, .{ Tag.LabelClear, 16 },   .{ Tag.LabelData, 17 },
+         .{ Tag.Send, 18 },
++        .{ Tag.EnvGet, 19 },   .{ Tag.EnvSet, 20 },       .{ Tag.EnvData, 21 },
++        .{ Tag.KillIfLabel, 22 }, .{ Tag.AttachIfLabel, 23 }, .{ Tag.GuardStatus, 24 },
+     }) |p| try std.testing.expectEqual(@as(u8, p[1]), @intFromEnum(p[0]));
+ }
+ 
++pub fn monotonicMillis() i64 {
++    var ts: std.c.timespec = undefined;
++    if (std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts) != 0) return 0;
++    return @as(i64, ts.sec) * 1000 + @divTrunc(@as(i64, ts.nsec), 1_000_000);
++}
++
++pub const MAX_HANDSHAKE_UNREAD_BYTES: usize = 4 * 1024 * 1024;
++
++fn appendUnreadOutputBounded(
++    alloc: std.mem.Allocator,
++    out_list: *std.ArrayList(u8),
++    payload: []const u8,
++    max_bytes: usize,
++) SessionProbeError!void {
++    const frame_len = @sizeOf(Header) + payload.len;
++    if (out_list.items.len + frame_len > max_bytes) {
++        return error.UnreadOutputBudgetExceeded;
++    }
++    appendMessage(alloc, out_list, .Output, payload) catch return error.Unexpected;
++}
++
++/// Waits on an already-connected socket `fd` until `expected_tag` arrives or
++/// the monotonic `deadline_ms` expires. Any `.Output` frames received while
++/// waiting are preserved in `unread_output_frames` when provided (bounded by
++/// `max_unread_bytes`) or discarded for non-terminal probes (`zmx get`,
++/// `zmx set`, `zmx clear`).
++pub fn awaitExpectedTagUntilDeadlineWithBudget(
++    alloc: std.mem.Allocator,
++    fd: i32,
++    sb: *SocketBuffer,
++    expected_tag: Tag,
++    deadline_ms: i64,
++    unread_output_frames: ?*std.ArrayList(u8),
++    max_unread_bytes: usize,
++) SessionProbeError![]u8 {
++    var poll_fds = [_]lib_posix.pollfd{.{ .fd = fd, .events = lib_posix.POLL.IN, .revents = 0 }};
++    while (true) {
++        while (sb.next()) |msg| {
++            if (msg.header.tag == expected_tag) {
++                return alloc.dupe(u8, msg.payload) catch return error.Unexpected;
++            }
++            if (msg.header.tag == .Output) {
++                if (unread_output_frames) |out_list| {
++                    try appendUnreadOutputBounded(alloc, out_list, msg.payload, max_unread_bytes);
++                }
++            }
++        }
++
++        const buffered_unread = if (unread_output_frames) |out_list| out_list.items.len else 0;
++        if (buffered_unread + sb.unreadBytes() > max_unread_bytes) {
++            return error.UnreadOutputBudgetExceeded;
++        }
++
++        const remaining_i64 = deadline_ms - monotonicMillis();
++        if (remaining_i64 <= 0) return error.Timeout;
++        const wait_ms: i32 = @intCast(@min(remaining_i64, @as(i64, std.math.maxInt(i32))));
++
++        const poll_result = lib_posix.poll(&poll_fds, wait_ms) catch return error.Unexpected;
++        if (poll_result == 0) return error.Timeout;
++
++        const n = sb.read(fd) catch |err| switch (err) {
++            error.WouldBlock => continue,
++            else => return error.Unexpected,
++        };
++        if (n == 0) return error.Unexpected;
++    }
++}
++
++pub fn awaitExpectedTagUntilDeadline(
++    alloc: std.mem.Allocator,
++    fd: i32,
++    sb: *SocketBuffer,
++    expected_tag: Tag,
++    deadline_ms: i64,
++    unread_output_frames: ?*std.ArrayList(u8),
++) SessionProbeError![]u8 {
++    return awaitExpectedTagUntilDeadlineWithBudget(
++        alloc,
++        fd,
++        sb,
++        expected_tag,
++        deadline_ms,
++        unread_output_frames,
++        MAX_HANDSHAKE_UNREAD_BYTES,
++    );
++}
++
++pub fn awaitExpectedTagOnSocket(
++    alloc: std.mem.Allocator,
++    fd: i32,
++    sb: *SocketBuffer,
++    expected_tag: Tag,
++    timeout_ms: i32,
++    unread_output_frames: ?*std.ArrayList(u8),
++) SessionProbeError![]u8 {
++    const deadline_ms = monotonicMillis() + @as(i64, @max(timeout_ms, 0));
++    return awaitExpectedTagUntilDeadline(alloc, fd, sb, expected_tag, deadline_ms, unread_output_frames);
++}
++
+ pub fn roundTripForTag(
+     alloc: std.mem.Allocator,
+     socket_path: []const u8,
+@@ -361,22 +471,549 @@ pub fn roundTripForTag(
+ 
+     send(fd, request_tag, payload) catch return error.Unexpected;
+ 
++    var sb = SocketBuffer.init(alloc) catch return error.Unexpected;
++    defer sb.deinit();
++
++    return awaitExpectedTagOnSocket(alloc, fd, &sb, expected_tag, timeout_ms, null);
++}
++
++pub const GuardReply = enum(u8) {
++    Matched = 0,
++    Mismatch = 1,
++    Invalid = 2,
++    _,
++};
++
++/// Waits for a `Tag.GuardStatus` frame on an already-connected socket `fd`
++/// using an overall monotonic `timeout_ms` deadline.
++/// Any non-GuardStatus frames (such as concurrent `.Output` broadcasts) that
++/// arrive before `.GuardStatus` are skipped, while any bytes remaining in `sb`
++/// after `.GuardStatus` stay buffered at an exact message boundary.
++/// Old daemons ignore unknown request tags (`KillIfLabel` / `AttachIfLabel`)
++/// and never emit `GuardStatus`, causing this call to fail closed with
++/// `error.Timeout`.
++pub fn awaitGuardStatus(
++    fd: i32,
++    sb: *SocketBuffer,
++    timeout_ms: i32,
++) SessionProbeError!GuardReply {
++    const deadline_ms = monotonicMillis() + @as(i64, @max(timeout_ms, 0));
+     var poll_fds = [_]lib_posix.pollfd{.{ .fd = fd, .events = lib_posix.POLL.IN, .revents = 0 }};
+-    const poll_result = lib_posix.poll(&poll_fds, timeout_ms) catch return error.Unexpected;
+-    if (poll_result == 0) return error.Timeout;
++    while (true) {
++        while (sb.next()) |msg| {
++            if (msg.header.tag == .GuardStatus) {
++                if (msg.payload.len != 1) return error.Unexpected;
++                return @enumFromInt(msg.payload[0]);
++            }
++        }
++        const remaining_i64 = deadline_ms - monotonicMillis();
++        if (remaining_i64 <= 0) return error.Timeout;
++        const wait_ms: i32 = @intCast(@min(remaining_i64, @as(i64, std.math.maxInt(i32))));
++
++        const poll_result = lib_posix.poll(&poll_fds, wait_ms) catch return error.Unexpected;
++        if (poll_result == 0) return error.Timeout;
++        const n = sb.read(fd) catch |err| switch (err) {
++            error.WouldBlock => continue,
++            else => return error.Unexpected,
++        };
++        if (n == 0) return error.Unexpected;
++    }
++}
++
++pub const AttachHandshakeError = error{
++    Timeout,
++    Unexpected,
++    LabelMismatch,
++    InvalidGuard,
++    UnreadOutputBudgetExceeded,
++};
++
++pub const LegacyAttachTestHooks = struct {
++    after_probe_delay_ms: u32 = 0,
++    max_unread_bytes: usize = MAX_HANDSHAKE_UNREAD_BYTES,
++    io: ?std.Io = null,
++    probe_ready_path: ?[]const u8 = null,
++    probe_resume_path: ?[]const u8 = null,
++};
++
++/// Performs a single-socket guarded attach handshake on `fd`, preserving any
++/// `.Output` frames received during the handshake so nothing is lost before
++/// `clientLoopWithUnread` starts.
++///
++/// When `allow_legacy_fallback` is true (`zmx attach --attach-only --if-label ...`),
++/// pipelines `.AttachIfLabel` followed by `.LabelGet` on `fd`:
++/// - A new daemon processes `.AttachIfLabel` first and replies with `.GuardStatus`
++///   before `.LabelData`. A `.Mismatch` or `.Invalid` reply fails closed immediately
++///   and never falls back to legacy.
++/// - An older `0.8.x` daemon ignores `.AttachIfLabel` and replies immediately with
++///   `.LabelData`. On that same connected socket `fd`, the client verifies
++///   `required_labels`, re-verifies `required_labels` via a second `.LabelGet` on
++///   `fd`, and (if `set_labels` is non-empty) sends `.LabelSet` and awaits `.Ack`
++///   before returning the preserved unread `.Output` stream.
++pub fn performGuardedOrLegacyAttachHandshake(
++    alloc: std.mem.Allocator,
++    fd: i32,
++    required_labels: []const u8,
++    set_labels: ?[]const u8,
++    allow_legacy_fallback: bool,
++    timeout_ms: i32,
++    legacy_after_probe_delay_ms: u32,
++) AttachHandshakeError![]u8 {
++    return performGuardedOrLegacyAttachHandshakeWithOptions(
++        alloc,
++        fd,
++        required_labels,
++        set_labels,
++        allow_legacy_fallback,
++        timeout_ms,
++        .{ .after_probe_delay_ms = legacy_after_probe_delay_ms },
++    );
++}
++
++pub fn performGuardedOrLegacyAttachHandshakeWithOptions(
++    alloc: std.mem.Allocator,
++    fd: i32,
++    required_labels: []const u8,
++    set_labels: ?[]const u8,
++    allow_legacy_fallback: bool,
++    timeout_ms: i32,
++    hooks: LegacyAttachTestHooks,
++) AttachHandshakeError![]u8 {
++    label.validateLabelPairs(required_labels, true, true) catch return error.InvalidGuard;
++    label.validateLabelPairs(set_labels orelse "", false, false) catch return error.InvalidGuard;
++
++    const guard_payload = std.fmt.allocPrint(
++        alloc,
++        "{s}\n{s}",
++        .{ required_labels, set_labels orelse "" },
++    ) catch return error.Unexpected;
++    defer alloc.free(guard_payload);
++
++    send(fd, .AttachIfLabel, guard_payload) catch return error.Unexpected;
++    if (allow_legacy_fallback) {
++        send(fd, .LabelGet, "") catch return error.Unexpected;
++    }
+ 
+     var sb = SocketBuffer.init(alloc) catch return error.Unexpected;
+     defer sb.deinit();
+ 
+-    const n = sb.read(fd) catch return error.Unexpected;
+-    if (n == 0) return error.Unexpected;
++    var unread_frames = std.ArrayList(u8).empty;
++    errdefer unread_frames.deinit(alloc);
+ 
+-    while (sb.next()) |msg| {
+-        if (msg.header.tag == expected_tag) {
+-            return alloc.dupe(u8, msg.payload) catch return error.Unexpected;
++    var deadline_ms = monotonicMillis() + @as(i64, @max(timeout_ms, 0));
++    var poll_fds = [_]lib_posix.pollfd{.{ .fd = fd, .events = lib_posix.POLL.IN, .revents = 0 }};
++
++    while (true) {
++        while (sb.next()) |msg| {
++            switch (msg.header.tag) {
++                .Output => {
++                    appendUnreadOutputBounded(
++                        alloc,
++                        &unread_frames,
++                        msg.payload,
++                        hooks.max_unread_bytes,
++                    ) catch |err| switch (err) {
++                        error.UnreadOutputBudgetExceeded => return error.UnreadOutputBudgetExceeded,
++                        else => return error.Unexpected,
++                    };
++                },
++                .GuardStatus => {
++                    if (msg.payload.len != 1) return error.Unexpected;
++                    const reply: GuardReply = @enumFromInt(msg.payload[0]);
++                    switch (reply) {
++                        .Matched => {
++                            if (allow_legacy_fallback) {
++                                const trailing_label = awaitExpectedTagUntilDeadlineWithBudget(
++                                    alloc,
++                                    fd,
++                                    &sb,
++                                    .LabelData,
++                                    deadline_ms,
++                                    &unread_frames,
++                                    hooks.max_unread_bytes,
++                                ) catch |err| switch (err) {
++                                    error.Timeout => return error.Timeout,
++                                    error.UnreadOutputBudgetExceeded => return error.UnreadOutputBudgetExceeded,
++                                    else => return error.Unexpected,
++                                };
++                                alloc.free(trailing_label);
++                            }
++                            if (sb.buf.items.len > sb.head) {
++                                const rem = sb.buf.items[sb.head..];
++                                if (unread_frames.items.len + rem.len > hooks.max_unread_bytes) {
++                                    return error.UnreadOutputBudgetExceeded;
++                                }
++                                unread_frames.appendSlice(alloc, rem) catch return error.Unexpected;
++                            }
++                            return unread_frames.toOwnedSlice(alloc) catch return error.Unexpected;
++                        },
++                        .Mismatch => return error.LabelMismatch,
++                        .Invalid, _ => return error.InvalidGuard,
++                    }
++                },
++                .LabelData => {
++                    if (!allow_legacy_fallback) return error.Unexpected;
++                    if (!label.labelPairsMatch(msg.payload, required_labels)) {
++                        return error.LabelMismatch;
++                    }
++                    if (hooks.probe_ready_path) |ready_path| {
++                        if (hooks.io) |io_val| {
++                            if (std.Io.Dir.createFileAbsolute(io_val, ready_path, .{})) |f| {
++                                std.Io.File.close(f, io_val);
++                            } else |_| {}
++                        }
++                    }
++                    if (hooks.after_probe_delay_ms > 0) {
++                        var empty_fds = [0]lib_posix.pollfd{};
++                        if (hooks.probe_resume_path) |resume_path| {
++                            if (hooks.io) |io_val| {
++                                const pause_start = monotonicMillis();
++                                const pause_limit = pause_start + @as(i64, hooks.after_probe_delay_ms);
++                                while (monotonicMillis() < pause_limit) {
++                                    if (std.Io.Dir.openFileAbsolute(io_val, resume_path, .{})) |f| {
++                                        std.Io.File.close(f, io_val);
++                                        break;
++                                    } else |_| {}
++                                    _ = lib_posix.poll(&empty_fds, 10) catch {};
++                                }
++                                deadline_ms += (monotonicMillis() - pause_start);
++                            }
++                        } else {
++                            _ = lib_posix.poll(&empty_fds, @intCast(hooks.after_probe_delay_ms)) catch {};
++                            deadline_ms += @as(i64, hooks.after_probe_delay_ms);
++                        }
++                    }
++
++                    // Re-verify generation on this exact socket descriptor right before
++                    // mutating attempt labels or entering clientLoop. If the old daemon
++                    // exited or its generation changed concurrently, fail closed.
++                    send(fd, .LabelGet, "") catch return error.Unexpected;
++                    const recheck_payload = awaitExpectedTagUntilDeadlineWithBudget(
++                        alloc,
++                        fd,
++                        &sb,
++                        .LabelData,
++                        deadline_ms,
++                        &unread_frames,
++                        hooks.max_unread_bytes,
++                    ) catch |err| switch (err) {
++                        error.Timeout => return error.Timeout,
++                        error.UnreadOutputBudgetExceeded => return error.UnreadOutputBudgetExceeded,
++                        else => return error.Unexpected,
++                    };
++                    defer alloc.free(recheck_payload);
++                    if (!label.labelPairsMatch(recheck_payload, required_labels)) {
++                        return error.LabelMismatch;
++                    }
++
++                    if (set_labels) |set_kvs| {
++                        if (set_kvs.len > 0) {
++                            send(fd, .LabelSet, set_kvs) catch return error.Unexpected;
++                            const ack_payload = awaitExpectedTagUntilDeadlineWithBudget(
++                                alloc,
++                                fd,
++                                &sb,
++                                .Ack,
++                                deadline_ms,
++                                &unread_frames,
++                                hooks.max_unread_bytes,
++                            ) catch |err| switch (err) {
++                                error.Timeout => return error.Timeout,
++                                error.UnreadOutputBudgetExceeded => return error.UnreadOutputBudgetExceeded,
++                                else => return error.Unexpected,
++                            };
++                            alloc.free(ack_payload);
++                        }
++                    }
++
++                    if (sb.buf.items.len > sb.head) {
++                        const rem = sb.buf.items[sb.head..];
++                        if (unread_frames.items.len + rem.len > hooks.max_unread_bytes) {
++                            return error.UnreadOutputBudgetExceeded;
++                        }
++                        unread_frames.appendSlice(alloc, rem) catch return error.Unexpected;
++                    }
++                    return unread_frames.toOwnedSlice(alloc) catch return error.Unexpected;
++                },
++                else => {},
++            }
++        }
++
++        if (unread_frames.items.len + sb.unreadBytes() > hooks.max_unread_bytes) {
++            return error.UnreadOutputBudgetExceeded;
++        }
++
++        const remaining_i64 = deadline_ms - monotonicMillis();
++        if (remaining_i64 <= 0) return error.Timeout;
++        const wait_ms: i32 = @intCast(@min(remaining_i64, @as(i64, std.math.maxInt(i32))));
++
++        const poll_result = lib_posix.poll(&poll_fds, wait_ms) catch return error.Unexpected;
++        if (poll_result == 0) return error.Timeout;
++
++        const n = sb.read(fd) catch |err| switch (err) {
++            error.WouldBlock => continue,
++            else => return error.Unexpected,
++        };
++        if (n == 0) return error.Unexpected;
++    }
++}
++
++/// Writes all bytes of `data` to `fd` within a single overall monotonic
++/// `timeout_ms` deadline, polling for `POLL.OUT` whenever a non-blocking
++/// descriptor returns `error.WouldBlock` or performs a partial write.
++pub fn writeAllWithTimeout(
++    fd: i32,
++    data: []const u8,
++    timeout_ms: i32,
++) SessionProbeError!void {
++    const deadline_ms = monotonicMillis() + @as(i64, @max(timeout_ms, 0));
++    var written: usize = 0;
++    var poll_fds = [_]lib_posix.pollfd{.{ .fd = fd, .events = lib_posix.POLL.OUT, .revents = 0 }};
++    while (written < data.len) {
++        const n = lib_posix.write(fd, data[written..]) catch |err| switch (err) {
++            error.WouldBlock => blk: {
++                const remaining_i64 = deadline_ms - monotonicMillis();
++                if (remaining_i64 <= 0) return error.Timeout;
++                const wait_ms: i32 = @intCast(@min(remaining_i64, @as(i64, std.math.maxInt(i32))));
++                const poll_result = lib_posix.poll(&poll_fds, wait_ms) catch return error.Unexpected;
++                if (poll_result == 0) return error.Timeout;
++                if (poll_fds[0].revents & (lib_posix.POLL.ERR | lib_posix.POLL.HUP | lib_posix.POLL.NVAL) != 0) {
++                    return error.Unexpected;
++                }
++                break :blk @as(usize, 0);
++            },
++            else => return error.Unexpected,
++        };
++        written += n;
++        if (written < data.len and monotonicMillis() >= deadline_ms) {
++            return error.Timeout;
+         }
+     }
+-    return error.Unexpected;
++}
++
++test "awaitGuardStatus and writeAllWithTimeout enforce a single monotonic deadline under trickle I/O" {
++    const alloc = std.testing.allocator;
++
++    // 1. awaitGuardStatus under trickle Output frames expires within the single monotonic deadline.
++    {
++        const fds = try lib_posix.pipe2(.{});
++        defer lib_posix.close(fds[0]);
++        defer lib_posix.close(fds[1]);
++
++        const TrickleWriter = struct {
++            wfd: i32,
++            fn run(wfd: i32) void {
++                var empty = [0]lib_posix.pollfd{};
++                for (0..6) |_| {
++                    _ = lib_posix.poll(&empty, 15) catch {};
++                    send(wfd, .Output, "trickle-out") catch return;
++                }
++            }
++        };
++        const writer_thread = try std.Thread.spawn(.{}, TrickleWriter.run, .{fds[1]});
++        defer writer_thread.join();
++
++        var sb = try SocketBuffer.init(alloc);
++        defer sb.deinit();
++
++        const start_ms = monotonicMillis();
++        try std.testing.expectError(error.Timeout, awaitGuardStatus(fds[0], &sb, 60));
++        const elapsed_ms = monotonicMillis() - start_ms;
++        try std.testing.expect(elapsed_ms < 200);
++    }
++
++    // 2. writeAllWithTimeout under trickle reader backpressure expires within the single monotonic deadline.
++    {
++        const bp_fds = try lib_posix.pipe2(.{ .NONBLOCK = true });
++        defer lib_posix.close(bp_fds[0]);
++        defer lib_posix.close(bp_fds[1]);
++
++        const filler = [_]u8{'z'} ** 4096;
++        while (true) {
++            _ = lib_posix.write(bp_fds[1], &filler) catch |err| switch (err) {
++                error.WouldBlock => break,
++                else => return err,
++            };
++        }
++
++        const TrickleReader = struct {
++            rfd: i32,
++            fn run(rfd: i32) void {
++                var empty = [0]lib_posix.pollfd{};
++                var sink: [512]u8 = undefined;
++                for (0..5) |_| {
++                    _ = lib_posix.poll(&empty, 15) catch {};
++                    _ = lib_posix.read(rfd, &sink) catch return;
++                }
++            }
++        };
++        const reader_thread = try std.Thread.spawn(.{}, TrickleReader.run, .{bp_fds[0]});
++        defer reader_thread.join();
++
++        const large_payload = [_]u8{'A'} ** (128 * 1024);
++        const start_ms = monotonicMillis();
++        try std.testing.expectError(error.Timeout, writeAllWithTimeout(bp_fds[1], &large_payload, 60));
++        const elapsed_ms = monotonicMillis() - start_ms;
++        try std.testing.expect(elapsed_ms < 200);
++    }
++}
++
++test "awaitGuardStatus skips prior Output and preserves trailing frames" {
++    const alloc = std.testing.allocator;
++    const fds = try lib_posix.pipe2(.{});
++    defer lib_posix.close(fds[0]);
++    defer lib_posix.close(fds[1]);
++
++    try send(fds[1], .Output, "noise-before");
++    try send(fds[1], .GuardStatus, &[_]u8{@intFromEnum(GuardReply.Matched)});
++    try send(fds[1], .Output, "after-guard");
++
++    var sb = try SocketBuffer.init(alloc);
++    defer sb.deinit();
++
++    const reply = try awaitGuardStatus(fds[0], &sb, 200);
++    try std.testing.expectEqual(GuardReply.Matched, reply);
++
++    const trailing = sb.next() orelse return error.TestUnexpectedResult;
++    try std.testing.expectEqual(Tag.Output, trailing.header.tag);
++    try std.testing.expectEqualStrings("after-guard", trailing.payload);
++}
++
++test "awaitGuardStatus times out fail-closed when daemon ignores unknown tag" {
++    const alloc = std.testing.allocator;
++    const fds = try lib_posix.pipe2(.{});
++    defer lib_posix.close(fds[0]);
++    defer lib_posix.close(fds[1]);
++
++    var sb = try SocketBuffer.init(alloc);
++    defer sb.deinit();
++
++    try std.testing.expectError(error.Timeout, awaitGuardStatus(fds[0], &sb, 25));
++}
++
++test "awaitExpectedTagOnSocket skips continuous Output before LabelData and enforces monotonic deadline" {
++    const alloc = std.testing.allocator;
++    const fds = try lib_posix.pipe2(.{});
++    defer lib_posix.close(fds[0]);
++    defer lib_posix.close(fds[1]);
++
++    try send(fds[1], .Output, "chunk-1\r\n");
++    try send(fds[1], .Output, "chunk-2\r\n");
++    try send(fds[1], .LabelData, "tako-gen=gen-noisy tako-attempt=att1");
++
++    var sb = try SocketBuffer.init(alloc);
++    defer sb.deinit();
++
++    const payload = try awaitExpectedTagOnSocket(alloc, fds[0], &sb, .LabelData, 200, null);
++    defer alloc.free(payload);
++    try std.testing.expectEqualStrings("tako-gen=gen-noisy tako-attempt=att1", payload);
++
++    // Even if `.Output` frames exist in the pipe without `.LabelData`, the monotonic deadline expires.
++    try send(fds[1], .Output, "still-noisy-1");
++    try send(fds[1], .Output, "still-noisy-2");
++    try std.testing.expectError(error.Timeout, awaitExpectedTagOnSocket(alloc, fds[0], &sb, .LabelData, 30, null));
++}
++
++test "performGuardedOrLegacyAttachHandshake preserves Output on legacy fallback and fails closed on new-daemon Mismatch" {
++    const alloc = std.testing.allocator;
++
++    // 1. New daemon returning GuardReply.Mismatch must fail closed and never fall back to trailing LabelData.
++    {
++        var sv: [2]c_int = undefined;
++        if (std.c.socketpair(lib_posix.AF.UNIX, lib_posix.SOCK.STREAM, 0, &sv) != 0) return error.Unexpected;
++        defer lib_posix.close(sv[0]);
++        defer lib_posix.close(sv[1]);
++
++        try send(sv[1], .GuardStatus, &[_]u8{@intFromEnum(GuardReply.Mismatch)});
++        try send(sv[1], .LabelData, "tako-gen=gen1");
++
++        try std.testing.expectError(
++            error.LabelMismatch,
++            performGuardedOrLegacyAttachHandshake(alloc, sv[0], "tako-gen=gen1", "tako-attempt=att1", true, 200, 0),
++        );
++    }
++
++    // 2. Old daemon ignoring AttachIfLabel: replies with LabelData, recheck LabelData, and Ack, while Output is preserved.
++    {
++        var sv: [2]c_int = undefined;
++        if (std.c.socketpair(lib_posix.AF.UNIX, lib_posix.SOCK.STREAM, 0, &sv) != 0) return error.Unexpected;
++        defer lib_posix.close(sv[0]);
++        defer lib_posix.close(sv[1]);
++
++        try send(sv[1], .Output, "before-probe\n");
++        try send(sv[1], .LabelData, "tako-gen=gen1");
++        try send(sv[1], .Output, "between-recheck\n");
++        try send(sv[1], .LabelData, "tako-gen=gen1");
++        try send(sv[1], .Output, "before-ack\n");
++        try send(sv[1], .Ack, "");
++        try send(sv[1], .Output, "after-ack\n");
++
++        const unread = try performGuardedOrLegacyAttachHandshake(
++            alloc,
++            sv[0],
++            "tako-gen=gen1",
++            "tako-attempt=att2",
++            true,
++            300,
++            0,
++        );
++        defer alloc.free(unread);
++
++        var check_sb = try SocketBuffer.init(alloc);
++        defer check_sb.deinit();
++        try check_sb.buf.appendSlice(alloc, unread);
++
++        const m1 = check_sb.next() orelse return error.TestUnexpectedResult;
++        try std.testing.expectEqualStrings("before-probe\n", m1.payload);
++        const m2 = check_sb.next() orelse return error.TestUnexpectedResult;
++        try std.testing.expectEqualStrings("between-recheck\n", m2.payload);
++        const m3 = check_sb.next() orelse return error.TestUnexpectedResult;
++        try std.testing.expectEqualStrings("before-ack\n", m3.payload);
++        const m4 = check_sb.next() orelse return error.TestUnexpectedResult;
++        try std.testing.expectEqualStrings("after-ack\n", m4.payload);
++        try std.testing.expect(check_sb.next() == null);
++    }
++
++    // 3. Old daemon closing its socket after the initial LabelData (simulating daemon death/replacement before Init) fails closed.
++    {
++        var sv: [2]c_int = undefined;
++        if (std.c.socketpair(lib_posix.AF.UNIX, lib_posix.SOCK.STREAM, 0, &sv) != 0) return error.Unexpected;
++        defer lib_posix.close(sv[0]);
++
++        try send(sv[1], .LabelData, "tako-gen=gen1");
++        lib_posix.close(sv[1]);
++
++        try std.testing.expectError(
++            error.Unexpected,
++            performGuardedOrLegacyAttachHandshake(alloc, sv[0], "tako-gen=gen1", "tako-attempt=att2", true, 200, 0),
++        );
++    }
++
++    // 4. Continuous .Output exceeding max_unread_bytes fails closed with UnreadOutputBudgetExceeded before Init.
++    {
++        var sv: [2]c_int = undefined;
++        if (std.c.socketpair(lib_posix.AF.UNIX, lib_posix.SOCK.STREAM, 0, &sv) != 0) return error.Unexpected;
++        defer lib_posix.close(sv[0]);
++        defer lib_posix.close(sv[1]);
++
++        const chunk = [_]u8{'A'} ** 128;
++        try send(sv[1], .Output, &chunk);
++        try send(sv[1], .Output, &chunk);
++        try send(sv[1], .LabelData, "tako-gen=gen1");
++
++        try std.testing.expectError(
++            error.UnreadOutputBudgetExceeded,
++            performGuardedOrLegacyAttachHandshakeWithOptions(
++                alloc,
++                sv[0],
++                "tako-gen=gen1",
++                "tako-attempt=att2",
++                true,
++                200,
++                .{ .max_unread_bytes = 200 },
++            ),
++        );
++    }
+ }
+ 
+ test "appendSizeMessage emits current and legacy encodings" {
+diff --git a/src/label.zig b/src/label.zig
+index e3cfaa6..cd90d80 100644
+--- a/src/label.zig
++++ b/src/label.zig
+@@ -116,6 +116,124 @@ pub fn getLabelValueFromPairs(single_kv: []const u8, labels: []const u8) error{L
+     return error.LabelKeyNotFound;
+ }
+ 
++pub const GuardLabelError = error{
++    EmptyLabels,
++    MalformedPair,
++    EmptyValue,
++} || LabelError;
++
++/// Strictly validates space-separated `key=value` pairs.
++/// Rejects empty strings when `require_non_empty` is true, leading/trailing/double
++/// spaces, tokens without `=`, duplicate keys, reserved keys, and invalid characters.
++/// When `require_values` is true, also rejects empty values (`key=`).
++pub fn validateLabelPairs(
++    raw: []const u8,
++    require_non_empty: bool,
++    require_values: bool,
++) GuardLabelError!void {
++    if (raw.len == 0) {
++        if (require_non_empty) return error.EmptyLabels;
++        return;
++    }
++    var count: usize = 0;
++    var start: usize = 0;
++    while (start <= raw.len) {
++        const end = std.mem.indexOfScalarPos(u8, raw, start, ' ') orelse raw.len;
++        const token = raw[start..end];
++        if (token.len == 0) return error.MalformedPair;
++        const eq = std.mem.indexOfScalar(u8, token, '=') orelse return error.MalformedPair;
++        const key = token[0..eq];
++        const value = token[eq + 1 ..];
++        try assertLabel(key, value);
++        if (require_values and value.len == 0) return error.EmptyValue;
++
++        var prev_start: usize = 0;
++        while (prev_start < start) {
++            const prev_end = std.mem.indexOfScalarPos(u8, raw, prev_start, ' ') orelse start;
++            const prev_tok = raw[prev_start..prev_end];
++            if (std.mem.indexOfScalar(u8, prev_tok, '=')) |prev_eq| {
++                if (std.mem.eql(u8, prev_tok[0..prev_eq], key)) return error.MalformedPair;
++            }
++            prev_start = prev_end + 1;
++        }
++
++        count += 1;
++        if (end == raw.len) break;
++        start = end + 1;
++    }
++    if (require_non_empty and count == 0) return error.EmptyLabels;
++}
++
++/// Returns true iff `required` is a valid non-empty `key=value` list (with non-empty
++/// values) and every pair in `required` matches `actual` exactly.
++pub fn labelsMatch(actual: std.StringHashMapUnmanaged([]u8), required: []const u8) bool {
++    validateLabelPairs(required, true, true) catch return false;
++    var start: usize = 0;
++    while (start <= required.len) {
++        const end = std.mem.indexOfScalarPos(u8, required, start, ' ') orelse required.len;
++        const token = required[start..end];
++        const eq = std.mem.indexOfScalar(u8, token, '=') orelse return false;
++        const key = token[0..eq];
++        const expected_val = token[eq + 1 ..];
++        const actual_val = actual.get(key) orelse return false;
++        if (!std.mem.eql(u8, actual_val, expected_val)) return false;
++        if (end == required.len) break;
++        start = end + 1;
++    }
++    return true;
++}
++
++/// Returns true iff `required` is a valid non-empty `key=value` list (with non-empty
++/// values) and every pair in `required` matches the space-separated `actual_pairs`
++/// (`Tag.LabelData` wire payload) exactly.
++pub fn labelPairsMatch(actual_pairs: []const u8, required: []const u8) bool {
++    validateLabelPairs(required, true, true) catch return false;
++    validateLabelPairs(actual_pairs, false, true) catch return false;
++    var start: usize = 0;
++    while (start <= required.len) {
++        const end = std.mem.indexOfScalarPos(u8, required, start, ' ') orelse required.len;
++        const token = required[start..end];
++        const eq = std.mem.indexOfScalar(u8, token, '=') orelse return false;
++        const key = token[0..eq];
++        const expected_val = token[eq + 1 ..];
++        const actual_val = getLabelValueFromPairs(key, actual_pairs) catch return false;
++        if (!std.mem.eql(u8, actual_val, expected_val)) return false;
++        if (end == required.len) break;
++        start = end + 1;
++    }
++    return true;
++}
++
++test "validateLabelPairs and labelsMatch reject empty, malformed, and mismatched labels" {
++    const alloc = std.testing.allocator;
++    try std.testing.expectError(error.EmptyLabels, validateLabelPairs("", true, true));
++    try std.testing.expectError(error.MalformedPair, validateLabelPairs("tako-gen", true, true));
++    try std.testing.expectError(error.EmptyValue, validateLabelPairs("tako-gen=", true, true));
++    try std.testing.expectError(error.MalformedPair, validateLabelPairs("tako-gen=a bogus", true, true));
++    try std.testing.expectError(error.MalformedPair, validateLabelPairs("tako-gen=a tako-gen=a", true, true));
++    try std.testing.expectError(error.MalformedPair, validateLabelPairs("tako-gen=a ", true, true));
++    try validateLabelPairs("tako-gen=gen1 tako-attempt=att1", true, true);
++
++    var map = std.StringHashMapUnmanaged([]u8).empty;
++    defer map.deinit(alloc);
++    try map.put(alloc, @constCast("tako-gen"), @constCast("gen1"));
++    try map.put(alloc, @constCast("role"), @constCast("worker"));
++
++    try std.testing.expect(labelsMatch(map, "tako-gen=gen1"));
++    try std.testing.expect(labelsMatch(map, "tako-gen=gen1 role=worker"));
++    try std.testing.expect(!labelsMatch(map, ""));
++    try std.testing.expect(!labelsMatch(map, "tako-gen"));
++    try std.testing.expect(!labelsMatch(map, "tako-gen=gen2"));
++    try std.testing.expect(!labelsMatch(map, "tako-gen=gen1 role=other"));
++    try std.testing.expect(!labelsMatch(map, "tako-gen=gen1 missing=1"));
++
++    try std.testing.expect(labelPairsMatch("role=worker tako-gen=gen1", "tako-gen=gen1"));
++    try std.testing.expect(labelPairsMatch("role=worker tako-gen=gen1", "tako-gen=gen1 role=worker"));
++    try std.testing.expect(!labelPairsMatch("", "tako-gen=gen1"));
++    try std.testing.expect(!labelPairsMatch("role=worker tako-gen=gen1", "tako-gen=gen2"));
++    try std.testing.expect(!labelPairsMatch("role=worker tako-gen=gen1", ""));
++}
++
+ test "getLabelValueFromPairs" {
+     try std.testing.expect(std.mem.eql(u8, "zmx", try getLabelValueFromPairs("project", "project=zmx env=prd")));
+     try std.testing.expect(std.mem.eql(u8, "zmx", try getLabelValueFromPairs("project", "env=prd status=done project=zmx")));
+diff --git a/src/loop.zig b/src/loop.zig
+index 2dfe736..23ff444 100644
+--- a/src/loop.zig
++++ b/src/loop.zig
+@@ -16,6 +16,10 @@ const builtin = @import("builtin");
+ /// clientLoop sends ipc commands to its corresponding daemon.  It uses poll() as its non-blocking
+ /// mechanism. It will send stdin to the daemon and receive stdout from the daemon.
+ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
++    return clientLoopWithUnread(client_sock_fd, env_str, "");
++}
++
++pub fn clientLoopWithUnread(client_sock_fd: i32, env_str: []const u8, initial_unread: []const u8) !ClientResult {
+     std.log.info("client loop fd={d}", .{client_sock_fd});
+     const gpa: std.mem.Allocator = blk: {
+         if (builtin.mode == .Debug) {
+@@ -54,6 +58,9 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+ 
+     var read_buf = try ipc.SocketBuffer.init(gpa);
+     defer read_buf.deinit();
++    if (initial_unread.len > 0) {
++        try read_buf.buf.appendSlice(gpa, initial_unread);
++    }
+ 
+     var stdout_buf = try std.ArrayList(u8).initCapacity(gpa, 4096);
+     defer stdout_buf.deinit(gpa);
+@@ -70,6 +77,31 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+     const detach_key_disabled = util.isDetachKeyDisabled();
+ 
+     while (true) {
++        while (read_buf.next()) |msg| {
++            switch (msg.header.tag) {
++                .Output => {
++                    if (msg.payload.len > 0) {
++                        try stdout_buf.appendSlice(gpa, msg.payload);
++                    }
++                },
++                .Resize => {
++                    const next_size = ipc.getTerminalSize(lib_posix.STDOUT_FILENO);
++                    try ipc.appendSizeMessage(gpa, &sock_write_buf, .Resize, next_size);
++                },
++                .Switch => {
++                    const newline_idx = std.mem.indexOfScalar(u8, msg.payload, '\n') orelse {
++                        return ClientResult{ .kind = .switch_session, .session_name = try gpa.dupe(u8, msg.payload) };
++                    };
++                    return ClientResult{
++                        .kind = .switch_session,
++                        .session_name = try gpa.dupe(u8, msg.payload[0..newline_idx]),
++                        .cwd = if (newline_idx + 1 < msg.payload.len) try gpa.dupe(u8, msg.payload[newline_idx + 1 ..]) else null,
++                    };
++                },
++                else => {},
++            }
++        }
++
+         poll_fds.clearRetainingCapacity();
+ 
+         try poll_fds.append(gpa, .{
+@@ -483,6 +515,12 @@ fn daemonLoop(daemon: *Daemon, gpa: std.mem.Allocator, io: std.Io, server_sock_f
+                         .Kill => {
+                             break :daemon_loop;
+                         },
++                        .KillIfLabel => {
++                            if (try daemon.handleKillIfLabel(gpa, client, msg.payload)) {
++                                break :daemon_loop;
++                            }
++                        },
++                        .AttachIfLabel => try daemon.handleAttachIfLabel(gpa, client, msg.payload),
+                         .Info => try daemon.handleInfo(gpa, client, &term),
+                         .LabelGet => try daemon.handleLabelGet(gpa, client),
+                         .LabelSet => try daemon.handleLabelSet(gpa, client, msg.payload),
+@@ -491,7 +529,7 @@ fn daemonLoop(daemon: *Daemon, gpa: std.mem.Allocator, io: std.Io, server_sock_f
+                         .EnvSet => try daemon.handleEnvSet(gpa, client, msg.payload),
+                         .History => try daemon.handleHistory(gpa, client, &term, msg.payload),
+                         .Run => try daemon.handleRun(gpa, io, client, msg.payload),
+-                        .Ack, .TaskComplete, .LabelData, .EnvData => {},
++                        .Ack, .TaskComplete, .LabelData, .EnvData, .GuardStatus => {},
+                         .Write => try daemon.handleWrite(gpa, client, msg.payload),
+                         _ => std.log.warn(
+                             "ignoring unknown IPC tag={d}",
+@@ -512,11 +550,13 @@ fn daemonLoop(daemon: *Daemon, gpa: std.mem.Allocator, io: std.Io, server_sock_f
+                 };
+ 
+                 if (n > 0) {
++                    client.has_flushed_bytes = true;
+                     client.write_buf.replaceRange(gpa, 0, n, &[_]u8{}) catch unreachable;
+                 }
+ 
+                 if (client.write_buf.items.len == 0) {
+                     client.has_pending_output = false;
++                    client.has_flushed_bytes = false;
+                 }
+             }
+ 
+@@ -544,6 +584,7 @@ pub const Client = struct {
+     alloc: std.mem.Allocator,
+     socket_fd: i32,
+     has_pending_output: bool = false,
++    has_flushed_bytes: bool = false,
+     is_terminal: bool = false, // sent .Init (a `zmx attach`), not a run/send/tail client
+     read_buf: ipc.SocketBuffer,
+     write_buf: std.ArrayList(u8),
+@@ -578,6 +619,7 @@ pub const Daemon = struct {
+     pty_write_buf: std.ArrayList(u8) = .empty,
+     clients: std.ArrayList(*Client) = .empty,
+     labels: std.StringHashMapUnmanaged([]u8) = .empty,
++    initial_labels: ?[]const u8 = null,
+     // This control which client is the leader.  The leader controls terminal state and
+     // cols/rows of session.
+     leader_client_fd: ?i32 = null,
+@@ -736,12 +778,23 @@ pub const Daemon = struct {
+         return self.run(io, dir, sesh_name);
+     }
+ 
++    /// Creates a brand-new session daemon by atomically binding `self.socket_path`.
++    /// Never attaches to an existing session and never unlinks a pre-existing socket.
++    pub fn createOnly(self: *Daemon, io: std.Io) !bool {
++        const sesh_name = self.session_name;
++        std.log.info("create-only session={s}", .{sesh_name});
++        var dir = try std.Io.Dir.openDirAbsolute(io, self.cfg.socket_dir, .{});
++        defer dir.close(io);
++        return self.run(io, dir, sesh_name);
++    }
++
+     fn run(self: *Daemon, io: std.Io, dir: std.Io.Dir, sesh_name: []const u8) !bool {
++        _ = dir;
+         std.log.info("creating session={s}", .{sesh_name});
+         const server_sock_fd: lib_posix.socket_t = try socket.createSocket(self.socket_path);
+         const log_fd = log.log_system.file.?.handle;
+ 
+-        var keep_fds_open = [_]i32{ server_sock_fd, dir.handle, log_fd };
++        var keep_fds_open = [_]i32{ server_sock_fd, log_fd };
+         const cmd = try daemonize.createCmdZ(self.shell, self.is_task_mode, self.command);
+ 
+         // `cwd_path` is the decoded path, and is empty when the cwd is on
+@@ -776,8 +829,9 @@ pub const Daemon = struct {
+                     return false;
+                 },
+                 else => {
++                    // Close the listening descriptor without unlinking by pathname:
++                    // pathname unlink is not atomic with respect to external replacement.
+                     lib_posix.close(server_sock_fd);
+-                    dir.deleteFile(io, self.session_name) catch {};
+                     return err;
+                 },
+             }
+@@ -825,21 +879,22 @@ pub const Daemon = struct {
+         };
+ 
+         defer {
+-            // Close and unlink the listen socket BEFORE handleKill()'s
+-            // 500ms SIGHUP->SIGKILL grace sleep. Otherwise a `zmx run`
+-            // for the same name issued in that window will hang waiting
+-            // for a connect.
++            // Close the listen socket descriptor BEFORE handleKill()'s
++            // 500ms SIGHUP->SIGKILL grace sleep so new connects immediately
++            // see ECONNREFUSED, without unlinking by pathname (which could
++            // race with an external replacement at the same path).
+             lib_posix.close(server_sock_fd);
+-            std.log.info("deleting socket file session={s}", .{sesh_name});
+-            dir.deleteFile(new_io, sesh_name) catch |err| {
+-                std.log.warn("failed to delete socket file err={s}", .{@errorName(err)});
+-            };
++            std.log.info("closed listen socket without pathname unlink session={s}", .{sesh_name});
+             self.handleKill(gpa, new_io);
+             self.deinit(gpa);
+             lib_posix.close(pty_info.master_fd);
+             _ = lib_posix.waitpid(self.pid, 0);
+         }
+ 
++        if (self.initial_labels) |init_kvs| {
++            try self.applyLabels(gpa, init_kvs);
++        }
++
+         try daemonLoop(self, gpa, new_io, server_sock_fd, pty_info.master_fd);
+         std.log.info("daemon loop shutdown", .{});
+         return true;
+@@ -1331,9 +1386,7 @@ pub const Daemon = struct {
+         client.has_pending_output = true;
+     }
+ 
+-    fn handleLabelSet(self: *Daemon, gpa: std.mem.Allocator, client: *Client, labels: []const u8) !void {
+-        std.log.info("handle label set payload={s}", .{labels});
+-
++    fn applyLabels(self: *Daemon, gpa: std.mem.Allocator, labels: []const u8) !void {
+         var kvs = label.LabelIterator.init(labels);
+         while (kvs.next()) |kv| {
+             if (kv.value.len == 0) {
+@@ -1356,11 +1409,79 @@ pub const Daemon = struct {
+                 gpa.free(existing.value);
+             }
+         }
++    }
++
++    fn handleLabelSet(self: *Daemon, gpa: std.mem.Allocator, client: *Client, labels: []const u8) !void {
++        std.log.info("handle label set payload={s}", .{labels});
++        try self.applyLabels(gpa, labels);
+ 
+         try ipc.appendMessage(gpa, &client.write_buf, .Ack, "");
+         client.has_pending_output = true;
+     }
+ 
++    pub fn handleKillIfLabel(self: *Daemon, gpa: std.mem.Allocator, client: *Client, payload: []const u8) !bool {
++        label.validateLabelPairs(payload, true, true) catch {
++            try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Invalid)});
++            client.has_pending_output = true;
++            return false;
++        };
++        if (!label.labelsMatch(self.labels, payload)) {
++            try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Mismatch)});
++            client.has_pending_output = true;
++            return false;
++        }
++        if (!client.has_flushed_bytes) {
++            client.write_buf.clearRetainingCapacity();
++            client.has_pending_output = false;
++        } else if (client.write_buf.items.len > 64 * 1024) {
++            std.log.info(
++                "conditional kill refused due to pre-existing write_buf={d} session={s}",
++                .{ client.write_buf.items.len, self.session_name },
++            );
++            return false;
++        }
++        std.log.info("conditional kill matched session={s}", .{self.session_name});
++        try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Matched)});
++        ipc.writeAllWithTimeout(client.socket_fd, client.write_buf.items, 200) catch |err| {
++            std.log.info("conditional kill failed to flush GuardStatus session={s} err={s}", .{ self.session_name, @errorName(err) });
++            client.write_buf.clearRetainingCapacity();
++            client.has_pending_output = false;
++            client.has_flushed_bytes = false;
++            return false;
++        };
++        client.write_buf.clearRetainingCapacity();
++        client.has_pending_output = false;
++        client.has_flushed_bytes = false;
++        return true;
++    }
++
++    pub fn handleAttachIfLabel(self: *Daemon, gpa: std.mem.Allocator, client: *Client, payload: []const u8) !void {
++        const nl = std.mem.indexOfScalar(u8, payload, '\n');
++        const required_kvs = if (nl) |idx| payload[0..idx] else payload;
++        const set_kvs = if (nl) |idx| payload[idx + 1 ..] else "";
++
++        label.validateLabelPairs(required_kvs, true, true) catch {
++            try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Invalid)});
++            client.has_pending_output = true;
++            return;
++        };
++        label.validateLabelPairs(set_kvs, false, false) catch {
++            try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Invalid)});
++            client.has_pending_output = true;
++            return;
++        };
++        if (!label.labelsMatch(self.labels, required_kvs)) {
++            try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Mismatch)});
++            client.has_pending_output = true;
++            return;
++        }
++        if (set_kvs.len > 0) {
++            try self.applyLabels(gpa, set_kvs);
++        }
++        try ipc.appendMessage(gpa, &client.write_buf, .GuardStatus, &[_]u8{@intFromEnum(ipc.GuardReply.Matched)});
++        client.has_pending_output = true;
++    }
++
+     fn handleLabelClear(self: *Daemon, gpa: std.mem.Allocator, client: *Client) !void {
+         var it = self.labels.iterator();
+         while (it.next()) |entry| {
+@@ -1544,3 +1665,184 @@ test "handleEnvGet returns leader client's environment variables including unset
+     const pay3 = client_req.write_buf.items[@sizeOf(ipc.Header)..];
+     try std.testing.expectEqualStrings("DISPLAY=:99\n", pay3);
+ }
++
++test "handleKillIfLabel and handleAttachIfLabel verify generation atomically without mutating on mismatch" {
++    const alloc = std.testing.allocator;
++    var cfg = Cfg{
++        .socket_dir = "/tmp",
++        .log_dir = "/tmp",
++    };
++    var daemon = Daemon{
++        .cfg = &cfg,
++        .clients = .empty,
++        .session_name = "test-guard",
++        .socket_path = try alloc.dupe(u8, ""),
++        .running = true,
++        .pid = 0,
++        .created_at = 0,
++    };
++    defer daemon.deinit(alloc);
++
++    const fds = try lib_posix.pipe2(.{});
++    defer lib_posix.close(fds[0]);
++    var client = Client{
++        .alloc = alloc,
++        .socket_fd = fds[1],
++        .read_buf = try ipc.SocketBuffer.init(alloc),
++        .write_buf = std.ArrayList(u8).empty,
++    };
++    defer client.deinit(alloc);
++
++    try daemon.applyLabels(alloc, "tako-gen=gen1");
++
++    // 1. Mismatched generation on AttachIfLabel must not apply set_kvs (`tako-attempt=att1`).
++    try daemon.handleAttachIfLabel(alloc, &client, "tako-gen=gen2\ntako-attempt=att1");
++    try std.testing.expectEqual(@as(u8, @intFromEnum(ipc.GuardReply.Mismatch)), client.write_buf.items[@sizeOf(ipc.Header)]);
++    try std.testing.expect(daemon.labels.get("tako-attempt") == null);
++    try std.testing.expectEqualStrings("gen1", daemon.labels.get("tako-gen").?);
++    client.write_buf.clearRetainingCapacity();
++
++    // 2. Empty required generation on AttachIfLabel is rejected as Invalid.
++    try daemon.handleAttachIfLabel(alloc, &client, "\ntako-attempt=att1");
++    try std.testing.expectEqual(@as(u8, @intFromEnum(ipc.GuardReply.Invalid)), client.write_buf.items[@sizeOf(ipc.Header)]);
++    try std.testing.expect(daemon.labels.get("tako-attempt") == null);
++    client.write_buf.clearRetainingCapacity();
++
++    // 3. Matching generation on AttachIfLabel atomically sets `tako-attempt=att1` and replies Matched.
++    try daemon.handleAttachIfLabel(alloc, &client, "tako-gen=gen1\ntako-attempt=att1");
++    try std.testing.expectEqual(@as(u8, @intFromEnum(ipc.GuardReply.Matched)), client.write_buf.items[@sizeOf(ipc.Header)]);
++    try std.testing.expectEqualStrings("att1", daemon.labels.get("tako-attempt").?);
++    client.write_buf.clearRetainingCapacity();
++
++    // 4. Mismatched or empty generation on KillIfLabel returns false and leaves daemon running.
++    try std.testing.expect(!try daemon.handleKillIfLabel(alloc, &client, "tako-gen=gen2"));
++    try std.testing.expectEqual(@as(u8, @intFromEnum(ipc.GuardReply.Mismatch)), client.write_buf.items[@sizeOf(ipc.Header)]);
++    client.write_buf.clearRetainingCapacity();
++
++    try std.testing.expect(!try daemon.handleKillIfLabel(alloc, &client, ""));
++    try std.testing.expectEqual(@as(u8, @intFromEnum(ipc.GuardReply.Invalid)), client.write_buf.items[@sizeOf(ipc.Header)]);
++    client.write_buf.clearRetainingCapacity();
++
++    // 5. Matching generation on KillIfLabel writes Matched to socket_fd and returns true.
++    try std.testing.expect(try daemon.handleKillIfLabel(alloc, &client, "tako-gen=gen1"));
++    var sb = try ipc.SocketBuffer.init(alloc);
++    defer sb.deinit();
++    try std.testing.expectEqual(ipc.GuardReply.Matched, try ipc.awaitGuardStatus(fds[0], &sb, 100));
++
++    // 6. Backpressure & flush failure: on a non-blocking pipe filled to EAGAIN,
++    // writeAllWithTimeout times out when undrained, handleKillIfLabel refuses to
++    // terminate when flushing GuardStatus fails, and succeeds across partial writes
++    // and EAGAIN once the client drains the socket.
++    const bp_fds = try lib_posix.pipe2(.{ .NONBLOCK = true });
++    defer lib_posix.close(bp_fds[0]);
++    var bp_client = Client{
++        .alloc = alloc,
++        .socket_fd = bp_fds[1],
++        .read_buf = try ipc.SocketBuffer.init(alloc),
++        .write_buf = std.ArrayList(u8).empty,
++    };
++    defer bp_client.deinit(alloc);
++
++    bp_client.socket_fd = bp_fds[0];
++    try std.testing.expect(!try daemon.handleKillIfLabel(alloc, &bp_client, "tako-gen=gen1"));
++    bp_client.socket_fd = bp_fds[1];
++
++    const filler = [_]u8{'x'} ** 4096;
++
++    // 1. Unsent pre-queued PTY .Output (has_flushed_bytes == false) is discarded cleanly
++    //    even if > 64 KiB, flushing only the 9-byte GuardStatus(Matched) frame.
++    bp_client.has_flushed_bytes = false;
++    for (0..20) |_| {
++        try ipc.appendMessage(alloc, &bp_client.write_buf, .Output, &filler);
++    }
++    try std.testing.expect(bp_client.write_buf.items.len > 64 * 1024);
++    try std.testing.expect(try daemon.handleKillIfLabel(alloc, &bp_client, "tako-gen=gen1"));
++    {
++        var rsb = try ipc.SocketBuffer.init(alloc);
++        defer rsb.deinit();
++        const n = try rsb.read(bp_fds[0]);
++        try std.testing.expectEqual(@as(usize, 9), n);
++        const msg = rsb.next().?;
++        try std.testing.expectEqual(ipc.Tag.GuardStatus, msg.header.tag);
++        try std.testing.expectEqual(@intFromEnum(ipc.GuardReply.Matched), msg.payload[0]);
++    }
++
++    // 2. Partially flushed write_buf > 64 KiB is refused without blocking or killing.
++    bp_client.has_flushed_bytes = true;
++    for (0..20) |_| {
++        try ipc.appendMessage(alloc, &bp_client.write_buf, .Output, &filler);
++    }
++    try std.testing.expect(bp_client.write_buf.items.len > 64 * 1024);
++    try std.testing.expect(!try daemon.handleKillIfLabel(alloc, &bp_client, "tako-gen=gen1"));
++    bp_client.write_buf.clearRetainingCapacity();
++
++    // 3. Partially flushed write_buf <= 64 KiB under kernel socket backpressure flushes via poll.
++    while (true) {
++        try ipc.appendMessage(alloc, &bp_client.write_buf, .Output, &filler);
++        const n = lib_posix.write(bp_fds[1], bp_client.write_buf.items) catch |err| switch (err) {
++            error.WouldBlock => break,
++            else => return err,
++        };
++        if (n > 0) bp_client.has_flushed_bytes = true;
++        try bp_client.write_buf.replaceRange(alloc, 0, n, &[_]u8{});
++    }
++    try std.testing.expectError(error.Timeout, ipc.writeAllWithTimeout(bp_fds[1], "ack", 20));
++
++    const DrainCtx = struct {
++        rfd: i32,
++        matched: bool = false,
++        fn run(ctx: *@This()) void {
++            var rsb = ipc.SocketBuffer.init(std.heap.page_allocator) catch return;
++            defer rsb.deinit();
++            const reply = ipc.awaitGuardStatus(ctx.rfd, &rsb, 1000) catch return;
++            ctx.matched = (reply == .Matched);
++        }
++    };
++    var ctx = DrainCtx{ .rfd = bp_fds[0] };
++    const thread = try std.Thread.spawn(.{}, DrainCtx.run, .{&ctx});
++    const killed = try daemon.handleKillIfLabel(alloc, &bp_client, "tako-gen=gen1");
++    thread.join();
++    try std.testing.expect(killed);
++    try std.testing.expect(ctx.matched);
++}
++
++test "closing listen socket without pathname unlink preserves replaced socket and get_session_entries is read-only" {
++    const alloc = std.testing.allocator;
++    const io = std.testing.io;
++    var dir = try std.Io.Dir.openDirAbsolute(io, "/tmp", .{});
++    defer dir.close(io);
++
++    const sub_name = "zmx-test-ro-list";
++    const sub_path = "/tmp/zmx-test-ro-list";
++    dir.deleteTree(io, sub_name) catch {};
++    try dir.createDir(io, sub_name, .default_dir);
++    defer dir.deleteTree(io, sub_name) catch {};
++
++    var sub_dir = try std.Io.Dir.openDirAbsolute(io, sub_path, .{});
++    defer sub_dir.close(io);
++
++    const sock_name = "s1";
++    const sock_path = "/tmp/zmx-test-ro-list/s1";
++
++    // 1. Daemon 1 binds sock_path, then sock_path is replaced by Daemon 2 while Daemon 1 is still alive.
++    //    When Daemon 1 exits and closes fd1 without unlinking by pathname, Daemon 2's socket remains intact and connectable.
++    const fd1 = try socket.createSocket(sock_path);
++    try sub_dir.deleteFile(io, sock_name);
++    const fd2 = try socket.createSocket(sock_path);
++    lib_posix.close(fd1);
++    try std.testing.expect(try socket.sessionExists(io, sub_dir, sock_name));
++    const cfd = try ipc.connectSession(sock_path);
++    lib_posix.close(cfd);
++
++    // 2. When Daemon 2 closes fd2 without unlinking, the stale socket returns ConnectionRefused
++    //    and get_session_entries omits the dead session without deleting the socket file on disk.
++    lib_posix.close(fd2);
++    try std.testing.expectError(error.ConnectionRefused, ipc.connectSession(sock_path));
++    var entries = try util.get_session_entries(alloc, io, sub_path);
++    defer {
++        for (entries.items) |e| e.deinit(alloc);
++        entries.deinit(alloc);
++    }
++    try std.testing.expectEqual(@as(usize, 0), entries.items.len);
++    try std.testing.expect(try socket.sessionExists(io, sub_dir, sock_name));
++}
+diff --git a/src/main.zig b/src/main.zig
+index c54bd37..c7cc7a9 100644
+--- a/src/main.zig
++++ b/src/main.zig
+@@ -160,14 +160,38 @@ pub fn main(init: std.process.Init) !void {
+         if (parsed.missing_labels_value) {
+             return printError(io, "--labels requires \"key=value ...\"", .{});
+         }
++        if (parsed.missing_if_label_value) {
++            return printError(io, "--if-label requires \"key=value ...\"", .{});
++        }
++        if (parsed.create_only and parsed.attach_only) {
++            return printError(io, "--create-only cannot be combined with --attach-only or --if-label", .{});
++        }
++        if (parsed.attach_only and parsed.if_label == null) {
++            return printError(io, "--attach-only requires --if-label \"key=value ...\"", .{});
++        }
+         // Before ensureSession, so a rejected label does not leave a session
+         // behind that the caller never asked for.
+-        if (parsed.labels) |kvs| assertLabels(io, kvs);
++        if (parsed.if_label) |req_kvs| assertGuardLabels(io, req_kvs, true);
++        if (parsed.labels) |kvs| {
++            if (parsed.attach_only) {
++                assertGuardLabels(io, kvs, false);
++            } else if (parsed.create_only) {
++                assertGuardLabels(io, kvs, true);
++            } else {
++                assertLabels(io, kvs);
++            }
++        }
+ 
+         var command: ?[][]const u8 = null;
+         if (parsed.command_start < attach_args.items.len) {
+             command = attach_args.items[parsed.command_start..];
+         }
++        if (parsed.attach_only and command != null) {
++            return printError(io, "--attach-only does not accept a command", .{});
++        }
++        if ((parsed.attach_only or parsed.create_only) and parsed.session_name.len == 0) {
++            return printError(io, "session name required", .{});
++        }
+ 
+         var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+         const cwd_len = std.process.currentPath(io, &cwd_buf) catch 0;
+@@ -189,6 +213,12 @@ pub fn main(init: std.process.Init) !void {
+         const env_str = try getTrackedEnvStr(gpa, env_keys, init.environ_map);
+         defer gpa.free(env_str);
+ 
++        if (parsed.create_only) {
++            return attachCreateOnly(gpa, io, &daemon, env_str, parsed.labels);
++        }
++        if (parsed.if_label) |req_kvs| {
++            return attachIfLabel(gpa, io, &daemon, env_str, req_kvs, parsed.labels);
++        }
+         return attach(gpa, io, &daemon, env_str, parsed.labels);
+     } else if (std.mem.eql(u8, cmd, "run") or std.mem.eql(u8, cmd, "r")) {
+         const session_name = args.next() orelse "";
+@@ -287,6 +317,8 @@ pub fn main(init: std.process.Init) !void {
+             matchers.deinit(gpa);
+         }
+         var force = false;
++        var if_label: ?[]const u8 = null;
++        var missing_if_label_value = false;
+         while (args.next()) |session_name| {
+             if (std.mem.eql(u8, session_name, "--help") or std.mem.eql(u8, session_name, "-h")) {
+                 return help(io);
+@@ -295,12 +327,42 @@ pub fn main(init: std.process.Init) !void {
+                 force = true;
+                 continue;
+             }
++            if (std.mem.startsWith(u8, session_name, "--if-label=")) {
++                if_label = session_name["--if-label=".len..];
++                continue;
++            }
++            if (std.mem.eql(u8, session_name, "--if-label")) {
++                if (args.next()) |val| {
++                    if_label = val;
++                } else {
++                    missing_if_label_value = true;
++                }
++                continue;
++            }
+             const m = try socket.parseSessionArg(gpa, session_name);
+             try matchers.append(gpa, m);
+         }
++        if (missing_if_label_value) {
++            return printError(io, "--if-label requires \"key=value ...\"", .{});
++        }
+         if (matchers.items.len == 0) {
+             return printError(io, "session name required", .{});
+         }
++        if (if_label) |req_kvs| {
++            if (force) {
++                return printError(io, "--force cannot be combined with --if-label", .{});
++            }
++            assertGuardLabels(io, req_kvs, true);
++            if (matchers.items.len != 1 or matchers.items[0].is_prefix) {
++                return printError(io, "--if-label requires a single exact session name", .{});
++            }
++            const target_name = matchers.items[0].name;
++            killIfLabel(gpa, io, &cfg, target_name, req_kvs) catch |err| switch (err) {
++                error.Timeout => return printError(io, "failed to kill session={s}: UnsupportedByDaemon", .{target_name}),
++                else => return printError(io, "failed to kill session={s}: {s}", .{ target_name, @errorName(err) }),
++            };
++            return;
++        }
+         var sessions = try util.get_session_entries(gpa, io, cfg.socket_dir);
+         defer {
+             for (sessions.items) |session| {
+@@ -1136,6 +1198,74 @@ fn kill(alloc: std.mem.Allocator, io: std.Io, cfg: *Cfg, session_name: []const u
+     try w.interface.flush();
+ }
+ 
++fn killIfLabel(
++    alloc: std.mem.Allocator,
++    io: std.Io,
++    cfg: *Cfg,
++    session_name: []const u8,
++    required_labels: []const u8,
++) !void {
++    std.log.info("conditional kill session={s}", .{session_name});
++    const socket_path = socket.getSocketPath(alloc, cfg.socket_dir, session_name) catch |err| switch (err) {
++        error.NameTooLong => return socket.printSessionNameTooLong(io, session_name, cfg.socket_dir),
++        error.OutOfMemory => return err,
++    };
++    defer alloc.free(socket_path);
++
++    var dir = try std.Io.Dir.openDirAbsolute(io, cfg.socket_dir, .{});
++    defer dir.close(io);
++
++    const exists = try socket.sessionExists(io, dir, session_name);
++    if (!exists) {
++        return error.SessionNotFound;
++    }
++    // Do not unlink the socket on connection errors: conditional kill must be
++    // side-effect-free whenever server-side identity cannot be verified.
++    const fd = ipc.connectSession(socket_path) catch |err| switch (err) {
++        error.ConnectionRefused => return error.SessionNotFound,
++        else => return error.SessionUnresponsive,
++    };
++    defer lib_posix.close(fd);
++
++    try ipc.send(fd, .KillIfLabel, required_labels);
++
++    var sb = try ipc.SocketBuffer.init(alloc);
++    defer sb.deinit();
++
++    const reply = try ipc.awaitGuardStatus(fd, &sb, 1000);
++    switch (reply) {
++        .Matched => {},
++        .Mismatch => return error.LabelMismatch,
++        .Invalid, _ => return error.InvalidGuard,
++    }
++
++    var drain: [256]u8 = undefined;
++    while (true) {
++        const n = lib_posix.read(fd, &drain) catch break;
++        if (n == 0) break;
++    }
++
++    var buf: [100]u8 = undefined;
++    var w = std.Io.File.stdout().writer(io, &buf);
++    try w.interface.print("killed session {s}\n", .{session_name});
++    try w.interface.flush();
++}
++
++fn assertGuardLabels(io: std.Io, raw: []const u8, require_values: bool) void {
++    label.validateLabelPairs(raw, true, require_values) catch |err| {
++        var buf: [4096]u8 = undefined;
++        var w = std.Io.File.stderr().writer(io, &buf);
++        switch (err) {
++            error.EmptyLabels => w.interface.print("error: label guard cannot be empty\n", .{}) catch {},
++            error.EmptyValue => w.interface.print("error: --if-label requires non-empty values\n", .{}) catch {},
++            error.MalformedPair => w.interface.print("error: malformed key=value label pair\n", .{}) catch {},
++            else => w.interface.print("error: invalid label guard ({s})\n", .{@errorName(err)}) catch {},
++        }
++        w.interface.flush() catch {};
++        std.process.exit(1);
++    };
++}
++
+ fn printLabelError(io: std.Io, session_name: []const u8, err: anyerror) noreturn {
+     var buf: [4096]u8 = undefined;
+     var w = std.Io.File.stderr().writer(io, &buf);
+@@ -1529,9 +1659,13 @@ const AttachArgs = struct {
+     /// `--labels "k=v ..."`: labels to apply once the session exists, in the
+     /// same space-separated form `zmx set` takes.
+     labels: ?[]const u8 = null,
++    attach_only: bool = false,
++    create_only: bool = false,
++    if_label: ?[]const u8 = null,
+     want_help: bool = false,
+     /// `--labels` was given with nothing to apply.
+     missing_labels_value: bool = false,
++    missing_if_label_value: bool = false,
+ };
+ 
+ /// Parses the arguments that follow `zmx attach`. Flags are only recognized
+@@ -1539,6 +1673,7 @@ const AttachArgs = struct {
+ /// handed to the session.
+ fn parseAttachArgs(argv: []const []const u8) AttachArgs {
+     const labels_flag = "--labels";
++    const if_label_flag = "--if-label";
+     var parsed: AttachArgs = .{};
+     var i: usize = 0;
+     while (i < argv.len) : (i += 1) {
+@@ -1547,6 +1682,30 @@ fn parseAttachArgs(argv: []const []const u8) AttachArgs {
+             parsed.want_help = true;
+             return parsed;
+         }
++        if (std.mem.eql(u8, arg, "--attach-only")) {
++            parsed.attach_only = true;
++            continue;
++        }
++        if (std.mem.eql(u8, arg, "--create-only")) {
++            parsed.create_only = true;
++            continue;
++        }
++        if (std.mem.startsWith(u8, arg, if_label_flag ++ "=")) {
++            parsed.if_label = arg[if_label_flag.len + 1 ..];
++            parsed.attach_only = true;
++            continue;
++        }
++        if (std.mem.eql(u8, arg, if_label_flag)) {
++            parsed.attach_only = true;
++            if (i + 1 >= argv.len) {
++                parsed.missing_if_label_value = true;
++                parsed.command_start = argv.len;
++                return parsed;
++            }
++            i += 1;
++            parsed.if_label = argv[i];
++            continue;
++        }
+         if (std.mem.startsWith(u8, arg, labels_flag ++ "=")) {
+             parsed.labels = arg[labels_flag.len + 1 ..];
+             continue;
+@@ -1569,6 +1728,156 @@ fn parseAttachArgs(argv: []const []const u8) AttachArgs {
+     return parsed;
+ }
+ 
++fn getLegacyAttachTestDelayMs() u32 {
++    const raw = lib_posix.getenv("ZMX_TEST_LEGACY_ATTACH_DELAY_MS") orelse return 0;
++    return std.fmt.parseInt(u32, raw, 10) catch 0;
++}
++
++fn getScopedTestFilePath(socket_dir: []const u8, env_name: []const u8) ?[]const u8 {
++    const raw = lib_posix.getenv(env_name) orelse return null;
++    if (raw.len <= socket_dir.len) return null;
++    if (!std.mem.startsWith(u8, raw, socket_dir)) return null;
++    if (socket_dir[socket_dir.len - 1] != '/' and raw[socket_dir.len] != '/') return null;
++    return raw;
++}
++
++fn attachIfLabelWithMode(
++    gpa: std.mem.Allocator,
++    io: std.Io,
++    daemon: *Daemon,
++    env_str: []const u8,
++    required_labels: []const u8,
++    set_labels: ?[]const u8,
++    allow_legacy_fallback: bool,
++) !void {
++    if (socket.getSeshNameFromEnv().len > 0) {
++        return printError(io, "cannot use --attach-only inside an active zmx session", .{});
++    }
++
++    var dir = try std.Io.Dir.openDirAbsolute(io, daemon.cfg.socket_dir, .{});
++    defer dir.close(io);
++
++    const exists = try socket.sessionExists(io, dir, daemon.session_name);
++    if (!exists) {
++        return printError(io, "session \"{s}\" not found", .{daemon.session_name});
++    }
++
++    const client_sock = ipc.connectSession(daemon.socket_path) catch |err| {
++        return printError(io, "session \"{s}\" not found or unresponsive ({s})", .{ daemon.session_name, @errorName(err) });
++    };
++
++    const unread_bytes = ipc.performGuardedOrLegacyAttachHandshakeWithOptions(
++        gpa,
++        client_sock,
++        required_labels,
++        set_labels,
++        allow_legacy_fallback,
++        1000,
++        .{
++            .after_probe_delay_ms = if (allow_legacy_fallback) getLegacyAttachTestDelayMs() else 0,
++            .io = io,
++            .probe_ready_path = if (allow_legacy_fallback) getScopedTestFilePath(daemon.cfg.socket_dir, "ZMX_TEST_LEGACY_ATTACH_PROBE_READY_FILE") else null,
++            .probe_resume_path = if (allow_legacy_fallback) getScopedTestFilePath(daemon.cfg.socket_dir, "ZMX_TEST_LEGACY_ATTACH_RESUME_FILE") else null,
++        },
++    ) catch |err| {
++        lib_posix.close(client_sock);
++        switch (err) {
++            error.LabelMismatch => return printError(io, "session \"{s}\" label mismatch", .{daemon.session_name}),
++            error.InvalidGuard => return printError(io, "session \"{s}\" rejected guarded attach", .{daemon.session_name}),
++            error.UnreadOutputBudgetExceeded => return printError(io, "session \"{s}\" exceeded handshake output budget", .{daemon.session_name}),
++            error.Timeout => return printError(io, "session \"{s}\" does not support guarded attach (daemon too old?)", .{daemon.session_name}),
++            else => return printError(io, "session \"{s}\" not found or unresponsive", .{daemon.session_name}),
++        }
++    };
++    defer gpa.free(unread_bytes);
++
++    std.log.info("guarded attach verified session={s}", .{daemon.session_name});
++    var orig_termios: cross.c.termios = undefined;
++    const stdin_is_tty = cross.c.tcgetattr(lib_posix.STDIN_FILENO, &orig_termios) == 0;
++    const restore_seq = "\x1bc\x1b]110\x1b\\\x1b]111\x1b\\\x1b]112\x1b\\";
++
++    defer {
++        if (stdin_is_tty) {
++            _ = cross.c.tcsetattr(lib_posix.STDIN_FILENO, cross.c.TCSAFLUSH, &orig_termios);
++        }
++        _ = lib_posix.write(lib_posix.STDOUT_FILENO, restore_seq) catch {};
++    }
++
++    if (stdin_is_tty) {
++        var raw_termios = orig_termios;
++        cross.c.cfmakeraw(&raw_termios);
++        raw_termios.c_cc[cross.c.VLNEXT] = cross.c._POSIX_VDISABLE;
++        raw_termios.c_cc[cross.c.VQUIT] = cross.c._POSIX_VDISABLE;
++        raw_termios.c_cc[cross.c.VMIN] = 1;
++        raw_termios.c_cc[cross.c.VTIME] = 0;
++        _ = cross.c.tcsetattr(lib_posix.STDIN_FILENO, cross.c.TCSANOW, &raw_termios);
++    }
++
++    const clear_seq = "\x1b[2J\x1b[H";
++    _ = try lib_posix.write(lib_posix.STDOUT_FILENO, clear_seq);
++
++    _ = try loop.clientLoopWithUnread(client_sock, env_str, unread_bytes);
++}
++
++fn attachIfLabel(
++    gpa: std.mem.Allocator,
++    io: std.Io,
++    daemon: *Daemon,
++    env_str: []const u8,
++    required_labels: []const u8,
++    set_labels: ?[]const u8,
++) !void {
++    return attachIfLabelWithMode(gpa, io, daemon, env_str, required_labels, set_labels, true);
++}
++
++fn attachCreateOnly(
++    gpa: std.mem.Allocator,
++    io: std.Io,
++    daemon: *Daemon,
++    env_str: []const u8,
++    labels: ?[]const u8,
++) !void {
++    if (socket.getSeshNameFromEnv().len > 0) {
++        return printError(io, "cannot use --create-only inside an active zmx session", .{});
++    }
++
++    daemon.initial_labels = labels;
++    const is_daemon_proc = daemon.createOnly(io) catch |err| switch (err) {
++        error.AddressInUse => return printError(io, "session \"{s}\" already exists", .{daemon.session_name}),
++        else => return printError(io, "cannot create session \"{s}\": {s}", .{ daemon.session_name, @errorName(err) }),
++    };
++    if (is_daemon_proc) return;
++
++    if (labels) |init_kvs| {
++        return attachIfLabelWithMode(gpa, io, daemon, env_str, init_kvs, null, false);
++    }
++
++    const client_sock = ipc.connectSession(daemon.socket_path) catch |err| {
++        return printError(io, "cannot connect to session \"{s}\": {s}", .{ daemon.session_name, @errorName(err) });
++    };
++    var orig_termios: cross.c.termios = undefined;
++    const stdin_is_tty = cross.c.tcgetattr(lib_posix.STDIN_FILENO, &orig_termios) == 0;
++    const restore_seq = "\x1bc\x1b]110\x1b\\\x1b]111\x1b\\\x1b]112\x1b\\";
++    defer {
++        if (stdin_is_tty) {
++            _ = cross.c.tcsetattr(lib_posix.STDIN_FILENO, cross.c.TCSAFLUSH, &orig_termios);
++        }
++        _ = lib_posix.write(lib_posix.STDOUT_FILENO, restore_seq) catch {};
++    }
++    if (stdin_is_tty) {
++        var raw_termios = orig_termios;
++        cross.c.cfmakeraw(&raw_termios);
++        raw_termios.c_cc[cross.c.VLNEXT] = cross.c._POSIX_VDISABLE;
++        raw_termios.c_cc[cross.c.VQUIT] = cross.c._POSIX_VDISABLE;
++        raw_termios.c_cc[cross.c.VMIN] = 1;
++        raw_termios.c_cc[cross.c.VTIME] = 0;
++        _ = cross.c.tcsetattr(lib_posix.STDIN_FILENO, cross.c.TCSANOW, &raw_termios);
++    }
++    const clear_seq = "\x1b[2J\x1b[H";
++    _ = try lib_posix.write(lib_posix.STDOUT_FILENO, clear_seq);
++    _ = try loop.clientLoopWithUnread(client_sock, env_str, "");
++}
++
+ fn attach(gpa: std.mem.Allocator, io: std.Io, daemon: *Daemon, env_str: []const u8, labels: ?[]const u8) !void {
+     const sesh = socket.getSeshNameFromEnv();
+     if (sesh.len > 0) {
+@@ -1968,6 +2277,31 @@ test "parseAttachArgs leaves labels unset when the flag is absent" {
+     try std.testing.expect(!parsed.missing_labels_value);
+ }
+ 
++test "parseAttachArgs reads --attach-only and --if-label in both forms" {
++    for ([_][]const []const u8{
++        &.{ "--attach-only", "--if-label", "tako-gen=gen1", "--labels", "tako-attempt=att1", "dev" },
++        &.{ "--if-label=tako-gen=gen1", "--labels=tako-attempt=att1", "dev" },
++    }) |argv| {
++        const parsed = parseAttachArgs(argv);
++        try std.testing.expect(parsed.attach_only);
++        try std.testing.expectEqualStrings("tako-gen=gen1", parsed.if_label.?);
++        try std.testing.expectEqualStrings("tako-attempt=att1", parsed.labels.?);
++        try std.testing.expectEqualStrings("dev", parsed.session_name);
++        try std.testing.expect(!parsed.missing_if_label_value);
++        try std.testing.expectEqual(argv.len, parsed.command_start);
++    }
++    const missing = parseAttachArgs(&.{"--if-label"});
++    try std.testing.expect(missing.attach_only);
++    try std.testing.expect(missing.missing_if_label_value);
++
++    const create_only = parseAttachArgs(&.{ "--create-only", "--labels", "tako-gen=gen1", "dev", "/bin/sh" });
++    try std.testing.expect(create_only.create_only);
++    try std.testing.expect(!create_only.attach_only);
++    try std.testing.expectEqualStrings("tako-gen=gen1", create_only.labels.?);
++    try std.testing.expectEqualStrings("dev", create_only.session_name);
++    try std.testing.expectEqual(@as(usize, 4), create_only.command_start);
++}
++
+ test "getTrackedEnvStr includes set and unset entries" {
+     const alloc = std.testing.allocator;
+     var env_map = std.process.Environ.Map.init(alloc);
+diff --git a/src/util.zig b/src/util.zig
+index 88c6665..d9c58ff 100644
+--- a/src/util.zig
++++ b/src/util.zig
+@@ -56,6 +56,15 @@ pub fn get_session_entries(
+             defer alloc.free(socket_path);
+ 
+             const result = ipc.probeSession(alloc, socket_path) catch |err| {
++                // Do not delete socket files from read-only listing/probing paths:
++                // unlinking by pathname during list/probe can race with concurrent
++                // session creation or replacement. A ConnectionRefused socket has
++                // no live listener, so omit it from active session entries while
++                // leaving the file untouched on disk.
++                if (err == error.ConnectionRefused) {
++                    alloc.free(name);
++                    continue;
++                }
+                 try sessions.append(alloc, .{
+                     .name = name,
+                     .pid = null,
+@@ -67,12 +76,6 @@ pub fn get_session_entries(
+                     .task_ended_at = 0,
+                     .labels = "",
+                 });
+-                // Only clean up when the daemon is definitively gone. A busy
+-                // daemon can miss the probe timeout; deleting its socket
+-                // orphans it permanently.
+-                if (err == error.ConnectionRefused) {
+-                    socket.cleanupStaleSocket(io, dir, entry.name);
+-                }
+                 continue;
+             };
+             defer result.deinit();

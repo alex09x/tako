@@ -34,6 +34,20 @@ class DispatcherTests(unittest.TestCase):
 
     @patch.object(hook.subprocess, "run")
     @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
+    def test_records_only_valid_observed_ids_on_explicit_recipient(self, which, run):
+        run.return_value = SimpleNamespace(returncode=0)
+        hook.dispatch("codex", "working", self.env, {"session_id": "thread-123"})
+        self.assertEqual(run.call_args_list[-1].args[0][1:],
+                         ["session", "note-agent", "codex", "thread-123", "--target", self.env["TAKO_SURFACE_ID"]])
+        run.reset_mock()
+        hook.dispatch("codex", "working", self.env, {"session_id": "bad;command"})
+        self.assertEqual(run.call_count, 2)
+        run.reset_mock()
+        hook.dispatch("codex", "working", {}, {"session_id": "thread-123"})
+        run.assert_not_called()
+
+    @patch.object(hook.subprocess, "run")
+    @patch.object(hook.shutil, "which", return_value="/fixture/bin/takoctl")
     def test_preserves_socket_spaces_and_target(self, which, run):
         run.return_value = SimpleNamespace(returncode=0)
         self.dispatch()

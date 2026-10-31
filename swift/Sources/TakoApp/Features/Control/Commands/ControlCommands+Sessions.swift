@@ -21,6 +21,24 @@ extension ControlCommands {
         }()
 
         switch action {
+        case "note-agent":
+            let surface = try target(request, all)
+            guard !SecureInput.shared.global, !SecureInput.shared.isSecure(for: surface), !surface.isSecureInput else {
+                throw ControlError(.disabled, "secure-input panes cannot record agent sessions")
+            }
+            guard let provider = request.args["provider"]?.string,
+                  let sessionID = request.args["session_id"]?.string,
+                  AgentConversationStore.valid(provider: provider, sessionID: sessionID) else {
+                throw ControlError(.invalid, "invalid agent session")
+            }
+            do {
+                try AgentConversationStore.shared.note(surface: surface.id, provider: provider, sessionID: sessionID)
+            } catch {
+                AgentConversationPresentation.warnAboutSaveFailure(in: surface.window)
+                throw ControlError(.internalError, "could not save agent session")
+            }
+            return ["recorded": .bool(true)]
+
         case "export":
             guard let path = request.args["path"]?.string, !path.isEmpty else {
                 throw ControlError(.invalid, "session export requires 'path'")

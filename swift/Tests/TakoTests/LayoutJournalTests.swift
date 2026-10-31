@@ -125,6 +125,26 @@ struct LayoutJournalTests {
             tabs: (0..<tabs).map { _ in tab() })])
     }
 
+    @Test func failedLaunchSyncNeverDeletesTheJournalItMayName() throws {
+        enum SimulatedFailure: Error { case afterRename }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let committer = JournalCommitter(directory: dir, generation: 0, state: .dirty)
+        #expect(committer.commit(layout(1)))
+        committer.writeLaunch = { record, directory in
+            try LayoutJournal.writeLaunch(record, in: directory)
+            throw SimulatedFailure.afterRename
+        }
+        #expect(!committer.commit(layout(2)))
+        let launch = LayoutJournal.readLaunch(in: dir)
+        #expect(launch.journalGeneration == 2)
+        let data = try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(launch.journalGeneration)))
+        let (status, journal) = LayoutJournal.check(data, expected: launch.journalGeneration)
+        #expect(status == .valid)
+        #expect(journal?.windows.first?.tabs.count == 2)
+    }
+
     @Test func aFailedWriteChangesNothingAndIsTriedAgain() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

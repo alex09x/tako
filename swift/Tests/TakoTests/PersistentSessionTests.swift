@@ -99,6 +99,9 @@ struct PersistentSessionTests {
         #expect(env["ZMX_TRACK_ENV"] == "")
         #expect(env["ZMX_DIR"]?.hasPrefix(home.url.path) == true)
         #expect(SessionNamespace.inheritedVariablesToDrop.contains("ZMX_SESSION"))
+        #expect(SessionNamespace.inheritedVariablesToDrop.contains("ZMX_TEST_LEGACY_ATTACH_DELAY_MS"))
+        #expect(SessionNamespace.inheritedVariablesToDrop.contains("ZMX_TEST_LEGACY_ATTACH_PROBE_READY_FILE"))
+        #expect(SessionNamespace.inheritedVariablesToDrop.contains("ZMX_TEST_LEGACY_ATTACH_RESUME_FILE"))
     }
 
     // MARK: owner
@@ -132,12 +135,60 @@ struct PersistentSessionTests {
 
         try Data("garbage".utf8).write(to: store.url(for: id))
         #expect(store.read(id) == .unreadable)
+        #expect(throws: (any Error).self) { try store.write(record) }
+        #expect(try Data(contentsOf: store.url(for: id)) == Data("garbage".utf8))
 
         // A record filed under another terminal's id is not this one's.
         var other = record
         other.id = UUID()
         try JSONEncoder().encode(other).write(to: store.url(for: id))
         #expect(store.read(id) == .unreadable)
+    }
+
+    @Test func staleGenerationAndConcurrentWriterCannotReplaceARecord() throws {
+        let home = Home()
+        defer { home.tearDown() }
+        let store = SessionRecordStore(directory: home.url.appendingPathComponent("records"))
+        let id = UUID()
+        let old = SessionRecord(id: id, runtimeID: runtimeID, generation: "old", state: .attached, createdAt: Date())
+        try store.write(old)
+        var current = old
+        current.generation = "new"
+        try store.write(current, replacingGeneration: "old")
+        let history = store.directory.appendingPathComponent("History")
+        let files = try FileManager.default.contentsOfDirectory(at: history, includingPropertiesForKeys: nil)
+        #expect(files.count == 1)
+        let archived = try JSONDecoder().decode(SessionRecord.self, from: Data(contentsOf: try #require(files.first)))
+        #expect(archived == old)
+        #expect(throws: (any Error).self) { try store.write(old) }
+        #expect(throws: (any Error).self) { try store.removeIfSameIdentity(old) }
+        #expect(store.read(id) == .record(current))
+        var vanished = current
+        vanished.id = UUID()
+        #expect(throws: (any Error).self) { try store.write(vanished, replacingGeneration: "old") }
+        #expect(store.read(vanished.id) == .none)
+
+        let lockPath = store.directory.appendingPathComponent(".\(id.uuidString).lock").path
+        let fd = open(lockPath, O_RDWR | O_CLOEXEC)
+        #expect(fd >= 0)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        #expect(flock(fd, LOCK_EX | LOCK_NB) == 0)
+        #expect(throws: (any Error).self) { try store.write(current) }
+        #expect(store.read(id) == .record(current))
+    }
+
+    @Test func failedHistoryWriteKeepsThePreviousGeneration() throws {
+        let home = Home()
+        defer { home.tearDown() }
+        let store = SessionRecordStore(directory: home.url.appendingPathComponent("records"))
+        let old = SessionRecord(id: UUID(), runtimeID: runtimeID, generation: "old", state: .attached, createdAt: Date())
+        try store.write(old)
+        try Data("not a directory".utf8).write(to: store.directory.appendingPathComponent("History"))
+        var next = old
+        next.generation = "new"
+        #expect(throws: (any Error).self) { try store.write(next, replacingGeneration: "old") }
+        #expect(store.read(old.id) == .record(old))
     }
 
     // MARK: reattach
@@ -172,6 +223,7 @@ struct PersistentSessionTests {
         // Out of time: an error, never "absent".
         #expect(c(nil, timedOut: true) == .error("the session did not answer in time"))
         #expect(c(["tako-gen": "gen2"], timedOut: true) == .error("the session found is not the one Tako made"))
+        #expect(c(["tako-gen": "gen2"], client: false, timedOut: true) == .error("the session found is not the one Tako made"))
         #expect(c(nil, client: false, timedOut: true) == .error("the attach client exited without an answer"))
     }
 

@@ -107,7 +107,7 @@ extension Tako.SurfaceView {
                 startProcess(workingDir: workingDir)
             }
 
-            if restored || snapshot != nil {
+            if (restored || snapshot != nil) && !persistent {
                 DispatchQueue.main.async { [weak self] in
                     self?.checkAndApplyResumeOnRestore(restoredDir: workingDir)
                 }

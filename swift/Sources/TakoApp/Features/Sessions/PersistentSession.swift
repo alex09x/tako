@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import Darwin
 import Foundation
 
@@ -86,7 +96,9 @@ struct SessionNamespace: Equatable {
 
     /// Inherited variables that would point a runtime at someone else's
     /// session.
-    static let inheritedVariablesToDrop = ["ZMX_SESSION", "ZMX_SESSION_PREFIX", "ZMX_DIR"]
+    static let inheritedVariablesToDrop = ["ZMX_SESSION", "ZMX_SESSION_PREFIX", "ZMX_DIR",
+                                           "ZMX_TEST_LEGACY_ATTACH_DELAY_MS", "ZMX_TEST_LEGACY_ATTACH_PROBE_READY_FILE",
+                                           "ZMX_TEST_LEGACY_ATTACH_RESUME_FILE"]
 }
 
 /// The one copy of Tako allowed to drive a session: an flock on
@@ -140,6 +152,10 @@ struct SessionRecord: Codable, Equatable {
     /// Tako says how long it has really been quiet, not since the relaunch.
     /// Nil while none runs; absent from records an older Tako wrote.
     var quietSince: Date?
+    /// Last known placement survives loss of the window layout.
+    var workspaceID: UUID? = nil
+    var tabIdentifier: String? = nil
+    var workingDirectory: String? = nil
 
     static func newGeneration() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -154,11 +170,58 @@ struct SessionRecordStore {
         directory.appendingPathComponent(id.uuidString).appendingPathExtension("session")
     }
 
-    func write(_ record: SessionRecord) throws {
+    func write(_ record: SessionRecord, replacingGeneration: String? = nil) throws {
+        try withLock(record.id) {
+            switch read(record.id) {
+            case .none:
+                guard replacingGeneration == nil else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(ESTALE))
+                }
+                try createIfAbsent(record)
+            case .unreadable:
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO))
+            case .record(let previous):
+                guard previous.runtimeID == record.runtimeID,
+                      previous.generation == record.generation || previous.generation == replacingGeneration else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(ESTALE))
+                }
+                if previous.generation != record.generation {
+                    try archivePrevious(previous)
+                }
+                try LayoutJournal.atomicWrite(JSONEncoder().encode(record), to: url(for: record.id))
+            }
+        }
+    }
+
+    func withLock<T>(_ id: UUID, _ action: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        try JSONEncoder().encode(record).write(to: url(for: record.id), options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url(for: record.id).path)
+        let lockURL = directory.appendingPathComponent(".\(id.uuidString).lock")
+        let lockFD = open(lockURL.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard lockFD >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(lockFD) }
+        guard flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { flock(lockFD, LOCK_UN) }
+        return try action()
+    }
+
+    /// Installs a complete record only if none exists. A concurrent creator
+    /// wins without either side overwriting the other's identity.
+    func createIfAbsent(_ record: SessionRecord) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let staging = directory.appendingPathComponent(".adopt-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try LayoutJournal.atomicWrite(JSONEncoder().encode(record), to: staging)
+        guard link(staging.path, url(for: record.id).path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        let fd = open(directory.path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(fd) }
+        guard fsync(fd) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
     }
 
     enum Read: Equatable {
@@ -169,16 +232,28 @@ struct SessionRecordStore {
     }
 
     func read(_ id: UUID) -> Read {
-        guard FileManager.default.fileExists(atPath: url(for: id).path) else { return .none }
-        guard let data = try? Data(contentsOf: url(for: id)),
+        let fd = open(url(for: id).path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        if fd < 0 { return errno == ENOENT ? .none : .unreadable }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_uid == getuid(), info.st_size <= 1_048_576,
+              let data = try? FileHandle(fileDescriptor: fd, closeOnDealloc: false).read(upToCount: 1_048_577),
+              data.count <= 1_048_576,
               let record = try? JSONDecoder().decode(SessionRecord.self, from: data),
               record.id == id
         else { return .unreadable }
         return .record(record)
     }
 
-    func remove(_ id: UUID) {
-        try? FileManager.default.removeItem(at: url(for: id))
+    func removeIfSameIdentity(_ record: SessionRecord) throws {
+        try withLock(record.id) {
+            guard case .record(let current) = read(record.id), current.runtimeID == record.runtimeID,
+                  current.generation == record.generation else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(ESTALE))
+            }
+            try FileManager.default.removeItem(at: url(for: record.id))
+        }
     }
 
     /// Every readable record.
@@ -242,10 +317,10 @@ enum Reattach {
             return .live
         }
         if timedOut {
-            if !clientRunning { return .error("the attach client exited without an answer") }
             if let labels, labels["tako-gen"] != generation {
                 return .error("the session found is not the one Tako made")
             }
+            if !clientRunning { return .error("the attach client exited without an answer") }
             return .error("the session did not answer in time")
         }
         return .pending

@@ -14,6 +14,7 @@ import Foundation
 /// isolated e2e profile; records and runtimes follow the app's own
 /// Application Support, which a separate bundle id keeps apart.
 enum SessionPlaces {
+    static var isSelfTest: Bool { CommandLine.arguments.contains { $0.hasPrefix("--selftest") } }
     static var support: URL { SessionSnapshotStore.shared.directory.deletingLastPathComponent() }
     static var records: SessionRecordStore {
         SessionRecordStore(directory: support.appendingPathComponent("SessionRecords", isDirectory: true))

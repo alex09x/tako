@@ -54,6 +54,90 @@ private let on = SessionSnapshotSaver.Settings(enabled: true, limit: 64 << 20, s
 @Suite
 @MainActor
 struct SessionRestoreTests {
+    @Test func replacingASavedScreenArchivesThePreviousOneAndSecureInputRemovesBoth() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let old = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(old, id: surface.id)
+        let previousBytes = try Data(contentsOf: tmp.store.url(for: surface.id))
+        surface.core.feed(bytes: Data("new screen\r\n".utf8))
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.save([surface], settings: on)
+        let history = tmp.store.directory.appendingPathComponent("History")
+        let files = try FileManager.default.contentsOfDirectory(at: history, includingPropertiesForKeys: nil)
+        #expect(try files.contains { try Data(contentsOf: $0) == previousBytes })
+        #expect(try Data(contentsOf: tmp.store.url(for: surface.id)) != previousBytes)
+        saver.save([surface], settings: .init(enabled: true, limit: 64 << 20, secureInput: true))
+        #expect(tmp.store.read(id: surface.id) == nil)
+        #expect(!FileManager.default.fileExists(atPath: history.path))
+    }
+
+    @Test func failedScreenArchiveDoesNotOverwriteTheOldScreen() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let old = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(old, id: surface.id)
+        try Data("not a directory".utf8).write(to: tmp.store.directory.appendingPathComponent("History"))
+        surface.core.feed(bytes: Data("new screen\r\n".utf8))
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        var failures = 0
+        saver.onSaveFailure = { _ in failures += 1 }
+        saver.save([surface], settings: on)
+        saver.save([surface], settings: on)
+        #expect(tmp.store.read(id: surface.id) == old)
+        #expect(failures == 1)
+    }
+
+    @Test func anUnverifiedPlaceholderNeverOverwritesItsSavedScreen() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let old = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(old, id: surface.id)
+        surface.hadPersistentSession = true
+        surface.core.feed(bytes: Data("connection could not be verified\r\n".utf8))
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.save([surface], settings: on)
+        #expect(tmp.store.read(id: surface.id) == old)
+        saver.save([], settings: on)
+        #expect(tmp.store.read(id: surface.id) == old)
+    }
+
+    @Test func closingAPlaceholderBeforeTheFirstSaveKeepsItsScreen() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let old = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(old, id: surface.id)
+        surface.hadPersistentSession = true
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.start(settings: { on }, surfaces: { [surface] })
+        defer { saver.stop() }
+        saver.save([], settings: on)
+        #expect(tmp.store.read(id: surface.id) == old)
+    }
+
+    @Test func disconnectProtectsTheScreenBeforeTheNextTimer() throws {
+        let tmp = TemporaryStore()
+        defer { tmp.tearDown() }
+        let surface = makeSurface()
+        defer { surface.close() }
+        let old = SessionSnapshot(savedAt: Date(timeIntervalSince1970: 1_790_000_000), checkpoint: Data([1, 2, 3]))
+        try tmp.store.write(old, id: surface.id)
+        let saver = SessionSnapshotSaver(store: tmp.store)
+        saver.start(settings: { on }, surfaces: { [surface] })
+        defer { saver.stop() }
+        saver.protect(id: surface.id)
+        saver.save([], settings: on)
+        #expect(tmp.store.read(id: surface.id) == old)
+    }
+
     @Test func storeRoundTripsAndKeepsFilesPrivate() throws {
         let tmp = TemporaryStore()
         defer { tmp.tearDown() }

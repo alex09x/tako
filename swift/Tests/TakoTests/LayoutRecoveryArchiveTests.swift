@@ -13,6 +13,18 @@ import Testing
 @testable import Tako
 
 struct LayoutRecoveryArchiveTests {
+    @Test func previousLayoutReadDoesNotFollowASymlink() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let original = dir.appendingPathComponent("original")
+        let link = dir.appendingPathComponent("journal-1.json")
+        try Data("old layout".utf8).write(to: original)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+        #expect(throws: (any Error).self) { try LayoutRecoveryArchive.readPrevious(link) }
+        #expect(try Data(contentsOf: original) == Data("old layout".utf8))
+    }
+
     @Test func aPreLaunchCopySurvivesJournalCleanup() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

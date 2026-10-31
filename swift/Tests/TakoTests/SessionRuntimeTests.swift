@@ -34,6 +34,59 @@ private struct Fixture {
 
 @Suite
 struct SessionRuntimeTests {
+    @Test func concurrentInstallsKeepOneCompleteRuntime() throws {
+        let f = Fixture()
+        defer { f.tearDown() }
+        let (manifest, helper) = try f.helper("runtime for concurrent install")
+        let lock = NSLock()
+        var ids: [String] = []
+        var failures = 0
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            do {
+                let id = try f.registry.install(manifest: manifest, from: helper)
+                lock.withLock { ids.append(id) }
+            } catch {
+                lock.withLock { failures += 1 }
+            }
+        }
+        #expect(failures == 0)
+        #expect(ids.count == 8 && Set(ids).count == 1)
+        let id = try #require(ids.first)
+        #expect(try SessionRuntimeRegistry.sha256(of: f.registry.executable(for: id)) == manifest.sha256)
+    }
+
+    @Test func guardedClientRequiresAnExplicitCapabilityAndMatchingBinary() throws {
+        let f = Fixture()
+        defer { f.tearDown() }
+        var (manifest, helper) = try f.helper("safe runtime")
+        let bundle = f.dir.appendingPathComponent("Tako.app")
+        let contents = bundle.appendingPathComponent("Contents")
+        let helpers = contents.appendingPathComponent("Helpers")
+        let resources = contents.appendingPathComponent("Resources")
+        try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let bundledHelper = helpers.appendingPathComponent("zmx")
+        try FileManager.default.copyItem(at: helper, to: bundledHelper)
+        let manifestURL = resources.appendingPathComponent("session-runtime.json")
+        try JSONEncoder().encode(manifest).write(to: manifestURL)
+        #expect(throws: SessionRuntimeRegistry.Failure.unsupportedGuardedProtocol) {
+            try f.registry.guardedClient(in: bundle)
+        }
+        manifest.guardedProtocol = 1
+        try JSONEncoder().encode(manifest).write(to: manifestURL)
+        #expect(throws: SessionRuntimeRegistry.Failure.unsupportedGuardedProtocol) {
+            try f.registry.guardedClient(in: bundle)
+        }
+        manifest.guardedProtocol = 3
+        try JSONEncoder().encode(manifest).write(to: manifestURL)
+        let client = try f.registry.guardedClient(in: bundle)
+        #expect(try SessionRuntimeRegistry.sha256(of: client) == manifest.sha256)
+        try Data("different".utf8).write(to: bundledHelper)
+        #expect(throws: SessionRuntimeRegistry.Failure.bundledMismatch) {
+            try f.registry.guardedClient(in: bundle)
+        }
+    }
+
     @Test func installsOnceAndFindsItByIdAlone() throws {
         let f = Fixture()
         defer { f.tearDown() }

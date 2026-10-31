@@ -11,10 +11,27 @@
 import Darwin
 import Foundation
 
+extension Notification.Name {
+    static let takoLayoutPersistenceFailed = Notification.Name("takoLayoutPersistenceFailed")
+}
+
 /// Keeps a bounded set of layouts from before launches, outside the journal's
 /// rolling generations, for recovery after an incomplete restore.
 enum LayoutRecoveryArchive {
     static let limit = 32
+
+    static func readPrevious(_ url: URL) throws -> Data? {
+        var info = stat()
+        if lstat(url.path, &info) != 0 {
+            if errno == ENOENT { return nil }
+            throw LayoutJournal.JournalError("cannot inspect previous layout")
+        }
+        guard info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(),
+              info.st_size >= 0, info.st_size <= Int64(LayoutJournal.maxFileBytes) else {
+            throw LayoutJournal.JournalError("previous layout is not a safe bounded file")
+        }
+        return try Data(contentsOf: url)
+    }
 
     static func preserve(_ data: Data, generation: UInt64, in directory: URL) throws {
         let target = directory.appendingPathComponent("recovery-\(generation).json")

@@ -21,6 +21,7 @@ import sys
 import time
 import uuid
 import json
+import re
 
 # Claude Code fires no hook when the user stops a turn ("Stop does not run if
 # the stoppage occurred due to a user interrupt"), but writes this line to the
@@ -193,7 +194,11 @@ def dispatch(agent, event, env, payload=None):
             start_watcher(surface, env, payload)
         elif event in ("stop", "done", "session_end"):
             stop_watcher(surface, env)
-    for args in commands(event, surface):
+    pending = commands(event, surface)
+    session_id = payload.get("session_id") if isinstance(payload, dict) else None
+    if agent in ("claude", "codex") and isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
+        pending.append(["session", "note-agent", agent, session_id, "--target", surface])
+    for args in pending:
         try:
             # Keep inherited targeting: do not pass --socket.
             result = subprocess.run(

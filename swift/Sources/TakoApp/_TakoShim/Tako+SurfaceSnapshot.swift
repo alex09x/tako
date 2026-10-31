@@ -63,8 +63,10 @@ extension Tako.SurfaceView {
         /// The app this surface belongs to, for the session code.
         // MARK: - Resume Agent Sessions (Track C6)
 
-        public func checkAndApplyResumeOnRestore(restoredDir: String?) {
-            guard let record = ResumeSessionStore.shared.record(for: id) else { return }
+        public func checkAndApplyResumeOnRestore(restoredDir: String?, store: ResumeSessionStore = .shared) {
+            // A persistent pane may still be attached to the original
+            // process. Never type a resume command into it automatically.
+            guard !hadPersistentSession, let record = store.record(for: id) else { return }
             let dir = record.cwd.isEmpty ? (restoredDir ?? "") : record.cwd
             if !record.isImported && ResumeTrustStore.shared.isApproved(argv: record.argv, cwd: dir) {
                 executeResume(record: record)
@@ -127,7 +129,7 @@ extension Tako.SurfaceView {
             base.hadPersistentSession = persistent
             base.workingDirectory = Self.restoredWorkingDirectory(
                 savedPwd, fallback: app.map { Tako.resolvedWorkingDirectory($0.config) })
-            if let uuid, app?.config.windowSaveContent ?? true {
+            if let uuid, !SessionPlaces.isSelfTest, app?.config.windowSaveContent ?? true {
                 base.restoredSnapshot = SessionSnapshotStore.shared.read(id: uuid)
             }
             return (app, base, uuid ?? UUID())

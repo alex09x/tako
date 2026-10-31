@@ -18,6 +18,7 @@ import Foundation
 @MainActor
 final class SurfaceSession {
     let runtime: URL
+    let guardedRuntime: URL?
     let namespace: SessionNamespace
     let name: String
     let owner: SessionOwnerLock
@@ -39,9 +40,10 @@ final class SurfaceSession {
         set { detachingLock.withLock { detachingFlag = newValue } }
     }
 
-    init(runtime: URL, namespace: SessionNamespace, name: String, owner: SessionOwnerLock,
+    init(runtime: URL, guardedRuntime: URL? = nil, namespace: SessionNamespace, name: String, owner: SessionOwnerLock,
          records: SessionRecordStore, record: SessionRecord) {
         self.runtime = runtime
+        self.guardedRuntime = guardedRuntime
         self.namespace = namespace
         self.name = name
         self.owner = owner
@@ -55,18 +57,25 @@ final class SurfaceSession {
     /// its own may have left its session running -- that is found out first.
     func clientExited(_ surface: Tako.SurfaceView) -> Bool {
         if attempt != nil || Self.appIsDetaching { return true }
-        let runtime = self.runtime, name = self.name, env = environment
+        let runtime = self.guardedRuntime, name = self.name, env = environment
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak surface] in
-            let listed = RuntimeCommand.isListed(runtime, name: name, environment: env)
+            let listed = runtime.flatMap { RuntimeCommand.isListed($0, name: name, environment: env) }
             DispatchQueue.main.async {
                 guard let self, let surface, surface.persistence === self, surface.pty == nil || !(surface.pty?.alive ?? false)
                 else { return }
                 switch listed {
                 case false:
-                    // The shell ended (exit, Ctrl-D): so did the session.
-                    self.records.remove(self.record.id)
-                    self.ended = true
-                    surface.onExit?(surface)
+                    // A missing list entry alone does not prove the shell is gone.
+                    // Keep the record and protect its screen in either case.
+                    try? self.save(.detached)
+                    if let shell = self.shellPID, kill(shell, 0) == -1, errno == ESRCH {
+                        self.confirmedLive = false
+                        (NSApp?.delegate as? AppDelegate)?.sessionSaver.protect(id: surface.id)
+                        self.ended = true
+                        surface.onExit?(surface)
+                    } else {
+                        surface.awaitReconnect("This session is not listed and may still be running. Press Return to check again, or open a new tab.")
+                    }
                 case true:
                     try? self.save(.detached)
                     surface.awaitReconnect("Disconnected from this terminal's session; it is still running. Press Return to reconnect.")
@@ -82,6 +91,9 @@ final class SurfaceSession {
     /// Ending owns it -- so nothing starts a second one.
     var ended = false
 
+    /// A placeholder that never connected must never end a live session when closed.
+    var confirmedLive = false
+
     /// Every session object alive in this process, including those of
     /// closed terminals still held for undo. Weak: it keeps nothing alive.
     private static let live = NSHashTable<SurfaceSession>.weakObjects()
@@ -91,9 +103,9 @@ final class SurfaceSession {
     /// The surface is gone for good -- closed, and past any undo that could
     /// bring it back -- and Tako is not quitting: its session ends with it.
     deinit {
-        guard !Self.appIsDetaching, !ended else { return }
-        Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
-               id: record.id, generation: record.generation, owner: owner).start()
+        guard !Self.appIsDetaching, !ended, confirmedLive else { return }
+        Ending(runtime: runtime, guardedRuntime: guardedRuntime, name: name, environment: namespace.environment, records: records,
+               id: record.id, generation: record.generation, runtimeID: namespace.runtimeID, owner: owner).start()
     }
 
     /// Quitting is confirmed: open terminals let go of their sessions --
@@ -106,7 +118,7 @@ final class SurfaceSession {
         let open = Set(surfaces.compactMap { $0.persistence.map(ObjectIdentifier.init) })
         // Terminals closed but still held for undo are not coming back:
         // their sessions end now, like any closed terminal's.
-        for session in live.allObjects where !open.contains(ObjectIdentifier(session)) && !session.ended {
+        for session in live.allObjects where !open.contains(ObjectIdentifier(session)) && !session.ended && session.confirmedLive {
             session.ended = true
             Ending(session).start(reportFailure: false)
         }
@@ -133,6 +145,19 @@ final class SurfaceSession {
         guard !Self.appIsDetaching, !ended, record.quietSince != date else { return }
         var next = record
         next.quietSince = date
+        guard (try? records.write(next)) != nil else { return }
+        record = next
+    }
+
+    func rememberPlacement(workspaceID: UUID?, tabIdentifier: String, workingDirectory: String?) {
+        let workspaceID = workspaceID ?? record.workspaceID
+        let workingDirectory = workingDirectory ?? record.workingDirectory
+        guard !ended, record.workspaceID != workspaceID || record.tabIdentifier != tabIdentifier ||
+                record.workingDirectory != workingDirectory else { return }
+        var next = record
+        next.workspaceID = workspaceID
+        next.tabIdentifier = tabIdentifier
+        next.workingDirectory = workingDirectory
         guard (try? records.write(next)) != nil else { return }
         record = next
     }

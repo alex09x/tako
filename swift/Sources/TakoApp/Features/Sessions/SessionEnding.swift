@@ -22,31 +22,36 @@ final class Ending: @unchecked Sendable {
     static let closedButRunning = "closed, but its session could not be ended"
 
     let runtime: URL
+    let guardedRuntime: URL?
     let name: String
     let environment: [String: String]
     let records: SessionRecordStore
     let id: UUID
     let generation: String
+    let runtimeID: String
     let owner: SessionOwnerLock
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var pending: [ObjectIdentifier: Ending] = [:]
     let attemptFinished = DispatchSemaphore(value: 0)
 
-    init(runtime: URL, name: String, environment: [String: String], records: SessionRecordStore,
-         id: UUID, generation: String, owner: SessionOwnerLock) {
+    init(runtime: URL, guardedRuntime: URL? = nil, name: String, environment: [String: String], records: SessionRecordStore,
+         id: UUID, generation: String, runtimeID: String, owner: SessionOwnerLock) {
         self.runtime = runtime
+        self.guardedRuntime = guardedRuntime
         self.name = name
         self.environment = environment
         self.records = records
         self.id = id
         self.generation = generation
+        self.runtimeID = runtimeID
         self.owner = owner
     }
 
     @MainActor convenience init(_ session: SurfaceSession) {
-        self.init(runtime: session.runtime, name: session.name, environment: session.namespace.environment,
+        self.init(runtime: session.runtime, guardedRuntime: session.guardedRuntime, name: session.name, environment: session.namespace.environment,
                   records: session.records, id: session.record.id, generation: session.record.generation,
+                  runtimeID: session.namespace.runtimeID,
                   owner: session.owner)
     }
 
@@ -67,20 +72,21 @@ final class Ending: @unchecked Sendable {
     /// True when the session is confirmed gone (or was never this ending's).
     @discardableResult
     func run(reportFailure: Bool = true) -> Bool {
-        if case .record(let record) = records.read(id), record.generation != generation {
+        guard case .record(let record) = records.read(id), record.generation == generation,
+              record.runtimeID == runtimeID else {
             settle()
-            return true
+            return false
         }
-        _ = RuntimeCommand.run(runtime, ["kill", name], environment: environment, timeout: 3)
-        let listed = RuntimeCommand.isListed(runtime, name: name, environment: environment)
-        attemptFinished.signal()
-
-        if listed == false {
-            records.remove(id)
-            settle()
-            return true
+        if let guardedRuntime,
+           RuntimeCommand.killIfGeneration(guardedRuntime, name: name, generation: generation,
+                                           environment: environment) == .killed {
+            if (try? records.removeIfSameIdentity(record)) != nil {
+                settle()
+                return true
+            }
         }
         markClosedButRunning()
+        attemptFinished.signal()
         guard reportFailure else { return false }
         DispatchQueue.main.async {
             Self.promptAskAgain(self)
@@ -90,16 +96,23 @@ final class Ending: @unchecked Sendable {
 
     /// The record says what is pending, so it survives the app ending.
     private func markClosedButRunning() {
-        if case .record(var record) = records.read(id), record.generation == generation {
+        if case .record(var record) = records.read(id), record.generation == generation, record.runtimeID == runtimeID {
             record.state = .error(Self.closedButRunning)
             try? records.write(record)
         }
     }
 
-    /// The user chose to leave the session running: Tako forgets it.
+    /// Keep the record so a running session can be recovered later.
     func leaveRunning() {
-        records.remove(id)
+        Self.markDetached(id: id, generation: generation, runtimeID: runtimeID, records: records)
         settle()
+    }
+
+    private static func markDetached(id: UUID, generation: String, runtimeID: String, records: SessionRecordStore) {
+        guard case .record(var record) = records.read(id), record.generation == generation,
+              record.runtimeID == runtimeID else { return }
+        record.state = .detached
+        try? records.write(record)
     }
 
     @MainActor static func promptAskAgain(_ ending: Ending) {
@@ -113,8 +126,8 @@ final class Ending: @unchecked Sendable {
             let theme = (NSApp.delegate as? AppDelegate)?.tako.config.theme
             let answer = await TerminalDialogView.choose(
                 in: window,
-                title: "Terminal Still Running",
-                lines: TUIText.plain("A closed terminal is still running. Its session could not be ended. Try again, or leave it running -- Tako will then stop tracking it.", width: 56),
+                title: "Session May Still Be Running",
+                lines: TUIText.plain("Tako could not confirm that the session ended. Try again, or keep its session record.", width: 56),
                 choices: [
                     .init(title: "Leave Running", kind: .normal),
                     .init(title: "Try Again", kind: .primary)
@@ -182,26 +195,27 @@ final class Ending: @unchecked Sendable {
                 let answer = await TerminalDialogView.choose(
                     in: window,
                     title: "Leftover Terminal Session",
-                    lines: TUIText.plain("A terminal closed before Tako last quit is still running. Its session could not be ended then. End it now, or leave it running -- Tako will then stop tracking it.", width: 56),
+                    lines: TUIText.plain("Tako could not confirm whether a previously closed session ended. Try again, or keep its session record.", width: 56),
                     choices: [
                         .init(title: "Leave Running", kind: .normal),
                         .init(title: "End Session", kind: .destructive)
                     ],
-                    selected: 1,
+                    selected: 0,
                     cancelIndex: 0,
                     theme: theme
                 )
                 guard answer == 1 else {
-                    records.remove(record.id)
+                    markDetached(id: record.id, generation: record.generation, runtimeID: record.runtimeID, records: records)
                     continue
                 }
                 let name = SessionNamespace.sessionName(for: record.id)
                 guard let runtime = try? registry.executable(for: record.runtimeID),
+                      let guardedRuntime = try? registry.guardedClient(in: Bundle.main.bundleURL),
                       let namespace = try? SessionNamespace.open(runtimeID: record.runtimeID, home: home),
                       let owner = try? SessionOwnerLock(namespace: namespace, name: name)
                 else { continue }   // Still marked: asked again next launch.
-                Ending(runtime: runtime, name: name, environment: namespace.environment, records: records,
-                       id: record.id, generation: record.generation, owner: owner).start()
+                Ending(runtime: runtime, guardedRuntime: guardedRuntime, name: name, environment: namespace.environment, records: records,
+                       id: record.id, generation: record.generation, runtimeID: record.runtimeID, owner: owner).start()
             }
         }
     }
