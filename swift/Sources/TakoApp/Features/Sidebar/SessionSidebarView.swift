@@ -18,19 +18,19 @@ struct SessionSidebarView: View {
     let containingWindow: NSWindow?
     let backgroundColor: Color
 
-    @ObservedObject private var store: SessionSidebarStore
-    @ObservedObject private var workspaceStore: WorkspaceStore
+    @ObservedObject var store: SessionSidebarStore
+    @ObservedObject var workspaceStore: WorkspaceStore
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     @ObservedObject private var animState = LivingAnimationState.shared
 
-    private typealias T = Tako.LivingTokens
+    typealias T = Tako.LivingTokens
 
-    @State private var selectedIndex: Int = 0
+    @State var selectedIndex: Int = 0
     /// Whether the arrow-key cursor is drawn: only while the keys move it. A
     /// click selects the tab itself, and a cursor left on another row would
     /// read as a second selection.
-    @State private var showsArrowCursor = false
+    @State var showsArrowCursor = false
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
     @FocusState private var isSearchFocused: Bool
@@ -52,7 +52,7 @@ struct SessionSidebarView: View {
         self.workspaceStore = workspaceStore
     }
 
-    private var targetWindow: NSWindow? {
+    var targetWindow: NSWindow? {
         containingWindow ?? hostingWindow ?? NSApp?.keyWindow
     }
 
@@ -75,7 +75,7 @@ struct SessionSidebarView: View {
         store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore)
     }
 
-    private var items: [SessionSidebarItem] {
+    var items: [SessionSidebarItem] {
         workspaceGroups.flatMap(\.items)
     }
 
@@ -316,10 +316,11 @@ struct SessionSidebarView: View {
                             .padding(.vertical, 24)
                     } else {
                         ForEach(groups) { wsGroup in
-                            SessionSidebarWorkspaceHeaderView(
+                            SidebarWorkspaceDropTarget(
                                 group: wsGroup,
                                 onToggleCollapse: { store.toggleWorkspaceCollapsed(wsGroup.id) },
-                                onSelectWorkspace: { store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore) }
+                                onSelectWorkspace: { store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore) },
+                                onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) }
                             )
                             ForEach(wsGroup.items) { item in
                                 let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
@@ -334,6 +335,10 @@ struct SessionSidebarView: View {
                                         store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
                                     }
                                 )
+                                .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
+                                    onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
+                                    canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
+                                    onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) }))
                             }
                         }
                     }
@@ -387,49 +392,4 @@ struct SessionSidebarView: View {
         }
     }
 
-    /// Puts the arrow-key cursor on the active tab's row.
-    private func followActiveTab() {
-        showsArrowCursor = false
-        if let activeIndex = SessionSidebarSelection.activeIndex(in: items) {
-            selectedIndex = activeIndex
-        }
-    }
-
-    private func jumpToNextWaiting() {
-        let allItems = items
-        guard !allItems.isEmpty else { return }
-        let start = max(0, selectedIndex)
-        for offset in 1...allItems.count {
-            let idx = (start + offset) % allItems.count
-            let candidate = allItems[idx]
-            if candidate.surfaceState == .waiting || candidate.needsAttention {
-                selectedIndex = idx
-                store.selectTab(item: candidate, in: targetWindow, workspaceStore: workspaceStore)
-                return
-            }
-        }
-    }
-
-    // MARK: - Footer (§5.8)
-
-    private var footerView: some View {
-        HStack(spacing: 8) {
-            Button(action: {
-                if let win = targetWindow, let surface = store.surfaces(in: win).first {
-                    NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: surface)
-                }
-            }) {
-                Text("+ New session").font(Font(T.monoFont(size: 10.5, weight: .regular))).foregroundColor(Color(nsColor: T.dim))
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            Button(action: jumpToNextWaiting) {
-                (Text("⌥⏎").font(.custom("Menlo-Regular", fixedSize: 10.5)) + Text(" next waiting").font(Font(T.monoFont(size: 10.5, weight: .regular))))
-                    .foregroundColor(Color(nsColor: T.dim))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-    }
 }

@@ -465,6 +465,9 @@ let scenarios: [Scenario] = [
     ("persist-name-collision", "an existing session survives a colliding new-pane identity", { d in
         try runSessionNameCollisionScenario(d)
     }),
+    ("persist-sidebar-workspace-move", "sidebar drag and context menu move the same live session", { d in
+        try runSidebarWorkspaceMoveScenario(d)
+    }),
     ("persist-agent-conversation", "an observed agent conversation remains available after relaunch", { d in
         try runAgentConversationRecoveryScenario(d)
     }),
@@ -4542,7 +4545,7 @@ struct TakoE2E {
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
-        let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation"]
+        let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move"]
     let explicitOnly = persistenceOnly.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))
