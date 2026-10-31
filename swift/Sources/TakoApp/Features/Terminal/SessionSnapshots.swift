@@ -170,6 +170,8 @@ final class SessionSnapshotSaver {
     private var written: [UUID: UInt64] = [:]
     /// Monotonic token per pane to ensure out-of-order or stale async saves never commit.
     private var activeTokens: [UUID: UInt64] = [:]
+    /// Surfaces seen in this run, including restored ones before their first save.
+    private var observed: Set<UUID> = []
     private let writeQueue = DispatchQueue(label: "codes.prod.tako.snapshots.writer", qos: .utility)
     private var timer: Timer?
 
@@ -179,6 +181,7 @@ final class SessionSnapshotSaver {
 
     func start(settings: @escaping @MainActor () -> Settings, surfaces: @escaping @MainActor () -> [Tako.SurfaceView]) {
         timer?.invalidate()
+        observed = Set(surfaces().map(\.id))
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.save(surfaces(), settings: settings(), asynchronous: true)
@@ -199,6 +202,7 @@ final class SessionSnapshotSaver {
             store.removeAll()
             written = [:]
             activeTokens = [:]
+            observed = []
             return
         }
         let share = surfaces.isEmpty ? 0 : settings.limit / UInt64(surfaces.count)
@@ -276,7 +280,11 @@ final class SessionSnapshotSaver {
                 }
             }
         }
-        store.removeAll(except: live)
+        // Only retire files for surfaces this saver actually tracked. A file
+        // absent from a partial restore may be the only copy of a session.
+        let retired = observed.union(written.keys).union(activeTokens.keys).subtracting(live)
+        for id in retired { store.remove(id: id) }
+        observed = live
         written = written.filter { live.contains($0.key) }
         activeTokens = activeTokens.filter { live.contains($0.key) }
     }

@@ -432,6 +432,12 @@ let scenarios: [Scenario] = [
         let after = try crashLayoutCount(d, "after")
         guard after.tabs == 2, after.panes == 3 else { throw Failure("after the upgrade crash: \(after)") }
     }),
+    ("persist-workspaces", "a relaunch preserves live shells in hidden workspaces", { d in
+        try runPersistentWorkspacesScenario(d)
+    }),
+    ("persist-missing-layout", "missing layout does not kill an unclaimed live session", { d in
+        try runMissingLayoutSafetyScenario(d)
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
@@ -4493,7 +4499,7 @@ struct TakoE2E {
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
-    let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow"]
+    let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout"]
     let explicitOnly = persistenceOnly.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))

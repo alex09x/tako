@@ -71,10 +71,8 @@ extension AppDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LayoutRecorder.finishLaunching(app: tako)
-        // The tabs are back, each with its own id: the workspaces keep those
-        // and forget the rest. With nothing restored there is nothing to keep.
-        let restored = Set(TerminalController.all.compactMap { $0.window?.stableTabIdentifier })
-        if !restored.isEmpty { WorkspaceStore.shared.pruneTabs(keeping: restored) }
+        // A partial restore is not proof that absent tabs were closed. Keep
+        // their workspace associations so their sessions can be recovered.
         sessionSaver.start(
             settings: { [unowned self] in self.sessionSaveSettings() },
             surfaces: { Self.restorableSurfaces() })
@@ -87,11 +85,8 @@ extension AppDelegate {
                     openIDs: Set(Self.restorableSurfaces().map(\.id)))
             }
         }
-        DispatchQueue.global(qos: .utility).async {
-            let activeIDs = Set(Self.restorableSurfaces().map(\.id))
-            let activeNames = Set(activeIDs.map { SessionNamespace.sessionName(for: $0) })
-            SessionSweeper.sweepOrphans(home: SessionPlaces.home, activeNames: activeNames, registry: SessionPlaces.registry)
-        }
+        // Never kill unclaimed runtimes at launch: a missing or incomplete
+        // layout can leave still-running sessions without a restored surface.
         // System settings overrides
         UserDefaults.tako.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
