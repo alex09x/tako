@@ -124,6 +124,15 @@ grant, token or scope: Tako is local and anything running as the user may drive 
 All notifications and status/progress commands identify the same recipient; process
 names, shared directories and the active tab are never recipient identities.
 
+For Claude and Codex events that include a valid `session_id`, the dispatcher
+also records the observed ID against that explicit pane. File → Agent
+Conversations shows the candidates and can copy a resume command. It does not
+run the command: multiple agents may have used the same pane, and an observed
+conversation may still be running. Only events received after both Tako and
+the installed dispatcher have been updated can be recorded; missing historical
+IDs cannot be inferred reliably. Conversation IDs are stored privately, without
+prompts or transcript contents, and are not recorded during Secure Input.
+
 The optional `--codex-wrapper` installer installs `tako-codex` and a Fish
 autoload function: inside Tako, new Codex sessions use the supported
 `--no-daemon` flag so hooks retain their PTY context. Outside Tako, arguments are

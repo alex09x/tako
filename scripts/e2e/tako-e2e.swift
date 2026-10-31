@@ -432,6 +432,42 @@ let scenarios: [Scenario] = [
         let after = try crashLayoutCount(d, "after")
         guard after.tabs == 2, after.panes == 3 else { throw Failure("after the upgrade crash: \(after)") }
     }),
+    ("persist-workspaces", "a relaunch preserves live shells in hidden workspaces", { d in
+        try runPersistentWorkspacesScenario(d)
+    }),
+    ("persist-missing-layout", "missing layout does not kill an unclaimed live session", { d in
+        try runMissingLayoutSafetyScenario(d)
+    }),
+    ("persist-damaged-record", "a damaged record can be adopted without replacing the live shell", { d in
+        try runDamagedSessionRecordScenario(d)
+    }),
+    ("persist-damaged-placeholder", "an existing placeholder can recover its damaged session record", { d in
+        try runDamagedSessionRecordScenario(d, retainLayout: true)
+    }),
+    ("persist-lost-workspaces", "sessions return to their workspaces when the window layout is lost", { d in
+        try runMissingLayoutAcrossWorkspacesScenario(d)
+    }),
+    ("persist-workspace-archive", "a workspace archive failure is visible and does not overwrite data", { d in
+        try runWorkspaceArchiveFailureScenario(d)
+    }),
+    ("persist-crash", "a crashed app reconnects to the same live shell", { d in
+        try runPersistentCrashScenario(d)
+    }),
+    ("persist-screen-archive", "a screen archive failure is visible and preserves the old snapshot", { d in
+        try runSnapshotArchiveFailureScenario(d)
+    }),
+    ("persist-layout-archive", "a layout archive failure is visible and restores the previous layout read-only", { d in
+        try runLayoutArchiveFailureScenario(d)
+    }),
+    ("persist-legacy-upgrade", "an old zmx daemon reconnects through the new guarded client", { d in
+        try runLegacyUpgradeScenario(d)
+    }),
+    ("persist-name-collision", "an existing session survives a colliding new-pane identity", { d in
+        try runSessionNameCollisionScenario(d)
+    }),
+    ("persist-agent-conversation", "an observed agent conversation remains available after relaunch", { d in
+        try runAgentConversationRecoveryScenario(d)
+    }),
     ("persist-live", "with session-persistence a relaunch reattaches to the same shell", { d in
         // Needs an app built with its session runtime (TAKO_WITH_ZMX=1).
         d.quit()
@@ -450,9 +486,9 @@ let scenarios: [Scenario] = [
         try d.run("exit")
         guard first == second else { throw Failure("a new shell after relaunch: \(first) then \(second)") }
     }),
-    ("persist-gone", "a session that ended while Tako was closed comes back as its saved screen and a new shell", { d in
+    ("persist-gone", "an unverifiable old session keeps its saved screen and lets the user open a new shell", { d in
         d.quit()
-        let config = "session-persistence = true\n"
+        let config = "session-persistence = true\nremote-control = on\n"
         try d.launch(config: config)
         let id = d.work.lastPathComponent
         try d.run("sh -c 'echo $PPID' > \(d.path("pid1")); printf 'gone-%s\\n' \(id)")
@@ -464,15 +500,22 @@ let scenarios: [Scenario] = [
         let shell = Int32(first.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         guard shell > 0, kill(shell, SIGKILL) == 0 else { throw Failure("could not end the shell \(first)") }
         usleep(1_000_000)
-        try d.launch(config: config)
-        guard d.wait(for: { d.screenText().contains("gone-\(id)") }, timeout: 10) else {
+        try d.launch(config: config, settleTerminal: false)
+        guard d.wait(for: {
+            let screen = d.screenText()
+            return screen.contains("gone-\(id)") && screen.contains("Saved screen from the previous session")
+        }, timeout: 15) else {
             throw Failure("the saved screen did not come back: [\(d.screenText().suffix(300))]")
+        }
+        let savedPane = try d.focusedPaneId()
+        d.newTab()
+        guard d.wait(for: { if let focused = try? d.focusedPaneId() { return focused != savedPane }; return false }, timeout: 8) else {
+            throw Failure("the new shell tab did not open")
         }
         try d.run("sh -c 'echo $PPID' > \(d.path("pid2"))")
         let second = try d.file("pid2")
-        try d.run("exit")
         guard first != second else { throw Failure("the same shell after it was killed?") }
-        guard !d.screenText().contains("[Tako]") else { throw Failure("an error was shown: \(d.screenText().suffix(300))") }
+        try d.run("exit")
     }),
     ("persist-close", "closing a persistent tab ends its session once undo has expired", { d in
         d.quit()
@@ -552,7 +595,7 @@ let scenarios: [Scenario] = [
         }
         guard kill(kept, 0) == 0 else { throw Failure("the open tab's session did not survive the quit") }
     }),
-    ("persist-second-owner", "a second copy of Tako restoring the same session is refused and starts nothing", { d in
+    ("persist-second-owner", "a second copy cannot open the same profile or disturb its live session", { d in
         d.quit()
         let config = "session-persistence = true\n"
         try d.launch(config: config)
@@ -567,15 +610,21 @@ let scenarios: [Scenario] = [
         guard try d.file("pid2").trimmingCharacters(in: .whitespacesAndNewlines) == String(shell) else {
             throw Failure("the first copy did not reattach")
         }
-        // A second copy restores the same window, so the same session.
-        let other = try d.launchAnother(config: config)
-        defer { kill(other, SIGKILL) }
-        guard d.wait(for: { d.screenTexts(ofPid: other).contains { $0.contains("open in another copy of Tako") } },
-                     timeout: 15) else {
-            throw Failure("the second copy said nothing about the session: \(d.screenTexts(ofPid: other).map { $0.suffix(200) })")
+        // A forced second instance is refused before it can write shared state.
+        guard let sessionsHome = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] else {
+            throw Failure("second-instance test requires an isolated session home")
         }
-        // It started nothing: the session still has its one shell, and the
-        // first copy still drives it.
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-n", "-g", "--env", "TAKO_SESSIONS_HOME=\(sessionsHome)",
+                          "--env", "TAKO_CONFIG_PATH=\(d.work.appendingPathComponent("config").path)", d.appURL.path]
+        try open.run()
+        open.waitUntilExit()
+        guard open.terminationStatus == 0 else { throw Failure("could not request a second instance") }
+        usleep(1_500_000)
+        guard d.running().allSatisfy({ $0.processIdentifier == d.pid }) else {
+            throw Failure("a second copy opened the same profile")
+        }
         try d.run("sh -c 'echo $PPID' > \(d.path("pid3"))")
         guard try d.file("pid3").trimmingCharacters(in: .whitespacesAndNewlines) == String(shell) else {
             throw Failure("the first copy lost its session")
@@ -4493,7 +4542,7 @@ struct TakoE2E {
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
-    let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow"]
+        let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation"]
     let explicitOnly = persistenceOnly.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))

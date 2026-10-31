@@ -70,28 +70,43 @@ extension AppDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Restore privacy before capturing layout or starting snapshot saves.
+        if UserDefaults.tako.bool(forKey: "SecureInput") != SecureInput.shared.global {
+            toggleSecureInput(self)
+        }
         LayoutRecorder.finishLaunching(app: tako)
-        // The tabs are back, each with its own id: the workspaces keep those
-        // and forget the rest. With nothing restored there is nothing to keep.
-        let restored = Set(TerminalController.all.compactMap { $0.window?.stableTabIdentifier })
-        if !restored.isEmpty { WorkspaceStore.shared.pruneTabs(keeping: restored) }
-        sessionSaver.start(
-            settings: { [unowned self] in self.sessionSaveSettings() },
-            surfaces: { Self.restorableSurfaces() })
-        // Sessions of terminals closed before the last quit that could not
-        // be ended then: asked about once windows are restored.
-        if tako.config.sessionPersistence {
+        NotificationCenter.default.addObserver(self, selector: #selector(workspacePersistenceFailed(_:)),
+                                               name: .takoWorkspacePersistenceFailed, object: WorkspaceStore.shared)
+        NotificationCenter.default.addObserver(self, selector: #selector(layoutPersistenceFailed(_:)),
+                                               name: .takoLayoutPersistenceFailed, object: nil)
+        // A partial restore is not proof that absent tabs were closed. Keep
+        // their workspace associations so their sessions can be recovered.
+        if !SessionPlaces.isSelfTest {
+            sessionSaver.onSaveFailure = { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                            ?? TerminalController.preferredParent?.window else { return }
+                    _ = await TerminalDialogView.choose(in: window, title: "Saved Screens Not Updating",
+                        lines: TUIText.plain("Tako could not preserve or write a saved screen. Recent output may not be saved; check storage before quitting.", width: 56),
+                        choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: self.tako.config.theme)
+                }
+            }
+            sessionSaver.start(
+                settings: { [unowned self] in self.sessionSaveSettings() },
+                surfaces: { Self.restorableSurfaces() })
+        }
+        // A live session absent from the restored layout is recoverable,
+        // not evidence that the user closed it.
+        if !SessionPlaces.isSelfTest,
+           tako.config.sessionPersistence || !WorkspaceStore.shared.persistenceAvailable || !LayoutRecorder.persistenceAvailable {
             DispatchQueue.main.async {
-                Ending.askAboutLeftovers(
-                    records: SessionPlaces.records, registry: SessionPlaces.registry, home: SessionPlaces.home,
-                    openIDs: Set(Self.restorableSurfaces().map(\.id)))
+                SessionRecoveryPresentation.scanAndPresent(
+                    app: self.tako, openIDs: SessionRecoveryPresentation.protectedSurfaceIDs(Self.restorableSurfaces()))
             }
         }
-        DispatchQueue.global(qos: .utility).async {
-            let activeIDs = Set(Self.restorableSurfaces().map(\.id))
-            let activeNames = Set(activeIDs.map { SessionNamespace.sessionName(for: $0) })
-            SessionSweeper.sweepOrphans(home: SessionPlaces.home, activeNames: activeNames, registry: SessionPlaces.registry)
-        }
+        // Never kill unclaimed runtimes at launch: a missing or incomplete
+        // layout can leave still-running sessions without a restored surface.
         // System settings overrides
         UserDefaults.tako.register(defaults: [
             // Disable this so that repeated key events make it through to our terminal views.
@@ -100,11 +115,6 @@ extension AppDelegate {
 
         // Store our start time
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
-
-        // Check if secure input was enabled when we last quit.
-        if UserDefaults.tako.bool(forKey: "SecureInput") != SecureInput.shared.enabled {
-            toggleSecureInput(self)
-        }
 
         // Initial config loading
         takoConfigDidChange(config: tako.config)
@@ -279,6 +289,26 @@ extension AppDelegate {
                 NSApp.unhide(nil)
                 NSApp.arrangeInFront(nil)
             }
+        }
+    }
+
+    @objc private func workspacePersistenceFailed(_ notification: Notification) {
+        Task { @MainActor in
+            guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                    ?? TerminalController.preferredParent?.window else { return }
+            _ = await TerminalDialogView.choose(in: window, title: "Workspaces Not Saved",
+                lines: TUIText.plain("Tako could not save workspace changes. Check storage before quitting; an earlier copy was kept when possible.", width: 56),
+                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: tako.config.theme)
+        }
+    }
+
+    @objc private func layoutPersistenceFailed(_ notification: Notification) {
+        Task { @MainActor in
+            guard let window = AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
+                    ?? TerminalController.preferredParent?.window else { return }
+            _ = await TerminalDialogView.choose(in: window, title: "Window Layout Not Saved",
+                lines: TUIText.plain("Tako could not save the current window layout. Check storage before quitting; an earlier copy was kept when possible.", width: 56),
+                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: tako.config.theme)
         }
     }
 

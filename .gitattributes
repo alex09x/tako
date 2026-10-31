@@ -4,3 +4,6 @@
 # fixture and every snapshot taken from it.
 tests/fixtures/**/*.recording -text
 tests/fixtures/**/*.bin       -text
+
+# Unified diffs preserve upstream whitespace as data, including context lines.
+patches/zmx/*.patch whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab

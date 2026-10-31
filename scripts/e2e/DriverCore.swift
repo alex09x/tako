@@ -72,7 +72,7 @@ final class Driver {
         return condition()
     }
 
-    func launch(config: String = Driver.defaultConfig) throws {
+    func launch(config: String = Driver.defaultConfig, settleTerminal: Bool = true) throws {
         quit()
         // The session sidebar's visibility is kept in the app's defaults: a run
         // that stopped with it open would start the next one with it open, and
@@ -125,7 +125,7 @@ final class Driver {
         if let window = self.windows().first {
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
-        try run("true")
+        if settleTerminal { try run("true") }
         usleep(300_000)
     }
 

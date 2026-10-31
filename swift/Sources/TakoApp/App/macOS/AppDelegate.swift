@@ -195,12 +195,38 @@ class AppDelegate: NSObject,
         return UNUserNotificationCenter.current()
     }
 
+    private var profileLease: SessionProfileLease?
+
     override init() {
         // TAKO_CONFIG_PATH names the one config file to read, in every build:
         // the README promises it, and a release build that quietly ignored it
         // is what a test driving the shipped app found.
         tako = Tako.App(configPath: ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"])
         super.init()
+        if SessionPlaces.isSelfTest {
+            var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            args["ApplePersistenceIgnoreState"] = true
+            UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
+        }
+        if NSClassFromString("XCTestCase") == nil,
+           !CommandLine.arguments.contains(where: { $0.hasPrefix("--selftest") }) {
+            let bundleID = Bundle.main.bundleIdentifier ?? "com.tako-core.terminal"
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .filter { $0.processIdentifier != getpid() && !$0.isTerminated }
+            if !others.isEmpty {
+                others.first?.activate(options: [.activateIgnoringOtherApps])
+                exit(0)
+            }
+            do {
+                profileLease = try SessionProfileLease(directory: SessionPlaces.support)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Tako cannot open its session data"
+                alert.informativeText = "The session profile could not be locked. No sessions were changed."
+                alert.runModal()
+                exit(1)
+            }
+        }
         // Decided here, as the delegate is created -- before NSApplication
         // finishes launching and before any window is restored: whether
         // windows come from AppKit or, after a crash, from the journal.

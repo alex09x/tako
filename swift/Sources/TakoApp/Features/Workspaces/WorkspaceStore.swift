@@ -21,7 +21,7 @@ extension Notification.Name {
 /// Manages workspace metadata, tab assignments, tab order, and attention aggregation.
 @MainActor
 public final class WorkspaceStore: ObservableObject {
-    public static let shared = WorkspaceStore(isTesting: Tako.CustomTabGroup.suppressWindowOrderingForTesting)
+    public static let shared = WorkspaceStore(isTesting: Tako.CustomTabGroup.suppressWindowOrderingForTesting || SessionPlaces.isSelfTest)
 
     public static let defaultWorkspaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
@@ -98,6 +98,8 @@ public final class WorkspaceStore: ObservableObject {
 
     private let storeURL: URL
     private var isTesting: Bool = false
+    private var canPersist = true
+    var persistenceAvailable: Bool { canPersist }
 
     public static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -112,6 +114,13 @@ public final class WorkspaceStore: ObservableObject {
         self.storeURL = targetURL
         self.activeWorkspaceId = Self.defaultWorkspaceId
 
+        if !isTesting {
+            do { try WorkspaceRecoveryArchive.preservePrevious(targetURL) }
+            catch {
+                canPersist = false
+                NSLog("WorkspaceStore: previous workspaces could not be archived: \(error)")
+            }
+        }
         load()
     }
 
@@ -266,10 +275,14 @@ public final class WorkspaceStore: ObservableObject {
             return
         }
 
+        let fileExists = FileManager.default.fileExists(atPath: storeURL.path)
         guard let data = try? Data(contentsOf: storeURL),
               let stored = try? JSONDecoder().decode(StoredData.self, from: data),
               !stored.workspaces.isEmpty
         else {
+            // An unreadable or invalid existing file is not an empty profile.
+            // Keep it in place and stop writes until it can be recovered.
+            if fileExists { canPersist = false }
             let def = makeDefaultWorkspace()
             workspaces = [def]
             activeWorkspaceId = def.id
@@ -282,7 +295,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func save() {
-        guard !isTesting else { return }
+        guard !isTesting, canPersist else { return }
         do {
             let dir = storeURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -290,10 +303,11 @@ public final class WorkspaceStore: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(stored)
-            try data.write(to: storeURL, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: storeURL.path)
+            try LayoutJournal.atomicWrite(data, to: storeURL)
         } catch {
+            canPersist = false
             NSLog("WorkspaceStore: Failed to save workspaces: \(error)")
+            NotificationCenter.default.post(name: .takoWorkspacePersistenceFailed, object: self)
         }
     }
 

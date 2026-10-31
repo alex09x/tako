@@ -63,11 +63,13 @@ import TakoKit
 
     func applicationWillTerminate(_ notification: Notification) {
         ControlCommands.stop()
-        sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())
-        sessionSaver.stop()
+        if !SessionPlaces.isSelfTest {
+            sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())
+            sessionSaver.stop()
+        }
         // Quitting is confirmed (a cancelled quit never gets here): persistent
         // terminals let go of their sessions instead of ending them.
-        SurfaceSession.detachAll(allLiveSurfaces())
+        if !SessionPlaces.isSelfTest { SurfaceSession.detachAll(allLiveSurfaces()) }
         // Last: the final layout, then `clean`. Only a quit that got this far
         // is clean; a crash anywhere before leaves the journal in charge.
         LayoutRecorder.finish()

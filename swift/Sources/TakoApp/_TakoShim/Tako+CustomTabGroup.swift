@@ -473,7 +473,11 @@ extension Tako {
                 }
             }
 
-            WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+            // AppKit closes windows during a normal quit too. Those tabs are
+            // detached for restoration, not explicitly closed by the user.
+            if !SurfaceSession.appIsDetaching {
+                WorkspaceStore.shared.removeTab(tabIdentifier: window.stableTabIdentifier)
+            }
             group.lastSelectedWindowByWorkspace = group.lastSelectedWindowByWorkspace.filter { _, win in
                 win !== window && group.windows.contains(win)
             }

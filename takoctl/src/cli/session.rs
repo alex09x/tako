@@ -251,6 +251,14 @@ pub fn parse(
                 positional.remove(0)
             };
             match sub.as_str() {
+                "note-agent" => {
+                    if positional.len() != 2 {
+                        return Err("session note-agent needs a provider and session ID".into());
+                    }
+                    args.insert("action".into(), Value::String("note-agent".into()));
+                    args.insert("provider".into(), Value::String(positional.remove(0)));
+                    args.insert("session_id".into(), Value::String(positional.remove(0)));
+                }
                 "export" => {
                     args.insert("action".into(), Value::String("export".into()));
                     if positional.is_empty() {

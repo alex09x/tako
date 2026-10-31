@@ -1,4 +1,11 @@
 #!/bin/bash
+# tako — Terminal emulator
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Builds zmx, the session runtime Tako can keep shells alive with across a
 # relaunch (session-persistence, experimental), from a pinned commit with a
 # pinned Zig, and prints the path of the result.
@@ -11,6 +18,11 @@
 # call does nothing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[ -s patches/zmx/0003-guarded-attach-and-kill.patch ] &&
+    grep -q -- '--create-only' patches/zmx/0003-guarded-attach-and-kill.patch || {
+    echo "[build-zmx] guarded session protocol patch is required" >&2
+    exit 1
+}
 
 ZMX_REPO=https://github.com/neurosnap/zmx
 ZMX_VERSION=0.8.1
@@ -34,7 +46,8 @@ OUT="target/zmx/$KEY"
 # A cache entry is the executable, the record of where it came from and the
 # notices that must ship with it -- all of them or it is not used.
 complete() {
-    [ -x "$1/zmx" ] && [ -s "$1/source.json" ] && [ -s "$1/LICENSE-zmx" ] && [ -s "$1/LICENSE-ghostty" ]
+    [ -x "$1/zmx" ] && [ -s "$1/source.json" ] && [ -s "$1/LICENSE-zmx" ] && [ -s "$1/LICENSE-ghostty" ] &&
+        grep -q '"guardedProtocol":3' "$1/source.json"
 }
 if complete "$OUT"; then
     echo "$OUT/zmx"
@@ -112,7 +125,7 @@ cp "$prefix/bin/zmx" "$stage/zmx"
 chmod 0755 "$stage/zmx"
 cp "$SRC/LICENSE" "$stage/LICENSE-zmx"
 cp "$ghostty_license" "$stage/LICENSE-ghostty"
-printf '{"name":"zmx","version":"%s","commit":"%s","zig":"%s","optimize":"%s","ghostty":"%s"}\n' \
+printf '{"name":"zmx","version":"%s","commit":"%s","zig":"%s","optimize":"%s","ghostty":"%s","guardedProtocol":3}\n' \
     "$ZMX_VERSION" "$ZMX_COMMIT" "$ZIG_VERSION" "$OPTIMIZE" "$ghostty_hash" > "$stage/source.json"
 complete "$stage" || { log "incomplete runtime entry"; exit 1; }
 rm -rf "$OUT"

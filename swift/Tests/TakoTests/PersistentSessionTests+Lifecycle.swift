@@ -108,8 +108,9 @@ struct SessionEndingTests {
         let root = URL(fileURLWithPath: "/tmp/tke-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let runtime = root.appendingPathComponent("zmx")
-        // `kill` does nothing; `list` prints what the case says.
-        try Data("#!/bin/sh\n[ \"$1\" = list ] && printf '\(listing)'\nexit 0\n".utf8).write(to: runtime)
+        // A guarded kill either confirms success or refuses without changing the session.
+        let killReply = listing.isEmpty ? "printf 'killed session abc\\n'; exit 0" : "exit 1"
+        try Data("#!/bin/sh\n[ \"$1\" = kill ] && { \(killReply); }\nexit 1\n".utf8).write(to: runtime)
         chmod(runtime.path, 0o755)
         let ns = try SessionNamespace.open(runtimeID: "0.8.1-cc9574e03dfb2480", home: root)
         let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
@@ -117,8 +118,8 @@ struct SessionEndingTests {
         try records.write(SessionRecord(id: id, runtimeID: "0.8.1-cc9574e03dfb2480", generation: "gen1",
                                         state: .attached, createdAt: Date()))
         let owner = try SessionOwnerLock(namespace: ns, name: "abc")
-        let ending = Ending(runtime: runtime, name: "abc", environment: [:], records: records, id: id,
-                            generation: "gen1", owner: owner)
+        let ending = Ending(runtime: runtime, guardedRuntime: runtime, name: "abc", environment: [:], records: records, id: id,
+                            generation: "gen1", runtimeID: "0.8.1-cc9574e03dfb2480", owner: owner)
         return (ending, records, root, ns)
     }
 
@@ -142,7 +143,7 @@ struct SessionEndingTests {
         defer { try? FileManager.default.removeItem(at: root) }
         guard case .record(var r) = records.read(ending.id) else { return }
         r.generation = "gen2"
-        try records.write(r)
+        try records.write(r, replacingGeneration: "gen1")
         ending.run(reportFailure: false)
         #expect(records.read(ending.id) == .record(r))
     }
@@ -166,7 +167,11 @@ struct SessionEndingTests {
         #expect(r.state == .error(Ending.closedButRunning))
         ending.leaveRunning()
         #expect(Ending.pendingCount == before)
-        #expect(records.read(ending.id) == .none)
+        guard case .record(let retained) = records.read(ending.id) else {
+            Issue.record("running session record was lost")
+            return
+        }
+        #expect(retained.state == .detached)
     }
 
     @Test func quittingWaitsForAnEndingUnderWay() throws {
@@ -175,15 +180,15 @@ struct SessionEndingTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let runtime = root.appendingPathComponent("zmx")
-        try Data("#!/bin/sh\n[ \"$1\" = kill ] && sleep 1\nexit 0\n".utf8).write(to: runtime)
+        try Data("#!/bin/sh\nif [ \"$1\" = kill ]; then sleep 1; printf 'killed session abc\\n'; exit 0; fi\nexit 1\n".utf8).write(to: runtime)
         chmod(runtime.path, 0o755)
         let ns = try SessionNamespace.open(runtimeID: "0.8.1-cc9574e03dfb2480", home: root)
         let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
         let id = UUID()
         try records.write(SessionRecord(id: id, runtimeID: "0.8.1-cc9574e03dfb2480", generation: "g",
                                         state: .attached, createdAt: Date()))
-        let ending = Ending(runtime: runtime, name: "abc", environment: [:], records: records, id: id,
-                            generation: "g", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
+        let ending = Ending(runtime: runtime, guardedRuntime: runtime, name: "abc", environment: [:], records: records, id: id,
+                            generation: "g", runtimeID: "0.8.1-cc9574e03dfb2480", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
         let before = Ending.pendingCount
         ending.start(reportFailure: false)
         Ending.settleBeforeQuit(within: 6)
@@ -197,14 +202,14 @@ struct SessionEndingTests {
         let runtime = root.appendingPathComponent("zmx")
         // If flag file 'f' exists, the script sleeps 1 sec and then succeeds (closing the session)
         // Otherwise, it fails immediately to simulate the first failed attempt.
-        try Data("#!/bin/sh\nif [ \"$1\" = list ]; then\n  if [ -f \"$T/f\" ]; then\n    exit 0\n  else\n    printf \"name=abc\\tpid=1\\n\"\n    exit 0\n  fi\nelif [ \"$1\" = kill ]; then\n  if [ -f \"$T/f\" ]; then\n    sleep 1\n    exit 0\n  else\n    echo \"kill failed\" >&2\n    exit 1\n  fi\nfi\n".utf8).write(to: runtime)
+        try Data("#!/bin/sh\nif [ \"$1\" = kill ]; then\n  if [ -f \"$T/f\" ]; then\n    sleep 1\n    printf 'killed session abc\\n'\n    exit 0\n  else\n    exit 1\n  fi\nfi\nexit 1\n".utf8).write(to: runtime)
         chmod(runtime.path, 0o755)
         
-        let ns = try SessionNamespace.open(runtimeID: "0.8.1", home: root)
+        let ns = try SessionNamespace.open(runtimeID: "0.8.1-cc9574e03dfb2480", home: root)
         let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
         let id = UUID()
-        try records.write(SessionRecord(id: id, runtimeID: "0.8.1", generation: "g", state: .attached, createdAt: Date()))
-        let ending = Ending(runtime: runtime, name: "abc", environment: ["T": root.path], records: records, id: id, generation: "g", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
+        try records.write(SessionRecord(id: id, runtimeID: "0.8.1-cc9574e03dfb2480", generation: "g", state: .attached, createdAt: Date()))
+        let ending = Ending(runtime: runtime, guardedRuntime: runtime, name: "abc", environment: ["T": root.path], records: records, id: id, generation: "g", runtimeID: "0.8.1-cc9574e03dfb2480", owner: try SessionOwnerLock(namespace: ns, name: "abc"))
         
         // 1. Fail first attempt
         let before = Ending.pendingCount

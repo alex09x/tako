@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Darwin
 
@@ -314,6 +324,7 @@ final class JournalCommitter: @unchecked Sendable {
     private(set) var generation: UInt64
     private(set) var lastWritten: Data?
     var state: LayoutJournal.LaunchState
+    var writeLaunch: (LayoutJournal.LaunchRecord, URL) throws -> Void = { try LayoutJournal.writeLaunch($0, in: $1) }
 
     init(directory: URL, generation: UInt64, state: LayoutJournal.LaunchState) {
         self.directory = directory
@@ -336,9 +347,10 @@ final class JournalCommitter: @unchecked Sendable {
             // The new generation's file whole, then the record naming it,
             // then the old file: every crash point names a whole file.
             try LayoutJournal.atomicWrite(data, to: directory.appendingPathComponent(LayoutJournal.journalName(committed)))
-            try LayoutJournal.writeLaunch(.init(state: state, journalGeneration: committed), in: directory)
+            try writeLaunch(.init(state: state, journalGeneration: committed), directory)
         } catch {
-            unlink(directory.appendingPathComponent(LayoutJournal.journalName(committed)).path)
+            // The launch record may already name this generation even when
+            // its directory sync failed. Never remove the possible target.
             NSLog("layout journal write failed: \(error)")
             return false
         }

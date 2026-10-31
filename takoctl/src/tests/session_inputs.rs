@@ -193,10 +193,16 @@ fn test_activity_subcommands_and_options_parsed_and_rendered() {
     assert!(rep_log.contains("[2026-10-05T02:01:00Z] takoctl: split"));
 
     let cleared_val = json!({"id": "p-1", "cleared": true});
-    assert_eq!(render("activity", &cleared_val), "Activity log cleared for pane p-1.\n");
+    assert_eq!(
+        render("activity", &cleared_val),
+        "Activity log cleared for pane p-1.\n"
+    );
 
     let exp_val = json!({"id": "p-1", "exported": "/tmp/act.json"});
-    assert_eq!(render("activity", &exp_val), "Exported activity log for pane p-1 to /tmp/act.json\n");
+    assert_eq!(
+        render("activity", &exp_val),
+        "Exported activity log for pane p-1 to /tmp/act.json\n"
+    );
 }
 
 #[test]
@@ -237,6 +243,24 @@ fn test_broadcast_subcommands_and_options_parsed_and_rendered() {
     });
     let rep_inactive = render("broadcast", &inactive_val);
     assert_eq!(rep_inactive, "Broadcast input is inactive.\n");
+}
+
+#[test]
+fn test_session_note_agent_keeps_explicit_target_and_id() {
+    let opts = parse(&[
+        "session".into(),
+        "note-agent".into(),
+        "codex".into(),
+        "thread-123".into(),
+        "--target".into(),
+        "11111111-1111-4111-8111-111111111111".into(),
+    ])
+    .unwrap();
+    assert_eq!(opts.args["action"], "note-agent");
+    assert_eq!(opts.args["provider"], "codex");
+    assert_eq!(opts.args["session_id"], "thread-123");
+    assert_eq!(opts.args["target"], "11111111-1111-4111-8111-111111111111");
+    assert!(parse(&["session".into(), "note-agent".into(), "codex".into()]).is_err());
 }
 
 #[test]
@@ -285,13 +309,10 @@ fn test_session_subcommands_and_options_parsed_and_rendered() {
         "windows": 2
     });
     let rep_imp = render("session", &imp_val);
+    assert!(rep_imp.contains("Imported session from /tmp/test_session.json (2 windows created)"));
     assert!(
-        rep_imp.contains("Imported session from /tmp/test_session.json (2 windows created)")
-    );
-    assert!(
-        rep_imp.contains(
-            "Untrusted session: control sequences dropped, nothing runs automatically"
-        )
+        rep_imp
+            .contains("Untrusted session: control sequences dropped, nothing runs automatically")
     );
 
     // 3. Info
@@ -315,9 +336,8 @@ fn test_session_subcommands_and_options_parsed_and_rendered() {
     });
     let rep_info = render("session", &info_val);
     assert!(
-        rep_info.contains(
-            "Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):"
-        )
+        rep_info
+            .contains("Session file (format v1, exported by Tako 0.1.7 at 2026-10-05T03:00:00Z):")
     );
     assert!(rep_info.contains("2 windows, 3 panes, 1 resume record"));
 }

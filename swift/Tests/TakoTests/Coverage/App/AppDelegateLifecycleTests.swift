@@ -151,9 +151,12 @@ struct AppDelegateLifecycleTests {
         #expect(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false) == false)
     }
 
-    @Test func shouldTerminateAfterLastWindowClosedDefaultsToFalse() {
+    @Test func shouldTerminateAfterLastWindowClosedDefaultsToTrue() {
+        _ = NSApplication.shared
+        WorkspaceStore.shared.resetForTesting()
+        defer { WorkspaceStore.shared.resetForTesting() }
         let delegate = AppDelegate()
-        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp) == false)
+        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp) == true)
     }
 
     @Test func shouldTerminateQuitsAtOnceUnlessATerminalIsBusy() {
@@ -192,6 +195,8 @@ struct AppDelegateLifecycleTests {
 
     @Test func willTerminateRemovesDeliveredNotificationsWithoutCrashing() {
         let delegate = AppDelegate()
+        let wasDetaching = SurfaceSession.appIsDetaching
+        defer { SurfaceSession.appIsDetaching = wasDetaching }
         // Deliberately not restored -- see the doc comment on
         // `didFinishLaunchingSetsUpTheAppAndDrainsDeferredConfigWork` for why
         // this override must outlive any single test.

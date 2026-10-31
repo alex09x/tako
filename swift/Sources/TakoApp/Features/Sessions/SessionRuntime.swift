@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import CryptoKit
 import Foundation
 
@@ -10,14 +20,16 @@ import Foundation
 /// `<root>/runtime/<id>/zmx`, where `id` is the version and the start of the
 /// hash. A session records only that id; the path is always worked out here,
 /// never taken from the session's own metadata. Updating the app adds a new
-/// id and leaves the old ones, so sessions started by an older Tako keep
-/// the runtime they need. Nothing is removed automatically.
+/// id and leaves the old ones. Guarded operations use the current verified
+/// client with the recorded session's namespace. Nothing is removed automatically.
 struct SessionRuntimeRegistry {
+    private static let installLock = NSLock()
     struct Manifest: Codable, Equatable {
         var name: String
         var version: String
         var commit: String
         var sha256: String
+        var guardedProtocol: Int? = nil
     }
 
     enum Failure: Error, Equatable {
@@ -32,6 +44,7 @@ struct SessionRuntimeRegistry {
         /// An id or manifest that is not a plain version and hash -- never
         /// turned into a path.
         case invalid(String)
+        case unsupportedGuardedProtocol
     }
 
     /// Where runtimes are installed: `<Application Support>/<bundle>`.
@@ -112,6 +125,15 @@ struct SessionRuntimeRegistry {
         return (manifest, executable)
     }
 
+    /// Guarded commands must never be passed to an older CLI, where unknown
+    /// flags can be interpreted as session names or commands.
+    func guardedClient(in bundle: URL) throws -> URL {
+        let bundled = try Self.bundled(in: bundle)
+        guard bundled.manifest.guardedProtocol == 3 else { throw Failure.unsupportedGuardedProtocol }
+        let id = try install(manifest: bundled.manifest, from: bundled.executable)
+        return try executable(for: id)
+    }
+
     /// Installs the bundled runtime if it is not already, and returns its id.
     /// The copy lands under a temporary name and is renamed into place only
     /// after its hash checks out, so a crash never leaves a partial runtime
@@ -120,6 +142,8 @@ struct SessionRuntimeRegistry {
     /// in every part; anything else in its place is replaced as a whole.
     @discardableResult
     func install(manifest: Manifest, from executable: URL) throws -> String {
+        Self.installLock.lock()
+        defer { Self.installLock.unlock() }
         guard Self.isValid(manifest) else { throw Failure.invalid(manifest.version) }
         guard try Self.sha256(of: executable) == manifest.sha256 else { throw Failure.bundledMismatch }
         let id = Self.id(for: manifest)

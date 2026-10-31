@@ -160,6 +160,18 @@
                                     <action selector="newTab:" target="-1" id="KoW-K7-hw5"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Recover Sessions…" id="rec-ov-er1">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="recoverSessions:" target="-1" id="rec-ov-act"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Agent Conversations…" id="agt-cn-v01">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="agentConversations:" target="-1" id="agt-cn-act"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="m54-Is-iLE"/>
                             <menuItem title="Split Right" id="VUR-Ld-nLx">
                                 <modifierMask key="keyEquivalentModifierMask"/>

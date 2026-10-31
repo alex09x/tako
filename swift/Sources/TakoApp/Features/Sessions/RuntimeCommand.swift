@@ -107,4 +107,74 @@ enum RuntimeCommand {
         }
         return sessions
     }
+
+    enum ConditionalKillOutcome: Equatable {
+        /// The daemon verified `tako-gen=<generation>` atomically and shut down.
+        case killed
+        /// The daemon or CLI refused the kill (generation mismatch, missing session,
+        /// or an older daemon that does not support `KillIfLabel`).
+        case refused(status: Int32)
+        /// The helper process could not be run or timed out.
+        case unreachable
+    }
+
+    /// CLI arguments for server-side conditional kill (`Tag.KillIfLabel`).
+    static func killIfGenerationArguments(name: String, generation: String) -> [String] {
+        ["kill", "--if-label", "tako-gen=\(generation)", name]
+    }
+
+    /// CLI arguments for attach-only with generation verification (`Tag.AttachIfLabel`,
+    /// with single-socket fallback to `Tag.LabelGet` on older `0.8.x` daemons).
+    /// Never creates a new daemon or unlinks a socket if the session is absent or unresponsive.
+    static func attachOnlyIfGenerationArguments(name: String, generation: String, attempt: String? = nil) -> [String] {
+        var args = ["attach", "--attach-only", "--if-label", "tako-gen=\(generation)"]
+        if let attempt, !attempt.isEmpty {
+            args.append(contentsOf: ["--labels", "tako-attempt=\(attempt)"])
+        }
+        args.append(name)
+        return args
+    }
+
+    /// CLI arguments for create-only session launch (`zmx attach --create-only`).
+    /// Atomically binds the session socket with initial labels before accepting clients;
+    /// fails closed without attaching, mutating labels, or unlinking the socket if `name` already exists.
+    static func createOnlyWithGenerationArguments(
+        name: String,
+        generation: String,
+        attempt: String? = nil,
+        command: [String] = []
+    ) -> [String] {
+        var labels = "tako-gen=\(generation)"
+        if let attempt, !attempt.isEmpty {
+            labels += " tako-attempt=\(attempt)"
+        }
+        var args = ["attach", "--create-only", "--labels", labels, name]
+        args.append(contentsOf: command)
+        return args
+    }
+
+    /// Ends `name` only if the running daemon atomically confirms `tako-gen=<generation>`.
+    /// Fails closed against older daemons (which ignore `Tag.KillIfLabel` and time out)
+    /// and against empty `name` or `generation`.
+    static func killIfGeneration(
+        _ runtime: URL,
+        name: String,
+        generation: String,
+        environment: [String: String],
+        timeout: TimeInterval = 3
+    ) -> ConditionalKillOutcome {
+        guard !name.isEmpty, !generation.isEmpty else { return .refused(status: -1) }
+        guard let result = run(
+            runtime,
+            killIfGenerationArguments(name: name, generation: generation),
+            environment: environment,
+            timeout: timeout
+        ) else {
+            return .unreachable
+        }
+        if result.status == 0, result.output.contains("killed session \(name)") {
+            return .killed
+        }
+        return .refused(status: result.status)
+    }
 }
