@@ -219,8 +219,10 @@ final class SessionSnapshotSaver {
             if let session = surface.persistence, let window = surface.window, WorkspaceStore.shared.persistenceAvailable {
                 let tabID = window.stableTabIdentifier
                 let privateInput = settings.secureInput || surface.isSecureInput || SecureInput.shared.isSecure(for: surface)
+                let windowTabIDs = Tako.CustomTabGroup.existingGroup(for: window)?.windows
+                    .filter { !Tako.CustomTabGroup.isClosed($0) }.map(\.stableTabIdentifier)
                 session.rememberPlacement(workspaceID: WorkspaceStore.shared.workspace(forTab: tabID)?.id,
-                                          tabIdentifier: tabID, workingDirectory: privateInput ? nil : surface.pwd)
+                    tabIdentifier: tabID, workingDirectory: privateInput ? nil : surface.pwd, windowTabIdentifiers: windowTabIDs)
             }
         }
         guard settings.enabled, !settings.secureInput else {

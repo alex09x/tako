@@ -90,6 +90,9 @@ func runMissingLayoutSafetyScenario(_ d: Driver) throws {
         throw Failure("no session recovery dialog for the unplaced session")
     }
     try d.clickButton(titled: "Restore")
+    if d.wait(for: { d.hasText(containing: "Choose Window") }, timeout: 3) {
+        try d.clickButton(titled: "Use This")
+    }
     guard d.wait(for: { (try? d.focusedPaneId())?.lowercased() == originalPane.lowercased() }, timeout: 15) else {
         throw Failure("recovery did not return the original pane")
     }

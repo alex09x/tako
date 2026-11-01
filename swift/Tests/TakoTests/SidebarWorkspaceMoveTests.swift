@@ -48,6 +48,20 @@ struct SidebarWorkspaceMoveTests {
         #expect(scene.workspaces.workspace(forTab: id)?.id == scene.main.id)
     }
 
+    @Test func movingFromAnotherWindowJoinsTheUnambiguousDestinationGroup() {
+        let scene = WorkspaceSwitchVisualScene()
+        defer { scene.tearDown() }
+        let destination = scene.addTab(scene.surface("destination", .idle), to: scene.main)
+        let surface = scene.surface("moving", .idle)
+        let source = scene.addTab(surface, to: scene.legal, ownWindow: true)
+        let oldPTY = surface.pty
+        #expect(scene.store.moveTab(source.window.stableTabIdentifier, to: scene.main.id,
+                                    around: destination.window, workspaceStore: scene.workspaces))
+        #expect(Tako.CustomTabGroup.group(for: destination.window) === Tako.CustomTabGroup.group(for: source.window))
+        #expect(surface.pty === oldPTY)
+        #expect(scene.workspaces.workspace(forTab: source.window.stableTabIdentifier)?.id == scene.main.id)
+    }
+
     @Test func bringingASeparateWindowIntoTheCurrentTabBarKeepsTheSamePane() {
         let scene = WorkspaceSwitchVisualScene()
         defer { scene.tearDown() }

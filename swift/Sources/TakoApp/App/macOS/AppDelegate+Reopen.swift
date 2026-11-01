@@ -116,7 +116,7 @@ extension AppDelegate {
         case .new_tab:
             _ = TerminalController.newTab(
                 tako,
-                from: TerminalController.preferredParent?.window,
+                from: TerminalController.preferredTabParent?.window,
                 withBaseConfig: config
             )
         case .new_window: _ = TerminalController.newWindow(tako, withBaseConfig: config)

@@ -63,13 +63,40 @@ extension SessionSidebarStore {
               let target = sidebarWindow(tabId: tabID, around: window, workspaceStore: workspaceStore),
               !Tako.CustomTabGroup.isClosed(target) else { return false }
         if workspaceStore.workspace(forTab: tabID)?.id == workspaceID { return true }
+        let anchor = destinationAnchor(for: target, workspaceID: workspaceID, store: workspaceStore)
         workspaceStore.assignTab(tabIdentifier: tabID, to: workspaceID)
+        if let anchor { Tako.CustomTabGroup.join(target, to: anchor, select: false) }
         workspaceStore.setActiveTab(tabIdentifier: tabID, in: workspaceID)
         guard workspaceStore.switchWorkspace(to: workspaceID) else { return false }
         Tako.CustomTabGroup.group(for: target).select(target)
         if !Tako.CustomTabGroup.suppressWindowOrderingForTesting { target.makeKeyAndOrderFront(nil) }
         objectWillChange.send()
         return true
+    }
+
+    private func destinationAnchor(for window: NSWindow, workspaceID: UUID, store: WorkspaceStore) -> NSWindow? {
+        if let controller = window.windowController as? TerminalController,
+           controller.fullscreenStyle?.isFullscreen == true, controller.fullscreenStyle?.supportsTabs == false { return nil }
+        let source = Tako.CustomTabGroup.group(for: window)
+        let groups = Tako.CustomTabGroup.allGroups.filter { group in
+            if let controller = group.selectedWindow?.windowController as? TerminalController,
+               controller.fullscreenStyle?.isFullscreen == true, controller.fullscreenStyle?.supportsTabs == false { return false }
+            return group.windows.contains { candidate in
+                !Tako.CustomTabGroup.isClosed(candidate) &&
+                    (store.workspace(forTab: candidate.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId) == workspaceID
+            }
+        }
+        // The tab already shares a physical window with this workspace.
+        if groups.contains(where: { $0 === source }) { return nil }
+        if let selected = store.workspace(for: workspaceID)?.activeTabIdentifier,
+           (store.workspace(forTab: selected)?.id ?? WorkspaceStore.defaultWorkspaceId) == workspaceID,
+           let window = groups.flatMap(\.windows).first(where: { !Tako.CustomTabGroup.isClosed($0) && $0.stableTabIdentifier == selected }) { return window }
+        // Multiple windows without a remembered selection are ambiguous.
+        guard groups.count == 1 else { return nil }
+        return groups[0].windows.first {
+            !Tako.CustomTabGroup.isClosed($0) &&
+                (store.workspace(forTab: $0.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId) == workspaceID
+        }
     }
 }
 

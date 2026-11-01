@@ -64,6 +64,9 @@ public final class WorkspaceStore: ObservableObject {
     // Window ordering during a workspace change can temporarily make a
     // different window key before the remembered window is presented.
     var workspaceSwitchDepth = 0
+    /// A caller that will open a configured first tab can suppress the
+    /// ordinary empty-workspace placeholder during that synchronous switch.
+    var suppressEmptyWorkspaceCreation = false
     @Published public internal(set) var workspaces: [Workspace] = [] {
         didSet { indexTabs() }
     }

@@ -36,7 +36,7 @@ extension AppDelegate {
     @IBAction func newTab(_ sender: Any?) {
         _ = TerminalController.newTab(
             tako,
-            from: TerminalController.preferredParent?.window
+            from: TerminalController.preferredTabParent?.window
         )
     }
 

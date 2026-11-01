@@ -195,16 +195,17 @@ enum LayoutRecorder {
         var groups: [Tako.CustomTabGroup] = []
         for controller in controllers {
             guard let window = controller.window else { continue }
+            let group = Tako.CustomTabGroup.group(for: window)
             if WorkspaceStore.shared.persistenceAvailable {
                 let tabID = window.stableTabIdentifier
                 let workspaceID = WorkspaceStore.shared.workspace(forTab: tabID)?.id
+                let windowTabIDs = group.windows.filter { !Tako.CustomTabGroup.isClosed($0) }.map(\.stableTabIdentifier)
                 for surface in controller.surfaceTree {
                     let privateInput = SecureInput.shared.global || surface.isSecureInput || SecureInput.shared.isSecure(for: surface)
                     surface.persistence?.rememberPlacement(workspaceID: workspaceID, tabIdentifier: tabID,
-                                                           workingDirectory: privateInput ? nil : surface.pwd)
+                        workingDirectory: privateInput ? nil : surface.pwd, windowTabIdentifiers: windowTabIDs)
                 }
             }
-            let group = Tako.CustomTabGroup.group(for: window)
             if !groups.contains(where: { $0 === group }) { groups.append(group) }
         }
         let encoder = JSONEncoder()
@@ -299,6 +300,7 @@ enum LayoutRecorder {
     /// stable identifier; one AppKit did not bring back is skipped.
     static func regroup(_ journal: LayoutJournal.Journal) {
         let decoder = JSONDecoder()
+        let recordedIDs = Set(journal.windows.flatMap(\.tabs).compactMap { ($0 as? [String: Any])?["tabIdentifier"] as? String })
         var byTab: [String: NSWindow] = [:]
         for controller in TerminalController.all {
             if let window = controller.window { byTab[window.stableTabIdentifier] = window }
@@ -314,8 +316,18 @@ enum LayoutRecorder {
                 windows.append(window)
                 if index == entry.selectedTab { selected = window }
             }
-            guard windows.count > 1 else { continue }
+            guard !windows.isEmpty else { continue }
+            // A partial journal cannot tell us where an unrecorded member of
+            // an existing group belongs. Keep that group intact.
+            guard windows.allSatisfy({ window in
+                guard let group = Tako.CustomTabGroup.existingGroup(for: window) else { return true }
+                return group.windows.filter { !Tako.CustomTabGroup.isClosed($0) }
+                    .allSatisfy { recordedIDs.contains($0.stableTabIdentifier) }
+            }) else { continue }
             let anchor = selected ?? windows[0]
+            // AppKit may have already put this window in another group.
+            // Rebuild each recorded group without closing or unassigning tabs.
+            Tako.CustomTabGroup.isolateForRegroup(anchor)
             // Where the group stood, not where AppKit put this one tab.
             anchor.setFrame(onScreen(entry.frame), display: false)
             for window in windows where window !== anchor {

@@ -468,6 +468,33 @@ let scenarios: [Scenario] = [
     ("persist-sidebar-workspace-move", "sidebar drag and context menu move the same live session", { d in
         try runSidebarWorkspaceMoveScenario(d)
     }),
+    ("persist-partial-group", "a missing tab recovers into its original window", { d in
+        try runPartialLayoutGroupingScenario(d)
+    }),
+    ("persist-empty-workspace-group", "a new workspace reuses the existing window group", { d in
+        try runEmptyWorkspaceGroupingScenario(d)
+    }),
+    ("persist-task-workspace-group", "a worktree workspace opens only its configured tab", { d in
+        try runTaskWorkspaceGroupingScenario(d)
+    }),
+    ("persist-intentional-windows", "explicit separate windows remain separate after relaunch", { d in
+        try runIntentionalWindowsScenario(d)
+    }),
+    ("persist-assign-selected", "moving the selected tab reveals its remaining sibling", { d in
+        try runAssignSelectedTabScenario(d)
+    }),
+    ("persist-inactive-recovery-group", "recovering a hidden workspace tab preserves its group and focus", { d in
+        try runInactiveWorkspaceRecoveryScenario(d)
+    }),
+    ("persist-legacy-window-choice", "unknown old placement asks before joining or opening a window", { d in
+        try runLegacyWindowChoiceScenario(d)
+    }),
+    ("persist-legacy-workspace-choice", "unknown old workspace is chosen explicitly", { d in
+        try runLegacyWorkspaceChoiceScenario(d)
+    }),
+    ("persist-cross-window-workspace-move", "moving a standalone tab joins the destination window", { d in
+        try runCrossWindowWorkspaceMoveScenario(d)
+    }),
     ("persist-agent-conversation", "an observed agent conversation remains available after relaunch", { d in
         try runAgentConversationRecoveryScenario(d)
     }),
@@ -4545,7 +4572,7 @@ struct TakoE2E {
     let wanted = Set(args.dropFirst())
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
-        let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move"]
+        let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move", "persist-partial-group", "persist-empty-workspace-group", "persist-task-workspace-group", "persist-intentional-windows", "persist-assign-selected", "persist-inactive-recovery-group", "persist-cross-window-workspace-move", "persist-legacy-window-choice", "persist-legacy-workspace-choice"]
     let explicitOnly = persistenceOnly.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))

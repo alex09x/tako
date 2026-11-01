@@ -149,15 +149,18 @@ final class SurfaceSession {
         record = next
     }
 
-    func rememberPlacement(workspaceID: UUID?, tabIdentifier: String, workingDirectory: String?) {
+    func rememberPlacement(workspaceID: UUID?, tabIdentifier: String, workingDirectory: String?,
+                           windowTabIdentifiers: [String]? = nil) {
         let workspaceID = workspaceID ?? record.workspaceID
         let workingDirectory = workingDirectory ?? record.workingDirectory
+        let windowTabIdentifiers = windowTabIdentifiers ?? record.windowTabIdentifiers
         guard !ended, record.workspaceID != workspaceID || record.tabIdentifier != tabIdentifier ||
-                record.workingDirectory != workingDirectory else { return }
+                record.workingDirectory != workingDirectory || record.windowTabIdentifiers != windowTabIdentifiers else { return }
         var next = record
         next.workspaceID = workspaceID
         next.tabIdentifier = tabIdentifier
         next.workingDirectory = workingDirectory
+        next.windowTabIdentifiers = windowTabIdentifiers
         guard (try? records.write(next)) != nil else { return }
         record = next
     }

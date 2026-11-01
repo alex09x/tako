@@ -101,22 +101,41 @@ final class WorktreeTaskManager {
 
         switch target {
         case .workspace:
-            let ws = WorkspaceStore.shared.createWorkspace(
+            let workspaceStore = WorkspaceStore.shared
+            let anchor = [fromWindow, NSApplication.shared.keyWindow, TerminalController.preferredTabParent?.window]
+                .compactMap { $0 }.first { window in
+                    guard let controller = window.windowController as? TerminalController,
+                          !Tako.CustomTabGroup.isClosed(window) else { return false }
+                    return !(controller.fullscreenStyle?.isFullscreen == true && controller.fullscreenStyle?.supportsTabs == false)
+                }
+            let previousSuppression = workspaceStore.suppressEmptyWorkspaceCreation
+            workspaceStore.suppressEmptyWorkspaceCreation = true
+            defer { workspaceStore.suppressEmptyWorkspaceCreation = previousSuppression }
+            let ws = workspaceStore.createWorkspace(
                 name: "Task: \(sanitizedName)",
                 rootDirectory: worktreePath,
                 color: "purple",
                 icon: "hammer"
             )
             task.workspaceId = ws.id
-            WorkspaceStore.shared.switchWorkspace(to: ws.id)
-
             if let takoApp {
-                _ = TerminalController.newWindow(takoApp, withBaseConfig: config)
+                let controller: TerminalController
+                if let anchor {
+                    controller = TerminalController.newTab(takoApp, from: anchor, withBaseConfig: config, select: false)
+                        ?? TerminalController.newWindow(takoApp, withBaseConfig: config)
+                } else {
+                    controller = TerminalController.newWindow(takoApp, withBaseConfig: config)
+                }
+                if let window = controller.window {
+                    workspaceStore.assignTab(tabIdentifier: window.stableTabIdentifier, to: ws.id)
+                    _ = Tako.CustomTabGroup.group(for: window)
+                }
             }
+            workspaceStore.switchWorkspace(to: ws.id)
 
         case .tab:
-            let targetWindow = fromWindow ?? NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow ?? TerminalController.all.first?.window
-            if let targetWindow, let takoApp {
+            let targetWindow = fromWindow ?? TerminalController.preferredTabParent?.window
+            if let takoApp {
                 _ = TerminalController.newTab(takoApp, from: targetWindow, withBaseConfig: config)
             }
         }
