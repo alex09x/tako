@@ -188,9 +188,27 @@ func runSidebarLongListScenario(_ d: Driver) throws {
               let rect = frame(item), viewport.contains(CGPoint(x: rect.midX, y: rect.midY)) else { return nil }
         return rect
     }
+    guard d.wait(for: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, timeout: 8) else {
+        throw Failure("scrolling a long sidebar did not reveal the last row and workspace: \(d.staticTexts())")
+    }
+    guard let scrollbar = d.descendants(of: scroll, role: kAXScrollBarRole as String).first,
+          let bar = frame(scrollbar) else { throw Failure("sidebar scrollbar missing from accessibility") }
+    try d.drag(from: CGPoint(x: bar.midX, y: bar.maxY - 8),
+               to: CGPoint(x: bar.midX, y: bar.minY + 8), steps: 24)
+    guard d.wait(for: { visible("ListItem00") != nil }, timeout: 8) else {
+        throw Failure("dragging the scrollbar thumb did not scroll to the start")
+    }
+    CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved,
+            mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    for _ in 0..<6 {
+        let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -8, wheel2: 0, wheel3: 0)
+        wheel?.location = point
+        wheel?.post(tap: .cghidEventTap)
+        usleep(120_000)
+    }
     guard d.wait(for: { visible("ListItem14") != nil && visible("SCROLLDESTINATION") != nil }, timeout: 8),
           let row = visible("ListItem14"), let destination = visible("SCROLLDESTINATION") else {
-        throw Failure("scrolling a long sidebar did not reveal the last row and workspace: \(d.staticTexts())")
+        throw Failure("the last row and destination did not return after scrolling")
     }
     let pidBefore = try d.exec("\(ctl) tree --json")
     let dragStart = CGPoint(x: row.midX, y: row.midY)
