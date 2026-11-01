@@ -16,6 +16,25 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct WorkspaceCloseAndDeleteTests {
+    @Test func closingAnUnmountedBackgroundTabRemovesItFromItsGroup() {
+        let controller = TerminalController(Tako.App())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        controller.window = window
+        window.delegate = controller
+        _ = Tako.CustomTabGroup.group(for: window)
+        defer { Tako.CustomTabGroup.close(window) }
+
+        window.close()
+
+        #expect(Tako.CustomTabGroup.isClosed(window))
+        #expect(Tako.CustomTabGroup.existingGroup(for: window) == nil)
+        // The tab-bar observer may deliver the same close as well.
+        Tako.CustomTabGroup.close(window)
+        #expect(Tako.CustomTabGroup.existingGroup(for: window) == nil)
+    }
+
     @Test func transientlyHiddenLiveWindowDoesNotQuitTheApplication() {
         let store = WorkspaceStore.shared
         store.resetForTesting()
