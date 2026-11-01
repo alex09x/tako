@@ -138,7 +138,7 @@ struct MotionSpecLedgerTests {
                  because: "the strip is drawn, not layered: its chip slide, a drawn shake and tab transitions redraw it each frame for their 0.12-0.6 s and then stop; a failed row shakes on its own SwiftUI clock for 0.448 s",
                  "theStripsDisplayLinkRunsWhileSomethingMovesAndStops", "aFailedRowTakesFramesWhileItShakesAndNoneOnceItRests"),
         // 4a, the sidebar.
-        item(sessions, "4a: активная сессия залита и отмечена Ember-полосой у края", "theActiveSessionIsFilledAndMarkedByAnEmberBarAtTheSidebarsEdge",
+        item(sessions, "4a: активная сессия залита без полосы у края", "theActiveSessionIsFilledWithoutAnEdgeBar",
              "anotherSessionHasNoBar"),
         item(sessions, "4a: ждущая строка задаёт вопрос Claw-цветом", "aWaitingSessionAsksItsQuestionInClaw"),
         item(sessions, "точка непрочитанного Claw 5px держится до фокуса", "anUnreadSessionHasAClawDotOfFivePoints"),

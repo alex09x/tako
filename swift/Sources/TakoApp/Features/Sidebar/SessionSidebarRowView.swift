@@ -269,16 +269,6 @@ struct SessionSidebarRowView: View {
             }
         }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
-        .overlay(alignment: .leading) {
-            // Active row left 2pt Ember bar at sidebar left edge (x = 0, i.e. -8pt from row minX)
-            if isTabActive {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color(nsColor: T.ember))
-                    .frame(width: 2)
-                    .padding(.vertical, 8)
-                    .offset(x: -8)
-            }
-        }
         .contentShape(Rectangle())
         .onPress(perform: onSelect)
         .padding(.horizontal, 8)
