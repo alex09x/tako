@@ -345,7 +345,7 @@ struct SessionSidebarView: View {
                             }
                         }
                     }
-                }
+                }.background(SessionSidebarScrollerInstaller().frame(width: 0, height: 0))
             }
             .focusable()
             // The keys go to the list, but it is no text field: no blue ring
