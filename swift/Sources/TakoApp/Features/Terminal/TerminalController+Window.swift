@@ -170,6 +170,9 @@ extension TerminalController {
 
     override func windowWillClose(_ notification: Notification) {
         super.windowWillClose(notification)
+        if let closingWindow = notification.object as? NSWindow {
+            Tako.CustomTabGroup.close(closingWindow)
+        }
         cancelPendingInitialPresentation()
         self.relabelTabs()
 
