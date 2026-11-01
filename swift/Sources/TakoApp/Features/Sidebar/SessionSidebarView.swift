@@ -17,6 +17,7 @@ struct SessionSidebarView: View {
     @Binding var isPresented: Bool
     let containingWindow: NSWindow?
     let backgroundColor: Color
+    let newSessionShortcut: KeyboardShortcut?
 
     @ObservedObject var store: SessionSidebarStore
     @ObservedObject var workspaceStore: WorkspaceStore
@@ -42,12 +43,14 @@ struct SessionSidebarView: View {
         isPresented: Binding<Bool>,
         containingWindow: NSWindow? = nil,
         backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
+        newSessionShortcut: KeyboardShortcut? = Tako.Config.defaultKeyboardShortcuts["new_tab"],
         store: SessionSidebarStore = .shared,
         workspaceStore: WorkspaceStore = .shared
     ) {
         self._isPresented = isPresented
         self.containingWindow = containingWindow
         self.backgroundColor = backgroundColor
+        self.newSessionShortcut = newSessionShortcut
         self.store = store
         self.workspaceStore = workspaceStore
     }
@@ -116,21 +119,21 @@ struct SessionSidebarView: View {
             headerView(sessionCount: Self.sessionCount(groups, flatItems))
             searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
             tabListView(groups: groups, flatItems: flatItems)
-            Divider().background(Color(nsColor: T.hairline))
             footerView
         }
         .contextMenu {
             Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
             Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: T.body))
-        .overlay(
-            Rectangle()
-                .frame(width: 1)
-                .foregroundColor(Color(nsColor: T.hairline)),
-            alignment: .trailing
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(6)
+        .background(backgroundColor)
+        .overlay {
+            RoundedRectangle(cornerRadius: 3)
+                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
+                .padding(6)
+                .allowsHitTesting(false)
+        }
         .onKeyPress(.escape) {
             isPresented = false
             return .handled
