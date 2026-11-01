@@ -153,11 +153,13 @@ struct SessionClientExitRecoveryTests {
                                      records: records, record: record)
         defer { session.ended = true }
         let workspace = UUID()
-        session.rememberPlacement(workspaceID: workspace, tabIdentifier: "tab-1", workingDirectory: "/tmp")
+        session.rememberPlacement(workspaceID: workspace, tabIdentifier: "tab-1", workingDirectory: "/tmp",
+                                  windowTabIdentifiers: ["tab-1", "tab-2"])
         guard case .record(let saved) = records.read(id) else { Issue.record("record missing"); return }
         #expect(saved.workspaceID == workspace)
         #expect(saved.tabIdentifier == "tab-1")
         #expect(saved.workingDirectory == "/tmp")
+        #expect(saved.windowTabIdentifiers == ["tab-1", "tab-2"])
         #expect(saved.generation == record.generation)
         session.rememberPlacement(workspaceID: nil, tabIdentifier: "tab-1", workingDirectory: nil)
         #expect(records.read(id) == .record(saved))

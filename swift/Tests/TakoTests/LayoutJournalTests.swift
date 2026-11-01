@@ -51,12 +51,23 @@ struct LayoutJournalTests {
     }
 
     @Test func aGoodJournalReadsBack() throws {
-        let data = journal(tabs: [["surfaceTree": ["root": leaf]], ["surfaceTree": ["root": leaf]]])
+        let other: [String: Any] = ["leaf": ["view": ["id": UUID().uuidString]]]
+        let data = journal(tabs: [["surfaceTree": ["root": leaf]], ["surfaceTree": ["root": other]]])
         guard case .success(let j) = LayoutJournal.read(data) else { Issue.record("rejected"); return }
         #expect(j.generation == 3 && j.windows.count == 1 && j.windows[0].tabs.count == 2)
         // And survives its own encoding.
         guard case .success(let again) = LayoutJournal.read(try LayoutJournal.encode(j)) else { Issue.record("re-read"); return }
         #expect(again.windows[0].tabs.count == 2)
+    }
+
+    @Test func duplicateTabOrPaneIdentitiesRejectTheJournal() {
+        let firstID = UUID().uuidString
+        let secondID = UUID().uuidString
+        let first: [String: Any] = ["tabIdentifier": "tab-a", "surfaceTree": ["root": ["view": ["id": firstID]]]]
+        let sameTab: [String: Any] = ["tabIdentifier": "TAB-A", "surfaceTree": ["root": ["view": ["id": secondID]]]]
+        let samePane: [String: Any] = ["tabIdentifier": "tab-b", "surfaceTree": ["root": ["view": ["id": firstID.lowercased()]]]]
+        if case .success = LayoutJournal.read(journal(tabs: [first, sameTab])) { Issue.record("duplicate tab accepted") }
+        if case .success = LayoutJournal.read(journal(tabs: [first, samePane])) { Issue.record("duplicate pane accepted") }
     }
 
     @Test func anythingWrongRejectsTheWholeFile() {
@@ -123,6 +134,22 @@ struct LayoutJournalTests {
         LayoutJournal.Journal(generation: 0, windows: [LayoutJournal.Window(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600), isKey: true, selectedTab: 0,
             tabs: (0..<tabs).map { _ in tab() })])
+    }
+
+    @Test func aDuplicateCaptureNeverReplacesTheLastUsableLayout() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let committer = JournalCommitter(directory: dir, generation: 0, state: .dirty)
+        let good = layout(1)
+        #expect(committer.commit(good))
+        let before = try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(1)))
+        var bad = good
+        bad.windows.append(good.windows[0])
+        #expect(!committer.commit(bad))
+        #expect(committer.generation == 1)
+        #expect(LayoutJournal.readLaunch(in: dir).journalGeneration == 1)
+        #expect(try Data(contentsOf: dir.appendingPathComponent(LayoutJournal.journalName(1))) == before)
     }
 
     @Test func failedLaunchSyncNeverDeletesTheJournalItMayName() throws {

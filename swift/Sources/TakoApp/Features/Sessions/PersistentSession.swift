@@ -130,38 +130,6 @@ final class SessionOwnerLock: @unchecked Sendable {
     }
 }
 
-/// What Tako records about a terminal's session, beside its saved screen.
-struct SessionRecord: Codable, Equatable {
-    enum State: Codable, Equatable {
-        /// Written before the session is created; a crash right after it
-        /// leaves this, and the next launch checks rather than assumes.
-        case creating
-        case attached
-        case detached
-        case error(String)
-    }
-
-    var id: UUID
-    var runtimeID: String
-    /// Set as the session's `tako-gen` label when it is created: the proof,
-    /// on reattach, that the session found is the one Tako made.
-    var generation: String
-    var state: State
-    var createdAt: Date
-    /// When the quiet program running in it last printed, so a relaunched
-    /// Tako says how long it has really been quiet, not since the relaunch.
-    /// Nil while none runs; absent from records an older Tako wrote.
-    var quietSince: Date?
-    /// Last known placement survives loss of the window layout.
-    var workspaceID: UUID? = nil
-    var tabIdentifier: String? = nil
-    var workingDirectory: String? = nil
-
-    static func newGeneration() -> String {
-        UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-    }
-}
-
 /// Session records on disk, one per terminal, written atomically.
 struct SessionRecordStore {
     let directory: URL

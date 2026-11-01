@@ -134,7 +134,7 @@ enum SessionRecoveryPresentation {
         guard answer == 1 else { return }
         for candidate in verified {
             if let saved = candidate.record {
-                restore(saved, app: app, records: records)
+                await restore(saved, app: app, records: records)
                 Tako.CustomTabGroup.hideAllInactiveWindows()
             }
         }
@@ -166,7 +166,7 @@ enum SessionRecoveryPresentation {
                 }
             }
             if let adopted {
-                restore(adopted, app: app, records: records)
+                await restore(adopted, app: app, records: records)
                 Tako.CustomTabGroup.hideAllInactiveWindows()
             } else {
                 _ = await TerminalDialogView.choose(in: currentWindow, title: "Session Not Adopted",
@@ -201,7 +201,7 @@ enum SessionRecoveryPresentation {
         return true
     }
 
-    private static func restore(_ saved: SessionRecord, app: Tako.App, records: SessionRecordStore) {
+    private static func restore(_ saved: SessionRecord, app: Tako.App, records: SessionRecordStore) async {
         guard case .record(let current) = records.read(saved.id),
               current.runtimeID == saved.runtimeID, current.generation == saved.generation
         else { return }
@@ -223,6 +223,29 @@ enum SessionRecoveryPresentation {
             }
             return
         }
+        let store = WorkspaceStore.shared
+        guard let parent = await noticeWindow(),
+              let workspaceID = await SessionRecoveryPlacementChoice.workspace(
+                for: saved, store: store, window: parent, theme: app.config.theme) else { return }
+        let decision = SessionRecoveryWindowPlacement.decide(
+            record: saved, workspaceID: workspaceID, groups: Tako.CustomTabGroup.allGroups, store: store)
+        let windowChoice = await SessionRecoveryPlacementChoice.window(for: decision, record: saved,
+                                                                        parent: parent, theme: app.config.theme)
+        let anchor: NSWindow?
+        switch windowChoice {
+        case .existing(let window):
+            guard !Tako.CustomTabGroup.isClosed(window), Tako.CustomTabGroup.existingGroup(for: window) != nil else { return }
+            anchor = window
+        case .newWindow: anchor = nil
+        case .later: return
+        }
+        // The user may have taken time to choose a destination.
+        guard store.workspace(for: workspaceID) != nil,
+              !TerminalController.all.flatMap({ Array($0.surfaceTree) }).contains(where: { $0.id == saved.id }),
+              case .record(let stillCurrent) = records.read(saved.id),
+              stillCurrent.runtimeID == saved.runtimeID, stillCurrent.generation == saved.generation,
+              stillCurrent.workspaceID == saved.workspaceID, stillCurrent.tabIdentifier == saved.tabIdentifier,
+              stillCurrent.windowTabIdentifiers == saved.windowTabIdentifiers else { return }
         var base = Tako.SurfaceConfiguration()
         base.isRestored = true
         base.hadPersistentSession = true
@@ -247,11 +270,19 @@ enum SessionRecoveryPresentation {
                 WorkspaceStore.shared.removeTab(tabIdentifier: provisional)
             }
         }
-        let workspaceID = saved.workspaceID.flatMap { WorkspaceStore.shared.workspace(for: $0)?.id }
-            ?? WorkspaceStore.shared.activeWorkspaceId
         if WorkspaceStore.shared.workspace(forTab: recovered.stableTabIdentifier)?.id != workspaceID {
             WorkspaceStore.shared.assignTab(tabIdentifier: recovered.stableTabIdentifier, to: workspaceID)
         }
-        controller.showWindow(nil)
+        // An inactive workspace must not briefly steal focus during recovery.
+        if workspaceID == store.activeWorkspaceId { controller.showWindow(nil) }
+        if let anchor {
+            Tako.CustomTabGroup.join(recovered, to: anchor, select: workspaceID == store.activeWorkspaceId)
+        } else {
+            // Register before the next orphan is considered: siblings can
+            // then find this new group even while its workspace is hidden.
+            _ = Tako.CustomTabGroup.group(for: recovered)
+        }
+        Tako.CustomTabGroup.hideAllInactiveWindows()
+        LayoutRecorder.record()
     }
 }

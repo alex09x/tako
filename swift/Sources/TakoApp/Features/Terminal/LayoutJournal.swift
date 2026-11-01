@@ -167,11 +167,6 @@ enum LayoutJournal {
         return dir
     }
 
-    struct JournalError: Error, CustomStringConvertible {
-        let description: String
-        init(_ d: String) { description = d }
-    }
-
     /// Replaces `url` with `data` so that a crash at any point leaves either
     /// the old file or the new one, whole: a temporary file in the same
     /// directory, synced, renamed over, and the directory synced.
@@ -262,6 +257,7 @@ enum LayoutJournal {
         guard rawWindows.count <= maxWindows else { return .failure(JournalError("too many windows")) }
         var windows: [Window] = []
         var tabCount = 0, paneCount = 0
+        var identities = IdentityAccumulator()
         for raw in rawWindows {
             guard let f = raw["frame"] as? [Double], f.count == 4, f.allSatisfy(\.isFinite), f[2] > 0, f[3] > 0,
                   let tabs = raw["tabs"] as? [[String: Any]], !tabs.isEmpty,
@@ -276,6 +272,7 @@ enum LayoutJournal {
                 case .failure(let e): return .failure(e)
                 case .success(let leaves): paneCount += leaves
                 }
+                guard identities.accept(tab) else { return .failure(JournalError("duplicate tab or pane identity")) }
                 guard paneCount <= maxPanes else { return .failure(JournalError("too many panes")) }
             }
             windows.append(Window(frame: CGRect(x: f[0], y: f[1], width: f[2], height: f[3]),
@@ -343,6 +340,8 @@ final class JournalCommitter: @unchecked Sendable {
         let committed = generation + 1
         next.generation = committed
         guard let data = try? LayoutJournal.encode(next) else { return false }
+        // Never replace the last usable layout with one we would reject on launch.
+        guard case .success = LayoutJournal.read(data) else { return false }
         do {
             // The new generation's file whole, then the record naming it,
             // then the old file: every crash point names a whole file.

@@ -14,11 +14,16 @@ import TakoKit
 @MainActor extension AppDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         let store = WorkspaceStore.shared
+        // Workspace changes can momentarily order out every window while
+        // another live tab is being selected or created.
+        if store.workspaceSwitchDepth > 0 || store.suppressEmptyWorkspaceCreation { return false }
         let windows = Tako.CustomTabGroup.allGroups.flatMap(\.windows)
+            + TerminalController.all.compactMap(\.window)
         if let workspace = Self.workspaceToResume(store: store, windows: windows) {
             store.switchWorkspace(to: workspace)
             return false
         }
+        if windows.contains(where: { !Tako.CustomTabGroup.isClosed($0) }) { return false }
         return derivedConfig.shouldQuitAfterLastWindowClosed
     }
 

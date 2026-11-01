@@ -16,6 +16,23 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct WorkspaceCloseAndDeleteTests {
+    @Test func transientlyHiddenLiveWindowDoesNotQuitTheApplication() {
+        let store = WorkspaceStore.shared
+        store.resetForTesting()
+        let delegate = AppDelegate()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { Tako.CustomTabGroup.close(window); window.close(); store.resetForTesting() }
+        _ = Tako.CustomTabGroup.group(for: window)
+        store.assignTab(tabIdentifier: window.stableTabIdentifier, to: store.activeWorkspaceId)
+        window.orderOut(nil)
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        store.suppressEmptyWorkspaceCreation = true
+        defer { store.suppressEmptyWorkspaceCreation = false }
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+    }
+
     @Test func closingLastVisibleWindowFindsAnotherWorkspacesLiveWindow() {
         let store = WorkspaceStore(storeURL: nil, isTesting: true)
         let existing = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),

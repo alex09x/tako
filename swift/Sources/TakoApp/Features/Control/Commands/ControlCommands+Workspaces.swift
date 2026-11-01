@@ -140,7 +140,23 @@ extension ControlCommands {
                 }
                 tabId = matchedPane.stableTabID
             }
-            WorkspaceStore.shared.assignTab(tabIdentifier: tabId, to: targetWorkspace.id)
+            let store = WorkspaceStore.shared
+            let oldWorkspace = store.workspace(forTab: tabId)?.id ?? WorkspaceStore.defaultWorkspaceId
+            let wasActiveWorkspace = oldWorkspace == store.activeWorkspaceId
+            let window = all.first(where: { $0.stableTabID == tabId })?.controller?.window
+            store.assignTab(tabIdentifier: tabId, to: targetWorkspace.id)
+            if wasActiveWorkspace, targetWorkspace.id != store.activeWorkspaceId,
+               let window, let group = Tako.CustomTabGroup.existingGroup(for: window), group.selectedWindow === window {
+                if Tako.CustomTabGroup.allGroups.allSatisfy({ $0.visibleWindows.isEmpty }) {
+                    _ = store.switchWorkspace(to: targetWorkspace.id)
+                } else {
+                    group.syncWithActiveWorkspace()
+                }
+            } else if !wasActiveWorkspace, targetWorkspace.id == store.activeWorkspaceId,
+                      let window, let group = Tako.CustomTabGroup.existingGroup(for: window),
+                      group.selectedWindow.map({ !group.visibleWindows.contains($0) }) ?? true {
+                group.syncWithActiveWorkspace()
+            }
             return [
                 "tab": .string(tabId),
                 "workspace": .string(targetWorkspace.name),
