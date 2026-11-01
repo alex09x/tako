@@ -13,9 +13,8 @@ import SwiftUI
 import Testing
 @testable import Tako
 
-/// A session row's states that stand still (4a): the active session's fill
-/// and its Ember bar at the sidebar's edge, a waiting session's question in
-/// Claw, the unread dot.
+/// A session row's states that stand still (4a): the active session's fill,
+/// a waiting session's question in Claw, and the unread dot.
 @Suite(.serialized) @MainActor
 struct MotionSidebarLookTests {
     private static let size = CGSize(width: 280, height: 52)
@@ -43,14 +42,9 @@ struct MotionSidebarLookTests {
             .filter { $0.w > 0.5 }.map(\.p)
     }
 
-    @Test func theActiveSessionIsFilledAndMarkedByAnEmberBarAtTheSidebarsEdge() throws {
+    @Test func theActiveSessionIsFilledWithoutAnEdgeBar() {
         let frame = snapshot(item(selected: true))
-        let bar = edgeBar(frame, width: 4)
-        let xs = bar.map(\.x), ys = bar.map(\.y)
-        let minX = try #require(xs.min()), maxX = try #require(xs.max())
-        #expect(minX < 0.6 && maxX < 2.1, "the bar spans x \(minX)...\(maxX), not the sidebar's first 2 pt")
-        let height = (ys.max() ?? 0) - (ys.min() ?? 0)
-        #expect(height > 10, "the bar is \(height) pt tall")
+        #expect(edgeBar(frame, width: 4).isEmpty, "the active row must not draw an orange edge bar")
         let fill = frame.sample(CGPoint(x: 250, y: Self.size.height / 2))
         let active = NSColor.spec(0x241C16)
         #expect(abs(fill.r - active.redComponent) < 0.03 && abs(fill.g - active.greenComponent) < 0.03,

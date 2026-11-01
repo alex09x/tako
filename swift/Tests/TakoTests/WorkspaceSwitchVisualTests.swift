@@ -72,22 +72,52 @@ struct WorkspaceSwitchVisualTests {
         #expect(changed < 0.002, "\(Int(changed * 100_000)) of 100000 pixels differ after Default -> Legal -> Frontend -> Default")
     }
 
-    @Test func theSelectionBarMovesToTheWorkspaceSwitchedTo() {
+    @Test func switchingWorkspacesKeepsTheEdgeFreeOfSelectionBars() {
         let scene = WorkspaceSwitchVisualScene()
         defer { scene.tearDown() }
         scene.populate()
-        var bars: [String: ClosedRange<Int>] = [:]
+        var frames: [NSBitmapImageRep] = []
         for workspace in [scene.main, scene.legal, scene.frontend] {
             scene.switchTo(workspace)
             let frame = scene.snapshot()
             scene.export(frame, "selection-\(workspace.name)")
             let runs = SidebarPixels.accentRuns(frame, column: 2)
-            #expect(runs.count == 1, "one selection bar in \(workspace.name), found \(runs)")
-            bars[workspace.name] = runs.first
+            #expect(runs.isEmpty, "unexpected edge bar in \(workspace.name): \(runs)")
+            frames.append(frame)
         }
-        guard let d = bars["Default"], let l = bars["Legal"], let f = bars["Frontend"] else { return }
-        #expect(d.upperBound < l.lowerBound && l.upperBound < f.lowerBound,
-                "the bar follows the switch down the list: \(d) \(l) \(f)")
+        #expect(SidebarPixels.differingFraction(frames[0], frames[1]) > 0.0001)
+        #expect(SidebarPixels.differingFraction(frames[1], frames[2]) > 0.0001)
+    }
+
+    @Test func aLongSidebarStillRendersItsVisibleRows() {
+        let scene = WorkspaceSwitchVisualScene()
+        defer { scene.tearDown() }
+        scene.populate()
+        let before = scene.snapshot()
+        for i in 0..<15 {
+            scene.addTab(scene.surface("Session \(i)", .idle), to: scene.main)
+        }
+        #expect(scene.groups.flatMap(\.items).count >= 15)
+        let frame = scene.snapshot()
+        scene.export(frame, "long-sidebar")
+        #expect(SidebarPixels.differingFraction(before, frame) > 0.001)
+    }
+
+    @Test func resizingShowsOnlyAShortGripOnTheSidebarFrame() throws {
+        let scene = WorkspaceSwitchVisualScene()
+        defer { scene.tearDown() }
+        scene.populate()
+        let grip = SessionSidebarGripView(frame: NSRect(x: 272, y: 0, width: 12, height: 640))
+        scene.sidebar.addSubview(grip)
+        grip.layout()
+        let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [],
+                                                     timestamp: 0, windowNumber: 0, context: nil,
+                                                     eventNumber: 0, clickCount: 0, pressure: 0))
+        grip.mouseEntered(with: event)
+        let frame = scene.snapshot()
+        scene.export(frame, "resize-hover")
+        let edge = try #require(grip.layer?.sublayers?.first)
+        #expect(edge.opacity == 1 && edge.frame.height == 20)
     }
 
     @Test func aWorkingAgentInAWorkspaceYouLeftDoesNotAskForYou() {
@@ -188,7 +218,7 @@ enum SidebarPixels {
         return Double(differing) / Double(a.pixelsWide * a.pixelsHigh)
     }
 
-    /// Runs of the ember accent down one pixel column: the selected row's bar.
+    /// Runs of the ember accent down one pixel column.
     static func accentRuns(_ rep: NSBitmapImageRep, column x: Int) -> [ClosedRange<Int>] {
         var runs: [ClosedRange<Int>] = []
         var start: Int?

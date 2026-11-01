@@ -35,8 +35,8 @@ enum SessionSidebarWidth {
 /// double-click it for the standard width. An AppKit view rather than a
 /// SwiftUI gesture: the terminal beside the sidebar is an AppKit view too and
 /// took every press near the edge, and a SwiftUI hover cursor did not hold
-/// against it. The edge lights up in Ember while it can be dragged, as the
-/// active row's bar does.
+/// against it. A short, muted grip appears on hover; the cursor and the
+/// wider invisible hit area make the edge usable without a full-height bar.
 struct SessionSidebarResizeHandle: NSViewRepresentable {
     @Binding var width: Double
 
@@ -68,9 +68,12 @@ final class SessionSidebarGripView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        edge.backgroundColor = Tako.LivingTokens.ember.cgColor
+        edge.backgroundColor = Tako.LivingTokens.dim.withAlphaComponent(0.55).cgColor
+        edge.cornerRadius = 1
         edge.opacity = 0
         layer?.addSublayer(edge)
+        toolTip = "Drag to resize sidebar; double-click to reset"
+        setAccessibilityElement(true)
         setAccessibilityRole(.splitter)
         setAccessibilityLabel("Resize session sidebar")
     }
@@ -82,11 +85,11 @@ final class SessionSidebarGripView: NSView {
 
     override func layout() {
         super.layout()
-        // On the sidebar's edge, which is `overhang` from this view's right.
-        let x = bounds.width - SessionSidebarResizeHandle.overhang - 1
+        // Align the short grip with the inset outline, not the terminal edge.
+        let x = bounds.width - SessionSidebarResizeHandle.overhang - 7
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        edge.frame = CGRect(x: x, y: 0, width: 2, height: bounds.height)
+        edge.frame = CGRect(x: x, y: max(0, (bounds.height - 20) / 2), width: 2, height: min(20, bounds.height))
         CATransaction.commit()
     }
 

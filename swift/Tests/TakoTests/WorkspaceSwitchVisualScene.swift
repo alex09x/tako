@@ -54,7 +54,9 @@ final class WorkspaceSwitchVisualScene {
 
     /// The sidebar, as a tab's window shows it: it reads that window's tab group.
     func mountSidebar() {
+        let config = tabs[0].controller.tako.config
         sidebar = NSHostingView(rootView: SessionSidebarView(isPresented: .constant(true), containingWindow: anchor,
+                                                              backgroundColor: config.backgroundColor.opacity(config.backgroundOpacity),
                                                               store: store, workspaceStore: workspaces))
         sidebar.frame = NSRect(x: 0, y: 0, width: 280, height: 640)
         sidebarWindow.contentView = sidebar

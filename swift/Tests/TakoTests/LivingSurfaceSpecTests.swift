@@ -308,6 +308,18 @@ struct SessionSidebarGripTests {
         #expect(width == 280)
         #expect(!grip.mouseDownCanMoveWindow, "a drag on the edge must not move the window")
     }
+
+    @Test func resizeAffordanceIsShortAndNeutral() throws {
+        let grip = SessionSidebarGripView(frame: CGRect(x: 0, y: 0, width: 12, height: 400))
+        grip.layout()
+        let edge = try #require(grip.layer?.sublayers?.first)
+        let color = try #require(edge.backgroundColor.flatMap(NSColor.init(cgColor:))?.usingColorSpace(.sRGB))
+        #expect(edge.frame.height == 20)
+        #expect(edge.frame.midY == grip.bounds.midY)
+        #expect(abs(color.redComponent - color.greenComponent) < 0.15)
+        #expect(edge.opacity == 0)
+        #expect(grip.toolTip != nil)
+    }
 }
 
 /// One chosen row in the sidebar: the arrow-key cursor follows the active tab.

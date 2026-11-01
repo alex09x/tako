@@ -468,6 +468,9 @@ let scenarios: [Scenario] = [
     ("persist-sidebar-workspace-move", "sidebar drag and context menu move the same live session", { d in
         try runSidebarWorkspaceMoveScenario(d)
     }),
+    ("persist-sidebar-long-list", "resize, scroll and drag a long sidebar list", { d in
+        try runSidebarLongListScenario(d)
+    }),
     ("persist-partial-group", "a missing tab recovers into its original window", { d in
         try runPartialLayoutGroupingScenario(d)
     }),
@@ -4573,7 +4576,8 @@ struct TakoE2E {
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
         let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move", "persist-partial-group", "persist-empty-workspace-group", "persist-task-workspace-group", "persist-intentional-windows", "persist-assign-selected", "persist-inactive-recovery-group", "persist-cross-window-workspace-move", "persist-legacy-window-choice", "persist-legacy-workspace-choice"]
-    let explicitOnly = persistenceOnly.union(["kitty-icat"])
+    let isolatedPersistence = persistenceOnly.union(["persist-sidebar-long-list"])
+    let explicitOnly = isolatedPersistence.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))
     if !unknown.isEmpty {
@@ -4582,7 +4586,7 @@ struct TakoE2E {
     }
     let previouslyFront = NSWorkspace.shared.frontmostApplication
     var failed = 0
-    if !wanted.isDisjoint(with: persistenceOnly) {
+    if !wanted.isDisjoint(with: isolatedPersistence) {
         let helper = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Helpers/zmx").path
         guard FileManager.default.isExecutableFile(atPath: helper),
               ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] != nil else {

@@ -136,7 +136,8 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
         if item.isChild {
             menu(content)
         } else {
-            menu(content.draggable(SidebarTabTransfer.encode(item.tabId)))
+            menu(content.draggable(SidebarTabTransfer.encode(item.tabId))
+                .help("Drag this session to a workspace"))
         }
     }
 
