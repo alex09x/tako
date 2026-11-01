@@ -55,13 +55,10 @@ extension TerminalSettingsDialog {
             return true
         }
 
-        // Tab switching shortcuts: Cmd+1 for Keybindings, Cmd+2 for Terminal Settings
-        if flags == .command && event.charactersIgnoringModifiers == "1" {
-            switchTab(to: .keybindings)
-            return true
-        }
-        if flags == .command && event.charactersIgnoringModifiers == "2" {
-            switchTab(to: .terminalSettings)
+        // Cmd+1 ... Cmd+5 switch sections without reaching the terminal.
+        if flags == .command, let key = event.charactersIgnoringModifiers,
+           let number = Int(key), let tab = SettingsTab(rawValue: number - 1) {
+            switchTab(to: tab)
             return true
         }
 
@@ -130,6 +127,12 @@ extension TerminalSettingsDialog {
                 switchTab(to: .keybindings)
             case "2":
                 switchTab(to: .terminalSettings)
+            case "3":
+                switchTab(to: .themes)
+            case "4":
+                switchTab(to: .fonts)
+            case "5":
+                switchTab(to: .fontSize)
             case "/":
                 if let field = searchField {
                     window?.makeFirstResponder(field)
@@ -156,11 +159,11 @@ extension TerminalSettingsDialog {
             }
         case 125: moveSelection(1)             // Down
         case 123:                              // Left
-            if activeTab == .terminalSettings {
+            if activeTab != .keybindings {
                 toggleOrCycleSelectedSetting(reverse: true)
             }
         case 124:                              // Right
-            if activeTab == .terminalSettings {
+            if activeTab != .keybindings {
                 toggleOrCycleSelectedSetting(reverse: false)
             }
         case 116: moveSelection(-visibleRows) // Page Up
@@ -188,13 +191,19 @@ extension TerminalSettingsDialog {
             }
             switch chars {
             case " ":
-                if activeTab == .terminalSettings {
+                if activeTab != .keybindings {
                     toggleOrCycleSelectedSetting()
                 }
             case "1":
                 switchTab(to: .keybindings)
             case "2":
                 switchTab(to: .terminalSettings)
+            case "3":
+                switchTab(to: .themes)
+            case "4":
+                switchTab(to: .fonts)
+            case "5":
+                switchTab(to: .fontSize)
             case "r":
                 if activeTab == .keybindings {
                     startRecording()

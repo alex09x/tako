@@ -22,22 +22,12 @@ extension TerminalSettingsDialog {
             return
         }
 
-        // Check Row 1 clicks for tab switching: [1] Keybindings, [2] Terminal Settings
+        // Check Row 1 clicks for tab switching.
         let tabY = cell(0, 1).y
         if pt.y >= tabY && pt.y < tabY + cellHeight {
-            let tab1Title = " [1] Keybindings "
-            let tab1Col = 3
-            let tab2Col = tab1Col + tab1Title.count + 2
-            let tab2Title = " [2] Terminal Settings "
             let relCol = Int((pt.x - cell(0, 0).x) / cellWidth)
-            if relCol >= tab1Col && relCol < tab1Col + tab1Title.count {
-                switchTab(to: .keybindings)
-                isTabBarFocused = true
-                window?.makeFirstResponder(self)
-                needsDisplay = true
-                return
-            } else if relCol >= tab2Col && relCol < tab2Col + tab2Title.count {
-                switchTab(to: .terminalSettings)
+            if let entry = tabLayout.first(where: { relCol >= $0.column && relCol < $0.column + $0.label.count }) {
+                switchTab(to: entry.tab)
                 isTabBarFocused = true
                 window?.makeFirstResponder(self)
                 needsDisplay = true

@@ -1,0 +1,22 @@
+# Tako Ocean — a deep blue terminal palette.
+background = #0e1820
+foreground = #dce9ea
+cursor-color = #e8ad79
+selection-background = #29434c
+selection-foreground = #f4faf9
+palette = 0=#0e1820
+palette = 1=#d77876
+palette = 2=#8fc29e
+palette = 3=#d4bc7a
+palette = 4=#83b3d0
+palette = 5=#b69fc9
+palette = 6=#7cc5c0
+palette = 7=#cadcdd
+palette = 8=#617d83
+palette = 9=#ec9290
+palette = 10=#a9d9b5
+palette = 11=#ead49a
+palette = 12=#9fcce5
+palette = 13=#ceb6df
+palette = 14=#99dfd6
+palette = 15=#f4faf9

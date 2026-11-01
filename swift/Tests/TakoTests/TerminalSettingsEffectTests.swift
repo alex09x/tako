@@ -254,6 +254,14 @@ struct TerminalSettingsEffectTests {
             let defaultValue = setting.type.defaultStringValue
             #expect(configFile.effectiveSettingValue(for: setting) == defaultValue)
 
+            // The SwiftPM test host does not carry the app's bundled theme files.
+            // The app-bundle e2e separately exercises a real installed preset.
+            if case .options(let choices, _) = setting.type,
+               !choices.contains(where: { $0 != defaultValue }) {
+                #expect(setting.id == "theme")
+                continue
+            }
+
             // Select a valid non-default value to test write + persistence
             let customValue: String
             if case .color = setting.type {

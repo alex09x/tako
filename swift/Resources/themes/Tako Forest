@@ -1,0 +1,22 @@
+# Tako Forest — a subdued green-tinted dark terminal palette.
+background = #111a16
+foreground = #e0e9db
+cursor-color = #eab080
+selection-background = #34483a
+selection-foreground = #f5faf0
+palette = 0=#111a16
+palette = 1=#d67d77
+palette = 2=#9bc58a
+palette = 3=#d2bd7e
+palette = 4=#8da9c1
+palette = 5=#b9a1bd
+palette = 6=#83bdb0
+palette = 7=#d1dfcd
+palette = 8=#728476
+palette = 9=#ed9790
+palette = 10=#b4dda2
+palette = 11=#ead79d
+palette = 12=#a9c2d8
+palette = 13=#d2b8d3
+palette = 14=#9fd7c8
+palette = 15=#f5faf0
