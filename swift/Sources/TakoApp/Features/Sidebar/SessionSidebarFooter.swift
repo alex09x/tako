@@ -39,23 +39,16 @@ extension SessionSidebarView {
     // MARK: - Footer (§5.8)
 
     var footerView: some View {
-        HStack(spacing: 8) {
-            Button(action: {
-                if let win = targetWindow, let surface = store.surfaces(in: win).first {
-                    NotificationCenter.default.post(name: Tako.Notification.takoNewTab, object: surface)
-                }
-            }) {
-                Text("+ New session").font(Font(T.monoFont(size: 10.5, weight: .regular))).foregroundColor(Color(nsColor: T.dim))
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            Button(action: jumpToNextWaiting) {
-                (Text("⌥⏎").font(.custom("Menlo-Regular", fixedSize: 10.5)) + Text(" next waiting").font(Font(T.monoFont(size: 10.5, weight: .regular))))
-                    .foregroundColor(Color(nsColor: T.dim))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        Text(newSessionHint)
+            .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+            .foregroundColor(Color(nsColor: T.dim))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+    }
+
+    var newSessionHint: String {
+        guard let newSessionShortcut else { return "New session" }
+        return "[\(KeybindRegistry.format(shortcut: newSessionShortcut))]  New session"
     }
 }

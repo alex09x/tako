@@ -113,7 +113,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         SessionSidebarView(
                             isPresented: $viewModel.sessionSidebarIsShowing,
                             containingWindow: viewModel.containingWindow,
-                            backgroundColor: tako.config.backgroundColor)
+                            backgroundColor: tako.config.backgroundColor.opacity(tako.config.backgroundOpacity),
+                            newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab"))
                             .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
                             .overlay(alignment: .trailing) {
                                 SessionSidebarResizeHandle(width: $sessionSidebarWidth)
