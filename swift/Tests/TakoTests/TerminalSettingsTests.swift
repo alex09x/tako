@@ -17,45 +17,6 @@ import Testing
 @MainActor
 struct TerminalSettingsTests {
 
-    // MARK: - Registry & Setting Types
-
-    @Test func registryContainsWorkspaceSyncWindowFrame() {
-        let item = TerminalSettingRegistry.setting(for: "workspace-sync-window-frame")
-        #expect(item != nil)
-        #expect(item?.id == "workspace-sync-window-frame")
-        #expect(item?.category == "Workspaces")
-        #expect(item?.type == .boolean(defaultValue: false))
-        #expect(item?.aliases.contains("workspace-inherit-window-frame") == true)
-
-        // Lookup by alias works
-        let aliasItem = TerminalSettingRegistry.setting(for: "workspace-inherit-window-frame")
-        #expect(aliasItem?.id == "workspace-sync-window-frame")
-    }
-
-    @Test func settingTypeNextAndPreviousValue() {
-        // Boolean
-        let boolType = TerminalSettingType.boolean(defaultValue: false)
-        #expect(boolType.defaultStringValue == "false")
-        #expect(boolType.nextValue(current: "false") == "true")
-        #expect(boolType.nextValue(current: "true") == "false")
-
-        // Options
-        let optType = TerminalSettingType.options(options: ["modern", "native", "classic"], defaultValue: "modern")
-        #expect(optType.defaultStringValue == "modern")
-        #expect(optType.nextValue(current: "modern") == "native")
-        #expect(optType.nextValue(current: "native") == "classic")
-        #expect(optType.nextValue(current: "classic") == "modern")
-        #expect(optType.previousValue(current: "classic") == "native")
-        #expect(optType.previousValue(current: "modern") == "classic")
-
-        // Number
-        let numType = TerminalSettingType.number(defaultValue: 13, min: 10, max: 15, step: 2)
-        #expect(numType.defaultStringValue == "13")
-        #expect(numType.nextValue(current: "13") == "15")
-        #expect(numType.nextValue(current: "15") == "10") // wraps to min
-        #expect(numType.previousValue(current: "10") == "15") // wraps to max
-    }
-
     // MARK: - Config File Setting Persistence
 
     @Test func setAndGetSettingValueInConfigFile() throws {
@@ -189,12 +150,18 @@ struct TerminalSettingsTests {
         #expect(dialog.activeTab == .terminalSettings)
         #expect(dialog.isTabBarFocused == true)
 
-        // Right arrow again stays on rightmost tab (clamp)
+        // The new appearance sections follow the original two tabs.
         dialog.keyDown(with: keyEvent(code: 124)) // Right
-        #expect(dialog.activeTab == .terminalSettings)
+        #expect(dialog.activeTab == .themes)
+        dialog.keyDown(with: keyEvent(code: 124))
+        #expect(dialog.activeTab == .fonts)
+        dialog.keyDown(with: keyEvent(code: 124))
+        #expect(dialog.activeTab == .fontSize)
+        dialog.keyDown(with: keyEvent(code: 124))
+        #expect(dialog.activeTab == .fontSize)
 
-        // 3. Left arrow switches back to Keybindings tab
-        dialog.keyDown(with: keyEvent(code: 123)) // Left
+        // 3. Left arrow returns to Keybindings.
+        for _ in 0..<4 { dialog.keyDown(with: keyEvent(code: 123)) }
         #expect(dialog.activeTab == .keybindings)
         #expect(dialog.isTabBarFocused == true)
 

@@ -1323,6 +1323,9 @@ let scenarios: [Scenario] = [
         try d.run("echo 'containment_ok' > \(recoveredFile)")
         try d.expect("containment_recovered.txt", "containment_ok\n", "terminal keyboard input recovery after modal dismissal")
     }),
+    ("settings-appearance", "choose a bundled theme, installed font and font size", { d in
+        try runAppearanceSettingsScenario(d)
+    }),
     ("settings-terminal-effects", "settings dialog switches to Terminal Settings tab, exercises search responder handoff, toggles runtime setting, updates config, and resets cleanly", { d in
         d.key(Key.comma, .maskCommand)
         var closeBtn: AXUIElement?
@@ -1379,9 +1382,9 @@ let scenarios: [Scenario] = [
                   let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
                   let searchVal: String = d.attribute(searchField, kAXValueAttribute),
                   let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
-            return searchVal.isEmpty && val.contains("Terminal Settings: 24 items") && val.contains("Sync Window Frame")
+            return searchVal.isEmpty && val.contains("Terminal Settings: 25 items") && val.contains("Sync Window Frame")
         }, timeout: 5) else {
-            throw Failure("Escape in search field did not clear search text and recover full 24 settings list")
+            throw Failure("Escape in search field did not clear search text and recover the full settings list")
         }
 
         // 3. Type "sync" to filter to workspace sync setting

@@ -45,38 +45,20 @@ extension TerminalSettingsDialog {
             }
         }
 
-        // Tabs (Row 1): [1] Keybindings  [2] Terminal Settings
-        let tab1Title = " [1] Keybindings "
-        let tab2Title = " [2] Terminal Settings "
-        let tab1Col = 3
-        let tab2Col = tab1Col + tab1Title.count + 2
-
-        let tab1Selected = activeTab == .keybindings
-        let tab2Selected = activeTab == .terminalSettings
-
-        let tab1Origin = cell(tab1Col, 1)
-        if tab1Selected {
-            let tab1Rect = NSRect(x: tab1Origin.x, y: tab1Origin.y, width: CGFloat(tab1Title.count) * cellWidth, height: cellHeight)
-            TakoTUI.selection.setFill()
-            tab1Rect.fill()
-            if isTabBarFocused {
-                drawText("▌", col: tab1Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+        // Tabs share one layout with mouse hit-testing.
+        for entry in tabLayout {
+            let selected = activeTab == entry.tab
+            if selected {
+                let origin = cell(entry.column, 1)
+                TakoTUI.selection.setFill()
+                NSRect(x: origin.x, y: origin.y, width: CGFloat(entry.label.count) * cellWidth, height: cellHeight).fill()
+                if isTabBarFocused {
+                    drawText("▌", col: entry.column - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
+                }
             }
+            drawText(entry.label, col: entry.column, row: 1, font: selected ? style.boldFont : style.font,
+                     color: selected ? (isTabBarFocused ? TakoTUI.bright : TakoTUI.text) : TakoTUI.dim)
         }
-        drawText(tab1Title, col: tab1Col, row: 1, font: tab1Selected ? style.boldFont : style.font,
-                 color: tab1Selected ? (isTabBarFocused ? TakoTUI.bright : TakoTUI.text) : TakoTUI.dim)
-
-        let tab2Origin = cell(tab2Col, 1)
-        if tab2Selected {
-            let tab2Rect = NSRect(x: tab2Origin.x, y: tab2Origin.y, width: CGFloat(tab2Title.count) * cellWidth, height: cellHeight)
-            TakoTUI.selection.setFill()
-            tab2Rect.fill()
-            if isTabBarFocused {
-                drawText("▌", col: tab2Col - 1, row: 1, font: style.boldFont, color: TakoTUI.ember)
-            }
-        }
-        drawText(tab2Title, col: tab2Col, row: 1, font: tab2Selected ? style.boldFont : style.font,
-                 color: tab2Selected ? (isTabBarFocused ? TakoTUI.bright : TakoTUI.text) : TakoTUI.dim)
 
         // Header columns (Row 4)
         let headerY = 4
@@ -84,8 +66,9 @@ extension TerminalSettingsDialog {
             drawText("ACTION", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
             drawText("SHORTCUT", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         } else {
-            drawText("SETTING", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText("VALUE", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            let heading = activeTab == .themes ? "THEME / COLOR" : (activeTab == .fonts ? "MONOSPACE FONTS" : "SETTING")
+            drawText(heading, col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText(activeTab == .fonts ? "SAMPLE" : "VALUE", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         }
 
         // List Rows (Row 5 to 5 + visibleRows)
@@ -164,7 +147,35 @@ extension TerminalSettingsDialog {
                 // Setting Title
                 let titleColor = isSelected ? (isTabBarFocused ? TakoTUI.text : TakoTUI.bright) : TakoTUI.text
                 let titleText = String(item.title.prefix(40))
-                drawText(titleText, col: 4, row: r, font: isSelected ? style.boldFont : style.font, color: titleColor)
+                let choiceFont = item.category == TerminalAppearanceCatalog.fontCategory
+                    ? NSFontManager.shared.font(withFamily: item.title, traits: [], weight: 5, size: style.font.pointSize)
+                    : nil
+                drawText(titleText, col: 4, row: r, font: choiceFont ?? (isSelected ? style.boldFont : style.font), color: titleColor)
+
+                if item.category == TerminalAppearanceCatalog.themeCategory {
+                    let preview = themePreviews[item.title] ?? TerminalTheme.takoDefault.applyingTheme(named: item.title)
+                    themePreviews[item.title] = preview
+                    let colors = [preview.background, preview.foreground, preview.cursorColor]
+                    for (index, color) in colors.enumerated() {
+                        NSColor(cgColor: color)?.setFill()
+                        let point = cell(46 + index * 2, r)
+                        NSRect(x: point.x, y: point.y + 3, width: cellWidth, height: cellHeight - 6).fill()
+                    }
+                    let saved = configFile.getSettingValue(for: item) ?? "TakoCore"
+                    if saved.caseInsensitiveCompare(item.title) == .orderedSame
+                        || (saved.caseInsensitiveCompare("tako") == .orderedSame && item.title == "TakoCore") {
+                        drawText("✓", col: 60, row: r, font: style.boldFont, color: TakoTUI.claw)
+                    }
+                    continue
+                }
+                if item.category == TerminalAppearanceCatalog.fontCategory {
+                    drawText("Aa 0123", col: 46, row: r, font: choiceFont ?? style.font, color: TakoTUI.soft)
+                    let saved = configFile.getSettingValue(for: item) ?? TerminalAppearanceCatalog.defaultFont
+                    if saved.caseInsensitiveCompare(item.title) == .orderedSame {
+                        drawText("✓", col: 60, row: r, font: style.boldFont, color: TakoTUI.claw)
+                    }
+                    continue
+                }
 
                 // Current Value
                 let displayVal = configFile.effectiveSettingValue(for: item)
@@ -177,6 +188,17 @@ extension TerminalSettingsDialog {
                 let valColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
                 drawText(displayVal, col: 46, row: r, font: style.boldFont, color: valColor)
             }
+        }
+
+        if activeTab == .fontSize, let item = filteredSettingItems.first, item.id == "font-size" {
+            let value = configFile.effectiveSettingValue(for: item)
+            let size = min(72, max(6, Double(value).flatMap { $0.isFinite ? $0 : nil } ?? 13))
+            let fontItem = TerminalAppearanceCatalog.fontItems([])[0]
+            let family = configFile.getSettingValue(for: fontItem)
+            let preview = family.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: CGFloat(size)) }
+                ?? NSFont(descriptor: style.font.fontDescriptor, size: CGFloat(size)) ?? style.font
+            drawText("Aa Bb 012345", col: 4, row: 8, font: preview, color: TakoTUI.text)
+            drawText("← → change size · D reset", col: 4, row: 15, font: style.font, color: TakoTUI.dim)
         }
 
         // Scrollbar track
@@ -209,11 +231,13 @@ extension TerminalSettingsDialog {
             drawText(prompt, col: 3, row: bottomRow, font: style.boldFont, color: TakoTUI.claw)
         } else if let status = statusMessage {
             drawText(status, col: 3, row: bottomRow, font: style.font, color: TakoTUI.claw)
+        } else if activeTab == .themes, let warning = themeWarning {
+            drawText(String(warning.prefix(columns - 6)), col: 3, row: bottomRow, font: style.font, color: TakoTUI.claw)
         } else if activeTab == .keybindings {
-            let hint = "↑↓ navigate · return/R record · D reset · 1/2 tabs · / search · esc close"
+            let hint = "↑↓ move · Return record · D reset · / search · Esc close"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         } else {
-            let hint = "↑↓ navigate · return edit/toggle · D reset · / search · esc close"
+            let hint = "↑↓ move · ←→ change · Return apply · D reset · / search"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
         }
     }

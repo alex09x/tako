@@ -219,7 +219,7 @@ public enum TerminalSettingRegistry {
             id: "theme",
             title: "Color Theme",
             category: "Appearance",
-            type: .options(options: ["tako", "tokyonight", "catppuccin-mocha", "dracula", "nord", "solarized-dark", "solarized-light"], defaultValue: "tako"),
+            type: .options(options: TerminalAppearanceCatalog.themeNames(), defaultValue: "TakoCore"),
             description: "Color scheme and syntax highlighting"
         ),
         TerminalSettingItem(

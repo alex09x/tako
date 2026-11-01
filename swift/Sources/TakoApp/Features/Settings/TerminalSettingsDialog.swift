@@ -41,11 +41,17 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     public enum SettingsTab: Int, CaseIterable, Sendable {
         case keybindings = 0
         case terminalSettings = 1
+        case themes = 2
+        case fonts = 3
+        case fontSize = 4
 
         public var title: String {
             switch self {
             case .keybindings: return "Keybindings"
             case .terminalSettings: return "Terminal Settings"
+            case .themes: return "Themes"
+            case .fonts: return "Fonts"
+            case .fontSize: return "Font Size"
             }
         }
     }
@@ -66,6 +72,9 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     var filteredSettingItems: [TerminalSettingItem] = []
     var selectedSettingIndex: Int = 0
     var scrollSettingOffset: Int = 0
+    var fontFamilies: [String] = []
+    var themePreviews: [String: TerminalTheme] = [:]
+    var themeWarning: String?
 
     var searchField: NSTextField?
     var colorEditField: NSTextField?
@@ -143,6 +152,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         setupSearchField()
         setupButtons()
         updateButtonsForActiveTab()
+        filterItems("")
         updateAccessibilityState()
     }
 
@@ -151,7 +161,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     override var acceptsFirstResponder: Bool { true }
 
-    private var isWithdrawing: Bool = false
+    var isWithdrawing: Bool = false
 
     private func setupSearchField() {
         let field = NSTextField()
@@ -234,9 +244,20 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         if colorEditField != nil { saveEditedColor(); return }
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
+        if item.category == TerminalAppearanceCatalog.themeCategory || item.category == TerminalAppearanceCatalog.fontCategory {
+            applyAppearanceChoice(item)
+            return
+        }
         if case .color = item.type { beginEditingColor(item); return }
         let current = configFile.effectiveSettingValue(for: item)
-        let next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
+        let next: String
+        if activeTab == .fontSize, item.id == "font-size" {
+            let currentSize = Double(current).flatMap { $0.isFinite ? $0 : nil } ?? 13
+            let adjusted = min(72, max(6, currentSize + (reverse ? -1 : 1)))
+            next = adjusted.rounded() == adjusted ? String(Int(adjusted)) : String(adjusted)
+        } else {
+            next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
+        }
         if next == item.type.defaultStringValue {
             if configFile.removeSettingValue(for: item) {
                 statusMessage = "Default: \(item.id) = \(next)"
@@ -275,75 +296,6 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             setAccessibilityValue("setting_reset_error: \(item.id)")
         }
         needsDisplay = true
-    }
-
-    func switchTab(to tab: SettingsTab) {
-        cancelEditingColor()
-        guard activeTab != tab else { return }
-        activeTab = tab
-        pendingConflict = nil
-        isRecording = false
-        statusMessage = nil
-        updateButtonsForActiveTab()
-        filterItems(searchField?.stringValue ?? "")
-        needsDisplay = true
-    }
-
-    func updateAccessibilityState() {
-        if isWithdrawing {
-            setAccessibilityValue("closed")
-            return
-        }
-        if isRecording {
-            setAccessibilityValue("recording")
-            return
-        }
-        if let msg = statusMessage {
-            setAccessibilityValue(msg)
-            return
-        }
-        if activeTab == .terminalSettings {
-            let itemDesc = selectedSettingIndex < filteredSettingItems.count ? filteredSettingItems[selectedSettingIndex].title : (filteredSettingItems.isEmpty ? "No matching settings" : "")
-            setAccessibilityValue("Terminal Settings: \(filteredSettingItems.count) items, \(itemDesc)")
-        } else {
-            let itemDesc = selectedIndex < filteredItems.count ? filteredItems[selectedIndex].title : (filteredItems.isEmpty ? "No matching actions" : "")
-            setAccessibilityValue("Keybindings: \(filteredItems.count) items, \(itemDesc)")
-        }
-    }
-
-    func filterItems(_ query: String) {
-        cancelEditingColor(restoreFocus: false)
-        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
-        if activeTab == .keybindings {
-            if q.isEmpty {
-                filteredItems = allItems
-            } else {
-                filteredItems = allItems.filter { item in
-                    item.title.localizedCaseInsensitiveContains(q)
-                        || item.id.localizedCaseInsensitiveContains(q)
-                        || (configFile.customOverrides[item.id]?.localizedCaseInsensitiveContains(q) ?? false)
-                        || (KeybindRegistry.defaultShortcut(for: item.id).map { KeybindRegistry.format(shortcut: $0) }?.localizedCaseInsensitiveContains(q) ?? false)
-                }
-            }
-            selectedIndex = 0
-            scrollOffset = 0
-        } else {
-            if q.isEmpty {
-                filteredSettingItems = allSettingItems
-            } else {
-                filteredSettingItems = allSettingItems.filter { item in
-                    item.title.localizedCaseInsensitiveContains(q)
-                        || item.id.localizedCaseInsensitiveContains(q)
-                        || item.category.localizedCaseInsensitiveContains(q)
-                        || item.description.localizedCaseInsensitiveContains(q)
-                        || item.aliases.contains { $0.localizedCaseInsensitiveContains(q) }
-                }
-            }
-            selectedSettingIndex = 0
-            scrollSettingOffset = 0
-        }
-        needsDisplay = true
-        updateAccessibilityState()
     }
 
     func withdraw() {

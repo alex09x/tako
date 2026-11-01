@@ -1,0 +1,22 @@
+# Tako Night — a cool, low-contrast dark terminal palette.
+background = #11151e
+foreground = #e3e8f0
+cursor-color = #e9a46d
+selection-background = #303d50
+selection-foreground = #f6f8fb
+palette = 0=#11151e
+palette = 1=#d9787b
+palette = 2=#9ac88b
+palette = 3=#d7bd78
+palette = 4=#8baed3
+palette = 5=#b99bcf
+palette = 6=#82bfc2
+palette = 7=#d5dce8
+palette = 8=#667487
+palette = 9=#f28b89
+palette = 10=#b1dda0
+palette = 11=#f0d596
+palette = 12=#a6c7ec
+palette = 13=#d2b4e6
+palette = 14=#9bd8d9
+palette = 15=#f6f8fb
