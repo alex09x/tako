@@ -139,13 +139,23 @@ The Swift suites need the engine built locally first:
 
 Tako reads its configuration from `~/.config/tako/config`. 
 
-Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to automatically create and open this file in your default editor.
+Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to open the in-terminal settings dialog. **Themes**, **Fonts**, and **Font Size** have their own sections, with color samples, installed monospaced font families, and a size preview. Changes are saved to the active configuration file and apply to open terminals.
+
+Tako ships its own theme presets: **TakoCore**, **Tako Forest**, **Tako Night**, **Tako Ocean**, and **Tako Slate**. Custom theme files can live in `~/.config/tako/themes/`; they use the same `key = value` syntax as the configuration file. Explicit color settings in the configuration override the selected preset.
+
+### Planned: workspace and terminal styles
+
+Workspace- and terminal-specific appearance is planned; current appearance settings apply globally.
+
+The planned style hierarchy is **global defaults → workspace style → terminal pane style**. Each workspace and each terminal pane, including an individual split, will be able to customize its theme, terminal colors, font family, and font size. An override changes only the fields explicitly set at that level; resetting a field restores inheritance.
+
+When a terminal moves to another workspace, inherited fields will follow the destination workspace while explicit terminal overrides remain. Styles will persist across app restarts and session restoration, and applying them will preserve the running terminal processes. Named custom presets and a preview with cancel/reset are also planned.
 
 ### Example `~/.config/tako/config`
 
 ```ini
 # Theme & Appearance
-theme = TokyoNight
+theme = TakoCore
 font-family = JetBrains Mono
 font-size = 13.5
 background-opacity = 0.95
