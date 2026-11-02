@@ -23,6 +23,11 @@ import XCTest
     private(set) var app: XCUIApplication?
     private(set) var primaryPaneID: String?
 
+    func paneThemeConfig(_ id: String) throws -> String {
+        let name = try XCTUnwrap(paneStyle(id)["theme"])
+        return try String(contentsOf: testRoot.appendingPathComponent("themes").appendingPathComponent(name), encoding: .utf8)
+    }
+
     init() throws {
         testRoot = FileManager.default.temporaryDirectory.appendingPathComponent("tako-ui-\(UUID().uuidString)")
         configFile = testRoot.appendingPathComponent("config")
@@ -92,7 +97,9 @@ import XCTest
 
     func identifyPane(_ pane: XCUIElement, title: String, slot: String) throws -> String {
         let file = testRoot.appendingPathComponent("pane-\(slot)")
-        let quoted = "'" + file.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        // Both initial and split shells start in testRoot. Typing only the
+        // filename avoids synthesizing hundreds of sandbox-path keystrokes.
+        let quoted = "'" + file.lastPathComponent.replacingOccurrences(of: "'", with: "'\\''") + "'"
         pane.typeText("printf '\\033]0;\(title)\\007'; printf '%s' \"$TAKO_SURFACE_ID\" > \(quoted)\n")
         guard Self.wait({ (try? String(contentsOf: file, encoding: .utf8).isEmpty) == false }) else {
             throw ObservationError.unavailable("Test terminal did not report its own pane ID")
@@ -103,7 +110,9 @@ import XCTest
     }
 
     func paneStyle(_ id: String) throws -> [String: String] {
-        let data = try Data(contentsOf: support.appendingPathComponent("Appearance.json"))
+        let path = support.appendingPathComponent("Appearance.json")
+        if !FileManager.default.fileExists(atPath: path.path) { return [:] }
+        let data = try Data(contentsOf: path)
         guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ObservationError.unavailable("Malformed style document")
         }

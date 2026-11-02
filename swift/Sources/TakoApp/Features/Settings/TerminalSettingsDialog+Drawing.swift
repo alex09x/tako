@@ -69,9 +69,9 @@ extension TerminalSettingsDialog {
         } else if activeTab == .themeConfig {
             drawText("COMPLETE THEME CONFIGURATION", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         } else {
-            let heading = activeTab == .themes ? "THEME / COLOR" : (activeTab == .fonts ? "MONOSPACE FONTS" : "SETTING")
+            let heading = activeTab == .themes ? (presetEditor == nil ? "THEME PRESETS" : "THEME COLORS") : (activeTab == .fonts ? "MONOSPACE FONTS" : "SETTING")
             drawText(heading, col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
-            drawText(activeTab == .fonts ? "SAMPLE" : "VALUE", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+            drawText(activeTab == .themes && presetEditor == nil ? "PALETTE" : activeTab == .fonts ? "SAMPLE" : "VALUE", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         }
 
         // List Rows (Row 5 to 5 + visibleRows)
@@ -155,7 +155,7 @@ extension TerminalSettingsDialog {
 
                 if item.category == TerminalAppearanceCatalog.themeCategory {
                     let preview = item.title == inheritanceTitle && scopedAppearance != nil
-                        ? scopedAppearance!.previewInheriting("theme")
+                        ? scopedAppearance!.inheritedTheme
                         : themePreviews[item.title] ?? TerminalTheme.takoDefault.applyingTheme(named: item.title, searchPaths: configFile.appearanceThemePaths)
                     if item.title != inheritanceTitle { themePreviews[item.title] = preview }
                     let colors = [preview.background, preview.foreground, preview.cursorColor]
@@ -237,6 +237,10 @@ extension TerminalSettingsDialog {
         } else if activeTab == .keybindings {
             let hint = "↑↓ move · Return record · D reset · / search · Esc close"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)
+        } else if activeTab == .themes && presetEditor == nil {
+            drawText("Click or ↑↓ applies now · ⌘E edit theme · ⌘N new", col: 3, row: bottomRow, font: style.font, color: style.muted)
+        } else if presetEditor != nil {
+            drawText("Live preview · ⌘S save theme · Esc cancel", col: 3, row: bottomRow, font: style.font, color: style.muted)
         } else {
             let hint = "↑↓ move · ←→ change · Return apply · D reset · / search"
             drawText(hint, col: 3, row: bottomRow, font: style.font, color: style.muted)

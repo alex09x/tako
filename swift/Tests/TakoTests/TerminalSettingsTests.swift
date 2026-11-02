@@ -108,7 +108,9 @@ struct TerminalSettingsTests {
         })
 
         dialog.filterItems("")
-        #expect(dialog.filteredSettingItems.count == dialog.allSettingItems.count)
+        #expect(dialog.filteredSettingItems.count == dialog.allSettingItems.filter {
+            !ThemePresetConfig.isAppearanceKey($0.id) && $0.id != "theme"
+        }.count)
     }
 
     // MARK: - Keyboard Navigation (Tab Bar <-> List)
@@ -154,11 +156,11 @@ struct TerminalSettingsTests {
         dialog.keyDown(with: keyEvent(code: 124)) // Right
         #expect(dialog.activeTab == .themes)
         dialog.keyDown(with: keyEvent(code: 124))
-        #expect(dialog.activeTab == .fonts)
+        #expect(dialog.activeTab == .themes)
         dialog.keyDown(with: keyEvent(code: 124))
-        #expect(dialog.activeTab == .fontSize)
+        #expect(dialog.activeTab == .themes)
         dialog.keyDown(with: keyEvent(code: 124))
-        #expect(dialog.activeTab == .fontSize)
+        #expect(dialog.activeTab == .themes)
 
         // 3. Left arrow returns to Keybindings.
         for _ in 0..<4 { dialog.keyDown(with: keyEvent(code: 123)) }

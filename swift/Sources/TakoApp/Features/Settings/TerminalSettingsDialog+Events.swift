@@ -151,6 +151,19 @@ extension TerminalSettingsDialog {
     }
 
     private func handleListKeyDown(_ event: NSEvent) {
+        let isChoiceList = activeTab == .fonts || (activeTab == .themes && presetEditor == nil)
+        let printable = CharacterSet.letters.union(.decimalDigits).union(.punctuationCharacters)
+            .union(.symbols).union(.whitespaces).union(.nonBaseCharacters)
+        if isChoiceList, event.modifierFlags.intersection([.command, .control]).isEmpty,
+           let text = event.characters, !text.isEmpty, text != "/",
+           text.unicodeScalars.allSatisfy({ printable.contains($0) && !CharacterSet.controlCharacters.contains($0) }),
+           let field = searchField {
+            window?.makeFirstResponder(field)
+            field.stringValue += text
+            (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: field.stringValue.utf16.count, length: 0))
+            controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+            return
+        }
         switch event.keyCode {
         case 126: // Up arrow: move selection or focus tab bar if at top
             let currentIndex = activeTab == .keybindings ? selectedIndex : selectedSettingIndex
@@ -194,7 +207,7 @@ extension TerminalSettingsDialog {
             }
             switch chars {
             case " ":
-                if activeTab != .keybindings {
+                if activeTab != .keybindings && !isChoiceList {
                     toggleOrCycleSelectedSetting()
                 }
             case "1":
@@ -210,13 +223,13 @@ extension TerminalSettingsDialog {
             case "r":
                 if activeTab == .keybindings {
                     startRecording()
-                } else {
+                } else if !isChoiceList {
                     toggleOrCycleSelectedSetting()
                 }
             case "d":
                 if activeTab == .keybindings {
                     resetSelected()
-                } else {
+                } else if !isChoiceList {
                     resetSelectedSetting()
                 }
             case "/":
@@ -227,6 +240,7 @@ extension TerminalSettingsDialog {
                 if let field = searchField, let first = chars.first, (first.isLetter || first.isNumber) {
                     window?.makeFirstResponder(field)
                     field.stringValue += chars
+                    (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: field.stringValue.utf16.count, length: 0))
                     controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
                 }
             }
@@ -262,6 +276,7 @@ extension TerminalSettingsDialog {
                 scrollSettingOffset = selectedSettingIndex - visibleRows + 1
             }
         }
+        applySelectedAppearanceImmediately()
         updateAccessibilityState()
         needsDisplay = true
     }
@@ -278,6 +293,7 @@ extension TerminalSettingsDialog {
             selectedSettingIndex = min(max(target, 0), filteredSettingItems.count - 1)
             scrollSettingOffset = min(selectedSettingIndex, max(filteredSettingItems.count - visibleRows, 0))
         }
+        applySelectedAppearanceImmediately()
         updateAccessibilityState()
         needsDisplay = true
     }

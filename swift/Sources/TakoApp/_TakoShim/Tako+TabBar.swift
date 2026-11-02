@@ -228,6 +228,33 @@ extension Tako {
 
         func refresh() {
             needsDisplay = true
+            updateStatusLayersFromCurrentState()
+        }
+
+        func updateStatusLayersFromCurrentState() {
+            if tabs.isEmpty && showsStrip {
+                layoutTabs()
+            }
+            guard !tabs.isEmpty else { return }
+            for tab in tabs {
+                let key = ObjectIdentifier(tab.window)
+                guard let statusLayer = statusLayers[key] else { continue }
+                let state = pillSurfaceState(for: tab.window)
+                let baseRect = pillRect(for: tab)
+                let ringOrigin = statusLayer.drawsSurface ? nil : statusLayer.geometry.ringOrigin
+                let animState = LivingAnimationState.shared
+                let palette = Tako.tabStatusPalette(window: tab.window)
+                statusLayer.apply(
+                    state: state,
+                    in: statusLayer.drawsSurface ? baseRect : tab.frame,
+                    hideRing: statusLayer.ringContainer.isHidden,
+                    reduceMotion: animState.reduceMotion,
+                    paused: animState.isTimelinePaused,
+                    allowFrameAnimation: isTabDragging,
+                    pulses: liveActivity(for: tab.window)?.pulses ?? 0,
+                    palette: palette
+                )
+            }
         }
 
         // MARK: Layout

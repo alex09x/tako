@@ -50,6 +50,13 @@ import AppKit
         }
     }
 
+    var inheritedTheme: TerminalTheme {
+        switch scope {
+        case .workspace: return globalTheme()
+        case .pane: return store.effectiveTheme(global: globalTheme(), workspaceID: workspaceID(), paneID: nil)
+        }
+    }
+
     @discardableResult func setValue(_ value: String?, for key: String) -> Bool {
         guard isAvailable() else { writeError = "This workspace or pane has been closed."; return false }
         do {

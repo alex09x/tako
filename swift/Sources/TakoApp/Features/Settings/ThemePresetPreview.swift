@@ -62,9 +62,11 @@ import SwiftUI
             surface.backgroundColor = nil
             surface.derivedConfig.backgroundColor = Color(nsColor: NSColor(cgColor: theme.background) ?? .black)
             (surface.window?.windowController as? TerminalController)?.syncAppearance()
+            refreshTabs(for: surface.window)
             count += 1
         }
         applied = count > 0
+        Tako.TabBarController.refreshAll()
         return count
     }
 
@@ -81,6 +83,24 @@ import SwiftUI
                 surface.updateTheme(config.theme)
             }
             (surface.window?.windowController as? TerminalController)?.syncAppearance()
+            refreshTabs(for: surface.window)
+        }
+        Tako.TabBarController.refreshAll()
+    }
+
+    private func refreshTabs(for window: NSWindow?) {
+        guard let window else { return }
+        if let bar = Tako.TabBarController.bar(for: window) {
+            bar.layoutTabs()
+            bar.refresh()
+        }
+        if let contentView = window.contentView {
+            for sub in contentView.subviews {
+                if let bar = sub as? Tako.TabBarView {
+                    bar.layoutTabs()
+                    bar.refresh()
+                }
+            }
         }
     }
 

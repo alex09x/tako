@@ -91,6 +91,9 @@ extension TerminalSettingsDialog: NSTextViewDelegate {
 
     func updatePresetControlVisibility() {
         presetActionButtons.forEach { $0.isHidden = activeTab != .themes }
+        if activeTab == .themes && presetEditor == nil { searchField?.placeholderString = "Search themes…" }
+        else if activeTab == .fonts { searchField?.placeholderString = "Search fonts…" }
+        else { searchField?.placeholderString = "Search settings or shortcuts…" }
         let raw = presetEditor != nil && activeTab == .themeConfig
         presetConfigScroll?.isHidden = !raw
         if raw { presetConfigText?.string = presetEditor?.config ?? "" }
@@ -104,6 +107,7 @@ extension TerminalSettingsDialog: NSTextViewDelegate {
         buttons[2].title = "Cancel (Esc)"
         for (button, id) in zip(buttons, ["ThemePresetPreviewButton", "ThemePresetSaveButton", "ThemePresetCancelButton"]) {
             button.setAccessibilityIdentifier(id)
+            button.setAccessibilityLabel(button.title)
         }
         needsLayout = true
     }
@@ -137,6 +141,7 @@ extension TerminalSettingsDialog: NSTextViewDelegate {
         guard let text = presetConfigText, (notification.object as? NSTextView) === text else { return }
         presetEditor?.config = text.string
         statusMessage = nil
+        previewEditedTheme()
         needsDisplay = true
     }
 

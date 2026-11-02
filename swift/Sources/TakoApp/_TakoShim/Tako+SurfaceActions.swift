@@ -64,6 +64,17 @@ extension Tako.SurfaceView {
     func applyTheme(_ newTheme: TerminalTheme) {
         theme = newTheme
         setFrameSize(frame.size)
+        if let window {
+            let host = Tako.CustomTabGroup.existingGroup(for: window)?.selectedWindow ?? window
+            Tako.TabBarController.bar(for: host)?.refresh()
+            if let contentView = host.contentView {
+                for sub in contentView.subviews {
+                    if let bar = sub as? Tako.TabBarView {
+                        bar.refresh()
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Reset

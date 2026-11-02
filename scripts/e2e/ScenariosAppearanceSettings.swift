@@ -41,11 +41,8 @@ func runAppearanceSettingsScenario(_ d: Driver) throws {
     d.key(Key.down)
     guard d.wait(for: { value().contains("Tako Night") }, timeout: 5) else { throw Failure("Tako Night not found: \(value())") }
     let configPath = d.path("config")
-    let beforeChoice = try String(contentsOfFile: configPath, encoding: .utf8)
-    guard !beforeChoice.contains("theme = ") else { throw Failure("highlighting a preset changed the config") }
-    d.key(Key.returnKey)
     guard d.wait(for: { (try? String(contentsOfFile: configPath, encoding: .utf8).contains("theme = Tako Night")) == true }, timeout: 5) else {
-        throw Failure("the chosen theme was not saved")
+        throw Failure("keyboard selection did not immediately apply the theme")
     }
     var after: NSColor?
     guard d.wait(for: {
@@ -56,33 +53,32 @@ func runAppearanceSettingsScenario(_ d: Driver) throws {
     }, timeout: 10) else { throw Failure("the terminal did not apply the chosen theme") }
 
     let beforeFont = try screenshot("font-before.png")
-    d.key(21, .maskCommand) // Cmd+4: Fonts
-    guard d.wait(for: { value().contains("Fonts:") }, timeout: 5) else {
-        throw Failure("font section did not show installed families: \(value())")
+    d.key(14, .maskCommand) // Edit this theme, not separate global font settings.
+    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
+          let editor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("theme editor did not open") }
+    func editorValue() -> String { (d.attribute(editor, kAXValueAttribute) as String?) ?? "" }
+    d.key(21, .maskCommand)
+    d.key(Key.slash); try d.type("Monaco"); d.key(Key.returnKey)
+    guard d.wait(for: { editorValue().contains("font-family = Monaco") }, timeout: 5) else {
+        throw Failure("font was not edited inside the theme")
     }
-    let initialFontDescription = value()
-    d.key(Key.down)
-    let familyDescription = value()
-    guard familyDescription != initialFontDescription else { throw Failure("no installed font family to choose") }
-    d.key(Key.returnKey)
-    guard d.wait(for: { (try? String(contentsOfFile: configPath, encoding: .utf8).contains("font-family = ")) == true }, timeout: 5) else {
-        throw Failure("selected font was not saved")
-    }
-    guard d.wait(for: { guard let image = try? screenshot("font-after.png") else { return false }; return image != beforeFont }, timeout: 10) else {
-        throw Failure("the terminal did not redraw with the chosen font")
-    }
-
-    let beforeSize = try screenshot("size-before.png")
-    d.key(23, .maskCommand) // Cmd+5: Font Size
-    guard d.wait(for: { value().contains("Font Size:") && value().contains("Font size") }, timeout: 5) else {
-        throw Failure("font size section missing: \(value())")
-    }
+    d.key(Key.slash); d.key(Key.a, .maskCommand); d.key(51); d.key(Key.down)
+    d.key(23, .maskCommand)
     d.key(Key.right)
-    guard d.wait(for: { (try? String(contentsOfFile: configPath, encoding: .utf8).contains("font-size = 14")) == true }, timeout: 5) else {
-        throw Failure("font size did not increase")
+    guard d.wait(for: { editorValue().contains("setting_custom_success: font-size") }, timeout: 5) else {
+        throw Failure("theme font size did not increase")
     }
-    guard d.wait(for: { guard let image = try? screenshot("size-after.png") else { return false }; return image != beforeSize }, timeout: 10) else {
-        throw Failure("the terminal did not redraw at the new font size")
+    guard let save = d.element(withIdentifier: "ThemePresetSaveButton") else { throw Failure("missing theme Save") }
+    d.press(save)
+    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5) else { throw Failure("theme did not save") }
+    let saved = try String(contentsOf: d.work.appendingPathComponent("themes/Tako Night Copy"), encoding: .utf8)
+    let selected = try String(contentsOfFile: configPath, encoding: .utf8)
+    guard saved.contains("font-family = Monaco"), saved.contains("font-size = 14"),
+          selected.contains("theme = Tako Night Copy"), !selected.contains("font-family =") else {
+        throw Failure("font and size did not belong to the saved theme")
     }
     d.key(Key.escape)
+    guard d.wait(for: { guard let image = try? screenshot("font-after.png") else { return false }; return image != beforeFont }, timeout: 10) else {
+        throw Failure("the saved theme did not redraw terminal typography")
+    }
 }

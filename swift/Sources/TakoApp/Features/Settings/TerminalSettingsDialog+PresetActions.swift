@@ -23,8 +23,9 @@ extension TerminalSettingsDialog {
             let selectedName = selected?.category == TerminalAppearanceCatalog.themeCategory && selected?.title != inheritanceTitle
                 ? selected?.title : nil
             let name = selectedName ?? TerminalSettingRegistry.setting(for: "theme").flatMap { storedSettingValue(for: $0) } ?? "TakoCore"
-            let source = createNew ? nil : try store.load(named: name.lowercased() == "tako" ? "TakoCore" : name)
-            var copyName = createNew ? "New Theme" : "\(source?.name ?? name) Copy"
+            let inherited = scopedAppearance != nil && selected?.title == inheritanceTitle
+            let source = createNew || inherited ? nil : try store.load(named: name.lowercased() == "tako" ? "TakoCore" : name)
+            var copyName = createNew ? "New Theme" : inherited ? "Custom Theme" : "\(source?.name ?? name) Copy"
             let names = Set(TerminalAppearanceCatalog.themeNames(paths: configFile.appearanceThemePaths).map { $0.lowercased() })
             let initialName = copyName
             var suffix = 2
@@ -38,6 +39,7 @@ extension TerminalSettingsDialog {
             dialog.previousResponder = self
             isHidden = true
             content.addSubview(dialog, positioned: .above, relativeTo: nil)
+            dialog.previewEditedTheme()
             window.makeFirstResponder(dialog.presetNameField ?? dialog)
             dialog.presetNameField?.currentEditor()?.selectAll(nil)
             dialog.needsLayout = true
@@ -63,7 +65,7 @@ extension TerminalSettingsDialog {
                 needsDisplay = true
                 return
             }
-            statusMessage = "Preview · Save applies · Cancel restores"
+            statusMessage = "Live preview · Save theme · Cancel restores"
             setAccessibilityValue("theme_preview_success: \(count) panes")
         } catch {
             statusMessage = error.localizedDescription

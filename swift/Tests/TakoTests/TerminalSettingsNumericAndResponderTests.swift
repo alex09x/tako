@@ -139,7 +139,8 @@ struct TerminalSettingsNumericAndResponderTests {
         // Recovery: clear search query
         searchField.stringValue = ""
         dialog.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
-        #expect(dialog.filteredSettingItems.count == TerminalSettingRegistry.allSettings.count)
+        let generalCount = TerminalSettingRegistry.allSettings.filter { !ThemePresetConfig.isAppearanceKey($0.id) && $0.id != "theme" }.count
+        #expect(dialog.filteredSettingItems.count == generalCount)
 
         // 4. cancelOperation with active field editor textView clears query and recovers items
         let fieldEditor = NSTextView()
@@ -151,6 +152,6 @@ struct TerminalSettingsNumericAndResponderTests {
         #expect(handled == true)
         #expect(fieldEditor.string == "")
         #expect(searchField.stringValue == "")
-        #expect(dialog.filteredSettingItems.count == TerminalSettingRegistry.allSettings.count)
+        #expect(dialog.filteredSettingItems.count == generalCount)
     }
 }

@@ -59,7 +59,10 @@ extension TerminalSettingsDialog {
                     let relCol = Int((pt.x - cell(0, 0).x) / cellWidth)
                     let isValueColumn = relCol >= 44
 
-                    if isValueColumn || event.clickCount == 2 {
+                    let item = filteredSettingItems[targetIdx]
+                    if item.category == TerminalAppearanceCatalog.themeCategory || item.category == TerminalAppearanceCatalog.fontCategory {
+                        applyAppearanceChoice(item)
+                    } else if isValueColumn || event.clickCount == 2 {
                         toggleOrCycleSelectedSetting()
                     } else {
                         updateAccessibilityState()
@@ -79,6 +82,7 @@ extension TerminalSettingsDialog {
 
     override func scrollWheel(with event: NSEvent) {
         cancelEditingColor()
+        needsLayout = true
         let delta = event.scrollingDeltaY
         if activeTab == .keybindings {
             if delta > 0 {

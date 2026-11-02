@@ -12,7 +12,7 @@ import AppKit
 
 extension TerminalSettingsDialog {
     var tabLayout: [(tab: SettingsTab, label: String, column: Int)] {
-        let labels = [" [1] Keys", " [2] General", presetEditor == nil ? " [3] Themes" : " [3] Colors",
+        let labels = [" [1] Keys", presetEditor == nil ? " [2] General" : " [2] Layout", presetEditor == nil ? " [3] Themes" : " [3] Colors",
                       " [4] Fonts", " [5] Font Size", " [6] Config"]
         var column = 3
         return zip(SettingsTab.allCases, labels).filter { availableTabs.contains($0.0) }.map { tab, label in
@@ -26,6 +26,7 @@ extension TerminalSettingsDialog {
         cancelEditingColor()
         guard activeTab != tab else { return }
         activeTab = tab
+        updateAppearanceBackdrop()
         pendingConflict = nil
         isRecording = false
         statusMessage = nil
@@ -36,6 +37,7 @@ extension TerminalSettingsDialog {
         if presetEditor != nil {
             window?.makeFirstResponder(activeTab == .themeConfig ? presetConfigText : self)
         }
+        needsLayout = true
         needsDisplay = true
     }
 
@@ -56,10 +58,12 @@ extension TerminalSettingsDialog {
             statusMessage = scopedAppearance?.writeError ?? "Could not save \(item.id). Your config was not updated."
             setAccessibilityValue("setting_write_error: \(item.id)")
         }
+        needsLayout = true
         needsDisplay = true
     }
 
     func updateAccessibilityState() {
+        if activeTab == .themes && presetEditor == nil { needsLayout = true }
         if isWithdrawing { setAccessibilityValue("closed"); return }
         if isRecording { setAccessibilityValue("recording"); return }
         if let msg = statusMessage { setAccessibilityValue(msg); return }
@@ -71,7 +75,8 @@ extension TerminalSettingsDialog {
             let warning = activeTab == .themes ? themeWarning.map { "; \($0)" } ?? "" : ""
             let detail = (scopedAppearance != nil || presetEditor != nil) && selectedSettingIndex < filteredSettingItems.count
                 ? " = " + effectiveSettingValue(for: filteredSettingItems[selectedSettingIndex]) : ""
-            let section = presetEditor != nil && activeTab == .themes ? "Colors" : activeTab.title
+            let section = presetEditor != nil && activeTab == .themes ? "Colors"
+                : presetEditor != nil && activeTab == .terminalSettings ? "Layout" : activeTab.title
             setAccessibilityValue("\(section): \(filteredSettingItems.count) items, \(item)\(detail)\(warning)")
         }
     }
@@ -105,8 +110,7 @@ extension TerminalSettingsDialog {
                     themeWarning = nil
                 }
                 let presets = TerminalAppearanceCatalog.themeItems(names)
-                items = scopedAppearance == nil ? presets : [inheritanceItem(key: "theme", category: TerminalAppearanceCatalog.themeCategory)]
-                    + presets.filter { $0.category == TerminalAppearanceCatalog.themeCategory || ScopedAppearanceContext.keys.contains($0.id) }
+                items = scopedAppearance == nil ? presets : [inheritanceItem(key: "theme", category: TerminalAppearanceCatalog.themeCategory)] + presets
             case .fonts:
                 if fontFamilies.isEmpty { fontFamilies = TerminalAppearanceCatalog.fontFamilies() }
                 items = presetEditor != nil
@@ -116,15 +120,25 @@ extension TerminalSettingsDialog {
                         + TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
             case .fontSize: items = TerminalAppearanceCatalog.sizeItems
             case .themeConfig: items = []
-            case .terminalSettings, .keybindings: items = allSettingItems
+            case .terminalSettings:
+                items = allSettingItems.filter { item in
+                    let appearance = ThemePresetConfig.isAppearanceKey(item.id)
+                    if presetEditor != nil {
+                        return appearance && !["font-family", "font-size"].contains(item.id)
+                            && !TerminalSettingRegistry.colorSettings.contains(where: { $0.id == item.id })
+                    }
+                    return !appearance && item.id != "theme"
+                }
+            case .keybindings: items = allSettingItems
             }
             filteredSettingItems = q.isEmpty ? items : items.filter { item in
                 item.title.localizedCaseInsensitiveContains(q) || item.id.localizedCaseInsensitiveContains(q)
                     || item.category.localizedCaseInsensitiveContains(q) || item.description.localizedCaseInsensitiveContains(q)
                     || item.aliases.contains { $0.localizedCaseInsensitiveContains(q) }
             }
-            selectedSettingIndex = 0
-            scrollSettingOffset = 0
+            selectedSettingIndex = activeTab == .themes && presetEditor == nil
+                ? filteredSettingItems.firstIndex(where: isActiveAppearanceChoice) ?? 0 : 0
+            scrollSettingOffset = max(0, selectedSettingIndex - visibleRows + 1)
         }
         needsDisplay = true
         updatePresetControlVisibility()

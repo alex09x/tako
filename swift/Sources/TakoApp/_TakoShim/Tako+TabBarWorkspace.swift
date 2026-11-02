@@ -219,6 +219,7 @@ extension Tako.TabBarView {
             statusLayer.geometry = geometry
         }
         let animState = LivingAnimationState.shared
+        let palette = Tako.tabStatusPalette(window: window)
         statusLayer.apply(
             state: state,
             in: rect,
@@ -226,7 +227,8 @@ extension Tako.TabBarView {
             reduceMotion: animState.reduceMotion,
             paused: animState.isTimelinePaused,
             allowFrameAnimation: isTabDragging,
-            pulses: liveActivity(for: window)?.pulses ?? 0
+            pulses: liveActivity(for: window)?.pulses ?? 0,
+            palette: palette
         )
         if let t = animState.fixedTimeOverride {
             statusLayer.applySnapshotPhase(at: t, doneElapsed: t, failedElapsed: t)

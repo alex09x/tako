@@ -38,13 +38,15 @@ struct ScopedAppearanceDialogTests {
                                                globalTheme: { global })
         let dialog = TerminalSettingsDialog(style: .from(nil), configFile: file, appearance: context)
         #expect(dialog.activeTab == .themes)
-        #expect(dialog.tabLayout.map(\.tab) == [.themes, .fonts, .fontSize])
+        #expect(dialog.tabLayout.map(\.tab) == [.themes])
         #expect(!dialog.filteredSettingItems.contains { $0.id.hasPrefix("tab-status-") })
         dialog.switchTab(to: .keybindings)
         #expect(dialog.activeTab == .themes)
 
-        dialog.switchTab(to: .fontSize)
-        let item = try #require(dialog.filteredSettingItems.first)
+        // Field inheritance is retained for existing configuration files;
+        // the picker itself now exposes complete presets only.
+        let item = TerminalAppearanceCatalog.sizeItems[0]
+        dialog.filteredSettingItems = [item]
         #expect(dialog.effectiveSettingValue(for: item) == "18")
         dialog.toggleOrCycleSelectedSetting()
         #expect(store.value(for: "font-size", scope: .workspace(id)) == "19")
@@ -68,7 +70,8 @@ struct ScopedAppearanceDialogTests {
         let context = ScopedAppearanceContext(scope: .pane(pane), title: "Pane", store: store,
             globalTheme: { .takoDefault }, workspaceID: { destination })
         let dialog = TerminalSettingsDialog(style: .from(nil), initialTab: .fontSize, appearance: context)
-        let item = try #require(dialog.filteredSettingItems.first)
+        let item = TerminalAppearanceCatalog.sizeItems[0]
+        dialog.filteredSettingItems = [item]
         #expect(dialog.effectiveSettingValue(for: item) == "17")
         destination = second
         #expect(dialog.effectiveSettingValue(for: item) == "21")
@@ -78,13 +81,13 @@ struct ScopedAppearanceDialogTests {
         dialog.resetSelectedSetting()
         #expect(dialog.effectiveSettingValue(for: item) == "17")
 
-        dialog.switchTab(to: .fonts)
-        let family = try #require(dialog.filteredSettingItems.dropFirst().first)
+        let family = try #require(TerminalAppearanceCatalog.fontItems(TerminalAppearanceCatalog.fontFamilies()).dropFirst().first)
         dialog.applyAppearanceChoice(family)
         #expect(store.value(for: "font-family", scope: .pane(pane)) == family.title)
-        dialog.applyAppearanceChoice(dialog.filteredSettingItems[0])
+        let inherit = dialog.inheritanceItem(key: "font-family", category: TerminalAppearanceCatalog.fontCategory)
+        dialog.applyAppearanceChoice(inherit)
         #expect(store.value(for: "font-family", scope: .pane(pane)) == nil)
-        #expect(dialog.isActiveAppearanceChoice(dialog.filteredSettingItems[0]))
+        #expect(dialog.isActiveAppearanceChoice(inherit))
     }
 
     @Test func liveOverridesPreserveCoreAndContentsAndRecomputeWhenMoved() throws {

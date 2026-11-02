@@ -139,21 +139,21 @@ The Swift suites need the engine built locally first:
 
 Tako reads its configuration from `~/.config/tako/config`. 
 
-Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to open the in-terminal settings dialog. **Themes**, **Fonts**, and **Font Size** have their own sections, with color samples, installed monospaced font families, and a size preview. Changes are saved to the active configuration file and apply to open terminals.
+Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to open the in-terminal settings dialog. **Themes** lists complete presets. A single click or keyboard selection applies the preset immediately to open terminals; no Save or Return is needed. Opening or filtering the list does not change the current theme.
 
-Tako ships its own complete theme presets: **TakoCore**, **Tako Forest**, **Tako Night**, **Tako Ocean**, and **Tako Slate**. Each preset owns its colors, ANSI palette, font family and size. Selecting a complete preset replaces appearance overrides at that level; other pane/workspace overrides and unrelated settings are retained. You can customize individual fields again afterwards.
+Tako ships its own complete theme presets: **TakoCore**, **Tako Forest**, **Tako Night**, **Tako Ocean**, and **Tako Slate**. Each preset owns its colors, ANSI palette, font family and size. Selecting a complete preset replaces appearance overrides at that level; other pane/workspace overrides and unrelated settings are retained. Customize a preset through **Edit theme**, rather than separate global font or color sections.
 
-In **Themes**, choose **New Theme** or **Edit / Copy**. Built-ins open as a copy; your own presets can be edited in place. The editor has **Colors** (including all 16 ANSI colors), **Fonts**, **Font Size**, and **Config** for the complete appearance configuration. **Preview** changes the live rendering without saving, **Cancel** restores it, and **Save** writes and applies the named preset. Invalid names, concurrent file edits and failed writes preserve the prior preset.
+In **Themes**, choose **New Theme** or **Edit / Copy**. Built-ins open as a copy; your own presets can be edited in place. The theme's editor contains **Colors** (terminal, status and all 16 ANSI colors), **Fonts**, **Font Size**, **Layout**, and **Config** for its complete appearance configuration. Valid edits preview immediately without saving. **Cancel** restores the previous display; **Save** keeps the named theme and selects it. Invalid names, concurrent file edits and failed writes preserve the prior preset.
 
 User presets live in the `themes/` directory beside the active config (`~/.config/tako/themes/` by default). They use `key = value` text with a `# tako-preset-version: 1` header. Legacy color-only theme files remain supported; their font inheritance is preserved.
 
 ### Workspace and terminal styles
 
-Right-click a workspace heading in the Sessions sidebar and choose **Workspace Appearance…**. Right-click a terminal or split row and choose **Terminal Appearance…** or **Pane Appearance…** to style that individual pane. These editors have separate Themes, Fonts and Font Size sections; <kbd>Cmd</kbd> + <kbd>,</kbd> continues to edit Tako's global settings.
+Right-click a workspace heading in the Sessions sidebar and choose **Workspace Appearance…**. Right-click a terminal or split row and choose **Terminal Appearance…** or **Pane Appearance…** to choose its preset. These catalogs show themes only; editing a theme keeps all of its visual parameters together. Editing an inherited style creates a custom theme from its current effective appearance. **Inherit** clears the local appearance and follows its parent again. <kbd>Cmd</kbd> + <kbd>,</kbd> continues to choose Tako's global theme.
 
-The style hierarchy is **global defaults → workspace style → terminal pane style**. Each level can override the theme, terminal background/foreground/cursor/selection colors, font family, and font size. Only explicitly set fields override their parent. Choose **Inherit** for a theme or font, or press <kbd>D</kbd> on a field, to restore inheritance. A complete preset supplies its own fonts and palette; choosing it resets previous field overrides at that level.
+The style hierarchy is **global defaults → workspace preset → terminal pane preset**. Choose a complete preset at each level, or **Inherit** to follow the parent for the whole appearance. Colors, fonts, size and layout are edited inside the chosen theme. Choosing a preset clears earlier field overrides at that level; older configuration files with partial overrides remain supported.
 
-Moving a terminal to another workspace recomputes inherited fields while retaining its explicit pane overrides. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
+Moving a terminal keeps its explicit pane preset. A pane set to **Inherit** follows its new workspace. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
 
 A local font size belongs to its pane or workspace and is not copied into a newly created pane. Ordinary transient zoom still follows `window-inherit-font-size` when the source has no scoped size override. Styles for missing/closed scopes are retained for undo and recovery; they are not pruned based on an incomplete window layout.
 

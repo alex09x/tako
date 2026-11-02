@@ -58,10 +58,9 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         let pane = app.groups["Terminal pane"].firstMatch
         let original = try XCTUnwrap(H.samplePixelColor(from: pane))
         let parent = openThemes(app)
-        let editor = createDraft(app)
         let dimmedOriginal = try XCTUnwrap(H.samplePixelColor(from: pane))
-        app.buttons["ThemePresetPreviewButton"].click()
-        H.assertValue(editor, contains: "theme_preview_success")
+        let editor = createDraft(app)
+        // Editing the complete theme previews without a Preview or Save click.
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(dimmedOriginal, color) > 0.04 })
         XCTAssertFalse(FileManager.default.fileExists(atPath: env.testRoot.appendingPathComponent("themes/\(presetName)").path))
         XCTAssertEqual(try Data(contentsOf: env.configFile), originalConfig)
@@ -132,11 +131,9 @@ final class TakoThemePresetUITests: TakoCustomConfigCase {
         XCTAssertEqual(try Data(contentsOf: url), original)
         app.buttons["ThemePresetCancelButton"].click()
         let failure = editSaved(app, dialog: parent)
-        setConfig(config.replacingOccurrences(of: "#123456", with: "#884422"), editor: failure, app: app)
         let pane = app.groups["Terminal pane"].firstMatch
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
-        app.buttons["ThemePresetPreviewButton"].click()
-        H.assertValue(failure, contains: "theme_preview_success")
+        setConfig(config.replacingOccurrences(of: "#123456", with: "#884422"), editor: failure, app: app)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) > 0.04 })
         let themes = url.deletingLastPathComponent()
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: themes.path)
