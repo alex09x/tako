@@ -165,7 +165,7 @@ extension Tako {
         }()
         let state = tabVisualState(for: window)
         let dot = tabStatusDot(for: state)
-        let palette = tabStatusPalette(surface: targetSurface, window: window)
+        let palette = tabStatusPalette(window: window)
         return TabVisualReport(
             title: titleFor(window),
             index: group.visibleWindows.firstIndex { $0 === window } ?? 0,

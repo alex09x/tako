@@ -165,7 +165,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         if editor == nil && [.fonts, .fontSize, .themeConfig].contains(initialTab) { self.activeTab = .themes }
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor
+        updateAppearanceBackdrop()
 
         filteredItems = allItems
         filteredSettingItems = allSettingItems
@@ -238,6 +238,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     func updateButtonsForActiveTab() {
         guard buttons.count >= 3 else { return }
         if presetEditor != nil { updatePresetEditorControls(); return }
+        buttons[0].isHidden = activeTab == .themes
+        buttons[1].title = activeTab == .themes ? (scopedAppearance == nil ? "Default theme" : "Inherit") : "Reset (D)"
         if activeTab == .keybindings {
             buttons[0].title = "Record (R)"
             buttons[0].setAccessibilityIdentifier("SettingsRecordButton")
@@ -248,6 +250,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             buttons[0].title = "Change (Space)"
             buttons[0].setAccessibilityIdentifier("SettingsChangeButton")
         }
+        buttons.forEach { $0.setAccessibilityLabel($0.title) }
         needsLayout = true
         needsDisplay = true
     }

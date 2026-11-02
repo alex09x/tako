@@ -26,6 +26,7 @@ extension TerminalSettingsDialog {
         cancelEditingColor()
         guard activeTab != tab else { return }
         activeTab = tab
+        updateAppearanceBackdrop()
         pendingConflict = nil
         isRecording = false
         statusMessage = nil

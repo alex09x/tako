@@ -87,9 +87,37 @@ import Testing
         let context = ScopedAppearanceContext(scope: .workspace(first), title: "Workspace", store: store, globalTheme: { .takoDefault })
         let dialog = TerminalSettingsDialog(style: .from(nil), appearance: context)
         #expect(dialog.availableTabs == [.themes])
-        dialog.applyAppearanceChoice(try #require(dialog.filteredSettingItems.first))
+        #expect(!dialog.isActiveAppearanceChoice(try #require(dialog.filteredSettingItems.first)))
+        dialog.scrollTo(0) // An explicit keyboard Home selection inherits immediately.
         #expect(store.document.overrides(for: .workspace(first)) == nil)
         #expect(store.value(for: "font-size", scope: .workspace(second)) == "22")
+    }
+
+    @Test func typingPresetNamesNeverRunsLegacyResetOrApplyShortcuts() throws {
+        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("config")
+        let original = "theme = Custom\nfont-size = 19\nforeground = #abcdef\ncommand = /bin/sh\n"
+        try original.write(to: path, atomically: true, encoding: .utf8)
+        let store = ScopedAppearanceStore(fileURL: root.appendingPathComponent("Appearance.json"))
+        let scope = AppearanceScope.workspace(UUID())
+        try store.setValue("21", for: "font-size", scope: scope)
+        let before = store.document
+        let context = ScopedAppearanceContext(scope: scope, title: "Workspace", store: store, globalTheme: { .takoDefault })
+        let contexts: [ScopedAppearanceContext?] = [nil, context]
+        let keys: [(String, UInt16)] = [("d", 2), ("r", 15), (" ", 49)]
+        for appearance in contexts {
+            for (text, code) in keys {
+                let dialog = TerminalSettingsDialog(style: .from(nil), configFile: KeybindConfigFile(configPath: path.path),
+                                                    initialTab: .themes, appearance: appearance)
+                let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                    timestamp: 0, windowNumber: 0, context: nil, characters: text,
+                    charactersIgnoringModifiers: text, isARepeat: false, keyCode: code))
+                dialog.keyDown(with: event)
+                #expect(dialog.searchField?.stringValue == text)
+                #expect(try String(contentsOf: path, encoding: .utf8) == original)
+                #expect(store.document == before)
+            }
+        }
     }
 
     @Test func nestedEditorChangesPreviewImmediatelyAndCancelRestoresWithoutSaving() throws {

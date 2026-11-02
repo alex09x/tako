@@ -21,6 +21,11 @@ extension TerminalSettingsDialog {
         return "Inherit Tako settings"
     }
 
+    func updateAppearanceBackdrop() {
+        let alpha: CGFloat = presetEditor != nil || activeTab == .themes ? 0.12 : 0.65
+        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(alpha).cgColor
+    }
+
     func inheritanceItem(key: String, category: String) -> TerminalSettingItem {
         TerminalSettingItem(id: key, title: inheritanceTitle, category: category,
                             type: .options(options: [], defaultValue: ""),
@@ -66,8 +71,7 @@ extension TerminalSettingsDialog {
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
         guard item.category == TerminalAppearanceCatalog.themeCategory
-                || item.category == TerminalAppearanceCatalog.fontCategory,
-              !isActiveAppearanceChoice(item) else { return }
+                || item.category == TerminalAppearanceCatalog.fontCategory else { return }
         applyAppearanceChoice(item)
     }
 
@@ -78,7 +82,9 @@ extension TerminalSettingsDialog {
 
     func isActiveAppearanceChoice(_ item: TerminalSettingItem) -> Bool {
         let raw = storedSettingValue(for: item)
-        if scopedAppearance != nil && item.title == inheritanceTitle { return raw == nil }
+        if let scopedAppearance, item.title == inheritanceTitle {
+            return item.id == "theme" ? scopedAppearance.store.document.overrides(for: scopedAppearance.scope)?.isEmpty != false : raw == nil
+        }
         let fallback = item.id == "theme" ? "TakoCore" : TerminalAppearanceCatalog.defaultFont
         guard let selected = raw ?? (scopedAppearance == nil ? fallback : nil) else { return false }
         return selected.caseInsensitiveCompare(item.title) == .orderedSame

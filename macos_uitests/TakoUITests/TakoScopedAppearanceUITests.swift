@@ -20,6 +20,11 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let original = try Data(contentsOf: env.configFile)
         let dialog = H.openWorkspaceAppearance(in: app)
         XCTAssertTrue(dialog.label.contains("Workspace: Default"))
+        XCTAssertEqual(app.buttons["SettingsResetButton"].label, "Inherit")
+        dialog.typeText("dr")
+        XCTAssertEqual(dialog.textFields.firstMatch.value as? String, "dr")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: env.support.appendingPathComponent("Appearance.json").path))
+        H.search("", in: dialog)
         for key in ["1", "2", "4", "5"] {
             dialog.typeKey(key, modifierFlags: .command)
             H.assertValue(dialog, contains: "Themes:")
@@ -40,6 +45,15 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let pane = app.groups["Terminal pane"].firstMatch
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
         let dialog = H.openWorkspaceAppearance(in: app)
+        let behindCatalog = try XCTUnwrap(H.samplePixelColor(from: pane))
+        app.buttons["ThemePresetChoice-Tako Forest"].click()
+        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Forest")
+        XCTAssertTrue(H.wait {
+            guard let color = H.samplePixelColor(from: pane) else { return false }
+            return H.colorDifference(behindCatalog, color) > 0.04
+        }, "One click must visibly apply the theme while its catalog remains open")
+        XCTAssertTrue(dialog.exists)
+        H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "theme-click-live-catalog", to: self)
         H.search("Ocean", in: dialog)
         XCTAssertFalse(app.buttons["ThemePresetSaveButton"].exists)
         app.buttons["ThemePresetChoice-Tako Ocean"].click()

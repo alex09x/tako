@@ -151,9 +151,9 @@ User presets live in the `themes/` directory beside the active config (`~/.confi
 
 Right-click a workspace heading in the Sessions sidebar and choose **Workspace Appearance…**. Right-click a terminal or split row and choose **Terminal Appearance…** or **Pane Appearance…** to choose its preset. These catalogs show themes only; editing a theme keeps all of its visual parameters together. Editing an inherited style creates a custom theme from its current effective appearance. **Inherit** clears the local appearance and follows its parent again. <kbd>Cmd</kbd> + <kbd>,</kbd> continues to choose Tako's global theme.
 
-The style hierarchy is **global defaults → workspace style → terminal pane style**. Each level can override the theme, terminal background/foreground/cursor/selection colors, font family, and font size. Only explicitly set fields override their parent. Choose **Inherit** for a theme or font, or press <kbd>D</kbd> on a field, to restore inheritance. A complete preset supplies its own fonts and palette; choosing it resets previous field overrides at that level.
+The style hierarchy is **global defaults → workspace preset → terminal pane preset**. Choose a complete preset at each level, or **Inherit** to follow the parent for the whole appearance. Colors, fonts, size and layout are edited inside the chosen theme. Choosing a preset clears earlier field overrides at that level; older configuration files with partial overrides remain supported.
 
-Moving a terminal to another workspace recomputes inherited fields while retaining its explicit pane overrides. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
+Moving a terminal keeps its explicit pane preset. A pane set to **Inherit** follows its new workspace. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
 
 A local font size belongs to its pane or workspace and is not copied into a newly created pane. Ordinary transient zoom still follows `window-inherit-font-size` when the source has no scoped size override. Styles for missing/closed scopes are retained for undo and recovery; they are not pruned based on an incomplete window layout.
 

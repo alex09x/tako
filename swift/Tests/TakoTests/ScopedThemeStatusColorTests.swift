@@ -18,68 +18,6 @@ import Testing
 @MainActor
 struct ScopedThemeStatusColorTests {
 
-    private func makeWindow(title: String) -> NSWindow {
-        let win = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 600, height: 400),
-                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = title
-        return win
-    }
-
-    private func mount(_ bar: Tako.TabBarView, in window: NSWindow) {
-        bar.frame = NSRect(x: 0, y: 0, width: 400, height: 38)
-        window.contentView?.addSubview(bar)
-    }
-
-    private func attachSurface(to window: NSWindow) -> Tako.SurfaceView {
-        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
-        window.contentView?.addSubview(surface)
-        return surface
-    }
-
-    private func drawBar(_ bar: Tako.TabBarView) {
-        bar.layoutTabs()
-        if let rep = bar.bitmapImageRepForCachingDisplay(in: bar.bounds) {
-            bar.cacheDisplay(in: bar.bounds, to: rep)
-        }
-    }
-
-    private func hex(for cgColor: CGColor?) -> String? {
-        guard let cgColor, let nsColor = NSColor(cgColor: cgColor) else { return nil }
-        return Tako.Brand.hexString(for: nsColor)
-    }
-
-    private func findShapes(in layer: CALayer) -> [CAShapeLayer] {
-        var result: [CAShapeLayer] = []
-        if let shape = layer as? CAShapeLayer {
-            result.append(shape)
-        }
-        for sub in layer.sublayers ?? [] {
-            result.append(contentsOf: findShapes(in: sub))
-        }
-        return result
-    }
-
-    private func findGradients(in layer: CALayer) -> [CAGradientLayer] {
-        var result: [CAGradientLayer] = []
-        if let grad = layer as? CAGradientLayer {
-            result.append(grad)
-        }
-        for sub in layer.sublayers ?? [] {
-            result.append(contentsOf: findGradients(in: sub))
-        }
-        return result
-    }
-
-    private func makeTheme(working: String, waiting: String, done: String, error: String, idle: String) -> TerminalTheme {
-        var theme = TerminalTheme.takoDefault
-        theme.tabStatusColors["working"] = TerminalTheme.parseColor(working)
-        theme.tabStatusColors["waiting"] = TerminalTheme.parseColor(waiting)
-        theme.tabStatusColors["done"] = TerminalTheme.parseColor(done)
-        theme.tabStatusColors["error"] = TerminalTheme.parseColor(error)
-        theme.tabStatusColors["idle"] = TerminalTheme.parseColor(idle)
-        return theme
-    }
-
     @Test func independentSurfacesAndWindowsRetainDistinctCAColorsAndTabReports() throws {
         let prevOverride = Tako.overrideTabStatusTheme
         defer { Tako.overrideTabStatusTheme = prevOverride }
@@ -144,6 +82,9 @@ struct ScopedThemeStatusColorTests {
                 let grad = try #require(findGradients(in: statusLayerA.ringContainer).first { $0.name == "workingSpin" })
                 let gradHexes = (grad.colors as? [CGColor] ?? []).compactMap { hex(for: $0) }
                 #expect(gradHexes.contains(entry.expectedHex))
+                let comet = try #require(statusLayerA.named(Tako.TabStatusLayer.LayerName.cometGradient) as? CAGradientLayer)
+                let cometHexes = (comet.colors as? [CGColor] ?? []).compactMap { hex(for: $0) }
+                #expect(cometHexes.contains(entry.expectedHex) && !cometHexes.contains("#ffaa11"))
                 let bgCircle = try #require(findShapes(in: statusLayerA.ringContainer).first { $0.strokeColor != nil && $0.fillColor == nil })
                 #expect(hex(for: bgCircle.strokeColor) == entry.expectedHex)
 
@@ -157,6 +98,9 @@ struct ScopedThemeStatusColorTests {
                 }
                 if let glow = statusLayerA.named(Tako.TabStatusLayer.LayerName.breatheGlowShadow) as? CAShapeLayer {
                     #expect(hex(for: glow.shadowColor) == entry.expectedHex)
+                    #expect(glow.superlayer?.frame.minX == -24)
+                    #expect(glow.superlayer?.frame.width == statusLayerA.bounds.width + 48)
+                    #expect(glow.shadowPath != nil)
                 }
 
             case .done:
@@ -389,6 +333,7 @@ struct ScopedThemeStatusColorTests {
         let report1 = Tako.tabVisualStatus(for: window)
         #expect(report1.dot == "ember")
         #expect(report1.hex == "#ff0011")
+        #expect(Tako.tabVisualStatus(for: window, targetSurface: pane2).hex == report1.hex)
 
         drawBar(bar)
         let statusLayer = try #require(bar.statusLayers[ObjectIdentifier(window)])
@@ -402,9 +347,32 @@ struct ScopedThemeStatusColorTests {
         let report2 = Tako.tabVisualStatus(for: window)
         #expect(report2.dot == "claw")
         #expect(report2.hex == "#00ff22")
+        #expect(Tako.tabVisualStatus(for: window, targetSurface: pane1).hex == report2.hex)
 
         drawBar(bar)
         let dot = try #require(findShapes(in: statusLayer.ringContainer).first { $0.name == "waitingDot" })
         #expect(hex(for: dot.fillColor) == "#00ff22")
+    }
+
+    @Test func hiddenTabThemeRefreshesTheSelectedWindowsRetainedLayerWithoutDrawing() throws {
+        let previous = Tako.overrideTabStatusTheme
+        Tako.overrideTabStatusTheme = nil
+        defer { Tako.overrideTabStatusTheme = previous }
+        let shown = makeWindow(title: "shown"), hidden = makeWindow(title: "hidden")
+        defer { Tako.CustomTabGroup.leave(hidden); Tako.CustomTabGroup.leave(shown) }
+        let front = attachSurface(to: shown), back = attachSurface(to: hidden)
+        defer { front.removeFromSuperview(); back.removeFromSuperview() }
+        Tako.CustomTabGroup.join(hidden, to: shown, select: false)
+        front.crab.setStatus(.idle, text: nil)
+        back.crab.setStatus(.working, text: "hidden-work")
+        let bar = Tako.TabBarView(frame: .zero)
+        mount(bar, in: shown)
+        defer { bar.removeFromSuperview() }
+        drawBar(bar)
+        let layer = try #require(bar.statusLayers[ObjectIdentifier(hidden)])
+        back.applyTheme(makeTheme(working: "#1234ff", waiting: "#ffaa00", done: "#00ff00", error: "#ff0000", idle: "#555555"))
+        let spin = try #require(findGradients(in: layer.ringContainer).first { $0.name == "workingSpin" })
+        #expect((spin.colors as? [CGColor] ?? []).compactMap { hex(for: $0) }.contains("#1234ff"))
+        #expect(Tako.CustomTabGroup.existingGroup(for: shown)?.selectedWindow === shown)
     }
 }

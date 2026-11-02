@@ -301,6 +301,8 @@ struct MotionCensusTests {
         Site(file: "PaneOverviewView.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {"#,
              what: "the Overview's first frame is still and holds five cards, its clock starts 0.05 s later",
              coveredBy: ["theOverviewOpensOnAStillFrameOfFiveCardsThenItsClockStarts"]),
+        Site(file: "SessionRecoveryPresentation.swift", code: "try? await Task.sleep(nanoseconds: 100_000_000)",
+             what: "recovery waits for a host window to show its notice; no frame is animated", coveredBy: [delayedAction]),
         // Changes made at once, which would otherwise ease a quarter second.
         Site(file: "SessionSidebarResize.swift", code: "CATransaction.setDisableActions(true)",
              what: "the resize edge follows the sidebar at once", coveredBy: ["theResizeEdgeFollowsTheSidebarAtOnce"]),

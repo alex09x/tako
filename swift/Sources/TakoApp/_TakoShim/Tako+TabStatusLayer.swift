@@ -191,38 +191,36 @@ extension Tako {
         static let stillBorderColors = Array(repeating: T.ember.withAlphaComponent(0.8).cgColor, count: 5)
 
         private func layoutGeometries(for size: CGSize, ringX: CGFloat = 8) {
-            let inset: CGFloat = 0.5
-            let boundsPath = CGPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset),
-                                    cornerWidth: geometry.cornerRadius, cornerHeight: geometry.cornerRadius, transform: nil)
-            clippedInnerContainer.frame = CGRect(origin: .zero, size: size)
-            clippedInnerContainer.cornerRadius = geometry.cornerRadius
-            failedLineLayer.frame = CGRect(x: 0, y: 0, width: size.width, height: 2)
-            failedLineLayer.path = CGPath(rect: CGRect(x: 0, y: 0, width: size.width, height: 2), transform: nil)
+            let b = CGRect(origin: .zero, size: size)
+            let r = geometry.cornerRadius
+            clippedInnerContainer.frame = b
+            clippedInnerContainer.cornerRadius = r
+            failedLineLayer.frame = b
+            let errPath = CGMutablePath()
+            errPath.addRect(b)
+            errPath.addRoundedRect(in: b.offsetBy(dx: 0, dy: 2), cornerWidth: r, cornerHeight: r)
+            failedLineLayer.path = errPath
             flashLayer.layout(for: size)
 
-            cometContainer.frame = CGRect(origin: .zero, size: size)
-            cometMask.frame = CGRect(origin: .zero, size: size)
-            cometMask.path = boundsPath
-            let diag = sqrt(size.width * size.width + size.height * size.height)
-            cometGradient.frame = CGRect(x: (size.width - diag) / 2, y: (size.height - diag) / 2, width: diag, height: diag)
+            cometContainer.frame = b
+            let insetRect = b.insetBy(dx: 0.5, dy: 0.5)
+            let borderPath = CGPath(roundedRect: insetRect, cornerWidth: r, cornerHeight: r, transform: nil)
+            cometMask.frame = b; cometMask.path = borderPath
+            let diag = hypot(size.width, size.height)
+            cometGradient.bounds = CGRect(x: 0, y: 0, width: diag, height: diag)
+            cometGradient.position = CGPoint(x: size.width / 2, y: size.height / 2)
 
-            breatheGlowContainer.frame = CGRect(x: -8, y: -8, width: size.width + 16, height: size.height + 16)
-            breatheGlowMask.frame = breatheGlowContainer.bounds
-            let maskPath = CGMutablePath()
-            maskPath.addRect(breatheGlowContainer.bounds)
-            maskPath.addPath(CGPath(roundedRect: CGRect(x: 8, y: 8, width: size.width, height: size.height),
-                                    cornerWidth: geometry.cornerRadius, cornerHeight: geometry.cornerRadius, transform: nil))
-            breatheGlowMask.path = maskPath
-            breatheGlowLayer.frame = CGRect(x: 8, y: 8, width: size.width, height: size.height)
-            breatheGlowLayer.path = CGPath(roundedRect: breatheGlowLayer.bounds,
-                                           cornerWidth: geometry.cornerRadius, cornerHeight: geometry.cornerRadius, transform: nil)
-
-            breatheLayer.frame = CGRect(origin: .zero, size: size)
-            breatheLayer.path = boundsPath
-
-            offlineBorderLayer.frame = CGRect(origin: .zero, size: size)
-            offlineBorderLayer.path = boundsPath
-
+            let pad: CGFloat = 24
+            let outer = CGRect(x: 0, y: 0, width: size.width + pad * 2, height: size.height + pad * 2)
+            let inner = CGRect(x: pad, y: pad, width: size.width, height: size.height)
+            breatheGlowContainer.frame = CGRect(x: -pad, y: -pad, width: outer.width, height: outer.height)
+            breatheGlowMask.frame = outer
+            let mp = CGMutablePath(); mp.addRect(outer); mp.addRoundedRect(in: inner, cornerWidth: r, cornerHeight: r)
+            breatheGlowMask.path = mp
+            breatheGlowLayer.frame = outer; breatheGlowLayer.path = CGPath(roundedRect: inner, cornerWidth: r, cornerHeight: r, transform: nil)
+            breatheGlowLayer.shadowPath = CGPath(roundedRect: inner.insetBy(dx: -1, dy: -1), cornerWidth: r + 1, cornerHeight: r + 1, transform: nil)
+            breatheLayer.frame = b; breatheLayer.path = borderPath
+            offlineBorderLayer.frame = b; offlineBorderLayer.path = borderPath
             ringContainer.frame = ringFrame(in: size, ringX: ringX)
         }
 

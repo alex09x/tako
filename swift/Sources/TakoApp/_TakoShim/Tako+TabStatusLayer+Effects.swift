@@ -27,9 +27,9 @@ extension Tako.TabStatusLayer {
             return state == .working
         }()
         cometContainer.isHidden = !comet; cometGradient.removeAllAnimations()
-        if palette.hasCustomColors {
+        if palette.configuredKeys.contains("working") {
             let stillBorderColors = Array(repeating: (palette.working.copy(alpha: 0.8) ?? palette.working), count: 5)
-            let cometColors = [NSColor.clear.cgColor, palette.waiting, palette.rust, NSColor.clear.cgColor, NSColor.clear.cgColor]
+            let cometColors = [NSColor.clear.cgColor, palette.working, palette.rust, NSColor.clear.cgColor, NSColor.clear.cgColor]
             cometGradient.colors = reduceMotion ? stillBorderColors : cometColors
         } else {
             cometGradient.colors = reduceMotion ? Self.stillBorderColors : Self.cometColors

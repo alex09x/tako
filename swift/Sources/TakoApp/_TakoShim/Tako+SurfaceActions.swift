@@ -65,8 +65,9 @@ extension Tako.SurfaceView {
         theme = newTheme
         setFrameSize(frame.size)
         if let window {
-            Tako.TabBarController.bar(for: window)?.refresh()
-            if let contentView = window.contentView {
+            let host = Tako.CustomTabGroup.existingGroup(for: window)?.selectedWindow ?? window
+            Tako.TabBarController.bar(for: host)?.refresh()
+            if let contentView = host.contentView {
                 for sub in contentView.subviews {
                     if let bar = sub as? Tako.TabBarView {
                         bar.refresh()
