@@ -299,6 +299,8 @@ enum ControlCommands {
                 return .ok(try activityCommand(request, all: all))
             case "workspace":
                 return .ok(try workspaceCommand(request, all: all))
+            case "theme":
+                return .ok(try themeCommand(request, all: all))
             case "layout":
                 return .ok(try layoutCommand(request, all: all))
             case "action":

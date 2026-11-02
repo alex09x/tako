@@ -16,6 +16,7 @@ mod layout;
 mod parser;
 mod review;
 mod session;
+pub(crate) mod theme;
 mod types;
 mod usage;
 

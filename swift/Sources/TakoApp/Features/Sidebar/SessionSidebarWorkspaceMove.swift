@@ -58,11 +58,25 @@ extension SessionSidebarStore {
     /// Move the existing tab window, not its processes or its pane tree.
     @discardableResult
     func moveTab(_ tabID: String, to workspaceID: UUID, around window: NSWindow?,
-                 workspaceStore: WorkspaceStore = .shared) -> Bool {
+                 workspaceStore: WorkspaceStore = .shared,
+                 appearanceStore: ScopedAppearanceStore = .shared) -> Bool {
         guard workspaceStore.workspace(for: workspaceID) != nil,
               let target = sidebarWindow(tabId: tabID, around: window, workspaceStore: workspaceStore),
               !Tako.CustomTabGroup.isClosed(target) else { return false }
         if workspaceStore.workspace(forTab: tabID)?.id == workspaceID { return true }
+        let source = workspaceStore.workspace(forTab: tabID)?.id ?? workspaceStore.activeWorkspaceId
+        let panes = (target.windowController as? BaseTerminalController).map { Array($0.surfaceTree) } ?? Tako.surfaces(in: target)
+        do { try appearanceStore.preserveWorkspaceStyle(from: source, for: panes.map(\.id)) }
+        catch {
+            if !Tako.CustomTabGroup.suppressWindowOrderingForTesting, let window {
+                Task { @MainActor in
+                    _ = await TerminalDialogView.choose(in: window, title: "Session Not Moved",
+                        lines: TUIText.plain("Could not preserve this session's appearance. \(error.localizedDescription)", width: 56),
+                        choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: panes.first?.theme)
+                }
+            }
+            return false
+        }
         let anchor = destinationAnchor(for: target, workspaceID: workspaceID, store: workspaceStore)
         workspaceStore.assignTab(tabIdentifier: tabID, to: workspaceID)
         if let anchor { Tako.CustomTabGroup.join(target, to: anchor, select: false) }

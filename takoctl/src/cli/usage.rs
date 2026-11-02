@@ -12,6 +12,18 @@ pub const USAGE: &str = "\
 usage: takoctl [--json] <command> [options]
 
 commands:
+  theme [list|fonts|keys]  list themes, installed fonts, or supported appearance keys
+  theme show NAME         print complete config (--json: response envelope)
+  theme create NAME       global appearance, or --from PRESET | --file PATH | --stdin
+  theme copy FROM TO      create TO from FROM
+  theme set NAME K=V...    update appearance keys (or --file PATH | --stdin)
+  theme unset NAME K...    remove settings
+  theme rename OLD NEW    rename a user theme and its references
+  theme delete NAME       delete an unreferenced user theme
+  theme apply NAME        require --global | --workspace NAME_OR_UUID | --target PANE
+  theme reset             same explicit scope; restore inherited appearance
+  theme current           same scope; default: current pane; print effective config
+                          --session ID and --pane ID alias --target ID
   version                 the running app and its protocol version
   tree                    windows, tabs and panes, with their directories
   send TEXT               type TEXT into the pane and press Enter (--no-enter: don't)

@@ -53,6 +53,23 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
         }
         return color
     }
+    func moveUsingSidebar(to workspace: String) throws {
+        try sidebar()
+        guard let window = d.activeWindow(), let row = d.descendants(of: window, role: kAXStaticTextRole as String).first(where: {
+            (d.attribute($0, kAXValueAttribute) as String?) == "AppearanceWitness"
+        }), let position: AXValue = d.attribute(row, kAXPositionAttribute), let extent: AXValue = d.attribute(row, kAXSizeAttribute) else {
+            throw Failure("missing styled sidebar session")
+        }
+        var point = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(position, .cgPoint, &point); AXValueGetValue(extent, .cgSize, &size)
+        point.x += size.width / 2; point.y += size.height / 2
+        CGEvent(mouseEventSource: d.source, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: d.source, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
+        guard d.wait(for: { d.openMenuItem(titled: "Move to Workspace") != nil }, timeout: 5),
+              let submenu = d.openMenuItem(titled: "Move to Workspace") else { throw Failure("missing workspace move submenu") }
+        d.press(submenu)
+        try d.clickOpenMenuItem(titled: workspace)
+    }
     func difference(_ a: NSColor, _ b: NSColor) -> CGFloat {
         abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent) + abs(a.blueComponent - b.blueComponent)
     }
@@ -70,10 +87,20 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
         throw Failure("workspace theme did not reach the live renderer")
     }
     let ocean = try background("scoped-ocean")
+    // A session styled by its source workspace must keep that custom
+    // appearance even before it has any explicit pane preset of its own.
+    _ = try d.exec("\(ctl) workspace create Unstyled")
+    try moveUsingSidebar(to: "Unstyled")
+    guard d.wait(for: { guard let color = try? background("scoped-inherited-moved") else { return false }; return difference(ocean, color) < 0.02 }, timeout: 10) else {
+        throw Failure("moving the session discarded its source workspace's custom theme")
+    }
+    _ = try d.exec("\(ctl) workspace assign --workspace Default --target \(pane)")
+    _ = try d.exec("\(ctl) workspace switch Default")
     let paneDialog = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
     d.key(14, .maskCommand) // Edit the inherited effective theme as a custom preset.
     guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
           let editor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("pane theme editor missing") }
+    d.key(Key.a, .maskCommand); try d.type("Scoped Session"); d.key(Key.returnKey)
     d.key(23, .maskCommand) // Font Size
     guard d.wait(for: { value(editor).contains("Font Size:") && value(editor).contains("= 13") }, timeout: 5) else {
         throw Failure("pane theme did not start with its inherited size: \(value(editor))")
@@ -94,9 +121,8 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     guard let save = d.element(withIdentifier: "ThemePresetSaveButton") else { throw Failure("missing theme Save") }
     d.press(save)
     guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5),
-          value(paneDialog).contains("Custom Theme") else { throw Failure("pane custom theme did not save") }
+          value(paneDialog).contains("Scoped Session") else { throw Failure("pane custom theme did not save") }
     d.key(Key.escape)
-    _ = try d.exec("\(ctl) workspace create Unstyled")
     _ = try d.exec("\(ctl) workspace assign --workspace Unstyled --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Unstyled")
     guard d.wait(for: { guard let color = try? background("scoped-moved") else { return false }; return difference(ocean, color) < 0.02 }, timeout: 10) else {
@@ -107,7 +133,7 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     try d.launch(config: config)
     _ = try d.exec("\(ctl) focus --target \(pane)")
     let restored = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
-    guard value(restored).contains("Custom Theme") else { throw Failure("pane theme assignment did not survive restore") }
+    guard value(restored).contains("Scoped Session") else { throw Failure("pane theme assignment did not survive restore") }
     d.key(14, .maskCommand)
     guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
           let restoredEditor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("restored theme editor missing") }

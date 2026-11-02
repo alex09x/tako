@@ -25,6 +25,7 @@ public final class ScopedAppearanceStore {
 
     private(set) var document: AppearanceDocument
     private(set) var loadError: AppearanceStoreError?
+    private var persistedData: Data?
 
     public init(fileURL: URL, themeSearchPaths: [String]? = nil) {
         self.fileURL = fileURL
@@ -143,6 +144,30 @@ public final class ScopedAppearanceStore {
 
     // MARK: - Persistence
 
+    /// Commit a complete, validated transaction before publishing it. Move
+    /// preservation and preset renames must not partially update split panes.
+    func commitDocument(_ draft: AppearanceDocument) throws {
+        if let loadError { throw loadError }
+        guard draft.version == AppearanceDocument.currentVersion else {
+            throw AppearanceStoreError.unsupportedVersion(draft.version, fileURL)
+        }
+        try draft.validateEntries(fileURL: fileURL)
+        do { try persist(draft) }
+        catch { throw AppearanceStoreError.persistenceFailed(error.localizedDescription) }
+        document = draft
+        NotificationCenter.default.post(name: .takoScopedAppearanceDidChange, object: self)
+    }
+
+    /// Destructive preset operations must not rely on a cached reference
+    /// list after another process has edited appearance storage.
+    func verifyDiskIsCurrent() throws {
+        if let loadError { throw loadError }
+        let current = FileManager.default.fileExists(atPath: fileURL.path) ? try Data(contentsOf: fileURL) : nil
+        guard current == persistedData else {
+            throw AppearanceStoreError.persistenceFailed("Appearance storage changed outside Tako; restart Tako to reload it. The external file was left untouched.")
+        }
+    }
+
     private func load() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             // Missing file is allowed; start clean
@@ -151,6 +176,7 @@ public final class ScopedAppearanceStore {
 
         do {
             let data = try Data(contentsOf: fileURL)
+            persistedData = data
             guard let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 self.loadError = .corruptedFile(fileURL, "Root JSON value is not a dictionary")
                 return
@@ -178,6 +204,7 @@ public final class ScopedAppearanceStore {
     }
 
     private func persist(_ doc: AppearanceDocument) throws {
+        try verifyDiskIsCurrent()
         let parent = fileURL.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: parent.path) {
             try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
@@ -187,5 +214,6 @@ public final class ScopedAppearanceStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(doc)
         try data.write(to: fileURL, options: .atomic)
+        persistedData = data
     }
 }

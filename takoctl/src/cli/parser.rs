@@ -306,6 +306,9 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             }
             "-h" | "--help" => return Err(String::new()),
             a if a.starts_with('-') => return Err(format!("unknown option {a}")),
+            "theme" if cmd.is_none() => {
+                return super::theme::parse(argv, argv.len() - it.len() - 1);
+            }
             a if cmd.is_none() => cmd = Some(a.to_string()),
             a => positional.push(a.to_string()),
         }
@@ -330,12 +333,7 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         }
     }
 
-    dispatch_and_validate(
-        &cmd,
-        &mut args,
-        &mut positional,
-        dashdash,
-    )?;
+    dispatch_and_validate(&cmd, &mut args, &mut positional, dashdash)?;
     if client.is_none() {
         client = args.get("client").and_then(Value::as_str).map(String::from);
     }

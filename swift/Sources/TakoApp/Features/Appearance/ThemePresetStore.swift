@@ -69,7 +69,7 @@ public final class ThemePresetStore {
     /// checks for built-in shadowing and stale overwrites, writes atomically, and posts
     /// `Notification.Name.takoThemePresetsDidChange`.
     public func save(name: String, config: String, replacing: ThemePreset? = nil) throws -> ThemePreset {
-        try Self.validatePresetName(name)
+        try Self.validateWritableName(name)
 
         if Self.isSymbolicLink(at: directory) {
             throw ThemePresetError.symlinkNotAllowed("Preset directory is a symbolic link: '\(directory.path)'")
@@ -127,6 +127,37 @@ public final class ThemePresetStore {
 
     // MARK: - Validation & Filesystem Helpers
 
+    /// Rename first makes an exact alias, preserving even legacy theme
+    /// semantics. Both files remain valid until references have moved.
+    func copyForRename(_ original: ThemePreset, to name: String) throws -> ThemePreset {
+        try Self.validateWritableName(name)
+        guard original.isUser else { throw ThemePresetError.readOnlyBuiltin(original.name) }
+        let current = try load(named: original.name)
+        guard current.isUser, current.config == original.config else { throw ThemePresetError.staleOverwrite(original.name) }
+        guard !isBuiltinFile(named: name) else { throw ThemePresetError.cannotShadowBuiltin(name) }
+        let target = directory.appendingPathComponent(name)
+        guard !Self.isSymbolicLink(at: target) else { throw ThemePresetError.symlinkNotAllowed(name) }
+        guard !FileManager.default.fileExists(atPath: target.path) else { throw ThemePresetError.presetAlreadyExists(name) }
+        try Data(original.config.utf8).write(to: target, options: .atomic)
+        NotificationCenter.default.post(name: .takoThemePresetsDidChange, object: self)
+        return ThemePreset(name: name, config: original.config, isUser: true)
+    }
+
+    /// Removal is recoverable. Hidden backups do not appear in the catalog.
+    func remove(_ original: ThemePreset) throws -> URL {
+        guard original.isUser else { throw ThemePresetError.readOnlyBuiltin(original.name) }
+        let current = try load(named: original.name)
+        guard current.isUser else { throw ThemePresetError.readOnlyBuiltin(original.name) }
+        guard current.config == original.config else { throw ThemePresetError.staleOverwrite(original.name) }
+        let recovery = directory.appendingPathComponent(".deleted", isDirectory: true)
+        guard !Self.isSymbolicLink(at: recovery) else { throw ThemePresetError.symlinkNotAllowed(recovery.path) }
+        try FileManager.default.createDirectory(at: recovery, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let backup = recovery.appendingPathComponent(UUID().uuidString + ".theme")
+        try FileManager.default.moveItem(at: directory.appendingPathComponent(original.name), to: backup)
+        NotificationCenter.default.post(name: .takoThemePresetsDidChange, object: self)
+        return backup
+    }
+
     public static func validatePresetName(_ name: String) throws {
         guard !name.isEmpty, !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ThemePresetError.invalidName("Preset name cannot be empty or whitespace-only")
@@ -147,6 +178,14 @@ public final class ThemePresetStore {
             if CharacterSet.controlCharacters.contains(scalar) || CharacterSet.newlines.contains(scalar) || scalar.value < 0x20 || scalar.value == 0x7F {
                 throw ThemePresetError.invalidName("Preset name cannot contain control characters: '\(name)'")
             }
+        }
+    }
+
+    private static func validateWritableName(_ name: String) throws {
+        try validatePresetName(name)
+        guard name.lowercased() != "tako" else { throw ThemePresetError.cannotShadowBuiltin("tako is the reserved TakoCore alias") }
+        guard !(name.hasPrefix("\"") && name.hasSuffix("\"")) && !(name.hasPrefix("'") && name.hasSuffix("'")) else {
+            throw ThemePresetError.invalidName("Do not wrap the stored name in literal quotes")
         }
     }
 

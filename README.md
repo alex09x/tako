@@ -153,7 +153,44 @@ Right-click a workspace heading in the Sessions sidebar and choose **Workspace A
 
 The style hierarchy is **global defaults → workspace preset → terminal pane preset**. Choose a complete preset at each level, or **Inherit** to follow the parent for the whole appearance. Colors, fonts, size and layout are edited inside the chosen theme. Choosing a preset clears earlier field overrides at that level; older configuration files with partial overrides remain supported.
 
-Moving a terminal keeps its explicit pane preset. A pane set to **Inherit** follows its new workspace. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
+Moving a terminal keeps its explicit pane preset and carries the source workspace's custom appearance with panes that inherited it. A session from an unstyled workspace still follows its destination. Choose **Inherit** after moving if you want to adopt the destination's appearance. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell.
+
+### Theme configuration from the CLI
+
+`takoctl theme` uses the same preset format and validation as the editor. All supported visual keys are discoverable, including typography, metrics, padding, shaders, status colors and palette entries 0–255:
+
+```sh
+takoctl theme list
+takoctl theme fonts
+takoctl theme keys
+takoctl theme create "Work" --from "Tako Night"
+takoctl theme set "Work" font-family=Monaco font-size=18 'background=#121826' 'palette:1=#ff5577'
+takoctl theme set "Work" font-feature=+liga font-feature=-dlig
+takoctl theme show "Work" > work-theme.conf
+takoctl theme create "Imported" --file work-theme.conf
+cat work-theme.conf | takoctl theme create "Piped" --stdin
+```
+
+Use `theme set NAME --file FILE` or `--stdin` to replace the full configuration, and `theme unset NAME KEY...` to reset selected settings. Repeated `font-feature` and `custom-shader` assignments replace their lists together. Paths inside a preset are relative to its theme directory; absolute shader paths work too. Files/stdin are read by the client, which sends configuration text to the app.
+
+Assignments apply immediately and need an explicit mutation target:
+
+```sh
+takoctl theme apply "Work" --global
+takoctl theme apply "Work" --workspace "Legal"
+takoctl theme apply "Work" --session SESSION_UUID
+takoctl theme current --target SESSION_UUID --json
+takoctl theme current --workspace "Legal"
+takoctl theme rename "Work" "Work v2"
+takoctl theme reset --session SESSION_UUID
+takoctl theme reset --workspace "Legal"
+takoctl theme reset --global
+takoctl theme delete "Work v2"
+```
+
+`--target`/`--pane`/`--session` identify a terminal pane; `self` and `active` work for live panes. A saved session's full UUID can be configured before reattaching it. `current` reports the selected preset, overrides and full effective configuration; JSON also includes the rendered configuration for a live pane. Read-only `current` defaults to the current pane. Named preset edits affect every scope using that preset; copy it first for an independent style.
+
+Built-ins are read-only templates. Rename updates global, workspace and session references without changing the preset's contents. Delete refuses presets still assigned in the current profile, listing those scopes; reset or reassign them first. Removed files are kept in a hidden recovery directory and the JSON response returns `recovery_path`; restore with `theme create NAME --file PATH`. Failed rename writes keep both theme files recoverable rather than leaving references to missing files. Add `--json` to any command for structured output.
 
 A local font size belongs to its pane or workspace and is not copied into a newly created pane. Ordinary transient zoom still follows `window-inherit-font-size` when the source has no scoped size override. Styles for missing/closed scopes are retained for undo and recovery; they are not pruned based on an incomplete window layout.
 
