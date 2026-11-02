@@ -70,10 +70,14 @@ final class TerminalThemeCoverageTests: XCTestCase {
         XCTAssertTrue(theme.palette.isEmpty)
     }
 
-    func testThemeSearchPathsAndAvailableThemes() {
+    func testThemeSearchPathsAndAvailableThemes() throws {
         let paths = TerminalTheme.themeSearchPaths
         // The user's directories come before the bundled themes.
-        XCTAssertEqual(paths.first, ("~/.config/tako-core/themes" as NSString).expandingTildeInPath)
+        let own = ("~/.config/tako/themes" as NSString).expandingTildeInPath
+        let legacy = ("~/.config/tako-core/themes" as NSString).expandingTildeInPath
+        let ownIndex = try XCTUnwrap(paths.lastIndex(of: own))
+        let legacyIndex = try XCTUnwrap(paths.lastIndex(of: legacy))
+        XCTAssertLessThan(ownIndex, legacyIndex)
         XCTAssertEqual(paths.last, Bundle.main.resourceURL?.appendingPathComponent("themes").path ?? "")
 
         let available = TerminalTheme.availableThemes()

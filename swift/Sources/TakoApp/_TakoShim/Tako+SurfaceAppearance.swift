@@ -39,8 +39,12 @@ extension Tako.SurfaceView {
 
     var hasScopedFontSize: Bool {
         guard let surface else { return false }
-        return store.value(for: "font-size", scope: .pane(surface.id)) != nil
-            || workspace().flatMap { store.value(for: "font-size", scope: .workspace($0)) } != nil
+        let scopes = [AppearanceScope.pane(surface.id)] + (workspace().map { [.workspace($0)] } ?? [])
+        return scopes.contains { scope in
+            if store.value(for: "font-size", scope: scope) != nil { return true }
+            guard let preset = store.value(for: "theme", scope: scope) else { return false }
+            return TerminalTheme.presetContainsTypography(named: preset, searchPaths: store.themeSearchPaths ?? TerminalTheme.themeSearchPaths)
+        }
     }
 
     init(surface: Tako.SurfaceView, store: ScopedAppearanceStore = .shared, workspaceID: (() -> UUID?)? = nil) {

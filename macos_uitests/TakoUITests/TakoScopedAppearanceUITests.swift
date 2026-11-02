@@ -1,5 +1,5 @@
 /*
- * tako — Terminal emulator
+ * tako — Real workspace and split-pane appearance journeys
  * Copyright (c) 2026 Alexander Panasenko
  *
  * Contact: alex@prod.codes
@@ -12,224 +12,116 @@ import AppKit
 import XCTest
 
 final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
-    override static var runsForEachTargetApplicationUIConfiguration: Bool {
-        false
+    private typealias H = TakoScopedAppearanceHelpers
+
+    @MainActor func testWorkspaceAndPaneMenusAndModalContainment() throws {
+        let env = try H(); defer { env.cleanup() }
+        let app = try env.launchIsolatedApp()
+        let original = try Data(contentsOf: env.configFile)
+        let dialog = H.openWorkspaceAppearance(in: app)
+        XCTAssertTrue(dialog.label.contains("Workspace: Default"))
+        for key in ["1", "2"] {
+            dialog.typeKey(key, modifierFlags: .command)
+            H.assertValue(dialog, contains: "Themes:")
+        }
+        dialog.typeKey("d", modifierFlags: .command)
+        XCTAssertEqual(try env.paneIDs().count, 1)
+        H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "workspace-editor", to: self)
+        H.dismissDialog(dialog, in: app)
+        let pane = H.openPaneAppearance(in: app)
+        XCTAssertTrue(pane.label.contains("Pane appearance"))
+        H.dismissDialog(pane, in: app)
+        XCTAssertEqual(try Data(contentsOf: env.configFile), original)
     }
 
-    @MainActor
-    func testWorkspaceAndPaneMenuOpenScopedEditorAndModalContainment() async throws {
-        let env = TakoScopedAppearanceHelpers()
-        defer { env.cleanup() }
+    @MainActor func testWorkspaceThemeAndResetChangeRenderedPixels() throws {
+        let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-
-        // 1. Open Workspace Scoped Editor from Workspace Menu in Session Sidebar
-        let wsDialog = TakoScopedAppearanceHelpers.openWorkspaceAppearance(in: app)
-        XCTAssertTrue(wsDialog.label.contains("Workspace: Default"), "Dialog title should reflect workspace scope")
-
-        let preModalScreenshot = app.windows.firstMatch.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(preModalScreenshot, name: "WorkspaceScopedEditor-Open", to: self)
-
-        // 2. Verify Modal Containment: Global navigation keys (Cmd+1, Cmd+2) do not escape scoped appearance
-        wsDialog.typeKey("1", modifierFlags: .command)
-        XCTAssertTrue(wsDialog.exists, "Dialog must retain containment on Cmd+1")
-        XCTAssertTrue(wsDialog.label.contains("Workspace: Default"), "Dialog must remain scoped to workspace on Cmd+1")
-
-        wsDialog.typeKey("2", modifierFlags: .command)
-        XCTAssertTrue(wsDialog.exists, "Dialog must retain containment on Cmd+2")
-        XCTAssertTrue(wsDialog.label.contains("Workspace: Default"), "Dialog must remain scoped to workspace on Cmd+2")
-
-        // 3. Verify Modal Containment: Action shortcuts (Cmd+D for split) are consumed and do not act outside
-        wsDialog.typeKey("d", modifierFlags: .command)
-        XCTAssertEqual(app.groups.matching(identifier: "Terminal pane").count, 1, "Cmd+D must be consumed by modal containment")
-
-        // 4. Dismiss Workspace Dialog
-        TakoScopedAppearanceHelpers.dismissDialog(wsDialog, in: app)
-
-        // 5. Open Pane Scoped Editor from Pane Menu in Session Sidebar
-        let paneDialog = TakoScopedAppearanceHelpers.openPaneAppearance(in: app, isChild: false)
-        XCTAssertTrue(paneDialog.label.contains("Pane appearance"), "Dialog title should reflect pane scope")
-
-        let paneModalScreenshot = app.windows.firstMatch.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(paneModalScreenshot, name: "PaneScopedEditor-Open", to: self)
-
-        // 6. Dismiss Pane Dialog
-        TakoScopedAppearanceHelpers.dismissDialog(paneDialog, in: app)
-    }
-
-    @MainActor
-    func testThemeApplicationWithRenderedPixelsAndInheritanceReset() async throws {
-        let env = TakoScopedAppearanceHelpers()
-        defer { env.cleanup() }
-        let app = try env.launchIsolatedApp()
-
         let pane = app.groups["Terminal pane"].firstMatch
-        XCTAssertTrue(pane.waitForExistence(timeout: 5), "Terminal pane must exist")
-
-        // 1. Capture initial rendered background pixel
-        guard let initialColor = TakoScopedAppearanceHelpers.samplePixelColor(from: pane) else {
-            XCTFail("Failed to sample initial rendered background pixel")
-            return
-        }
-        let initialScreenshot = pane.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(initialScreenshot, name: "ThemeRender-Initial", to: self)
-
-        // 2. Open Workspace Scoped Editor
-        let dialog = TakoScopedAppearanceHelpers.openWorkspaceAppearance(in: app)
-
-        // 3. Search and select theme preset "Ocean" (Tako Ocean)
-        dialog.typeText("Ocean")
+        let before = try XCTUnwrap(H.samplePixelColor(from: pane))
+        let dialog = H.openWorkspaceAppearance(in: app)
+        H.search("Ocean", in: dialog)
         dialog.typeKey(.return, modifierFlags: [])
-
-        let hasCustomSuccess = (dialog.value as? String)?.contains("Ocean") == true
-            || (dialog.value as? String)?.contains("setting_custom_success") == true
-            || (dialog.value as? String)?.contains("theme") == true
-        XCTAssertTrue(hasCustomSuccess, "Theme selection should be acknowledged in dialog accessibility state")
-
-        TakoScopedAppearanceHelpers.dismissDialog(dialog, in: app)
-
-        // 4. Assert rendered output reflects the new theme
-        guard let oceanColor = TakoScopedAppearanceHelpers.samplePixelColor(from: pane) else {
-            XCTFail("Failed to sample ocean rendered background pixel")
-            return
-        }
-        let oceanScreenshot = pane.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(oceanScreenshot, name: "ThemeRender-Ocean", to: self)
-
-        let diffOcean = TakoScopedAppearanceHelpers.colorDifference(initialColor, oceanColor)
-        XCTAssertGreaterThan(diffOcean, 0.04, "Rendered background pixel must visibly change when theme is applied")
-
-        // 5. Re-open scoped editor and reset theme override (test inheritance/reset)
-        let resetDialog = TakoScopedAppearanceHelpers.openWorkspaceAppearance(in: app)
-        let resetBtn = app.buttons["SettingsResetButton"]
-        if resetBtn.exists {
-            resetBtn.click()
-        } else {
-            resetDialog.typeKey("d", modifierFlags: [])
-        }
-
-        TakoScopedAppearanceHelpers.dismissDialog(resetDialog, in: app)
-
-        // 6. Assert rendered output restores back to initial appearance
-        guard let restoredColor = TakoScopedAppearanceHelpers.samplePixelColor(from: pane) else {
-            XCTFail("Failed to sample restored rendered background pixel")
-            return
-        }
-        let restoredScreenshot = pane.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(restoredScreenshot, name: "ThemeRender-Restored", to: self)
-
-        let diffRestored = TakoScopedAppearanceHelpers.colorDifference(initialColor, restoredColor)
-        XCTAssertLessThan(diffRestored, 0.03, "Rendered background pixel must restore back to inherited initial color")
+        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
+        H.dismissDialog(dialog, in: app)
+        XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) > 0.04 })
+        H.attachScreenshot(pane.screenshot(), name: "workspace-theme-rendered", to: self)
+        let reset = H.openWorkspaceAppearance(in: app)
+        app.buttons["SettingsResetButton"].click()
+        H.assertValue(reset, contains: "setting_reset_success: theme")
+        H.dismissDialog(reset, in: app)
+        XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) < 0.03 })
     }
 
-    @MainActor
-    func testSplitPaneIndependentAppearanceOverrides() async throws {
-        let env = TakoScopedAppearanceHelpers()
-        defer { env.cleanup() }
+    @MainActor func testSplitPaneOwnsOnlyItsAppearance() throws {
+        let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-
-        // 1. Create a split pane with Cmd+D
+        let first = try XCTUnwrap(env.paneIDs().first)
         app.typeKey("d", modifierFlags: .command)
-
-        let panes = app.groups.matching(identifier: "Terminal pane")
-        XCTAssertTrue(panes.element(boundBy: 1).waitForExistence(timeout: 5), "Two split panes must exist")
-        let leftPane = panes.element(boundBy: 0)
-        let rightPane = panes.element(boundBy: 1)
-
-        // 2. Open Pane Appearance for the child split pane from Session Sidebar
-        let paneDialog = TakoScopedAppearanceHelpers.openPaneAppearance(in: app, isChild: true)
-        XCTAssertTrue(paneDialog.label.contains("Pane appearance"), "Child pane dialog should open")
-
-        // 3. Apply custom theme to child pane
-        paneDialog.typeText("Ocean")
-        paneDialog.typeKey(.return, modifierFlags: [])
-
-        // Also adjust Font Size in child pane via Cmd+5
-        paneDialog.typeKey("5", modifierFlags: .command)
-        paneDialog.typeKey(.rightArrow, modifierFlags: [])
-
-        TakoScopedAppearanceHelpers.dismissDialog(paneDialog, in: app)
-
-        // 4. Verify independent split-pane color overrides
-        guard let leftColor = TakoScopedAppearanceHelpers.samplePixelColor(from: leftPane),
-              let rightColor = TakoScopedAppearanceHelpers.samplePixelColor(from: rightPane) else {
-            XCTFail("Failed to sample split pane rendered background pixels")
-            return
-        }
-
-        let leftScreenshot = leftPane.screenshot()
-        let rightScreenshot = rightPane.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(leftScreenshot, name: "SplitPane-Left-Inherited", to: self)
-        TakoScopedAppearanceHelpers.attachScreenshot(rightScreenshot, name: "SplitPane-Right-Overridden", to: self)
-
-        let splitDiff = TakoScopedAppearanceHelpers.colorDifference(leftColor, rightColor)
-        XCTAssertGreaterThan(splitDiff, 0.04, "Split panes must render independent background colors after override")
+        XCTAssertTrue(H.wait { (try? env.paneIDs().count) == 2 })
+        let second = try XCTUnwrap(env.paneIDs().first { $0 != first })
+        _ = try env.control(["title", "Scope Split", "--target", second])
+        let panes = app.groups.matching(identifier: "Terminal pane").allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }
+        XCTAssertEqual(panes.count, 2)
+        let left = panes[0], right = panes[1]
+        let beforeLeft = try XCTUnwrap(H.samplePixelColor(from: left))
+        let dialog = H.openPaneAppearance(in: app, title: "Scope Split", isChild: true)
+        H.search("Ocean", in: dialog)
+        dialog.typeKey(.return, modifierFlags: [])
+        H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
+        H.search("", in: dialog)
+        dialog.typeKey("5", modifierFlags: .command)
+        for _ in 0..<4 { dialog.typeKey(.rightArrow, modifierFlags: []) }
+        XCTAssertTrue(H.wait { (try? env.paneStyle(second)["font-size"]) == "17" })
+        H.dismissDialog(dialog, in: app)
+        XCTAssertTrue(H.wait {
+            guard let a = H.samplePixelColor(from: left), let b = H.samplePixelColor(from: right) else { return false }
+            return H.colorDifference(beforeLeft, a) < 0.03 && H.colorDifference(a, b) > 0.04
+        })
+        XCTAssertNil(try env.paneStyle(first)["theme"])
+        XCTAssertNil(try env.paneStyle(first)["font-size"])
+        H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "independent-split-panes", to: self)
     }
 
-    @MainActor
-    func testFontFamilyAndSizeControls() async throws {
-        let env = TakoScopedAppearanceHelpers()
-        defer { env.cleanup() }
+    @MainActor func testFontSizeAndFamilyReachActualRenderedGlyphs() throws {
+        let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-
-        // 1. Open Pane Scoped Editor
-        let dialog = TakoScopedAppearanceHelpers.openPaneAppearance(in: app, isChild: false)
-
-        // 2. Navigate to Font Size section with Cmd+5
+        let id = try XCTUnwrap(env.paneIDs().first)
+        let pane = app.groups["Terminal pane"].firstMatch
+        pane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
+        var initial: H.GlyphObservation?
+        XCTAssertTrue(H.wait { initial = try? H.glyphs(in: pane); return initial != nil })
+        let initialGlyphs = try XCTUnwrap(initial)
+        let dialog = H.openPaneAppearance(in: app)
         dialog.typeKey("5", modifierFlags: .command)
-
-        let initialSizeVal = dialog.value as? String ?? ""
-        XCTAssertTrue(initialSizeVal.contains("Font Size"), "Font Size section should be active")
-
-        // Increase font size with Right arrow
-        dialog.typeKey(.rightArrow, modifierFlags: [])
-        let increasedVal = dialog.value as? String ?? ""
-        XCTAssertTrue(
-            increasedVal.contains("setting_custom_success") || increasedVal.contains("font-size"),
-            "Increasing font size should acknowledge update in accessibility value"
-        )
-
-        // Reset font size with Reset button / 'd'
-        let resetBtn = app.buttons["SettingsResetButton"]
-        if resetBtn.exists {
-            resetBtn.click()
-        } else {
-            dialog.typeKey("d", modifierFlags: [])
-        }
-        let resetVal = dialog.value as? String ?? ""
-        XCTAssertTrue(
-            resetVal.contains("setting_reset_success") || resetVal.contains("Font Size"),
-            "Resetting font size should acknowledge reset in accessibility value"
-        )
-
-        // 3. Navigate to Fonts section with Cmd+4
-        dialog.typeKey("4", modifierFlags: .command)
-        let fontSectionVal = dialog.value as? String ?? ""
-        XCTAssertTrue(fontSectionVal.contains("Fonts"), "Fonts section should be active")
-
-        // Select a font family by typing search query
-        dialog.typeText("Menlo")
-        dialog.typeKey(.return, modifierFlags: [])
-        let fontAppliedVal = dialog.value as? String ?? ""
-        XCTAssertTrue(
-            fontAppliedVal.contains("setting_custom_success") || fontAppliedVal.contains("font-family") || fontAppliedVal.contains("Menlo"),
-            "Applying font family should acknowledge update"
-        )
-
-        // Reset font family
-        if resetBtn.exists {
-            resetBtn.click()
-        } else {
-            dialog.typeKey("d", modifierFlags: [])
-        }
-        let fontResetVal = dialog.value as? String ?? ""
-        XCTAssertTrue(
-            fontResetVal.contains("setting_reset_success") || fontResetVal.contains("Fonts"),
-            "Resetting font family should acknowledge reset"
-        )
-
-        TakoScopedAppearanceHelpers.dismissDialog(dialog, in: app)
-
-        let finalScreenshot = app.windows.firstMatch.screenshot()
-        TakoScopedAppearanceHelpers.attachScreenshot(finalScreenshot, name: "FontControls-Final", to: self)
+        for _ in 0..<4 { dialog.typeKey(.rightArrow, modifierFlags: []) }
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-size"]) == "17" })
+        H.dismissDialog(dialog, in: app)
+        var enlarged: H.GlyphObservation?
+        XCTAssertTrue(H.wait {
+            enlarged = try? H.glyphs(in: pane)
+            return (enlarged?.bounds.width ?? 0) > initialGlyphs.bounds.width * 1.15
+                && (enlarged?.bounds.height ?? 0) > initialGlyphs.bounds.height * 1.15
+        })
+        H.attachScreenshot(try XCTUnwrap(enlarged).screenshot, name: "font-size-rendered", to: self)
+        let reset = H.openPaneAppearance(in: app)
+        reset.typeKey("5", modifierFlags: .command)
+        app.buttons["SettingsResetButton"].click()
+        H.assertValue(reset, contains: "setting_reset_success: font-size")
+        H.dismissDialog(reset, in: app)
+        XCTAssertTrue(H.wait {
+            guard let glyphs = try? H.glyphs(in: pane) else { return false }
+            return abs(glyphs.bounds.width - initialGlyphs.bounds.width) < initialGlyphs.bounds.width * 0.08
+        })
+        XCTAssertNil(try env.paneStyle(id)["font-size"])
+        let family = H.openPaneAppearance(in: app)
+        family.typeKey("4", modifierFlags: .command)
+        H.search("Monaco", in: family)
+        family.typeKey(.return, modifierFlags: [])
+        H.assertValue(family, contains: "setting_custom_success: font-family = Monaco")
+        H.dismissDialog(family, in: app)
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-family"]) == "Monaco" })
+        XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != initialGlyphs.pixels })
+        H.attachScreenshot(pane.screenshot(), name: "font-family-rendered", to: self)
     }
 }

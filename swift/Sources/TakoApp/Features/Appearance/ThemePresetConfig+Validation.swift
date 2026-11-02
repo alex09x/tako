@@ -11,6 +11,18 @@
 import Foundation
 
 extension ThemePresetConfig {
+    /// The same schema drives validation and replacement of old overrides.
+    public static func isAppearanceKey(_ key: String) -> Bool {
+        if key == "palette" { return true }
+        do {
+            try validateAppearanceKey(key, value: "", lineNum: 0)
+            return true
+        } catch let error as ThemePresetError {
+            if case .unknownKey = error { return false }
+            return true
+        } catch { return false }
+    }
+
     /// Validate theme preset configuration text.
     public static func validate(_ text: String) throws {
         var seenKeys = Set<String>()
@@ -68,7 +80,7 @@ extension ThemePresetConfig {
                 continue
             }
 
-            if key != "font-feature" {
+            if key != "font-feature" && key != "custom-shader" {
                 guard !seenKeys.contains(key) else {
                     throw ThemePresetError.duplicateKey(line: lineNum, "Duplicate appearance key '\(key)'")
                 }

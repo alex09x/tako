@@ -14,7 +14,7 @@ import AppKit
 enum TerminalAppearanceCatalog {
     static let themeCategory = "Theme presets"
     static let fontCategory = "Font families"
-    static let defaultFont = "Tako default"
+    static let defaultFont = "Theme default"
 
     static func themeNames(paths: [String] = TerminalTheme.themeSearchPaths) -> [String] {
         var names: [String: String] = [:]

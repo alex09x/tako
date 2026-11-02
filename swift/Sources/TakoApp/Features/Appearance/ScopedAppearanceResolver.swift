@@ -23,14 +23,15 @@ public enum ScopedAppearanceResolver {
         global: TerminalTheme,
         workspaceOverrides: [String: String]?,
         paneOverrides: [String: String]?,
-        themeSearchPaths: [String] = TerminalTheme.themeSearchPaths
+        themeSearchPaths: [String] = TerminalTheme.themeSearchPaths,
+        themeOverrides: [String: TerminalTheme] = [:]
     ) -> TerminalTheme {
         var theme = global
 
         // 1. Optional workspace theme preset
         if let ws = workspaceOverrides {
             if let preset = ws[AppearanceKey.theme.rawValue] {
-                theme = theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
+                theme = themeOverrides[preset] ?? theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
             }
             // 2. Workspace explicit fields
             applyExplicitFields(overrides: ws, to: &theme)
@@ -39,7 +40,7 @@ public enum ScopedAppearanceResolver {
         // 3. Optional pane theme preset
         if let pane = paneOverrides {
             if let preset = pane[AppearanceKey.theme.rawValue] {
-                theme = theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
+                theme = themeOverrides[preset] ?? theme.applyingTheme(named: preset, searchPaths: themeSearchPaths)
             }
             // 4. Pane explicit fields
             applyExplicitFields(overrides: pane, to: &theme)

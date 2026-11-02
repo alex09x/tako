@@ -11,6 +11,26 @@
 use super::common::*;
 
 #[test]
+fn replacing_host_theme_clears_omitted_palette_entries_but_keeps_program_overrides() {
+    let mut term = Terminal::new(10, 3);
+    let builtin = tako_core::palette::Palette::new();
+    term.set_base_colors(None, None, None, &[(1, BASE_IDX1), (2, BASE_IDX2)]);
+    term.feed(&osc4_set(2, (9, 8, 7)));
+
+    // Preview cancellation can return to a theme with no indexed overrides.
+    term.set_base_colors(None, None, None, &[]);
+    assert_eq!(term.palette().get(1), builtin.get(1));
+    assert_eq!(term.palette().base(2), builtin.base(2));
+    assert_eq!(term.palette().get(2), (9, 8, 7));
+
+    term.feed(b"\x1b]104;2\x07");
+    assert_eq!(term.palette().get(2), builtin.get(2));
+    term.set_base_colors(None, None, None, &[(3, (1, 2, 3))]);
+    assert_eq!(term.palette().get(1), builtin.get(1));
+    assert_eq!(term.palette().get(3), (1, 2, 3));
+}
+
+#[test]
 fn set_base_colors_applies_immediately_when_nothing_overridden() {
     let mut term = Terminal::new(10, 3);
     term.set_base_colors(

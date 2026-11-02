@@ -25,22 +25,22 @@ public enum ThemePresetConfig {
     public static let defaultCursorBlink = "true"
 
     public static let defaultPaletteHex: [Int: String] = [
-        0: "#14100e",
-        1: "#d54e53",
+        0: "#1d1f21",
+        1: "#cc6666",
         2: "#b5bd68",
         3: "#f0c674",
         4: "#81a2be",
         5: "#b294bb",
         6: "#8abeb7",
-        7: "#ede6df",
-        8: "#6b6259",
-        9: "#ff7a3d",
-        10: "#7bd88f",
-        11: "#f4c96b",
-        12: "#9bb8d3",
-        13: "#c9a8d0",
-        14: "#a3d3cd",
-        15: "#faf7f2",
+        7: "#c5c8c6",
+        8: "#666666",
+        9: "#d54e53",
+        10: "#b9ca4a",
+        11: "#e7c547",
+        12: "#7aa6da",
+        13: "#c397d8",
+        14: "#70c0b1",
+        15: "#eaeaea",
     ]
 
     /// Extract the value for an ordinary key or synthetic key (e.g. `palette:0` through `palette:15`).
@@ -72,7 +72,7 @@ public enum ThemePresetConfig {
                 guard let eq = trimmed.firstIndex(of: "=") else { continue }
                 let k = trimmed[..<eq].trimmingCharacters(in: .whitespaces)
                 if k == key {
-                    return String(trimmed[trimmed.index(after: eq)...].trimmingCharacters(in: .whitespaces))
+                    return unquoted(String(trimmed[trimmed.index(after: eq)...].trimmingCharacters(in: .whitespaces)))
                 }
             }
             return nil
@@ -155,9 +155,10 @@ public enum ThemePresetConfig {
     }
 
     /// Parse configuration text into a TerminalTheme.
-    public static func parsed(_ text: String) throws -> TerminalTheme {
-        try validate(text)
-        return TerminalTheme.parse(config: text, base: .takoDefault, honourTheme: false)
+    public static func parsed(_ text: String, configPath: String? = nil) throws -> TerminalTheme {
+        let complete = prepareForSave(text)
+        try validate(complete)
+        return TerminalTheme.parse(config: complete, base: .takoDefault, honourTheme: false, configPath: configPath)
     }
 
     /// Serialize a TerminalTheme into a standalone theme preset configuration string.
@@ -191,6 +192,7 @@ public enum ThemePresetConfig {
             ? "\(Int(theme.fontSize))"
             : "\(theme.fontSize)"
         lines.append("font-size = \(formattedSize)")
+        lines += typographyConfiguration(from: theme)
 
         for i in 0...15 {
             let colorHex = theme.palette[i].map(hex(for:)) ?? defaultPaletteHex[i]!
@@ -238,16 +240,11 @@ public enum ThemePresetConfig {
     static func prepareForSave(_ text: String) -> String {
         var working = text
 
-        if !working.contains(marker) {
-            if !working.contains("# tako-preset-version:") {
-                if working.isEmpty {
-                    working = marker + "\n"
-                } else if working.hasPrefix("\n") {
-                    working = marker + working
-                } else {
-                    working = marker + "\n" + working
-                }
-            }
+        let hasVersionLine = working.components(separatedBy: .newlines).contains {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("# tako-preset-version:")
+        }
+        if !hasVersionLine {
+            working = marker + "\n" + working
         }
 
         if value(for: "background", in: working) == nil {

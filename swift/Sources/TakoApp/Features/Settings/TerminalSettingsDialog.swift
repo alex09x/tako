@@ -44,6 +44,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         case themes = 2
         case fonts = 3
         case fontSize = 4
+        case themeConfig = 5
 
         public var title: String {
             switch self {
@@ -52,6 +53,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             case .themes: return "Themes"
             case .fonts: return "Fonts"
             case .fontSize: return "Font Size"
+            case .themeConfig: return "Config"
             }
         }
     }
@@ -59,6 +61,11 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     let style: Style
     let configFile: KeybindConfigFile
     let scopedAppearance: ScopedAppearanceContext?
+    let presetEditor: ThemePresetEditor?
+    var presetNameField: NSTextField?
+    var presetConfigScroll: NSScrollView?
+    var presetConfigText: NSTextView?
+    var presetActionButtons: [DialogButton] = []
     var activeTab: SettingsTab = .keybindings
     var isTabBarFocused: Bool = false
 
@@ -106,7 +113,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         tab: SettingsTab = .keybindings,
         appearance: ScopedAppearanceContext? = nil
     ) {
-        if let existing = window.contentView?.subviews.first(where: { $0 is TerminalSettingsDialog }) {
+        if let existing = window.contentView?.subviews.last(where: { $0 is TerminalSettingsDialog && !$0.isHidden }) {
             let dialog = existing as? TerminalSettingsDialog
             if dialog?.scopedAppearance?.scope != appearance?.scope {
                 dialog?.withdraw()
@@ -139,11 +146,12 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     init(style: Style, configFile: KeybindConfigFile? = nil, initialTab: SettingsTab = .keybindings,
-         appearance: ScopedAppearanceContext? = nil) {
+         appearance: ScopedAppearanceContext? = nil, editor: ThemePresetEditor? = nil) {
         self.style = style
         self.configFile = configFile ?? .shared
         self.scopedAppearance = appearance
-        self.activeTab = appearance != nil && initialTab.rawValue < 2 ? .themes : initialTab
+        self.presetEditor = editor
+        self.activeTab = (appearance != nil || editor != nil) && initialTab.rawValue < 2 ? .themes : initialTab
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor
@@ -153,12 +161,13 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityIdentifier("TerminalSettingsDialog")
+        setAccessibilityIdentifier(editor == nil ? "TerminalSettingsDialog" : "ThemePresetEditor")
         setAccessibilityLabel(settingsTitle)
         setAccessibilityTitle(settingsTitle)
 
         setupSearchField()
         setupButtons()
+        setupPresetControls()
         updateButtonsForActiveTab()
         filterItems("")
         updateAccessibilityState()
@@ -217,6 +226,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     func updateButtonsForActiveTab() {
         guard buttons.count >= 3 else { return }
+        if presetEditor != nil { updatePresetEditorControls(); return }
         if activeTab == .keybindings {
             buttons[0].title = "Record (R)"
             buttons[0].setAccessibilityIdentifier("SettingsRecordButton")
@@ -229,6 +239,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     }
 
     @objc private func buttonPressed(_ sender: DialogButton) {
+        if handlePresetEditorButton(sender.tag) { return }
         switch sender.tag {
         case 0:
             if activeTab == .keybindings {
@@ -266,7 +277,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         } else {
             next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
         }
-        if scopedAppearance == nil && next == item.type.defaultStringValue {
+        if scopedAppearance == nil && presetEditor == nil && next == item.type.defaultStringValue
+            && !(configFile.hasFullThemePreset && ThemePresetConfig.isAppearanceKey(item.id)) {
             if removeSettingValue(for: item) {
                 statusMessage = "Default: \(item.id) = \(next)"
                 setAccessibilityValue("setting_reset_success: \(item.id)")
@@ -311,6 +323,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         cancelEditingColor()
         guard !isWithdrawing else { return }
         isWithdrawing = true
+        finishPresetEditor()
         setAccessibilityValue("closed")
         if let previous = previousResponder {
             window?.makeFirstResponder(previous)
@@ -346,6 +359,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             let origin = cell(3, 2)
             field.frame = NSRect(x: origin.x, y: origin.y, width: CGFloat(columns - 6) * cellWidth, height: cellHeight)
         }
+        layoutPresetControls()
 
         var col = columns - 3
         for button in buttons.reversed() {

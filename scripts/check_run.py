@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+# tako — Focused application verification
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+
 """Targeted checks on the test Mac: only the tests a change touches.
 
 Run through scripts/check.sh, which sends it to the test Mac. Each argument
 names one check:
 
-    rust:<name>      cargo test --test <name> if tests/<name>.rs exists,
+    rust:<name>      cargo test --test <name> for a test file or directory target,
                      else cargo test <name> as a filter
     swift:<filter>   the Swift package's tests matching <filter>, no coverage
     e2e:<a,b,...>    those scenarios of scripts/e2e-macapp.sh on a fresh build
@@ -54,15 +61,18 @@ def note(check, ok, detail, build=None, lock=None, run_s=None):
 
 
 def check_rust(name):
-    target = ["--test", name] if os.path.exists(f"tests/{name}.rs") else [name]
+    integration = os.path.isfile(f"tests/{name}.rs") or os.path.isfile(f"tests/{name}/main.rs")
+    target = ["--test", name] if integration else [name]
     only = target if target[0] == "--test" else []
     build, code, _ = run(["cargo", "test", "--features", "pty,ssh", "--no-run"] + only)
     if code != 0:
         return note(f"rust:{name}", False, "build failed", build)
     secs, code, out = run(["cargo", "test", "--features", "pty,ssh"] + target)
-    passed = sum(int(n) for n in re.findall(r"test result: ok\. (\d+) passed", out))
+    passed = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", out))
+    failed_tests = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. \d+ passed; (\d+) failed", out))
     ok = code == 0 and passed > 0
-    note(f"rust:{name}", ok, f"{passed} passed" if passed else "no tests ran", build, None, secs)
+    detail = f"{passed} passed, {failed_tests} failed" if passed or failed_tests else "no completed test summary"
+    note(f"rust:{name}", ok, detail, build, None, secs)
 
 
 def host_framework():

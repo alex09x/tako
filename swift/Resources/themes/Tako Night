@@ -1,3 +1,6 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
 # Tako Night — a cool, low-contrast dark terminal palette.
 background = #11151e
 foreground = #e3e8f0

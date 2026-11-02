@@ -12,6 +12,21 @@ import CoreGraphics
 import Foundation
 
 extension TerminalTheme {
+    private static func fullPresetVersionIsSupported(_ text: String) -> Bool {
+        let versions = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("# tako-preset-version:") }
+        return !versions.isEmpty && versions.allSatisfy { $0 == "# tako-preset-version: 1" }
+    }
+
+    /// Full Tako presets include typography; legacy color themes do not.
+    public static func presetContainsTypography(named name: String, searchPaths: [String] = themeSearchPaths) -> Bool {
+        for directory in searchPaths {
+            guard let text = try? String(contentsOfFile: (directory as NSString).appendingPathComponent(name), encoding: .utf8) else { continue }
+            return fullPresetVersionIsSupported(text)
+        }
+        return false
+    }
+
     /// Every theme name available on this machine, sorted.
     public static func availableThemes() -> [String] {
         var names = Set<String>()
@@ -34,11 +49,23 @@ extension TerminalTheme {
         for dir in searchPaths {
             let path = (dir as NSString).appendingPathComponent(name)
             guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            let presetVersion = text.components(separatedBy: .newlines).first {
+                $0.trimmingCharacters(in: .whitespaces).hasPrefix("# tako-preset-version:")
+            }
+            if presetVersion != nil {
+                guard Self.fullPresetVersionIsSupported(text) else { return self }
+                // A full Tako preset owns its typography as well as its
+                // palette. Missing appearance values start from Tako's
+                // defaults rather than leaking from the previous preset.
+                let preset = Self.parse(config: text, base: .takoDefault, honourTheme: false,
+                                        themeSearchPaths: searchPaths, configPath: path)
+                return preset
+            }
             var merged = Self.parse(
                 config: text,
                 base: self,
                 honourTheme: false,
-                themeSearchPaths: searchPaths)
+                themeSearchPaths: searchPaths, configPath: path)
             // A theme sets colors; it must not clobber the user's font or
             // padding choices, which live in the config proper.
             merged.fontFamily = fontFamily
@@ -79,11 +106,12 @@ extension TerminalTheme {
                              base: TerminalTheme = TerminalTheme(),
                              honourTheme: Bool = true,
                              configPath: String? = nil) -> TerminalTheme {
-        parse(
+        let profile = configPath.map { URL(fileURLWithPath: $0).deletingLastPathComponent().appendingPathComponent("themes").path }
+        return parse(
             config: text,
             base: base,
             honourTheme: honourTheme,
-            themeSearchPaths: Self.themeSearchPaths,
+            themeSearchPaths: (profile.map { [$0] } ?? []) + Self.themeSearchPaths,
             configPath: configPath)
     }
 
@@ -98,8 +126,11 @@ extension TerminalTheme {
             guard !line.isEmpty, !line.hasPrefix("#"),
                   let eq = line.firstIndex(of: "=") else { continue }
             let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-            entries.append((String(key), String(value)))
+            var value = String(line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces))
+            if value.count >= 2, (value.first == "\"" && value.last == "\"" || value.first == "'" && value.last == "'") {
+                value = String(value.dropFirst().dropLast())
+            }
+            entries.append((String(key), value))
         }
 
         // Tako applies the selected theme first, then overlays every

@@ -40,6 +40,7 @@ import TakoKit
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        ThemePresetPreview.restoreAll()
         if AppUpdater.isRelaunching { return .terminateNow }
         let windows = NSApplication.shared.windows
         if windows.isEmpty { return .terminateNow }
@@ -67,6 +68,7 @@ import TakoKit
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ThemePresetPreview.restoreAll()
         ControlCommands.stop()
         if !SessionPlaces.isSelfTest {
             sessionSaver.save(Self.restorableSurfaces(), settings: sessionSaveSettings())

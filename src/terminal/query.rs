@@ -221,7 +221,7 @@ impl Terminal {
         )
     }
 
-    /// Sets the host's base fg / bg / cursor colors and base palette entries.
+    /// Replaces the host's base colors and palette, preserving OSC overrides.
     pub fn set_base_colors(
         &mut self,
         fg: Option<(u8, u8, u8)>,
@@ -241,9 +241,7 @@ impl Terminal {
         if !self.palette.cursor_overridden() {
             self.cursor_color = cursor;
         }
-        for &(index, rgb) in palette {
-            self.palette.set_base(index, rgb);
-        }
+        self.palette.replace_base(palette);
     }
 
     /// A power-on terminal that keeps what the host configured.

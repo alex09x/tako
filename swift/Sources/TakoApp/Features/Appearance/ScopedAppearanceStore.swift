@@ -84,6 +84,19 @@ public final class ScopedAppearanceStore {
         NotificationCenter.default.post(name: .takoScopedAppearanceDidChange, object: self)
     }
 
+    /// Choosing a full preset replaces custom fields at this level, while
+    /// leaving other panes and workspaces untouched.
+    func applyPreset(_ name: String, scope: AppearanceScope) throws {
+        if let loadError { throw loadError }
+        try AppearanceValidator.validate(value: name, for: .theme)
+        var draft = document
+        draft.reset(scope)
+        draft.setOverride(name, for: "theme", scope: scope)
+        try persist(draft)
+        document = draft
+        NotificationCenter.default.post(name: .takoScopedAppearanceDidChange, object: self)
+    }
+
     /// Resolve the effective theme combining global theme, workspace overrides, and pane overrides.
     public func effectiveTheme(
         global: TerminalTheme,

@@ -33,6 +33,7 @@ extension TerminalSettingsDialog {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlePresetKeyEquivalent(event) { return true }
         if isRecording {
             handleRecordingKey(event)
             return true
@@ -63,7 +64,9 @@ extension TerminalSettingsDialog {
         }
 
         // Allow standard clipboard and text editing shortcuts while searching
-        if let field = colorEditField ?? searchField, window?.firstResponder == field.currentEditor() {
+        if [colorEditField, presetNameField, searchField].compactMap({ $0 }).contains(where: {
+            $0.currentEditor() != nil && window?.firstResponder === $0.currentEditor()
+        }) || (presetConfigText != nil && window?.firstResponder === presetConfigText) {
             if flags == .command, let char = event.charactersIgnoringModifiers?.lowercased() {
                 if ["a", "c", "v", "x", "z"].contains(char) {
                     return super.performKeyEquivalent(with: event)
@@ -288,6 +291,13 @@ extension TerminalSettingsDialog {
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        if let field = presetNameField, (obj.object as? NSTextField) === field {
+            presetEditor?.name = field.stringValue
+            setAccessibilityLabel(settingsTitle)
+            setAccessibilityTitle(settingsTitle)
+            needsDisplay = true
+            return
+        }
         if (obj.object as? NSTextField) === colorEditField { return }
         cancelEditingColor(restoreFocus: false)
         pendingConflict = nil
@@ -296,6 +306,15 @@ extension TerminalSettingsDialog {
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if control === presetNameField {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                window?.makeFirstResponder(self); return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                withdraw(); return true
+            }
+            return false
+        }
         if control === colorEditField {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 saveEditedColor(); return true
