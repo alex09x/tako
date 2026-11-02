@@ -1,3 +1,6 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
 # Tako Forest — a subdued green-tinted dark terminal palette.
 background = #111a16
 foreground = #e0e9db

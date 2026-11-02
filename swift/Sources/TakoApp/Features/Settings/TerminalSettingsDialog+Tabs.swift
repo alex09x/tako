@@ -12,7 +12,8 @@ import AppKit
 
 extension TerminalSettingsDialog {
     var tabLayout: [(tab: SettingsTab, label: String, column: Int)] {
-        let labels = [" [1] Keys", " [2] General", " [3] Themes", " [4] Fonts", " [5] Font Size"]
+        let labels = [" [1] Keys", " [2] General", presetEditor == nil ? " [3] Themes" : " [3] Colors",
+                      " [4] Fonts", " [5] Font Size", " [6] Config"]
         var column = 3
         return zip(SettingsTab.allCases, labels).filter { availableTabs.contains($0.0) }.map { tab, label in
             defer { column += label.count + 1 }
@@ -31,6 +32,10 @@ extension TerminalSettingsDialog {
         themeWarning = nil
         updateButtonsForActiveTab()
         filterItems(searchField?.stringValue ?? "")
+        updatePresetControlVisibility()
+        if presetEditor != nil {
+            window?.makeFirstResponder(activeTab == .themeConfig ? presetConfigText : self)
+        }
         needsDisplay = true
     }
 
@@ -38,12 +43,14 @@ extension TerminalSettingsDialog {
         let isDefaultFont = item.category == TerminalAppearanceCatalog.fontCategory
             && item.title == TerminalAppearanceCatalog.defaultFont
         let isInherited = scopedAppearance != nil && item.title == inheritanceTitle
+        let fullPreset = item.id == "theme" && !isInherited
+            && TerminalTheme.presetContainsTypography(named: item.title, searchPaths: configFile.appearanceThemePaths)
         let saved = isDefaultFont || isInherited ? removeSettingValue(for: item)
-                                                 : setSettingValue(item.title, for: item)
+            : fullPreset ? applyCompleteTheme(item.title) : setSettingValue(item.title, for: item)
         if saved {
             if item.category == TerminalAppearanceCatalog.themeCategory { themeWarning = nil }
             statusMessage = item.category == TerminalAppearanceCatalog.themeCategory
-                ? "Theme: \(item.title) · custom colors remain" : "Font: \(item.title)"
+                ? "Theme: \(item.title) · \(fullPreset ? "colors and fonts applied" : "custom colors remain")" : "Font: \(item.title)"
             setAccessibilityValue("setting_custom_success: \(item.id) = \(item.title)")
         } else {
             statusMessage = scopedAppearance?.writeError ?? "Could not save \(item.id). Your config was not updated."
@@ -62,9 +69,10 @@ extension TerminalSettingsDialog {
         } else {
             let item = selectedSettingIndex < filteredSettingItems.count ? filteredSettingItems[selectedSettingIndex].title : "No matching settings"
             let warning = activeTab == .themes ? themeWarning.map { "; \($0)" } ?? "" : ""
-            let detail = scopedAppearance != nil && selectedSettingIndex < filteredSettingItems.count
+            let detail = (scopedAppearance != nil || presetEditor != nil) && selectedSettingIndex < filteredSettingItems.count
                 ? " = " + effectiveSettingValue(for: filteredSettingItems[selectedSettingIndex]) : ""
-            setAccessibilityValue("\(activeTab.title): \(filteredSettingItems.count) items, \(item)\(detail)\(warning)")
+            let section = presetEditor != nil && activeTab == .themes ? "Colors" : activeTab.title
+            setAccessibilityValue("\(section): \(filteredSettingItems.count) items, \(item)\(detail)\(warning)")
         }
     }
 
@@ -83,7 +91,12 @@ extension TerminalSettingsDialog {
             let items: [TerminalSettingItem]
             switch activeTab {
             case .themes:
-                let names = TerminalAppearanceCatalog.themeNames()
+                if presetEditor != nil {
+                    themeWarning = nil
+                    items = ThemePresetEditor.colorItems
+                    break
+                }
+                let names = TerminalAppearanceCatalog.themeNames(paths: configFile.appearanceThemePaths)
                 if let themeSetting = TerminalSettingRegistry.setting(for: "theme"),
                    let selected = storedSettingValue(for: themeSetting), selected.lowercased() != "tako",
                    !names.contains(where: { $0.caseInsensitiveCompare(selected) == .orderedSame }) {
@@ -96,10 +109,13 @@ extension TerminalSettingsDialog {
                     + presets.filter { $0.category == TerminalAppearanceCatalog.themeCategory || ScopedAppearanceContext.keys.contains($0.id) }
             case .fonts:
                 if fontFamilies.isEmpty { fontFamilies = TerminalAppearanceCatalog.fontFamilies() }
-                items = scopedAppearance == nil ? TerminalAppearanceCatalog.fontItems(fontFamilies)
+                items = presetEditor != nil
+                    ? TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
+                    : scopedAppearance == nil ? TerminalAppearanceCatalog.fontItems(fontFamilies)
                     : [inheritanceItem(key: "font-family", category: TerminalAppearanceCatalog.fontCategory)]
                         + TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
             case .fontSize: items = TerminalAppearanceCatalog.sizeItems
+            case .themeConfig: items = []
             case .terminalSettings, .keybindings: items = allSettingItems
             }
             filteredSettingItems = q.isEmpty ? items : items.filter { item in
@@ -111,6 +127,7 @@ extension TerminalSettingsDialog {
             scrollSettingOffset = 0
         }
         needsDisplay = true
+        updatePresetControlVisibility()
         updateAccessibilityState()
     }
 }

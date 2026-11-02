@@ -289,9 +289,13 @@ public struct TerminalTheme {
     /// Where a theme is looked up by name, first match wins: the user's own
     /// theme directories, then the themes bundled with the app.
     public static var themeSearchPaths: [String] {
-        [
-            "~/.config/tako-core/themes",
+        let profileThemes = ProcessInfo.processInfo.environment["TAKO_CONFIG_PATH"].flatMap { path in
+            path.isEmpty ? nil : URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                .deletingLastPathComponent().appendingPathComponent("themes").path
+        }
+        return (profileThemes.map { [$0] } ?? []) + [
             "~/.config/tako/themes",
+            "~/.config/tako-core/themes",
             "~/Library/Application Support/com.tako-core.terminal/themes",
         ].map { ($0 as NSString).expandingTildeInPath }
             + [Bundle.main.resourceURL?.appendingPathComponent("themes").path ?? ""]

@@ -11,8 +11,11 @@
 import AppKit
 
 extension TerminalSettingsDialog {
-    var settingsTitle: String { String((scopedAppearance?.title ?? "Tako Settings").prefix(54)) }
-    var availableTabs: [SettingsTab] { scopedAppearance == nil ? SettingsTab.allCases : [.themes, .fonts, .fontSize] }
+    var settingsTitle: String { String((presetEditor.map { "Theme: \($0.name)" } ?? scopedAppearance?.title ?? "Tako Settings").prefix(54)) }
+    var availableTabs: [SettingsTab] {
+        if presetEditor != nil { return [.themes, .fonts, .fontSize, .themeConfig] }
+        return scopedAppearance == nil ? [.keybindings, .terminalSettings, .themes, .fonts, .fontSize] : [.themes, .fonts, .fontSize]
+    }
     var inheritanceTitle: String {
         if let scope = scopedAppearance?.scope, case .pane = scope { return "Inherit workspace" }
         return "Inherit Tako settings"
@@ -25,21 +28,25 @@ extension TerminalSettingsDialog {
     }
 
     func storedSettingValue(for item: TerminalSettingItem) -> String? {
+        if let presetEditor { return presetEditor.value(for: item.id) }
         if let scopedAppearance { return scopedAppearance.value(for: item.id) }
         return configFile.getSettingValue(for: item)
     }
 
     func effectiveSettingValue(for item: TerminalSettingItem) -> String {
+        if let presetEditor { return presetEditor.effectiveValue(for: item.id) }
         if let scopedAppearance { return scopedAppearance.effectiveValue(for: item.id) ?? item.type.defaultStringValue }
         return configFile.effectiveSettingValue(for: item)
     }
 
     @discardableResult func setSettingValue(_ value: String, for item: TerminalSettingItem) -> Bool {
+        if let presetEditor { presetEditor.setValue(value, for: item.id); return true }
         if let scopedAppearance { return scopedAppearance.setValue(value, for: item.id) }
         return configFile.setSettingValue(value, for: item)
     }
 
     @discardableResult func removeSettingValue(for item: TerminalSettingItem) -> Bool {
+        if let presetEditor { presetEditor.reset(item.id); return true }
         if let scopedAppearance { return scopedAppearance.setValue(nil, for: item.id) }
         return configFile.removeSettingValue(for: item)
     }
@@ -51,6 +58,18 @@ extension TerminalSettingsDialog {
         guard let selected = raw ?? (scopedAppearance == nil ? fallback : nil) else { return false }
         return selected.caseInsensitiveCompare(item.title) == .orderedSame
             || (item.id == "theme" && selected.lowercased() == "tako" && item.title == "TakoCore")
+    }
+
+    func applyCompleteTheme(_ name: String) -> Bool {
+        guard (try? ThemePresetStore.validatePresetName(name)) != nil else { return false }
+        if let scopedAppearance {
+            guard scopedAppearance.isAvailable() else { return false }
+            do {
+                try scopedAppearance.store.applyPreset(name, scope: scopedAppearance.scope)
+                return true
+            } catch { statusMessage = error.localizedDescription; return false }
+        }
+        return configFile.applyFullThemePreset(name)
     }
 
     func appearanceChoiceFont(for item: TerminalSettingItem) -> NSFont? {

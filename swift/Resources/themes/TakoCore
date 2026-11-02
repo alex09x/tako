@@ -1,3 +1,6 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
 # The palette from the design system. Warm, not blue: the background is
 # nearly black-brown and the text is an off-white, so ember reads as an
 # accent rather than fighting a cool background.

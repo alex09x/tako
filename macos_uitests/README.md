@@ -1,6 +1,6 @@
 # macOS UI tests
 
-The upstream XCUITest suite, ported to Tako. These tests drive a real
+The upstream XCUITest suite, ported to Tako, plus Tako's feature journeys. These tests drive a real
 running app through the accessibility tree -- windows, tabs, menu items, the
 command palette, titlebar pixels.
 
@@ -15,7 +15,7 @@ project can host one. (And a stray directory under `swift/Sources` or
 |---|---|
 | `project.yml` | XcodeGen spec; the `.xcodeproj` below is generated from it |
 | `TakoUITests.xcodeproj` | Generated. Committed, so no tool is needed to build |
-| `TakoUITests/` | The 8 upstream source files, byte-identical to upstream |
+| `TakoUITests/` | Upstream compatibility cases and first-party feature journeys |
 | `AppHost/main.swift` | Placeholder entry point for the host-app target |
 
 The eight files under `TakoUITests/` are upstream's
@@ -36,7 +36,7 @@ native macOS app target that exists only as a wrapper:
    own product in `BUILT_PRODUCTS_DIR`, replacing the placeholder wholesale.
 
 Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
-(`com.tako-core.terminal`), and the UI test target sets
+(`com.tako-core.terminal.uitest`, separate from the installed application), and the UI test target sets
 `TEST_TARGET_NAME = TakoCore`, which is what puts `UITargetAppPath` into the
 generated `.xctestrun`.
 
@@ -46,6 +46,29 @@ of this project and is deliberately not held hostage to the app build; the
 tests skip themselves outside a manual Xcode run anyway (below).
 
 ## Building and running
+
+Run the focused appearance cases on the remote test Mac:
+
+```sh
+scripts/uitest.sh TakoScopedAppearanceUITests TakoThemePresetUITests
+```
+
+This uses the `TakoUITests-Run` scheme, which enables test discovery, holds the shared GUI lock,
+and rejects a run with zero passed cases. The seven tests check scoped menus and containment,
+rendered theme/reset pixels, independent split panes, rendered font geometry and glyphs,
+full-preset preview/cancel, save/relaunch/reopen, invalid names and failed writes. Screenshots
+are retained in `target/uitest.xcresult` as supporting evidence. Each fixture uses an isolated
+config, defaults and test-bundle state; it restores any prior test profile and does not use the
+installed app's bundle or sessions.
+
+To prepare the exact runner without executing UI tests:
+
+```sh
+scripts/uitest.sh --build-only TakoScopedAppearanceUITests TakoThemePresetUITests
+```
+
+This is explicitly **compilation only**, not a passing UI run. The wrapper also fails if the
+real host app was not built and Xcode kept the placeholder.
 
 ```
 xcodebuild build-for-testing -project macos_uitests/TakoUITests.xcodeproj \
@@ -69,9 +92,17 @@ behaviour, kept verbatim: these tests are slow and click-driven, and upstream's
 CI does not run them either. Removing the skip would make them run, and hang or
 fail, in exactly the contexts upstream never intended.
 
-Running them for real therefore needs Xcode itself, plus:
+The `-Run` scheme supplies that IDE variable explicitly. Running it for real also needs:
 
 - a logged-in, unlocked GUI session on a real (not headless) display,
 - Accessibility and Automation permission granted to Xcode, otherwise the
   runner dies with `Timed out while enabling automation mode`,
 - no other app stealing focus, since the tests type keystrokes and drag tabs.
+
+If `/usr/bin/automationmodetool status` reports that Automation Mode is disabled and enabling
+it requires user authentication, the wrapper fails before running any test and says so. An
+authorized CI host that allows activation without repeated authentication proceeds normally;
+the test runner enables its own automation session. Administrator authorization on the test Mac is a
+system prerequisite; it must not be bypassed or counted as successful execution. The existing
+isolated AX/CGEvent journeys (`settings-theme-presets`, `settings-appearance`,
+`persist-scoped-appearance`) are a separate executable UI gate, not XCUITest results.

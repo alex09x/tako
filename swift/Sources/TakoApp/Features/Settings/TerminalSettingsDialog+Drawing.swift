@@ -61,10 +61,13 @@ extension TerminalSettingsDialog {
         }
 
         // Header columns (Row 4)
+        if presetEditor != nil { drawText("Name", col: 4, row: 3, font: style.font, color: TakoTUI.dim) }
         let headerY = 4
         if activeTab == .keybindings {
             drawText("ACTION", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
             drawText("SHORTCUT", col: 46, row: headerY, font: style.boldFont, color: TakoTUI.dim)
+        } else if activeTab == .themeConfig {
+            drawText("COMPLETE THEME CONFIGURATION", col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
         } else {
             let heading = activeTab == .themes ? "THEME / COLOR" : (activeTab == .fonts ? "MONOSPACE FONTS" : "SETTING")
             drawText(heading, col: 4, row: headerY, font: style.boldFont, color: TakoTUI.dim)
@@ -153,7 +156,7 @@ extension TerminalSettingsDialog {
                 if item.category == TerminalAppearanceCatalog.themeCategory {
                     let preview = item.title == inheritanceTitle && scopedAppearance != nil
                         ? scopedAppearance!.previewInheriting("theme")
-                        : themePreviews[item.title] ?? TerminalTheme.takoDefault.applyingTheme(named: item.title)
+                        : themePreviews[item.title] ?? TerminalTheme.takoDefault.applyingTheme(named: item.title, searchPaths: configFile.appearanceThemePaths)
                     if item.title != inheritanceTitle { themePreviews[item.title] = preview }
                     let colors = [preview.background, preview.foreground, preview.cursorColor]
                     for (index, color) in colors.enumerated() {
@@ -181,7 +184,7 @@ extension TerminalSettingsDialog {
                     let point = cell(44, r)
                     NSRect(x: point.x, y: point.y + 3, width: cellWidth, height: cellHeight - 6).fill()
                 }
-                let isCustom = storedSettingValue(for: item) != nil
+                let isCustom = presetEditor?.isChanged(item.id) ?? (storedSettingValue(for: item) != nil)
                 let valColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
                 drawText(displayVal, col: 46, row: r, font: style.boldFont, color: valColor)
             }
@@ -191,7 +194,8 @@ extension TerminalSettingsDialog {
             let value = effectiveSettingValue(for: item)
             let size = min(72, max(6, Double(value).flatMap { $0.isFinite ? $0 : nil } ?? 13))
             let fontItem = TerminalAppearanceCatalog.fontItems([])[0]
-            let family = scopedAppearance?.effectiveValue(for: "font-family") ?? configFile.getSettingValue(for: fontItem)
+            let family = presetEditor?.effectiveValue(for: "font-family")
+                ?? scopedAppearance?.effectiveValue(for: "font-family") ?? configFile.getSettingValue(for: fontItem)
             let preview = family.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: CGFloat(size)) }
                 ?? NSFont(descriptor: style.font.fontDescriptor, size: CGFloat(size)) ?? style.font
             drawText("Aa Bb 012345", col: 4, row: 8, font: preview, color: TakoTUI.text)

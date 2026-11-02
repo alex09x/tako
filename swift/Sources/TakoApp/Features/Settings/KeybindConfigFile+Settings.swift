@@ -45,11 +45,20 @@ extension KeybindConfigFile {
     }
 
     public func effectiveSettingValue(for setting: TerminalSettingItem) -> String {
+        let theme = TerminalTheme.parse(config: rawConfigLines.joined(separator: "\n"), configPath: configPath)
         if case .color = setting.type {
-            let theme = TerminalTheme.parse(config: rawConfigLines.joined(separator: "\n"))
             if let color = theme.settingsColor(for: setting.id), let nsColor = NSColor(cgColor: color) {
                 return Tako.Brand.hexString(for: nsColor)
             }
+        }
+        switch setting.id {
+        case "font-family": return theme.fontFamily ?? TerminalAppearanceCatalog.defaultFont
+        case "font-size": return theme.fontSize.rounded() == theme.fontSize ? String(Int(theme.fontSize)) : String(Double(theme.fontSize))
+        case "cursor-style":
+            switch theme.cursorShape { case .bar: return "bar"; case .block: return "block"; case .underline: return "underline" }
+        case "cursor-style-blink": return theme.cursorBlink ? "true" : "false"
+        case "background-blur": return String(theme.backgroundBlur)
+        default: break
         }
         return getSettingValue(for: setting) ?? setting.type.defaultStringValue
     }

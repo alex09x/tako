@@ -14,7 +14,7 @@ import AppKit
 enum TerminalAppearanceCatalog {
     static let themeCategory = "Theme presets"
     static let fontCategory = "Font families"
-    static let defaultFont = "Tako default"
+    static let defaultFont = "Theme default"
 
     static func themeNames(paths: [String] = TerminalTheme.themeSearchPaths) -> [String] {
         var names: [String: String] = [:]
@@ -25,7 +25,8 @@ enum TerminalAppearanceCatalog {
                 guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
                       FileManager.default.isReadableFile(atPath: url.path) else { continue }
                 let name = url.lastPathComponent
-                guard name.rangeOfCharacter(from: .controlCharacters.union(.newlines)) == nil else { continue }
+                guard name.rangeOfCharacter(from: .controlCharacters.union(.newlines)) == nil,
+                      name == name.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
                 if names[name.lowercased()] == nil { names[name.lowercased()] = name }
             }
         }

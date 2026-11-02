@@ -1,3 +1,6 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
 # Tako Ocean — a deep blue terminal palette.
 background = #0e1820
 foreground = #dce9ea

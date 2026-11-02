@@ -471,6 +471,9 @@ let scenarios: [Scenario] = [
     ("persist-scoped-appearance", "workspace and pane styles follow live sessions across moves and relaunch", { d in
         try runScopedAppearanceScenario(d)
     }),
+    ("settings-theme-presets", "full named theme preview, cancel, save, reopen and storage errors", { d in
+        try runThemePresetScenario(d)
+    }),
     ("persist-sidebar-long-list", "resize, scroll and drag a long sidebar list", { d in
         try runSidebarLongListScenario(d)
     }),

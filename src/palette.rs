@@ -7,6 +7,7 @@
  * Project: https://github.com/alex09x/tako
  * SPDX-License-Identifier: MIT
  */
+mod theme;
 
 pub struct Palette {
     /// Live values: what OSC 4 sets and OSC 4's query reports.
