@@ -41,6 +41,26 @@ import Testing
         #expect(try String(contentsOf: original, encoding: .utf8) == text)
     }
 
+    @Test func legacyCopyCanonicalizesRuntimeRGBAndEquivalentPaletteIndexes() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("Legacy RGB")
+        let text = "background = 40,44,52\nforeground = 190,191,192\nselection-foreground = 10,20,30\ntab-status-color-working = 30,40,50\npalette = 1=1,2,3\npalette = 01=40,44,52\npalette = 0200=4,5,6\n"
+        try text.write(to: source, atomically: true, encoding: .utf8)
+        let store = ThemePresetStore(directory: root.appendingPathComponent("copies"), searchPaths: [root.path])
+        let editor = ThemePresetEditor(store: store, original: try store.load(named: "Legacy RGB"),
+                                      base: .takoDefault, copyName: "RGB Copy")
+        let saved = try editor.save()
+        let parsed = try ThemePresetConfig.parsed(saved.config)
+        #expect(ThemePresetConfig.hex(for: parsed.background) == "#282c34")
+        #expect(ThemePresetConfig.hex(for: parsed.foreground) == "#bebfc0")
+        #expect(ThemePresetConfig.value(for: "selection-foreground", in: saved.config) == "#0a141e")
+        #expect(ThemePresetConfig.value(for: "tab-status-color-working", in: saved.config) == "#1e2832")
+        #expect(parsed.palette[1] == TerminalTheme.parseColor("#282c34"))
+        #expect(parsed.palette[200] == TerminalTheme.parseColor("#040506"))
+        #expect(try String(contentsOf: source, encoding: .utf8) == text)
+    }
+
     @Test func reopeningSettingsClosesEditorAndItsScopedParent() throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -113,10 +113,12 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         H.assertValue(reset, contains: "setting_reset_success: font-size")
         H.dismissDialog(reset, in: app)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
+        var resetGlyphs: H.GlyphObservation?
         XCTAssertTrue(H.wait {
-            guard let glyphs = try? H.glyphs(in: pane) else { return false }
-            return abs(glyphs.bounds.width - initialGlyphs.bounds.width) < initialGlyphs.bounds.width * 0.08
-        })
+            resetGlyphs = try? H.glyphs(in: pane)
+            return resetGlyphs?.bounds.size == initialGlyphs.bounds.size && resetGlyphs?.pixels == initialGlyphs.pixels
+        }, "Reset must restore the same glyph size and ink mask before testing family changes")
+        let familyBaseline = try XCTUnwrap(resetGlyphs)
         XCTAssertNil(try env.paneStyle(id)["font-size"])
         let family = H.openPaneAppearance(in: app, paneID: id)
         family.typeKey("4", modifierFlags: .command)
@@ -126,7 +128,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         H.dismissDialog(family, in: app)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-family"]) == "Monaco" })
-        XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != initialGlyphs.pixels })
+        XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != familyBaseline.pixels })
         H.attachScreenshot(pane.screenshot(), name: "font-family-rendered", to: self)
     }
 }

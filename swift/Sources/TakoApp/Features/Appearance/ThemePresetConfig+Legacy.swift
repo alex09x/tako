@@ -21,7 +21,7 @@ extension ThemePresetConfig {
     /// entries become notes rather than preventing the user from copying a
     /// theme that already renders. Last ordinary value wins, as at runtime.
     static func legacyDraft(_ text: String) -> String {
-        let lines = text.components(separatedBy: "\n")
+        let lines = text.components(separatedBy: "\n").map(canonicalLegacyColors)
         func identity(_ line: String) -> String? {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), let equal = trimmed.firstIndex(of: "=") else { return nil }
@@ -29,7 +29,8 @@ extension ThemePresetConfig {
             if key == "font-feature" || key == "custom-shader" { return nil }
             if key == "palette" {
                 let value = trimmed[trimmed.index(after: equal)...].trimmingCharacters(in: .whitespaces)
-                return "palette:" + String(value.split(separator: "=", maxSplits: 1).first ?? "").trimmingCharacters(in: .whitespaces)
+                guard let index = Int(String(value.split(separator: "=", maxSplits: 1).first ?? "").trimmingCharacters(in: .whitespaces)) else { return nil }
+                return "palette:" + String(index)
             }
             return key
         }
@@ -44,5 +45,29 @@ extension ThemePresetConfig {
             if let key = identity(line), last[key] != index { return "# Superseded legacy: " + line }
             return line
         }.joined(separator: "\n")
+    }
+
+    /// Legacy runtime colors also accept decimal RGB triples. Convert those
+    /// to the full preset format before validation and duplicate resolution.
+    private static func canonicalLegacyColors(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("#"), let equal = trimmed.firstIndex(of: "=") else { return line }
+        let key = trimmed[..<equal].trimmingCharacters(in: .whitespaces)
+        let value = trimmed[trimmed.index(after: equal)...].trimmingCharacters(in: .whitespaces)
+        func colorHex(_ value: String) -> String? {
+            guard let color = TerminalTheme.parseColor(value),
+                  color.components?.allSatisfy({ $0.isFinite }) == true else { return nil }
+            return hex(for: color)
+        }
+        if key == "palette" {
+            let parts = value.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2,
+                  let index = Int(parts[0].trimmingCharacters(in: .whitespaces)),
+                  let color = colorHex(parts[1].trimmingCharacters(in: .whitespaces)) else { return line }
+            return "palette = \(index)=\(color)"
+        }
+        let colorKeys = ["background", "foreground", "cursor-color", "selection-background", "selection-foreground"]
+        guard colorKeys.contains(key) || key.hasPrefix("tab-status-color-"), let color = colorHex(value) else { return line }
+        return "\(key) = \(color)"
     }
 }
