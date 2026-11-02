@@ -48,7 +48,7 @@ public enum ThemePresetConfig {
         let lines = text.components(separatedBy: "\n")
         if key.hasPrefix("palette:"),
            let index = Int(key.dropFirst("palette:".count)),
-           (0...15).contains(index) {
+           (0...255).contains(index) {
             for line in lines.reversed() {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
@@ -90,7 +90,7 @@ public enum ThemePresetConfig {
 
         if key.hasPrefix("palette:"),
            let index = Int(key.dropFirst("palette:".count)),
-           (0...15).contains(index) {
+           (0...255).contains(index) {
             var foundIndex: Int?
             var lastPaletteLineIndex: Int?
 
@@ -198,6 +198,9 @@ public enum ThemePresetConfig {
             let colorHex = theme.palette[i].map(hex(for:)) ?? defaultPaletteHex[i]!
             lines.append("palette = \(i)=\(colorHex)")
         }
+        for index in theme.palette.keys.sorted() where (16...255).contains(index) {
+            if let color = theme.palette[index] { lines.append("palette = \(index)=\(hex(for: color))") }
+        }
 
         if theme.selectionInvertFgBg {
             lines.append("selection-invert-fg-bg = true")
@@ -225,9 +228,6 @@ public enum ThemePresetConfig {
         }
         if theme.windowColorSpace != .srgb {
             lines.append("window-colorspace = \(theme.windowColorSpace.rawValue)")
-        }
-        if theme.graphemeWidthMethod != .unicode {
-            lines.append("grapheme-width-method = \(theme.graphemeWidthMethod == .legacy ? "legacy" : "unicode")")
         }
         for (state, color) in theme.tabStatusColors.sorted(by: { $0.key < $1.key }) {
             lines.append("tab-status-color-\(state) = \(hex(for: color))")

@@ -21,6 +21,7 @@ import XCTest
     private let savedSupport: URL
     private let previousApp: NSRunningApplication?
     private(set) var app: XCUIApplication?
+    private(set) var primaryPaneID: String?
 
     init() throws {
         testRoot = FileManager.default.temporaryDirectory.appendingPathComponent("tako-ui-\(UUID().uuidString)")
@@ -52,6 +53,10 @@ import XCTest
         let application = XCUIApplication()
         application.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "--no-update", "--no-launch-notices"]
         application.launchEnvironment["TAKO_CONFIG_PATH"] = configFile.path
+        // The target must use the same disposable data home as this
+        // sandboxed runner, not the operator's Application Support.
+        application.launchEnvironment["CFFIXED_USER_HOME"] = NSHomeDirectory()
+        application.launchEnvironment["HOME"] = NSHomeDirectory()
         application.launchEnvironment["TAKO_USER_DEFAULTS_SUITE"] = defaultsSuite
         application.launchEnvironment["TAKO_SESSIONS_HOME"] = testRoot.appendingPathComponent("sessions").path
         application.launchEnvironment["TAKO_AGENT_HOOKS_HOME"] = testRoot.appendingPathComponent("hooks").path
@@ -61,8 +66,9 @@ import XCTest
         application.launch()
         self.app = application
         XCTAssertTrue(application.windows.firstMatch.waitForExistence(timeout: 10))
-        let id = try XCTUnwrap(paneIDs().first)
-        _ = try control(["title", "Scope Primary", "--target", id])
+        let terminal = application.groups["Terminal pane"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        primaryPaneID = try identifyPane(terminal, title: "Scope Primary", slot: "primary")
         return application
     }
 
@@ -84,29 +90,16 @@ import XCTest
         previousApp?.activate(options: [])
     }
 
-    func control(_ args: [String]) throws -> String {
-        guard let process = NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).first,
-              let bundle = process.bundleURL else { throw ObservationError.unavailable("Isolated app is not running") }
-        let child = Process()
-        child.executableURL = bundle.appendingPathComponent("Contents/MacOS/takoctl")
-        child.arguments = ["--bundle-id", Self.bundleID] + args
-        let out = Pipe(), err = Pipe()
-        child.standardOutput = out; child.standardError = err
-        try child.run()
-        child.waitUntilExit()
-        guard child.terminationStatus == 0 else {
-            throw ObservationError.unavailable(String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+    func identifyPane(_ pane: XCUIElement, title: String, slot: String) throws -> String {
+        let file = testRoot.appendingPathComponent("pane-\(slot)")
+        let quoted = "'" + file.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        pane.typeText("printf '\\033]0;\(title)\\007'; printf '%s' \"$TAKO_SURFACE_ID\" > \(quoted)\n")
+        guard Self.wait({ (try? String(contentsOf: file, encoding: .utf8).isEmpty) == false }) else {
+            throw ObservationError.unavailable("Test terminal did not report its own pane ID")
         }
-        return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    }
-
-    func paneIDs() throws -> [String] {
-        guard let outer = try JSONSerialization.jsonObject(with: Data(control(["tree", "--json"]).utf8)) as? [String: Any] else {
-            throw ObservationError.unavailable("Malformed tree response")
-        }
-        let result = outer["result"] as? [String: Any] ?? outer
-        return (result["windows"] as? [[String: Any]] ?? []).flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
-            .flatMap { $0["panes"] as? [[String: Any]] ?? [] }.compactMap { $0["id"] as? String }
+        let id = try String(contentsOf: file, encoding: .utf8)
+        guard UUID(uuidString: id) != nil else { throw ObservationError.unavailable("Invalid pane ID from test terminal") }
+        return id
     }
 
     func paneStyle(_ id: String) throws -> [String: String] {
@@ -144,19 +137,25 @@ import XCTest
         return dialog
     }
 
-    static func openPaneAppearance(in app: XCUIApplication, title: String = "Scope Primary", isChild: Bool = false) -> XCUIElement {
+    static func openPaneAppearance(in app: XCUIApplication, paneID: String, isChild: Bool = false) -> XCUIElement {
         openSidebar(in: app)
-        let predicate = NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", title, title)
-        XCTAssertTrue(wait { app.staticTexts.matching(predicate).count > 0 })
-        let edge = app.descendants(matching: .any)["SessionSidebarHeader"].frame.maxX + 20
-        let rows = app.staticTexts.matching(predicate).allElementsBoundByIndex.filter { $0.frame.minX < edge }.sorted { $0.frame.midY < $1.frame.midY }
-        guard let row = isChild ? rows.last : rows.first else { XCTFail("Missing exact sidebar row '\(title)'"); return app.groups["missing"] }
+        let query = app.descendants(matching: .any).matching(identifier: (isChild ? "session-pane-" : "session-tab-") + paneID.lowercased())
+        XCTAssertTrue(query.firstMatch.waitForExistence(timeout: 5), "Missing exact session row for \(paneID)")
+        guard let row = query.allElementsBoundByIndex.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
+            XCTFail("No hittable session row"); return app.groups["missing"]
+        }
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
         let item = app.menuItems[isChild ? "Pane Appearance…" : "Terminal Appearance…"]
         XCTAssertTrue(item.waitForExistence(timeout: 5)); item.click()
         let dialog = app.groups["TerminalSettingsDialog"]
         XCTAssertTrue(dialog.waitForExistence(timeout: 5))
         return dialog
+    }
+
+    static func leafPanes(in app: XCUIApplication) -> [XCUIElement] {
+        app.textViews.matching(identifier: "terminal").allElementsBoundByIndex.filter {
+            $0.frame.width > 0 && $0.frame.height > 0
+        }.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     static func search(_ text: String, in dialog: XCUIElement) {

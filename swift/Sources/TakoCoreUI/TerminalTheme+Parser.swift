@@ -57,8 +57,9 @@ extension TerminalTheme {
                 // A full Tako preset owns its typography as well as its
                 // palette. Missing appearance values start from Tako's
                 // defaults rather than leaking from the previous preset.
-                let preset = Self.parse(config: text, base: .takoDefault, honourTheme: false,
+                var preset = Self.parse(config: text, base: .takoDefault, honourTheme: false,
                                         themeSearchPaths: searchPaths, configPath: path)
+                preset.graphemeWidthMethod = graphemeWidthMethod
                 return preset
             }
             var merged = Self.parse(

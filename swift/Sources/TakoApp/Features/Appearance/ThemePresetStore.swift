@@ -39,7 +39,7 @@ public final class ThemePresetStore {
                 throw ThemePresetError.symlinkNotAllowed("Theme preset file is a symbolic link: '\(userURL.path)'")
             }
             let text = try String(contentsOf: userURL, encoding: .utf8)
-            try ThemePresetConfig.validate(text)
+            if ThemePresetConfig.isVersioned(text) { try ThemePresetConfig.validate(text) }
             return ThemePreset(name: name, config: text, isUser: true)
         }
 
@@ -55,7 +55,7 @@ public final class ThemePresetStore {
                     throw ThemePresetError.symlinkNotAllowed("Built-in theme file is a symbolic link: '\(candidateURL.path)'")
                 }
                 let text = try String(contentsOf: candidateURL, encoding: .utf8)
-                try ThemePresetConfig.validate(text)
+                if ThemePresetConfig.isVersioned(text) { try ThemePresetConfig.validate(text) }
                 return ThemePreset(name: name, config: text, isUser: false)
             }
         }
@@ -130,6 +130,9 @@ public final class ThemePresetStore {
     public static func validatePresetName(_ name: String) throws {
         guard !name.isEmpty, !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw ThemePresetError.invalidName("Preset name cannot be empty or whitespace-only")
+        }
+        guard name == name.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw ThemePresetError.invalidName("Preset name cannot start or end with whitespace")
         }
         guard !name.hasPrefix(".") else {
             throw ThemePresetError.invalidName("Preset name cannot start with a dot: '\(name)'")

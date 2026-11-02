@@ -25,10 +25,10 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
             H.assertValue(dialog, contains: "Themes:")
         }
         dialog.typeKey("d", modifierFlags: .command)
-        XCTAssertEqual(try env.paneIDs().count, 1)
+        XCTAssertEqual(H.leafPanes(in: app).count, 1)
         H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "workspace-editor", to: self)
         H.dismissDialog(dialog, in: app)
-        let pane = H.openPaneAppearance(in: app)
+        let pane = H.openPaneAppearance(in: app, paneID: try XCTUnwrap(env.primaryPaneID))
         XCTAssertTrue(pane.label.contains("Pane appearance"))
         H.dismissDialog(pane, in: app)
         XCTAssertEqual(try Data(contentsOf: env.configFile), original)
@@ -56,16 +56,15 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
     @MainActor func testSplitPaneOwnsOnlyItsAppearance() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-        let first = try XCTUnwrap(env.paneIDs().first)
+        let first = try XCTUnwrap(env.primaryPaneID)
         app.typeKey("d", modifierFlags: .command)
-        XCTAssertTrue(H.wait { (try? env.paneIDs().count) == 2 })
-        let second = try XCTUnwrap(env.paneIDs().first { $0 != first })
-        _ = try env.control(["title", "Scope Split", "--target", second])
-        let panes = app.groups.matching(identifier: "Terminal pane").allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }
+        XCTAssertTrue(H.wait { H.leafPanes(in: app).count == 2 })
+        let panes = H.leafPanes(in: app)
         XCTAssertEqual(panes.count, 2)
         let left = panes[0], right = panes[1]
+        let second = try env.identifyPane(right, title: "Scope Split", slot: "split")
         let beforeLeft = try XCTUnwrap(H.samplePixelColor(from: left))
-        let dialog = H.openPaneAppearance(in: app, title: "Scope Split", isChild: true)
+        let dialog = H.openPaneAppearance(in: app, paneID: second, isChild: true)
         H.search("Ocean", in: dialog)
         dialog.typeKey(.return, modifierFlags: [])
         H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
@@ -86,40 +85,46 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
     @MainActor func testFontSizeAndFamilyReachActualRenderedGlyphs() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
-        let id = try XCTUnwrap(env.paneIDs().first)
+        let id = try XCTUnwrap(env.primaryPaneID)
         let pane = app.groups["Terminal pane"].firstMatch
         pane.typeText("printf '\\033[2J\\033[H\\033[?25lALPHABET\\n'; exec sleep 600\n")
         var initial: H.GlyphObservation?
         XCTAssertTrue(H.wait { initial = try? H.glyphs(in: pane); return initial != nil })
         let initialGlyphs = try XCTUnwrap(initial)
-        let dialog = H.openPaneAppearance(in: app)
+        H.attachScreenshot(initialGlyphs.screenshot, name: "font-size-before", to: self)
+        let dialog = H.openPaneAppearance(in: app, paneID: id)
         dialog.typeKey("5", modifierFlags: .command)
         for _ in 0..<4 { dialog.typeKey(.rightArrow, modifierFlags: []) }
         XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-size"]) == "17" })
         H.dismissDialog(dialog, in: app)
+        pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         var enlarged: H.GlyphObservation?
-        XCTAssertTrue(H.wait {
+        let grew = H.wait {
             enlarged = try? H.glyphs(in: pane)
             return (enlarged?.bounds.width ?? 0) > initialGlyphs.bounds.width * 1.15
                 && (enlarged?.bounds.height ?? 0) > initialGlyphs.bounds.height * 1.15
-        })
+        }
+        if let enlarged { H.attachScreenshot(enlarged.screenshot, name: "font-size-after", to: self) }
+        XCTAssertTrue(grew, "Before glyph bounds: \(initialGlyphs.bounds); after: \(String(describing: enlarged?.bounds))")
         H.attachScreenshot(try XCTUnwrap(enlarged).screenshot, name: "font-size-rendered", to: self)
-        let reset = H.openPaneAppearance(in: app)
+        let reset = H.openPaneAppearance(in: app, paneID: id)
         reset.typeKey("5", modifierFlags: .command)
         app.buttons["SettingsResetButton"].click()
         H.assertValue(reset, contains: "setting_reset_success: font-size")
         H.dismissDialog(reset, in: app)
+        pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         XCTAssertTrue(H.wait {
             guard let glyphs = try? H.glyphs(in: pane) else { return false }
             return abs(glyphs.bounds.width - initialGlyphs.bounds.width) < initialGlyphs.bounds.width * 0.08
         })
         XCTAssertNil(try env.paneStyle(id)["font-size"])
-        let family = H.openPaneAppearance(in: app)
+        let family = H.openPaneAppearance(in: app, paneID: id)
         family.typeKey("4", modifierFlags: .command)
         H.search("Monaco", in: family)
         family.typeKey(.return, modifierFlags: [])
         H.assertValue(family, contains: "setting_custom_success: font-family = Monaco")
         H.dismissDialog(family, in: app)
+        pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-family"]) == "Monaco" })
         XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != initialGlyphs.pixels })
         H.attachScreenshot(pane.screenshot(), name: "font-family-rendered", to: self)

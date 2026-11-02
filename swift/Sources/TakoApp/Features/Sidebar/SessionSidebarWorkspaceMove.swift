@@ -161,5 +161,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                 }
             }
         }
+        .accessibilityIdentifier((item.isChild ? "session-pane-" : "session-tab-")
+            + (item.surfaceId?.uuidString.lowercased() ?? item.tabId))
     }
 }

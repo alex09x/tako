@@ -34,6 +34,7 @@ extension KeybindConfigFile {
     func applyFullThemePreset(_ name: String) -> Bool {
         guard let path = configPath else { return false }
         do {
+            try ThemePresetStore.validatePresetName(name)
             try ensureConfigFileExists(at: path)
             let text = try String(contentsOfFile: path, encoding: .utf8)
             let updated = Self.configurationSelectingPreset(name, from: text)

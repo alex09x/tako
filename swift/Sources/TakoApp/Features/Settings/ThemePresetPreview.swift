@@ -89,18 +89,20 @@ import SwiftUI
         let workspace = surface.appearanceWorkspaceID
         var workspaceFields = workspace.flatMap { store.document.overrides(for: .workspace($0)) }
         var paneFields = store.document.overrides(for: .pane(surface.id))
-        var global = surface.app?.config.theme ?? .takoDefault
+        var global = surface.app?.config.theme ?? surface.configuredTheme ?? surface.theme
+        var appearance = draft
+        appearance.graphemeWidthMethod = global.graphemeWidthMethod
         let previewName = "__tako_unsaved_preview__"
         var replacements: [String: TerminalTheme] = [:]
         switch owner.scopedAppearance?.scope {
         case .workspace:
             workspaceFields = ["theme": previewName]
-            replacements[previewName] = draft
+            replacements[previewName] = appearance
         case .pane:
             paneFields = ["theme": previewName]
-            replacements[previewName] = draft
+            replacements[previewName] = appearance
         case nil:
-            global = draft
+            global = appearance
         }
         return ScopedAppearanceResolver.resolve(global: global, workspaceOverrides: workspaceFields,
             paneOverrides: paneFields, themeOverrides: replacements)

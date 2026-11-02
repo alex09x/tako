@@ -67,8 +67,8 @@ extension ThemePresetConfig {
                 let indexStr = parts[0].trimmingCharacters(in: .whitespaces)
                 let colorStr = parts[1].trimmingCharacters(in: .whitespaces)
 
-                guard let index = Int(indexStr), (0...15).contains(index) else {
-                    throw ThemePresetError.invalidPaletteIndex(line: lineNum, "Palette index must be an integer between 0 and 15, got '\(indexStr)'")
+                guard let index = Int(indexStr), (0...255).contains(index) else {
+                    throw ThemePresetError.invalidPaletteIndex(line: lineNum, "Palette index must be an integer between 0 and 255, got '\(indexStr)'")
                 }
                 guard isValidRGBColor(colorStr) else {
                     throw ThemePresetError.invalidColor(line: lineNum, key: "palette:\(index)", colorStr)
@@ -162,10 +162,6 @@ extension ThemePresetConfig {
         case "cursor-style":
             guard ["block", "block_hollow", "bar", "underline"].contains(value) else {
                 throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Invalid cursor-style")
-            }
-        case "grapheme-width-method":
-            guard ["unicode", "legacy"].contains(value) else {
-                throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Invalid grapheme-width-method")
             }
         case "custom-shader":
             guard isControlFree(value) else {

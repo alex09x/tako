@@ -31,8 +31,10 @@ struct FullThemePresetTests {
         var parent = TerminalTheme.takoDefault
         parent.fontFamily = "Menlo"
         parent.fontSize = 17
+        parent.graphemeWidthMethod = .legacy
         let full = parent.applyingTheme(named: "Complete", searchPaths: [root.path])
         #expect(full.fontFamily == "Monaco" && full.fontSize == 21)
+        #expect(full.graphemeWidthMethod == .legacy)
         #expect(full.background == TerminalTheme.parseColor("#123456"))
         let legacy = parent.applyingTheme(named: "Legacy", searchPaths: [root.path])
         #expect(legacy.fontFamily == "Menlo" && legacy.fontSize == 17)
@@ -46,7 +48,7 @@ struct FullThemePresetTests {
         let store = ThemePresetStore(directory: themes, searchPaths: [])
         _ = try store.save(name: "Full", config: "font-family = Monaco\nfont-size = 20\nforeground = #112233\n")
         let path = root.appendingPathComponent("config")
-        let original = "font-size = 13\nfont-family = Menlo\nforeground = #ffffff\npalette = 1=#abcdef\ncommand = /bin/sh\nkeybind = cmd+k=clear_screen\n# keep this comment\n"
+        let original = "font-size = 13\nfont-family = Menlo\nforeground = #ffffff\npalette = 1=#abcdef\ngrapheme-width-method = legacy\ncommand = /bin/sh\nkeybind = cmd+k=clear_screen\n# keep this comment\n"
         try original.write(to: path, atomically: true, encoding: .utf8)
         let file = KeybindConfigFile(configPath: path.path)
         let dialog = TerminalSettingsDialog(style: .from(nil), configFile: file, initialTab: .themes)
@@ -55,6 +57,8 @@ struct FullThemePresetTests {
         let saved = try String(contentsOf: path, encoding: .utf8)
         #expect(saved.contains("command = /bin/sh") && saved.contains("keybind = cmd+k=clear_screen"))
         #expect(saved.contains("# keep this comment") && saved.contains("theme = Full"))
+        #expect(saved.contains("grapheme-width-method = legacy"))
+        #expect(!ThemePresetConfig.isAppearanceKey("grapheme-width-method"))
         #expect(!saved.contains("font-size = 13") && !saved.contains("foreground = #ffffff") && !saved.contains("palette ="))
         dialog.switchTab(to: .fontSize)
         #expect(dialog.effectiveSettingValue(for: dialog.filteredSettingItems[0]) == "20")
@@ -139,6 +143,9 @@ struct FullThemePresetTests {
         let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         surface.close()
         surface.updateTheme(.takoDefault)
+        var initial = surface.theme
+        initial.graphemeWidthMethod = .legacy
+        surface.updateTheme(initial)
         let before = surface.theme
         let originalCellWidth = surface.cellWidth
         let core = surface.core
@@ -146,10 +153,12 @@ struct FullThemePresetTests {
         var changed = before
         changed.fontSize = 26
         changed.background = TerminalTheme.parseColor("#123456")!
+        changed.graphemeWidthMethod = .unicode
         preview.apply(changed)
         #expect(surface.theme.fontSize == 26 && surface.theme.background == changed.background)
         #expect(surface.core === core)
         #expect(surface.cellWidth > originalCellWidth)
+        #expect(surface.theme.graphemeWidthMethod == .legacy)
         ThemePresetPreview.restoreAll()
         #expect(surface.theme.fontSize == before.fontSize && surface.theme.background == before.background)
         #expect(surface.core === core)

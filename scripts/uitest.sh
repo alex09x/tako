@@ -95,6 +95,7 @@ python3 scripts/gui_lock.py -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
     -scheme TakoUITests-Run \
     -destination platform=macOS \
+    -parallel-testing-enabled NO \
     -resultBundlePath "$RESULT_BUNDLE" \
     ${only[@]+"${only[@]}"} 2>&1 | tee "$LOG" \
     | grep -E "^Test Case .*(passed|failed|skipped)|error:|^\*\* (BUILD|TEST)"

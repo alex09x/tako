@@ -202,7 +202,7 @@ struct ThemePresetStoreTests {
 
         let store = ThemePresetStore(directory: userDir, searchPaths: [])
 
-        let invalidNames = ["", "   ", ".", "..", ".hidden", "sub/dir", "../parent", "theme\u{07}", "theme\n1", "a\\b", "a\0b"]
+        let invalidNames = ["", "   ", " Leading", "Trailing ", ".", "..", ".hidden", "sub/dir", "../parent", "theme\u{07}", "theme\n1", "a\\b", "a\0b"]
         for invalid in invalidNames {
             #expect(throws: ThemePresetError.self) { try store.load(named: invalid) }
             #expect(throws: ThemePresetError.self) { try store.save(name: invalid, config: "background = #111111") }
@@ -262,7 +262,7 @@ struct ThemePresetStoreTests {
             "palette = 1=#111111\npalette = 1=#222222",
             "background = #12345",
             "background = blue",
-            "palette = 16=#112233",
+            "palette = 256=#112233",
             "palette = -1=#112233",
             "font-size = 4",
             "font-size = 75",

@@ -61,6 +61,7 @@ extension TerminalSettingsDialog {
     }
 
     func applyCompleteTheme(_ name: String) -> Bool {
+        guard (try? ThemePresetStore.validatePresetName(name)) != nil else { return false }
         if let scopedAppearance {
             guard scopedAppearance.isAvailable() else { return false }
             do {

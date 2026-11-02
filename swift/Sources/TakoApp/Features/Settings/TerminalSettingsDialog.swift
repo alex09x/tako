@@ -24,7 +24,11 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         var muted: NSColor
 
         static func from(_ theme: TerminalTheme?) -> Style {
-            let baseFont = TakoTUI.font(theme)
+            // Editing a 72pt terminal must not make the settings controls
+            // themselves 72pt and push Save/Cancel outside the window.
+            var chromeTheme = theme ?? .takoDefault
+            chromeTheme.fontSize = 13
+            let baseFont = TakoTUI.font(chromeTheme)
             let bold = NSFontManager.shared.convert(baseFont, toHaveTrait: .boldFontMask)
             return Style(
                 font: baseFont,
@@ -115,6 +119,11 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     ) {
         if let existing = window.contentView?.subviews.last(where: { $0 is TerminalSettingsDialog && !$0.isHidden }) {
             let dialog = existing as? TerminalSettingsDialog
+            if dialog?.presetEditor != nil {
+                dialog?.withdraw()
+                show(in: window, theme: theme, configPath: configPath, tab: tab, appearance: appearance)
+                return
+            }
             if dialog?.scopedAppearance?.scope != appearance?.scope {
                 dialog?.withdraw()
             } else if dialog?.activeTab != tab {

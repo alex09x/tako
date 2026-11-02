@@ -25,7 +25,8 @@ import AppKit
         self.original = original?.isUser == true ? original : nil
         self.name = original?.isUser == true ? original!.name : copyName
         self.initialTheme = base
-        var text = original?.config ?? ThemePresetConfig.configuration(from: base)
+        var text = original.map { ThemePresetConfig.isVersioned($0.config) ? $0.config : ThemePresetConfig.legacyDraft($0.config) }
+            ?? ThemePresetConfig.configuration(from: base)
         let defaults = ThemePresetConfig.configuration(from: base)
         let essential = ["background", "foreground", "cursor-color", "selection-background", "font-family", "font-size"]
             + (0..<16).map { "palette:\($0)" }
