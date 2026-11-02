@@ -49,7 +49,7 @@ func runThemePresetScenario(_ d: Driver) throws {
         d.key(Key.a, .maskCommand)
         try d.type(themeName)
         d.key(Key.returnKey) // Commit name and focus the Colors list.
-        for _ in 0..<6 { d.key(Key.down) } // Palette 1 after five terminal color fields.
+        for _ in 0..<11 { d.key(Key.down) } // Palette 1 after all terminal and status colors.
         d.key(Key.returnKey)
         guard d.wait(for: { d.textField(identifier: "terminal-setting-color-palette:1") != nil }, timeout: 5) else {
             throw Failure("ANSI 1 structured color editor did not open")
@@ -174,11 +174,10 @@ func runThemePresetScenario(_ d: Driver) throws {
           appliedConfig.contains("theme = \(themeName)"), !appliedConfig.contains("font-size = 13"), !appliedConfig.contains("foreground = #ffffff") else {
         throw Failure("full preset did not own saved typography and palette")
     }
-    d.key(23, .maskCommand)
-    guard d.wait(for: {
-        guard let dialog = d.element(withIdentifier: "TerminalSettingsDialog") else { return false }
-        return ((d.attribute(dialog, kAXValueAttribute) as String?) ?? "").contains("Font Size:")
-    }, timeout: 5) else { throw Failure("global font size section unavailable") }
+    guard let catalog = d.element(withIdentifier: "TerminalSettingsDialog"),
+          ((d.attribute(catalog, kAXValueAttribute) as String?) ?? "").contains(themeName) else {
+        throw Failure("saved preset was not selected in its catalog")
+    }
     d.key(Key.escape)
     try waitBackground(blue, name: "preset-saved")
     guard d.wait(for: { ((try? palettePixels("preset-palette-saved")) ?? 0) > 8 }, timeout: 10) else { throw Failure("saved ANSI palette did not reach terminal pixels") }

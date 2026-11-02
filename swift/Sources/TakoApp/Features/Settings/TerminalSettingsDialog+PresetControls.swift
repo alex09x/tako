@@ -137,6 +137,7 @@ extension TerminalSettingsDialog: NSTextViewDelegate {
         guard let text = presetConfigText, (notification.object as? NSTextView) === text else { return }
         presetEditor?.config = text.string
         statusMessage = nil
+        previewEditedTheme()
         needsDisplay = true
     }
 

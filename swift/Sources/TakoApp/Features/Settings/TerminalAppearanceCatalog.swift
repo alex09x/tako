@@ -49,8 +49,8 @@ enum TerminalAppearanceCatalog {
         names.map { name in
             TerminalSettingItem(id: "theme", title: name, category: themeCategory,
                                 type: .options(options: [name], defaultValue: "TakoCore"),
-                                description: "Apply this theme; custom color overrides stay in place")
-        } + TerminalSettingRegistry.colorSettings
+                                description: "Apply this preset immediately; edit its colors, font and size inside the theme")
+        }
     }
 
     static func fontItems(_ names: [String]) -> [TerminalSettingItem] {

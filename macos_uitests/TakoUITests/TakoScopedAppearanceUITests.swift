@@ -20,7 +20,7 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let original = try Data(contentsOf: env.configFile)
         let dialog = H.openWorkspaceAppearance(in: app)
         XCTAssertTrue(dialog.label.contains("Workspace: Default"))
-        for key in ["1", "2"] {
+        for key in ["1", "2", "4", "5"] {
             dialog.typeKey(key, modifierFlags: .command)
             H.assertValue(dialog, contains: "Themes:")
         }
@@ -41,7 +41,8 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let before = try XCTUnwrap(H.samplePixelColor(from: pane))
         let dialog = H.openWorkspaceAppearance(in: app)
         H.search("Ocean", in: dialog)
-        dialog.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(app.buttons["ThemePresetSaveButton"].exists)
+        app.buttons["ThemePresetChoice-Tako Ocean"].click()
         H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
         H.dismissDialog(dialog, in: app)
         XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(before, color) > 0.04 })
@@ -66,12 +67,17 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let beforeLeft = try XCTUnwrap(H.samplePixelColor(from: left))
         let dialog = H.openPaneAppearance(in: app, paneID: second, isChild: true)
         H.search("Ocean", in: dialog)
-        dialog.typeKey(.return, modifierFlags: [])
+        app.buttons["ThemePresetChoice-Tako Ocean"].click()
         H.assertValue(dialog, contains: "setting_custom_success: theme = Tako Ocean")
         H.search("", in: dialog)
-        dialog.typeKey("5", modifierFlags: .command)
-        for _ in 0..<4 { dialog.typeKey(.rightArrow, modifierFlags: []) }
-        XCTAssertTrue(H.wait { (try? env.paneStyle(second)["font-size"]) == "17" })
+        app.buttons["ThemePresetEditButton"].click()
+        let editor = app.groups["ThemePresetEditor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeKey("5", modifierFlags: .command)
+        for _ in 0..<4 { editor.typeKey(.rightArrow, modifierFlags: []) }
+        app.buttons["ThemePresetSaveButton"].click()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(try env.paneThemeConfig(second).contains("font-size = 17"))
         H.dismissDialog(dialog, in: app)
         XCTAssertTrue(H.wait {
             guard let a = H.samplePixelColor(from: left), let b = H.samplePixelColor(from: right) else { return false }
@@ -93,9 +99,15 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let initialGlyphs = try XCTUnwrap(initial)
         H.attachScreenshot(initialGlyphs.screenshot, name: "font-size-before", to: self)
         let dialog = H.openPaneAppearance(in: app, paneID: id)
-        dialog.typeKey("5", modifierFlags: .command)
-        for _ in 0..<4 { dialog.typeKey(.rightArrow, modifierFlags: []) }
-        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-size"]) == "17" })
+        app.buttons["ThemePresetEditButton"].click()
+        let sizeEditor = app.groups["ThemePresetEditor"]
+        XCTAssertTrue(sizeEditor.waitForExistence(timeout: 5))
+        sizeEditor.typeKey("5", modifierFlags: .command)
+        for _ in 0..<4 { sizeEditor.typeKey(.rightArrow, modifierFlags: []) }
+        XCTAssertNil(try env.paneStyle(id)["font-size"])
+        app.buttons["ThemePresetSaveButton"].click()
+        XCTAssertTrue(sizeEditor.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-size = 17"))
         H.dismissDialog(dialog, in: app)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         var enlarged: H.GlyphObservation?
@@ -108,9 +120,14 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         XCTAssertTrue(grew, "Before glyph bounds: \(initialGlyphs.bounds); after: \(String(describing: enlarged?.bounds))")
         H.attachScreenshot(try XCTUnwrap(enlarged).screenshot, name: "font-size-rendered", to: self)
         let reset = H.openPaneAppearance(in: app, paneID: id)
-        reset.typeKey("5", modifierFlags: .command)
-        app.buttons["SettingsResetButton"].click()
-        H.assertValue(reset, contains: "setting_reset_success: font-size")
+        app.buttons["ThemePresetEditButton"].click()
+        let resetEditor = app.groups["ThemePresetEditor"]
+        XCTAssertTrue(resetEditor.waitForExistence(timeout: 5))
+        resetEditor.typeKey("5", modifierFlags: .command)
+        for _ in 0..<4 { resetEditor.typeKey(.leftArrow, modifierFlags: []) }
+        app.buttons["ThemePresetSaveButton"].click()
+        XCTAssertTrue(resetEditor.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-size = 13"))
         H.dismissDialog(reset, in: app)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
         var resetGlyphs: H.GlyphObservation?
@@ -121,13 +138,18 @@ final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
         let familyBaseline = try XCTUnwrap(resetGlyphs)
         XCTAssertNil(try env.paneStyle(id)["font-size"])
         let family = H.openPaneAppearance(in: app, paneID: id)
-        family.typeKey("4", modifierFlags: .command)
-        H.search("Monaco", in: family)
-        family.typeKey(.return, modifierFlags: [])
-        H.assertValue(family, contains: "setting_custom_success: font-family = Monaco")
+        app.buttons["ThemePresetEditButton"].click()
+        let familyEditor = app.groups["ThemePresetEditor"]
+        XCTAssertTrue(familyEditor.waitForExistence(timeout: 5))
+        familyEditor.typeKey("4", modifierFlags: .command)
+        H.search("Monaco", in: familyEditor)
+        familyEditor.typeKey(.return, modifierFlags: [])
+        H.assertValue(familyEditor, contains: "setting_custom_success: font-family = Monaco")
+        app.buttons["ThemePresetSaveButton"].click()
+        XCTAssertTrue(familyEditor.waitForNonExistence(timeout: 5))
         H.dismissDialog(family, in: app)
         pane.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).click()
-        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["font-family"]) == "Monaco" })
+        XCTAssertTrue(try env.paneThemeConfig(id).contains("font-family = Monaco"))
         XCTAssertTrue(H.wait { guard let glyphs = try? H.glyphs(in: pane) else { return false }; return glyphs.pixels != familyBaseline.pixels })
         H.attachScreenshot(pane.screenshot(), name: "font-family-rendered", to: self)
     }

@@ -23,6 +23,11 @@ import XCTest
     private(set) var app: XCUIApplication?
     private(set) var primaryPaneID: String?
 
+    func paneThemeConfig(_ id: String) throws -> String {
+        let name = try XCTUnwrap(paneStyle(id)["theme"])
+        return try String(contentsOf: testRoot.appendingPathComponent("themes").appendingPathComponent(name), encoding: .utf8)
+    }
+
     init() throws {
         testRoot = FileManager.default.temporaryDirectory.appendingPathComponent("tako-ui-\(UUID().uuidString)")
         configFile = testRoot.appendingPathComponent("config")

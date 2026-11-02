@@ -70,6 +70,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     var presetConfigScroll: NSScrollView?
     var presetConfigText: NSTextView?
     var presetActionButtons: [DialogButton] = []
+    var themeChoiceButtons: [NSButton] = []
     var activeTab: SettingsTab = .keybindings
     var isTabBarFocused: Bool = false
 
@@ -161,6 +162,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         self.scopedAppearance = appearance
         self.presetEditor = editor
         self.activeTab = (appearance != nil || editor != nil) && initialTab.rawValue < 2 ? .themes : initialTab
+        if editor == nil && [.fonts, .fontSize, .themeConfig].contains(initialTab) { self.activeTab = .themes }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor
@@ -239,6 +241,9 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         if activeTab == .keybindings {
             buttons[0].title = "Record (R)"
             buttons[0].setAccessibilityIdentifier("SettingsRecordButton")
+        } else if activeTab == .themes {
+            buttons[0].title = "Edit theme (⌘E)"
+            buttons[0].setAccessibilityIdentifier("SettingsEditThemeButton")
         } else {
             buttons[0].title = "Change (Space)"
             buttons[0].setAccessibilityIdentifier("SettingsChangeButton")
@@ -253,6 +258,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         case 0:
             if activeTab == .keybindings {
                 startRecording()
+            } else if activeTab == .themes {
+                beginPresetEditor(createNew: false)
             } else {
                 toggleOrCycleSelectedSetting()
             }
@@ -363,6 +370,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     override func layout() {
         super.layout()
+        layoutThemeChoices()
         layoutColorEditor()
         if let field = searchField {
             let origin = cell(3, 2)

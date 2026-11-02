@@ -71,39 +71,51 @@ func runScopedAppearanceScenario(_ d: Driver) throws {
     }
     let ocean = try background("scoped-ocean")
     let paneDialog = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
+    d.key(14, .maskCommand) // Edit the inherited effective theme as a custom preset.
+    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
+          let editor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("pane theme editor missing") }
     d.key(23, .maskCommand) // Font Size
-    guard d.wait(for: { value(paneDialog).contains("Font Size:") && value(paneDialog).contains("= 13") }, timeout: 5) else {
-        throw Failure("pane did not inherit global size: \(value(paneDialog))")
+    guard d.wait(for: { value(editor).contains("Font Size:") && value(editor).contains("= 13") }, timeout: 5) else {
+        throw Failure("pane theme did not start with its inherited size: \(value(editor))")
     }
     d.key(Key.right)
-    guard d.wait(for: { value(paneDialog).contains("setting_custom_success: font-size") }, timeout: 5) else {
-        throw Failure("pane size did not save: \(value(paneDialog))")
+    guard d.wait(for: { value(editor).contains("setting_custom_success: font-size") }, timeout: 5) else {
+        throw Failure("pane theme size did not change: \(value(editor))")
     }
     // The save acknowledgement temporarily replaces the section description.
     // Return to the section to read its persisted effective size.
     d.key(Key.three, .maskCommand)
     d.key(23, .maskCommand)
-    guard d.wait(for: { value(paneDialog).contains("= 14") }, timeout: 5) else {
-        throw Failure("pane size did not read back: \(value(paneDialog))")
+    guard d.wait(for: { value(editor).contains("= 14") }, timeout: 5) else {
+        throw Failure("pane theme size did not read back: \(value(editor))")
     }
     d.key(Key.one, .maskCommand)
-    guard value(paneDialog).contains("14") else { throw Failure("scoped editor escaped into global settings") }
+    guard value(editor).contains("14") else { throw Failure("theme editor escaped into global settings") }
+    guard let save = d.element(withIdentifier: "ThemePresetSaveButton") else { throw Failure("missing theme Save") }
+    d.press(save)
+    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") == nil }, timeout: 5),
+          value(paneDialog).contains("Custom Theme") else { throw Failure("pane custom theme did not save") }
     d.key(Key.escape)
     _ = try d.exec("\(ctl) workspace create Unstyled")
     _ = try d.exec("\(ctl) workspace assign --workspace Unstyled --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Unstyled")
-    guard d.wait(for: { guard let color = try? background("scoped-moved") else { return false }; return difference(initial, color) < 0.02 }, timeout: 10) else {
-        throw Failure("moved pane retained its old workspace background")
+    guard d.wait(for: { guard let color = try? background("scoped-moved") else { return false }; return difference(ocean, color) < 0.02 }, timeout: 10) else {
+        throw Failure("moving a pane lost its explicit complete theme")
     }
     d.quit()
     guard kill(process, 0) == 0 else { throw Failure("quitting the renderer killed its process") }
     try d.launch(config: config)
     _ = try d.exec("\(ctl) focus --target \(pane)")
     let restored = try openAppearance(text: "AppearanceWitness", menu: "Terminal Appearance…")
+    guard value(restored).contains("Custom Theme") else { throw Failure("pane theme assignment did not survive restore") }
+    d.key(14, .maskCommand)
+    guard d.wait(for: { d.element(withIdentifier: "ThemePresetEditor") != nil }, timeout: 5),
+          let restoredEditor = d.element(withIdentifier: "ThemePresetEditor") else { throw Failure("restored theme editor missing") }
     d.key(23, .maskCommand)
-    guard d.wait(for: { value(restored).contains("Font Size:") && value(restored).contains("= 14") }, timeout: 5) else {
-        throw Failure("pane override did not survive restore: \(value(restored))")
+    guard d.wait(for: { value(restoredEditor).contains("Font Size:") && value(restoredEditor).contains("= 14") }, timeout: 5) else {
+        throw Failure("pane theme typography did not survive restore: \(value(restoredEditor))")
     }
+    d.key(Key.escape)
     d.key(Key.escape)
     _ = try d.exec("\(ctl) workspace assign --workspace Default --target \(pane)")
     _ = try d.exec("\(ctl) workspace switch Default")

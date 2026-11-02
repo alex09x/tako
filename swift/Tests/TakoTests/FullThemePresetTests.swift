@@ -60,8 +60,7 @@ struct FullThemePresetTests {
         #expect(saved.contains("grapheme-width-method = legacy"))
         #expect(!ThemePresetConfig.isAppearanceKey("grapheme-width-method"))
         #expect(!saved.contains("font-size = 13") && !saved.contains("foreground = #ffffff") && !saved.contains("palette ="))
-        dialog.switchTab(to: .fontSize)
-        #expect(dialog.effectiveSettingValue(for: dialog.filteredSettingItems[0]) == "20")
+        #expect(file.effectiveSettingValue(for: TerminalAppearanceCatalog.sizeItems[0]) == "20")
         #expect(file.effectiveSettingValue(for: TerminalAppearanceCatalog.fontItems([])[0]) == "Monaco")
     }
 

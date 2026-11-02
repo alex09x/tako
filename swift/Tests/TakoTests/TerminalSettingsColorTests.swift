@@ -89,6 +89,9 @@ struct TerminalSettingsColorTests {
             initialTab: .terminalSettings
         )
         dialog.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        // Exercise legacy config editing primitives independently of the
+        // current catalog; new theme editor live preview has its own tests.
+        dialog.filteredSettingItems = TerminalSettingRegistry.colorSettings
         window.contentView = dialog
         dialog.layoutSubtreeIfNeeded()
 
@@ -203,6 +206,7 @@ struct TerminalSettingsColorTests {
             ("tab-status-color-done", "ok", .done, "#00dd66", Tako.Brand.hex(for: "ok")),
             ("tab-status-color-error", "error", .error, "#ee1133", Tako.Brand.hex(for: "error")),
         ]
+        dialog.filteredSettingItems = TerminalSettingRegistry.colorSettings
 
         // Apply all 5 custom tab status colors through TerminalSettingsDialog's editor
         for entry in customColors {

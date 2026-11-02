@@ -55,7 +55,7 @@ struct TerminalAppearanceSettingsTests {
         file.reload()
         let dialog = TerminalSettingsDialog(style: .from(nil), configFile: file)
 
-        #expect(dialog.tabLayout.count == 5)
+        #expect(dialog.tabLayout.count == 3)
         let last = try #require(dialog.tabLayout.last)
         #expect(last.column + last.label.count < dialog.columns)
         dialog.switchTab(to: .themes)
@@ -67,21 +67,9 @@ struct TerminalAppearanceSettingsTests {
         #expect(file.getSettingValue(for: foreground) == "#ffffff")
 
         dialog.switchTab(to: .fonts)
-        let family = try #require(dialog.filteredSettingItems.dropFirst().first)
-        dialog.selectedSettingIndex = 1
-        dialog.toggleOrCycleSelectedSetting()
-        #expect(file.getSettingValue(for: family) == family.title)
-        dialog.selectedSettingIndex = 0
-        dialog.toggleOrCycleSelectedSetting()
-        #expect(file.getSettingValue(for: family) == nil)
-
+        #expect(dialog.activeTab == .themes)
         dialog.switchTab(to: .fontSize)
-        let size = try #require(dialog.filteredSettingItems.first)
-        #expect(size.id == "font-size")
-        dialog.toggleOrCycleSelectedSetting()
-        #expect(file.getSettingValue(for: size) == "14.5")
-        dialog.toggleOrCycleSelectedSetting(reverse: true)
-        #expect(file.getSettingValue(for: size) == "13.5")
+        #expect(dialog.activeTab == .themes)
         #expect(file.getSettingValue(for: foreground) == "#ffffff")
     }
 
@@ -90,7 +78,10 @@ struct TerminalAppearanceSettingsTests {
         #expect(!families.isEmpty)
         let family = try #require(families.first)
         #expect(NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 13) != nil)
-        let dialog = TerminalSettingsDialog(style: .from(nil), initialTab: .fonts)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editor = ThemePresetEditor(store: ThemePresetStore(directory: root, searchPaths: []), original: nil, base: .takoDefault, copyName: "Font test")
+        let dialog = TerminalSettingsDialog(style: .from(nil), initialTab: .fonts, editor: editor)
         dialog.filterItems(family)
         #expect(dialog.filteredSettingItems.contains { $0.title == family })
     }
@@ -139,14 +130,16 @@ struct TerminalAppearanceSettingsTests {
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let config = KeybindConfigFile(configPath: dir.appendingPathComponent("config").path)
-        let dialog = TerminalSettingsDialog(style: .from(nil), configFile: config)
+        let editor = ThemePresetEditor(store: ThemePresetStore(directory: dir.appendingPathComponent("themes"), searchPaths: []),
+                                      original: nil, base: .takoDefault, copyName: "Render test")
+        let dialog = TerminalSettingsDialog(style: .from(nil), configFile: config, editor: editor)
         dialog.frame = NSRect(x: 0, y: 0, width: 1000, height: 650)
         window.contentView = dialog
         let names = TerminalAppearanceCatalog.themeNames(paths: [themesDirectory.path])
         for tab in [TerminalSettingsDialog.SettingsTab.themes, .fonts, .fontSize] {
             dialog.switchTab(to: tab)
             if tab == .themes {
-                dialog.filteredSettingItems = TerminalAppearanceCatalog.themeItems(names)
+                dialog.filteredSettingItems = ThemePresetEditor.colorItems
                 for name in names {
                     dialog.themePreviews[name] = TerminalTheme.takoDefault.applyingTheme(named: name, searchPaths: [themesDirectory.path])
                 }

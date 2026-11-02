@@ -55,7 +55,7 @@ import AppKit
         if let value = value(for: key) { return value }
         let theme = effectiveTheme
         if key == "selection-foreground" { return Self.hex(theme.selectionForeground ?? theme.foreground) }
-        return ""
+        return TerminalSettingRegistry.setting(for: key)?.type.defaultStringValue ?? ""
     }
 
     func save() throws -> ThemePreset {
@@ -70,7 +70,7 @@ import AppKit
     }
 
     static var colorItems: [TerminalSettingItem] {
-        let terminal = TerminalSettingRegistry.colorSettings.filter { ScopedAppearanceContext.keys.contains($0.id) }
+        let terminal = TerminalSettingRegistry.colorSettings
         let selection = TerminalSettingItem(id: "selection-foreground", title: "Selection text color", category: "Terminal colors",
             type: .color(defaultValue: "#ffffff"), description: "Selected text color; remove this key in Config for automatic")
         let names = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White",

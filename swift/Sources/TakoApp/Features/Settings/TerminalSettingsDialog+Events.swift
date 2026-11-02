@@ -262,6 +262,7 @@ extension TerminalSettingsDialog {
                 scrollSettingOffset = selectedSettingIndex - visibleRows + 1
             }
         }
+        applySelectedAppearanceImmediately()
         updateAccessibilityState()
         needsDisplay = true
     }
@@ -278,6 +279,7 @@ extension TerminalSettingsDialog {
             selectedSettingIndex = min(max(target, 0), filteredSettingItems.count - 1)
             scrollSettingOffset = min(selectedSettingIndex, max(filteredSettingItems.count - visibleRows, 0))
         }
+        applySelectedAppearanceImmediately()
         updateAccessibilityState()
         needsDisplay = true
     }
