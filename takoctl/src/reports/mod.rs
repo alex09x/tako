@@ -15,6 +15,7 @@ pub mod layout;
 pub mod redact;
 pub mod review;
 pub mod session;
+pub(crate) mod theme;
 
 pub use control::*;
 pub use diagnostics::*;
@@ -28,6 +29,7 @@ use serde_json::Value;
 
 pub fn render(cmd: &str, result: &Value) -> String {
     match cmd {
+        "theme" => theme::report(result),
         "version" => format!(
             "{} {} (build {}), protocol {}",
             result["app"].as_str().unwrap_or("Tako"),

@@ -71,6 +71,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
     var presetConfigText: NSTextView?
     var presetActionButtons: [DialogButton] = []
     var themeChoiceButtons: [NSButton] = []
+    var themeCatalogObservation: ThemeCatalogObservation?
     var activeTab: SettingsTab = .keybindings
     var isTabBarFocused: Bool = false
 
@@ -182,6 +183,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         updateButtonsForActiveTab()
         filterItems("")
         updateAccessibilityState()
+        if editor == nil { themeCatalogObservation = ThemeCatalogObservation(dialog: self) }
     }
 
     @available(*, unavailable)
@@ -342,6 +344,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         cancelEditingColor()
         guard !isWithdrawing else { return }
         isWithdrawing = true
+        themeCatalogObservation = nil
         finishPresetEditor()
         setAccessibilityValue("closed")
         if let previous = previousResponder {

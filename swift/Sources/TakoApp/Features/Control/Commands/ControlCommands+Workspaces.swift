@@ -144,6 +144,12 @@ extension ControlCommands {
             let oldWorkspace = store.workspace(forTab: tabId)?.id ?? WorkspaceStore.defaultWorkspaceId
             let wasActiveWorkspace = oldWorkspace == store.activeWorkspaceId
             let window = all.first(where: { $0.stableTabID == tabId })?.controller?.window
+            if oldWorkspace != targetWorkspace.id {
+                do {
+                    try ScopedAppearanceStore.shared.preserveWorkspaceStyle(from: oldWorkspace,
+                        for: all.filter { $0.stableTabID == tabId }.map(\.surface.id))
+                } catch { throw ControlError(.internalError, "session not moved: could not preserve appearance: \(error.localizedDescription)") }
+            }
             store.assignTab(tabIdentifier: tabId, to: targetWorkspace.id)
             if wasActiveWorkspace, targetWorkspace.id != store.activeWorkspaceId,
                let window, let group = Tako.CustomTabGroup.existingGroup(for: window), group.selectedWindow === window {

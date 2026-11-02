@@ -216,10 +216,17 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
     if opts.cmd == "diagnose" {
         let app_result = (|| {
             let inherited = std::env::var("TAKO_SOCKET").ok();
-            if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("") {
+            if opts.socket.is_none() && !opts.bundle_id_explicit && inherited.as_deref() == Some("")
+            {
                 return None;
             }
-            let path = socket::resolve_path(&opts.bundle_id, opts.socket.as_deref(), opts.bundle_id_explicit, inherited.as_deref()).ok()?;
+            let path = socket::resolve_path(
+                &opts.bundle_id,
+                opts.socket.as_deref(),
+                opts.bundle_id_explicit,
+                inherited.as_deref(),
+            )
+            .ok()?;
             let opts = opts.clone();
             let req = request(&opts, std::env::var("TAKO_SURFACE_ID").ok());
             let ans = socket::exchange_within(
@@ -259,7 +266,12 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
         );
         return ExitCode::from(3);
     }
-    let path = match socket::resolve_path(&opts.bundle_id, opts.socket.as_deref(), opts.bundle_id_explicit, inherited.as_deref()) {
+    let path = match socket::resolve_path(
+        &opts.bundle_id,
+        opts.socket.as_deref(),
+        opts.bundle_id_explicit,
+        inherited.as_deref(),
+    ) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("takoctl: {e}");
@@ -327,7 +339,9 @@ pub fn run_cli(argv: &[String]) -> ExitCode {
         }
     };
     let ok = answer["ok"].as_bool() == Some(true);
-    if opts.json {
+    if opts.cmd == "theme" && (opts.json || ok) {
+        print!("{}", reports::theme::answer(opts.json, &answer));
+    } else if opts.json {
         println!("{answer}");
     } else if ok {
         if opts.cmd == "screenshot" {

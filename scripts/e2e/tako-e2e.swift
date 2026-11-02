@@ -471,6 +471,9 @@ let scenarios: [Scenario] = [
     ("persist-scoped-appearance", "workspace and pane styles follow live sessions across moves and relaunch", { d in
         try runScopedAppearanceScenario(d)
     }),
+    ("theme-control", "complete CLI theme configuration, scope assignments and safe lifecycle", { d in
+        try runThemeControlScenario(d)
+    }),
     ("settings-theme-presets", "full named theme preview, cancel, save, reopen and storage errors", { d in
         try runThemePresetScenario(d)
     }),

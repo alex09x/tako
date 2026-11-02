@@ -13,10 +13,18 @@ import SwiftUI
 
 extension Tako.SurfaceView {
     func applyScopedTheme(_ global: TerminalTheme, store: ScopedAppearanceStore, workspaceID: UUID?) {
-        let effective = store.effectiveTheme(global: global, workspaceID: workspaceID, paneID: id)
+        let effective = store.effectiveTheme(global: global, workspaceID: workspaceID, paneID: id,
+            themeSearchPaths: store.themeSearchPaths ?? appearanceThemeSearchPaths)
         configuredTheme = effective
         applyTheme(effective)
         derivedConfig.backgroundColor = Color(nsColor: NSColor(cgColor: effective.background) ?? .black)
+    }
+
+    var appearanceThemeSearchPaths: [String] {
+        let profile = (app?.activeConfigPath).map {
+            URL(fileURLWithPath: $0).deletingLastPathComponent().appendingPathComponent("themes").path
+        }
+        return (profile.map { [$0] } ?? []) + TerminalTheme.themeSearchPaths
     }
 
     var appearanceWorkspaceID: UUID? {
@@ -43,7 +51,7 @@ extension Tako.SurfaceView {
         return scopes.contains { scope in
             if store.value(for: "font-size", scope: scope) != nil { return true }
             guard let preset = store.value(for: "theme", scope: scope) else { return false }
-            return TerminalTheme.presetContainsTypography(named: preset, searchPaths: store.themeSearchPaths ?? TerminalTheme.themeSearchPaths)
+            return TerminalTheme.presetContainsTypography(named: preset, searchPaths: store.themeSearchPaths ?? surface.appearanceThemeSearchPaths)
         }
     }
 

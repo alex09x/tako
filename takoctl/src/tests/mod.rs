@@ -20,4 +20,5 @@ mod review;
 mod session_inputs;
 mod status_progress;
 mod tasks_actions;
+mod theme;
 mod token_instance_isolation;
