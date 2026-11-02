@@ -30,7 +30,15 @@ extension ThemeControlService {
         } else if let sourceName = args["from_theme"]?.string {
             let original = try loadPreset(sourceName)
             let base = try baseTheme().applyingTheme(named: original.name, searchPaths: presets.searchPaths)
-            config = ThemePresetEditor(store: presets, original: original, base: base, copyName: name).config
+            let draft = ThemePresetEditor(store: presets, original: original, base: base, copyName: name).config
+            if original.config.components(separatedBy: .newlines).contains(where: { KeybindConfigFile.parseConfigKeyValue($0)?.key == "custom-shader" }) {
+                // A profile can copy from a different fallback directory.
+                // Keep shader order but bind paths to their resolved source.
+                let withoutShaders = draft.components(separatedBy: "\n").filter {
+                    KeybindConfigFile.parseConfigKeyValue($0)?.key != "custom-shader"
+                }.joined(separator: "\n")
+                config = withoutShaders + "\n" + base.customShaders.map { "custom-shader = \($0)" }.joined(separator: "\n") + "\n"
+            } else { config = draft }
         } else {
             config = ThemePresetConfig.configuration(from: try baseTheme())
         }

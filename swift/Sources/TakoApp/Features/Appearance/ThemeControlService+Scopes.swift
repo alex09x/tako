@@ -12,11 +12,14 @@ import Foundation
 extension ThemeControlService {
     func applyPreset(_ name: String, to scope: ThemeControlScope) throws -> [String: JSON] {
         let preset = try loadPreset(name)
+        let full = TerminalTheme.presetContainsTypography(named: preset.name, searchPaths: presets.searchPaths)
         if let local = scope.appearance {
-            try appearances.applyPreset(preset.name, scope: local)
+            if full { try appearances.applyPreset(preset.name, scope: local) }
+            else { try appearances.setValue(preset.name, for: "theme", scope: local) }
         } else {
             let previous = try readConfiguration()
-            let changed = KeybindConfigFile.configurationSelectingPreset(preset.name, from: previous)
+            let changed = full ? KeybindConfigFile.configurationSelectingPreset(preset.name, from: previous)
+                : configurationRenamingTheme(in: previous, to: preset.name)
             try writeConfiguration(changed, expecting: previous)
         }
         reload()

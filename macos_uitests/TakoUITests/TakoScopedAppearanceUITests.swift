@@ -14,6 +14,56 @@ import XCTest
 final class TakoScopedAppearanceUITests: TakoCustomConfigCase {
     private typealias H = TakoScopedAppearanceHelpers
 
+    @MainActor func testMovingAnInheritedCustomThemeKeepsPixelsPaneAndShell() throws {
+        let env = try H(); defer { env.cleanup() }
+        let initial = "00000000-0000-0000-0000-000000000001"
+        let destination = UUID().uuidString
+        try FileManager.default.createDirectory(at: env.support, withIntermediateDirectories: true)
+        let workspaces: [String: Any] = ["activeWorkspaceId": initial, "workspaces": [
+            ["id": initial, "name": "Default", "tabIdentifiers": [], "createdAt": 0] as [String: Any],
+            ["id": destination, "name": "Destination", "tabIdentifiers": [], "createdAt": 0] as [String: Any]
+        ]]
+        let workspaceDirectory = env.support.appendingPathComponent("Workspaces")
+        try FileManager.default.createDirectory(at: workspaceDirectory, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: workspaces).write(to: workspaceDirectory.appendingPathComponent("workspaces.json"))
+        let themes = env.testRoot.appendingPathComponent("themes")
+        try FileManager.default.createDirectory(at: themes, withIntermediateDirectories: true)
+        try "# tako-preset-version: 1\nbackground = #123456\nfont-family = Monaco\nfont-size = 19\n".write(to: themes.appendingPathComponent("Move Witness"), atomically: true, encoding: .utf8)
+        let styles: [String: Any] = ["version": 1, "panes": [:], "workspaces": [initial: ["theme": "Move Witness"]]]
+        try JSONSerialization.data(withJSONObject: styles).write(to: env.support.appendingPathComponent("Appearance.json"))
+        let app = try env.launchIsolatedApp()
+        let id = try XCTUnwrap(env.primaryPaneID)
+        let pane = app.groups["Terminal pane"].firstMatch
+        let ocean = NSColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1)
+        XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) < 0.03 })
+        func shell(_ slot: String) throws -> String {
+            let name = "shell-" + slot
+            pane.typeText("sh -c 'printf %s \"$PPID\"' > '\(name)'\n")
+            let file = env.testRoot.appendingPathComponent(name)
+            XCTAssertTrue(H.wait { ((try? String(contentsOf: file, encoding: .utf8)) ?? "").isEmpty == false })
+            return try String(contentsOf: file, encoding: .utf8)
+        }
+        let process = try shell("before")
+        H.openSidebar(in: app)
+        let rows = app.descendants(matching: .any).matching(identifier: "session-tab-" + id.lowercased())
+        let row = try XCTUnwrap(rows.allElementsBoundByIndex.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }))
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
+        app.menuItems["Move to Workspace"].click()
+        // AppKit exposes titles through the identifiers query; its main-menu
+        // workspace switch also has this title, but is a different action.
+        app.menuItems.matching(identifier: "Destination")
+            .matching(NSPredicate(format: "identifier != %@", "selectWorkspaceFromMenu:")).firstMatch.click()
+        XCTAssertTrue(H.wait { (try? env.paneStyle(id)["theme"]) == "Move Witness" })
+        XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) < 0.03 })
+        XCTAssertEqual(try env.identifyPane(pane, title: "Moved", slot: "moved"), id)
+        XCTAssertEqual(try shell("after"), process)
+        H.attachScreenshot(app.windows.firstMatch.screenshot(), name: "moved-session-keeps-inherited-theme", to: self)
+        let dialog = H.openPaneAppearance(in: app, paneID: id)
+        app.buttons["SettingsResetButton"].click()
+        H.dismissDialog(dialog, in: app)
+        XCTAssertTrue(H.wait { guard let color = H.samplePixelColor(from: pane) else { return false }; return H.colorDifference(color, ocean) > 0.04 })
+    }
+
     @MainActor func testWorkspaceAndPaneMenusAndModalContainment() throws {
         let env = try H(); defer { env.cleanup() }
         let app = try env.launchIsolatedApp()
