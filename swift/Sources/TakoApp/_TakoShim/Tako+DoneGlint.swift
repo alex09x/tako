@@ -151,6 +151,15 @@ final class DoneGlintLayer: CALayer {
     override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Updates the glint gradient colors to match the effective done status color.
+    func updateColor(_ doneColor: CGColor) {
+        let peak = doneColor.copy(alpha: DoneGlint.peakAlpha) ?? doneColor
+        let none = doneColor.copy(alpha: 0) ?? doneColor
+        for tile in tiles {
+            tile.colors = [none, peak, none]
+        }
+    }
+
     /// Sizes the tiles for a surface of `size`.
     func layout(for size: CGSize) {
         surfaceWidth = size.width

@@ -81,10 +81,14 @@ extension Tako {
         return raw
     }
 
-    public static func aggregateCrab(for window: NSWindow) -> Tako.CrabTracker? {
+    public static func contributingSurface(for window: NSWindow) -> Tako.SurfaceView? {
         let all = surfaces(in: window)
         guard !all.isEmpty else { return nil }
-        return all.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority })?.crab
+        return all.max(by: { $0.crab.paneStatus.priority < $1.crab.paneStatus.priority })
+    }
+
+    public static func aggregateCrab(for window: NSWindow) -> Tako.CrabTracker? {
+        contributingSurface(for: window)?.crab
     }
 
     /// The progress a tab shows: its panes' reports together -- unless a
@@ -161,13 +165,14 @@ extension Tako {
         }()
         let state = tabVisualState(for: window)
         let dot = tabStatusDot(for: state)
+        let palette = tabStatusPalette(surface: targetSurface, window: window)
         return TabVisualReport(
             title: titleFor(window),
             index: group.visibleWindows.firstIndex { $0 === window } ?? 0,
             selected: window === selectedWindow,
             dot: dot,
-            color: Tako.tabStatusColorName(for: dot),
-            hex: Tako.tabStatusHex(for: dot),
+            color: palette.colorName(for: dot),
+            hex: palette.hex(for: dot),
             state: state,
             style: (appConfig?.tabStyle == .classic) ? "classic" : "pill",
             panesCount: surfaces(in: window).count,

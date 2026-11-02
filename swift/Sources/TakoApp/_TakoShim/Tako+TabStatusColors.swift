@@ -13,30 +13,68 @@ import AppKit
 extension Tako {
     public static var overrideTabStatusTheme: TerminalTheme?
 
+    public static func effectiveTabStatusTheme(
+        theme: TerminalTheme? = nil,
+        surface: Tako.SurfaceView? = nil,
+        window: NSWindow? = nil
+    ) -> TerminalTheme? {
+        if let override = overrideTabStatusTheme {
+            return override
+        }
+        if let theme {
+            return theme
+        }
+        if let surface {
+            return surface.theme
+        }
+        if let window {
+            if let contributing = contributingSurface(for: window) {
+                return contributing.theme
+            }
+            if let base = window.windowController as? TerminalController, let focused = base.focusedSurface {
+                return focused.theme
+            }
+        }
+        return (NSApp?.delegate as? AppDelegate)?.tako.config.theme
+    }
+
     static var activeTabStatusTheme: TerminalTheme? {
-        overrideTabStatusTheme ?? (NSApp?.delegate as? AppDelegate)?.tako.config.theme
+        effectiveTabStatusTheme()
     }
 
-    static func tabStatusColor(for dot: String) -> NSColor {
-        let keys = ["ember": "working", "claw": "waiting", "ok": "done", "error": "error", "dim": "idle"]
-        if let key = keys[dot],
-           let theme = activeTabStatusTheme,
-           let color = theme.tabStatusColors[key], let nsColor = NSColor(cgColor: color) {
-            return nsColor
-        }
-        return Brand.color(for: dot)
+    public static func tabStatusPalette(
+        theme: TerminalTheme? = nil,
+        surface: Tako.SurfaceView? = nil,
+        window: NSWindow? = nil
+    ) -> TabStatusPalette {
+        let resolvedTheme = effectiveTabStatusTheme(theme: theme, surface: surface, window: window)
+        return TabStatusPalette(theme: resolvedTheme)
     }
 
-    static func tabStatusHex(for dot: String) -> String {
-        Brand.hexString(for: tabStatusColor(for: dot))
+    public static func tabStatusColor(
+        for dot: String,
+        theme: TerminalTheme? = nil,
+        surface: Tako.SurfaceView? = nil,
+        window: NSWindow? = nil
+    ) -> NSColor {
+        tabStatusPalette(theme: theme, surface: surface, window: window).color(for: dot)
     }
 
-    static func tabStatusColorName(for dot: String) -> String {
-        let states = ["ember": "working", "claw": "waiting", "ok": "done", "error": "error", "dim": "idle"]
-        if let key = states[dot],
-           activeTabStatusTheme?.tabStatusColors[key] != nil {
-            return tabStatusHex(for: dot)
-        }
-        return ["ember": "orange", "claw": "amber", "ok": "green", "error": "red", "dim": "gray"][dot] ?? "gray"
+    public static func tabStatusHex(
+        for dot: String,
+        theme: TerminalTheme? = nil,
+        surface: Tako.SurfaceView? = nil,
+        window: NSWindow? = nil
+    ) -> String {
+        tabStatusPalette(theme: theme, surface: surface, window: window).hex(for: dot)
+    }
+
+    public static func tabStatusColorName(
+        for dot: String,
+        theme: TerminalTheme? = nil,
+        surface: Tako.SurfaceView? = nil,
+        window: NSWindow? = nil
+    ) -> String {
+        tabStatusPalette(theme: theme, surface: surface, window: window).colorName(for: dot)
     }
 }
