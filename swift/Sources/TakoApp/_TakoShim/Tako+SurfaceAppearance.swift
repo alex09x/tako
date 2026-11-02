@@ -23,7 +23,7 @@ extension Tako.SurfaceView {
         let controller = window?.windowController as? TerminalController
             ?? TerminalController.all.first { $0.surfaceTree.contains { $0 === self } }
         guard let tab = controller?.window?.stableTabIdentifier else { return nil }
-        return WorkspaceStore.shared.workspace(forTab: tab)?.id
+        return WorkspaceStore.shared.workspace(forTab: tab)?.id ?? WorkspaceStore.shared.activeWorkspaceId
     }
 }
 
@@ -36,6 +36,12 @@ extension Tako.SurfaceView {
     private let initialTheme: TerminalTheme
     private let store: ScopedAppearanceStore
     private let workspace: () -> UUID?
+
+    var hasScopedFontSize: Bool {
+        guard let surface else { return false }
+        return store.value(for: "font-size", scope: .pane(surface.id)) != nil
+            || workspace().flatMap { store.value(for: "font-size", scope: .workspace($0)) } != nil
+    }
 
     init(surface: Tako.SurfaceView, store: ScopedAppearanceStore = .shared, workspaceID: (() -> UUID?)? = nil) {
         self.surface = surface

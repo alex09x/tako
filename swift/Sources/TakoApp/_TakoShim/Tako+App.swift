@@ -301,7 +301,15 @@ extension Tako {
     /// The font size (in points, possibly zoomed) of the surface holding the
     /// keys currently, so a new window, tab or split can start at it.
     @MainActor static var focusedFontSize: CGFloat? {
-        focusedSurfaceInKeyWindow?.theme.fontSize
+        inheritedFontSize(from: focusedSurfaceInKeyWindow)
+    }
+
+    @MainActor static func inheritedFontSize(from surface: SurfaceView?) -> CGFloat? {
+        guard let surface else { return nil }
+        // A persisted local size belongs to this pane/workspace. It must
+        // not become another pane's transient inherited zoom.
+        guard (surface.configObserver as? SurfaceAppearanceObservation)?.hasScopedFontSize != true else { return nil }
+        return surface.theme.fontSize
     }
 
     /// Where a terminal starts when nothing else supplies a directory:

@@ -117,6 +117,17 @@ public final class ScopedAppearanceStore {
         )
     }
 
+    /// Preview resetting one field without touching disk or notifying surfaces.
+    func previewRemoving(_ key: String, scope: AppearanceScope, global: TerminalTheme,
+                         workspaceID: UUID?, paneID: UUID?) -> TerminalTheme {
+        var draft = document
+        draft.setOverride(nil, for: key, scope: scope)
+        return ScopedAppearanceResolver.resolve(global: global,
+            workspaceOverrides: workspaceID.flatMap { draft.overrides(for: .workspace($0)) },
+            paneOverrides: paneID.flatMap { draft.overrides(for: .pane($0)) },
+            themeSearchPaths: themeSearchPaths ?? TerminalTheme.themeSearchPaths)
+    }
+
     // MARK: - Persistence
 
     private func load() {

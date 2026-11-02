@@ -151,6 +151,8 @@ The style hierarchy is **global defaults → workspace style → terminal pane s
 
 Moving a terminal to another workspace recomputes inherited fields while retaining its explicit pane overrides. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell. Named editable custom presets and a preview with cancel/reset remain on the roadmap.
 
+A local font size belongs to its pane or workspace and is not copied into a newly created pane. Ordinary transient zoom still follows `window-inherit-font-size` when the source has no scoped size override. Styles for missing/closed scopes are retained for undo and recovery; they are not pruned based on an incomplete window layout.
+
 ### Example `~/.config/tako/config`
 
 ```ini

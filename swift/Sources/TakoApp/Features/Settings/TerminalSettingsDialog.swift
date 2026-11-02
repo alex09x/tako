@@ -292,6 +292,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         let item = filteredSettingItems[selectedSettingIndex]
         let wasCustom = storedSettingValue(for: item) != nil
         if removeSettingValue(for: item) {
+            if item.id == "theme" { themeWarning = nil }
             Tako.TabBarController.refreshAll()
             if wasCustom {
                 statusMessage = "\(scopedAppearance == nil ? "Reset to default" : "Inherit"): \(item.id)"

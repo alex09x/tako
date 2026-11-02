@@ -147,14 +147,12 @@ extension TerminalSettingsDialog {
                 // Setting Title
                 let titleColor = isSelected ? (isTabBarFocused ? TakoTUI.text : TakoTUI.bright) : TakoTUI.text
                 let titleText = String(item.title.prefix(40))
-                let choiceFont = item.category == TerminalAppearanceCatalog.fontCategory
-                    ? NSFontManager.shared.font(withFamily: item.title, traits: [], weight: 5, size: style.font.pointSize)
-                    : nil
+                let choiceFont = appearanceChoiceFont(for: item)
                 drawText(titleText, col: 4, row: r, font: choiceFont ?? (isSelected ? style.boldFont : style.font), color: titleColor)
 
                 if item.category == TerminalAppearanceCatalog.themeCategory {
                     let preview = item.title == inheritanceTitle && scopedAppearance != nil
-                        ? scopedAppearance!.effectiveTheme
+                        ? scopedAppearance!.previewInheriting("theme")
                         : themePreviews[item.title] ?? TerminalTheme.takoDefault.applyingTheme(named: item.title)
                     if item.title != inheritanceTitle { themePreviews[item.title] = preview }
                     let colors = [preview.background, preview.foreground, preview.cursorColor]

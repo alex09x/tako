@@ -52,4 +52,12 @@ extension TerminalSettingsDialog {
         return selected.caseInsensitiveCompare(item.title) == .orderedSame
             || (item.id == "theme" && selected.lowercased() == "tako" && item.title == "TakoCore")
     }
+
+    func appearanceChoiceFont(for item: TerminalSettingItem) -> NSFont? {
+        guard item.category == TerminalAppearanceCatalog.fontCategory else { return nil }
+        if let scopedAppearance, item.title == inheritanceTitle {
+            return Style.from(scopedAppearance.previewInheriting("font-family")).font
+        }
+        return NSFontManager.shared.font(withFamily: item.title, traits: [], weight: 5, size: style.font.pointSize)
+    }
 }

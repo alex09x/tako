@@ -126,4 +126,81 @@ struct ScopedAppearanceDialogTests {
         #expect(context.writeError?.contains("closed") == true)
         #expect(!FileManager.default.fileExists(atPath: path.path))
     }
+
+    @Test func openingAndSavingScopedColorKeepsExactRGBBytes() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ScopedAppearanceStore(fileURL: directory.appendingPathComponent("appearance.json"))
+        let scope = AppearanceScope.workspace(UUID())
+        let context = ScopedAppearanceContext(scope: scope, title: "Colors", store: store, globalTheme: { .takoDefault })
+        let dialog = TerminalSettingsDialog(style: .from(nil), appearance: context)
+        let item = try #require(TerminalSettingRegistry.setting(for: "background"))
+        for original in ["#1a1b26", "#123456", "#abcdef", "#000000", "#ffffff"] {
+            try store.setValue(original, for: "background", scope: scope)
+            dialog.beginEditingColor(item)
+            #expect(dialog.colorEditField?.stringValue == original)
+            dialog.saveEditedColor()
+            #expect(store.value(for: "background", scope: scope) == original)
+        }
+    }
+
+    @Test func inheritancePreviewMatchesResetWhileKeepingExplicitColorsAndAvoidingWrites() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try "background = #abcdef\n".write(to: directory.appendingPathComponent("Child"), atomically: true, encoding: .utf8)
+        let path = directory.appendingPathComponent("appearance.json")
+        let store = ScopedAppearanceStore(fileURL: path, themeSearchPaths: [directory.path])
+        let workspace = UUID(), pane = UUID()
+        try store.setValue("#123456", for: "background", scope: .workspace(workspace))
+        try store.setValue("Menlo", for: "font-family", scope: .workspace(workspace))
+        try store.setValue("Child", for: "theme", scope: .pane(pane))
+        try store.setValue("#11ff22", for: "foreground", scope: .pane(pane))
+        try store.setValue("Monaco", for: "font-family", scope: .pane(pane))
+        let context = ScopedAppearanceContext(scope: .pane(pane), title: "Preview", store: store,
+            globalTheme: { .takoDefault }, workspaceID: { workspace })
+        let before = try Data(contentsOf: path)
+        let preview = context.previewInheriting("theme")
+        #expect(preview.background == TerminalTheme.parseColor("#123456"))
+        #expect(preview.foreground == TerminalTheme.parseColor("#11ff22"))
+        #expect(context.previewInheriting("font-family").fontFamily == "Menlo")
+        #expect(context.effectiveTheme.background == TerminalTheme.parseColor("#abcdef"))
+        #expect(try Data(contentsOf: path) == before)
+        #expect(context.setValue(nil, for: "theme"))
+        #expect(context.effectiveTheme.background == preview.background)
+        #expect(context.effectiveTheme.foreground == preview.foreground)
+    }
+
+    @Test func resettingUnavailableThemeClearsItsWarning() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ScopedAppearanceStore(fileURL: directory.appendingPathComponent("appearance.json"))
+        let scope = AppearanceScope.workspace(UUID())
+        try store.setValue("Missing-\(UUID().uuidString)", for: "theme", scope: scope)
+        let context = ScopedAppearanceContext(scope: scope, title: "Missing", store: store, globalTheme: { .takoDefault })
+        let dialog = TerminalSettingsDialog(style: .from(nil), appearance: context)
+        #expect(dialog.themeWarning != nil)
+        dialog.resetSelectedSetting()
+        #expect(dialog.themeWarning == nil)
+        #expect(store.value(for: "theme", scope: scope) == nil)
+    }
+
+    @Test func scopedFontSizeCannotSeedAnotherPanesInheritedSize() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ScopedAppearanceStore(fileURL: directory.appendingPathComponent("appearance.json"))
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        surface.close()
+        let workspace = UUID()
+        let observation = SurfaceAppearanceObservation(surface: surface, store: store, workspaceID: { workspace })
+        surface.configObserver = observation
+        try store.setValue("24", for: "font-size", scope: .pane(surface.id))
+        #expect(surface.theme.fontSize == 24)
+        #expect(Tako.inheritedFontSize(from: surface) == nil)
+        try store.reset(.pane(surface.id))
+        surface.changeFontSize(.increase(3))
+        #expect(Tako.inheritedFontSize(from: surface) == surface.theme.fontSize, "Ordinary transient zoom still inherits")
+        try store.setValue("20", for: "font-size", scope: .workspace(workspace))
+        #expect(surface.theme.fontSize == 20)
+        #expect(Tako.inheritedFontSize(from: surface) == nil)
+    }
 }
