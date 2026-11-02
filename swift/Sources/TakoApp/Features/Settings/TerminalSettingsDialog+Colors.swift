@@ -12,7 +12,7 @@ import AppKit
 extension TerminalSettingsDialog {
     func beginEditingColor(_ item: TerminalSettingItem) {
         cancelEditingColor()
-        let field = NSTextField(string: configFile.effectiveSettingValue(for: item))
+        let field = NSTextField(string: effectiveSettingValue(for: item))
         field.font = style.boldFont
         field.textColor = TakoTUI.bright
         field.backgroundColor = TakoTUI.field
@@ -50,8 +50,8 @@ extension TerminalSettingsDialog {
             return
         }
         value = "#" + value.lowercased()
-        guard configFile.setSettingValue(value, for: item) else {
-            statusMessage = "Could not save color. Your config was not updated."
+        guard setSettingValue(value, for: item) else {
+            statusMessage = scopedAppearance?.writeError ?? "Could not save color. Your config was not updated."
             setAccessibilityValue("setting_write_error: " + item.id)
             needsDisplay = true
             return

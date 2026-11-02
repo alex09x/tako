@@ -26,6 +26,6 @@ fi
 
 mkdir -p target
 started=$(date +%s)
-swiftc -O -o target/tako-e2e scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/ScenariosDialogsAndTabs.swift scripts/e2e/ScenariosHumanInteractions.swift scripts/e2e/ScenariosKittyGraphics.swift scripts/e2e/ScenariosSessionRecovery.swift scripts/e2e/ScenariosSessionCollision.swift scripts/e2e/ScenariosSidebarWorkspaceMove.swift scripts/e2e/ScenariosRecoveryGrouping.swift scripts/e2e/ScenariosLegacyWorkspaceRecovery.swift scripts/e2e/ScenariosAppearanceSettings.swift scripts/e2e/tako-e2e.swift
+swiftc -O -o target/tako-e2e scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/ScenariosDialogsAndTabs.swift scripts/e2e/ScenariosHumanInteractions.swift scripts/e2e/ScenariosKittyGraphics.swift scripts/e2e/ScenariosSessionRecovery.swift scripts/e2e/ScenariosSessionCollision.swift scripts/e2e/ScenariosSidebarWorkspaceMove.swift scripts/e2e/ScenariosRecoveryGrouping.swift scripts/e2e/ScenariosLegacyWorkspaceRecovery.swift scripts/e2e/ScenariosAppearanceSettings.swift scripts/e2e/ScenariosScopedAppearance.swift scripts/e2e/tako-e2e.swift
 echo "[timing] e2e runner compiled in $(( $(date +%s) - started ))s" >&2
 exec python3 scripts/gui_lock.py -- target/tako-e2e "$APP" "$@"

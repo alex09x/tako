@@ -110,6 +110,9 @@ struct SidebarWorkspaceDropTarget: View {
     var body: some View {
         SessionSidebarWorkspaceHeaderView(group: group, onToggleCollapse: onToggleCollapse,
                                           onSelectWorkspace: onSelectWorkspace)
+            .contextMenu {
+                Button("Workspace Appearance…") { ScopedAppearanceContext.showWorkspace(group.id) }
+            }
             .background {
                 if targeted {
                     RoundedRectangle(cornerRadius: 6)
@@ -143,6 +146,11 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
 
     private func menu<Content: View>(_ content: Content) -> some View {
         content.contextMenu {
+            Button(item.isChild ? "Pane Appearance…" : "Terminal Appearance…") {
+                if let id = item.surfaceId { ScopedAppearanceContext.showPane(id) }
+            }
+            .disabled(item.surfaceId == nil)
+            Divider()
             if canMoveToWindow() {
                 Button(item.isChild ? "Move Tab to This Window" : "Move to This Window", action: onMoveToWindow)
             }

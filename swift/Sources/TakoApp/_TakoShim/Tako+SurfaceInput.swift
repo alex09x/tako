@@ -141,8 +141,7 @@ extension Tako.SurfaceView {
             // stands up a fresh Metal stack, because font metrics and palette
             // are baked into rasterized glyph masks. Doing any of that here as
             // well is how the two surfaces drifted apart in the first place.
-            configuredTheme = newTheme
-            applyTheme(newTheme)
+            applyScopedTheme(newTheme, store: .shared, workspaceID: appearanceWorkspaceID)
         }
 
         /// Evaluates safe paste guard before sending text to the shell.

@@ -143,13 +143,13 @@ Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to open the in-terminal settings
 
 Tako ships its own theme presets: **TakoCore**, **Tako Forest**, **Tako Night**, **Tako Ocean**, and **Tako Slate**. Custom theme files can live in `~/.config/tako/themes/`; they use the same `key = value` syntax as the configuration file. Explicit color settings in the configuration override the selected preset.
 
-### Planned: workspace and terminal styles
+### Workspace and terminal styles
 
-Workspace- and terminal-specific appearance is planned; current appearance settings apply globally.
+Right-click a workspace heading in the Sessions sidebar and choose **Workspace Appearance…**. Right-click a terminal or split row and choose **Terminal Appearance…** or **Pane Appearance…** to style that individual pane. These editors have separate Themes, Fonts and Font Size sections; <kbd>Cmd</kbd> + <kbd>,</kbd> continues to edit Tako's global settings.
 
-The planned style hierarchy is **global defaults → workspace style → terminal pane style**. Each workspace and each terminal pane, including an individual split, will be able to customize its theme, terminal colors, font family, and font size. An override changes only the fields explicitly set at that level; resetting a field restores inheritance.
+The style hierarchy is **global defaults → workspace style → terminal pane style**. Each level can override the theme, terminal background/foreground/cursor/selection colors, font family, and font size. Only explicitly set fields override their parent. Choose **Inherit** for a theme or font, or press <kbd>D</kbd> on a field, to restore inheritance. A selected preset supplies its palette before that scope's explicit color overrides.
 
-When a terminal moves to another workspace, inherited fields will follow the destination workspace while explicit terminal overrides remain. Styles will persist across app restarts and session restoration, and applying them will preserve the running terminal processes. Named custom presets and a preview with cancel/reset are also planned.
+Moving a terminal to another workspace recomputes inherited fields while retaining its explicit pane overrides. Scoped styles are saved separately from window layouts, survive app restarts and session restoration, and apply without restarting the shell. Named editable custom presets and a preview with cancel/reset remain on the roadmap.
 
 ### Example `~/.config/tako/config`
 

@@ -54,7 +54,12 @@ public enum ScopedAppearanceResolver {
         }
         if let sizeStr = overrides[AppearanceKey.fontSize.rawValue],
            let size = Double(sizeStr.trimmingCharacters(in: .whitespaces)),
-           size.isFinite {
+           size.isFinite, size >= 6, size <= 72 {
+            if theme.fontSize > 0 {
+                let scale = CGFloat(size) / theme.fontSize
+                theme.cellWidth = theme.cellWidth.map { $0 * scale }
+                theme.cellHeight = theme.cellHeight.map { $0 * scale }
+            }
             theme.fontSize = CGFloat(size)
         }
         if let bgStr = overrides[AppearanceKey.background.rawValue],

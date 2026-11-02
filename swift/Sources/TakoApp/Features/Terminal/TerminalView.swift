@@ -109,12 +109,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         case .ready:
             ZStack {
                 HStack(spacing: 0) {
-                    if viewModel.sessionSidebarIsShowing {
-                        SessionSidebarView(
+                    if viewModel.sessionSidebarIsShowing,
+                       let sidebarSurface = focusedSurface ?? lastFocusedSurface?.value ?? viewModel.surfaceTree.first(where: { _ in true }) {
+                        TerminalSidebar(surface: sidebarSurface,
                             isPresented: $viewModel.sessionSidebarIsShowing,
-                            containingWindow: viewModel.containingWindow,
-                            backgroundColor: tako.config.backgroundColor.opacity(tako.config.backgroundOpacity),
-                            newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab"))
+                            window: viewModel.containingWindow,
+                            shortcut: tako.config.keyboardShortcut(for: "new_tab"))
                             .frame(width: SessionSidebarWidth.clamped(CGFloat(sessionSidebarWidth)))
                             .overlay(alignment: .trailing) {
                                 SessionSidebarResizeHandle(width: $sessionSidebarWidth)

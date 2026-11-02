@@ -14,6 +14,7 @@ import Foundation
 extension Tako.SurfaceView {
         func configDidReload(_ config: Tako.Config) {
             guard let owningApp, config === owningApp.config else { return }
+            derivedConfig = DerivedConfig(config)
             applySurfaceConfig(config)
             updateTheme(config.theme)
         }
@@ -37,21 +38,7 @@ extension Tako.SurfaceView {
         /// it; nothing else reaches the surfaces already on screen, so each
         /// one listens and takes what applies to it.
         func observeConfigReload() {
-            configObserver = NotificationCenter.default.addObserver(
-                forName: .takoConfigDidChange, object: nil, queue: nil
-            ) { [weak self] note in
-                guard let config = note.userInfo?[Foundation.Notification.Name.TakoConfigChangeKey]
-                        as? Tako.Config else { return }
-                // The reload may be announced from any thread; a view is
-                // only touched on the main one.
-                if Thread.isMainThread {
-                    MainActor.assumeIsolated { self?.configDidReload(config) }
-                } else {
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated { self?.configDidReload(config) }
-                    }
-                }
-            }
+            configObserver = SurfaceAppearanceObservation(surface: self)
         }
 
         func applySurfaceConfig(_ config: Tako.Config) {

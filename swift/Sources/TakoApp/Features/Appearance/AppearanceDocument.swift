@@ -39,8 +39,20 @@ public struct AppearanceDocument: Codable, Equatable, Sendable {
         let rawPanes = try container.decodeIfPresent([String: [String: String]].self, forKey: .panes) ?? [:]
 
         // Normalize UUID keys to uppercase for stable lookup
-        workspaces = Dictionary(uniqueKeysWithValues: rawWorkspaces.map { ($0.key.uppercased(), $0.value) })
-        panes = Dictionary(uniqueKeysWithValues: rawPanes.map { ($0.key.uppercased(), $0.value) })
+        workspaces = try Self.normalized(rawWorkspaces, decoder: decoder)
+        panes = try Self.normalized(rawPanes, decoder: decoder)
+    }
+
+    private static func normalized(_ values: [String: [String: String]], decoder: Decoder) throws -> [String: [String: String]] {
+        var result: [String: [String: String]] = [:]
+        for (key, fields) in values {
+            let normalized = key.uppercased()
+            guard result.updateValue(fields, forKey: normalized) == nil else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                    debugDescription: "Duplicate appearance identity: \(key)"))
+            }
+        }
+        return result
     }
 
     public func encode(to encoder: Encoder) throws {

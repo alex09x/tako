@@ -468,6 +468,9 @@ let scenarios: [Scenario] = [
     ("persist-sidebar-workspace-move", "sidebar drag and context menu move the same live session", { d in
         try runSidebarWorkspaceMoveScenario(d)
     }),
+    ("persist-scoped-appearance", "workspace and pane styles follow live sessions across moves and relaunch", { d in
+        try runScopedAppearanceScenario(d)
+    }),
     ("persist-sidebar-long-list", "resize, scroll and drag a long sidebar list", { d in
         try runSidebarLongListScenario(d)
     }),
@@ -4579,7 +4582,7 @@ struct TakoE2E {
     // Scenarios that need a build with the session runtime run only when named,
     // from scripts/e2e-persist.sh: never as part of the default set.
         let persistenceOnly: Set<String> = ["persist-live", "persist-gone", "persist-close", "persist-cancel", "persist-close-asks", "persist-close-quit", "persist-second-owner", "persist-reflow", "persist-workspaces", "persist-missing-layout", "persist-damaged-record", "persist-damaged-placeholder", "persist-lost-workspaces", "persist-workspace-archive", "persist-crash", "persist-screen-archive", "persist-layout-archive", "persist-legacy-upgrade", "persist-name-collision", "persist-agent-conversation", "persist-sidebar-workspace-move", "persist-partial-group", "persist-empty-workspace-group", "persist-task-workspace-group", "persist-intentional-windows", "persist-assign-selected", "persist-inactive-recovery-group", "persist-cross-window-workspace-move", "persist-legacy-window-choice", "persist-legacy-workspace-choice"]
-    let isolatedPersistence = persistenceOnly.union(["persist-sidebar-long-list"])
+    let isolatedPersistence = persistenceOnly.union(["persist-sidebar-long-list", "persist-scoped-appearance"])
     let explicitOnly = isolatedPersistence.union(["kitty-icat"])
     // A misspelt name must not pass as a run of nothing.
     let unknown = wanted.subtracting(scenarios.map(\.name))
