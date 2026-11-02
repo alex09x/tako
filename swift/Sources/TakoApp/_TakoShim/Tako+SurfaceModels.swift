@@ -174,7 +174,7 @@ public final class CachedValue<T> {
 
 extension Tako.SurfaceView {
         struct DerivedConfig: Equatable {
-            let backgroundColor: Color
+            var backgroundColor: Color
             let backgroundOpacity: Double
             let backgroundBlur: Tako.Config.BackgroundBlur
             let macosWindowShadow: Bool

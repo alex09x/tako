@@ -231,7 +231,7 @@ extension TerminalSettingsDialog {
     }
 
     func navigateTab(direction: Int) {
-        let tabs = SettingsTab.allCases
+        let tabs = availableTabs
         guard let currentIndex = tabs.firstIndex(of: activeTab) else { return }
         let newIndex = min(max(currentIndex + direction, 0), tabs.count - 1)
         if newIndex != currentIndex {

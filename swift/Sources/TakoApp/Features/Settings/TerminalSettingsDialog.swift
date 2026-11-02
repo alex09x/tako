@@ -58,6 +58,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     let style: Style
     let configFile: KeybindConfigFile
+    let scopedAppearance: ScopedAppearanceContext?
     var activeTab: SettingsTab = .keybindings
     var isTabBarFocused: Bool = false
 
@@ -102,16 +103,20 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         in window: NSWindow,
         theme: TerminalTheme? = nil,
         configPath: String? = nil,
-        tab: SettingsTab = .keybindings
+        tab: SettingsTab = .keybindings,
+        appearance: ScopedAppearanceContext? = nil
     ) {
         if let existing = window.contentView?.subviews.first(where: { $0 is TerminalSettingsDialog }) {
             let dialog = existing as? TerminalSettingsDialog
-            if dialog?.activeTab != tab {
+            if dialog?.scopedAppearance?.scope != appearance?.scope {
+                dialog?.withdraw()
+            } else if dialog?.activeTab != tab {
                 dialog?.switchTab(to: tab)
+                return
             } else {
                 dialog?.withdraw()
+                return
             }
-            return
         }
 
         guard let content = window.contentView else { return }
@@ -122,7 +127,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         let configFile = KeybindConfigFile(configPath: resolvedPath)
         configFile.reload()
 
-        let dialog = TerminalSettingsDialog(style: .from(theme), configFile: configFile, initialTab: tab)
+        let dialog = TerminalSettingsDialog(style: .from(theme), configFile: configFile, initialTab: tab,
+                                            appearance: appearance)
         dialog.frame = content.bounds
         dialog.autoresizingMask = [.width, .height]
         dialog.previousResponder = window.firstResponder
@@ -132,10 +138,12 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         dialog.needsLayout = true
     }
 
-    init(style: Style, configFile: KeybindConfigFile? = nil, initialTab: SettingsTab = .keybindings) {
+    init(style: Style, configFile: KeybindConfigFile? = nil, initialTab: SettingsTab = .keybindings,
+         appearance: ScopedAppearanceContext? = nil) {
         self.style = style
         self.configFile = configFile ?? .shared
-        self.activeTab = initialTab
+        self.scopedAppearance = appearance
+        self.activeTab = appearance != nil && initialTab.rawValue < 2 ? .themes : initialTab
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.65).cgColor
@@ -146,8 +154,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("TerminalSettingsDialog")
-        setAccessibilityLabel("Tako Settings")
-        setAccessibilityTitle("Tako Settings")
+        setAccessibilityLabel(settingsTitle)
+        setAccessibilityTitle(settingsTitle)
 
         setupSearchField()
         setupButtons()
@@ -249,7 +257,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
             return
         }
         if case .color = item.type { beginEditingColor(item); return }
-        let current = configFile.effectiveSettingValue(for: item)
+        let current = effectiveSettingValue(for: item)
         let next: String
         if activeTab == .fontSize, item.id == "font-size" {
             let currentSize = Double(current).flatMap { $0.isFinite ? $0 : nil } ?? 13
@@ -258,8 +266,8 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         } else {
             next = reverse ? item.type.previousValue(current: current) : item.type.nextValue(current: current)
         }
-        if next == item.type.defaultStringValue {
-            if configFile.removeSettingValue(for: item) {
+        if scopedAppearance == nil && next == item.type.defaultStringValue {
+            if removeSettingValue(for: item) {
                 statusMessage = "Default: \(item.id) = \(next)"
                 setAccessibilityValue("setting_reset_success: \(item.id)")
             } else {
@@ -267,11 +275,11 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
                 setAccessibilityValue("setting_write_error: \(item.id)")
             }
         } else {
-            if configFile.setSettingValue(next, for: item) {
+            if setSettingValue(next, for: item) {
                 statusMessage = "Custom: \(item.id) = \(next)"
                 setAccessibilityValue("setting_custom_success: \(item.id)")
             } else {
-                statusMessage = "Error: Failed to write \(item.id) to config file."
+                statusMessage = scopedAppearance?.writeError ?? "Error: Failed to write \(item.id) to config file."
                 setAccessibilityValue("setting_write_error: \(item.id)")
             }
         }
@@ -282,17 +290,18 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         cancelEditingColor()
         guard selectedSettingIndex < filteredSettingItems.count else { return }
         let item = filteredSettingItems[selectedSettingIndex]
-        let wasCustom = configFile.getSettingValue(for: item) != nil
-        if configFile.removeSettingValue(for: item) {
+        let wasCustom = storedSettingValue(for: item) != nil
+        if removeSettingValue(for: item) {
+            if item.id == "theme" { themeWarning = nil }
             Tako.TabBarController.refreshAll()
             if wasCustom {
-                statusMessage = "Reset to default: \(item.id)"
+                statusMessage = "\(scopedAppearance == nil ? "Reset to default" : "Inherit"): \(item.id)"
             } else {
                 statusMessage = "\(item.id) is already at default."
             }
             setAccessibilityValue("setting_reset_success: \(item.id)")
         } else {
-            statusMessage = "Error: Failed to reset \(item.id) in config file."
+            statusMessage = scopedAppearance?.writeError ?? "Error: Failed to reset \(item.id) in config file."
             setAccessibilityValue("setting_reset_error: \(item.id)")
         }
         needsDisplay = true
