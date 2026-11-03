@@ -165,7 +165,8 @@ let knownTakoConfigKeys: Set<String> = [
     // don't get flagged as unknown.
     "background-blur-radius", "background-blur", "background", "font-family",
     "font-family-bold", "font-family-italic", "font-family-bold-italic", "font-size",
-    "font-feature", "font-style", "font-style-bold", "font-style-italic", "font-synthetic-style",
+    "font-feature", "font-style", "font-style-bold", "font-style-italic", "font-style-bold-italic", "font-synthetic-style",
+    "font-weight", "font-weight-bold", "font-weight-italic", "font-weight-bold-italic",
     "adjust-cell-width", "adjust-cell-height", "adjust-font-baseline",
     "adjust-underline-position", "adjust-underline-thickness", "grapheme-width-method",
     "theme", "foreground", "selection-background", "selection-foreground", "selection-invert-fg-bg",
