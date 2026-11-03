@@ -113,6 +113,7 @@ final class PaneDragHandleView: NSView, NSDraggingSource {
     }
 
     func completeDrag(at point: NSPoint, operation: NSDragOperation, mouseButtons: Int) {
+        let sourceFrame = window?.frame
         if let cancelMonitor { NSEvent.removeMonitor(cancelMonitor) }
         cancelMonitor = nil
         dragging = false
@@ -120,7 +121,8 @@ final class PaneDragHandleView: NSView, NSDraggingSource {
         draggingChanged(false)
         // No destination accepts an outside drop. Escape also reports .none,
         // so it must be distinguished from a released mouse before detaching.
-        if operation.isEmpty, !cancelled, mouseButtons & 1 == 0 { detach(point) }
+        if operation.isEmpty, !cancelled, mouseButtons & 1 == 0,
+           let sourceFrame, !sourceFrame.contains(point) { detach(point) }
         cancelled = false
     }
 }

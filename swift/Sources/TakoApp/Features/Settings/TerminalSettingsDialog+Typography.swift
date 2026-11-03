@@ -13,7 +13,8 @@ import CoreText
 extension TerminalSettingsDialog {
     func typographyPreviewFont(family: String? = nil, size: CGFloat? = nil, face: String = "font-weight") -> NSFont {
         var sample = presetEditor?.effectiveTheme ?? scopedAppearance?.effectiveTheme
-            ?? TerminalTheme.parse(config: configFile.rawConfigLines.joined(separator: "\n"), configPath: configFile.configPath)
+            ?? TerminalTheme.parse(config: configFile.rawConfigLines.joined(separator: "\n"), configPath: configFile.configPath,
+                                   darkAppearance: TakoSystemAppearance.isDark)
         if let family { sample.fontFamily = family }
         sample.fontSize = size ?? style.font.pointSize
         let metrics = TerminalRenderer.Metrics(theme: sample)

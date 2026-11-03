@@ -45,7 +45,8 @@ extension KeybindConfigFile {
     }
 
     public func effectiveSettingValue(for setting: TerminalSettingItem) -> String {
-        let theme = TerminalTheme.parse(config: rawConfigLines.joined(separator: "\n"), configPath: configPath)
+        let theme = TerminalTheme.parse(config: rawConfigLines.joined(separator: "\n"), configPath: configPath,
+                                        darkAppearance: TakoSystemAppearance.isDark)
         if case .color = setting.type {
             if let color = theme.settingsColor(for: setting.id), let nsColor = NSColor(cgColor: color) {
                 return Tako.Brand.hexString(for: nsColor)

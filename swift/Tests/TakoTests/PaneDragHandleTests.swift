@@ -30,6 +30,10 @@ struct PaneDragHandleTests {
 
     @Test func anOutsideReleaseDetachesAtThePointerAndClearsDragging() {
         let view = PaneDragHandleView(frame: .zero)
+        let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 300, height: 200),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        defer { window.contentView = nil }
         var position: NSPoint?
         var dragging = true
         view.detach = { position = $0 }
@@ -37,6 +41,23 @@ struct PaneDragHandleTests {
         view.completeDrag(at: NSPoint(x: 450, y: 300), operation: [], mouseButtons: 0)
         #expect(position == NSPoint(x: 450, y: 300))
         #expect(!dragging)
+    }
+
+    @Test func aRejectedReleaseInsideItsSourceWindowStaysInPlace() {
+        let view = PaneDragHandleView(frame: .zero)
+        let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 300, height: 200),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        defer { window.contentView = nil }
+        var detached = false
+        var dragging = true
+        view.detach = { _ in detached = true }
+        view.draggingChanged = { dragging = $0 }
+        view.completeDrag(at: NSPoint(x: window.frame.midX, y: window.frame.midY),
+                          operation: [], mouseButtons: 0)
+        #expect(!detached)
+        #expect(!dragging)
+        #expect(view.window === window)
     }
 
     @Test func escapeCannotDetachEvenIfTheMouseIsReleased() {

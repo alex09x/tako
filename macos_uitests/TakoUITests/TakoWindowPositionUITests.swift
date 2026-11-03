@@ -81,6 +81,25 @@ final class TakoWindowPositionUITests: TakoCustomConfigCase {
         XCTAssertEqual(windowFrame4.minY, windowFrame3.minY + 30, accuracy: 5, "New window should be on the bottom right")
     }
 
+    @MainActor func testRejectedSplitDropInsideItsWindowKeepsBothPanes() throws {
+        let app = try takoApplication()
+        app.launch()
+        app.typeKey("d", modifierFlags: .command)
+        let window = app.windows.firstMatch
+        let handles = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pane-drag-handle-'"))
+        XCTAssertEqual(handles.count, 2)
+        let original = Set(handles.allElementsBoundByIndex.map(\.identifier))
+        handles.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.2, thenDragTo: window.textViews.element(boundBy: 1)
+                .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        XCTAssertEqual(app.windows.count, 1, "A rejected drop inside the source window must not detach")
+        XCTAssertEqual(window.textViews.count, 2)
+        XCTAssertEqual(Set(handles.allElementsBoundByIndex.map(\.identifier)), original)
+        for terminal in window.textViews.allElementsBoundByIndex {
+            XCTAssertTrue(terminal.isHittable)
+        }
+    }
+
     @MainActor func testDragSplitWindowPosition() async throws {
         try updateConfig(
             """
