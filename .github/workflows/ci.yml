@@ -96,7 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo /usr/sbin/DevToolsSecurity --enable
-          /usr/bin/automationmodetool status
+          /usr/bin/automationmodetool
 
       - name: Run full test-only stage locally
         env:

@@ -209,13 +209,14 @@ sys.exit("FAIL: no available iPhone simulator")
             export TAKO_WITH_ZMX=1
             export TAKO_BUNDLE_ID=com.tako-core.terminal.uitest
             export TAKO_APP_DIR=target/macapp-uitest
-            # Fail on an unavailable Automation service rather than silently
-            # falling back to build-for-testing. The -Run scheme enables
+            # Xcode enables Automation Mode when tests start. Disabled at
+            # rest is valid if the host permits activation without a prompt.
+            # The -Run scheme enables
             # discovery of the inherited UI suites as well as our journeys.
-            mode=$(/usr/bin/automationmodetool status 2>&1)
+            mode=$(/usr/bin/automationmodetool 2>&1)
             printf '%s\n' "$mode"
-            if [[ "$mode" == *"Automation Mode is disabled"* ]]; then
-                echo 'FAIL: Automation Mode is disabled; no XCUITest executed' >&2
+            if [[ "$mode" == *"Automation Mode is disabled"* && "$mode" != *"DOES NOT REQUIRE user authentication"* ]]; then
+                echo 'FAIL: enabling Automation Mode requires authentication; no XCUITest executed' >&2
                 exit 3
             fi
             result_dir=$(mktemp -d target/ci-ui.XXXXXX)
