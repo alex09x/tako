@@ -160,6 +160,7 @@ struct SessionSidebarRowView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                     .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                 } else {
                     Color.clear.frame(width: 10, height: 14)
