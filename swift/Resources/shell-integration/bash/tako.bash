@@ -27,15 +27,20 @@ if [ -n "$TAKO_BASH_INJECT" ]; then
   builtin unset ENV TAKO_BASH_INJECT
 
   # Restore an existing ENV that was replaced by the shell integration code.
-  if [[ -n "$TAKO_BASH_ENV" ]]; then
-    builtin export ENV=$TAKO_BASH_ENV
-    builtin unset TAKO_BASH_ENV
+  if [[ "$TAKO_BASH_ENV_SET" == 1 || -n "$TAKO_BASH_ENV" ]]; then
+    builtin export ENV="$TAKO_BASH_ENV"
   fi
+  builtin unset TAKO_BASH_ENV TAKO_BASH_ENV_SET
 
-  # Restore bash's default 'posix' behavior. Also reset 'inherit_errexit',
-  # which doesn't happen as part of the 'posix' reset.
-  builtin set +o posix
-  builtin shopt -u inherit_errexit 2>/dev/null
+  # Undo only the POSIX mode enabled by our launcher. Preserve inherited
+  # POSIX and inherit_errexit settings before running any user profiles.
+  if [[ "$TAKO_BASH_POSIX" != 1 ]]; then
+    builtin set +o posix
+    if [[ "$TAKO_BASH_INHERIT_ERREXIT" != 1 ]]; then
+      builtin shopt -u inherit_errexit 2>/dev/null
+    fi
+  fi
+  builtin unset TAKO_BASH_POSIX TAKO_BASH_INHERIT_ERREXIT
 
   # Unexport HISTFILE if it was set by the shell integration code.
   if [[ -n "$TAKO_BASH_UNEXPORT_HISTFILE" ]]; then

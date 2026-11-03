@@ -89,17 +89,17 @@ final class PTY {
         // rules out setenv/unsetenv/strdup.
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let shellPathString = PTY.loginShell
-        let extraEnv = PTY.shellIntegrationEnvironment(config: config, loginShell: shellPathString)
-            + TakoPTYEnvironment.terminalIdentity(appVersion: appVersion)
-
         var envMap = ProcessInfo.processInfo.environment
         for key in TakoPTYEnvironment.variablesRemovedFromChild { envMap.removeValue(forKey: key) }
         envMap["TERM"] = "xterm-256color"
         envMap["COLORTERM"] = "truecolor"
         envMap["SHELL"] = shellPathString
-        for (key, value) in extraEnv { envMap[key] = value }
+        for (key, value) in TakoPTYEnvironment.terminalIdentity(appVersion: appVersion) { envMap[key] = value }
         for key in removing { envMap.removeValue(forKey: key) }
         for (key, value) in environment { envMap[key] = value }
+        let plan = PTY.shellLaunchPlan(config: config, loginShell: shellPathString,
+                                      environment: envMap, program: program)
+        for (key, value) in plan.environment { envMap[key] = value }
 
         // Plain C arrays, allocated here: passing a Swift array with `&` in
         // the child would go through Swift's array bridging, which is not
@@ -109,9 +109,8 @@ final class PTY {
         for (i, s) in envStrings.enumerated() { envp[i] = s }
         envp[envStrings.count] = nil
 
-        let shellPath = strdup(program?.first ?? shellPathString)
-        let argvStrings: [UnsafeMutablePointer<CChar>?] = program.map { $0.map { strdup($0) } }
-            ?? [strdup(shellPathString), strdup("-l")]
+        let shellPath = strdup(plan.arguments.first ?? shellPathString)
+        let argvStrings: [UnsafeMutablePointer<CChar>?] = plan.arguments.map { strdup($0) }
         let argv = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: argvStrings.count + 1)
         for (i, s) in argvStrings.enumerated() { argv[i] = s }
         argv[argvStrings.count] = nil

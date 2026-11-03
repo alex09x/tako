@@ -38,20 +38,7 @@ extension PTY {
     /// async-signal-safe calls are allowed, and Foundation is not one --
     /// doing this in the child killed the shell before it ever ran.
     static func shellIntegrationEnvironment(config: Tako.Config? = nil, loginShell: String = PTY.loginShell) -> [(String, String)] {
-        // `shell-integration = none`: inject nothing.
-        guard config?.shellIntegration != Tako.Config.ShellIntegration.none else { return [] }
-        guard let resources = Bundle.main.resourceURL?
-            .appendingPathComponent("tako").path else { return [] }
-        let base = resources + "/shell-integration"
-        guard FileManager.default.fileExists(atPath: base) else { return [] }
-
-        return shellIntegrationVariables(
-            resourcesDir: resources,
-            base: base,
-            mode: config?.shellIntegration ?? .detect,
-            loginShell: loginShell,
-            shellFeatures: shellFeatures(config?.shellIntegrationFeatures),
-            environment: ProcessInfo.processInfo.environment)
+        shellLaunchPlan(config: config, loginShell: loginShell).environment
     }
 
     /// The env vars a shell-integration mode needs, given the login shell
@@ -107,7 +94,9 @@ extension PTY {
             }
             env.append(("ZDOTDIR", base + "/zsh"))
         case "bash":
-            env.append(("TAKO_BASH_INJECT", "1"))
+            // The launch plan couples ENV and --posix only for supported
+            // Bash. Older Bash keeps these common vars for manual sourcing.
+            break
         default:
             let existing = environment["XDG_DATA_DIRS"] ?? "/usr/local/share:/usr/share"
             env.append(("XDG_DATA_DIRS", base + ":" + existing))
