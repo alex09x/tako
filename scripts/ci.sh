@@ -111,7 +111,8 @@ SH
             # Explicitly refresh the host slice and bindings before SwiftPM
             # plans the graph. No iOS cross-compiles for this macOS suite.
             ./scripts/build-xcframework.sh --macos-only
-            ci_logged "$stage" ./scripts/swift-test.sh --jobs 2 --no-parallel \
+            ci_logged "$stage" python3 scripts/ci-swift-watchdog.py -- \
+                ./scripts/swift-test.sh --jobs 2 --no-parallel \
                 --enable-xctest --enable-swift-testing
             ci_require "$stage" "Test Case .* passed"
             ci_require "$stage" 'Test run with [1-9][0-9]* tests?( in [0-9]+ suites?)? passed after'
