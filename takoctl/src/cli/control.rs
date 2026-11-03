@@ -211,13 +211,12 @@ pub fn parse(
                 positional.remove(0)
             };
             match sub.as_str() {
-                "lock" | "unlock" | "takeover" | "handback" | "status" | "log"
-                | "allow-automation" | "disallow-automation" | "confirm-automation" => {
+                "lock" | "unlock" | "takeover" | "handback" | "status" | "log" => {
                     args.insert("subcommand".into(), Value::String(sub));
                 }
                 other => {
                     return Err(format!(
-                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, log, allow-automation, disallow-automation, or confirm-automation"
+                        "unknown input action \"{other}\"; use lock, unlock, takeover, handback, status, or log"
                     ));
                 }
             }

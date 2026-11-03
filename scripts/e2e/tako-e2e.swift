@@ -193,30 +193,78 @@ let scenarios: [Scenario] = [
         d.quit()
         try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = local\n")
         // On PATH through the shell integration's `path` feature.
-        try d.run("takoctl tree --json > \(d.path("tree")); echo $TAKO_SURFACE_ID > \(d.path("self")); cd \(d.work.path)")
+        // Redirection creates the reply file before takoctl finishes. Publish a
+        // separate witness only after stdout, stderr, status, and pane ID are final.
+        try d.run("""
+        sh -c 'me=$TAKO_SURFACE_ID; takoctl tree --json > "\(d.path("tree"))" 2> "\(d.path("tree.err"))"; echo $? > "\(d.path("tree.rc"))"; echo "$me" > "\(d.path("self"))"; echo done > "\(d.path("tree.done"))"'; cd "\(d.work.path)"
+        """)
+        guard d.wait(for: {
+            (try? String(contentsOfFile: d.path("tree.done"), encoding: .utf8)) == "done\n"
+        }, timeout: 10) else { throw Failure("tree CLI reply did not complete") }
         let tree = try d.file("tree")
+        let treeError = try d.file("tree.err")
+        let treeStatus = try d.file("tree.rc")
         let me = try d.file("self").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard me.count == 36, tree.contains("\"id\":\"\(me)\""), tree.contains("\"ok\":true") else {
-            throw Failure("tree does not list this pane \(me): \(tree.prefix(400))")
+        guard treeStatus == "0\n", treeError.isEmpty,
+              let reply = try? JSONSerialization.jsonObject(with: Data(tree.utf8)) as? [String: Any],
+              reply["ok"] as? Bool == true,
+              let result = reply["result"] as? [String: Any],
+              let windows = result["windows"] as? [[String: Any]] else {
+            throw Failure("invalid tree reply (exit \(treeStatus), stderr \(treeError)): \(tree.prefix(400))")
+        }
+        let panes = windows.flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
+            .flatMap { $0["panes"] as? [[String: Any]] ?? [] }
+        guard UUID(uuidString: me) != nil, panes.contains(where: { $0["id"] as? String == me }) else {
+            throw Failure("tree does not list the original pane \(me): \(tree.prefix(400))")
         }
         // Without the pane context, the default setting refuses.
-        try d.run("sh -c 'env -u TAKO_SURFACE_ID takoctl version 2> \(d.path("err")); echo $? > \(d.path("rc"))'")
+        try d.run("""
+        sh -c 'me=$TAKO_SURFACE_ID; env -u TAKO_SURFACE_ID takoctl version > "\(d.path("outside.out"))" 2> "\(d.path("err"))"; echo $? > "\(d.path("rc"))"; echo "$me" > "\(d.path("outside.self"))"; echo done > "\(d.path("outside.done"))"'
+        """)
+        guard d.wait(for: {
+            (try? String(contentsOfFile: d.path("outside.done"), encoding: .utf8)) == "done\n"
+        }, timeout: 10) else { throw Failure("outside-pane CLI reply did not complete") }
         guard try d.file("rc").trimmingCharacters(in: .whitespacesAndNewlines) == "1",
-              try d.file("err").contains("disabled") else {
+              try d.file("err").contains("disabled"),
+              try d.file("outside.self").trimmingCharacters(in: .whitespacesAndNewlines) == me else {
             throw Failure("a request from outside a pane was not refused: \(try d.file("err"))")
         }
-        try d.run("takoctl version > \(d.path("ver"))")
-        guard try d.file("ver").contains("protocol 1") else { throw Failure("version: \(try d.file("ver"))") }
+        try d.run("""
+        sh -c 'me=$TAKO_SURFACE_ID; takoctl version > "\(d.path("ver"))" 2> "\(d.path("ver.err"))"; echo $? > "\(d.path("ver.rc"))"; echo "$me" > "\(d.path("ver.self"))"; echo done > "\(d.path("ver.done"))"'
+        """)
+        guard d.wait(for: {
+            (try? String(contentsOfFile: d.path("ver.done"), encoding: .utf8)) == "done\n"
+        }, timeout: 10) else { throw Failure("version CLI reply did not complete") }
+        guard try d.file("ver.rc") == "0\n", try d.file("ver.err").isEmpty,
+              try d.file("ver.self").trimmingCharacters(in: .whitespacesAndNewlines) == me,
+              try d.file("ver").contains("protocol 1") else { throw Failure("version: \(try d.file("ver")), stderr: \(try d.file("ver.err"))") }
     }),
     ("ctl-quick", "takoctl works from the Quick Terminal, which tree lists", { d in
         d.key(Key.grave, [.maskCommand, .maskShift])
         usleep(1_500_000)
-        try d.run("takoctl tree --json > \(d.path("qtree")); echo $TAKO_SURFACE_ID > \(d.path("qself"))")
+        try d.run("""
+        sh -c 'me=$TAKO_SURFACE_ID; takoctl tree --json > "\(d.path("qtree"))" 2> "\(d.path("qtree.err"))"; echo $? > "\(d.path("qtree.rc"))"; echo "$me" > "\(d.path("qself"))"; echo done > "\(d.path("qtree.done"))"'
+        """)
+        guard d.wait(for: {
+            (try? String(contentsOfFile: d.path("qtree.done"), encoding: .utf8)) == "done\n"
+        }, timeout: 10) else { throw Failure("Quick Terminal CLI reply did not complete") }
         let tree = try d.file("qtree")
+        let treeError = try d.file("qtree.err")
+        let treeStatus = try d.file("qtree.rc")
         let me = try d.file("qself").trimmingCharacters(in: .whitespacesAndNewlines)
         d.key(Key.grave, [.maskCommand, .maskShift])
-        guard tree.contains("\"ok\":true"), tree.contains("quick-terminal"), tree.contains("\"id\":\"\(me)\"") else {
-            throw Failure("from the Quick Terminal \(me): \(tree.prefix(500))")
+        guard treeStatus == "0\n", treeError.isEmpty,
+              let reply = try? JSONSerialization.jsonObject(with: Data(tree.utf8)) as? [String: Any],
+              reply["ok"] as? Bool == true,
+              let result = reply["result"] as? [String: Any],
+              let windows = result["windows"] as? [[String: Any]] else {
+            throw Failure("invalid Quick Terminal reply (exit \(treeStatus), stderr \(treeError)): \(tree.prefix(500))")
+        }
+        let panes = windows.filter { $0["id"] as? String == "quick-terminal" }
+            .flatMap { $0["tabs"] as? [[String: Any]] ?? [] }
+            .flatMap { $0["panes"] as? [[String: Any]] ?? [] }
+        guard UUID(uuidString: me) != nil, panes.contains(where: { $0["id"] as? String == me }) else {
+            throw Failure("tree does not list the original Quick Terminal pane \(me): \(tree.prefix(500))")
         }
     }),
     ("ctl-layout", "takoctl splits, types, reads, retitles, opens a tab behind and closes with the user's answer", { d in
@@ -1930,12 +1978,6 @@ let scenarios: [Scenario] = [
             throw Failure("input lock failed: physical keyboard input leaked through while pane was locked")
         }
 
-        // Verify approved automation command executes without error
-        let autoStatus = try d.exec("\(ctl) input allow-automation")
-        guard autoStatus.contains("allowed") || autoStatus.contains("true") else {
-            throw Failure("allow-automation failed: \(autoStatus)")
-        }
-
         // Send an authorized automated command and require its unique PTY witness during lock
         _ = try d.exec("\(ctl) send \"echo auto_witness > \(autoFile)\"")
         try d.expect("input_auto.txt", "auto_witness\n", "authorized automated input delivered while pane locked")
@@ -1981,11 +2023,6 @@ let scenarios: [Scenario] = [
         d.activate()
         try d.run("cd '\(repoPath)'")
         usleep(300_000)
-
-        // Allow automation on both panes so takoctl send is permitted
-        _ = try d.exec("\(ctl) input allow-automation --target \(targetPaneId)")
-        _ = try d.exec("\(ctl) input allow-automation --target \(nonTargetPaneId)")
-        usleep(500_000)
 
         // Establish readiness of both capture processes with self-contained scripts
         let targetReady = d.path("target_ready.txt")
@@ -3415,9 +3452,8 @@ let scenarios: [Scenario] = [
             throw Failure("failed to discover focused pane ID for activity journey")
         }
 
-        // 1. Clear any prior activity and permit external automation on this pane
+        // 1. Clear any prior activity
         _ = try? d.exec("\(ctl) activity clear \(originalPaneId) --json")
-        _ = try d.exec("\(ctl) input allow-automation --target \(originalPaneId)")
 
         // 2. Perform automated input with client attribution
         let agentClient = "e2e-test-agent"

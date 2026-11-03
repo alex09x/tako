@@ -27,6 +27,10 @@ extension Driver {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "TAKO_SURFACE_ID")
+        environment.removeValue(forKey: "TAKO_SOCKET")
+        process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
