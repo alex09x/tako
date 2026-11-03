@@ -172,9 +172,12 @@ extension Tako {
             guard let themeFrame = window.contentView?.superview,
                   let titlebarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView")
             else { return }
-            titlebarContainer.wantsLayer = true
-            titlebarContainer.layer?.backgroundColor = NSColor.clear.cgColor
-            titlebarContainer.layer?.isOpaque = false
+            let titlebar = titlebarContainer.firstDescendant(withClassName: "NSTitlebarView")
+            for view in [titlebarContainer, titlebar].compactMap({ $0 }) {
+                view.wantsLayer = true
+                view.layer?.backgroundColor = NSColor.clear.cgColor
+                view.layer?.isOpaque = false
+            }
         }
 
         /// Inset the real content below the strip's row -- the content view

@@ -1,3 +1,10 @@
+# tako — macOS UI test project
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # XcodeGen spec for the macOS UI test suite.
 #
 # SwiftPM has no UI-Testing-Bundle target kind, so swift/Package.swift cannot
@@ -108,15 +115,13 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests
+        CODE_SIGN_ENTITLEMENTS: TakoUITests/TakoUITests.entitlements
         TEST_TARGET_NAME: TakoCore
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  # The default scheme keeps upstream's behaviour: TakoCustomConfigCase
-  # returns an empty suite unless IDE_DISABLED_OS_ACTIVITY_DT_MODE is set, a
-  # variable Xcode's IDE sets and xcodebuild does not. So `xcodebuild test`
-  # here compiles the tests and runs none of them, which is what upstream's
-  # CI wants and what keeps a click-driven suite out of an unattended build.
+  # Both schemes execute real tests. Use build-for-testing when only a
+  # compilation is wanted; a test invocation must not silently run nothing.
   TakoUITests:
     build:
       targets:
@@ -128,12 +133,8 @@ schemes:
     run:
       config: Debug
 
-  # The same tests, actually run. The variable is set here rather than in the
-  # test case so upstream's file stays verbatim, and in a second scheme rather
-  # than the first so that enabling them is always deliberate: they take over
-  # the screen, typing keystrokes and dragging tabs, and need a logged-in
-  # session with Accessibility permission granted. Driven by
-  # scripts/uitest.sh.
+  # Compatibility name used by scripts/uitest.sh and hosted CI. These tests
+  # drive the logged-in desktop and require UI automation authorization.
   TakoUITests-Run:
     build:
       targets:

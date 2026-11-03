@@ -23,6 +23,7 @@ extension TerminalController {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window else { return }
+        didApplyInitialWindowSize = false
 
         // I copy this because we may change the source in the future but also because
         // I regularly audit our codebase for "tako.config" access because generally
@@ -81,6 +82,7 @@ extension TerminalController {
         // If we have a default size, we want to apply it.
         if let defaultSize {
             defaultSize.apply(to: window)
+            didApplyInitialWindowSize = true
 
             if case .contentIntrinsicSize = defaultSize {
                 if let screen = window.screen ?? NSScreen.main {
@@ -133,8 +135,8 @@ extension TerminalController {
         )
         let restored = LastWindowPosition.shared.restore(
             terminalWindow,
-            origin: !originChanged,
-            size: defaultSize == nil,
+            origin: !originChanged && !derivedConfig.maximize,
+            size: !didApplyInitialWindowSize,
         )
 
         // If nothing is changed for the frame,

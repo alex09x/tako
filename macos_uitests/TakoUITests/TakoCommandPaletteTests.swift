@@ -38,6 +38,10 @@ final class TakoCommandPaletteTests: TakoCustomConfigCase {
 
         XCTAssertTrue(clearScreenButton.waitForNonExistence(timeout: 5), "Command Palette should disappear after clicking outside")
 
+        // The outside point may activate another desktop app. Establish the
+        // foreground app before testing its keyboard shortcut.
+        app.activate()
+        XCTAssertTrue(clearScreenButton.waitForNonExistence(timeout: 5), "The palette must remain dismissed after reactivation")
         app.typeKey("p", modifierFlags: [.command, .shift])
 
         XCTAssertTrue(clearScreenButton.waitForExistence(timeout: 5), "Command Palette should appear")

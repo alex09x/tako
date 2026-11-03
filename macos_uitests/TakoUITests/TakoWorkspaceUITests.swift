@@ -68,7 +68,7 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
     }
 
     @MainActor
-    func testNewWorkspaceWindowAndIsolation() throws {
+    func testNewWorkspaceWindowAndIsolation() async throws {
         let app = try takoApplication()
         app.launch()
 
@@ -93,7 +93,7 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         wsPill.click()
         let newWsItem = app.menuItems["New Workspace..."]
         XCTAssertTrue(newWsItem.waitForExistence(timeout: 3), "New Workspace... menu item should appear")
-        newWsItem.click()
+        newWsItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
 
         let createBtn = app.buttons["Create"]
         XCTAssertTrue(createBtn.waitForExistence(timeout: 3), "Create button in modal alert should appear")
@@ -125,16 +125,35 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         app.typeKey("[", modifierFlags: [.control, .option])
         let restoredDefaultPill = app.buttons["workspace-pill"]
         XCTAssertTrue(restoredDefaultPill.waitForExistence(timeout: 5), "Default workspace pill should return")
+        await fulfillment(of: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Default"), object: restoredDefaultPill)], timeout: 5)
         XCTAssertEqual(restoredDefaultPill.value as? String, "Default", "Active workspace should return to Default")
 
         // 7. Verify remembered tab selection in Default workspace (Tab 1 remains selected)
-        let restoredDefaultWindow = app.windows.containing(.button, identifier: "workspace-pill").firstMatch
-        XCTAssertEqual(restoredDefaultWindow.radioButtons["tab-1"].value as? Int, 1, "Tab 1 in Default workspace should still be selected")
+        // Backend tab windows can retain matching AX identifiers while hidden.
+        // Select a live click target in the currently visible workspace.
+        let tabDeadline = Date().addingTimeInterval(5)
+        var visibleDefaultTab: XCUIElement?
+        while visibleDefaultTab == nil, Date() < tabDeadline {
+            visibleDefaultTab = app.radioButtons.matching(identifier: "tab-1")
+                .allElementsBoundByIndex.first(where: { $0.isHittable })
+            if visibleDefaultTab == nil { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        if visibleDefaultTab == nil {
+            let evidence = XCTAttachment(screenshot: app.screenshot())
+            evidence.name = "DefaultWorkspace-VisibleTabEvidence"
+            evidence.lifetime = .keepAlways
+            add(evidence)
+        }
+        let restoredDefaultTab = try XCTUnwrap(visibleDefaultTab, "The remembered tab must be a visible click target")
+        XCTAssertEqual(restoredDefaultTab.value as? Int, 1, "Tab 1 in Default workspace should still be selected")
 
         // 8. Switch back to new workspace via Next Workspace shortcut (Ctrl+Option+])
         app.typeKey("]", modifierFlags: [.control, .option])
         let returnWsPill = app.buttons["workspace-pill"]
         XCTAssertTrue(returnWsPill.waitForExistence(timeout: 5), "New workspace pill should return")
+        await fulfillment(of: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", newWsName), object: returnWsPill)], timeout: 5)
         XCTAssertEqual(returnWsPill.value as? String, newWsName, "Should return to new workspace")
     }
 }

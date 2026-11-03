@@ -86,6 +86,7 @@ extension Tako.Config {
         "new_split:down": .init("d", modifiers: [.command, .shift]),
         "close_surface": .init("w", modifiers: .command),
         "toggle_quick_terminal": .init("`", modifiers: [.command, .shift]),
+        "toggle_command_palette": .init("p", modifiers: [.command, .shift]),
         "reload_config": .init(",", modifiers: [.command, .shift]),
         "open_config": .init(",", modifiers: .command),
         "goto_split:previous": .init("[", modifiers: .command),

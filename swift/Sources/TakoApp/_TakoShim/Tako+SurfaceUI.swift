@@ -134,6 +134,7 @@ extension Tako {
         var body: some View {
             HStack(spacing: 6) {
                 TextField("Find", text: $searchState.needle)
+                    .accessibilityIdentifier("TerminalFindField")
                     .textFieldStyle(.plain)
                     .frame(width: 180)
                     .focused($fieldFocused)
@@ -154,7 +155,7 @@ extension Tako {
             }
             .padding(6)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-            .onAppear { fieldFocused = true }
+            .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             .onReceive(NotificationCenter.default.publisher(for: .takoSearchFocus)) { note in
                 if note.object as? SurfaceView === surfaceView { fieldFocused = true }
             }

@@ -73,6 +73,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// `window-width`/`window-height` apply only to a new window, never a
     /// tab or a split.
     var appliesConfiguredWindowSize: Bool = true
+    var didApplyInitialWindowSize: Bool = false
 
     /// TabGroupCloseCoordinator.Controller
     lazy private(set) var tabGroupCloseCoordinator = TabGroupCloseCoordinator()
