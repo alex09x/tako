@@ -139,7 +139,7 @@ if not up_to_date(os.path.join(BUILD, "TakoObjC.o"), ["swift/Sources/TakoObjC"])
      "-o", os.path.join(BUILD, "TakoObjC.o"),
      "swift/Sources/TakoObjC/TakoObjC.m"], "objc helpers")
 
-files = [f for f in swift_files("swift/Sources/TakoApp") if "/App/iOS/" not in f] \
+files = swift_files("swift/Sources/TakoApp") \
         + [f for f in swift_files("swift/Sources/TakoCoreUI") if "/Generated/" not in f] \
         + ["target/bindings/tako_core.swift"]
 

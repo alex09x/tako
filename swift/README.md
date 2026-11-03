@@ -96,31 +96,26 @@ func terminalView(_ view: TakoTerminalView, didResizeCols cols: Int, rows: Int) 
 5. Host-visible effects (bell, clipboard, notifications, working directory,
    progress) arrive as `core.takeEvents()`.
 
-## Offscreen proof
+## Rendering verification
 
-`Sources/RenderDemo` renders a session to a PNG with no window server, which
-doubles as a rendering regression harness:
+The running app can export a pane's offscreen-rendered frame:
 
+```sh
+takoctl screenshot --target active --out terminal.png
 ```
-swiftc -O target/bindings/tako_core.swift \
-  swift/Sources/TakoCoreUI/TerminalRenderer.swift \
-  swift/Sources/RenderDemo/main.swift \
-  -Xcc -fmodule-map-file=$PWD/target/bindings/tako_coreFFI.modulemap \
-  -I target/bindings -L target/macos -ltako_core \
-  -framework CoreGraphics -framework CoreText -framework ImageIO \
-  -framework UniformTypeIdentifiers -o /tmp/render_demo
-/tmp/render_demo terminal.png
-```
+
+This is the app-side rendered image, not a capture of the displayed Metal
+window. Renderer tests live in `Tests/TakoCoreUITests`; actual window-pixel
+checks live in `../macos_uitests`. Run only the affected suite or journey
+through the entry points in [../scripts/README.md](../scripts/README.md).
 
 ## Running the macOS app
 
 The direct build compiles the Rust core, generated UniFFI bindings, upstream
 AppKit surface, shared renderer and Metal shaders into one signed app bundle:
 
-```
-python3 scripts/build-macapp.py
-open target/macapp/Tako.app
-```
+Use the isolated development bundle and profile in the root
+[Build & Run](../README.md#build--run) instructions.
 
 The live surface obtains one `FfiRenderFrame` per redraw and gives Metal
 ordinary backgrounds, selection, glyphs, cursor and Kitty images. The

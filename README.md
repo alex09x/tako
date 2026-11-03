@@ -76,24 +76,42 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 git clone https://github.com/alex09x/tako.git
 cd tako
 
-# 2. Build the macOS application bundle (target/macapp/Tako.app)
+# 2. Build a development app with its own identity
+TAKO_APP_DIR=target/macapp-dev \
+TAKO_BUNDLE_ID=com.tako-core.terminal.dev \
 python3 scripts/build-macapp.py
 
-# 3. Run automated headless verification (keys, shell input, smooth scroll)
-./scripts/selftest-macapp.sh
-
-# 4. Install to /Applications/Tako.app
-./scripts/install-macapp.sh
+# 3. Launch it with a separate configuration and session home
+mkdir -p target/dev-profile
+touch target/dev-profile/config
+open -n \
+  --env "TAKO_CONFIG_PATH=$PWD/target/dev-profile/config" \
+  --env "TAKO_SESSIONS_HOME=$PWD/target/dev-profile/sessions" \
+  target/macapp-dev/Tako.app
 ```
 
-You can now launch Tako from Spotlight, Launchpad, or the terminal:
-```bash
-open -a Tako
-```
+For everyday installation, use the signed, notarized release above. The
+development commands launch their own bundle and state without replacing
+the installed application. Build, test, release and diagnostics entry points
+are listed in [scripts/README.md](scripts/README.md).
+From outside its panes, target this development instance with
+`takoctl --bundle-id com.tako-core.terminal.dev ...`.
 
 ---
 
 ## Automated Self-Tests
+
+Run the checks affected by a change on your configured test Mac:
+
+```bash
+./scripts/check.sh rust:search
+./scripts/check.sh 'swift:ThemePresetStoreTests|ThemeWeightDiagnosticTests'
+./scripts/check.sh e2e:theme-typography
+./scripts/uitest.sh TakoFontWeightUITests
+```
+
+`TAKO_MAC` selects the test host. `scripts/ci.sh` is the explicit full
+multi-stage release gate; it is separate from these targeted checks.
 
 Tako ships with an end-to-end integration test runner that exercises real macOS events, PTY streams, and Metal presentation callbacks:
 

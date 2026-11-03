@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
+# tako — UniFFI Swift binding generation
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Generate the UniFFI Swift bindings the Swift package compiles against.
 #
 # `swift/Sources/TakoApp/_bindings` is a tracked symlink to
 # `target/bindings`, which is a build artifact. On a fresh clone that symlink
 # therefore dangles, and `swift build` fails on a missing `tako_coreFFI.h`
-# with no hint that anything needs generating first. Run this once after
-# cloning; `dev.sh` calls it for you.
+# with no hint that anything needs generating first. The app and framework
+# builders generate these bindings; run this directly for binding-only work.
 #
 # Regenerating is also mandatory after any change to the FFI surface -- a new
 # record, method or enum case -- because a stale file silently describes a
