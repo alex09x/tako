@@ -1,4 +1,11 @@
 #!/bin/bash
+# tako — Isolated session persistence tests
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # The session-persistence scenarios, each isolated: a copy of the app built
 # with its session runtime under a bundle id of that scenario's run only (so
 # its saved windows and Application Support are its own) and a fresh
@@ -13,8 +20,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner persist-reflow
-export TAKO_APP_DIR=target/macapp-persist TAKO_WITH_ZMX=1
+export TAKO_APP_DIR=target/macapp-persist TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
 APP="$TAKO_APP_DIR/Tako.app"
+# Bundle identity is metadata, not a Swift compile input. Build once, then
+# reseal only that metadata per scenario; inner executable bytes stay fixed.
+TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py
 
 run_one() {
     local scenario=$1
@@ -37,8 +47,9 @@ run_one() {
     trap cleanup_one EXIT
     # Called on the left of ||, so errexit does not apply here: every step
     # that must stop the run checks its own status.
-    if ! TAKO_BUNDLE_ID=$bundle python3 scripts/build-macapp.py >/dev/null; then
-        echo "FAIL  $scenario: the app could not be built" >&2
+    if ! /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle" "$APP/Contents/Info.plist" \
+        || ! codesign --force --sign - "$APP"; then
+        echo "FAIL  $scenario: the isolated app could not be resealed" >&2
         cleanup_one
         trap - EXIT
         return 1

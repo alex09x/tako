@@ -91,11 +91,11 @@ SH
     echo "== $stage (test-only; full LAN quality gates are separate)"
     case "$stage" in
         engine-tests)
-            ci_logged "$stage" cargo test --locked --features pty,ssh -- --test-threads=2
+            ci_logged "$stage" cargo test --locked --no-fail-fast --features pty,ssh -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
             ;;
         cli-tests)
-            ci_logged "$stage" cargo test --locked --manifest-path takoctl/Cargo.toml -- --test-threads=2
+            ci_logged "$stage" cargo test --locked --no-fail-fast --manifest-path takoctl/Cargo.toml -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
             ;;
         python-tests)
