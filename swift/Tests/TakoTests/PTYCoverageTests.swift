@@ -144,7 +144,10 @@ struct PTYCoverageTests {
         let env = PTY.shellIntegrationVariables(
             resourcesDir: "/r", base: "/r/shell-integration", mode: .bash,
             loginShell: "/bin/zsh", shellFeatures: "sudo,prompt,highlight", environment: [:])
-        #expect(env.contains { $0.0 == "TAKO_BASH_INJECT" })
+        #expect(env.contains { $0.0 == "TAKO_RESOURCES_DIR" })
+        // Automatic Bash injection also needs a supported executable and
+        // matching argv; the shared launch plan owns that decision.
+        #expect(!env.contains { $0.0 == "TAKO_BASH_INJECT" })
         #expect(!env.contains { $0.0 == "ZDOTDIR" })
     }
 

@@ -16,7 +16,11 @@ Automatic [Bash](https://www.gnu.org/software/bash/) shell integration works by
 starting Bash in POSIX mode and using the `ENV` environment variable to load
 our integration script (`bash/tako.bash`). This prevents Bash from loading
 its normal startup files, which becomes our script's responsibility (along with
-disabling POSIX mode).
+restoring the inherited POSIX setting). Both direct shells and newly created
+persistent sessions use the same parent-side argv/environment plan. Bash 4+
+is detected with a cached, bounded `--version` probe; older Bash or an unsuccessful
+probe keeps ordinary login startup, without forcing POSIX mode. Existing `ENV`
+(including an empty value) is restored before login profiles run.
 
 Bash shell integration can also be sourced manually from `bash/tako.bash`.
 This also works for older versions of Bash.
