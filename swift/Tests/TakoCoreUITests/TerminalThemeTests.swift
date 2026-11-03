@@ -64,6 +64,26 @@ final class TerminalThemeTests: XCTestCase {
         XCTAssertEqual(theme.fontSize, 17)
     }
 
+    func testConditionalThemesResolveBothAppearancesAndKeepExplicitSettings() throws {
+        for (name, background) in [("Owned light", "#f7f7f7"), ("Owned dark", "#14100e")] {
+            try "background = \(background)\nfont-size = 12\n".write(
+                to: temporaryDirectory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        for selection in ["light:Owned light,dark:Owned dark", "dark:Owned dark, light:Owned light"] {
+            for dark in [false, true] {
+                let theme = TerminalTheme.parse(
+                    config: "theme = \(selection)\nfont-size = 19\nforeground = #abcdef\n",
+                    base: .takoDefault, honourTheme: true,
+                    themeSearchPaths: [temporaryDirectory.path], darkAppearance: dark)
+                if dark { assertRGB(theme.background, 0x14, 0x10, 0x0e) }
+                else { assertRGB(theme.background, 0xf7, 0xf7, 0xf7) }
+                assertRGB(theme.foreground, 0xab, 0xcd, 0xef)
+                XCTAssertEqual(theme.fontSize, 19)
+            }
+        }
+        XCTAssertEqual(TerminalTheme.themeName(for: "Literal, Name", darkAppearance: false), "Literal, Name")
+    }
+
     func testExplicitColorsOutrankThemeRegardlessOfConfigOrder() throws {
         let themeDirectory = temporaryDirectory.appendingPathComponent("themes", isDirectory: true)
         try FileManager.default.createDirectory(at: themeDirectory, withIntermediateDirectories: true)
