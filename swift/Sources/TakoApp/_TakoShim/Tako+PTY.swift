@@ -227,7 +227,10 @@ final class PTY {
 
     func readLoop(targetQueue: DispatchQueue = .main, onData: @escaping (Data) -> Void, onExit: @escaping () -> Void) {
         let fd = master
-        DispatchQueue.global(qos: .userInitiated).async {
+        // read() and delivery backpressure may block for the terminal's whole
+        // lifetime. Keep them off libdispatch's shared worker pool, and do not
+        // retain the owner while waiting for its child to produce output.
+        let reader = Thread { [weak self] in
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             let readChunk: () -> Data? = {
                 let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
@@ -254,6 +257,9 @@ final class PTY {
                 targetQueue: targetQueue
             )
         }
+        reader.name = "tako.pty.reader.\(fd)"
+        reader.qualityOfService = .userInitiated
+        reader.start()
     }
 
     /// Set once the master is handed off to be closed. A second terminate
