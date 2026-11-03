@@ -245,31 +245,63 @@ extension Driver {
         }
     }
 
-    func postClick(at point: CGPoint) throws -> Double {
-        guard topmostOwner(at: point) == pid else {
-            let winInfo = topmostWindowInfo(at: point)
-            throw Failure("refusing to click at \(point): the window there is not Tako's (windows: \(winInfo))")
-        }
-        CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
-                mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-        usleep(10_000)
-        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
-                                 mouseCursorPosition: point, mouseButton: .left) else {
-            throw Failure("failed to create leftMouseDown CGEvent")
+    struct PreparedClick {
+        let point: CGPoint
+        let move: CGEvent
+        let down: CGEvent
+        let up: CGEvent
+    }
+
+    struct ClickDispatchTrace {
+        let ownerStarted: Double
+        let ownerChecked: Double
+        let movePosted: Double
+        let downPosted: Double
+        let upPosted: Double
+        let returned: Double
+    }
+
+    func prepareClick(at point: CGPoint) throws -> PreparedClick {
+        guard let move = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                                 mouseCursorPosition: point, mouseButton: .left),
+              let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                 mouseCursorPosition: point, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                               mouseCursorPosition: point, mouseButton: .left) else {
+            throw Failure("failed to prepare mouse CGEvents")
         }
         down.setIntegerValueField(.mouseEventClickState, value: 1)
-        down.post(tap: .cghidEventTap)
-        let dispatchTime = ProcessInfo.processInfo.systemUptime
-
-        usleep(25_000)
-
-        guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
-                               mouseCursorPosition: point, mouseButton: .left) else {
-            throw Failure("failed to create leftMouseUp CGEvent")
-        }
         up.setIntegerValueField(.mouseEventClickState, value: 1)
-        up.post(tap: .cghidEventTap)
+        return PreparedClick(point: point, move: move, down: down, up: up)
+    }
+
+    func postPreparedClick(_ click: PreparedClick) throws -> ClickDispatchTrace {
+        let ownerStarted = ProcessInfo.processInfo.systemUptime
+        guard topmostOwner(at: click.point) == pid else {
+            let info = topmostWindowInfo(at: click.point)
+            throw Failure("refusing to click at \(click.point): the window there is not Tako's (windows: \(info))")
+        }
+        let ownerChecked = ProcessInfo.processInfo.systemUptime
+        // Preparation can precede delivery by a window-server round trip.
+        // Keep each event's timestamp at its real posting time.
+        click.move.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.move.post(tap: .cghidEventTap)
+        let movePosted = ProcessInfo.processInfo.systemUptime
         usleep(10_000)
-        return dispatchTime
+        click.down.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.down.post(tap: .cghidEventTap)
+        let downPosted = ProcessInfo.processInfo.systemUptime
+        usleep(25_000)
+        click.up.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.up.post(tap: .cghidEventTap)
+        let upPosted = ProcessInfo.processInfo.systemUptime
+        usleep(10_000)
+        return ClickDispatchTrace(ownerStarted: ownerStarted, ownerChecked: ownerChecked,
+                                  movePosted: movePosted, downPosted: downPosted, upPosted: upPosted,
+                                  returned: ProcessInfo.processInfo.systemUptime)
+    }
+
+    func postClick(at point: CGPoint) throws -> Double {
+        try postPreparedClick(prepareClick(at: point)).downPosted
     }
 }

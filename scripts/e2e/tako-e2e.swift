@@ -106,11 +106,24 @@ let scenarios: [Scenario] = [
         try d.run("echo right > \(d.path("ctrlu"))")
         try d.expect("ctrlu", "right\n", "ctrl+u")
 
-        try d.run("sleep 30; echo late > \(d.path("late"))")
-        usleep(800_000)
+        // A single foreground shell owns the sleep and exits on INT, rather
+        // than letting the interactive shell continue a semicolon command list.
+        let fixture = """
+        trap 'printf "INT\\n" > "$2"; exit 130' INT
+        printf 'ready\\n' > "$1"
+        /bin/sleep 30
+        printf 'late\\n' > "$3"
+        """
+        try fixture.write(to: d.work.appendingPathComponent("ctrlc.sh"), atomically: true, encoding: .utf8)
+        try d.run("/bin/sh '\(d.path("ctrlc.sh"))' '\(d.path("ctrlc_ready"))' '\(d.path("ctrlc_int"))' '\(d.path("late"))'")
+        try d.expect("ctrlc_ready", "ready\n", "foreground command readiness")
         d.key(Key.c, .maskControl)
         try d.run("echo after > \(d.path("after"))")
-        _ = try d.file("after", timeout: 5)
+        let after = try d.file("after", timeout: 5)
+        guard after == "after\n" else {
+            throw Failure("post-interrupt input: expected \(hex("after\n")), got \(hex(after))")
+        }
+        try d.expect("ctrlc_int", "INT\n", "foreground command received Ctrl+C")
         guard !FileManager.default.fileExists(atPath: d.path("late")) else {
             throw Failure("ctrl+c did not stop the command")
         }
@@ -1356,9 +1369,22 @@ let scenarios: [Scenario] = [
         guard d.wait(for: { d.button(titled: "Close") != nil }, timeout: 5) else {
             throw Failure("settings dialog did not open for modal containment test")
         }
+        guard let window = d.activeWindow(),
+              let dialog = d.element(withIdentifier: "TerminalSettingsDialog", root: window),
+              let searchField = d.element(withIdentifier: "SettingsSearchField", root: dialog) else {
+            throw Failure("active settings dialog or its search field was not found")
+        }
         // Attempt typing command into terminal while modal is active
         let leakFile = d.path("containment_leak.txt")
-        try d.run("echo 'leaked_to_pty' > \(leakFile)")
+        let leakCommand = "echo 'leaked_to_pty' > \(leakFile)"
+        try d.run(leakCommand)
+        guard d.wait(for: {
+            let query: String? = d.attribute(searchField, kAXValueAttribute)
+            let state: String? = d.attribute(dialog, kAXValueAttribute)
+            return query == leakCommand && state == "Keybindings: 0 items, No matching actions"
+        }, timeout: 5) else {
+            throw Failure("empty filtered Settings entered recording or lost the contained query after Return")
+        }
         // Attempt split shortcut (Cmd+D) while modal is active: must be blocked by performKeyEquivalent
         d.key(Key.d, .maskCommand)
         usleep(400_000)
@@ -1372,16 +1398,48 @@ let scenarios: [Scenario] = [
         guard !FileManager.default.fileExists(atPath: leakFile) else {
             throw Failure("keystrokes leaked through modal dialog to terminal PTY")
         }
+        let state: String? = d.attribute(dialog, kAXValueAttribute)
+        guard state == "Keybindings: 0 items, No matching actions" else {
+            throw Failure("Cmd+D changed empty filtered Settings state: \(state ?? "nil")")
+        }
 
-        // Dismiss settings dialog
+        // Return moved focus out of search. Use / to focus its editor so Escape
+        // exercises query clearing, then exercise and cancel valid recording.
+        d.key(Key.slash)
         d.key(Key.escape)
+        guard d.wait(for: {
+            let query: String? = d.attribute(searchField, kAXValueAttribute)
+            let state: String? = d.attribute(dialog, kAXValueAttribute)
+            return query == "" && state?.hasPrefix("Keybindings: ") == true
+                && state?.contains("No matching actions") == false && d.button(titled: "Close") != nil
+        }, timeout: 5) else {
+            throw Failure("Escape did not clear the query while keeping Settings open")
+        }
+        guard let record = d.element(withIdentifier: "SettingsRecordButton", root: dialog),
+              let close = d.element(withIdentifier: "SettingsCloseButton", root: dialog) else {
+            throw Failure("Settings Record or Close control was not found")
+        }
+        d.press(record)
+        guard d.wait(for: { (d.attribute(dialog, kAXValueAttribute) as String?) == "recording" }, timeout: 5) else {
+            throw Failure("Record did not enter recording with a selected action")
+        }
+        d.key(Key.escape)
+        guard d.wait(for: {
+            (d.attribute(dialog, kAXValueAttribute) as String?) == "cancelled" && d.button(titled: "Close") != nil
+        }, timeout: 5) else {
+            throw Failure("Escape did not cancel recording while keeping Settings open")
+        }
+        d.press(close)
         guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
-            throw Failure("Escape did not dismiss settings dialog")
+            throw Failure("Close control did not dismiss Settings")
         }
         // Verify terminal PTY input recovers cleanly
         let recoveredFile = d.path("containment_recovered.txt")
         try d.run("echo 'containment_ok' > \(recoveredFile)")
         try d.expect("containment_recovered.txt", "containment_ok\n", "terminal keyboard input recovery after modal dismissal")
+        guard !FileManager.default.fileExists(atPath: leakFile) else {
+            throw Failure("contained command reached the PTY during modal dismissal")
+        }
     }),
     ("settings-appearance", "choose a bundled theme, installed font and font size", { d in
         try runAppearanceSettingsScenario(d)
@@ -1404,22 +1462,36 @@ let scenarios: [Scenario] = [
         }, timeout: 5) else {
             throw Failure("Cmd+2 did not switch to Terminal Settings tab")
         }
+        guard let initialState: String = d.attribute(dialog, kAXValueAttribute),
+              let initialSummary = initialState.components(separatedBy: ",").first,
+              initialSummary.hasPrefix("Terminal Settings: ") else {
+            throw Failure("initial Terminal Settings summary was not available")
+        }
 
-        // Locate search field and its screen coordinates
-        guard let searchField = d.descendants(of: dialog, role: kAXTextFieldRole).first else {
-            throw Failure("search field not found in settings dialog")
+        // AXValue changes before deferred layout. Requery the field until its
+        // actual click point belongs to the current terminal window.
+        func searchGeometry() -> (origin: CGPoint, extent: CGSize)? {
+            guard let current = d.element(withIdentifier: "TerminalSettingsDialog"),
+                  let field = d.descendants(of: current, role: kAXTextFieldRole).first,
+                  let position: AXValue = d.attribute(field, kAXPositionAttribute),
+                  let size: AXValue = d.attribute(field, kAXSizeAttribute) else { return nil }
+            var origin = CGPoint.zero
+            var extent = CGSize.zero
+            guard AXValueGetValue(position, .cgPoint, &origin), AXValueGetValue(size, .cgSize, &extent),
+                  extent.width > 0, extent.height > 0 else { return nil }
+            let point = CGPoint(x: origin.x + extent.width / 2, y: origin.y + extent.height / 2)
+            guard d.windowFrame()?.contains(point) == true, d.topmostOwner(at: point) == d.pid else { return nil }
+            return (origin, extent)
         }
-        guard let sfPos: AXValue = d.attribute(searchField, kAXPositionAttribute),
-              let sfSize: AXValue = d.attribute(searchField, kAXSizeAttribute) else {
-            throw Failure("could not read search field frame coordinates")
+        var fieldGeometry: (origin: CGPoint, extent: CGSize)?
+        guard d.wait(for: { fieldGeometry = searchGeometry(); return fieldGeometry != nil }, timeout: 3),
+              let initialField = fieldGeometry else {
+            throw Failure("settings search field never acquired a current, owned screen frame")
         }
-        var sfOrigin = CGPoint.zero
-        var sfExtent = CGSize.zero
-        AXValueGetValue(sfPos, .cgPoint, &sfOrigin)
-        AXValueGetValue(sfSize, .cgSize, &sfExtent)
 
         // 1. Focus search field by clicking inside it and type a query with zero results
-        try d.click(at: CGPoint(x: sfOrigin.x + 20, y: sfOrigin.y + sfExtent.height / 2))
+        try d.click(at: CGPoint(x: initialField.origin.x + initialField.extent.width / 2,
+                               y: initialField.origin.y + initialField.extent.height / 2))
         usleep(200_000)
         try d.type("nonexistentqueryxyz")
         guard d.wait(for: {
@@ -1442,9 +1514,10 @@ let scenarios: [Scenario] = [
                   let searchField = d.descendants(of: curDialog, role: kAXTextFieldRole).first,
                   let searchVal: String = d.attribute(searchField, kAXValueAttribute),
                   let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
-            return searchVal.isEmpty && val.contains("Terminal Settings: 25 items") && val.contains("Sync Window Frame")
+            return searchVal.isEmpty && val.hasPrefix(initialSummary + ",") && val.contains("Sync Window Frame")
         }, timeout: 5) else {
-            throw Failure("Escape in search field did not clear search text and recover the full settings list")
+            let state: String = d.element(withIdentifier: "TerminalSettingsDialog").flatMap { d.attribute($0, kAXValueAttribute) } ?? "nil"
+            throw Failure("Escape did not restore \(initialSummary) with an empty query (actual: \(state))")
         }
 
         // 3. Type "sync" to filter to workspace sync setting
@@ -1460,24 +1533,35 @@ let scenarios: [Scenario] = [
         }
 
         // 4. Test mouse-to-keyboard focus handoff:
-        // Click on the list item row (Row 5 is 3.5 row heights below search field at Row 2)
-        let clickPt = CGPoint(x: sfOrigin.x + 50, y: sfOrigin.y + 3.5 * sfExtent.height)
-        try d.click(at: clickPt)
+        guard d.wait(for: { fieldGeometry = searchGeometry(); return fieldGeometry != nil }, timeout: 3),
+              let filteredField = fieldGeometry else {
+            throw Failure("filtered settings search field lost its owned screen frame")
+        }
+        try d.click(at: CGPoint(x: filteredField.origin.x + 50,
+                                y: filteredField.origin.y + 3.5 * filteredField.extent.height))
         usleep(300_000)
 
         // Now send Space to toggle setting (Space toggles/cycles setting when dialog is focused)
+        let beforeSpace: String = d.attribute(dialog, kAXValueAttribute) ?? "nil"
         d.key(Key.space)
         guard d.wait(for: {
             guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
                   let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
-            return val == "setting_custom_success: workspace-sync-window-frame" ||
+            return val == "setting_custom_success: workspace-sync-window-frame = true" ||
                    val.contains("Custom: workspace-sync-window-frame = true")
         }, timeout: 5) else {
-            throw Failure("Space key after mouse click did not toggle filtered setting to custom=true")
+            let afterSpace: String = d.attribute(dialog, kAXValueAttribute) ?? "nil"
+            let query: String = d.element(withIdentifier: "SettingsSearchField", root: dialog)
+                .flatMap { d.attribute($0, kAXValueAttribute) } ?? "nil"
+            throw Failure("Space after row click did not toggle custom=true (before: \(beforeSpace), after: \(afterSpace), query: \(query))")
         }
 
         // Verify search field string value remained "sync"
-        let searchVal: String = d.attribute(searchField, kAXValueAttribute) ?? ""
+        guard let currentDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
+              let currentSearch = d.descendants(of: currentDialog, role: kAXTextFieldRole).first,
+              let searchVal: String = d.attribute(currentSearch, kAXValueAttribute) else {
+            throw Failure("search field disappeared during mouse handoff")
+        }
         guard searchVal == "sync" else {
             throw Failure("search field text was corrupted or lost during mouse handoff: \(searchVal)")
         }
@@ -4089,10 +4173,27 @@ let scenarios: [Scenario] = [
         let tabTransitionsBefore = (try? d.tabTransitions()) ?? []
         let baselineTabSeq = tabTransitionsBefore.compactMap { ($0["sequence"] as? NSNumber)?.int64Value }.max() ?? 0
 
-        let tTab0 = try d.postClick(at: tab0Point)
+        let click0 = try d.prepareClick(at: tab0Point)
+        let click1 = try d.prepareClick(at: tab1Point)
+        guard d.topmostOwner(at: tab0Point) == d.pid, d.topmostOwner(at: tab1Point) == d.pid else {
+            throw Failure("rapid tab points are not both owned by Tako")
+        }
+        let firstClick = try d.postPreparedClick(click0)
+        let gapStarted = ProcessInfo.processInfo.systemUptime
         usleep(40_000) // 40ms: within the callback window (<150ms)
-        let tTab1 = try d.postClick(at: tab1Point)
+        let gapEnded = ProcessInfo.processInfo.systemUptime
+        let secondClick = try d.postPreparedClick(click1)
+        let tTab0 = firstClick.downPosted
+        let tTab1 = secondClick.downPosted
         let tabDispatchIntervalMs = (tTab1 - tTab0) * 1000.0
+        // Format only after both complete clicks; keep diagnostics outside
+        // the unchanged down-to-down race and retain the live owner checks.
+        print(String(format: "rapid tab dispatch %.3fms: release %.3f, trailing %.3f, gap %.3f, owner %.3f, move %.3f, press %.3f",
+                     tabDispatchIntervalMs, (firstClick.upPosted - tTab0) * 1000,
+                     (firstClick.returned - firstClick.upPosted) * 1000, (gapEnded - gapStarted) * 1000,
+                     (secondClick.ownerChecked - secondClick.ownerStarted) * 1000,
+                     (secondClick.movePosted - secondClick.ownerChecked) * 1000,
+                     (secondClick.downPosted - secondClick.movePosted) * 1000))
         guard tabDispatchIntervalMs < 140.0 else {
             throw Failure("rapid tab switch dispatch interval exceeded race window: \(tabDispatchIntervalMs)ms (expected < 140ms)")
         }
@@ -4201,8 +4302,11 @@ let scenarios: [Scenario] = [
               let idA2 = d.windowID(for: winA2) else {
             throw Failure("second window A2 AXUIElement or its ID not found")
         }
-        d.setPosition(CGPoint(x: 700, y: 50), for: winA2)
+        // Keep the inactive sibling inside the actual display. Hosted Macs
+        // can be 1024pt wide; x700 +550 would be clamped when shown again.
+        let siblingX = min(700, CGDisplayBounds(CGMainDisplayID()).maxX - 550 - 20)
         d.setSize(CGSize(width: 550, height: 380), for: winA2)
+        d.setPosition(CGPoint(x: siblingX, y: 50), for: winA2)
         usleep(500_000)
         guard let initialFrameA2 = d.windowFrame(winA2) else {
             throw Failure("could not read initial frame for window A2")
@@ -4339,30 +4443,46 @@ let scenarios: [Scenario] = [
         d.key(Key.two, .maskCommand) // switch to Terminal Settings tab
         usleep(300_000)
 
-        // Focus search and filter to sync
-        if let search = d.descendants(of: d.element(withIdentifier: "TerminalSettingsDialog")!, role: kAXTextFieldRole).first {
-            d.press(search)
-            try d.type("sync")
-            usleep(300_000)
+        // A text field has no AXPress action. Focus its real hit target and
+        // verify the query before handing keyboard focus to the first row.
+        guard let settings = d.element(withIdentifier: "TerminalSettingsDialog"),
+              let search = d.descendants(of: settings, role: kAXTextFieldRole).first else {
+            throw Failure("workspace sync settings search was not found")
         }
-        // Click list row to transfer responder and press Space
-        if let f = d.windowFrame() {
-            try d.click(at: CGPoint(x: f.origin.x + 200, y: f.origin.y + 160))
-            usleep(300_000)
+        try d.clickElement(search)
+        try d.type("sync")
+        guard d.wait(for: {
+            let query: String? = d.attribute(search, kAXValueAttribute)
+            let state: String? = d.attribute(settings, kAXValueAttribute)
+            return query == "sync" && state?.contains("Sync Window Frame") == true
+        }, timeout: 5) else {
+            throw Failure("workspace sync settings search did not receive the query")
         }
+        guard let position: AXValue = d.attribute(search, kAXPositionAttribute),
+              let size: AXValue = d.attribute(search, kAXSizeAttribute) else {
+            throw Failure("workspace sync search frame was not available")
+        }
+        var searchOrigin = CGPoint.zero
+        var searchExtent = CGSize.zero
+        guard AXValueGetValue(position, .cgPoint, &searchOrigin), AXValueGetValue(size, .cgSize, &searchExtent),
+              searchExtent.width > 0, searchExtent.height > 0 else {
+            throw Failure("workspace sync search frame was invalid")
+        }
+        try d.click(at: CGPoint(x: searchOrigin.x + 50, y: searchOrigin.y + 3.5 * searchExtent.height))
+        usleep(300_000)
         d.key(Key.space)
         guard d.wait(for: {
             guard let curDialog = d.element(withIdentifier: "TerminalSettingsDialog"),
                   let val: String = d.attribute(curDialog, kAXValueAttribute) else { return false }
-            return val == "setting_custom_success: workspace-sync-window-frame" ||
+            return val == "setting_custom_success: workspace-sync-window-frame = true" ||
                    val.contains("Custom: workspace-sync-window-frame = true")
         }, timeout: 5) else {
             throw Failure("Space did not toggle workspace-sync-window-frame")
         }
 
-        d.key(Key.escape)
+        try d.clickButton(titled: "Close")
         guard d.wait(for: { d.button(titled: "Close") == nil }, timeout: 5) else {
-            throw Failure("Escape did not dismiss settings dialog after enabling sync")
+            throw Failure("Close did not dismiss settings dialog after enabling sync")
         }
 
         // Verify config on disk contains setting (fail-closed read)
@@ -4613,6 +4733,9 @@ let scenarios: [Scenario] = [
 @main
 struct TakoE2E {
     static func main() {
+    // Preserve per-scenario evidence when CI redirects stdout or a later
+    // scenario stalls; do not leave earlier results in the stdio buffer.
+    setbuf(stdout, nil)
     let args = Array(CommandLine.arguments.dropFirst())
     guard let appPath = args.first else {
         print("usage: tako-e2e <Tako.app> [scenario ...]")
