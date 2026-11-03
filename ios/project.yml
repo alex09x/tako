@@ -93,6 +93,7 @@ targets:
         script: |
           set -euo pipefail
           cd "$SRCROOT/.."
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
           # An asset catalog has to hold the icon itself, so this is the copy
           # that keeps it from drifting away from what brand/make-icons.swift
           # produces.
@@ -106,7 +107,7 @@ targets:
           # by build scripts otherwise inherit the current SDK's minimum OS
           # (for example 26.x) instead of this app's iOS 17 deployment target.
           export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
-          "$HOME/.cargo/bin/cargo" build --release --features ssh --target "$TARGET"
+          cargo build --release --features ssh --target "$TARGET"
           # The bridging header imports tako_coreFFI.h from target/bindings and
           # the app compiles the generated Swift beside TakoCoreUI; both must
           # describe the library just built, so generate them here (a no-op
