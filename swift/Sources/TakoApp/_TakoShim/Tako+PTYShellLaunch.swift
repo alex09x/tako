@@ -104,6 +104,7 @@ enum TakoBashBootstrapSupport {
   private static func probe(_ shell: String) -> Bool {
     let process = Process()
     let output = Pipe()
+    defer { try? output.fileHandleForReading.close() }
     let finished = DispatchSemaphore(value: 0)
     process.executableURL = URL(fileURLWithPath: shell)
     process.arguments = ["--version"]
@@ -120,7 +121,15 @@ enum TakoBashBootstrapSupport {
       return false
     }
     guard process.terminationStatus == 0 else { return false }
-    let version = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    // A wrapper may exit while a descendant retains stdout. Read only the
+    // available version prefix; neither EOF nor another writer may delay us.
+    let descriptor = output.fileHandleForReading.fileDescriptor
+    let flags = fcntl(descriptor, F_GETFL)
+    guard flags != -1, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1 else { return false }
+    var bytes = [UInt8](repeating: 0, count: 4096)
+    let count = read(descriptor, &bytes, bytes.count)
+    guard count > 0 else { return false }
+    let version = String(decoding: bytes.prefix(count), as: UTF8.self)
     let prefix = "GNU bash, version "
     guard version.hasPrefix(prefix),
       let major = Int(version.dropFirst(prefix.count).prefix(while: { $0.isNumber }))

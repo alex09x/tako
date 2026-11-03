@@ -6,6 +6,7 @@
 // Project: https://github.com/alex09x/tako
 // SPDX-License-Identifier: MIT
 
+import Darwin
 import Foundation
 import Testing
 
@@ -61,6 +62,41 @@ struct PTYShellLaunchTests {
     #expect(env["TAKO_BASH_INJECT"] == nil)
     #expect(env["TAKO_RESOURCES_DIR"] == Self.resources)
     #expect(!TakoBashBootstrapSupport.supports("/no/such/bash"))
+  }
+
+  @Test func bashCapabilityDoesNotWaitForDescendantHoldingStdout() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let wrapper = directory.appendingPathComponent("bash")
+    let childFile = directory.appendingPathComponent("bash.child")
+    defer {
+      if let text = try? String(contentsOf: childFile, encoding: .utf8),
+        let child = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)), child > 0
+      {
+        kill(child, SIGKILL)
+      }
+      try? FileManager.default.removeItem(at: directory)
+    }
+    try """
+    #!/bin/sh
+    printf 'GNU bash, version 5.2.0(1)-release\\n'
+    /bin/sleep 10 &
+    printf '%s\\n' "$!" > "$0.child"
+    exit 0
+    """.write(to: wrapper, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+
+    let start = ContinuousClock.now
+    let supported = TakoBashBootstrapSupport.supports(wrapper.path)
+    let elapsed = start.duration(to: .now)
+    #expect(supported)
+    #expect(elapsed < .seconds(1))
+    let child = try #require(
+      Int32(
+        try String(contentsOf: childFile, encoding: .utf8)
+          .trimmingCharacters(in: .whitespacesAndNewlines)))
+    #expect(child > 0)
+    #expect(kill(child, 0) == 0)
   }
 
   @Test func disabledMissingResourcesAndExplicitProgramsNeverProbeOrRewrite() {
