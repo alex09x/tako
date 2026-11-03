@@ -48,6 +48,45 @@ USER = os.environ["USER"]
 # prompt, which is the only thing standing between a password and a stranger,
 # reaches the same verdict for each of them.
 HOST_KEY_TYPES = ["ed25519", "rsa", "ecdsa"]
+TMUX_SOCKET = "tako-ui"
+REQUIRED_HOST_TOOLS = (
+    "tmux", "less", "vim", "nano", "top",
+    "seq", "sed", "awk", "head", "tail", "wc",
+)
+
+
+def find_host_tool(name):
+    search_path = ":".join([
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        os.environ.get("PATH", ""),
+        "/usr/bin",
+        "/bin",
+    ])
+    return shutil.which(name, path=search_path)
+
+
+def ensure_host_tools():
+    missing = [name for name in REQUIRED_HOST_TOOLS if not find_host_tool(name)]
+    if missing and "tmux" in missing and shutil.which("brew"):
+        run(["brew", "install", "tmux"])
+        missing = [name for name in REQUIRED_HOST_TOOLS if not find_host_tool(name)]
+    if missing:
+        sys.exit(f"missing required host tools for simtest workloads: {missing}")
+
+
+def clean_tmux_fixture():
+    tmux = find_host_tool("tmux")
+    if tmux:
+        subprocess.run([tmux, "-L", TMUX_SOCKET, "kill-server"],
+                       capture_output=True)
+    for path in (
+        "/tmp/tako-ui-less.txt",
+        "/tmp/tako-ui-vim.txt",
+        "/tmp/tako-ui-nano.txt",
+    ):
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def run(cmd, check=True, **kw):
@@ -137,6 +176,8 @@ def make_servers():
     world-readable build directory and a password written in this file, so
     they have no business being reachable from the network.
     """
+    ensure_host_tools()
+    clean_tmux_fixture()
     if os.path.isdir(FIXTURE):
         stop_servers()
         shutil.rmtree(FIXTURE)
@@ -223,6 +264,7 @@ def make_servers():
 
 
 def stop_servers():
+    clean_tmux_fixture()
     for pid_file in (
         "sshd.pid", "test_sshd.pid", "test_sshd_mfa.pid", "fault_proxy.pid"
     ):
