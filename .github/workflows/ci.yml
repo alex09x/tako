@@ -102,3 +102,33 @@ jobs:
         env:
           CI_STAGE: ${{ matrix.stage }}
         run: ./scripts/ci.sh --local "$CI_STAGE"
+
+      - name: Report native crash diagnostics on failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          reports = Path.home() / 'Library/Logs/DiagnosticReports'
+          for path in sorted(reports.glob('*.ips')):
+              if not any(name in path.name.lower() for name in ('tako', 'swiftpm-testing', 'xctest')):
+                  continue
+              try:
+                  text = path.read_text()
+                  decoder = json.JSONDecoder()
+                  report, end = decoder.raw_decode(text)
+                  if text[end:].strip():
+                      report, _ = decoder.raw_decode(text[end:].lstrip())
+                  print('Crash report:', path.name)
+                  for key in ('procName', 'exception', 'termination', 'asi'):
+                      print(key, json.dumps(report.get(key))[:3000])
+                  images = report.get('usedImages', [])
+                  for thread in report.get('threads', []):
+                      if thread.get('triggered'):
+                          for frame in thread.get('frames', [])[:30]:
+                              index = frame.get('imageIndex', -1)
+                              name = images[index].get('name') if 0 <= index < len(images) else '?'
+                              print(name, frame.get('symbol', '?'), frame.get('symbolLocation', ''))
+              except (ValueError, OSError, TypeError) as error:
+                  print('Could not decode', path.name, type(error).__name__)
+          PY
