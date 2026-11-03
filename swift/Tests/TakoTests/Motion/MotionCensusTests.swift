@@ -202,7 +202,7 @@ struct MotionCensusTests {
         Site(file: "TabGroupCloseCoordinator.swift", code: "debounceTimer = Timer.scheduledTimer(",
              what: "debounces closing a tab group", coveredBy: [notMotion]),
         // Delays and clocks: asyncAfter, Task.sleep, the display's clock, implicit animation, spinners.
-        Site(file: "HostKeyPrompt.swift", code: #"try await Task.sleep(nanoseconds: 1_000_000_000)"#,
+        Site(file: "HostKeyPrompt.swift", code: #"try await Task.sleep(for: $0)"#,
              what: "the phone: a new host key's buttons arm after 1 s", coveredBy: [phoneApp]),
         Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {"#,
              what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),

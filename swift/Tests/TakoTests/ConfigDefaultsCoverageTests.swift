@@ -163,9 +163,10 @@ struct ConfigDefaultsCoverageTests {
         #expect(config.abnormalCommandExitRuntime == .milliseconds(250))
     }
 
-    @Test func commandPaletteEntriesDefaultsToEmpty() throws {
+    @Test func commandPaletteIncludesUsefulDefaultCommands() throws {
         let config = try TemporaryConfig("")
-        #expect(config.commandPaletteEntries.isEmpty)
+        #expect(config.commandPaletteEntries.contains { $0.action == "new_tab" })
+        #expect(config.commandPaletteEntries.contains { $0.action == "clear_screen" })
     }
 
     @Test func progressStyleDefaultsToTrue() throws {
