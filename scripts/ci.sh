@@ -104,6 +104,10 @@ SH
             ci_require "$stage" '^OK'
             ;;
         swift-tests)
+            TAKO_TEST_NEW_ZMX=$(./scripts/build-zmx.sh)
+            TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
+            export TAKO_TEST_NEW_ZMX="$PWD/$TAKO_TEST_NEW_ZMX"
+            export TAKO_TEST_OLD_ZMX="$PWD/$TAKO_TEST_OLD_ZMX"
             # Explicitly refresh the host slice and bindings before SwiftPM
             # plans the graph. No iOS cross-compiles for this macOS suite.
             ./scripts/build-xcframework.sh --macos-only
@@ -141,6 +145,8 @@ PY
             ci_require "$stage" '^tako e2e: ok$'
             ;;
         persist-e2e-tests)
+            TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
+            export TAKO_TEST_OLD_ZMX="$PWD/$TAKO_TEST_OLD_ZMX"
             # All isolated persistence scenarios in the driver registry,
             # including the newer recovery, grouping and appearance cases.
             ci_logged "$stage" ./scripts/e2e-persist.sh \
