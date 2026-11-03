@@ -28,6 +28,7 @@ public final class GlyphAtlas: @unchecked Sendable {
         let skew: CGFloat
         let scale: CGFloat
         let emboldened: Bool
+        let variations: [GlyphAtlasKey.Variation]
     }
     var clusterCache: [ClusterRequest: GlyphAtlasEntry] = [:]
     /// Changes whenever any page changes or the atlas is cleared.
@@ -96,7 +97,8 @@ public final class GlyphAtlas: @unchecked Sendable {
             fontSize: CTFontGetSize(font),
             skew: CTFontGetMatrix(font).c,
             scale: scale,
-            emboldened: emboldened
+            emboldened: emboldened,
+            variations: GlyphAtlasKey.variations(of: font)
         )
         if let existing = clusterCache[request] {
             return existing

@@ -290,7 +290,8 @@ extension GlyphAtlas {
             pixelFormat: pixelFormat,
             skew: request.skew,
             emboldened: request.emboldened,
-            cluster: request.text
+            cluster: request.text,
+            variations: request.variations
         )
         let advance = CGSize(width: CTLineGetTypographicBounds(line, nil, nil, nil), height: 0)
         let scale = max(request.scale, 0.001)

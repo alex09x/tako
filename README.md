@@ -171,6 +171,16 @@ takoctl theme create "Imported" --file work-theme.conf
 cat work-theme.conf | takoctl theme create "Piped" --stdin
 ```
 
+Font weight is numeric: `font-weight=550`, `font-weight-bold=700`, `font-weight-italic=450` and `font-weight-bold-italic=650`. Values are integers from 100 to 900. A variable font uses its `wght` axis, clamped to that font's own range; a static font selects the closest available face. Omitting the keys preserves the font's normal named-style behavior. The theme editor has the same controls inside **Fonts**, with 50-unit arrow steps; Config and CLI accept any integer.
+
+Tako bundles JetBrains Mono Nerd Font and Fira Code 6.2 variable, with their SIL OFL licenses. Other installed monospaced families are discovered automatically. `takoctl theme fonts --json` includes each family's styles and real variable-weight range. Commercial fonts must be installed separately. For example:
+
+```sh
+takoctl theme create "Ocean Medium" --from "Tako Ocean"
+takoctl theme set "Ocean Medium" 'font-family=Fira Code' font-size=16 font-weight=550 font-weight-bold=700
+takoctl theme apply "Ocean Medium" --workspace "Legal"
+```
+
 Use `theme set NAME --file FILE` or `--stdin` to replace the full configuration, and `theme unset NAME KEY...` to reset selected settings. Repeated `font-feature` and `custom-shader` assignments replace their lists together. Paths inside a preset are relative to its theme directory; absolute shader paths work too. Files/stdin are read by the client, which sends configuration text to the app.
 
 Assignments apply immediately and need an explicit mutation target:
@@ -267,7 +277,7 @@ For an in-depth breakdown of the internal layers, UniFFI bridging, PTY pipeline,
 
 Tako is licensed under the [MIT License](LICENSE).
 
-- The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1 ([`swift/Resources/fonts/OFL.txt`](swift/Resources/fonts/OFL.txt)).
+- The bundled JetBrains Mono Nerd Font and Fira Code are under the SIL Open Font License 1.1 ([JetBrains license](swift/Resources/fonts/OFL.txt), [Fira Code license](swift/Resources/fonts/FiraCode-OFL.txt)).
 - Reference test fixtures adapted from [Alacritty](https://github.com/alacritty/alacritty) (Apache 2.0 License, © The Alacritty Project).
 - Full third-party notices and licenses are documented in [NOTICE.md](NOTICE.md).
 

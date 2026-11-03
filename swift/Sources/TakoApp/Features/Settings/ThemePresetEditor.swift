@@ -54,6 +54,13 @@ import AppKit
     func effectiveValue(for key: String) -> String {
         if let value = value(for: key) { return value }
         let theme = effectiveTheme
+        switch key {
+        case "font-weight": return String(theme.fontWeight ?? 400)
+        case "font-weight-bold": return String(theme.fontWeightBold ?? 700)
+        case "font-weight-italic": return String(theme.fontWeightItalic ?? theme.fontWeight ?? 400)
+        case "font-weight-bold-italic": return String(theme.fontWeightBoldItalic ?? 700)
+        default: break
+        }
         if key == "selection-foreground" { return Self.hex(theme.selectionForeground ?? theme.foreground) }
         return TerminalSettingRegistry.setting(for: key)?.type.defaultStringValue ?? ""
     }

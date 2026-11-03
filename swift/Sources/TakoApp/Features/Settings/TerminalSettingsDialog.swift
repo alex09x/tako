@@ -195,6 +195,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
 
     private func setupSearchField() {
         let field = NSTextField()
+        field.setAccessibilityIdentifier("SettingsSearchField")
         field.placeholderString = "Filter actions, settings, or shortcuts (type to search)…"
         field.isBordered = false
         field.drawsBackground = true
@@ -310,7 +311,7 @@ final class TerminalSettingsDialog: NSView, NSTextFieldDelegate {
         } else {
             if setSettingValue(next, for: item) {
                 statusMessage = "Custom: \(item.id) = \(next)"
-                setAccessibilityValue("setting_custom_success: \(item.id)")
+                setAccessibilityValue("setting_custom_success: \(item.id) = \(next)")
             } else {
                 statusMessage = scopedAppearance?.writeError ?? "Error: Failed to write \(item.id) to config file."
                 setAccessibilityValue("setting_write_error: \(item.id)")

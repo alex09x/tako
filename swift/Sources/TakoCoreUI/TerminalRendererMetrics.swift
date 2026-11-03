@@ -53,7 +53,8 @@ extension TerminalRenderer {
         public init(theme: TerminalTheme) {
             let fontSize = theme.fontSize
             let base = Self.resolveFont(named: theme.fontFamily, size: fontSize)
-            let regular = Self.namedFace(theme.fontStyle, like: base) ?? base
+            let unweighted = Self.namedFace(theme.fontStyle, like: base) ?? base
+            let regular = Self.weightedFace(unweighted, weight: theme.fontWeight)
 
             let glyph = CTFontGetGlyphWithName(regular, "M" as CFString)
             var advance = CGSize.zero
@@ -100,16 +101,19 @@ extension TerminalRenderer {
             self.underlineThickness = underlineThickness
 
             let synthetic = theme.fontSyntheticStyle
-            let bold = Self.styledFace(
+            let bold = Self.weightedStyle(Self.styledFace(
                 traits: .traitBold, family: theme.fontFamilyBold, style: theme.fontStyleBold,
-                regular: regular, synthesise: synthetic.contains(.bold))
-            let italic = Self.styledFace(
+                regular: unweighted, synthesise: synthetic.contains(.bold), fallbackRegular: regular),
+                weight: theme.fontWeightBold, style: theme.fontStyleBold, regular: regular)
+            let italic = Self.weightedStyle(Self.styledFace(
                 traits: .traitItalic, family: theme.fontFamilyItalic, style: theme.fontStyleItalic,
-                regular: regular, synthesise: synthetic.contains(.italic))
-            let boldItalic = Self.styledFace(
+                regular: unweighted, synthesise: synthetic.contains(.italic), fallbackRegular: regular),
+                weight: theme.fontWeightItalic ?? theme.fontWeight, style: theme.fontStyleItalic, regular: regular)
+            let boldItalic = Self.weightedStyle(Self.styledFace(
                 traits: [.traitBold, .traitItalic], family: theme.fontFamilyBoldItalic,
-                style: theme.fontStyleBoldItalic, regular: regular,
-                synthesise: synthetic.contains(.boldItalic))
+                style: theme.fontStyleBoldItalic, regular: unweighted,
+                synthesise: synthetic.contains(.boldItalic), fallbackRegular: regular),
+                weight: theme.fontWeightBoldItalic, style: theme.fontStyleBoldItalic, regular: regular)
 
             let features = Self.featureDescriptor(theme.fontFeatures)
             func withFeatures(_ font: CTFont) -> CTFont {
@@ -175,14 +179,18 @@ extension TerminalRenderer {
             family: String?,
             style: TerminalTheme.FontStyle,
             regular: CTFont,
-            synthesise: Bool
+            synthesise: Bool,
+            fallbackRegular: CTFont? = nil
         ) -> (font: CTFont, emboldened: Bool) {
             if style == .disabled { return (regular, false) }
             let size = CTFontGetSize(regular)
             let base = family.flatMap { firstMatch([$0, $0 + "-Regular"], size: size) } ?? regular
             if let named = namedFace(style, like: base) { return (named, false) }
             if let face = traitFace(base, traits) { return (face, false) }
-            guard synthesise else { return (regular, false) }
+            // Selecting a real styled face uses the unweighted family base.
+            // If none exists, synthesis-off falls back to the configured
+            // regular instance, including its numeric weight.
+            guard synthesise else { return (fallbackRegular ?? regular, false) }
 
             let wantsBold = traits.contains(.traitBold)
             let wantsItalic = traits.contains(.traitItalic)

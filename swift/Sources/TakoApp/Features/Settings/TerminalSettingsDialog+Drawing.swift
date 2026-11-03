@@ -187,6 +187,9 @@ extension TerminalSettingsDialog {
                 let isCustom = presetEditor?.isChanged(item.id) ?? (storedSettingValue(for: item) != nil)
                 let valColor = isCustom ? TakoTUI.ember : (isSelected && !isTabBarFocused ? TakoTUI.claw : TakoTUI.soft)
                 drawText(displayVal, col: 46, row: r, font: style.boldFont, color: valColor)
+                if item.id.hasPrefix("font-weight") {
+                    drawText("Aa 09", col: 53, row: r, font: typographyPreviewFont(face: item.id), color: TakoTUI.soft)
+                }
             }
         }
 
@@ -196,8 +199,7 @@ extension TerminalSettingsDialog {
             let fontItem = TerminalAppearanceCatalog.fontItems([])[0]
             let family = presetEditor?.effectiveValue(for: "font-family")
                 ?? scopedAppearance?.effectiveValue(for: "font-family") ?? configFile.getSettingValue(for: fontItem)
-            let preview = family.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: CGFloat(size)) }
-                ?? NSFont(descriptor: style.font.fontDescriptor, size: CGFloat(size)) ?? style.font
+            let preview = typographyPreviewFont(family: family, size: CGFloat(size))
             drawText("Aa Bb 012345", col: 4, row: 8, font: preview, color: TakoTUI.text)
             drawText("← → change size · D reset", col: 4, row: 15, font: style.font, color: TakoTUI.dim)
         }

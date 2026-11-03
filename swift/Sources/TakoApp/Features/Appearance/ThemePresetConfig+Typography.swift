@@ -13,6 +13,10 @@ import Foundation
 extension ThemePresetConfig {
     static func typographyConfiguration(from theme: TerminalTheme) -> [String] {
         var lines: [String] = []
+        for (key, weight) in [("font-weight", theme.fontWeight), ("font-weight-bold", theme.fontWeightBold),
+                              ("font-weight-italic", theme.fontWeightItalic), ("font-weight-bold-italic", theme.fontWeightBoldItalic)] {
+            if let weight { lines.append("\(key) = \(weight)") }
+        }
         for (key, family) in [("font-family-bold", theme.fontFamilyBold), ("font-family-italic", theme.fontFamilyItalic),
                               ("font-family-bold-italic", theme.fontFamilyBoldItalic)] {
             if let family { lines.append("\(key) = \(family)") }

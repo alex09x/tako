@@ -14,6 +14,7 @@ extension ThemePresetConfig {
     static let controlKeys = [
         "background", "foreground", "cursor-color", "selection-background", "selection-foreground",
         "font-size", "font-family", "font-family-bold", "font-family-italic", "font-family-bold-italic",
+        "font-weight", "font-weight-bold", "font-weight-italic", "font-weight-bold-italic",
         "font-style", "font-style-bold", "font-style-italic", "font-style-bold-italic", "font-synthetic-style", "font-feature",
         "adjust-cell-width", "adjust-cell-height", "adjust-font-baseline", "adjust-underline-position", "adjust-underline-thickness",
         "cursor-opacity", "background-opacity", "cursor-thickness", "background-blur", "background-blur-radius",
