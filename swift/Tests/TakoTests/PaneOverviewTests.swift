@@ -150,10 +150,12 @@ struct PaneOverviewTests {
         store.refresh(fromControllers: [controller])
 
         #expect(store.filteredItems.count == 3)
+        #expect(store.paneCountLabel == "3 panes")
 
         // Filter by title
         store.filterText = "cargo"
         #expect(store.filteredItems.count == 1)
+        #expect(store.paneCountLabel == "1 of 3")
         #expect(store.filteredItems[0].title == "cargo build")
 
         // Filter by directory
@@ -174,10 +176,17 @@ struct PaneOverviewTests {
         // Filter with no match
         store.filterText = "nonexistent"
         #expect(store.filteredItems.isEmpty)
+        #expect(store.paneCountLabel == "0 of 3")
 
         // Clear filter restores all
         store.filterText = ""
         #expect(store.filteredItems.count == 3)
+        #expect(store.paneCountLabel == "3 panes")
+        store.statusFilter = .working
+        #expect(store.paneCountLabel == "1 of 3")
+        store.statusFilter = nil
+        store.filterText = "  \n "
+        #expect(store.paneCountLabel == "3 panes")
     }
 
     // MARK: - Live Status Updates

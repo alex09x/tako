@@ -69,6 +69,12 @@ final class PaneOverviewStore: ObservableObject {
         }
     }
 
+    /// Keep the summary consistent with both text and status filtering.
+    var paneCountLabel: String {
+        let hasFilter = statusFilter != nil || !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasFilter ? "\(filteredItems.count) of \(items.count)" : "\(items.count) panes"
+    }
+
     /// The currently selected item in the filtered view, if any.
     var selectedItem: PaneOverviewItem? {
         let current = filteredItems
