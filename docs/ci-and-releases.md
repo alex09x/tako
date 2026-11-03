@@ -17,6 +17,18 @@ all 32 isolated persistence scenarios, the iOS surface suite and the iOS SSH
 scenarios/walkthrough with its existing coverage gate. A workflow definition is not proof of execution:
 inspect the run's test counts, failures and hardware-specific skips.
 
+Checkout is pinned to the event commit (or an explicitly supplied source
+commit), so retrying a pull-request run cannot silently test a newer branch.
+The Swift job captures process stacks and fails after three minutes without
+runtime test output; compiler output does not arm that runtime watchdog.
+
+Swift and native application jobs install a supported Bash and expose its
+path as `TAKO_TEST_BASH`, so the automatic shell-integration startup cases
+run alongside the stock Bash fallback. The native job also sets that Bash as
+the disposable runner account's login shell: PTY startup reads the account
+record rather than trusting the launcher's `SHELL` variable. This provisioning
+does not change a maintainer's shell or an installed Tako application.
+
 The GitHub Mac is a temporary macOS VM. Xcode and ordinary macOS tools are
 available, but GUI authorization and GPU/Metal behavior must be verified
 by actual jobs. The native event driver also needs Accessibility trust, which

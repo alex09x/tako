@@ -14,13 +14,13 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Optional source ref or commit (defaults to the event ref)
+        description: Optional source ref or commit (defaults to the event commit)
         required: false
         type: string
   workflow_call:
     inputs:
       source_ref:
-        description: Optional source ref or commit (defaults to the event ref)
+        description: Optional source ref or commit (defaults to the event commit)
         required: false
         type: string
 
@@ -56,7 +56,8 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          # Keep reruns on the original event commit, including PR merges.
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
 
       - name: Require standard arm64 macOS and repository toolchain
@@ -71,6 +72,26 @@ jobs:
           # rustup reads rust-toolchain.toml, including the three Apple targets.
           rustup show
           cargo --version
+
+      - name: Prepare supported Bash integration coverage
+        if: ${{ matrix.stage == 'swift-tests' || matrix.stage == 'macapp-e2e-tests' }}
+        env:
+          CI_STAGE: ${{ matrix.stage }}
+        run: |
+          set -euo pipefail
+          brew install bash
+          tako_ci_bash="$(brew --prefix bash)/bin/bash"
+          "$tako_ci_bash" --version
+          "$tako_ci_bash" -c '(( BASH_VERSINFO[0] >= 4 ))'
+          printf 'TAKO_TEST_BASH=%s\n' "$tako_ci_bash" >> "$GITHUB_ENV"
+          if [ "$CI_STAGE" = macapp-e2e-tests ]; then
+            # PTY startup reads the account record, not the launcher's SHELL.
+            # This changes only the disposable hosted runner account.
+            sudo dscl . -create "/Users/$(id -un)" UserShell "$tako_ci_bash"
+            tako_ci_actual=$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')
+            test "$tako_ci_actual" = "$tako_ci_bash"
+            printf 'Native E2E login shell: %s\n' "$tako_ci_actual"
+          fi
 
       - name: Prepare Metal compiler for Apple targets
         if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
