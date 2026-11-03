@@ -23,6 +23,28 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
     }
 
     @MainActor
+    func testQuickTerminalKeepsItsContentBelowTheStrip() throws {
+        try updateConfig("confirm-close-surface = false\n")
+        let app = try takoApplication()
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 5), "Close the ordinary window before inspecting Quick Terminal")
+        app.menuBarItems["View"].firstMatch.click()
+        app.menuItems["Quick Terminal"].firstMatch.click()
+        let quick = app.windows.firstMatch
+        XCTAssertTrue(quick.waitForExistence(timeout: 5), "Quick Terminal must open")
+        let strip = quick.descendants(matching: .any)["tab-bar"]
+        let terminal = quick.textViews.firstMatch
+        XCTAssertTrue(strip.waitForExistence(timeout: 5))
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        XCTAssertTrue(terminal.isHittable)
+        XCTAssertGreaterThan(terminal.frame.height, 0)
+        XCTAssertGreaterThanOrEqual(terminal.frame.minY, strip.frame.maxY - 1,
+                                   "The strip must not cover Quick Terminal's first rows")
+    }
+
+    @MainActor
     func testWorkspaceWindowDragging() throws {
         let app = try takoApplication()
         app.launch()

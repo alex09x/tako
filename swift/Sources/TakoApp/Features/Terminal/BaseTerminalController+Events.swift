@@ -339,6 +339,10 @@ extension BaseTerminalController {
         // it is already a single split.
         guard surfaceTree.isSplit else { return }
 
+        // Collapsing the old SwiftUI tree can resize a moved NSView before
+        // the new controller mounts it. Preserve its current viewport first.
+        let draggedContentSize = target.frame.size
+
         // If we are removing our focused surface then we move it. We need to
         // keep track of our old one so undo sends focus back to the right place.
         let oldFocusedSurface = focusedSurface
@@ -360,6 +364,9 @@ extension BaseTerminalController {
         }
 
         replaceSurfaceTree(removedTree, moveFocusFrom: oldFocusedSurface)
+        if draggedContentSize.width > 0, draggedContentSize.height > 0 {
+            target.initialSize = draggedContentSize
+        }
         _ = TerminalController.newWindow(
             tako,
             tree: newTree,
