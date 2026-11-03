@@ -39,13 +39,18 @@ extension Tako {
             }
         }
 
+        // Readiness can become ready more than once before the delayed launch.
+        // An asynchronous self-test must have just one owner of its surface.
+        private var selfTestScheduled = false
+
         public func scheduleSelfTestIfNeeded() {
             let args = CommandLine.arguments
-            guard readiness == .ready,
+            guard !selfTestScheduled, readiness == .ready,
                   args.contains("--selftest-keys")
                     || args.contains("--selftest-input")
                     || args.contains("--selftest-scroll")
                     || args.contains("--selftest-frame") else { return }
+            selfTestScheduled = true
             func tryRun(attemptsLeft: Int) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     MainActor.assumeIsolated {
