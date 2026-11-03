@@ -44,10 +44,10 @@ public final class ThemePresetStore {
         }
 
         // 2. Built-in files elsewhere
-        let standardizedDir = directory.standardizedFileURL.path
+        let standardizedDir = directory.resolvingSymlinksInPath().standardizedFileURL.path
         for searchDir in searchPaths {
             let expandedDir = (searchDir as NSString).expandingTildeInPath
-            let searchURL = URL(fileURLWithPath: expandedDir).standardizedFileURL
+            let searchURL = URL(fileURLWithPath: expandedDir).resolvingSymlinksInPath().standardizedFileURL
             guard searchURL.path != standardizedDir else { continue }
             let candidateURL = searchURL.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: candidateURL.path) {
@@ -198,10 +198,12 @@ public final class ThemePresetStore {
     }
 
     private func isBuiltinFile(named name: String) -> Bool {
-        let standardizedDir = directory.standardizedFileURL.path
+        // A legacy profile can alias the same directory through a parent
+        // symlink. It remains the user directory, not a built-in source.
+        let standardizedDir = directory.resolvingSymlinksInPath().standardizedFileURL.path
         for searchDir in searchPaths {
             let expandedDir = (searchDir as NSString).expandingTildeInPath
-            let searchURL = URL(fileURLWithPath: expandedDir).standardizedFileURL
+            let searchURL = URL(fileURLWithPath: expandedDir).resolvingSymlinksInPath().standardizedFileURL
             guard searchURL.path != standardizedDir else { continue }
             let candidateURL = searchURL.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: candidateURL.path) {
