@@ -35,6 +35,19 @@ public struct GlyphAtlasKey: Hashable, Equatable, Sendable {
     /// A shaped grapheme cluster rather than one glyph: `glyph` is 0 and
     /// `fontName` is the face the cluster was shaped with.
     public let cluster: String?
+    /// Design coordinates distinguish variable instances sharing a name/size.
+    public let variations: [Variation]
+
+    public struct Variation: Hashable, Sendable {
+        public let axis: UInt32
+        public let value: Double
+    }
+
+    static func variations(of font: CTFont) -> [Variation] {
+        let values = CTFontCopyVariation(font) as? [NSNumber: NSNumber] ?? [:]
+        return values.map { Variation(axis: $0.key.uint32Value, value: $0.value.doubleValue) }
+            .sorted { $0.axis < $1.axis }
+    }
 
     public init(
         glyph: CGGlyph,
@@ -44,7 +57,8 @@ public struct GlyphAtlasKey: Hashable, Equatable, Sendable {
         pixelFormat: GlyphAtlasPixelFormat = .grayscale8,
         skew: CGFloat = 0,
         emboldened: Bool = false,
-        cluster: String? = nil
+        cluster: String? = nil,
+        variations: [Variation] = []
     ) {
         self.glyph = glyph
         self.fontName = fontName
@@ -54,6 +68,7 @@ public struct GlyphAtlasKey: Hashable, Equatable, Sendable {
         self.skew = skew
         self.emboldened = emboldened
         self.cluster = cluster
+        self.variations = variations
     }
 
     public init(
@@ -73,7 +88,8 @@ public struct GlyphAtlasKey: Hashable, Equatable, Sendable {
             scale: scale,
             pixelFormat: resolvedFormat,
             skew: CTFontGetMatrix(font).c,
-            emboldened: emboldened
+            emboldened: emboldened,
+            variations: Self.variations(of: font)
         )
     }
 

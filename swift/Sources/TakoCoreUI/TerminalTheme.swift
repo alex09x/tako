@@ -86,6 +86,10 @@ public struct TerminalTheme {
         backgroundBlur: Int = 0,
         fontFamily: String? = nil,
         fontSize: CGFloat = 13,
+        fontWeight: Int? = nil,
+        fontWeightBold: Int? = nil,
+        fontWeightItalic: Int? = nil,
+        fontWeightBoldItalic: Int? = nil,
         cellWidth: CGFloat? = nil,
         cellHeight: CGFloat? = nil,
         windowPadding: CGFloat = 10,
@@ -106,6 +110,10 @@ public struct TerminalTheme {
         self.backgroundBlur = backgroundBlur
         self.fontFamily = fontFamily
         self.fontSize = fontSize
+        self.fontWeight = fontWeight
+        self.fontWeightBold = fontWeightBold
+        self.fontWeightItalic = fontWeightItalic
+        self.fontWeightBoldItalic = fontWeightBoldItalic
         self.cellWidth = cellWidth
         self.cellHeight = cellHeight
         self.padding = TerminalPadding(uniform: windowPadding)
@@ -136,6 +144,14 @@ public struct TerminalTheme {
     public var fontStyleBold: FontStyle = .default
     public var fontStyleItalic: FontStyle = .default
     public var fontStyleBoldItalic: FontStyle = .default
+    /// CSS integer weights (100...900). Nil preserves the family's existing
+    /// face selection. Base weight also applies to italic unless overridden;
+    /// bold and bold-italic keep normal bold semantics unless set explicitly.
+    /// Numeric weights override named face weight, but never a disabled style.
+    public var fontWeight: Int? = nil
+    public var fontWeightBold: Int? = nil
+    public var fontWeightItalic: Int? = nil
+    public var fontWeightBoldItalic: Int? = nil
     /// Which styles missing from a family may be synthesised.
     public var fontSyntheticStyle: FontSyntheticStyle = .all
     /// OpenType features applied to every face (`font-feature`).

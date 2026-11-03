@@ -53,7 +53,8 @@ extension TerminalRenderer {
         public init(theme: TerminalTheme) {
             let fontSize = theme.fontSize
             let base = Self.resolveFont(named: theme.fontFamily, size: fontSize)
-            let regular = Self.namedFace(theme.fontStyle, like: base) ?? base
+            let unweighted = Self.namedFace(theme.fontStyle, like: base) ?? base
+            let regular = Self.weightedFace(unweighted, weight: theme.fontWeight)
 
             let glyph = CTFontGetGlyphWithName(regular, "M" as CFString)
             var advance = CGSize.zero
@@ -100,16 +101,19 @@ extension TerminalRenderer {
             self.underlineThickness = underlineThickness
 
             let synthetic = theme.fontSyntheticStyle
-            let bold = Self.styledFace(
+            let bold = Self.weightedStyle(Self.styledFace(
                 traits: .traitBold, family: theme.fontFamilyBold, style: theme.fontStyleBold,
-                regular: regular, synthesise: synthetic.contains(.bold))
-            let italic = Self.styledFace(
+                regular: unweighted, synthesise: synthetic.contains(.bold)),
+                weight: theme.fontWeightBold, style: theme.fontStyleBold, regular: regular)
+            let italic = Self.weightedStyle(Self.styledFace(
                 traits: .traitItalic, family: theme.fontFamilyItalic, style: theme.fontStyleItalic,
-                regular: regular, synthesise: synthetic.contains(.italic))
-            let boldItalic = Self.styledFace(
+                regular: unweighted, synthesise: synthetic.contains(.italic)),
+                weight: theme.fontWeightItalic ?? theme.fontWeight, style: theme.fontStyleItalic, regular: regular)
+            let boldItalic = Self.weightedStyle(Self.styledFace(
                 traits: [.traitBold, .traitItalic], family: theme.fontFamilyBoldItalic,
-                style: theme.fontStyleBoldItalic, regular: regular,
-                synthesise: synthetic.contains(.boldItalic))
+                style: theme.fontStyleBoldItalic, regular: unweighted,
+                synthesise: synthetic.contains(.boldItalic)),
+                weight: theme.fontWeightBoldItalic, style: theme.fontStyleBoldItalic, regular: regular)
 
             let features = Self.featureDescriptor(theme.fontFeatures)
             func withFeatures(_ font: CTFont) -> CTFont {

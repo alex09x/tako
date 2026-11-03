@@ -114,7 +114,8 @@ extension TerminalSettingsDialog {
             case .fonts:
                 if fontFamilies.isEmpty { fontFamilies = TerminalAppearanceCatalog.fontFamilies() }
                 items = presetEditor != nil
-                    ? TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
+                    ? TerminalSettingRegistry.fontWeightSettings
+                        + TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
                     : scopedAppearance == nil ? TerminalAppearanceCatalog.fontItems(fontFamilies)
                     : [inheritanceItem(key: "font-family", category: TerminalAppearanceCatalog.fontCategory)]
                         + TerminalAppearanceCatalog.fontItems(fontFamilies).filter { $0.title != TerminalAppearanceCatalog.defaultFont }
@@ -124,7 +125,7 @@ extension TerminalSettingsDialog {
                 items = allSettingItems.filter { item in
                     let appearance = ThemePresetConfig.isAppearanceKey(item.id)
                     if presetEditor != nil {
-                        return appearance && !["font-family", "font-size"].contains(item.id)
+                        return appearance && !["font-family", "font-size"].contains(item.id) && !item.id.hasPrefix("font-weight")
                             && !TerminalSettingRegistry.colorSettings.contains(where: { $0.id == item.id })
                     }
                     return !appearance && item.id != "theme"

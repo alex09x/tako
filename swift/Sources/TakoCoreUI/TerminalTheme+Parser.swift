@@ -81,6 +81,10 @@ extension TerminalTheme {
             merged.fontStyleBold = fontStyleBold
             merged.fontStyleItalic = fontStyleItalic
             merged.fontStyleBoldItalic = fontStyleBoldItalic
+            merged.fontWeight = fontWeight
+            merged.fontWeightBold = fontWeightBold
+            merged.fontWeightItalic = fontWeightItalic
+            merged.fontWeightBoldItalic = fontWeightBoldItalic
             merged.fontSyntheticStyle = fontSyntheticStyle
             merged.fontFeatures = fontFeatures
             merged.adjustCellWidth = adjustCellWidth
@@ -187,6 +191,14 @@ extension TerminalTheme {
                 theme.fontStyleItalic = FontStyle(configValue: unquoted(value))
             case "font-style-bold-italic":
                 theme.fontStyleBoldItalic = FontStyle(configValue: unquoted(value))
+            case "font-weight":
+                parseWeight(value, into: &theme.fontWeight)
+            case "font-weight-bold":
+                parseWeight(value, into: &theme.fontWeightBold)
+            case "font-weight-italic":
+                parseWeight(value, into: &theme.fontWeightItalic)
+            case "font-weight-bold-italic":
+                parseWeight(value, into: &theme.fontWeightBoldItalic)
             case "font-synthetic-style":
                 if let style = FontSyntheticStyle(configValue: value) { theme.fontSyntheticStyle = style }
             case "font-feature":
@@ -279,6 +291,14 @@ extension TerminalTheme {
             modifier = nil
         } else if let parsed = MetricModifier(configValue: value) {
             modifier = parsed
+        }
+    }
+
+    private static func parseWeight(_ value: String, into weight: inout Int?) {
+        if value.isEmpty {
+            weight = nil
+        } else if let parsed = Int(value), (100...900).contains(parsed) {
+            weight = parsed
         }
     }
 

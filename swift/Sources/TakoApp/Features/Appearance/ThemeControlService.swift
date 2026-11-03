@@ -38,7 +38,7 @@ import Foundation
         let action = args["action"]?.string ?? "list"
         switch action {
         case "list": return try listPresets()
-        case "fonts": return ["fonts": .array(TerminalAppearanceCatalog.fontFamilies().map(JSON.string))]
+        case "fonts": return TerminalAppearanceCatalog.fontInventory()
         case "keys": return ["keys": .array(ThemePresetConfig.controlKeys.map(JSON.string))]
         case "show": return presetJSON(try loadPreset(try name(args)))
         case "create": return try createPreset(args)

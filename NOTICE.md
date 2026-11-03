@@ -13,6 +13,14 @@ The JetBrains Mono Nerd Font files under `swift/Resources/fonts/` are
 and distributed under the SIL Open Font License 1.1 (see
 `swift/Resources/fonts/OFL.txt`).
 
+Fira Code 6.2 (`swift/Resources/fonts/FiraCode-VF.ttf`) is
+© 2014 The Fira Code Project Authors (https://github.com/tonsky/FiraCode),
+distributed under the SIL Open Font License 1.1 (see
+`swift/Resources/fonts/FiraCode-OFL.txt`). The unmodified variable font comes
+from the project's `6.2` release, `Fira_Code_v6.2.zip`,
+`variable_ttf/FiraCode-VF.ttf`; its SHA-256 is
+`04149681350f161aca538858b88d17443c586cacca83c165939a13423fe91a26`.
+
 The cases in `tests/expected_screens.rs` and `tests/cluster_edges.rs` are
 adapted from the test suite of [x/vt](https://github.com/charmbracelet/x/tree/main/vt),
 a terminal emulator library. Where this terminal deliberately behaves as xterm

@@ -106,6 +106,10 @@ extension ThemePresetConfig {
             guard !family.trimmingCharacters(in: .whitespaces).isEmpty && isControlFree(family) else {
                 throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Font family must be non-empty and control-free")
             }
+        case "font-weight", "font-weight-bold", "font-weight-italic", "font-weight-bold-italic":
+            guard let weight = Int(value), (100...900).contains(weight) else {
+                throw ThemePresetError.invalidValue(line: lineNum, key: key, value: value, reason: "Font weight must be an integer between 100 and 900")
+            }
         case "font-style", "font-style-bold", "font-style-italic", "font-style-bold-italic":
             let style = unquoted(value)
             guard isControlFree(style) else {

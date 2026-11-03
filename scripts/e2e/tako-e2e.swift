@@ -474,6 +474,9 @@ let scenarios: [Scenario] = [
     ("theme-control", "complete CLI theme configuration, scope assignments and safe lifecycle", { d in
         try runThemeControlScenario(d)
     }),
+    ("theme-typography", "all visual CLI keys and real variable font weights in created presets", { d in
+        try runThemeTypographyScenario(d)
+    }),
     ("settings-theme-presets", "full named theme preview, cancel, save, reopen and storage errors", { d in
         try runThemePresetScenario(d)
     }),

@@ -108,6 +108,6 @@ extension TerminalSettingsDialog {
         if let scopedAppearance, item.title == inheritanceTitle {
             return Style.from(scopedAppearance.previewInheriting("font-family")).font
         }
-        return NSFontManager.shared.font(withFamily: item.title, traits: [], weight: 5, size: style.font.pointSize)
+        return typographyPreviewFont(family: item.title)
     }
 }

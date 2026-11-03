@@ -38,6 +38,9 @@ enum TerminalAppearanceCatalog {
     }
 
     @MainActor static func fontFamilies() -> [String] {
+        // Registration also happens during UI startup, but CLI discovery can
+        // be the first consumer. Include bundled fonts on that path too.
+        _ = Tako.LivingTokens.monoFont(size: 13)
         let manager = NSFontManager.shared
         let names = manager.availableFontNames(with: .fixedPitchFontMask) ?? []
         let families = Set(names.compactMap { NSFont(name: $0, size: 13)?.familyName }
