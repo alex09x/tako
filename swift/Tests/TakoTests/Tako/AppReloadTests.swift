@@ -13,6 +13,7 @@ import Testing
 @testable import Tako
 
 @Suite
+@MainActor
 struct AppReloadTests {
     @Test
     func reloadConfigPublishesTheNewGlobalConfiguration() {

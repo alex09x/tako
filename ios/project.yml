@@ -1,3 +1,10 @@
+# tako — iOS application project
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # The Xcode project for the iOS demo app.
 #
 # `scripts/build-iosapp.py` drives `swiftc` directly, which is fine for a
@@ -115,7 +122,7 @@ targets:
           # deployment variables would otherwise make the generator's host
           # build target iOS.
           env -i HOME="$HOME" DEVELOPER_DIR="${DEVELOPER_DIR:-}" \
-            PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
             ./scripts/bindings.sh
     postBuildScripts:
       # UI tests authenticate to a disposable local sshd. Put its generated

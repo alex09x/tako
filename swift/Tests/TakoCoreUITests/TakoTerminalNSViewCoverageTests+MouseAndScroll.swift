@@ -258,7 +258,7 @@ extension TakoTerminalNSViewCoverageTests {
 
     func testScrollWheelLocalBoundarySettlement() throws {
         let (view, _) = makeHostedView()
-        let lines = (0..<30).map { "Line \($0)" }.joined(separator: "\r\n") + "\r\n"
+        let lines = (0..<(view.rows + 50)).map { "Line \($0)" }.joined(separator: "\r\n") + "\r\n"
         view.feed(data: Data(lines.utf8))
 
         let scrollUp = try XCTUnwrap(makeScrollEvent(deltaY: 10, precise: false))

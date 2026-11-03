@@ -32,7 +32,7 @@ extension TakoTerminalNSView {
     /// Where the grid on screen sits in this view: inside the configured
     /// padding, centred in the spare space with `window-padding-balance`.
     /// Every path that draws the grid or maps a point to a cell uses this one.
-    public var gridLayout: TerminalGridLayout {
+    var layoutTheme: TerminalTheme {
         var effectiveTheme = theme
         if commandMarksEnabled && (commandDurationsEnabled || commandTimestampsEnabled) {
             let minGutter: CGFloat = commandTimestampsEnabled ? 64.0 : 44.0
@@ -40,10 +40,29 @@ extension TakoTerminalNSView {
                 effectiveTheme.padding.left = minGutter
             }
         }
-        return TerminalGridLayout(
+        return effectiveTheme
+    }
+
+    /// Fit and paint with the same gutter, including opt-in duration labels.
+    public func fittedGridLayout(for size: CGSize) -> TerminalGridLayout {
+        TerminalGridLayout(
+            viewSize: size,
+            cellSize: CGSize(width: cellWidth, height: cellHeight),
+            theme: layoutTheme
+        )
+    }
+
+    func updateCommandGutterLayout() {
+        needsLayout = true
+        updateGutterMarks()
+        updateScroller()
+    }
+
+    public var gridLayout: TerminalGridLayout {
+        TerminalGridLayout(
             viewSize: bounds.size,
             cellSize: CGSize(width: cellWidth, height: cellHeight),
-            theme: effectiveTheme,
+            theme: layoutTheme,
             cols: cols,
             rows: rows
         )

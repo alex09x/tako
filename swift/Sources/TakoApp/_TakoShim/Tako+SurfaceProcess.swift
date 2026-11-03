@@ -113,11 +113,7 @@ extension Tako.SurfaceView {
                 ? bounds.size
                 : (window?.contentView?.bounds.size ?? initialSize ?? .zero)
             if candidateSize.width > 0 && candidateSize.height > 0 {
-                let fitted = TerminalGridLayout(
-                    viewSize: candidateSize,
-                    cellSize: CGSize(width: cellWidth, height: cellHeight),
-                    theme: theme
-                )
+                let fitted = fittedGridLayout(for: candidateSize)
                 if fitted.cols > 0 && fitted.rows > 0 {
                     initialCols = fitted.cols
                     initialRows = fitted.rows

@@ -82,3 +82,51 @@ func makeTerminalController(_ tako: Tako.App) -> (TerminalController, NSWindow) 
     controller.window = window
     return (controller, window)
 }
+
+/// Tracks only windows created by this fixture. A plain AppKit window avoids
+/// loading the excluded nib and does not install process-wide quit overrides.
+@MainActor
+final class AppDelegateWindowFixture {
+    private let originalSystem = TerminalController.system
+    private let originalCascadePoint = TerminalController.lastCascadePoint
+    private(set) var controllers: [TerminalController] = []
+
+    init() {
+        _ = NSApplication.shared
+        WorkspaceStore.shared.resetForTesting()
+        Tako.CustomTabGroup.resetForTesting()
+        TerminalController.system = .init(attachWindow: { [unowned self] controller in
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            controller.window = window
+            self.controllers.append(controller)
+        })
+    }
+
+    func closeWindows() {
+        for controller in controllers {
+            controller.cancelPendingInitialPresentation()
+            controller.surfaceTree.forEach {
+                $0.confirmCloseSurface = .never
+                $0.pty?.terminate()
+            }
+            if let window = controller.window {
+                TerminalDialogView.pending(in: window)?.withdraw()
+                Tako.CustomTabGroup.close(window)
+                window.close()
+                window.windowController = nil
+            }
+        }
+        controllers.removeAll()
+    }
+
+    func restore() {
+        closeWindows()
+        TerminalController.system = originalSystem
+        TerminalController.lastCascadePoint = originalCascadePoint
+        Tako.CustomTabGroup.resetForTesting()
+        WorkspaceStore.shared.resetForTesting()
+    }
+}
