@@ -46,7 +46,16 @@ else
 fi
 
 echo -e "\n[4. Code Signing: TakoUITests-Runner.app]"
-RUNNER_APP="/Users/alex09x/Library/Developer/Xcode/DerivedData/TakoUITests-bzbaotmnrtkwhjdseafbsjothsms/Build/Products/Debug/TakoUITests-Runner.app"
+RUNNER_APP="${TAKO_XCUI_RUNNER_APP:-}"
+if [ -z "$RUNNER_APP" ]; then
+    derived_data="${TAKO_XCUI_DERIVED_DATA_DIR:-$HOME/Library/Developer/Xcode/DerivedData}"
+    for runner_candidate in "$derived_data"/*/Build/Products/Debug/TakoUITests-Runner.app; do
+        [ -d "$runner_candidate" ] || continue
+        if [ -z "$RUNNER_APP" ] || [ "$runner_candidate" -nt "$RUNNER_APP" ]; then
+            RUNNER_APP="$runner_candidate"
+        fi
+    done
+fi
 if [ -d "$RUNNER_APP" ]; then
     codesign -dvvv "$RUNNER_APP" 2>&1
     echo "Entitlements:"

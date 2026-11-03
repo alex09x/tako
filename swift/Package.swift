@@ -12,22 +12,20 @@
 
 import PackageDescription
 
-// TakoCoreUI: the rendering half of the terminal, so an app needs no
-// third-party emulator. It draws the cells that TakoCore (Rust, via
-// UniFFI) produces, with CoreText only -- no AppKit, no UIKit, so the same
-// source serves macOS, iOS and offscreen rendering.
+// TakoCoreUI hosts the Rust/UniFFI engine in AppKit and UIKit views, with
+// Metal rendering, a CoreText glyph atlas and a CoreText fallback renderer.
 //
 // Consumers add TakoCore.xcframework (built by
 // scripts/build-xcframework.sh) plus the generated tako_core.swift, then
 // this package for the view layer.
 //
 // The remaining targets (TakoKit, TakoObjC, Tako)
-// exist for `swift test` only: they wrap upstream's verbatim macOS app
-// layer (swift/Sources/TakoApp, see macos_port/README.md) plus the shim
+// exist in this package for `swift test`: they wrap the macOS app
+// layer (swift/Sources/TakoApp, see ../ARCHITECTURE.md) plus the shim
 // that lets it typecheck without upstream's Zig core,
 // so upstream's own test suite (macos/Tests, macos/TakoUITests
-// upstream) can run against it here. None of this is part
-// of the shipped app binary, which is assembled separately by
+// upstream) can run against it here. The shipped app's module graph
+// is assembled separately by
 // scripts/build-macapp.py using raw swiftc (SPM does not drive the real
 // build -- see that script's own module/link ordering).
 //
@@ -61,19 +59,19 @@ let package = Package(
             ]
         ),
 
-        // Upstream's own shim targets (see macos_port/README.md's table).
+        // App shim targets (see ../ARCHITECTURE.md).
         .target(name: "TakoKit"),
         .target(
             name: "TakoObjC",
             publicHeadersPath: "."
         ),
-        // Upstream's app layer, verbatim, plus the `Tako.*` adapter over
+        // The macOS app layer plus the `Tako.*` adapter over
         // the Rust core (TakoShim). Test-only target: not linked against
         // the Rust static library, since nothing here calls into it
         // directly -- TakoKit is a pure-Swift shim, not a real FFI
         // bridge, and the bridging header's `tako_coreFFI.h` import is
         // type-only (upstream's own files never got that far into our
-        // stack; see macos_port/README.md).
+        // stack; see ../ARCHITECTURE.md).
         .target(
             name: "Tako",
             dependencies: ["TakoKit", "TakoObjC"],
@@ -99,10 +97,6 @@ let package = Package(
                 // own file list.
                 "App/macOS/main.swift",
                 "App/macOS/MainMenu.xib",
-                // build-macapp.py excludes this too: it's upstream's iOS
-                // app shell, incompatible with the macOS-only shim surface
-                // TakoKit/TakoShim provide here.
-                "App/iOS/iOSApp.swift",
                 // Imported manually via -import-objc-header below, not
                 // auto-detected as a target header (which would make this a
                 // mixed Swift+ObjC target).

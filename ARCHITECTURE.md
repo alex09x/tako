@@ -28,7 +28,7 @@ that draws it with Metal, and two apps on top.
 | Module | Role |
 |---|---|
 | `parser` | VT escape-sequence state machine (ESC, CSI, OSC, DCS, APC) |
-| `terminal` | The emulator: modes, cursor, margins, tabs, charsets, OSC handling, reports; `checkpoint.rs` serializes and restores full state |
+| `terminal` | The emulator: modes, cursor, margins, tabs, charsets, OSC handling, reports; `terminal/checkpoint/` serializes and restores full state |
 | `grid` | Cells, the active screen and the scrollback |
 | `key_encode`, `mouse_encode`, `kitty_keyboard`, `paste` | Input encoding (legacy, modifyOtherKeys, kitty keyboard protocol, bracketed paste) |
 | `graphics` | Kitty graphics protocol |
@@ -59,11 +59,17 @@ display link.
 
 The app layer talks to the terminal through the `Tako.*` namespace in
 `_TakoShim`, backed by `TakoCoreUI` and the Rust engine; `TakoKit` provides
-the C-style API the app layer was written against. See
-`macos_port/README.md` for what is wired and what is not.
+the C-style API the app layer was written against. `TakoObjC` contains the
+Objective-C helpers used by the native window layer. Current user-facing
+features are described in [README.md](README.md).
 
 The app is built by `scripts/build-macapp.py` with `swiftc` directly;
 `swift/Package.swift` exists to run the test suites.
+
+The direct build has two important constraints: its Swift module name must
+match `customModule="Tako"` in the XIBs, and the app layer needs its bridging
+header for the Foundation and generated FFI declarations. Keep those in sync
+when changing the module or link order.
 
 ## iOS app (`swift/Sources/iOSApp`)
 
@@ -79,6 +85,13 @@ committed: `scripts/build-xcframework.sh` builds it locally, and
 root `Package.swift`, which exposes `TakoCoreUI` to consumers, at that asset.
 
 ## Tests
+
+For development, use `scripts/check.sh` with explicit targets, for example
+`scripts/check.sh swift:ThemePresetStoreTests e2e:theme-typography`.
+Swift filters are regular expressions; combine alternatives with `|`.
+E2E scenario names are comma-separated and persistence scenarios are routed
+to their isolated runner. [scripts/README.md](scripts/README.md) maps the
+build, test, release and manual diagnostic entry points.
 
 - Rust: `cargo test` (engine, parity ports, C ABI, checkpoint), with
   `--features pty` / `ssh` for those modules; `scripts/coverage-gate.py`
@@ -97,4 +110,5 @@ root `Package.swift`, which exposes `TakoCoreUI` to consumers, at that asset.
   the macOS XCUITest suite.
 - `scripts/ci.sh` runs all of the above on a separate test Mac through
   `scripts/mac-remote.sh`, holding every engine file and the covered Swift
-  directories to 80% line coverage; there is no hosted CI.
+  directories to 80% line coverage. This is the test gate;
+  the GitHub Actions workflow packages macOS releases separately.
