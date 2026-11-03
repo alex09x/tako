@@ -15,7 +15,8 @@
 #   scripts/ci.sh --local swift-tests
 #
 # Test-only stages (no coverage or clippy gate): engine-tests, cli-tests,
-# python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests. They retain full
+# python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests,
+# macapp-e2e-tests, persist-e2e-tests, ios-surface-tests, ios-simtest. They retain full
 # logs under target/ci-logs, reject empty runs, and show hardware skips.
 # They do not replace the full LAN gates or produce release artifacts.
 #
@@ -59,6 +60,19 @@ ci_require() {
         echo "FAIL: $1 lacks completion evidence: $2" >&2
         exit 1
     fi
+}
+
+ci_simulator_name() {
+    xcrun simctl list devices available --json | python3 -c '
+import json, sys
+for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=True):
+    if ".iOS-" in runtime:
+        for device in devices:
+            if device.get("isAvailable") and device["name"].startswith("iPhone"):
+                print(device["name"])
+                sys.exit(0)
+sys.exit("FAIL: no available iPhone simulator")
+'
 }
 
 ci_test_stage() {
@@ -117,6 +131,44 @@ PY
             ci_logged macapp-build python3 scripts/build-macapp.py
             ci_logged "$stage" env APP=target/macapp-ci/Tako.app ./scripts/selftest-macapp.sh
             ci_require "$stage" '^macapp self-test: ok$'
+            ;;
+        macapp-e2e-tests)
+            export TAKO_WITH_ZMX=1 TAKO_BUNDLE_ID=com.tako-core.terminal.e2e
+            export TAKO_APP_DIR=target/macapp-e2e
+            ci_logged macapp-e2e-build python3 scripts/build-macapp.py
+            ci_logged "$stage" ./scripts/e2e-macapp.sh
+            ci_require "$stage" '^ok '
+            ci_require "$stage" '^tako e2e: ok$'
+            ;;
+        persist-e2e-tests)
+            # All isolated persistence scenarios in the driver registry,
+            # including the newer recovery, grouping and appearance cases.
+            ci_logged "$stage" ./scripts/e2e-persist.sh \
+                persist-live persist-gone persist-close persist-cancel \
+                persist-close-asks persist-close-quit persist-second-owner persist-reflow \
+                persist-workspaces persist-missing-layout persist-damaged-record \
+                persist-damaged-placeholder persist-lost-workspaces persist-workspace-archive \
+                persist-crash persist-screen-archive persist-layout-archive persist-legacy-upgrade \
+                persist-name-collision persist-agent-conversation persist-sidebar-workspace-move \
+                persist-partial-group persist-empty-workspace-group persist-task-workspace-group \
+                persist-intentional-windows persist-assign-selected persist-inactive-recovery-group \
+                persist-cross-window-workspace-move persist-legacy-window-choice \
+                persist-legacy-workspace-choice persist-sidebar-long-list persist-scoped-appearance
+            ci_require "$stage" '^ok +persist-'
+            ci_require "$stage" '^tako e2e: ok$'
+            ;;
+        ios-surface-tests)
+            ./scripts/bindings.sh
+            ci_logged "$stage" ./scripts/test-ios-surface.sh
+            ci_require "$stage" 'Completed [1-9][0-9]* tests with 0 failures'
+            ;;
+        ios-simtest)
+            ./scripts/bindings.sh
+            export TAKO_SIM_DEVICE="${TAKO_SIM_DEVICE:-$(ci_simulator_name)}"
+            ci_logged "$stage" python3 scripts/simtest.py
+            ci_require "$stage" '\[simtest\] [1-9][0-9]*/[1-9][0-9]* scenarios passed'
+            ci_logged ios-coverage python3 scripts/ios-coverage-gate.py
+            ci_require ios-coverage '^ok +[0-9]'
             ;;
         ios-unit-tests)
             # This Xcode project links the simulator archive directly. Its
@@ -182,10 +234,10 @@ sys.exit("FAIL: no available iPhone simulator")
 }
 
 script=$'set -euo pipefail\n'
-script+="$(declare -f ci_logged ci_require ci_test_stage)"
+script+="$(declare -f ci_logged ci_require ci_simulator_name ci_test_stage)"
 for stage in "${stages[@]}"; do
     case "$stage" in
-        engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests)
+        engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
             script+=$'\n'
             script+="ci_test_stage $stage" ;;
         rust) script+="
@@ -221,7 +273,7 @@ echo '== persist'
         uitest) script+="
 echo '== uitest'
 ./scripts/uitest.sh --local" ;;
-        *) echo "unknown stage: $stage (rust, cli, swift, apps, persist, uitest; engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests)" >&2; exit 2 ;;
+        *) echo "unknown stage: $stage (see scripts/ci.sh for full LAN and hosted stages)" >&2; exit 2 ;;
     esac
 done
 

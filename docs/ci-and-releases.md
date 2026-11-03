@@ -12,12 +12,16 @@ accumulating Actions artifact storage.
 `ci.yml` runs on pull requests, main pushes and manual dispatch. It is also
 reusable by the release workflow for an exact source commit. Engine, CLI,
 Swift, application, iOS and UI stages are separate so a failure is visible
-at its actual boundary. A workflow definition is not proof of execution:
+at its actual boundary. Separate end-to-end jobs run ordinary Mac interactions,
+all 32 isolated persistence scenarios, the iOS surface suite and the iOS SSH
+scenarios/walkthrough with its existing coverage gate. A workflow definition is not proof of execution:
 inspect the run's test counts, failures and hardware-specific skips.
 
 The GitHub Mac is a temporary macOS VM. Xcode and ordinary macOS tools are
 available, but GUI authorization and GPU/Metal behavior must be verified
-by actual jobs. Zero executed UI tests is a failure. A hardware-dependent
+by actual jobs. The native event driver also needs Accessibility trust, which
+is distinct from XCUITest authorization; missing trust fails the job explicitly.
+Zero executed UI tests is a failure. A hardware-dependent
 skip is not a claim that its behavior was tested. The existing real test
 Mac remains useful for hardware-sensitive verification.
 

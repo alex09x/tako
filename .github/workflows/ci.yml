@@ -37,12 +37,12 @@ jobs:
     if: ${{ github.event.repository.visibility == 'public' && github.event.repository.private == false }}
     name: ${{ matrix.stage }} (macOS arm64)
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: ${{ matrix.stage == 'persist-e2e-tests' && 180 || 120 }}
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
-        stage: [engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests]
+        stage: [engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests, macapp-e2e-tests, persist-e2e-tests, ios-surface-tests, ios-simtest]
     env:
       CARGO_BUILD_JOBS: "2"
       RUST_TEST_THREADS: "2"
@@ -84,7 +84,7 @@ jobs:
           xcrun --find metallib
 
       - name: Install iOS project generator and show available simulators
-        if: ${{ matrix.stage == 'ios-unit-tests' }}
+        if: ${{ startsWith(matrix.stage, 'ios-') }}
         run: |
           set -euo pipefail
           brew install xcodegen
@@ -92,7 +92,7 @@ jobs:
           xcrun simctl list devices available
 
       - name: Inspect macOS UI automation
-        if: ${{ matrix.stage == 'macos-ui-tests' }}
+        if: ${{ matrix.stage == 'macos-ui-tests' || matrix.stage == 'macapp-e2e-tests' || matrix.stage == 'persist-e2e-tests' }}
         run: |
           set -euo pipefail
           sudo /usr/sbin/DevToolsSecurity --enable
