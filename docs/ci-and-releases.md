@@ -7,6 +7,13 @@ Actions run; automatic test artifact uploads and paid cache expansion are
 not enabled. Release candidates use draft GitHub Releases instead of
 accumulating Actions artifact storage.
 
+The free-compute claim applies to standard runners in this public repository.
+An account-wide billing summary can also contain other repositories and products.
+GitHub's `Gross amount` shows usage before discounts; `Billed amount` (`net_amount`
+in a usage report) is the amount after discounts. To reconcile a charge, use the
+detailed usage CSV's repository, workflow, SKU and net-amount fields, rather than
+the runner's SKU name alone. See [billing report fields](https://docs.github.com/en/billing/reference/billing-reports).
+
 ## Automated checks
 
 `ci.yml` runs on pull requests, main pushes and manual dispatch. It is also
