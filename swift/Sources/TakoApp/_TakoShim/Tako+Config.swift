@@ -105,9 +105,9 @@ extension Tako {
             if let path = TakoKit.configStorage(config)?.loadedPath,
                let text = try? String(contentsOfFile: path, encoding: .utf8) {
                 self.theme = TerminalTheme.parse(config: text, configPath: path,
-                                                darkAppearance: NSApplication.shared.effectiveAppearance.isDark)
+                                                darkAppearance: TakoSystemAppearance.isDark)
             } else {
-                self.theme = TerminalTheme.loadUserConfig(darkAppearance: NSApplication.shared.effectiveAppearance.isDark)
+                self.theme = TerminalTheme.loadUserConfig(darkAppearance: TakoSystemAppearance.isDark)
             }
             if let storage = TakoKit.configStorage(config) {
                 self.keybindOverrides = Self.parseKeybindOverrides(storage.keybindLines)
@@ -134,9 +134,9 @@ extension Tako {
             if let path = TakoKit.configStorage(config)?.loadedPath,
                let text = try? String(contentsOfFile: path, encoding: .utf8) {
                 self.theme = TerminalTheme.parse(config: text, configPath: path,
-                                                darkAppearance: NSApplication.shared.effectiveAppearance.isDark)
+                                                darkAppearance: TakoSystemAppearance.isDark)
             } else {
-                self.theme = TerminalTheme.loadUserConfig(darkAppearance: NSApplication.shared.effectiveAppearance.isDark)
+                self.theme = TerminalTheme.loadUserConfig(darkAppearance: TakoSystemAppearance.isDark)
             }
             if let storage = TakoKit.configStorage(config) {
                 self.keybindOverrides = Self.parseKeybindOverrides(storage.keybindLines)
