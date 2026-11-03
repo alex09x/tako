@@ -1,169 +1,234 @@
 name: release-macapp
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
+      mode:
+        description: Candidate download or signed public release
+        type: choice
+        options: [candidate, signed]
+        default: candidate
+      ref:
+        description: Candidate source ref (signed mode uses the tag)
+        type: string
+        default: main
+      version:
+        description: Candidate marketing version; empty uses the nearest version tag
+        type: string
       tag:
-        description: "Release tag to build (e.g. v0.1.2)"
-        required: true
+        description: Existing vX.Y.Z tag for signed mode
         type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag || inputs.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
-    runs-on: macos-14
-    env:
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      TAP_REPO: alex09x/homebrew-apps
-
+  source:
+    if: github.event.repository.private == false
+    runs-on: macos-26
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.metadata.outputs.sha }}
+      version: ${{ steps.metadata.outputs.version }}
+      mode: ${{ steps.metadata.outputs.mode }}
+      tag: ${{ steps.metadata.outputs.tag }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          # A manual run builds the tag it was given, not whatever branch it
-          # was dispatched from.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
-
-      - name: Check the checkout is the release tag
+          persist-credentials: false
+          ref: ${{ github.event_name == 'push' && github.ref || inputs.mode == 'signed' && format('refs/tags/{0}', inputs.tag) || inputs.ref || 'main' }}
+      - name: Resolve and validate source
+        id: metadata
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+          TAG_INPUT: ${{ inputs.tag }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$(git rev-parse "${RELEASE_TAG}^{commit}")" \
-            || { echo "checked out $(git rev-parse HEAD), not ${RELEASE_TAG}"; exit 1; }
-
-      - name: Require signing and notarization credentials
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          # A release Gatekeeper blocks on a clean Mac is worse than none:
-          # without a Developer ID and notarization nothing is published.
-          missing=""
-          for name in MACOS_CERTIFICATE APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
-            [ -n "${!name}" ] || missing="$missing $name"
-          done
-          [ -z "$missing" ] || { echo "missing secrets:$missing"; exit 1; }
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.97.1
-          targets: aarch64-apple-darwin
-
-      - name: Install the Developer ID certificate and notarization credentials
+          mode="${MODE_INPUT:-candidate}"
+          tag="$TAG_INPUT"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then mode=signed; tag="$GITHUB_REF_NAME"; fi
+          sha=$(git rev-parse HEAD)
+          if [ "$mode" = signed ]; then
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || { echo 'A version tag is required'; exit 1; }
+            test "$sha" = "$(git rev-parse "${tag}^{commit}")"
+            git merge-base --is-ancestor "$sha" origin/main
+            version="${tag#v}"
+            version="${version%%-*}"
+          else
+            # A privileged package job must not execute an arbitrary PR ref.
+            # Main ancestry or the explicitly dispatched workflow commit is trusted.
+            if [ "$sha" != "$GITHUB_SHA" ]; then git merge-base --is-ancestor "$sha" origin/main; fi
+            version="${VERSION_INPUT:-$(git describe --tags --abbrev=0 | sed 's/^v//; s/-.*//')}"
+            tag="candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Version must be X.Y.Z'; exit 1; }
+          printf 'sha=%s\nversion=%s\nmode=%s\ntag=%s\n' "$sha" "$version" "$mode" "$tag" >> "$GITHUB_OUTPUT"
+      - name: Require credentials only for signed publication
+        if: steps.metadata.outputs.mode == 'signed'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          KEYCHAIN_PWD: "ci-keychain-temp-password"
         run: |
           set -euo pipefail
-          CERT_PATH="$RUNNER_TEMP/build_cert.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          missing=''
+          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          [ -z "$missing" ] || { echo "Missing secrets:$missing. Use candidate mode and sign locally."; exit 1; }
 
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+  checks:
+    needs: source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_ref: ${{ needs.source.outputs.sha }}
 
-          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
-          echo "Imported Apple Developer certificate into CI keychain"
-          # The profile scripts/release-macapp.py submits with.
-          xcrun notarytool store-credentials tako \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
-            --keychain "$KEYCHAIN_PATH"
-          # scripts/release-macapp.py looks there, not in the default keychain.
-          echo "TAKO_NOTARY_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-
-      - name: Build Tako.app
+  package:
+    needs: [source, checks]
+    runs-on: macos-26
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      TAKO_VERSION: ${{ needs.source.outputs.version }}
+      SOURCE_SHA: ${{ needs.source.outputs.sha }}
+      RELEASE_MODE: ${{ needs.source.outputs.mode }}
+      RELEASE_TAG: ${{ needs.source.outputs.tag }}
+      RELEASE: '1'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.SOURCE_SHA }}
+      - name: Prepare compiler tools
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          export TAKO_VERSION="$version"
-          export RELEASE=1
-          export PROD_CODE_LOCAL=1
-          python3 scripts/build-macapp.py
-
-      - name: Notarize, staple and package
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          # Developer ID check, notarization and stapling of the app and the
-          # disk image, and a Gatekeeper assessment; fails on any of them.
-          python3 scripts/release-macapp.py
-          APP="target/macapp/Tako.app"
-          DMG="target/macapp/Tako-${version}.dmg"
-          ZIP="target/macapp/Tako-${version}.zip"
-          test -f "$DMG"
-          # The zip is made from the stapled app, so it opens offline too.
-          ditto -c -k --keepParent "$APP" "$ZIP"
-
-          dmg_sha="$(shasum -a 256 "$DMG" | awk '{print $1}')"
-          zip_sha="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
-          echo "TAKO_VERSION=${version}" >> "$GITHUB_ENV"
-          echo "TAKO_DMG_SHA256=${dmg_sha}" >> "$GITHUB_ENV"
-          echo "TAKO_ZIP_SHA256=${zip_sha}" >> "$GITHUB_ENV"
-          echo "DMG SHA256: ${dmg_sha}"
-          echo "ZIP SHA256: ${zip_sha}"
-
-      - name: Upload assets to GitHub Release
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          gh release upload "$RELEASE_TAG" \
-            "target/macapp/Tako-${version}.dmg" \
-            "target/macapp/Tako-${version}.zip" \
-            "target/macapp/Tako-${version}-sbom.spdx.json" \
-            "target/macapp/Tako-${version}-sbom.cdx.json" \
-            --clobber
-
-      - name: Update Homebrew Tap (if TAP_TOKEN available)
-        if: env.TAP_TOKEN != ''
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup target add aarch64-apple-darwin --toolchain 1.97.1
+          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then xcodebuild -downloadComponent MetalToolchain; fi
+      - name: Import managed signing credentials
+        if: env.RELEASE_MODE == 'signed'
         env:
-          GH_TOKEN: ${{ env.TAP_TOKEN }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           set -euo pipefail
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          gh auth setup-git
-          rm -rf tap
-          gh repo clone "$TAP_REPO" tap
-
-          default_branch="$(gh repo view "$TAP_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-          git -C tap checkout "$default_branch"
-          mkdir -p tap/Casks
-
+          umask 077
+          certificate="$RUNNER_TEMP/tako-certificate.p12"
+          keychain="$RUNNER_TEMP/tako-signing.keychain-db"
+          password=$(openssl rand -base64 32)
+          echo "::add-mask::$password"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -P "$MACOS_CERTIFICATE_PWD" -t cert -f pkcs12 -k "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          xcrun notarytool store-credentials tako --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --keychain "$keychain"
+          echo "TAKO_NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Compile candidate
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_MODE" = candidate ]; then export TAKO_CODESIGN_IDENTITY=-; fi
+          python3 scripts/build-macapp.py
+      - name: Package an unsigned private candidate
+        if: env.RELEASE_MODE == 'candidate'
+        run: |
+          set -euo pipefail
+          archive="target/macapp/Tako-${TAKO_VERSION}-unsigned.zip"
+          ditto -c -k --keepParent target/macapp/Tako.app "$archive"
           python3 - <<'PY'
-          import os
+          import hashlib, json, os, plistlib
           from pathlib import Path
-
-          template = Path("packaging/homebrew/tako.rb.in").read_text()
-          rendered = template.replace("@@TAKO_VERSION@@", os.environ["TAKO_VERSION"])
-          rendered = rendered.replace("@@TAKO_DMG_SHA256@@", os.environ["TAKO_DMG_SHA256"])
-
-          target = Path("tap/Casks/tako.rb")
-          target.write_text(rendered)
-          print(f"Updated {target} to version {os.environ['TAKO_VERSION']}")
+          root = Path('target/macapp')
+          app = root / 'Tako.app'
+          info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+          archive = root / f"Tako-{info['CFBundleShortVersionString']}-unsigned.zip"
+          data = {'source_sha': os.environ['SOURCE_SHA'], 'version': info['CFBundleShortVersionString'],
+                  'build': info['CFBundleVersion'], 'archive': archive.name,
+                  'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'distribution_signed': False,
+                  'run_url': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"}
+          (root / 'candidate.json').write_text(json.dumps(data, indent=2) + '\n')
+          (root / 'SHA256SUMS').write_text(f"{data['sha256']}  {archive.name}\n")
           PY
-
-          git -C tap add Casks/tako.rb
-          if git -C tap diff --cached --quiet; then
-            echo "Cask already up to date"
-            exit 0
+      - name: Notarize signed distribution
+        if: env.RELEASE_MODE == 'signed'
+        run: python3 scripts/release-macapp.py
+      - name: Upload candidate to a draft release
+        if: env.RELEASE_MODE == 'candidate'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" --draft --prerelease --target "$SOURCE_SHA" \
+            --title "Unsigned candidate ${TAKO_VERSION} (${SOURCE_SHA:0:8})" \
+            --notes "CI candidate only. Source: $SOURCE_SHA. Download, verify candidate.json/SHA256SUMS, then use scripts/sign-macapp.py --notarize locally. Not ready for public distribution."
+          gh release upload "$RELEASE_TAG" "target/macapp/Tako-${TAKO_VERSION}-unsigned.zip" \
+            target/macapp/candidate.json target/macapp/SHA256SUMS
+          echo "Candidate draft: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish only notarized assets
+        if: env.RELEASE_MODE == 'signed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release.json" 2>/dev/null; then
+            test "$(jq -r .isDraft "$RUNNER_TEMP/release.json")" = true || { echo 'Refusing to overwrite a published release'; exit 1; }
+          else
+            prerelease=()
+            [[ "$RELEASE_TAG" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$RELEASE_TAG" --draft "${prerelease[@]}" --target "$SOURCE_SHA" --title "Tako $RELEASE_TAG" --generate-notes
           fi
-          git -C tap commit -m "feat(cask): update Tako to ${RELEASE_TAG}"
-          git -C tap push origin "$default_branch"
-          echo "Pushed updated Cask to ${TAP_REPO}"
+          gh release upload "$RELEASE_TAG" target/macapp/Tako-"$TAKO_VERSION".{dmg,zip} \
+            target/macapp/Tako-"$TAKO_VERSION"-sbom.{spdx,cdx}.json --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
+      - name: Update optional Homebrew tap after signed publication
+        if: env.RELEASE_MODE == 'signed' && !contains(env.RELEASE_TAG, '-')
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "$GH_TOKEN" ] || { echo 'No tap token configured; release is published, tap unchanged.'; exit 0; }
+          gh auth setup-git
+          gh repo clone alex09x/homebrew-apps tap
+          git -C tap config user.name github-actions\[bot\]
+          git -C tap config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          version = os.environ['TAKO_VERSION']
+          digest = hashlib.sha256(Path(f'target/macapp/Tako-{version}.dmg').read_bytes()).hexdigest()
+          template = Path('packaging/homebrew/tako.rb.in').read_text()
+          target = Path('tap/Casks/tako.rb')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(template.replace('@@TAKO_VERSION@@', version).replace('@@TAKO_DMG_SHA256@@', digest))
+          PY
+          git -C tap add Casks/tako.rb
+          git -C tap diff --cached --quiet && exit 0
+          git -C tap commit -m "Update Tako to $RELEASE_TAG"
+          git -C tap push
+      - name: Remove ephemeral signing material
+        if: always()
+        run: |
+          keychain="$RUNNER_TEMP/tako-signing.keychain-db"
+          if [ -f "$keychain" ]; then security delete-keychain "$keychain"; fi
+          rm -f "$RUNNER_TEMP/tako-certificate.p12"

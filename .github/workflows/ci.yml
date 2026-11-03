@@ -42,7 +42,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        stage: [engine-tests, cli-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests]
+        stage: [engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests]
     env:
       CARGO_BUILD_JOBS: "2"
       RUST_TEST_THREADS: "2"
@@ -54,7 +54,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ inputs.source_ref || github.ref }}
           persist-credentials: false
@@ -73,10 +73,10 @@ jobs:
           cargo --version
 
       - name: Prepare Metal compiler for Apple targets
-        if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' }}
+        if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
         run: |
           set -euo pipefail
-          if ! xcrun --find metal; then
+          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
             echo 'Metal compiler missing; installing the Xcode component'
             xcodebuild -downloadComponent MetalToolchain
           fi
@@ -91,12 +91,11 @@ jobs:
           xcodegen --version
           xcrun simctl list devices available
 
-      - name: Enable macOS UI automation
+      - name: Inspect macOS UI automation
         if: ${{ matrix.stage == 'macos-ui-tests' }}
         run: |
           set -euo pipefail
-          sudo /usr/sbin/DevToolsSecurity -enable
-          sudo /usr/bin/automationmodetool enable-automation-without-authentication
+          sudo /usr/sbin/DevToolsSecurity --enable
           /usr/bin/automationmodetool status
 
       - name: Run full test-only stage locally

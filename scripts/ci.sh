@@ -15,7 +15,7 @@
 #   scripts/ci.sh --local swift-tests
 #
 # Test-only stages (no coverage or clippy gate): engine-tests, cli-tests,
-# swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests. They retain full
+# python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests. They retain full
 # logs under target/ci-logs, reject empty runs, and show hardware skips.
 # They do not replace the full LAN gates or produce release artifacts.
 #
@@ -83,6 +83,11 @@ SH
         cli-tests)
             ci_logged "$stage" cargo test --locked --manifest-path takoctl/Cargo.toml -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
+            ;;
+        python-tests)
+            ci_logged "$stage" python3 -m unittest discover -s scripts -p 'test_*.py' -v
+            ci_require "$stage" '^Ran [1-9][0-9]* tests? in '
+            ci_require "$stage" '^OK'
             ;;
         swift-tests)
             # Explicitly refresh the host slice and bindings before SwiftPM
@@ -180,7 +185,7 @@ script=$'set -euo pipefail\n'
 script+="$(declare -f ci_logged ci_require ci_test_stage)"
 for stage in "${stages[@]}"; do
     case "$stage" in
-        engine-tests|cli-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests)
+        engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests)
             script+=$'\n'
             script+="ci_test_stage $stage" ;;
         rust) script+="
@@ -216,7 +221,7 @@ echo '== persist'
         uitest) script+="
 echo '== uitest'
 ./scripts/uitest.sh --local" ;;
-        *) echo "unknown stage: $stage (rust, cli, swift, apps, persist, uitest; engine-tests, cli-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests)" >&2; exit 2 ;;
+        *) echo "unknown stage: $stage (rust, cli, swift, apps, persist, uitest; engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests)" >&2; exit 2 ;;
     esac
 done
 

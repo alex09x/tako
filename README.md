@@ -113,6 +113,9 @@ Run the checks affected by a change on your configured test Mac:
 `TAKO_MAC` selects the test host. `scripts/ci.sh` is the explicit full
 multi-stage release gate; it is separate from these targeted checks.
 
+GitHub Mac CI and candidate/signing workflows are documented in
+[CI and release delivery](docs/ci-and-releases.md).
+
 Tako ships with an end-to-end integration test runner that exercises real macOS events, PTY streams, and Metal presentation callbacks:
 
 ```bash
