@@ -118,7 +118,8 @@ def run(command, idle_timeout, directory):
         if proc.poll() is None:
             proc.send_signal(number)
 
-    previous = {number: signal.signal(number, relay) for number in (signal.SIGINT, signal.SIGTERM)}
+    previous = {number: signal.signal(number, relay)
+                for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(proc.stdout, selectors.EVENT_READ)

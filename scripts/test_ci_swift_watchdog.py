@@ -8,7 +8,9 @@
 import os
 from pathlib import Path
 import runpy
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -79,6 +81,36 @@ class SwiftWatchdogTests(unittest.TestCase):
                 capture_output=True, text=True, timeout=10)
             self.assertEqual((Path(directory) / "swift-test-123.txt").read_text(),
                              "owned xcodebuild stack\n")
+
+    def test_sighup_cancels_and_reaps_the_separately_sessioned_child(self):
+        with tempfile.TemporaryDirectory(prefix="tako-watchdog-hup-") as directory:
+            pid_file = Path(directory) / "child.pid"
+            code = ("import os,sys,time; from pathlib import Path; "
+                    "Path(sys.argv[1]).write_text(str(os.getpid())); "
+                    "print(\"Test Suite 'All tests' started\", flush=True); time.sleep(20)")
+            proc = subprocess.Popen(
+                [sys.executable, str(WATCHDOG), "--idle-timeout", "5", "--diagnostics-dir", directory,
+                 "--", sys.executable, "-c", code, str(pid_file)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            child_pid = None
+            try:
+                self.assertTrue(select.select([proc.stdout], [], [], 5)[0], "runtime never started")
+                self.assertIn("Test Suite 'All tests' started", proc.stdout.readline())
+                child_pid = int(pid_file.read_text())
+                proc.send_signal(signal.SIGHUP)
+                output, errors = proc.communicate(timeout=8)
+                self.assertEqual(proc.returncode, 129, output + errors)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child_pid, 0)
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+                    proc.communicate(timeout=8)
+                if child_pid is not None:
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
 
 if __name__ == "__main__":
