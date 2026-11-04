@@ -479,7 +479,13 @@ let scenarios: [Scenario] = [
     }),
     ("upgrade-crash", "a layout AppKit saved survives a crash right after the first launch that keeps a journal", { d in
         defer { d.quit(); forgetLayout(d) }
-        try crashLayoutSetup(d)
+        // A legacy AppKit archive must contain every window. Hidden custom
+        // tabs belong to the journal and are not all saved by AppKit.
+        try crashLayoutSetup(d, separateWindows: true)
+        let before = try crashLayoutCount(d, "before-upgrade")
+        guard before.windows == 2, before.tabs == 2, before.panes == 3 else {
+            throw Failure("the AppKit migration fixture was incomplete: \(before)")
+        }
         try d.quitNormally()
         // As before the journal existed: only AppKit's saved state.
         let bundle = Bundle(url: d.appURL)?.bundleIdentifier ?? "com.tako-core.terminal"
@@ -868,13 +874,22 @@ let scenarios: [Scenario] = [
             // The panel keeps the last query; replace it.
             d.key(Key.a, .maskCommand)
             try d.type(marker)
-            guard d.wait(for: { d.staticTexts().contains { $0.contains(marker) } }, timeout: 5) else {
-                throw Failure("the match was never listed: \(d.staticTexts())")
+            // Rows from a shorter query remain visible during the debounce.
+            // Require completion for the full field value before choosing a hit.
+            guard d.wait(for: {
+                let texts = d.staticTexts()
+                return d.textFields().contains(marker)
+                    && texts.contains { $0.contains(marker) }
+                    && texts.contains { $0.range(of: #"^\d+ match(?:es)?(?: shown;.*)?$"#,
+                                                 options: .regularExpression) != nil }
+            }, timeout: 5) else {
+                throw Failure("the current query never finished: fields=\(d.textFields()), texts=\(d.staticTexts())")
             }
+            let beforeReturn = d.debugFocusState()
             d.key(Key.returnKey)
             // Tab A in front: its screen holds the marker.
             guard d.wait(for: { d.screenText().contains(marker) }, timeout: 5) else {
-                throw Failure("Return did not bring the tab with the match forward")
+                throw Failure("Return did not bring the tab with the match forward; before: \(beforeReturn); after: \(d.debugFocusState()); fields: \(d.textFields()); texts: \(d.staticTexts()); screen: [\(d.screenText().suffix(500))]")
             }
             FileManager.default.createFile(atPath: witness, contents: Data())
 
@@ -3810,16 +3825,44 @@ let scenarios: [Scenario] = [
         }
     }),
     ("workspace-journey", "dragging window, creating tabs, mouse-switching tabs, and switching workspaces work end-to-end", { d in
+        // Keep the titlebars in a deterministic part of the test display.
+        // Cascaded windows can otherwise put real clicks under system panels.
+        // Leave room for the unchanged 52pt downward drag and 500pt height.
+        let display = CGDisplayBounds(CGMainDisplayID())
+        let fixtureOrigin = CGPoint(x: display.minX + 100,
+                                    y: max(display.minY + 100, display.maxY - 580))
+        func placeFixtureWindow(_ window: AXUIElement) throws {
+            var origin = fixtureOrigin
+            guard let value = AXValueCreate(.cgPoint, &origin),
+                  AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success,
+                  d.windowFrame(window)?.origin == fixtureOrigin else {
+                throw Failure("could not position the workspace fixture window at \(fixtureOrigin)")
+            }
+        }
         func clickWorkspaceItem(_ title: String) throws {
             guard d.wait(for: { d.openMenuItem(titled: title) != nil }, timeout: 5),
                   let item = d.openMenuItem(titled: title),
                   let position: AXValue = d.attribute(item, kAXPositionAttribute),
                   let size: AXValue = d.attribute(item, kAXSizeAttribute) else {
+                if ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" {
+                    let items = d.descendants(of: d.axApp, role: kAXMenuItemRole as String)
+                    for candidate in items where (d.attribute(candidate, kAXTitleAttribute) as String?)?.contains(title) == true {
+                        d.traceClick(at: CGEvent(source: nil)?.location ?? .zero,
+                                     expected: d.activeWindow(), target: candidate)
+                    }
+                    print("workspace menu failure: \(d.debugFocusState()); windows=\(d.windows().map { String(describing: d.windowID(for: $0)) })")
+                }
                 throw Failure("workspace item '\(title)' has no visible frame")
             }
             var origin = CGPoint.zero, extent = CGSize.zero
             AXValueGetValue(position, .cgPoint, &origin)
             AXValueGetValue(size, .cgSize, &extent)
+            if ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" {
+                let again = d.openMenuItem(titled: title)
+                print("workspace menu token stable: \(again.map { CFEqual(item, $0) } ?? false)")
+                d.traceClick(at: CGPoint(x: origin.x + extent.width / 2, y: origin.y + extent.height / 2),
+                             expected: item, target: item)
+            }
             try d.click(at: CGPoint(x: origin.x + extent.width / 2, y: origin.y + extent.height / 2))
         }
         // Clean start with pill style config
@@ -3829,7 +3872,7 @@ let scenarios: [Scenario] = [
             try? FileManager.default.removeItem(at: wsDir)
         }
         try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\ntab-style = pill\n")
-        d.setPosition(CGPoint(x: 100, y: 100))
+        d.setPosition(fixtureOrigin)
         d.setSize(CGSize(width: 800, height: 500))
         d.focus()
         usleep(1_000_000)
@@ -3920,6 +3963,7 @@ let scenarios: [Scenario] = [
               let win2Id = d.windowID(for: win2Element) else {
             throw Failure("could not identify active on-screen window after Cmd+N in Workspace A")
         }
+        try placeFixtureWindow(win2Element)
         try d.run("tty > \(d.path("ws1_win2_created.txt"))")
         let ws1_win2 = try d.file("ws1_win2_created.txt").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ws1_win2.isEmpty, ws1_win2 != ws1_tab0, ws1_win2 != ws1_tab1 else {
@@ -3990,6 +4034,10 @@ let scenarios: [Scenario] = [
         // 8. Test window dragging on Workspace 2 window by its titlebar
         // Reserve an empty part of the strip regardless of saved window size.
         d.setSize(CGSize(width: 800, height: 500))
+        guard let wsBWindow = d.activeOnScreenWindow() else {
+            throw Failure("no active Workspace 2 fixture window")
+        }
+        try placeFixtureWindow(wsBWindow)
         guard let preDragF2 = d.windowFrame() else {
             throw Failure("no window frame before dragging Workspace 2 window")
         }
@@ -4025,7 +4073,10 @@ let scenarios: [Scenario] = [
         try d.run("tty > \(d.path("ws2_tab0_switched.txt"))")
         let ws2_tab0_switched = try d.file("ws2_tab0_switched.txt").trimmingCharacters(in: .whitespacesAndNewlines)
         guard ws2_tab0_switched == ws2_tab0 else {
-            throw Failure("mouse click on Workspace 2 Tab 0 failed to route input (got: \(ws2_tab0_switched), expected: \(ws2_tab0))")
+            let workspaces = (try? d.workspaceList()) ?? []
+            let transitions = (try? d.tabTransitions()) ?? []
+            let selected: NSNumber? = d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) }
+            throw Failure("mouse click on Workspace 2 Tab 0 failed to route input (got: \(ws2_tab0_switched), expected: \(ws2_tab0), tab1: \(ws2_tab1)); tab0 selected: \(String(describing: selected)); focus: \(d.debugFocusState()); workspaces: \(workspaces); transitions: \(transitions)")
         }
 
         try d.clickTab(index: 1)
@@ -4178,10 +4229,9 @@ let scenarios: [Scenario] = [
         guard d.topmostOwner(at: tab0Point) == d.pid, d.topmostOwner(at: tab1Point) == d.pid else {
             throw Failure("rapid tab points are not both owned by Tako")
         }
-        let firstClick = try d.postPreparedClick(click0)
-        let gapStarted = ProcessInfo.processInfo.systemUptime
-        usleep(40_000) // 40ms: within the callback window (<150ms)
-        let gapEnded = ProcessInfo.processInfo.systemUptime
+        // Each click still has its move/down/up cadence. Additional settling
+        // after release oversleeps on hosted VMs and can miss the race entirely.
+        let firstClick = try d.postPreparedClick(click0, settleAfterRelease: false)
         let secondClick = try d.postPreparedClick(click1)
         let tTab0 = firstClick.downPosted
         let tTab1 = secondClick.downPosted
@@ -4190,7 +4240,8 @@ let scenarios: [Scenario] = [
         // the unchanged down-to-down race and retain the live owner checks.
         print(String(format: "rapid tab dispatch %.3fms: release %.3f, trailing %.3f, gap %.3f, owner %.3f, move %.3f, press %.3f",
                      tabDispatchIntervalMs, (firstClick.upPosted - tTab0) * 1000,
-                     (firstClick.returned - firstClick.upPosted) * 1000, (gapEnded - gapStarted) * 1000,
+                     (firstClick.returned - firstClick.upPosted) * 1000,
+                     (secondClick.ownerStarted - firstClick.returned) * 1000,
                      (secondClick.ownerChecked - secondClick.ownerStarted) * 1000,
                      (secondClick.movePosted - secondClick.ownerChecked) * 1000,
                      (secondClick.downPosted - secondClick.movePosted) * 1000))
@@ -4805,9 +4856,9 @@ struct TakoE2E {
     }
 }
 
-/// Two tabs, three panes, made through takoctl, then left long enough to be
-/// recorded.
-func crashLayoutSetup(_ d: Driver) throws {
+/// Two tabs, three panes. The migration fixture uses separate visible
+/// windows so AppKit can archive the whole layout without a journal.
+func crashLayoutSetup(_ d: Driver, separateWindows: Bool = false) throws {
     d.quit()
     forgetLayout(d)
     try d.launch(config: "window-save-state = always\n")
@@ -4827,13 +4878,14 @@ func crashLayoutSetup(_ d: Driver) throws {
     let out = d.work.path
     try """
     takoctl split right > /dev/null || exit 1
-    takoctl tab-new --no-select > /dev/null || exit 1
+    \(separateWindows ? "" : "takoctl tab-new --no-select > /dev/null || exit 1")
     echo done > \(out)/made
     """.write(toFile: d.path("make.sh"), atomically: true, encoding: .utf8)
     try d.run("sh \(d.path("make.sh"))")
     guard (try? d.file("made", timeout: 15)) != nil else {
         throw Failure("the layout was not made; screen: [\(d.screenText().suffix(600))]")
     }
+    if separateWindows { d.key(Key.n, .maskCommand) }
     usleep(2_000_000)
 }
 

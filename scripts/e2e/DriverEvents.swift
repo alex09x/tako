@@ -141,6 +141,32 @@ extension Driver {
         return dispatchTime
     }
 
+    /// Read-only ownership and AX diagnostics; never inspect another app's content.
+    func traceClick(at point: CGPoint, expected: AXUIElement?, target: AXUIElement?) {
+        guard ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" else { return }
+        func describe(_ element: AXUIElement?) -> String {
+            guard let element else { return "nil" }
+            var owner: pid_t = 0
+            let ownerStatus = AXUIElementGetPid(element, &owner)
+            guard ownerStatus == .success, owner == pid else {
+                return "owner=\(owner), status=\(ownerStatus.rawValue)"
+            }
+            let values = [kAXRoleAttribute, "AXIdentifier", kAXPositionAttribute, kAXSizeAttribute,
+                          kAXValueAttribute].map { name -> String in
+                var value: CFTypeRef?
+                let status = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+                return "\(name)=\(String(describing: value)) [\(status.rawValue)]"
+            }
+            return "window=\(String(describing: windowID(for: element))), " + values.joined(separator: ", ")
+        }
+        var hit: AXUIElement?
+        let status = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(),
+                                                    Float(point.x), Float(point.y), &hit)
+        let main: AXUIElement? = attribute(axApp, kAXMainWindowAttribute)
+        let focused: AXUIElement? = attribute(axApp, kAXFocusedWindowAttribute)
+        print("click diagnostic: point=\(point), cursor=\(String(describing: CGEvent(source: nil)?.location)), expected=\(String(describing: expected.flatMap { windowID(for: $0) })), main=\(String(describing: main.flatMap { windowID(for: $0) })), focused=\(String(describing: focused.flatMap { windowID(for: $0) })), topmost=\(topmostWindowInfo(at: point)), AXstatus=\(status.rawValue), target={\(describe(target))}, hit={\(describe(hit))}")
+    }
+
     func click(at point: CGPoint, count: Int = 1) throws {
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
@@ -149,6 +175,18 @@ extension Driver {
         }
         guard let owner = topmostOwner(at: point), owner == pid else {
             throw Failure("click at \(point) target not owned by Tako (owner \(String(describing: topmostOwner(at: point))), pid \(pid))")
+        }
+
+        // The CG owner helper filters nonzero layers belonging to other apps.
+        // A system panel can therefore cover an otherwise valid Tako target.
+        // Check the actual AX hit before posting any physical mouse event.
+        var hit: AXUIElement?
+        let hitStatus = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(),
+                                                       Float(point.x), Float(point.y), &hit)
+        var hitOwner: pid_t = 0
+        guard hitStatus == .success, let hit,
+              AXUIElementGetPid(hit, &hitOwner) == .success, hitOwner == pid else {
+            throw Failure("click at \(point) obstructed (AX status \(hitStatus.rawValue), hit owner \(hitOwner), expected \(pid)); windows: \(topmostWindowInfo(at: point))")
         }
 
         let source = CGEventSource(stateID: .combinedSessionState)
@@ -275,7 +313,9 @@ extension Driver {
         return PreparedClick(point: point, move: move, down: down, up: up)
     }
 
-    func postPreparedClick(_ click: PreparedClick) throws -> ClickDispatchTrace {
+    func postPreparedClick(
+        _ click: PreparedClick, settleAfterRelease: Bool = true
+    ) throws -> ClickDispatchTrace {
         let ownerStarted = ProcessInfo.processInfo.systemUptime
         guard topmostOwner(at: click.point) == pid else {
             let info = topmostWindowInfo(at: click.point)
@@ -295,7 +335,7 @@ extension Driver {
         click.up.timestamp = DispatchTime.now().uptimeNanoseconds
         click.up.post(tap: .cghidEventTap)
         let upPosted = ProcessInfo.processInfo.systemUptime
-        usleep(10_000)
+        if settleAfterRelease { usleep(10_000) }
         return ClickDispatchTrace(ownerStarted: ownerStarted, ownerChecked: ownerChecked,
                                   movePosted: movePosted, downPosted: downPosted, upPosted: upPosted,
                                   returned: ProcessInfo.processInfo.systemUptime)
