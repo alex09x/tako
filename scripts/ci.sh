@@ -227,7 +227,9 @@ sys.exit("FAIL: no available iPhone simulator")
                 exit 3
             fi
             result_dir=$(mktemp -d target/ci-ui.XXXXXX)
-            ci_logged "$stage" python3 scripts/gui_lock.py -- xcodebuild test \
+            ci_logged "$stage" python3 scripts/gui_lock.py -- \
+                python3 scripts/ci-swift-watchdog.py \
+                --diagnostics-dir target/ci-logs/mac-ui-stall -- xcodebuild test \
                 -project macos_uitests/TakoUITests.xcodeproj -scheme TakoUITests-Run \
                 -destination platform=macOS -jobs 2 -parallel-testing-enabled NO \
                 -resultBundlePath "$result_dir/tests.xcresult"

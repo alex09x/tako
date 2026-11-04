@@ -7,10 +7,14 @@
 
 import os
 from pathlib import Path
+import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 WATCHDOG = Path(__file__).with_name("ci-swift-watchdog.py")
@@ -56,6 +60,25 @@ class SwiftWatchdogTests(unittest.TestCase):
         pid = int(next(line.split("=", 1)[1] for line in result.stdout.splitlines() if line.startswith("child-pid=")))
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
+
+    def test_xcodebuild_stall_collects_the_owned_driver_stack(self):
+        diagnose = runpy.run_path(str(WATCHDOG))["diagnose"]
+        rows = [
+            ["123", "1", "123", "S", "0", "100", "/usr/bin/xcodebuild"],
+            ["124", "123", "123", "S", "0", "100", "/bin/sh"],
+        ]
+        with tempfile.TemporaryDirectory(prefix="tako-watchdog-stack-") as directory:
+            with mock.patch.dict(diagnose.__globals__, descendants=lambda _: rows), \
+                    mock.patch.object(shutil, "which", side_effect=lambda tool:
+                                      "/usr/bin/sample" if tool == "sample" else None), \
+                    mock.patch.object(subprocess, "run", return_value=SimpleNamespace(
+                        stdout="owned xcodebuild stack\n", stderr="")) as sample:
+                diagnose(SimpleNamespace(pid=123), Path(directory))
+            sample.assert_called_once_with(
+                ["/usr/bin/sample", "123", "3", "1"],
+                capture_output=True, text=True, timeout=10)
+            self.assertEqual((Path(directory) / "swift-test-123.txt").read_text(),
+                             "owned xcodebuild stack\n")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tako — Diagnose a Swift test runner that stops making progress
+# tako — Diagnose a Swift or XCTest runner that stops making progress
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
@@ -88,7 +88,8 @@ def diagnose(proc, directory):
     if sampler:
         for row in rows:
             name = Path(row[6]).name
-            if "swiftpm-testing" not in name and "xctest" not in row[6] and not name.endswith("PackageTests"):
+            if (name != "xcodebuild" and "swiftpm-testing" not in name
+                    and "xctest" not in row[6] and not name.endswith("PackageTests")):
                 continue
             try:
                 result = subprocess.run([sampler, row[0], "3", "1"], capture_output=True, text=True, timeout=10)
