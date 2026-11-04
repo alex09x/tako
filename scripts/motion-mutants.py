@@ -151,10 +151,26 @@ MUTANTS = [
     ("row-never-pauses", "a row stands still while the sidebar is hidden", ROW,
      "                        paused: motionPaused,\n                        pulses: item.live?.pulses ?? 0,",
      "                        paused: false,\n                        pulses: item.live?.pulses ?? 0,"),
-    ("question-dim", "a waiting row asks its question in Claw", ROW,
+    ("question-dim", "a waiting row asks its question in Claw", "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowDetails.swift",
      "return (prompt, Color(nsColor: T.claw), .tail)", "return (prompt, Color(nsColor: T.dim), .tail)"),
-    ("active-bar-inside", "the active row's bar is at the sidebar's edge", ROW,
-     ".offset(x: -8)", ".offset(x: 0)"),
+    ("active-bar-visible", "an active row has no orange edge", ROW,
+     ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
+     "        .contentShape(Rectangle())\n"
+     "        .onPress(perform: onSelect)\n"
+     "        .padding(.horizontal, 8)",
+     ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
+     "        .overlay(alignment: .leading) {\n"
+     "            if isTabActive {\n"
+     "                RoundedRectangle(cornerRadius: 1)\n"
+     "                    .fill(Color(nsColor: T.ember))\n"
+     "                    .frame(width: 2)\n"
+     "                    .padding(.vertical, 8)\n"
+     "                    .offset(x: -8)\n"
+     "            }\n"
+     "        }\n"
+     "        .contentShape(Rectangle())\n"
+     "        .onPress(perform: onSelect)\n"
+     "        .padding(.horizontal, 8)"),
     ("row-progress-no-comet", "a row in progress runs the comet", ROW,
      "cometForProgress: true", "cometForProgress: false"),
     ("row-line-at-edge", "a row's progress line starts 8 pt in", ROW,

@@ -99,8 +99,8 @@ extension WalkthroughTests {
         // terminal itself. Dismiss it immediately before typing so the bytes
         // cannot land in a system dialog instead of the PTY.
         dismissSystemPrompt()
-        XCTAssertFalse(app.sheets["Save Password?"].exists,
-                       "the system password offer still covers the terminal")
+        XCTAssertTrue(app.sheets["Save Password?"].waitForNonExistence(timeout: 5),
+                      "the system password offer still covers the terminal")
         shot("06 connected")
 
         // A renderer resize is only half the contract: the process on the

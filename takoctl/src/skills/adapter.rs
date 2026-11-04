@@ -63,14 +63,16 @@ impl SkillAdapter {
         }
         #[cfg(unix)]
         {
-            if let Ok(meta) = fs::symlink_metadata(path) {
-                if meta.file_type().is_symlink() || !meta.is_file() {
-                    return false;
-                }
+            if let Ok(meta) = fs::symlink_metadata(path)
+                && (meta.file_type().is_symlink() || !meta.is_file())
+            {
+                return false;
             }
         }
         match fs::read_to_string(path) {
-            Ok(content) => content.contains("Tako Terminal Integration") || content.contains("name: tako"),
+            Ok(content) => {
+                content.contains("Tako Terminal Integration") || content.contains("name: tako")
+            }
             Err(_) => false,
         }
     }

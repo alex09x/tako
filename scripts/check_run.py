@@ -11,8 +11,8 @@
 Run through scripts/check.sh, which sends it to the test Mac. Each argument
 names one check:
 
-    rust:<name>      cargo test --test <name> for a test file or directory target,
-                     else cargo test <name> as a filter
+    rust:<name>      mitts test --test <name> for a test file or directory target,
+                     else mitts test <name> as a filter
     swift:<filter>   the Swift package's tests matching <filter>, no coverage
     e2e:<a,b,...>    those scenarios of scripts/e2e-macapp.sh on a fresh build
     selftest         the app's self-test on a fresh build
@@ -64,10 +64,10 @@ def check_rust(name):
     integration = os.path.isfile(f"tests/{name}.rs") or os.path.isfile(f"tests/{name}/main.rs")
     target = ["--test", name] if integration else [name]
     only = target if target[0] == "--test" else []
-    build, code, _ = run(["cargo", "test", "--features", "pty,ssh", "--no-run"] + only)
+    build, code, _ = run(["mitts", "test", "--features", "pty,ssh", "--no-run"] + only)
     if code != 0:
         return note(f"rust:{name}", False, "build failed", build)
-    secs, code, out = run(["cargo", "test", "--features", "pty,ssh"] + target)
+    secs, code, out = run(["mitts", "test", "--features", "pty,ssh"] + target)
     passed = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", out))
     failed_tests = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. \d+ passed; (\d+) failed", out))
     ok = code == 0 and passed > 0
@@ -79,7 +79,7 @@ def host_framework():
     """The macOS slice the Swift package links, rebuilt only when the engine changed."""
     def stale(artifact):
         # By content, not timestamps: see scripts/engine_fingerprint.py.
-        # The build scripts themselves make cargo see changed content.
+        # The build scripts themselves make Mitts see changed content.
         return subprocess.run(["python3", "scripts/engine_fingerprint.py", "check", artifact]).returncode != 0
 
     secs = 0.0

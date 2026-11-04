@@ -17,6 +17,17 @@ import QuartzCore
 extension TakoTerminalNSView {
     // MARK: - Redraw Scheduling & Display Link
 
+    /// State captured by the app self-test when waiting for a real submission.
+    var selfTestPresentationDiagnostics: String {
+        "window=\(window != nil) visible=\(window?.isVisible == true)"
+            + " occluded=\(window?.occlusionState.contains(.visible) != true) hidden=\(isHiddenOrHasHiddenAncestor)"
+            + " bounds=\(bounds.size) drawable=\(metalLayer?.drawableSize ?? .zero)"
+            + " paused=\(isPresentationPaused) link=\(displayLink != nil) linkPaused=\(displayLink?.isPaused == true)"
+            + " redraw=\(redrawPending) retry=\(presentationRetryPending) throttle=\(pendingPresentationThrottle != nil)"
+            + " synchronized=\(core.isSynchronizedOutputActive()) renderer=\(metalRenderer != nil)"
+            + " unavailable=\(metalUnavailableReason ?? "none") outcome=\(String(describing: lastFrameStatistics?.presentation))"
+    }
+
     func startDisplayLink() {
         guard displayLink == nil, window != nil else { return }
         if #available(macOS 14.0, *) {

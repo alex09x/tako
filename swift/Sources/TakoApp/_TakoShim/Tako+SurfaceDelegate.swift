@@ -95,17 +95,13 @@ extension Tako.SurfaceView {
         /// Reflow the terminal grid to match target size and notify the PTY.
         public func reflow(to targetSize: CGSize, forcePtyResize: Bool = false) {
             guard targetSize.width > 0, targetSize.height > 0 else { return }
-            if let superview = superview, superview.bounds.size != targetSize {
+            if let superview = superview, !(superview is SurfaceHostingView), superview.bounds.size != targetSize {
                 superview.setFrameSize(targetSize)
             }
             if bounds.size != targetSize {
                 setFrameSize(targetSize)
             }
-            let fitted = TerminalGridLayout(
-                viewSize: targetSize,
-                cellSize: CGSize(width: cellWidth, height: cellHeight),
-                theme: theme
-            )
+            let fitted = fittedGridLayout(for: targetSize)
             guard fitted.cols > 0, fitted.rows > 0 else { return }
             if forcePtyResize {
                 updatePtyPixelSize(cols: fitted.cols, rows: fitted.rows)

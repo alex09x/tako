@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# tako — macOS app self-tests
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # Does the built macOS app actually take input?
 #
 # The app has carried `--selftest-keys` and `--selftest-input` for a while:
@@ -9,6 +16,12 @@
 # every keystroke. This script is that gap closed: it runs both and fails.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+case "${1:-}" in
+    "") scroll_only=0 ;;
+    --scroll-only) scroll_only=1 ;;
+    *) echo "usage: $0 [--scroll-only]" >&2; exit 2 ;;
+esac
 
 APP="${APP:-${TAKO_APP_DIR:-target/macapp}/Tako.app}"
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
@@ -28,6 +41,7 @@ trap 'quit; rm -rf "$REPORTS"' EXIT
 
 fail=0
 
+if [ "$scroll_only" -eq 0 ]; then
 echo "== keys: an NSEvent must produce the bytes it stands for =="
 rm -f "$REPORTS"/tako-keytest.txt
 quit; launch --selftest-keys
@@ -71,17 +85,23 @@ else
     grep -q "^focused at launch: yes" "$REPORTS/tako-inputtest.txt" \
         || { echo "  FAIL: a new window does not give the terminal the keyboard" >&2; fail=1; }
 fi
+fi
 
 echo
 echo "== scroll: a precise delta must move the grid by a fraction of a row =="
 rm -f "$REPORTS"/tako-scrolltest.txt
 quit; launch --selftest-scroll
-for _ in $(seq 1 25); do [ -f "$REPORTS/tako-scrolltest.txt" ] && break; sleep 1; done
+for _ in $(seq 1 25); do
+    [ -f "$REPORTS/tako-scrolltest.txt" ] && grep -q '^complete$' "$REPORTS/tako-scrolltest.txt" && break
+    sleep 1
+done
 quit
 if [ ! -f "$REPORTS/tako-scrolltest.txt" ]; then
     echo "  FAIL: the app produced no report at all" >&2; fail=1
 else
     cat "$REPORTS/tako-scrolltest.txt"
+    grep -q '^complete$' "$REPORTS/tako-scrolltest.txt" \
+        || { echo "  FAIL: display checks did not complete" >&2; fail=1; }
     grep -q "^FAIL" "$REPORTS/tako-scrolltest.txt" && fail=1
     # A run that scrolled without ever handing a frame over would report every
     # position correctly and still show nothing moving.
@@ -89,6 +109,7 @@ else
         || { echo "  FAIL: no frame was handed to the display while scrolling" >&2; fail=1; }
 fi
 
+if [ "$scroll_only" -eq 0 ]; then
 echo
 echo "== frame: the pixels on screen put the grid inside its padding =="
 rm -f "$REPORTS"/tako-frametest.txt "$REPORTS"/tako-frame.png
@@ -105,6 +126,7 @@ else
         mkdir -p target && cp "$REPORTS/tako-frame.png" target/selftest-frame.png
         echo "  frame saved to target/selftest-frame.png"
     fi
+fi
 fi
 
 echo

@@ -141,6 +141,32 @@ extension Driver {
         return dispatchTime
     }
 
+    /// Read-only ownership and AX diagnostics; never inspect another app's content.
+    func traceClick(at point: CGPoint, expected: AXUIElement?, target: AXUIElement?) {
+        guard ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" else { return }
+        func describe(_ element: AXUIElement?) -> String {
+            guard let element else { return "nil" }
+            var owner: pid_t = 0
+            let ownerStatus = AXUIElementGetPid(element, &owner)
+            guard ownerStatus == .success, owner == pid else {
+                return "owner=\(owner), status=\(ownerStatus.rawValue)"
+            }
+            let values = [kAXRoleAttribute, "AXIdentifier", kAXPositionAttribute, kAXSizeAttribute,
+                          kAXValueAttribute].map { name -> String in
+                var value: CFTypeRef?
+                let status = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+                return "\(name)=\(String(describing: value)) [\(status.rawValue)]"
+            }
+            return "window=\(String(describing: windowID(for: element))), " + values.joined(separator: ", ")
+        }
+        var hit: AXUIElement?
+        let status = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(),
+                                                    Float(point.x), Float(point.y), &hit)
+        let main: AXUIElement? = attribute(axApp, kAXMainWindowAttribute)
+        let focused: AXUIElement? = attribute(axApp, kAXFocusedWindowAttribute)
+        print("click diagnostic: point=\(point), cursor=\(String(describing: CGEvent(source: nil)?.location)), expected=\(String(describing: expected.flatMap { windowID(for: $0) })), main=\(String(describing: main.flatMap { windowID(for: $0) })), focused=\(String(describing: focused.flatMap { windowID(for: $0) })), topmost=\(topmostWindowInfo(at: point)), AXstatus=\(status.rawValue), target={\(describe(target))}, hit={\(describe(hit))}")
+    }
+
     func click(at point: CGPoint, count: Int = 1) throws {
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
@@ -151,8 +177,11 @@ extension Driver {
             throw Failure("click at \(point) target not owned by Tako (owner \(String(describing: topmostOwner(at: point))), pid \(pid))")
         }
 
+        try requireAXOwnedTarget(at: point)
+
         let source = CGEventSource(stateID: .combinedSessionState)
         for i in 1...count {
+            try requireAXOwnedTarget(at: point)
             guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                      mouseCursorPosition: point, mouseButton: .left),
                   let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
@@ -167,18 +196,33 @@ extension Driver {
         }
     }
 
+    /// Window-list filtering misses some system overlays. Check the actual
+    /// input recipient before a mouse gesture or any subsequent mouse down.
+    func requireAXOwnedTarget(at point: CGPoint) throws {
+        var hit: AXUIElement?
+        let hitStatus = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(),
+                                                       Float(point.x), Float(point.y), &hit)
+        var hitOwner: pid_t = 0
+        guard hitStatus == .success, let hit,
+              AXUIElementGetPid(hit, &hitOwner) == .success, hitOwner == pid else {
+            throw Failure("mouse target \(point) obstructed (AX status \(hitStatus.rawValue), hit owner \(hitOwner), expected \(pid)); windows: \(topmostWindowInfo(at: point))")
+        }
+    }
+
     func doubleClick(at point: CGPoint) throws {
         try click(at: point, count: 2)
     }
 
     func dragMouse(from start: CGPoint, to end: CGPoint, duration: Double = 0.5,
-                   returnHome home: CGPoint? = nil) {
+                   returnHome home: CGPoint? = nil) throws {
+        try requireAXOwnedTarget(at: start)
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let moveStart = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
                                       mouseCursorPosition: start, mouseButton: .left) else { return }
         moveStart.post(tap: .cghidEventTap)
         usleep(50_000)
 
+        try requireAXOwnedTarget(at: start)
         guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                  mouseCursorPosition: start, mouseButton: .left) else { return }
         down.setIntegerValueField(.mouseEventClickState, value: 1)
@@ -213,10 +257,12 @@ extension Driver {
         guard topmostOwner(at: start) == pid else {
             throw Failure("refusing to drag from \(start): the window there is not Tako's")
         }
+        try requireAXOwnedTarget(at: start)
         let home = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
                 mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)
         usleep(40_000)
+        try requireAXOwnedTarget(at: start)
         guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                  mouseCursorPosition: start, mouseButton: .left) else { return }
         down.setIntegerValueField(.mouseEventClickState, value: 1)
@@ -245,31 +291,67 @@ extension Driver {
         }
     }
 
-    func postClick(at point: CGPoint) throws -> Double {
-        guard topmostOwner(at: point) == pid else {
-            let winInfo = topmostWindowInfo(at: point)
-            throw Failure("refusing to click at \(point): the window there is not Tako's (windows: \(winInfo))")
-        }
-        CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
-                mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-        usleep(10_000)
-        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
-                                 mouseCursorPosition: point, mouseButton: .left) else {
-            throw Failure("failed to create leftMouseDown CGEvent")
+    struct PreparedClick {
+        let point: CGPoint
+        let move: CGEvent
+        let down: CGEvent
+        let up: CGEvent
+    }
+
+    struct ClickDispatchTrace {
+        let ownerStarted: Double
+        let ownerChecked: Double
+        let movePosted: Double
+        let downPosted: Double
+        let upPosted: Double
+        let returned: Double
+    }
+
+    func prepareClick(at point: CGPoint) throws -> PreparedClick {
+        guard let move = CGEvent(mouseEventSource: source, mouseType: .mouseMoved,
+                                 mouseCursorPosition: point, mouseButton: .left),
+              let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
+                                 mouseCursorPosition: point, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
+                               mouseCursorPosition: point, mouseButton: .left) else {
+            throw Failure("failed to prepare mouse CGEvents")
         }
         down.setIntegerValueField(.mouseEventClickState, value: 1)
-        down.post(tap: .cghidEventTap)
-        let dispatchTime = ProcessInfo.processInfo.systemUptime
-
-        usleep(25_000)
-
-        guard let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
-                               mouseCursorPosition: point, mouseButton: .left) else {
-            throw Failure("failed to create leftMouseUp CGEvent")
-        }
         up.setIntegerValueField(.mouseEventClickState, value: 1)
-        up.post(tap: .cghidEventTap)
+        return PreparedClick(point: point, move: move, down: down, up: up)
+    }
+
+    func postPreparedClick(
+        _ click: PreparedClick, settleAfterRelease: Bool = true
+    ) throws -> ClickDispatchTrace {
+        let ownerStarted = ProcessInfo.processInfo.systemUptime
+        guard topmostOwner(at: click.point) == pid else {
+            let info = topmostWindowInfo(at: click.point)
+            throw Failure("refusing to click at \(click.point): the window there is not Tako's (windows: \(info))")
+        }
+        try requireAXOwnedTarget(at: click.point)
+        let ownerChecked = ProcessInfo.processInfo.systemUptime
+        // Preparation can precede delivery by a window-server round trip.
+        // Keep each event's timestamp at its real posting time.
+        click.move.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.move.post(tap: .cghidEventTap)
+        let movePosted = ProcessInfo.processInfo.systemUptime
         usleep(10_000)
-        return dispatchTime
+        try requireAXOwnedTarget(at: click.point)
+        click.down.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.down.post(tap: .cghidEventTap)
+        let downPosted = ProcessInfo.processInfo.systemUptime
+        usleep(25_000)
+        click.up.timestamp = DispatchTime.now().uptimeNanoseconds
+        click.up.post(tap: .cghidEventTap)
+        let upPosted = ProcessInfo.processInfo.systemUptime
+        if settleAfterRelease { usleep(10_000) }
+        return ClickDispatchTrace(ownerStarted: ownerStarted, ownerChecked: ownerChecked,
+                                  movePosted: movePosted, downPosted: downPosted, upPosted: upPosted,
+                                  returned: ProcessInfo.processInfo.systemUptime)
+    }
+
+    func postClick(at point: CGPoint) throws -> Double {
+        try postPreparedClick(prepareClick(at: point)).downPosted
     }
 }

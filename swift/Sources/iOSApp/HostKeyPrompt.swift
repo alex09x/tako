@@ -22,7 +22,24 @@ struct HostKeyPrompt: View {
     let presented: KnownHosts.Presented
     let onTrust: () -> Void
     let onCancel: () -> Void
+    let sleepBeforeArming: @MainActor @Sendable (Duration) async throws -> Void
     @State private var actionsArmed = false
+
+    init(
+        host: String,
+        presented: KnownHosts.Presented,
+        sleepBeforeArming: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        },
+        onTrust: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.host = host
+        self.presented = presented
+        self.sleepBeforeArming = sleepBeforeArming
+        self.onTrust = onTrust
+        self.onCancel = onCancel
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -126,7 +143,7 @@ struct HostKeyPrompt: View {
             // security feature. The delay still makes Cancel a second,
             // physically separate gesture from the Connect tap underneath.
             do {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await sleepBeforeArming(.seconds(1))
                 actionsArmed = true
             } catch {
                 // The prompt disappeared before it armed.

@@ -36,8 +36,10 @@ extension ControlServerTests {
         #expect(try server.start() == .listening)
         defer { server.stop() }
         let started = Date()
-        let answer: String = try await Task.detached {
+        let deadline = DispatchTime.now() + .seconds(9)
+        let (answer, bytesSent) = try await Task.detached {
             let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+            try #require(fd >= 0)
             defer { close(fd) }
             noSigpipe(fd)
             var address = sockaddr_un()
@@ -45,20 +47,49 @@ extension ControlServerTests {
             withUnsafeMutableBytes(of: &address.sun_path) { raw in
                 let bytes = Array(path.utf8); raw.copyBytes(from: bytes); raw[bytes.count] = 0
             }
-            _ = withUnsafePointer(to: &address) {
+            let connected = withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
-            // A byte every second: each read succeeds, the whole never ends.
-            for _ in 0..<10 {
-                var byte: UInt8 = 0x20
-                if write(fd, &byte, 1) != 1 { break }
-                sleep(1)
-            }
+            try #require(connected == 0)
+            // Keep trickling without completing the request, but observe the
+            // answer as soon as it arrives, independently of a later write failing.
+            var nextByte = DispatchTime.now()
+            var bytesSent = 0
+            var answer = Data()
             var buffer = [UInt8](repeating: 0, count: 512)
-            let n = read(fd, &buffer, buffer.count)
-            return n > 0 ? String(decoding: buffer[0..<n], as: UTF8.self) : ""
+            while DispatchTime.now() < deadline {
+                let now = DispatchTime.now()
+                let wake = min(nextByte, deadline)
+                let milliseconds = wake > now ? (wake.uptimeNanoseconds - now.uptimeNanoseconds + 999_999) / 1_000_000 : 0
+                var pending = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                let ready = poll(&pending, 1, Int32(milliseconds))
+                if ready < 0 {
+                    if errno == EINTR { continue }
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                if ready > 0 {
+                    let n = read(fd, &buffer, buffer.count)
+                    if n < 0 && errno == EINTR { continue }
+                    guard n > 0 else { break }
+                    answer.append(contentsOf: buffer[0..<n])
+                    if answer.contains(0x0A) { break }
+                } else if DispatchTime.now() < deadline {
+                    var byte: UInt8 = 0x20
+                    if write(fd, &byte, 1) == 1 {
+                        bytesSent += 1
+                        nextByte = bytesSent < 10 ? .now() + .seconds(1) : deadline
+                    } else {
+                        // A closed write side does not mean there is no answer to read.
+                        nextByte = deadline
+                    }
+                }
+            }
+            return (answer, bytesSent)
         }.value
-        #expect(answer.contains("\"timeout\""))
+        #expect(bytesSent > 1)
+        let expected = ControlResponse.failure(ControlError(.timeout,
+            "no complete request within \(Int(ControlServer.readTimeout)) s")).encoded()
+        #expect(answer == expected)
         #expect(Date().timeIntervalSince(started) < 9)
     }
 

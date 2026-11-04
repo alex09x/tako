@@ -185,21 +185,22 @@ extension TerminalController {
         confirmUndo: Bool = true,
         inheritBackgroundOpacity: Bool? = nil
     ) -> TerminalController {
+        // Mounting the same live views in the new controller changes their
+        // bounds. Capture their terminal area before attaching the window.
+        let treeSize = tree.root?.viewBounds()
         let c = TerminalController.init(tako, withSurfaceTree: tree)
         Self.system.attachWindow(c)
         if let inheritBackgroundOpacity {
             c.isBackgroundOpaque = inheritBackgroundOpacity
         }
 
-        // Calculate the target frame based on the tree's view bounds
-        let treeSize: CGSize? = tree.root?.viewBounds()
-
         c.scheduleInitialPresentation {
             c.showWindow(self)
             if let window = c.window {
                 // If we have a tree size, resize the window's content to match
-                if let treeSize, treeSize.width > 0, treeSize.height > 0 {
-                    window.setContentSize(treeSize)
+                if !c.didApplyInitialWindowSize, let treeSize, treeSize.width > 0, treeSize.height > 0 {
+                    window.setContentSize(NSSize(width: treeSize.width,
+                        height: treeSize.height + Tako.TabBarController.barHeight))
                     window.constrainToScreen()
                 }
 
@@ -326,13 +327,13 @@ extension TerminalController {
 
         case "current": fallthrough
         default:
-            if let currentIdx = group.visibleWindows.firstIndex(of: parent) {
+            let store = WorkspaceStore.shared
+            // A departing parent has no active rank; insert below uses the full group, including hidden tabs.
+            let workspaceIndex = store.rank(ofTab: parent.stableTabIdentifier, in: store.activeWorkspaceId).map { $0 + 1 }
+            store.assignTab(tabIdentifier: window.stableTabIdentifier, to: store.activeWorkspaceId, at: workspaceIndex)
+            if let currentIdx = group.windows.firstIndex(of: parent) {
                 Tako.CustomTabGroup.insert(window, into: parent, at: currentIdx + 1, select: select)
             } else {
-                WorkspaceStore.shared.assignTab(
-                    tabIdentifier: window.stableTabIdentifier,
-                    to: WorkspaceStore.shared.activeWorkspaceId
-                )
                 Tako.CustomTabGroup.join(window, to: parent, select: select)
             }
         }

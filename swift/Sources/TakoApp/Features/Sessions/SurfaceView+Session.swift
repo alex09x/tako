@@ -255,11 +255,16 @@ extension Tako.SurfaceView {
             sessionNotice("This terminal's session record cannot be written (\(error)). Nothing was started. Press Return to try again.")
             return
         }
+        let shellPlan = PTY.shellLaunchPlan(
+            config: owningApp?.config,
+            environment: ProcessInfo.processInfo.environment.merging(session.environment) { _, new in new })
+        let shellEnvironment = session.environment.merging(
+            Dictionary(shellPlan.environment, uniquingKeysWith: { _, new in new })) { _, new in new }
         startProcess(
             workingDir: workingDir,
             program: [guardedRuntime.path] + RuntimeCommand.createOnlyWithGenerationArguments(
-                name: session.name, generation: session.record.generation, command: [PTY.loginShell, "-l"]),
-            environment: session.environment,
+                name: session.name, generation: session.record.generation, command: shellPlan.arguments),
+            environment: shellEnvironment,
             removing: SessionNamespace.inheritedVariablesToDrop,
             sessionPreamble: session.name)
         reflowToCurrentBounds(forcePtyResize: true)

@@ -17,11 +17,16 @@ pub fn overlay_report(result: &Value) -> String {
         let mut out = String::new();
         if let Some(fields) = result.get("fields").and_then(Value::as_object) {
             let order: Vec<String> = match result.get("order").and_then(Value::as_array) {
-                Some(names) => names.iter().filter_map(|n| n.as_str().map(str::to_string)).collect(),
+                Some(names) => names
+                    .iter()
+                    .filter_map(|n| n.as_str().map(str::to_string))
+                    .collect(),
                 None => fields.keys().cloned().collect(),
             };
             for name in &order {
-                let Some(value) = fields.get(name) else { continue };
+                let Some(value) = fields.get(name) else {
+                    continue;
+                };
                 match value {
                     Value::Array(values) => {
                         for v in values {
@@ -77,7 +82,6 @@ pub fn overlay_report(result: &Value) -> String {
     format!("{result}\n")
 }
 
-
 pub fn session_report(result: &Value) -> String {
     if result.get("exported") == Some(&Value::Bool(true)) {
         let path = result["path"].as_str().unwrap_or("");
@@ -130,7 +134,6 @@ pub fn session_report(result: &Value) -> String {
     format!("{result}\n")
 }
 
-
 pub fn resume_report(result: &Value) -> String {
     if result["cleared"].as_bool() == Some(true) {
         return format!(
@@ -172,10 +175,8 @@ pub fn resume_report(result: &Value) -> String {
     if let Some(cwd) = result["cwd"].as_str() {
         out += &format!("Directory: {}\n", cwd);
     }
-    if let Some(is_imported) = result["is_imported"].as_bool() {
-        if is_imported {
-            out += "Imported: yes (untrusted, auto-run disabled)\n";
-        }
+    if let Some(true) = result["is_imported"].as_bool() {
+        out += "Imported: yes (untrusted, auto-run disabled)\n";
     }
     if let Some(approved) = result["approved"].as_bool() {
         out += &format!(
@@ -188,7 +189,6 @@ pub fn resume_report(result: &Value) -> String {
     }
     out
 }
-
 
 pub fn action_report(result: &Value) -> String {
     if let Some(actions) = result.get("actions").and_then(Value::as_array) {
@@ -247,7 +247,6 @@ pub fn action_report(result: &Value) -> String {
     }
     format!("{result}\n")
 }
-
 
 pub fn task_report(result: &Value) -> String {
     if let Some(tasks) = result.get("tasks").and_then(Value::as_array) {
@@ -320,88 +319,3 @@ pub fn task_report(result: &Value) -> String {
     }
     format!("{result}\n")
 }
-
-
-pub fn workspace_report(result: &Value) -> String {
-    if let Some(workspaces) = result.get("workspaces").and_then(Value::as_array) {
-        let mut out = String::new();
-        for ws in workspaces {
-            let active = if ws["is_active"].as_bool() == Some(true) {
-                "* "
-            } else {
-                "  "
-            };
-            let name = ws["name"].as_str().unwrap_or("");
-            let tabs_count = ws["tabs"].as_array().map_or(0, |a| a.len());
-            let attention = ws["attention_count"].as_f64().unwrap_or(0.0) as u64;
-            let mut line = format!("{active}{name} ({tabs_count} tabs)");
-            if attention > 0 {
-                line += &format!(" [{attention} unread]");
-            }
-            if let Some(root) = ws["root_directory"].as_str() {
-                line += &format!("  {root}");
-            }
-            line.push('\n');
-            out += &line;
-        }
-        return out;
-    }
-    if let Some(name) = result.get("name").and_then(Value::as_str) {
-        if result.get("tabs").is_some() {
-            let tabs_count = result["tabs"].as_array().map_or(0, |a| a.len());
-            let attention = result["attention_count"].as_f64().unwrap_or(0.0) as u64;
-            let mut line = format!("{name} ({tabs_count} tabs)");
-            if attention > 0 {
-                line += &format!(" [{attention} unread]");
-            }
-            if let Some(root) = result["root_directory"].as_str() {
-                line += &format!("  {root}");
-            }
-            line.push('\n');
-            return line;
-        }
-        return format!("{name}\n");
-    }
-    if let Some(deleted) = result.get("deleted").and_then(Value::as_str) {
-        return format!("deleted {deleted}\n");
-    }
-    if let Some(tab) = result.get("tab").and_then(Value::as_str) {
-        let ws = result["workspace"].as_str().unwrap_or("");
-        return format!("assigned {tab} to {ws}\n");
-    }
-    if let Some(transitions) = result.get("transitions").and_then(Value::as_array) {
-        let mut out = String::new();
-        for t in transitions {
-            let seq = t["sequence"].as_i64().unwrap_or(0);
-            let from = t["from_id"].as_str().unwrap_or("?");
-            let to = t["to_id"].as_str().unwrap_or("?");
-            let ts = t["timestamp"].as_f64().unwrap_or(0.0);
-            if seq > 0 {
-                out += &format!("#{seq} {ts:.3}: {from} -> {to}\n");
-            } else {
-                out += &format!("{ts:.3}: {from} -> {to}\n");
-            }
-        }
-        if let Some(tab_transitions) = result.get("tab_transitions").and_then(Value::as_array) {
-            if !tab_transitions.is_empty() {
-                out += "Tab transitions:\n";
-                for t in tab_transitions {
-                    let seq = t["sequence"].as_i64().unwrap_or(0);
-                    let ws = t["workspace_id"].as_str().unwrap_or("?");
-                    let from = t["from_id"].as_str().unwrap_or("?");
-                    let to = t["to_id"].as_str().unwrap_or("?");
-                    let ts = t["timestamp"].as_f64().unwrap_or(0.0);
-                    if seq > 0 {
-                        out += &format!("  #{seq} {ts:.3} [{ws}]: {from} -> {to}\n");
-                    } else {
-                        out += &format!("  {ts:.3} [{ws}]: {from} -> {to}\n");
-                    }
-                }
-            }
-        }
-        return out;
-    }
-    format!("{result}\n")
-}
-
-

@@ -77,21 +77,21 @@ pub fn parse(
                     if !positional.is_empty() && !args.contains_key("file") {
                         args.insert("file".into(), Value::String(positional.remove(0)));
                     }
-                    if !positional.is_empty() && !args.contains_key("line") {
-                        if let Ok(line_num) = positional[0].parse::<u64>() {
-                            positional.remove(0);
-                            args.insert("line".into(), Value::from(line_num));
-                        }
+                    if !positional.is_empty()
+                        && !args.contains_key("line")
+                        && let Ok(line_num) = positional[0].parse::<u64>()
+                    {
+                        positional.remove(0);
+                        args.insert("line".into(), Value::from(line_num));
                     }
                     if !positional.is_empty() {
-                        let comment_text =
-                            positional.drain(..).collect::<Vec<_>>().join(" ");
+                        let comment_text = positional.join(" ");
+                        positional.clear();
                         args.insert("text".into(), Value::String(comment_text));
                     }
                     if !args.contains_key("file") {
                         return Err(
-                            "review comment add requires a file (--file or positional)"
-                                .into(),
+                            "review comment add requires a file (--file or positional)".into()
                         );
                     }
                     if !args.contains_key("text") {
@@ -105,10 +105,7 @@ pub fn parse(
                 }
                 "remove" => {
                     if !positional.is_empty() {
-                        args.insert(
-                            "comment_id".into(),
-                            Value::String(positional.remove(0)),
-                        );
+                        args.insert("comment_id".into(), Value::String(positional.remove(0)));
                     }
                     if !args.contains_key("comment_id") {
                         return Err("review comment remove requires a comment ID".into());

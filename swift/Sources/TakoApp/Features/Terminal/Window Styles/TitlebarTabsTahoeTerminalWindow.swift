@@ -40,12 +40,9 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
         // the titlebar which have their own title.
         titleVisibility = .hidden
 
-        // Create a toolbar
-        let toolbar = NSToolbar(identifier: "TerminalToolbar")
-        toolbar.delegate = self
-        toolbar.centeredItemIdentifiers.insert(.title)
-        self.toolbar = toolbar
-        toolbarStyle = .unifiedCompact
+        // Tako draws the strip inside the full-size content view. A native
+        // toolbar creates an opaque titlebar layer above it on macOS 26.
+        toolbar = nil
     }
     // Called after new tab finishes adjusting and setupTabBar is called in order to prevent Tab Bar hiding/size bug that occurs with some interactions with Mac UI
     override func syncAppearance(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {

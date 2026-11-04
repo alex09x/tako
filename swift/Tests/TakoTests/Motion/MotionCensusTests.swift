@@ -202,7 +202,7 @@ struct MotionCensusTests {
         Site(file: "TabGroupCloseCoordinator.swift", code: "debounceTimer = Timer.scheduledTimer(",
              what: "debounces closing a tab group", coveredBy: [notMotion]),
         // Delays and clocks: asyncAfter, Task.sleep, the display's clock, implicit animation, spinners.
-        Site(file: "HostKeyPrompt.swift", code: #"try await Task.sleep(nanoseconds: 1_000_000_000)"#,
+        Site(file: "HostKeyPrompt.swift", code: #"try await Task.sleep(for: $0)"#,
              what: "the phone: a new host key's buttons arm after 1 s", coveredBy: [phoneApp]),
         Site(file: "LaunchProbe.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {"#,
              what: "the phone's launch probe, a test harness", coveredBy: [notMotion]),
@@ -262,6 +262,9 @@ struct MotionCensusTests {
              what: "the app's self-test starts", coveredBy: [notMotion]),
         Site(file: "Tako+AppSelfTest.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {"#,
              what: "the app's self-test reads the screen", coveredBy: [notMotion]),
+        Site(file: "Tako+AppSelfTest.swift", code: "do { try await Task.sleep(nanoseconds: 10_000_000) }",
+             what: "the scroll self-test yields until a new real display submission or its deadline",
+             coveredBy: ["submissionWaitYieldsUntilTheCountAdvances", "submissionWaitRejectsAnOldNonzeroCount"]),
         Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in"#,
              what: "a system notification is taken back after its time", coveredBy: [delayedAction]),
         Site(file: "Tako+SurfaceFilter.swift", code: #"DispatchQueue.main.asyncAfter(deadline: .now() + debounceDelay, execute: item)"#,

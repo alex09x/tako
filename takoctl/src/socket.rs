@@ -27,7 +27,11 @@ pub fn default_path(bundle_id: &str) -> Result<String, String> {
     let dir = user_temp_dir()?;
     let digest = Sha256::digest(bundle_id.as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    Ok(format!("{}/tako-ctl-{}.sock", dir.trim_end_matches('/'), &hex[..12]))
+    Ok(format!(
+        "{}/tako-ctl-{}.sock",
+        dir.trim_end_matches('/'),
+        &hex[..12]
+    ))
 }
 
 pub fn resolve_path(
@@ -38,17 +42,23 @@ pub fn resolve_path(
 ) -> Result<String, String> {
     if let Some(s) = socket_arg {
         Ok(s.to_string())
-    } else if explicit_bundle || inherited.is_none() {
-        default_path(bundle_id)
+    } else if let Some(inh) = inherited.filter(|_| !explicit_bundle) {
+        Ok(inh.to_string())
     } else {
-        Ok(inherited.unwrap().to_string())
+        default_path(bundle_id)
     }
 }
 
 #[cfg(target_os = "macos")]
 fn user_temp_dir() -> Result<String, String> {
     let mut buf = vec![0u8; libc::PATH_MAX as usize];
-    let n = unsafe { libc::confstr(libc::_CS_DARWIN_USER_TEMP_DIR, buf.as_mut_ptr().cast(), buf.len()) };
+    let n = unsafe {
+        libc::confstr(
+            libc::_CS_DARWIN_USER_TEMP_DIR,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+        )
+    };
     if n == 0 || n > buf.len() {
         return Err("no per-user temporary directory".into());
     }
@@ -92,18 +102,30 @@ impl Failure {
     }
 }
 
-pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize) -> Result<Value, Failure> {
-    let unsent = |message: String| Failure { message, sent: false };
+pub fn exchange_within(
+    path: &str,
+    request: &Value,
+    limit: Duration,
+    max: usize,
+) -> Result<Value, Failure> {
+    let unsent = |message: String| Failure {
+        message,
+        sent: false,
+    };
     let deadline = Instant::now() + limit;
     let mut stream = connect(path, deadline).map_err(unsent)?;
     // While the connection is surely open: once Tako has answered and closed
     // its end, macOS refuses to change a socket's timeouts (EINVAL).
-    stream.set_read_timeout(Some(left(deadline).map_err(unsent)?)).map_err(|e| unsent(e.to_string()))?;
+    stream
+        .set_read_timeout(Some(left(deadline).map_err(unsent)?))
+        .map_err(|e| unsent(e.to_string()))?;
     let mut line = serde_json::to_vec(request).map_err(|e| unsent(e.to_string()))?;
     line.push(b'\n');
     let mut written = 0;
     while written < line.len() {
-        stream.set_write_timeout(Some(left(deadline).map_err(unsent)?)).map_err(|e| unsent(e.to_string()))?;
+        stream
+            .set_write_timeout(Some(left(deadline).map_err(unsent)?))
+            .map_err(|e| unsent(e.to_string()))?;
         match stream.write(&line[written..]) {
             Ok(0) => return Err(unsent("the connection closed".into())),
             Ok(n) => written += n,
@@ -118,14 +140,17 @@ pub fn exchange_within(path: &str, request: &Value, limit: Duration, max: usize)
 /// before the first read: the answer is still there to read, though the
 /// socket no longer takes a new timeout, so the one set before stands.
 fn read_answer(stream: &mut UnixStream, deadline: Instant, max: usize) -> Result<Value, Failure> {
-    let sent = |message: String| Failure { message, sent: true };
+    let sent = |message: String| Failure {
+        message,
+        sent: true,
+    };
     let mut answer = Vec::new();
     let mut chunk = [0u8; 64 * 1024];
     loop {
-        if let Err(e) = stream.set_read_timeout(Some(left(deadline).map_err(sent)?)) {
-            if e.kind() != std::io::ErrorKind::InvalidInput {
-                return Err(sent(format!("setting the read timeout: {e}")));
-            }
+        if let Err(e) = stream.set_read_timeout(Some(left(deadline).map_err(sent)?))
+            && e.kind() != std::io::ErrorKind::InvalidInput
+        {
+            return Err(sent(format!("setting the read timeout: {e}")));
         }
         match stream.read(&mut chunk) {
             Ok(0) => break,
@@ -157,8 +182,14 @@ pub fn stream_events<F>(path: &str, request: &Value, mut on_line: F) -> Result<(
 where
     F: FnMut(&str) -> Result<(), String>,
 {
-    let unsent = |message: String| Failure { message, sent: false };
-    let sent = |message: String| Failure { message, sent: true };
+    let unsent = |message: String| Failure {
+        message,
+        sent: false,
+    };
+    let sent = |message: String| Failure {
+        message,
+        sent: true,
+    };
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut stream = connect(path, deadline).map_err(unsent)?;
     let mut line = serde_json::to_vec(request).map_err(|e| unsent(e.to_string()))?;
@@ -169,12 +200,13 @@ where
     let reader = std::io::BufReader::new(stream);
     for line_res in reader.lines() {
         let text = line_res.map_err(|e| sent(e.to_string()))?;
-        if text.trim().is_empty() { continue; }
+        if text.trim().is_empty() {
+            continue;
+        }
         on_line(&text).map_err(sent)?;
     }
     Ok(())
 }
-
 
 fn left(deadline: Instant) -> Result<Duration, String> {
     let now = Instant::now();
@@ -209,221 +241,72 @@ fn connect(path: &str, deadline: Instant) -> Result<UnixStream, String> {
             return Err(std::io::Error::last_os_error().to_string());
         }
         let stream = UnixStream::from_raw_fd(fd);
-        libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK);
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+        libc::fcntl(
+            fd,
+            libc::F_SETFL,
+            libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK,
+        );
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
         {
             let one: libc::c_int = 1;
-            libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_NOSIGPIPE, (&one as *const libc::c_int).cast(),
-                             std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+            libc::setsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                libc::SO_NOSIGPIPE,
+                (&one as *const libc::c_int).cast(),
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            );
         }
-        let rc = libc::connect(fd, (&address as *const libc::sockaddr_un).cast(),
-                               std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t);
+        let rc = libc::connect(
+            fd,
+            (&address as *const libc::sockaddr_un).cast(),
+            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+        );
         if rc != 0 {
             let err = std::io::Error::last_os_error();
-            let pending = matches!(err.raw_os_error(), Some(libc::EINPROGRESS) | Some(libc::EAGAIN));
+            let pending = matches!(
+                err.raw_os_error(),
+                Some(libc::EINPROGRESS) | Some(libc::EAGAIN)
+            );
             if !pending {
                 return Err(err.to_string());
             }
-            let mut p = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+            let mut p = libc::pollfd {
+                fd,
+                events: libc::POLLOUT,
+                revents: 0,
+            };
             let ms = left(deadline)?.as_millis().min(i32::MAX as u128) as i32;
             if libc::poll(&mut p, 1, ms) <= 0 {
                 return Err("timed out connecting".into());
             }
             let mut so_error: libc::c_int = 0;
             let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-            libc::getsockopt(fd, libc::SOL_SOCKET, libc::SO_ERROR, (&mut so_error as *mut libc::c_int).cast(), &mut len);
+            libc::getsockopt(
+                fd,
+                libc::SOL_SOCKET,
+                libc::SO_ERROR,
+                (&mut so_error as *mut libc::c_int).cast(),
+                &mut len,
+            );
             if so_error != 0 {
                 return Err(std::io::Error::from_raw_os_error(so_error).to_string());
             }
         }
-        libc::fcntl(fd, libc::F_SETFL, libc::fcntl(fd, libc::F_GETFL) & !libc::O_NONBLOCK);
+        libc::fcntl(
+            fd,
+            libc::F_SETFL,
+            libc::fcntl(fd, libc::F_GETFL) & !libc::O_NONBLOCK,
+        );
         Ok(stream)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{BufRead, BufReader};
-
-    #[test]
-    fn the_name_matches_the_apps() {
-        // sha256("com.tako-core.terminal"), first 12 hex digits; the Swift
-        // side derives the same name (ControlServer.socketPath).
-        let path = default_path("com.tako-core.terminal").unwrap();
-        let want: String = Sha256::digest(b"com.tako-core.terminal").iter().map(|b| format!("{b:02x}")).collect();
-        assert!(path.ends_with(&format!("/tako-ctl-{}.sock", &want[..12])), "{path}");
-    }
-
-    #[test]
-    fn one_request_gets_one_answer() {
-        let (path, listener) = listen("echo");
-        let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            let req: Value = serde_json::from_str(&line).unwrap();
-            let mut s = stream;
-            writeln!(s, "{}", serde_json::json!({"ok": true, "result": {"echo": req["cmd"]}})).unwrap();
-            s.flush().unwrap();
-            std::thread::sleep(Duration::from_millis(20));
-        });
-        let answer = exchange(path.to_str().unwrap(), &serde_json::json!({"cmd": "tree"})).unwrap();
-        server.join().unwrap();
-        assert_eq!(answer["result"]["echo"], "tree");
-    }
-
-    fn listen(name: &str) -> (std::path::PathBuf, std::os::unix::net::UnixListener) {
-        let dir = std::env::temp_dir().join(format!("takoctl-{name}-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("s.sock");
-        let _ = std::fs::remove_file(&path);
-        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
-        (path, listener)
-    }
-
-    /// Tako answered and closed its end before takoctl read: the answer is
-    /// read, not lost to "unknown outcome: Invalid argument (os error 22)".
-    #[test]
-    fn an_answer_left_by_a_closed_peer_is_still_read() {
-        let (mut ours, mut theirs) = UnixStream::pair().unwrap();
-        ours.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-        writeln!(theirs, "{}", serde_json::json!({"ok": true, "result": {"name": "Default"}})).unwrap();
-        drop(theirs);
-        let answer = read_answer(&mut ours, Instant::now() + Duration::from_secs(2), MAX_ANSWER_BYTES).unwrap();
-        assert_eq!(answer["result"]["name"], "Default");
-    }
-
-    /// Why: macOS will not set a timeout on a socket whose peer has closed.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_refuses_a_timeout_once_the_peer_has_closed() {
-        let (ours, theirs) = UnixStream::pair().unwrap();
-        drop(theirs);
-        let err = ours.set_read_timeout(Some(Duration::from_secs(1))).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{err}");
-    }
-
-    #[test]
-    fn nothing_listening_is_a_request_never_sent() {
-        let err = exchange_within("/nonexistent/tako.sock", &serde_json::json!({"cmd": "x"}),
-                                  Duration::from_millis(300), MAX_ANSWER_BYTES).unwrap_err();
-        assert!(!err.sent, "{err}");
-    }
-
-    #[test]
-    fn a_server_that_never_answers_times_out() {
-        let (path, listener) = listen("silent");
-        let _hold = std::thread::spawn(move || {
-            let (s, _) = listener.accept().unwrap();
-            std::thread::sleep(Duration::from_secs(3));
-            drop(s);
-        });
-        let started = Instant::now();
-        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
-                                  Duration::from_millis(300), MAX_ANSWER_BYTES).unwrap_err();
-        assert!(err.contains("timed out"), "{err}");
-        // Delivered, then silence: the outcome is unknown, not "no Tako".
-        assert!(err.sent);
-        assert!(started.elapsed() < Duration::from_secs(2));
-    }
-
-    #[test]
-    fn a_trickling_answer_still_ends_at_the_deadline() {
-        let (path, listener) = listen("drip");
-        let _drip = std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            for _ in 0..30 {
-                if s.write_all(b" ").is_err() { break; }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        });
-        let started = Instant::now();
-        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
-                                  Duration::from_millis(500), MAX_ANSWER_BYTES).unwrap_err();
-        assert!(err.contains("timed out"), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(2));
-    }
-
-    #[test]
-    fn an_oversized_json_line_is_refused_even_when_complete() {
-        let (path, listener) = listen("bigline");
-        let _big = std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            let line = format!("{}\n", serde_json::json!({"ok": true, "result": {"pad": "x".repeat(4000)}}));
-            let _ = s.write_all(line.as_bytes());
-        });
-        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
-                                  Duration::from_secs(2), 1024).unwrap_err();
-        assert!(err.contains("larger than"), "{err}");
-    }
-
-    #[test]
-    fn an_oversized_answer_is_refused() {
-        let (path, listener) = listen("big");
-        let _big = std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 128];
-            let _ = s.read(&mut buf);
-            let _ = s.write_all(&vec![b'x'; 4096]);
-            std::thread::sleep(Duration::from_millis(50));
-        });
-        let err = exchange_within(path.to_str().unwrap(), &serde_json::json!({"cmd": "x"}),
-                                  Duration::from_secs(2), 1024).unwrap_err();
-        assert!(err.contains("larger than"), "{err}");
-    }
-
-    #[test]
-    fn stream_events_yields_lines_until_closed() {
-        let (path, listener) = listen("stream");
-        let server = std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(s.try_clone().unwrap());
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            let req: Value = serde_json::from_str(&line).unwrap();
-            assert_eq!(req["cmd"], "events");
-            writeln!(s, "{}", serde_json::json!({"cursor": 1, "type": "command_start"})).unwrap();
-            writeln!(s, "{}", serde_json::json!({"cursor": 2, "type": "command_end"})).unwrap();
-            writeln!(s, "{}", serde_json::json!({"cursor": 3, "type": "status"})).unwrap();
-            s.flush().unwrap();
-            drop(s);
-        });
-
-        let mut lines = Vec::new();
-        let res = stream_events(path.to_str().unwrap(), &serde_json::json!({"cmd": "events"}), |l| {
-            lines.push(l.to_string());
-            Ok(())
-        });
-        server.join().unwrap();
-        assert!(res.is_ok());
-        assert_eq!(lines.len(), 3);
-        assert!(lines[0].contains("\"cursor\":1"));
-        assert!(lines[1].contains("\"cursor\":2"));
-        assert!(lines[2].contains("\"cursor\":3"));
-    }
-
-    #[test]
-    fn stream_events_aborts_when_callback_fails() {
-        let (path, listener) = listen("stream-abort");
-        let server = std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            let _ = writeln!(s, "{}", serde_json::json!({"cursor": 1}));
-            let _ = writeln!(s, "{}", serde_json::json!({"cursor": 2}));
-            let _ = s.flush();
-        });
-
-        let mut count = 0;
-        let res = stream_events(path.to_str().unwrap(), &serde_json::json!({"cmd": "events"}), |_| {
-            count += 1;
-            Err("stop requested".to_string())
-        });
-        server.join().unwrap();
-        assert!(res.is_err());
-        assert_eq!(count, 1);
-        let err = res.unwrap_err();
-        assert!(err.sent);
-        assert!(err.contains("stop requested"));
-    }
-}
+mod tests;

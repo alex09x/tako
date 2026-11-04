@@ -33,29 +33,39 @@ func totalLight(_ pixels: [UInt8]) -> Int { pixels.reduce(0) { $0 + Int($1) } }
 /// they are real buttons.
 @MainActor
 final class HostKeyPromptArmingTests: XCTestCase {
-    private func spin(_ seconds: TimeInterval) {
-        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
-    }
-
-    func testTrustAndCancelAreDimLabelsForASecondThenFullButtons() {
+    func testTrustAndCancelAreDimLabelsForASecondThenFullButtons() async throws {
+        let clock = HostKeyPromptTestClock()
         let prompt = HostKeyPrompt(
             host: "example.test",
             presented: .init(algorithm: "ssh-ed25519", fingerprint: "SHA256:abc", changed: false),
+            sleepBeforeArming: { try await clock.sleep(for: $0) },
             onTrust: {}, onCancel: {})
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let host = UIHostingController(rootView: prompt)
         window.rootViewController = host
         window.makeKeyAndVisible()
-        defer { window.isHidden = true }
+        defer { window.isHidden = true; clock.cancel() }
 
-        spin(0.25)
+        let mountedDeadline = Date().addingTimeInterval(5)
+        while !clock.isSleeping, Date() < mountedDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard clock.isSleeping else {
+            XCTFail("the mounted prompt never started its arming delay")
+            return
+        }
+        // Snapshot and brightness calculation time must not advance the
+        // security clock on a slower simulator.
+        clock.advance(by: .milliseconds(250))
+        try await Task.sleep(for: .milliseconds(50))
         let early = totalLight(shownPixels(host.view))
-        spin(0.55)
+        clock.advance(by: .milliseconds(550))
+        try await Task.sleep(for: .milliseconds(50))
         let stillEarly = totalLight(shownPixels(host.view))
         XCTAssertEqual(early, stillEarly, "the prompt changed before its second was up (at 0.8 s)")
-        // 1.4 s in: the second is up with room for a slow runner, and far from
-        // any longer delay a mutation might put there.
-        spin(0.6)
+        // 1.4 logical seconds: still rejects an incorrectly longer delay.
+        clock.advance(by: .milliseconds(600))
+        try await Task.sleep(for: .milliseconds(50))
         let armed = totalLight(shownPixels(host.view))
         XCTAssertGreaterThan(armed, early + 20_000, "the buttons look the same after a second: \(early) vs \(armed)")
     }

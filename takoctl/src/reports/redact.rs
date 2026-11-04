@@ -12,10 +12,11 @@ pub fn reduce_path(path: &str) -> String {
     if path.is_empty() {
         return String::new();
     }
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() && path.starts_with(&home) {
-            return format!("~{}", &path[home.len()..]);
-        }
+    if let Ok(home) = std::env::var("HOME")
+        && !home.is_empty()
+        && path.starts_with(&home)
+    {
+        return format!("~{}", &path[home.len()..]);
     }
     if path.starts_with("/Users/") {
         let parts: Vec<&str> = path.splitn(4, '/').collect();
@@ -55,18 +56,17 @@ pub fn redact_secrets(text: &str) -> String {
 
         // Mask key=val or key: val secret patterns
         let lower = sanitized.to_lowercase();
-        if lower.contains("token")
+        if (lower.contains("token")
             || lower.contains("secret")
             || lower.contains("password")
             || lower.contains("api_key")
             || lower.contains("apikey")
-            || lower.contains("bearer")
+            || lower.contains("bearer"))
+            && let Some(pos) = sanitized.find(['=', ':'])
         {
-            if let Some(pos) = sanitized.find(|c| c == '=' || c == ':') {
-                let key = &sanitized[..pos];
-                let delim = &sanitized[pos..=pos];
-                sanitized = format!("{key}{delim} [REDACTED]");
-            }
+            let key = &sanitized[..pos];
+            let delim = &sanitized[pos..=pos];
+            sanitized = format!("{key}{delim} [REDACTED]");
         }
 
         // Known token prefixes (GitHub, GitLab, Slack, AWS)

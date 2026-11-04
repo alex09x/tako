@@ -93,7 +93,7 @@ E2E scenario names are comma-separated and persistence scenarios are routed
 to their isolated runner. [scripts/README.md](scripts/README.md) maps the
 build, test, release and manual diagnostic entry points.
 
-- Rust: `cargo test` (engine, parity ports, C ABI, checkpoint), with
+- Rust: `mitts test` (engine, parity ports, C ABI, checkpoint), with
   `--features pty` / `ssh` for those modules; `scripts/coverage-gate.py`
   holds every engine file to a line-coverage floor. `tests/frame_diffs.rs`
   replays what a real differential TUI renderer sends between random frames

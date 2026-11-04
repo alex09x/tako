@@ -325,12 +325,10 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
         args.insert("target".into(), pane);
     }
 
-    if !bundle_id_explicit && socket.is_none() {
-        if client.is_none() {
-            client = std::env::var("TAKO_CLIENT_ID")
-                .or_else(|_| std::env::var("TAKO_CLIENT"))
-                .ok();
-        }
+    if !bundle_id_explicit && socket.is_none() && client.is_none() {
+        client = std::env::var("TAKO_CLIENT_ID")
+            .or_else(|_| std::env::var("TAKO_CLIENT"))
+            .ok();
     }
 
     dispatch_and_validate(&cmd, &mut args, &mut positional, dashdash)?;

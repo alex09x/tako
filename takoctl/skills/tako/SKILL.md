@@ -57,10 +57,10 @@ Instead of running slow tasks (builds, test suites, linters, dev servers) in you
 
 2. **Run the program in a child split**:
    ```bash
-   takoctl run --split right --wait --timeout 300 -- cargo test
+takoctl run --split right --wait --timeout 300 -- mitts test
    ```
    Or via MCP:
-   - Call `tako_run(program="cargo", args=["test"], split="right", wait=true, timeout="300s")`
+- Call `tako_run(program="mitts", args=["test"], split="right", wait=true, timeout="300s")`
 
 3. **Or split explicitly and wait**:
    ```bash
@@ -68,7 +68,7 @@ Instead of running slow tasks (builds, test suites, linters, dev servers) in you
    CHILD_PANE=$(takoctl split right --child-of self --label "unit-tests")
 
    # Send command into child pane
-   takoctl send --target "$CHILD_PANE" "cargo test"
+takoctl send --target "$CHILD_PANE" "mitts test"
 
    # Wait for command completion through Tako's OSC 133 integration
    takoctl wait --target "$CHILD_PANE" --timeout 300

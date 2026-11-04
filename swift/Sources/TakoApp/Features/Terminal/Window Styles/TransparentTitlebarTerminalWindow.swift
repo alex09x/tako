@@ -106,9 +106,11 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
             let isTransparentTitlebar = derivedConfig.macosTitlebarStyle == .transparent ||
             derivedConfig.macosTitlebarStyle == .tabs
 
-            titlebarView.layer?.backgroundColor = (isGlassStyle && isTransparentTitlebar)
+            let showsTakoStrip = Tako.TabBarController.bar(for: self) != nil
+            titlebarView.layer?.backgroundColor = (showsTakoStrip || (isGlassStyle && isTransparentTitlebar))
                 ? NSColor.clear.cgColor
                 : preferredBackgroundColor?.cgColor
+            if showsTakoStrip { titlebarView.layer?.isOpaque = false }
         }
 
         // In all cases, we have to hide the background view since this has multiple subviews

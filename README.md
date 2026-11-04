@@ -113,6 +113,9 @@ Run the checks affected by a change on your configured test Mac:
 `TAKO_MAC` selects the test host. `scripts/ci.sh` is the explicit full
 multi-stage release gate; it is separate from these targeted checks.
 
+GitHub Mac CI and candidate/signing workflows are documented in
+[CI and release delivery](docs/ci-and-releases.md).
+
 Tako ships with an end-to-end integration test runner that exercises real macOS events, PTY streams, and Metal presentation callbacks:
 
 ```bash
@@ -142,8 +145,13 @@ macapp self-test: ok
 
 To run the Rust engine test suite:
 ```bash
-cargo test
+mitts test
 ```
+
+Rust builds, tests, lint and coverage use the latest stable [Mitts](https://mittsbuild.com/).
+Install it with `curl -fsSL https://mittsbuild.com/install.sh | MITTS_INSTALL_ROOT="$HOME/.local" sh` and add
+`~/.local/bin` to `PATH`. Unsupported commands or options stop the affected
+check and are reported to Mitts; build scripts do not fall back to Cargo.
 
 The Swift suites need the engine built locally first:
 ```bash

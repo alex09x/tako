@@ -98,17 +98,8 @@ extension TakoTerminalNSView {
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
-        if bounds.size.width > 0 && bounds.size.height > 0 {
-            let fitted = TerminalGridLayout(
-                viewSize: bounds.size,
-                cellSize: CGSize(width: cellWidth, height: cellHeight),
-                theme: theme
-            )
-            if fitted.cols > 0 && fitted.rows > 0 && (fitted.cols != restore.cols || fitted.rows != restore.rows) {
-                scheduleGridResize(cols: fitted.cols, rows: fitted.rows)
-            }
-        }
-
+        // The host decides when to fit the restored screen to its live pane.
+        // Import itself must not enqueue a resize against stale view bounds.
         delegate?.terminalViewDidChangeContent(self)
         scheduleRedraw()
     }
@@ -154,8 +145,8 @@ extension TakoTerminalNSView {
                     }
                     let targetId = id ?? core.newestCommandId()
                     let now = Date()
-                    if let cmdId = targetId {
-                        activeRunningCommandId = cmdId
+                    activeRunningCommandId = targetId
+                    if let cmdId = targetId, stickyCommandHeaderEnabled {
                         let firstLine = core.firstRetainedLine()
                         let totalScrollback = Int(core.scrollbackLen())
                         let cmdText = core.firstCommandAfter(after: cmdId - 1)?.input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -244,7 +235,9 @@ extension TakoTerminalNSView {
                         if tracked.command.isEmpty, !cmdText.isEmpty {
                             tracked.command = cmdText
                         }
-                        trackedCommands[cmdId] = tracked
+                        if stickyCommandHeaderEnabled {
+                            trackedCommands[cmdId] = tracked
+                        }
                     }
                     activeRunningCommandId = nil
                     delegate?.terminalView(self, commandDidEnd: exitCode)

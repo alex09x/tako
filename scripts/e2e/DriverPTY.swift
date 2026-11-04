@@ -27,6 +27,10 @@ extension Driver {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "TAKO_SURFACE_ID")
+        environment.removeValue(forKey: "TAKO_SOCKET")
+        process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -65,7 +69,7 @@ extension Driver {
 
     /// Every static text in the front window, through accessibility.
     func staticTexts() -> [String] {
-        guard let window = windows().first else { return [] }
+        guard let window = activeWindow() else { return [] }
         return descendants(of: window, role: kAXStaticTextRole as String).compactMap {
             attribute($0, kAXValueAttribute) as String?
         }
@@ -73,7 +77,7 @@ extension Driver {
 
     /// The terminal's selected text, through accessibility.
     func selectedText() -> String {
-        guard let window = windows().first,
+        guard let window = activeWindow(),
               let area = descendants(of: window, role: kAXTextAreaRole as String).first,
               let text: String = attribute(area, kAXSelectedTextAttribute)
         else { return "" }

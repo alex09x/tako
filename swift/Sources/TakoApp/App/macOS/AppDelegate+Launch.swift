@@ -217,6 +217,7 @@ extension AppDelegate {
             }
 
             tako_app_set_color_scheme(app, scheme)
+            self.tako.updateSystemTheme(darkAppearance: appearance.isDark)
         }
 
         // Setup our menu

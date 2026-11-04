@@ -23,6 +23,7 @@ extension TerminalController {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window else { return }
+        didApplyInitialWindowSize = false
 
         // I copy this because we may change the source in the future but also because
         // I regularly audit our codebase for "tako.config" access because generally
@@ -74,13 +75,16 @@ extension TerminalController {
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
         // SwiftUI focus chain.
-        container.initialContentSize = focusedSurface?.initialSize
+        container.initialContentSize = focusedSurface?.initialSize.map {
+            NSSize(width: $0.width, height: $0.height + Tako.TabBarController.barHeight)
+        }
 
         window.contentView = container
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
             defaultSize.apply(to: window)
+            didApplyInitialWindowSize = true
 
             if case .contentIntrinsicSize = defaultSize {
                 if let screen = window.screen ?? NSScreen.main {
@@ -133,8 +137,8 @@ extension TerminalController {
         )
         let restored = LastWindowPosition.shared.restore(
             terminalWindow,
-            origin: !originChanged,
-            size: defaultSize == nil,
+            origin: !originChanged && !derivedConfig.maximize,
+            size: !didApplyInitialWindowSize,
         )
 
         // If nothing is changed for the frame,
@@ -235,6 +239,19 @@ extension TerminalController {
 
     func reflowSurfaces(forcePtyResize: Bool = true) {
         guard let window, let contentView = window.contentView else { return }
+        let mounted = surfaceTree.compactMap { surface -> (Tako.SurfaceView, SurfaceHostingView)? in
+            guard let host = surface.superview as? SurfaceHostingView, host.window === window else { return nil }
+            return (surface, host)
+        }
+        if !mounted.isEmpty {
+            // SwiftUI has already allocated room for the strip, sidebar and
+            // pane handles. Recomputing slots from the whole window fights
+            // those constraints and can create an AppKit layout feedback loop.
+            for (surface, host) in mounted {
+                surface.reflow(to: host.bounds.size, forcePtyResize: forcePtyResize)
+            }
+            return
+        }
         let contentBounds = contentView.bounds
         guard contentBounds.width > 0, contentBounds.height > 0 else { return }
 

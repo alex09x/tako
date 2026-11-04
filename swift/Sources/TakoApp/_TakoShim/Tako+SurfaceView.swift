@@ -147,7 +147,7 @@ extension Tako {
             // The app's config is the one it loaded (TAKO_CONFIG_PATH, a UI
             // test's file); the user's default config is for a surface
             // without an app.
-            let baseTheme = theme ?? app?.config.theme ?? TerminalTheme.loadUserConfig()
+            let baseTheme = theme ?? app?.config.theme ?? TerminalTheme.loadUserConfig(darkAppearance: TakoSystemAppearance.isDark)
             // `window-inherit-font-size` (default true): a new window, tab or
             // split starts at the focused terminal's current, possibly
             // zoomed, size rather than the configured default.

@@ -102,8 +102,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public var commandMarksEnabled: Bool = true {
         didSet {
             guard commandMarksEnabled != oldValue else { return }
-            updateGutterMarks()
-            updateScroller()
+            updateCommandGutterLayout()
         }
     }
     public var stickyCommandHeaderEnabled: Bool = true {
@@ -112,16 +111,16 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
             updateStickyCommandHeader()
         }
     }
-    public var commandDurationsEnabled: Bool = true {
+    public var commandDurationsEnabled: Bool = false {
         didSet {
             guard commandDurationsEnabled != oldValue else { return }
-            updateGutterMarks()
+            updateCommandGutterLayout()
         }
     }
     public var commandTimestampsEnabled: Bool = false {
         didSet {
             guard commandTimestampsEnabled != oldValue else { return }
-            updateGutterMarks()
+            updateCommandGutterLayout()
         }
     }
 

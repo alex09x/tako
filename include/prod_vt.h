@@ -2,7 +2,7 @@
  * prod_vt.h -- the TakoCore terminal C ABI: create a terminal, feed it bytes,
  * read what it shows and what it wants written back.
  *
- * Link against the static library built by `cargo build --release`
+ * Link against the static library built by `mitts build --release`
  * (target/release/libtako_core.a). Checkpoints (saving and restoring the
  * whole terminal state) are declared separately in prod_vt_checkpoint.h.
  *

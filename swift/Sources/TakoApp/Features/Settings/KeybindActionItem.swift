@@ -92,6 +92,7 @@ public enum KeybindRegistry {
         KeybindActionItem(id: "toggle_quick_terminal", title: "Toggle Quick Terminal", category: .terminal),
         KeybindActionItem(id: "reload_config", title: "Reload Configuration", category: .terminal),
         KeybindActionItem(id: "open_config", title: "Open Settings / Config", category: .terminal),
+        KeybindActionItem(id: "toggle_command_palette", title: "Command Palette", category: .terminal),
 
         // Edit & Search
         KeybindActionItem(id: "copy_to_clipboard", title: "Copy", category: .edit),

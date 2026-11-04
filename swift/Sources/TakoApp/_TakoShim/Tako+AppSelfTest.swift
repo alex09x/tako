@@ -123,11 +123,13 @@ extension Tako {
     @MainActor static func runScrollSelfTest() {
         guard let (window, surface) = selfTestTarget() else { return }
         window.makeFirstResponder(surface)
+        let reportPath = Tako.selfTestReportPath("tako-scrolltest.txt")
 
         // Somewhere to scroll to. Fed straight to the engine rather than
         // through the shell, so the test does not depend on what the shell
         // prints or how fast it does it.
         let history = (0..<400).map { "history line \($0)" }.joined(separator: "\r\n") + "\r\n"
+        let beforeHistory = surface.presentationCadence.submitted
         surface.feed(data: Data(history.utf8))
 
         /// One precise wheel event. `hasPreciseScrollingDeltas` cannot be set
@@ -165,13 +167,60 @@ extension Tako {
             if let event = precise(-1) { surface.scrollWheel(with: event) }
         }
         line("after reversing all the way", surface.presentedScrollRows, 0)
-
-        let cadence = surface.presentationCadence
-        report += "\nframes submitted=\(cadence.submitted) presented=\(cadence.sequence)\n"
-        if cadence.submitted == 0 {
-            report += "FAIL  nothing was ever handed to the display\n"
+        // Geometry-only callers can inspect these synchronous assertions. A
+        // pending report is a failure to the runner until display checks finish.
+        try? (report + "FAIL  display check pending\n")
+            .write(toFile: reportPath, atomically: true, encoding: .utf8)
+        Task { @MainActor in
+            // A geometry-only host may already have closed its test surface.
+            guard surface.window === window, FileManager.default.fileExists(atPath: reportPath) else { return }
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
+            @MainActor func awaitSubmission(_ label: String, after baseline: UInt64) async {
+                let immediate = surface.presentationCadence
+                let initialState = surface.selfTestPresentationDiagnostics
+                let didSubmit = await waitForSelfTestSubmission(
+                    after: baseline, timeout: max(0, deadline - ProcessInfo.processInfo.systemUptime)
+                ) { surface.presentationCadence.submitted }
+                let cadence = surface.presentationCadence
+                report += "\(didSubmit ? "ok  " : "FAIL")  \(label): baseline=\(baseline) immediate=\(immediate.submitted)"
+                    + " submitted=\(cadence.submitted) presented=\(cadence.sequence)\n"
+                report += "  before: \(initialState)\n  after: \(surface.selfTestPresentationDiagnostics)\n"
+            }
+            // Exclude startup/history frames before measuring a new scroll.
+            await awaitSubmission("history display", after: beforeHistory)
+            let baseline = surface.presentationCadence
+            if let event = precise(1) {
+                surface.scrollWheel(with: event)
+                line("fraction before display", surface.presentedScrollRows, 1 / 3)
+                // Hold the fraction until the normal display loop submits it.
+                await awaitSubmission("fractional scroll display", after: baseline.submitted)
+                line("fraction retained through display", surface.presentedScrollRows, 1 / 3)
+            } else { report += "FAIL  could not build event\n" }
+            let beforeReverse = surface.presentationCadence.submitted
+            if let event = precise(-1) { surface.scrollWheel(with: event) }
+            line("reverse before display", surface.presentedScrollRows, 0)
+            await awaitSubmission("reverse scroll display", after: beforeReverse)
+            let cadence = surface.presentationCadence
+            report += "\nframes submitted=\(cadence.submitted - baseline.submitted)"
+                + " presented=\(cadence.sequence - baseline.sequence)"
+                + " baseline=\(baseline.submitted) total=\(cadence.submitted)\ncomplete\n"
+            try? report.write(toFile: reportPath, atomically: true, encoding: .utf8)
         }
-        try? report.write(toFile: Tako.selfTestReportPath("tako-scrolltest.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// Poll a real submission count while yielding MainActor to AppKit's
+    /// display link. The interval is a poll cadence, not the success condition.
+    @MainActor static func waitForSelfTestSubmission(
+        after baseline: UInt64, timeout: TimeInterval = 5,
+        submitted: () -> UInt64
+    ) async -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while submitted() <= baseline {
+            guard ProcessInfo.processInfo.systemUptime < deadline, !Task.isCancelled else { return false }
+            do { try await Task.sleep(nanoseconds: 10_000_000) }
+            catch { return false }
+        }
+        return true
     }
 
     @MainActor static func runKeySelfTest() {

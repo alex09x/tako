@@ -83,21 +83,27 @@ Regenerate the project after editing `project.yml`:
 cd macos_uitests && xcodegen generate
 ```
 
-## Why these tests do nothing on CI
+## Real execution and test isolation
 
-`TakoCustomConfigCase` overrides `defaultTestSuite` to return an empty
-suite unless `IDE_DISABLED_OS_ACTIVITY_DT_MODE` is set in the environment --
-a variable Xcode's IDE sets and `xcodebuild` does not. That is upstream's own
-behaviour, kept verbatim: these tests are slow and click-driven, and upstream's
-CI does not run them either. Removing the skip would make them run, and hang or
-fail, in exactly the contexts upstream never intended.
-
-The `-Run` scheme supplies that IDE variable explicitly. Running it for real also needs:
+Both schemes run real tests; `-Run` remains the name used by the existing
+scripts. Use `build-for-testing` for compilation without desktop interaction.
+Running the tests needs:
 
 - a logged-in, unlocked GUI session on a real (not headless) display,
 - Accessibility and Automation permission granted to Xcode, otherwise the
   runner dies with `Timed out while enabling automation mode`,
 - no other app stealing focus, since the tests type keystrokes and drag tabs.
+
+The sandboxed test runner has narrowly scoped entitlements for the `.uitest`
+profile, its two test preference domains, and `/private/tmp/tkui/`. The base
+fixture clears that test state before and after each case, with a separate
+session directory per case. Ordinary interaction tests disable session
+persistence; the persistence runner tests that separately. State remains
+available across launches inside a single case.
+
+These permissions belong to the UI-test target. To roll them back, remove
+its `CODE_SIGN_ENTITLEMENTS` setting and `TakoUITests.entitlements`, then
+rebuild the test target. Production app entitlements are independent.
 
 If `/usr/bin/automationmodetool status` reports that Automation Mode is disabled and enabling
 it requires user authentication, the wrapper fails before running any test and says so. An

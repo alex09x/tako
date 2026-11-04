@@ -76,7 +76,7 @@ extension Driver {
     }
 
     func textFields() -> [String] {
-        guard let window = windows().first else { return [] }
+        guard let window = activeWindow() else { return [] }
         return descendants(of: window, role: kAXTextFieldRole as String).compactMap {
             attribute($0, kAXValueAttribute) as String?
         }
@@ -215,6 +215,7 @@ extension Driver {
                         AXValueGetValue(btnPos, .cgPoint, &pos)
                         AXValueGetValue(btnSize, .cgSize, &size)
                         let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+                        traceClick(at: center, expected: root, target: elem)
                         try click(at: center)
                         usleep(600_000)
                         return
@@ -229,6 +230,7 @@ extension Driver {
                     AXValueGetValue(btnPos, .cgPoint, &pos)
                     AXValueGetValue(btnSize, .cgSize, &size)
                     let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+                    traceClick(at: center, expected: root, target: elem)
                     try click(at: center)
                     usleep(600_000)
                     return
@@ -244,6 +246,7 @@ extension Driver {
                     AXValueGetValue(btnPos, .cgPoint, &pos)
                     AXValueGetValue(btnSize, .cgSize, &size)
                     let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+                    traceClick(at: center, expected: root, target: elem)
                     try click(at: center)
                     usleep(600_000)
                     return
@@ -307,6 +310,10 @@ extension Driver {
 
     func clickTab(index: Int, in window: AXUIElement? = nil) throws {
         let clickPoint = try tabClickPoint(index: index, in: window)
+        if ProcessInfo.processInfo.environment["TAKO_E2E_TRACE_CLICKS"] == "1" {
+            traceClick(at: clickPoint, expected: window ?? activeWindow(),
+                       target: tabElement(index: index, in: window))
+        }
         try click(at: clickPoint)
         usleep(600_000)
     }

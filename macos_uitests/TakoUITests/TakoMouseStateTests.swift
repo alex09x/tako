@@ -19,8 +19,9 @@ import XCTest
 
 final class TakoMouseStateTests: TakoCustomConfigCase {
     @MainActor func testSelectionFocusChange() async throws {
-        let app = XCUIApplication()
+        let app = try takoApplication()
         app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "New window should appear")
         // Write dummy text to a temp file, cat it into the terminal, then clean up
         let lines = (1...200).map { "Line \($0): The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet, consectetur adipiscing elit." }
         let text = lines.joined(separator: "\n") + "\n"
@@ -63,14 +64,14 @@ final class TakoMouseStateTests: TakoCustomConfigCase {
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "New window should appear")
         app.typeKey("f", modifierFlags: .command)
 
-        let textfield = app.textFields.firstMatch
+        let textfield = app.textFields["TerminalFindField"]
         XCTAssertTrue(textfield.waitForExistence(timeout: 5), "Search field should appear")
         app.typeText("a")
 
         XCTAssertTrue(textfield.stringValue == "a", "Search text should be `a`")
 
         textfield.coordinate(withNormalizedOffset: .zero)
-            .withOffset(.init(dx: textfield.frame.width * 0.5, dy: 0))
+            .withOffset(.init(dx: textfield.frame.width * 0.5, dy: textfield.frame.height * 0.5))
             .click()
 
         app.typeText("b")

@@ -253,10 +253,22 @@ extension Tako.Config {
         rawValue("scrollbar").flatMap(Scrollbar.init(rawValue:)) ?? .system
     }
 
-    /// Custom entries displayed in command palette popup.
-    ///
-    /// WHY: Command palette dynamically populates from available actions; default to empty list.
-    var commandPaletteEntries: [Tako.Command] { [] }
+    /// Built-in terminal commands, using the same metadata as keybinding settings.
+    /// The shim has no custom command-palette-entry transport yet.
+    var commandPaletteEntries: [Tako.Command] {
+        let commands = KeybindRegistry.allActions.map { item in
+            Tako.Command(
+                title: item.title,
+                description: item.description,
+                action: item.id,
+                actionKey: String(item.id.split(separator: ":", maxSplits: 1)[0]))
+        }
+        // Clear Screen is supported by the surface but has no keybinding metadata.
+        return (commands + [Tako.Command(
+            title: "Clear Screen",
+            action: "clear_screen",
+            actionKey: "clear_screen")]).filter(\.isSupported)
+    }
 
     /// Terminal command progress indicator style (dock icon / tab progress bar / header / window).
     ///

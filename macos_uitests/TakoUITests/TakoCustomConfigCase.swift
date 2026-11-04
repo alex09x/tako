@@ -16,38 +16,102 @@
 //
 
 import XCTest
+import Darwin
 
+@MainActor
 class TakoCustomConfigCase: XCTestCase {
-    /// We only want run these UI tests
-    /// when testing manually with Xcode IDE
-    ///
-    /// So that we don't have to wait for each ci check
-    /// to run these tedious tests
-    override class var defaultTestSuite: XCTestSuite {
-        // https://lldb.llvm.org/cpp_reference/PlatformDarwin_8cpp_source.html#:~:text==%20%22-,IDE_DISABLED_OS_ACTIVITY_DT_MODE
-
-        if ProcessInfo.processInfo.environment["IDE_DISABLED_OS_ACTIVITY_DT_MODE"] != nil {
-            return XCTestSuite(forTestCaseClass: Self.self)
-        } else {
-            return XCTestSuite(name: "Skipping \(className())")
-        }
-    }
-
     static let defaultsSuiteName: String = "TAKO_UI_TESTS"
+    private static let testBundleID = "com.tako-core.terminal.uitest"
 
     private let configFile: URL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("tako")
+    private let sessionsHome = URL(fileURLWithPath: "/private/tmp/tkui")
+        .appendingPathComponent(String(UUID().uuidString.prefix(8)))
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
+        try await super.setUp()
         continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: Self.testBundleID)
+        if app.state != .notRunning { app.terminate() }
+        try removeTestState()
+        try resetTestDefaults()
+        try FileManager.default.createDirectory(at: sessionsHome, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try updateConfig("")
     }
 
     override func tearDown() async throws {
+        logTestProgress("teardown: app state begin")
+        let app = XCUIApplication(bundleIdentifier: Self.testBundleID)
+        if app.state != .notRunning {
+            logTestProgress("teardown: terminate begin")
+            app.terminate()
+            logTestProgress("teardown: terminate end")
+        }
+        logTestProgress("teardown: state cleanup begin")
+        try removeTestState()
+        logTestProgress("teardown: state cleanup end")
+        try resetTestDefaults()
+        logTestProgress("teardown: config cleanup begin")
         try? FileManager.default.removeItem(at: configFile)
+        logTestProgress("teardown: sessions cleanup begin")
+        try? FileManager.default.removeItem(at: sessionsHome)
+        logTestProgress("teardown: superclass begin")
+        try await super.tearDown()
+        logTestProgress("teardown: superclass end")
+    }
+
+    func logTestProgress(_ message: String) {
+        let line = "[xcui progress \(Date().timeIntervalSince1970)] \(message)\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
+    }
+
+    private func removeTestState() throws {
+        let home = try accountHome()
+        for path in ["Library/Application Support/\(Self.testBundleID)",
+                     "Library/Saved Application State/\(Self.testBundleID).savedState"] {
+            let url = home.appendingPathComponent(path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                logTestProgress("remove state: \(url.lastPathComponent) begin")
+                try FileManager.default.removeItem(at: url)
+                logTestProgress("remove state: \(url.lastPathComponent) end")
+            }
+        }
+    }
+
+    private func accountHome() throws -> URL {
+        // Cocoa home-directory APIs are container-relative in the UI runner.
+        // Resolve the account record without changing HOME or the app's env.
+        var account = passwd()
+        var result: UnsafeMutablePointer<passwd>?
+        var storage = [CChar](repeating: 0, count: 16_384)
+        logTestProgress("account lookup begin")
+        return try storage.withUnsafeMutableBufferPointer { bytes in
+            let status = getpwuid_r(getuid(), &account, bytes.baseAddress!, bytes.count, &result)
+            logTestProgress("account lookup end")
+            guard status == 0, result != nil, let directory = account.pw_dir else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: status == 0 ? Int(ENOENT) : Int(status))
+            }
+            return URL(fileURLWithPath: String(cString: directory))
+        }
+    }
+
+    private func resetTestDefaults() throws {
+        for domain in [Self.testBundleID, Self.defaultsSuiteName] {
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+            logTestProgress("defaults \(domain): remove begin")
+            defaults.removePersistentDomain(forName: domain)
+            logTestProgress("defaults \(domain): synchronize begin")
+            XCTAssertTrue(defaults.synchronize(), "Could not reset the test preferences domain")
+            logTestProgress("defaults \(domain): synchronize end")
+        }
     }
 
     func updateConfig(_ newConfig: String) throws {
-        try newConfig.write(to: configFile, atomically: true, encoding: .utf8)
+        // The persistence suite has its own runner. These interaction tests
+        // own their app lifecycle; explicit settings below can still override.
+        let defaults = "window-save-state = never\nsession-persistence = false\nquit-after-last-window-closed = false\n"
+        try (defaults + newConfig).write(to: configFile, atomically: true, encoding: .utf8)
     }
 
     func takoApplication(defaultsSuite: String = TakoCustomConfigCase.defaultsSuiteName) throws -> XCUIApplication {
@@ -55,6 +119,7 @@ class TakoCustomConfigCase: XCTestCase {
         app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES", "--no-update", "--no-launch-notices"])
         app.launchEnvironment["TAKO_CONFIG_PATH"] = configFile.path
         app.launchEnvironment["TAKO_USER_DEFAULTS_SUITE"] = defaultsSuite
+        app.launchEnvironment["TAKO_SESSIONS_HOME"] = sessionsHome.path
         app.launchEnvironment["TAKO_NO_UPDATE"] = "1"
         app.launchEnvironment["TAKO_NO_LAUNCH_NOTICES"] = "1"
         return app

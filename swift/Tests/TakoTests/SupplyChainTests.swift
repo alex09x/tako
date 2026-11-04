@@ -127,12 +127,13 @@ import Testing
             ($0["relationshipType"] as? String) == "DEPENDS_ON" &&
             ($0["spdxElementId"] as? String) == "SPDXRef-Package-tako"
         }
-        #expect(rootDependsOn.count == 12, "Root package must connect to exactly 12 direct dependencies, got \(rootDependsOn.count)")
         let rootTargetNames = rootDependsOn.compactMap { $0["relatedSpdxElement"] as? String }
         #expect(!rootTargetNames.contains { $0.contains("bytes") }, "Direct root dependencies must not include bytes dev-dependency")
 
         let allDependsOn = relationships.filter { ($0["relationshipType"] as? String) == "DEPENDS_ON" }
-        #expect(allDependsOn.count > 500, "SPDX document must record complete DAG of crate-to-crate DEPENDS_ON relationships, got \(allDependsOn.count)")
+        let graph = Dictionary(grouping: allDependsOn) { $0["spdxElementId"] as? String ?? "" }
+            .mapValues { $0.compactMap { $0["relatedSpdxElement"] as? String } }
+        expectReleaseGraph(packages: packages, idKey: "SPDXID", graph: graph, root: "SPDXRef-Package-tako")
     }
 
     // MARK: - 3. CycloneDX 1.5 SBOM Generation
@@ -197,7 +198,6 @@ import Testing
             Issue.record("Missing components list in CycloneDX document")
             return
         }
-        #expect(components.count >= 200 && components.count <= 220, "CycloneDX document must contain release dependency components, got \(components.count)")
         #expect(components.first { ($0["name"] as? String) == "criterion" } == nil, "criterion dev-dependency must not be in release CycloneDX SBOM")
         #expect(components.first { ($0["name"] as? String) == "eframe" } == nil, "eframe optional dependency must not be in release CycloneDX SBOM")
 
@@ -216,14 +216,54 @@ import Testing
         let rootDep = dependencies.first { ($0["ref"] as? String) == "pkg:github/alex09x/tako@0.1.7" }
         #expect(rootDep != nil, "CycloneDX document must include root dependency node")
         let rootDependsOn = rootDep?["dependsOn"] as? [String] ?? []
-        #expect(rootDependsOn.count == 12, "Root dependency node must connect to exactly 12 direct dependencies, got \(rootDependsOn.count)")
         #expect(!rootDependsOn.contains { $0.contains("pkg:cargo/bytes") }, "Direct root dependencies must not include bytes dev-dependency")
+        let rootID = "pkg:github/alex09x/tako@0.1.7"
+        let graph = Dictionary(grouping: dependencies) { $0["ref"] as? String ?? "" }
+            .mapValues { $0.flatMap { $0["dependsOn"] as? [String] ?? [] } }
+        let graphPackages = components + [["bom-ref": rootID, "name": "tako"]]
+        #expect(dependencies.count == graphPackages.count, "Every component needs one dependency node, including leaves")
+        expectReleaseGraph(packages: graphPackages, idKey: "bom-ref", graph: graph, root: rootID)
 
         let cratesWithDependencies = dependencies.filter {
             ($0["ref"] as? String) != "pkg:github/alex09x/tako@0.1.7" &&
             !($0["dependsOn"] as? [String] ?? []).isEmpty
         }
         #expect(cratesWithDependencies.count > 100, "CycloneDX document must record crate-to-crate dependencies, got \(cratesWithDependencies.count)")
+    }
+
+    // The manifest gained flate2 in #73. Check actual dependency identities and
+    // graph integrity instead of stale package/edge totals from an older lockfile.
+    private func expectReleaseGraph(
+        packages: [[String: Any]], idKey: String, graph: [String: [String]], root: String
+    ) {
+        let expectedDirect: Set<String> = [
+            "TakoCoreXCFramework", "base64", "bitflags", "flate2", "libc", "russh",
+            "smallvec", "thiserror", "tokio", "unicode-normalization",
+            "unicode-segmentation", "unicode-width", "uniffi",
+        ]
+        let namedIDs = packages.compactMap { package -> (String, String)? in
+            guard let id = package[idKey] as? String, let name = package["name"] as? String else { return nil }
+            return (id, name)
+        }
+        #expect(namedIDs.count == packages.count, "Every package needs an identifier and name")
+        let names = Dictionary(namedIDs, uniquingKeysWith: { first, _ in first })
+        let identifiers = Set(names.keys)
+        #expect(identifiers.count == packages.count, "Package identifiers must be unique")
+        #expect(Set(graph.keys).isSubset(of: identifiers), "Dependency sources must identify packages")
+        #expect(Set(graph.values.flatMap { $0 }).isSubset(of: identifiers), "Dependency targets must identify packages")
+        for children in graph.values {
+            #expect(Set(children).count == children.count, "Dependency edges must be unique")
+        }
+        let direct = graph[root] ?? []
+        #expect(direct.count == expectedDirect.count)
+        #expect(Set(direct.compactMap { names[$0] }) == expectedDirect, "Root edges must match all release dependencies")
+        var pending = [root]
+        var reachable = Set<String>()
+        while let id = pending.popLast() {
+            guard reachable.insert(id).inserted else { continue }
+            pending.append(contentsOf: graph[id] ?? [])
+        }
+        #expect(reachable == identifiers, "Every exported package must be reachable from the product")
     }
 
     // MARK: - 4. Reproducible Build Verification Script

@@ -14,6 +14,7 @@ import Network
 
 extension WalkthroughTests {
     func testRealOpenSSHHandlesDailyInteractiveWorkloads() {
+        let tmuxSocket = "tako-ui"
         openRealSSHSession(port: openSSHPort, resetState: true)
         shot("01 real OpenSSH shell")
 
@@ -77,14 +78,18 @@ extension WalkthroughTests {
         XCTAssertTrue(waitForTerminal(toContain: "AFTER-NANO"), "Nano did not restore the shell")
         shot("07 nano control-key save")
 
-        // tmux is a nested PTY and alternate screen. A marker produced inside
-        // it and another after its shell exits prove both halves rendered.
-        typeCommand("/opt/homebrew/bin/tmux -L tako-ui -f /dev/null new-session")
-        typeCommand("printf 'TMUX-INSIDE\\n'")
+        // tmux is a nested PTY and alternate screen. Split both markers across
+        // quotes so command echo cannot satisfy them, and require `$TMUX` to
+        // be non-empty inside the pane before exiting back to the outer shell.
+        typeCommand(
+            "/bin/sh -c 'PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" "
+                + "tmux -L \(tmuxSocket) -f /dev/null new-session -n main /bin/sh -i'"
+        )
+        typeCommand("test -n \"${TMUX:-}\" && printf 'TMUX''-INSIDE\\n'")
         XCTAssertTrue(waitForTerminal(toContain: "TMUX-INSIDE"), "tmux never became interactive")
         shot("08 tmux nested shell")
         typeCommand("exit")
-        typeCommand("printf 'AFTER-TMUX\\n'")
+        typeCommand("printf 'AFTER''-TMUX\\n'")
         XCTAssertTrue(waitForTerminal(toContain: "AFTER-TMUX"), "tmux did not return to the host shell")
 
         // top is continuously redrawn rather than appended. Its screen must
@@ -126,9 +131,10 @@ extension WalkthroughTests {
         shot("12 five thousand line tail")
 
         typeCommand(
-            "/opt/homebrew/bin/tmux -L tako-ui kill-server >/dev/null 2>&1; "
+            "/bin/sh -c 'PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" "
+                + "tmux -L \(tmuxSocket) kill-server >/dev/null 2>&1 || true; "
                 + "rm -f /tmp/tako-ui-less.txt /tmp/tako-ui-vim.txt /tmp/tako-ui-nano.txt; "
-                + "printf 'WORKLOADS-DONE\\n'"
+                + "printf \"WORKLOADS\"\"-DONE\\n\"'"
         )
         XCTAssertTrue(waitForTerminal(toContain: "WORKLOADS-DONE"))
         shot("13 real workloads complete")

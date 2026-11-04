@@ -225,7 +225,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\nif TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp-uitest/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp-uitest/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nelse\n  # Compiling the UI tests is deliberately not held hostage to the\n  # app build: the tests are what this project exists to build, and\n  # they skip themselves outside a manual Xcode IDE run anyway. Fail\n  # loudly in the build log instead, and leave the placeholder\n  # product so the test bundle still has a Target Application.\n  # It still needs signing itself, since CODE_SIGNING_ALLOWED is\n  # off for this whole target (see the setting's own comment above).\n  echo \"warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md.\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nfi\n";
+			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\nif TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp-uitest/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp-uitest/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nelse\n  # Never run a GUI journey against a placeholder or an older app\n  # left by another build when the current candidate failed.\n  echo \"error: the current Tako UI-test host could not be built. No UI tests will run.\"\n  exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -424,6 +424,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = TakoUITests/TakoUITests.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -462,6 +463,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = TakoUITests/TakoUITests.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

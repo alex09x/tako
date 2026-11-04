@@ -12,6 +12,7 @@ all of upstream's Swift link into one binary -- nothing loads at runtime
 that isn't in the bundle.
 """
 import hashlib, json, os, subprocess, sys, shutil, plistlib
+from macapp_signing import sign_bundle
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -92,7 +93,7 @@ def up_to_date(output, inputs):
     return os.path.getmtime(output) >= stamp(inputs)
 
 os.makedirs(BUILD, exist_ok=True)
-run(["cargo", "build", "--release", "--features", "ssh"], "cargo build")
+run(["mitts", "build", "--release", "--features", "ssh"], "mitts build")
 
 # The direct Swift build consumes generated UniFFI sources from target/bindings.
 # Keep them tied to the Rust ABI instead of silently reusing a stale file after
@@ -101,7 +102,7 @@ bindings_swift = "target/bindings/tako_core.swift"
 if not up_to_date(bindings_swift, ["src", "Cargo.toml", "Cargo.lock"]):
     os.makedirs("target/bindings", exist_ok=True)
     run([
-        "cargo", "run", "--quiet", "--bin", "uniffi-bindgen",
+        "mitts", "run", "--quiet", "--bin", "uniffi-bindgen",
         "--features", "uniffi-cli,ssh", "--", "generate",
         "--language", "swift", "--out-dir", "target/bindings",
         "target/release/libtako_core.dylib",
@@ -188,7 +189,7 @@ os.makedirs(macos); os.makedirs(res)
 shutil.copy(binary, os.path.join(macos, "Tako"))
 # takoctl, the command-line side of remote control: next to the app, where
 # the shell integration's `path` feature puts it on every pane's PATH.
-run(["cargo", "build", "--release", "--manifest-path", "takoctl/Cargo.toml"], "build takoctl")
+run(["mitts", "build", "--release", "--manifest-path", "takoctl/Cargo.toml"], "build takoctl")
 shutil.copy("takoctl/target/release/takoctl", os.path.join(macos, "takoctl"))
 # Upstream's interface files: the menu bar, the window styles, and the
 # scripting definition. Their Swift loads these by name, so they ship
@@ -229,6 +230,7 @@ with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": VERSION,
         "CFBundleVersion": BUILD_NUMBER,
+        "TakoSourceCommit": git("rev-parse", "HEAD"),
         "LSMinimumSystemVersion": "14.0",
         "NSHighResolutionCapable": True,
         "NSPrincipalClass": "NSApplication",
@@ -285,11 +287,6 @@ def codesign_identity():
 
 identity = codesign_identity()
 adhoc = identity == "-"
-cmd = ["codesign", "--force", "--sign", identity]
-if not adhoc:
-    # --timestamp needs Apple's server and is what makes the signature
-    # outlive the certificate. --options runtime is the hardened runtime.
-    cmd += ["--options", "runtime", "--timestamp"]
 
 # The session runtime (session-persistence, experimental): bundled only when
 # asked for, so ordinary builds and checks never fetch Zig or zmx. It is
@@ -303,7 +300,6 @@ if os.environ.get("TAKO_WITH_ZMX") != "0":
     os.makedirs(helpers, exist_ok=True)
     helper = os.path.join(helpers, "zmx")
     shutil.copy2(built, helper)
-    run(cmd + [helper], "sign session runtime")
     with open(os.path.join(os.path.dirname(built), "source.json")) as f:
         source = json.load(f)
     with open(helper, "rb") as f:
@@ -313,15 +309,13 @@ if os.environ.get("TAKO_WITH_ZMX") != "0":
     # The runtime's own notices, and those of what it bundles, ship with it.
     licenses = os.path.join(APP, "Contents", "Resources", "Licenses")
     os.makedirs(licenses, exist_ok=True)
-    for notice in ("LICENSE-zmx",):
+    for notice in ("LICENSE-zmx", "LICENSE-ghostty"):
         shutil.copy2(os.path.join(os.path.dirname(built), notice), os.path.join(licenses, notice))
 
 # takoctl is an executable of its own inside the bundle: notarization
 # wants every one signed, with the hardened runtime and a timestamp, by the
 # same team -- before the app's signature seals it.
-run(cmd + [os.path.join(macos, "takoctl")], "sign takoctl")
-
-run(cmd + [APP], "sign app")
+sign_bundle(APP, identity)
 
 print(f"built {APP} {VERSION} ({BUILD_NUMBER})")
 if adhoc:

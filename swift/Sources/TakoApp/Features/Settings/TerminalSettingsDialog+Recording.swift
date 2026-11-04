@@ -12,6 +12,7 @@ import AppKit
 
 extension TerminalSettingsDialog {
     func startRecording() {
+        guard filteredItems.indices.contains(selectedIndex) else { return }
         pendingConflict = nil
         isRecording = true
         recordingHeldModifiers = []

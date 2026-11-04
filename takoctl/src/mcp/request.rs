@@ -17,30 +17,46 @@ use crate::socket;
 pub fn parse_timeout_seconds(s: &str) -> Result<f64, String> {
     let s = s.trim();
     if let Some(rest) = s.strip_suffix("ms") {
-        let ms: f64 = rest.trim().parse().map_err(|_| format!("invalid duration '{s}'"))?;
+        let ms: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid duration '{s}'"))?;
         return Ok(ms / 1000.0);
     }
     if let Some(rest) = s.strip_suffix('s') {
-        let sec: f64 = rest.trim().parse().map_err(|_| format!("invalid duration '{s}'"))?;
+        let sec: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid duration '{s}'"))?;
         return Ok(sec);
     }
     if let Some(rest) = s.strip_suffix('m') {
-        let m: f64 = rest.trim().parse().map_err(|_| format!("invalid duration '{s}'"))?;
+        let m: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid duration '{s}'"))?;
         return Ok(m * 60.0);
     }
     if let Some(rest) = s.strip_suffix('h') {
-        let h: f64 = rest.trim().parse().map_err(|_| format!("invalid duration '{s}'"))?;
+        let h: f64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid duration '{s}'"))?;
         return Ok(h * 3600.0);
     }
-    s.parse::<f64>().map_err(|_| format!("invalid duration '{s}'"))
+    s.parse::<f64>()
+        .map_err(|_| format!("invalid duration '{s}'"))
 }
 
 pub fn determine_timeout(name: &str, args: &Value) -> Duration {
-    if name == "tako_wait" || name == "tako_ask" || (name == "tako_run" && args.get("wait") == Some(&Value::Bool(true))) {
-        if let Some(t_str) = args.get("timeout").and_then(Value::as_str) {
-            if let Ok(sec) = parse_timeout_seconds(t_str) {
-                return Duration::from_secs_f64(sec) + socket::TIMEOUT;
-            }
+    if name == "tako_wait"
+        || name == "tako_ask"
+        || (name == "tako_run" && args.get("wait") == Some(&Value::Bool(true)))
+    {
+        if let Some(t_str) = args.get("timeout").and_then(Value::as_str)
+            && let Ok(sec) = parse_timeout_seconds(t_str)
+        {
+            return Duration::from_secs_f64(sec) + socket::TIMEOUT;
         }
         return Duration::from_secs(24 * 3600);
     }
@@ -68,7 +84,10 @@ pub fn build_socket_request(
     let cmd = match name {
         "tako_tree" => "tree",
         "tako_split" => {
-            let dir = args.get("direction").and_then(Value::as_str).unwrap_or("right");
+            let dir = args
+                .get("direction")
+                .and_then(Value::as_str)
+                .unwrap_or("right");
             req_args.insert("direction".into(), Value::String(dir.into()));
             if let Some(child_of) = args.get("child_of").and_then(Value::as_str) {
                 req_args.insert("child_of".into(), Value::String(child_of.into()));
@@ -343,4 +362,3 @@ pub fn build_socket_request(
     }
     Ok(Value::Object(req))
 }
-

@@ -110,21 +110,23 @@ extension TerminalTheme {
     public static func parse(config text: String,
                              base: TerminalTheme = TerminalTheme(),
                              honourTheme: Bool = true,
-                             configPath: String? = nil) -> TerminalTheme {
+                             configPath: String? = nil,
+                             darkAppearance: Bool = true) -> TerminalTheme {
         let profile = configPath.map { URL(fileURLWithPath: $0).deletingLastPathComponent().appendingPathComponent("themes").path }
         return parse(
             config: text,
             base: base,
             honourTheme: honourTheme,
             themeSearchPaths: (profile.map { [$0] } ?? []) + Self.themeSearchPaths,
-            configPath: configPath)
+            configPath: configPath, darkAppearance: darkAppearance)
     }
 
     static func parse(config text: String,
                       base: TerminalTheme,
                       honourTheme: Bool,
                       themeSearchPaths: [String],
-                      configPath: String? = nil) -> TerminalTheme {
+                      configPath: String? = nil,
+                      darkAppearance: Bool = true) -> TerminalTheme {
         var entries: [(key: String, value: String)] = []
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -144,7 +146,7 @@ extension TerminalTheme {
             ? entries.last(where: { $0.key == "theme" })?.value
             : nil
         var theme = themeName.map {
-            base.applyingTheme(named: $0, searchPaths: themeSearchPaths)
+            base.applyingTheme(named: Self.themeName(for: $0, darkAppearance: darkAppearance), searchPaths: themeSearchPaths)
         } ?? base
 
         for (key, value) in entries {
@@ -335,18 +337,18 @@ extension TerminalTheme {
 
     /// Load the user's config: the application-support file first, then the
     /// XDG files, which win.
-    public static func loadUserConfig() -> TerminalTheme {
+    public static func loadUserConfig(darkAppearance: Bool = true) -> TerminalTheme {
         let paths = [
             "~/Library/Application Support/com.tako-core.terminal/config",
             "~/.config/tako-core/config",
             "~/.config/tako/config",
         ].map { ($0 as NSString).expandingTildeInPath }
-        return loadUserConfig(paths: paths, themeSearchPaths: Self.themeSearchPaths)
+        return loadUserConfig(paths: paths, themeSearchPaths: Self.themeSearchPaths, darkAppearance: darkAppearance)
     }
 
     /// Each existing file in `paths` is parsed on top of the previous result,
     /// so a later file overrides an earlier one, `theme` included.
-    static func loadUserConfig(paths: [String], themeSearchPaths: [String]) -> TerminalTheme {
+    static func loadUserConfig(paths: [String], themeSearchPaths: [String], darkAppearance: Bool = true) -> TerminalTheme {
         var theme = TerminalTheme.takoDefault
         for path in paths {
             guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
@@ -355,7 +357,7 @@ extension TerminalTheme {
                 base: theme,
                 honourTheme: true,
                 themeSearchPaths: themeSearchPaths,
-                configPath: path)
+                configPath: path, darkAppearance: darkAppearance)
         }
         return theme
     }

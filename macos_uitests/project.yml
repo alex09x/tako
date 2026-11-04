@@ -1,3 +1,10 @@
+# tako — macOS UI test project
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # XcodeGen spec for the macOS UI test suite.
 #
 # SwiftPM has no UI-Testing-Bundle target kind, so swift/Package.swift cannot
@@ -73,15 +80,10 @@ targets:
             /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
             /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
           else
-            # Compiling the UI tests is deliberately not held hostage to the
-            # app build: the tests are what this project exists to build, and
-            # they skip themselves outside a manual Xcode IDE run anyway. Fail
-            # loudly in the build log instead, and leave the placeholder
-            # product so the test bundle still has a Target Application.
-            # It still needs signing itself, since CODE_SIGNING_ALLOWED is
-            # off for this whole target (see the setting's own comment above).
-            echo "warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
-            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+            # Never run a GUI journey against a placeholder or an older app
+            # left by another build when the current candidate failed.
+            echo "error: the current Tako UI-test host could not be built. No UI tests will run."
+            exit 1
           fi
 
   TakoUITests:
@@ -108,15 +110,13 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tako-core.TakoUITests
+        CODE_SIGN_ENTITLEMENTS: TakoUITests/TakoUITests.entitlements
         TEST_TARGET_NAME: TakoCore
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  # The default scheme keeps upstream's behaviour: TakoCustomConfigCase
-  # returns an empty suite unless IDE_DISABLED_OS_ACTIVITY_DT_MODE is set, a
-  # variable Xcode's IDE sets and xcodebuild does not. So `xcodebuild test`
-  # here compiles the tests and runs none of them, which is what upstream's
-  # CI wants and what keeps a click-driven suite out of an unattended build.
+  # Both schemes execute real tests. Use build-for-testing when only a
+  # compilation is wanted; a test invocation must not silently run nothing.
   TakoUITests:
     build:
       targets:
@@ -128,12 +128,8 @@ schemes:
     run:
       config: Debug
 
-  # The same tests, actually run. The variable is set here rather than in the
-  # test case so upstream's file stays verbatim, and in a second scheme rather
-  # than the first so that enabling them is always deliberate: they take over
-  # the screen, typing keystrokes and dragging tabs, and need a logged-in
-  # session with Accessibility permission granted. Driven by
-  # scripts/uitest.sh.
+  # Compatibility name used by scripts/uitest.sh and hosted CI. These tests
+  # drive the logged-in desktop and require UI automation authorization.
   TakoUITests-Run:
     build:
       targets:

@@ -1,0 +1,166 @@
+# tako — Hosted macOS CI
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Optional source ref or commit (defaults to the event commit)
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Optional source ref or commit (defaults to the event commit)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-macos-ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.source_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    # Standard public-repository arm64 runners only; no LAN or signing keys.
+    if: ${{ github.event.repository.visibility == 'public' && github.event.repository.private == false }}
+    name: ${{ matrix.stage }} (macOS arm64)
+    runs-on: macos-26
+    timeout-minutes: ${{ matrix.stage == 'persist-e2e-tests' && 180 || 120 }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        stage: [engine-tests, cli-tests, python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests, macapp-e2e-tests, persist-e2e-tests, ios-surface-tests, ios-simtest]
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUST_TEST_THREADS: "2"
+      PROD_CODE_LOCAL: "1"
+      TAKO_CODESIGN_IDENTITY: "-"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Keep reruns on the original event commit, including PR merges.
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
+
+      - name: Require standard arm64 macOS and repository toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 26
+          xcode-select --print-path
+          xcodebuild -version
+          swift --version
+          python3 --version
+          # rustup reads rust-toolchain.toml, including the three Apple targets.
+          rustup show
+          rustc --version
+
+      - name: Bootstrap latest stable Mitts
+        if: ${{ matrix.stage != 'python-tests' }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
+          sh -n "$RUNNER_TEMP/mitts-install.sh"
+          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          mitts --version
+
+      - name: Prepare supported Bash integration coverage
+        if: ${{ matrix.stage == 'swift-tests' || matrix.stage == 'macapp-e2e-tests' }}
+        env:
+          CI_STAGE: ${{ matrix.stage }}
+        run: |
+          set -euo pipefail
+          brew install bash
+          tako_ci_bash="$(brew --prefix bash)/bin/bash"
+          "$tako_ci_bash" --version
+          "$tako_ci_bash" -c '(( BASH_VERSINFO[0] >= 4 ))'
+          printf 'TAKO_TEST_BASH=%s\n' "$tako_ci_bash" >> "$GITHUB_ENV"
+          if [ "$CI_STAGE" = macapp-e2e-tests ]; then
+            # PTY startup reads the account record, not the launcher's SHELL.
+            # This changes only the disposable hosted runner account.
+            sudo dscl . -create "/Users/$(id -un)" UserShell "$tako_ci_bash"
+            tako_ci_actual=$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')
+            test "$tako_ci_actual" = "$tako_ci_bash"
+            printf 'Native E2E login shell: %s\n' "$tako_ci_actual"
+          fi
+
+      - name: Prepare Metal compiler for Apple targets
+        if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
+        run: |
+          set -euo pipefail
+          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
+            echo 'Metal compiler missing; installing the Xcode component'
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun --sdk macosx metal --version
+          xcrun --find metallib
+
+      - name: Install iOS project generator and show available simulators
+        if: ${{ startsWith(matrix.stage, 'ios-') }}
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen --version
+          xcrun simctl list devices available
+
+      - name: Inspect macOS UI automation
+        if: ${{ matrix.stage == 'macos-ui-tests' || matrix.stage == 'macapp-e2e-tests' || matrix.stage == 'persist-e2e-tests' }}
+        run: |
+          set -euo pipefail
+          sudo /usr/sbin/DevToolsSecurity --enable
+          /usr/bin/automationmodetool
+
+      - name: Run full test-only stage locally
+        env:
+          CI_STAGE: ${{ matrix.stage }}
+        run: ./scripts/ci.sh --local "$CI_STAGE"
+
+      - name: Report native crash diagnostics on failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          reports = Path.home() / 'Library/Logs/DiagnosticReports'
+          for path in sorted(reports.glob('*.ips')):
+              if not any(name in path.name.lower() for name in ('tako', 'swiftpm-testing', 'xctest')):
+                  continue
+              try:
+                  text = path.read_text()
+                  decoder = json.JSONDecoder()
+                  report, end = decoder.raw_decode(text)
+                  if text[end:].strip():
+                      report, _ = decoder.raw_decode(text[end:].lstrip())
+                  print('Crash report:', path.name)
+                  for key in ('procName', 'exception', 'termination', 'asi'):
+                      print(key, json.dumps(report.get(key))[:3000])
+                  images = report.get('usedImages', [])
+                  for thread in report.get('threads', []):
+                      if thread.get('triggered'):
+                          for frame in thread.get('frames', [])[:30]:
+                              index = frame.get('imageIndex', -1)
+                              name = images[index].get('name') if 0 <= index < len(images) else '?'
+                              print(name, frame.get('symbol', '?'), frame.get('symbolLocation', ''))
+              except (ValueError, OSError, TypeError) as error:
+                  print('Could not decode', path.name, type(error).__name__)
+          PY

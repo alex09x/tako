@@ -26,6 +26,16 @@ fi
 
 mkdir -p target
 started=$(date +%s)
-swiftc -O -o target/tako-e2e scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/ScenariosDialogsAndTabs.swift scripts/e2e/ScenariosHumanInteractions.swift scripts/e2e/ScenariosKittyGraphics.swift scripts/e2e/ScenariosSessionRecovery.swift scripts/e2e/ScenariosSessionCollision.swift scripts/e2e/ScenariosSidebarWorkspaceMove.swift scripts/e2e/ScenariosRecoveryGrouping.swift scripts/e2e/ScenariosLegacyWorkspaceRecovery.swift scripts/e2e/ScenariosAppearanceSettings.swift scripts/e2e/ScenariosScopedAppearance.swift scripts/e2e/ScenariosThemePresets.swift scripts/e2e/ScenariosThemeControl.swift scripts/e2e/ScenariosThemeTypography.swift scripts/e2e/tako-e2e.swift
-echo "[timing] e2e runner compiled in $(( $(date +%s) - started ))s" >&2
+sources=(scripts/e2e/DriverCore.swift scripts/e2e/DriverEvents.swift scripts/e2e/DriverAX.swift scripts/e2e/DriverAXControls.swift scripts/e2e/DriverPTY.swift scripts/e2e/ScenariosDialogsAndTabs.swift scripts/e2e/ScenariosHumanInteractions.swift scripts/e2e/ScenariosKittyGraphics.swift scripts/e2e/ScenariosSessionRecovery.swift scripts/e2e/ScenariosSessionCollision.swift scripts/e2e/ScenariosSidebarWorkspaceMove.swift scripts/e2e/ScenariosRecoveryGrouping.swift scripts/e2e/ScenariosLegacyWorkspaceRecovery.swift scripts/e2e/ScenariosAppearanceSettings.swift scripts/e2e/ScenariosScopedAppearance.swift scripts/e2e/ScenariosThemePresets.swift scripts/e2e/ScenariosThemeControl.swift scripts/e2e/ScenariosThemeTypography.swift scripts/e2e/tako-e2e.swift)
+# Persistence runs use this same driver with a fresh bundle for each case.
+# Include the compiler and this script (its flags/source list) in the key.
+fingerprint=$({ swiftc --version; shasum -a 256 "$0" "${sources[@]}"; } | shasum -a 256 | cut -d' ' -f1)
+if [ ! -x target/tako-e2e ] || [ "$(cat target/tako-e2e.inputs 2>/dev/null || true)" != "$fingerprint" ]; then
+    swiftc -O -o target/tako-e2e.next "${sources[@]}"
+    mv -f target/tako-e2e.next target/tako-e2e
+    printf '%s\n' "$fingerprint" > target/tako-e2e.inputs
+    echo "[timing] e2e runner compiled in $(( $(date +%s) - started ))s" >&2
+else
+    echo '[timing] e2e runner unchanged; using cached executable' >&2
+fi
 exec python3 scripts/gui_lock.py -- target/tako-e2e "$APP" "$@"
