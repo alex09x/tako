@@ -41,9 +41,12 @@ failed = False
 checked = 0
 for entry in report["data"][0]["files"]:
     name = entry["filename"]
-    if "/src/" not in name:
+    if name.startswith("src/"):
+        rel = name
+    elif "/src/" in name:
+        rel = name[name.index("/src/") + 1 :]
+    else:
         continue
-    rel = name[name.index("/src/") + 1 :]
     if args.files and not any(rel.endswith(f) for f in args.files):
         continue
     lines = entry["summary"]["lines"]
@@ -53,6 +56,6 @@ for entry in report["data"][0]["files"]:
     checked += 1
     print(f"{'ok  ' if ok else 'FAIL'} {pct:6.2f}%  {rel}")
 
-if args.files and checked == 0:
-    sys.exit("coverage-gate: no file matched " + ", ".join(args.files))
+if checked == 0:
+    sys.exit("coverage-gate: no file matched " + (", ".join(args.files) if args.files else "src/"))
 sys.exit(1 if failed else 0)
