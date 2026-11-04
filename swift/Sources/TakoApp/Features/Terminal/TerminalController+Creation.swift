@@ -327,13 +327,13 @@ extension TerminalController {
 
         case "current": fallthrough
         default:
-            if let currentIdx = group.visibleWindows.firstIndex(of: parent) {
+            let store = WorkspaceStore.shared
+            // A departing parent has no active rank; insert below uses the full group, including hidden tabs.
+            let workspaceIndex = store.rank(ofTab: parent.stableTabIdentifier, in: store.activeWorkspaceId).map { $0 + 1 }
+            store.assignTab(tabIdentifier: window.stableTabIdentifier, to: store.activeWorkspaceId, at: workspaceIndex)
+            if let currentIdx = group.windows.firstIndex(of: parent) {
                 Tako.CustomTabGroup.insert(window, into: parent, at: currentIdx + 1, select: select)
             } else {
-                WorkspaceStore.shared.assignTab(
-                    tabIdentifier: window.stableTabIdentifier,
-                    to: WorkspaceStore.shared.activeWorkspaceId
-                )
                 Tako.CustomTabGroup.join(window, to: parent, select: select)
             }
         }
