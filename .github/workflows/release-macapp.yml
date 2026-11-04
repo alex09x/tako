@@ -119,6 +119,12 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.97.1 --profile minimal
           rustup target add aarch64-apple-darwin --toolchain 1.97.1
+          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
+          sh -n "$RUNNER_TEMP/mitts-install.sh"
+          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          mitts --version
           if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then xcodebuild -downloadComponent MetalToolchain; fi
       - name: Import managed signing credentials
         if: env.RELEASE_MODE == 'signed'

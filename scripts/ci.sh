@@ -91,11 +91,11 @@ SH
     echo "== $stage (test-only; full LAN quality gates are separate)"
     case "$stage" in
         engine-tests)
-            ci_logged "$stage" cargo test --locked --no-fail-fast --features pty,ssh -- --test-threads=2
+            ci_logged "$stage" mitts test --locked --no-fail-fast --features pty,ssh -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
             ;;
         cli-tests)
-            ci_logged "$stage" cargo test --locked --no-fail-fast --manifest-path takoctl/Cargo.toml -- --test-threads=2
+            ci_logged "$stage" mitts test --locked --no-fail-fast --manifest-path takoctl/Cargo.toml -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
             ;;
         python-tests)
@@ -252,12 +252,12 @@ for stage in "${stages[@]}"; do
             script+="ci_test_stage $stage" ;;
         rust) script+="
 echo '== rust'
-cargo clippy --all-targets --features pty,ssh -- -D warnings
+mitts clippy --all-targets --features pty,ssh -- -D warnings
 python3 scripts/coverage-gate.py --features pty,ssh" ;;
         cli) script+="
 echo '== cli'
-cargo clippy --manifest-path takoctl/Cargo.toml -- -D warnings
-cargo test --manifest-path takoctl/Cargo.toml" ;;
+mitts clippy --manifest-path takoctl/Cargo.toml -- -D warnings
+mitts test --manifest-path takoctl/Cargo.toml" ;;
         swift) script+="
 echo '== swift'
 ./scripts/build-xcframework.sh

@@ -75,7 +75,7 @@ export RUSTFLAGS="--remap-path-prefix=$(pwd)=/tako"
 ### Step 3: Compile the release static library
 
 ```bash
-cargo build --release --lib --features ssh --target aarch64-apple-darwin
+mitts build --release --lib --features ssh --target aarch64-apple-darwin
 ```
 
 ### Step 4: Verify the checksum

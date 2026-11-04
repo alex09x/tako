@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# tako — iOS terminal surface acceptance
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,7 +16,7 @@ mkdir -p "$BUILD_DIR"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 echo "=== 1. Running Rust Parity and Core Surface Tests ==="
-cargo test --test parity_input_encoding --test parity_resize --test pty_chunk_boundary
+mitts test --test parity_input_encoding --test parity_resize --test pty_chunk_boundary
 
 echo "=== 2. Building iOS App and Terminal Surface ==="
 python3 scripts/build-iosapp.py

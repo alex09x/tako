@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."
 RUN="/tmp/tako-remote-$$-$RANDOM"
 # The command travels base64-encoded: nothing in it is expanded on this side.
 CMD_B64=$(printf '%s\n' "set -e" "cd \"$DIR\"" "export DEVELOPER_DIR=\"$XCODE\"" \
-    'export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"' \
+    'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"' \
     "export TAKO_REMOTE_EXEC=1" "$*" | base64)
 
 # The remote login shell may not be bash, so scripts go through `bash -s`

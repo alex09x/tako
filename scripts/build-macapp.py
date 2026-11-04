@@ -93,7 +93,7 @@ def up_to_date(output, inputs):
     return os.path.getmtime(output) >= stamp(inputs)
 
 os.makedirs(BUILD, exist_ok=True)
-run(["cargo", "build", "--release", "--features", "ssh"], "cargo build")
+run(["mitts", "build", "--release", "--features", "ssh"], "mitts build")
 
 # The direct Swift build consumes generated UniFFI sources from target/bindings.
 # Keep them tied to the Rust ABI instead of silently reusing a stale file after
@@ -102,7 +102,7 @@ bindings_swift = "target/bindings/tako_core.swift"
 if not up_to_date(bindings_swift, ["src", "Cargo.toml", "Cargo.lock"]):
     os.makedirs("target/bindings", exist_ok=True)
     run([
-        "cargo", "run", "--quiet", "--bin", "uniffi-bindgen",
+        "mitts", "run", "--quiet", "--bin", "uniffi-bindgen",
         "--features", "uniffi-cli,ssh", "--", "generate",
         "--language", "swift", "--out-dir", "target/bindings",
         "target/release/libtako_core.dylib",
@@ -189,7 +189,7 @@ os.makedirs(macos); os.makedirs(res)
 shutil.copy(binary, os.path.join(macos, "Tako"))
 # takoctl, the command-line side of remote control: next to the app, where
 # the shell integration's `path` feature puts it on every pane's PATH.
-run(["cargo", "build", "--release", "--manifest-path", "takoctl/Cargo.toml"], "build takoctl")
+run(["mitts", "build", "--release", "--manifest-path", "takoctl/Cargo.toml"], "build takoctl")
 shutil.copy("takoctl/target/release/takoctl", os.path.join(macos, "takoctl"))
 # Upstream's interface files: the menu bar, the window styles, and the
 # scripting definition. Their Swift loads these by name, so they ship

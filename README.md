@@ -145,8 +145,13 @@ macapp self-test: ok
 
 To run the Rust engine test suite:
 ```bash
-cargo test
+mitts test
 ```
+
+Rust builds, tests, lint and coverage use the latest stable [Mitts](https://mittsbuild.com/).
+Install it with `curl -fsSL https://mittsbuild.com/install.sh | MITTS_INSTALL_ROOT="$HOME/.local" sh` and add
+`~/.local/bin` to `PATH`. Unsupported commands or options stop the affected
+check and are reported to Mitts; build scripts do not fall back to Cargo.
 
 The Swift suites need the engine built locally first:
 ```bash

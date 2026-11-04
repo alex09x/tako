@@ -49,6 +49,19 @@ coverage, remain separate from the explicitly named hosted test stages.
 Workflow changes must not suppress an existing failure to obtain a green
 badge.
 
+## Rust command execution
+
+Build, test, lint, coverage and metadata entry points use the latest stable
+Mitts. Each hosted job bootstraps it from the official installer and records
+the selected version. Unsupported commands or options fail the affected stage
+and are reported to Mitts; the workflows do not retry through Cargo or change
+dependency declarations to work around a tool failure.
+
+Keep the existing target, feature, locked-resolution and coverage arguments when
+using Mitts. A successful individual command does not replace the complete
+hosted gates: require actual test completion, the existing coverage thresholds
+and artifacts produced by the candidate being checked.
+
 ## Download a candidate without uploading Apple credentials
 
 Run **release-macapp → Run workflow** with:

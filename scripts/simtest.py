@@ -213,7 +213,7 @@ def make_servers():
              "-E", os.path.join(os.path.dirname(cfg), "sshd.log")])
         wait_for_port(PORT + i, f"sshd/{kind}")
 
-    run(["cargo", "build", "--features", "ssh", "--example", "test_sshd"])
+    run(["mitts", "build", "--features", "ssh", "--example", "test_sshd"])
     log = open(os.path.join(FIXTURE, "test_sshd.log"), "w")
     proc = subprocess.Popen(
         ["target/debug/examples/test_sshd",

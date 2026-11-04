@@ -54,8 +54,8 @@ for arg in "$@"; do
     esac
 done
 
-# Ensure cargo and rustc are present
-command -v cargo >/dev/null 2>&1 || { echo "error: cargo not found" >&2; exit 1; }
+# Ensure Mitts and rustc are present
+command -v mitts >/dev/null 2>&1 || { echo "error: mitts not found" >&2; exit 1; }
 command -v rustc >/dev/null 2>&1 || { echo "error: rustc not found" >&2; exit 1; }
 
 # Pinned build inputs
@@ -77,7 +77,7 @@ sha256() {
 if [ "$MODE" = "build-only" ]; then
     echo "🔨 Building reproducible TakoCore engine in ${ROOT}..."
     export RUSTFLAGS="--remap-path-prefix=${ROOT}=/tako"
-    cargo build --release --lib --features ssh --target aarch64-apple-darwin
+    mitts build --release --lib --features ssh --target aarch64-apple-darwin
     LIB_PATH="${ROOT}/target/aarch64-apple-darwin/release/libtako_core.a"
     HASH="$(sha256 "$LIB_PATH")"
     echo "✅ Engine artifact built successfully:"
@@ -89,7 +89,7 @@ fi
 # Verification mode: build across two independent isolated directories
 echo "🔬 Starting reproducible build verification across isolated build trees..."
 echo "   Rustc:               $(rustc --version)"
-echo "   Cargo:               $(cargo --version)"
+echo "   Mitts:               $(mitts --version)"
 echo "   SOURCE_DATE_EPOCH:   $SOURCE_DATE_EPOCH"
 echo "   ZERO_AR_DATE:        $ZERO_AR_DATE"
 echo "   DEPLOYMENT_TARGET:   $MACOSX_DEPLOYMENT_TARGET"
@@ -124,14 +124,14 @@ echo "🔨 [1/2] Compiling Build A (path prefix: ${BUILD_A} -> /tako)..."
 (
     cd "$BUILD_A"
     export RUSTFLAGS="--remap-path-prefix=${BUILD_A}=/tako"
-    cargo build --release --lib --features ssh --target aarch64-apple-darwin --quiet
+    mitts build --release --lib --features ssh --target aarch64-apple-darwin --quiet
 )
 
 echo "🔨 [2/2] Compiling Build B (path prefix: ${BUILD_B} -> /tako)..."
 (
     cd "$BUILD_B"
     export RUSTFLAGS="--remap-path-prefix=${BUILD_B}=/tako"
-    cargo build --release --lib --features ssh --target aarch64-apple-darwin --quiet
+    mitts build --release --lib --features ssh --target aarch64-apple-darwin --quiet
 )
 
 LIB_A="${BUILD_A}/target/aarch64-apple-darwin/release/libtako_core.a"

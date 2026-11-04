@@ -1,4 +1,11 @@
 #!/bin/bash
+# tako — macOS test library assembly
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+#
 # The macOS-only subset of build-xcframework.sh: the static library and the
 # generated bindings `scripts/swift-test.sh` links against, and nothing else.
 #
@@ -12,7 +19,7 @@ cd "$(dirname "$0")/.."
 
 echo "🔨 Compiling release build (aarch64-apple-darwin)..."
 python3 scripts/engine_fingerprint.py before-cargo aarch64-apple-darwin
-MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release --lib --features ssh --target aarch64-apple-darwin
+MACOSX_DEPLOYMENT_TARGET=13.0 mitts build --release --lib --features ssh --target aarch64-apple-darwin
 
 echo "🧬 Staging target/macos/libtako_core.a..."
 mkdir -p target/macos

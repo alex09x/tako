@@ -14,7 +14,7 @@
 //! `Terminal` a phone would use, and the resulting screen read back with
 //! `dump_text`. If this prints a prompt, a phone can too.
 //!
-//!     cargo run --example ssh_smoke --features ssh,pty -- \
+//!     mitts run --example ssh_smoke --features ssh,pty -- \
 //!         --host 192.0.2.1 --user user --key ~/.ssh/id_ed25519 \
 //!         --command "echo hello from the far end"
 

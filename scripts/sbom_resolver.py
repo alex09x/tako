@@ -9,7 +9,7 @@
 # SPDX-License-Identifier: MIT
 #
 
-"""Release dependency graph resolver for Cargo builds and SBOM generation."""
+"""Release dependency graph resolver through Mitts for SBOM generation."""
 
 import os
 import subprocess
@@ -90,9 +90,9 @@ def derive_manifest_direct_deps(features_spec=""):
 def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"):
     """Resolves Cargo packages for the actual release build configuration.
 
-    Filters out dev-dependencies and inactive optional features using cargo metadata,
+    Filters out dev-dependencies and inactive optional features using Mitts metadata,
     retaining only the packages built into the release artifact.
-    Falls back to Cargo.lock exact-package traversal if cargo metadata is unavailable.
+    Fails closed when target-specific metadata cannot be resolved.
     """
     cargo_lock_path = os.path.join(ROOT, "Cargo.lock")
     lock_pkgs = parse_cargo_lock(cargo_lock_path)
@@ -102,14 +102,16 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
     try:
         import json
         cmd = [
-            "cargo", "metadata",
+            "mitts", "metadata",
             "--format-version", "1",
             "--features", features,
             "--filter-platform", target,
             "--offline"
         ]
         res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-        if res.returncode != 0:
+        unsupported = any(marker in (res.stdout + res.stderr).lower() for marker in (
+            "unsupported", "unrecognized subcommand", "unexpected argument"))
+        if res.returncode != 0 and not unsupported:
             cmd.pop()
             res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
 
@@ -178,12 +180,12 @@ def resolve_release_cargo_packages(target="aarch64-apple-darwin", features="ssh"
         metadata_error = str(e)
 
     # Cargo.lock omits target cfg conditions, so resolving a target-accurate release
-    # SBOM requires Cargo metadata evaluation. Fail closed with a clear error rather than
+    # SBOM requires Mitts metadata evaluation. Fail closed with a clear error rather than
     # guessing or emitting foreign target packages (e.g. r-efi, wasi) in an Apple release SBOM.
     err_msg = (
         f"Cannot accurately resolve target-specific release dependency graph for target='{target}' "
-        f"and features='{features}' without cargo metadata: {metadata_error}. "
-        f"Ensure cargo is installed and available in PATH, or specify --include-all-lockfile "
+        f"and features='{features}' without Mitts metadata: {metadata_error}. "
+        f"Ensure mitts is installed and available in PATH, or specify --include-all-lockfile "
         f"to generate an unpruned workspace lockfile inventory."
     )
     raise RuntimeError(err_msg)

@@ -71,7 +71,18 @@ jobs:
           python3 --version
           # rustup reads rust-toolchain.toml, including the three Apple targets.
           rustup show
-          cargo --version
+          rustc --version
+
+      - name: Bootstrap latest stable Mitts
+        if: ${{ matrix.stage != 'python-tests' }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
+          sh -n "$RUNNER_TEMP/mitts-install.sh"
+          env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          mitts --version
 
       - name: Prepare supported Bash integration coverage
         if: ${{ matrix.stage == 'swift-tests' || matrix.stage == 'macapp-e2e-tests' }}

@@ -16,7 +16,7 @@
 //!
 //! It lives in the core rather than in Swift for the same reason everything
 //! else here does: it is bytes in and bytes out, and writing it once serves
-//! both platforms. It also makes it testable by `cargo test`, which matters
+//! both platforms. It also makes it testable by `mitts test`, which matters
 //! more than it sounds -- the iOS view's own tests do not run on a Mac at
 //! all, so anything only reachable from Swift is effectively untested.
 //!

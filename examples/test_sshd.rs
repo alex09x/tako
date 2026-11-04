@@ -22,7 +22,7 @@
 //! That last part is the point: what the key row produces becomes visible
 //! both in the engine's buffer and on the screen.
 //!
-//!     cargo run --features ssh --example test_sshd -- \
+//!     mitts run --features ssh --example test_sshd -- \
 //!         --port 2230 --password hunter2 --authorized-keys keys.pub
 //!
 //! Prints `listening <port>` once it is up, so a caller need not poll.

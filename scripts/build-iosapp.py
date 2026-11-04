@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# tako — iOS simulator app assembly
+# Copyright (c) 2026 Alexander Panasenko
+# Contact: alex@prod.codes
+# Author: https://prod.codes/about/
+# Project: https://github.com/alex09x/tako
+# SPDX-License-Identifier: MIT
+
 """Build the iPhone app for the simulator and install it.
 
 The engine and the renderer are the same sources the Mac builds; only the
@@ -37,8 +44,8 @@ os.makedirs(BUILD, exist_ok=True)
 # without it the app builds and can reach nothing.
 ios_env = os.environ.copy()
 ios_env["IPHONEOS_DEPLOYMENT_TARGET"] = "17.0"
-run(["cargo", "build", "--release", "--features", "ssh",
-     "--target", "aarch64-apple-ios-sim"], "cargo ios-sim", env=ios_env)
+run(["mitts", "build", "--release", "--features", "ssh",
+     "--target", "aarch64-apple-ios-sim"], "mitts ios-sim", env=ios_env)
 
 os.makedirs(APP, exist_ok=True)
 files = swift_files("swift/Sources/iOSApp") + swift_files("swift/Sources/TakoCoreUI")
