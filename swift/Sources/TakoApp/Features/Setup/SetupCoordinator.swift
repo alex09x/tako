@@ -17,10 +17,11 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
     private var model: SetupModel?
     private weak var host: NSWindow?
     private var previousResponder: NSResponder?
-    private var launchTask: Task<Void, Never>?
+    private lazy var launchObserver = SetupLaunchObserver()
     private var hostCloseObserver: NSObjectProtocol?
 
     func offerAtLaunch(app: Tako.App) {
+        launchObserver.stop()
         let store = SetupProgressStore()
         guard SetupProgressStore.allowsLaunch(arguments: CommandLine.arguments,
                 environment: ProcessInfo.processInfo.environment,
@@ -29,20 +30,19 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
             WhatsNewNotice.offerAtLaunch(theme: app.config.theme)
             return
         }
-        launchTask?.cancel()
-        launchTask = Task { [weak self, weak app] in
-            for _ in 0..<30 {
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled, !store.load().hasPresented, let self, let app else { return }
-                if let window = TerminalController.preferredTabParent?.window,
-                   self.show(app: app, in: window) { return }
-            }
+        launchObserver.start(store: store) { [weak self, weak app] in
+            guard let self, let app else { return true }
+            // Automatic setup never creates a window or overrides initial-window.
+            guard NSApp.isActive, let window = TerminalController.preferredTabParent?.window,
+                  window.isVisible, !window.isMiniaturized else { return false }
+            return self.show(app: app, in: window)
         }
     }
 
     @discardableResult
     func show(app: Tako.App, in window: NSWindow? = nil) -> Bool {
-        guard let window = window ?? TerminalController.preferredTabParent?.window else { return false }
+        if let panel { panel.makeKeyAndOrderFront(nil); return true }
+        guard let window = window ?? TerminalDialogView.ensureHostWindow(tako: app) else { return false }
         return show(model: SetupModel(configPath: app.activeConfigPath), in: window)
     }
 
@@ -92,6 +92,7 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
             }
         window.beginSheet(panel)
         model.didPresent()
+        launchObserver.stop()
         return true
     }
 
@@ -102,7 +103,7 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
         if let host, host.attachedSheet === panel { host.endSheet(panel) }
         panel.orderOut(nil)
         panel.close()
-        if !force, let previousResponder { host?.makeFirstResponder(previousResponder) }
+        if !force, let previousResponder, previousResponder !== host { host?.makeFirstResponder(previousResponder) }
         self.panel = nil
         self.model = nil
         self.host = nil

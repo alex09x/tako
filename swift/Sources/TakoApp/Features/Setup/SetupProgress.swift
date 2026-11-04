@@ -40,6 +40,7 @@ struct SetupProgress: Codable, Equatable {
     var completed = false
     var step = SetupStep.welcome
     var skipped: Set<SetupStep> = []
+    var agentSelection: Set<String>?
 }
 
 /// Intent is persisted; installation and permission states are always probed again.

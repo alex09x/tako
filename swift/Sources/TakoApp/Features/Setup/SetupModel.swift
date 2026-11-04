@@ -18,7 +18,13 @@ final class SetupModel: ObservableObject {
     @Published private(set) var notifications = SetupNotificationStatus(access: .unavailable)
     @Published private(set) var isBusy = false
     @Published private(set) var isRefreshing = false
-    @Published var selectedAgents: Set<String> = []
+    @Published var selectedAgents: Set<String> = [] {
+        didSet {
+            guard loadedAgents else { return }
+            progress.agentSelection = selectedAgents
+            store.save(progress)
+        }
+    }
     @Published var message: String?
     @Published var selectedTheme: String
     let store: SetupProgressStore
@@ -90,7 +96,9 @@ final class SetupModel: ObservableObject {
         notifications = newNotifications
         agents = newAgents
         if !loadedAgents {
-            if !store.defaults.bool(forKey: AgentHooksTool.declinedKey) {
+            if let selection = progress.agentSelection {
+                selectedAgents = selection
+            } else if !store.defaults.bool(forKey: AgentHooksTool.declinedKey), !progress.skipped.contains(.agents) {
                 selectedAgents = Set(agents.filter { $0.isDetected && !$0.isReady }.map(\.id))
             }
             loadedAgents = true
@@ -108,6 +116,8 @@ final class SetupModel: ObservableObject {
     func connectSelected() async {
         let ids = selectedDetectedAgents
         guard !isBusy, !isRefreshing, !ids.isEmpty else { return }
+        progress.agentSelection = selectedAgents
+        store.save(progress)
         isBusy = true
         message = nil
         refreshID = UUID()

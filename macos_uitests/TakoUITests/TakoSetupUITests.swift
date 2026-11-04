@@ -95,11 +95,21 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "not JSON".write(to: settings, atomically: true, encoding: .utf8)
         let skill = home.appendingPathComponent(".claude/skills/tako/SKILL.md")
+        let codex = home.appendingPathComponent(".codex/hooks.json")
+        try FileManager.default.createDirectory(at: codex.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{}".write(to: codex, atomically: true, encoding: .utf8)
         app.launch()
         try openSetup(app)
         app.buttons["SetupStep-agents"].click()
         let connect = app.buttons["SetupConnectAgents"]
         let enabled = NSPredicate(format: "enabled == true")
+        await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
+        app.checkBoxes["SetupAgent-codex"].click()
+        app.buttons["SetupLater"].click()
+        try openSetup(app)
+        let codexChoice = app.checkBoxes["SetupAgent-codex"]
+        await fulfillment(of: [expectation(for: enabled, evaluatedWith: codexChoice)], timeout: 10)
+        XCTAssertEqual(codexChoice.value as? Int, 0, "An explicitly unselected agent must stay unselected on resume")
         await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
         connect.click()
         XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 10))
@@ -116,9 +126,57 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertNotNil(config["hooks"])
         let skillText = try String(contentsOf: skill, encoding: .utf8)
         XCTAssertTrue(skillText.contains("name: tako") || skillText.contains("Tako Terminal Integration"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".codex/hooks.json").path))
+        XCTAssertEqual(try String(contentsOf: codex, encoding: .utf8), "{}")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".codex/skills/tako/SKILL.md").path))
         attach(app, name: "Setup connected agent")
         app.buttons["SetupLater"].click()
+    }
+
+    func testSetupMenuCreatesAHostWhenNoInitialWindowWasRequested() async throws {
+        try updateConfig("initial-window = false\n")
+        let app = try isolatedApplication()
+        app.launch()
+        app.activate()
+        XCTAssertTrue(app.menuBars.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 0)
+        app.menuBars.menuBarItems.element(boundBy: 1).click()
+        app.menuItems["Set Up Tako…"].click()
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 8))
+        app.buttons["SetupLater"].click()
+        try await assertTypingReachesTheShell(app)
+    }
+
+    func testSetupMenuCanRecoverAfterAllTerminalWindowsWereClosed() async throws {
+        let app = try isolatedApplication()
+        app.launch()
+        app.activate()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 8))
+        app.typeKey("p", modifierFlags: [.command, .shift])
+        let closeAll = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] %@", "Close All Windows")).firstMatch
+        XCTAssertTrue(closeAll.waitForExistence(timeout: 5))
+        closeAll.click()
+        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 5))
+        app.menuBars.menuBarItems.element(boundBy: 1).click()
+        app.menuItems["Set Up Tako…"].click()
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 8))
+        app.buttons["SetupLater"].click()
+        try await assertTypingReachesTheShell(app)
+    }
+
+    func testAutomaticSetupWaitsForAFirstWindowBeyondTheOldDeadline() async throws {
+        try updateConfig("initial-window = false\n")
+        let app = try isolatedApplication()
+        app.launchArguments.removeAll { $0 == "--no-launch-notices" }
+        app.launchEnvironment.removeValue(forKey: "TAKO_NO_LAUNCH_NOTICES")
+        app.launch()
+        app.activate()
+        XCTAssertTrue(app.menuBars.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 0)
+        try await Task.sleep(for: .seconds(13))
+        app.typeKey("n", modifierFlags: [.command])
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 15))
+        app.buttons["SetupLater"].click()
+        try await assertTypingReachesTheShell(app)
     }
 
     private func isolatedApplication() throws -> XCUIApplication {
@@ -158,6 +216,10 @@ final class TakoSetupUITests: TakoCustomConfigCase {
             if tab == nil { try await Task.sleep(for: .milliseconds(50)) }
         }
         XCTAssertEqual(try XCTUnwrap(tab).value as? Int, 1, "A normal keyboard shortcut must reach the terminal after setup closes")
+        try await assertTypingReachesTheShell(app)
+    }
+
+    private func assertTypingReachesTheShell(_ app: XCUIApplication) async throws {
         let witness = FileManager.default.temporaryDirectory.appendingPathComponent("setup-keyboard-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: witness) }
         app.typeText("/usr/bin/printf 'SETUP''-RETURN' > '\(witness.path)'\n")

@@ -49,7 +49,7 @@ enum SetupAgentService {
     }
 
     static func statuses(
-        baseDir: String? = nil, executableURL: URL? = nil, runner: Runner = run
+        baseDir: String? = nil, executableURL: URL? = nil, runner: Runner = { try await SetupAgentService.run($0) }
     ) async -> [Status] {
         let base = AgentHooksTool.resolvedBaseDir(baseDir)
         let detected = AgentHooksTool.detectAgents(baseDir: base)
@@ -88,7 +88,7 @@ enum SetupAgentService {
     }
 
     static func connect(
-        ids: [String], baseDir: String? = nil, executableURL: URL? = nil, runner: Runner = run
+        ids: [String], baseDir: String? = nil, executableURL: URL? = nil, runner: Runner = { try await SetupAgentService.run($0) }
     ) async -> [Status] {
         let base = AgentHooksTool.resolvedBaseDir(baseDir)
         let before = await statuses(baseDir: base, executableURL: executableURL, runner: runner)

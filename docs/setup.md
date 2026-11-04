@@ -5,6 +5,10 @@ are optional. **Finish later** remembers the current step; use **Tako → Set Up
 Tako…** or **Settings (⌘,) → Setup…** to return. Closing the guide leaves your
 terminal and running programs in place.
 
+If no terminal window is open, explicitly choosing **Set Up Tako…** opens a
+clean terminal for the guide. Automatic setup waits for the first usable
+terminal window; it respects `initial-window = false`.
+
 - **Appearance:** choose a complete theme preset. The choice applies and saves
   immediately. Custom themes, fonts and sizes remain available in Settings.
   Workspace and pane overrides retain their priority.
@@ -29,6 +33,8 @@ Setup progress records navigation and explicit choices. Installed components
 and permissions are checked again rather than inferred from a previous click.
 Existing “Don't Ask Again” choices are preserved; a previous agent decline
 leaves agents unselected until you choose them.
+Explicit agent selections, including unchecking every agent, are remembered
+when you finish later or close and reopen the guide.
 
 After finishing or dismissing the guide, it does not reopen automatically on
 every launch. Release notes remain a separate notice for later app versions.

@@ -123,6 +123,44 @@ struct SetupProgressTests {
         #expect(!SetupAppearanceStep.isSelected("Tako Forest", current: "TakoCore"))
     }
 
+    @Test func explicitAgentSelectionSurvivesReentry() async throws {
+        try await selectionSurvivesReentry(["codex"])
+    }
+
+    @Test func explicitEmptyAgentSelectionIsNotReplacedWithRecommendations() async throws {
+        try await selectionSurvivesReentry([])
+    }
+
+    @Test func earlierProgressWithoutAgentSelectionStillResumes() async throws {
+        try await withStore { store in
+            let legacy = #"{"version":1,"hasPresented":true,"completed":false,"step":"agents","skipped":[]}"#
+            store.defaults.set(Data(legacy.utf8), forKey: SetupProgressStore.key)
+            let progress = store.load()
+            #expect(progress.hasPresented && progress.step == .agents)
+            #expect(progress.agentSelection == nil && store.canWrite)
+        }
+    }
+
+    private func selectionSurvivesReentry(_ selected: Set<String>) async throws {
+        try await withStore { store in
+            var service = services(Calls())
+            service.checkAgents = {
+                ["codex", "claude"].map { id in
+                    SetupAgentService.Status(id: id, name: id, isDetected: true,
+                        hooksInstalled: false, skillInstalled: false, detail: nil)
+                }
+            }
+            let first = SetupModel(store: store, services: service)
+            await first.refresh()
+            #expect(first.selectedAgents == ["codex", "claude"])
+            first.selectedAgents = selected
+            first.dismiss()
+            let reopened = SetupModel(store: store, services: service)
+            await reopened.refresh()
+            #expect(reopened.selectedAgents == selected)
+        }
+    }
+
     private final class Calls {
         var installs = 0
         var permissionRequests = 0

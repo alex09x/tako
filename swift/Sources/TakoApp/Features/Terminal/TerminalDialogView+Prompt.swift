@@ -17,22 +17,22 @@ extension TerminalDialogView {
     /// window is created to serve as the dialog host without launching any unapproved commands.
     @MainActor
     static func ensureHostWindow(tako: Tako.App? = (NSApp?.delegate as? AppDelegate)?.tako) -> NSWindow? {
-        if let key = NSApp.keyWindow, key.windowController is BaseTerminalController {
+        if let key = NSApp.keyWindow, key.windowController is BaseTerminalController, !Tako.CustomTabGroup.isClosed(key) {
             if key.isMiniaturized { key.deminiaturize(nil) }
             if !key.isVisible { key.makeKeyAndOrderFront(nil) }
             return key
         }
-        if let main = NSApp.mainWindow, main.windowController is BaseTerminalController {
+        if let main = NSApp.mainWindow, main.windowController is BaseTerminalController, !Tako.CustomTabGroup.isClosed(main) {
             if main.isMiniaturized { main.deminiaturize(nil) }
             if !main.isVisible { main.makeKeyAndOrderFront(nil) }
             return main
         }
-        if let preferred = TerminalController.preferredParent?.window {
+        if let preferred = TerminalController.preferredParent?.window, !Tako.CustomTabGroup.isClosed(preferred) {
             if preferred.isMiniaturized { preferred.deminiaturize(nil) }
             if !preferred.isVisible { preferred.makeKeyAndOrderFront(nil) }
             return preferred
         }
-        if let existing = NSApp.windows.first(where: { $0.windowController is BaseTerminalController }) {
+        if let existing = NSApp.windows.first(where: { $0.windowController is BaseTerminalController && !Tako.CustomTabGroup.isClosed($0) }) {
             if existing.isMiniaturized { existing.deminiaturize(nil) }
             if !existing.isVisible { existing.makeKeyAndOrderFront(nil) }
             return existing
