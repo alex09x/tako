@@ -88,6 +88,39 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         app.buttons["SetupLater"].click()
     }
 
+    func testSelectedAgentReportsFailureThenInstallsRealHooksAndSkillInAnIsolatedHome() async throws {
+        let app = try isolatedApplication()
+        let home = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["TAKO_AGENT_HOOKS_HOME"]))
+        let settings = home.appendingPathComponent(".claude/settings.json")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "not JSON".write(to: settings, atomically: true, encoding: .utf8)
+        let skill = home.appendingPathComponent(".claude/skills/tako/SKILL.md")
+        app.launch()
+        try openSetup(app)
+        app.buttons["SetupStep-agents"].click()
+        let connect = app.buttons["SetupConnectAgents"]
+        let enabled = NSPredicate(format: "enabled == true")
+        await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
+        connect.click()
+        XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 10))
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), "not JSON")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skill.path))
+
+        try #"{"setup-test-preserved":true}"#.write(to: settings, atomically: true, encoding: .utf8)
+        app.buttons["SetupRefreshAgents"].click()
+        await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
+        connect.click()
+        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10))
+        let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
+        XCTAssertEqual(config["setup-test-preserved"] as? Bool, true)
+        XCTAssertNotNil(config["hooks"])
+        let skillText = try String(contentsOf: skill, encoding: .utf8)
+        XCTAssertTrue(skillText.contains("name: tako") || skillText.contains("Tako Terminal Integration"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".codex/hooks.json").path))
+        attach(app, name: "Setup connected agent")
+        app.buttons["SetupLater"].click()
+    }
+
     private func isolatedApplication() throws -> XCUIApplication {
         let app = try takoApplication()
         let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"]))

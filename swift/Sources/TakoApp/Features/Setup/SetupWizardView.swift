@@ -35,6 +35,7 @@ struct SetupWizardView: View {
         }
         .font(.system(size: 12, design: .monospaced))
         .foregroundStyle(SetupStyle.text)
+        .tint(SetupStyle.accent)
         .background(SetupStyle.background)
         .frame(minWidth: 760, minHeight: 560)
         .task { await model.refresh() }

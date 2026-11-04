@@ -27,7 +27,7 @@ struct SetupAppearanceStep: View {
                     Button { model.chooseTheme(choice.name) } label: { preview(choice) }
                         .buttonStyle(.plain)
                         .accessibilityLabel(choice.name)
-                        .accessibilityValue(model.selectedTheme == choice.name ? "Selected" : "Not selected")
+                        .accessibilityValue(Self.isSelected(choice.name, current: model.selectedTheme) ? "Selected" : "Not selected")
                         .accessibilityIdentifier("SetupTheme-\(choice.name)")
                 }
             }
@@ -36,11 +36,8 @@ struct SetupAppearanceStep: View {
         }.onAppear {
             guard choices.isEmpty else { return }
             let paths = model.configFile.appearanceThemePaths
-            var names = TerminalAppearanceCatalog.themeNames(paths: paths)
-            if let index = names.firstIndex(of: model.selectedTheme) {
-                names.insert(names.remove(at: index), at: 0)
-            }
-            choices = names.prefix(8).map { name in
+            let available = TerminalAppearanceCatalog.themeNames(paths: paths)
+            choices = Self.choiceNames(available: available, current: model.selectedTheme).map { name in
                 Choice(name: name, theme: TerminalTheme.parse(config: "theme = \(name)",
                     configPath: model.configFile.configPath, darkAppearance: TakoSystemAppearance.isDark))
             }
@@ -50,7 +47,7 @@ struct SetupAppearanceStep: View {
     private func preview(_ choice: Choice) -> some View {
         let foreground = Color(nsColor: NSColor(cgColor: choice.theme.foreground) ?? Tako.Brand.text)
         let background = Color(nsColor: NSColor(cgColor: choice.theme.background) ?? Tako.Brand.surface)
-        let selected = choice.name == model.selectedTheme
+        let selected = Self.isSelected(choice.name, current: model.selectedTheme)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(choice.name).font(.system(size: 11, weight: .semibold, design: .monospaced)).lineLimit(1)
@@ -69,5 +66,21 @@ struct SetupAppearanceStep: View {
         }
         .padding(12).background(SetupStyle.card, in: .rect(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(selected ? SetupStyle.accent : SetupStyle.border, lineWidth: selected ? 1.5 : 1))
+    }
+
+    /// Start with Tako's own presets, while retaining an existing custom selection.
+    /// The full user catalog belongs in Settings rather than this short first-run list.
+    static func choiceNames(available: [String], current: String) -> [String] {
+        let recommended = ["TakoCore", "Tako Forest", "Tako Night", "Tako Ocean", "Tako Slate"]
+        var names = recommended.filter { available.contains($0) }
+        if let selected = available.first(where: { isSelected($0, current: current) }), !names.contains(selected) {
+            names.insert(selected, at: 0)
+        }
+        return names
+    }
+
+    static func isSelected(_ name: String, current: String) -> Bool {
+        name.caseInsensitiveCompare(current) == .orderedSame
+            || (current.lowercased() == "tako" && name == "TakoCore")
     }
 }

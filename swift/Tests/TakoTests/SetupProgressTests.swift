@@ -113,6 +113,16 @@ struct SetupProgressTests {
         #expect(!state.alerts && !state.sounds)
     }
 
+    @Test func firstRunThemesKeepTheCurrentCustomPresetWithoutListingEveryFile() {
+        let builtins = ["TakoCore", "Tako Forest", "Tako Night", "Tako Ocean", "Tako Slate"]
+        let available = ["Temporary test preset", "Personal theme"] + builtins
+        #expect(SetupAppearanceStep.choiceNames(available: available, current: "personal THEME")
+            == ["Personal theme"] + builtins)
+        #expect(SetupAppearanceStep.choiceNames(available: available, current: "tako") == builtins)
+        #expect(SetupAppearanceStep.isSelected("TakoCore", current: "tako"))
+        #expect(!SetupAppearanceStep.isSelected("Tako Forest", current: "TakoCore"))
+    }
+
     private final class Calls {
         var installs = 0
         var permissionRequests = 0
