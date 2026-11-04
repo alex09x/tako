@@ -226,6 +226,7 @@ extension AppDelegate {
         setupUpdateMenuItem()
         setupCommandLineToolMenuItem()
         setupAgentHooksMenuItem()
+        setupFirstRunMenuItem()
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
         setupSidebarMenuItem()
@@ -243,9 +244,7 @@ extension AppDelegate {
         }
         setupDiagnosticsMenuItem()
         setDockBadge()
-        WhatsNewNotice.offerAtLaunch(theme: tako.config.theme)
-        CommandLineTool.offerAtLaunch(theme: tako.config.theme)
-        AgentHooksTool.offerAtLaunch(theme: tako.config.theme)
+        SetupCoordinator.shared.offerAtLaunch(app: tako)
 
         // Setup signal handlers
         setupSignals()

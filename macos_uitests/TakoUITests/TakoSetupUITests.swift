@@ -1,0 +1,137 @@
+/*
+ * tako — Setup wizard user journeys
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
+import XCTest
+
+@MainActor
+final class TakoSetupUITests: TakoCustomConfigCase {
+    func testFreshLaunchCanSkipSetupAndKeepUsingTheTerminal() async throws {
+        let app = try isolatedApplication()
+        app.launchArguments.removeAll { $0 == "--no-launch-notices" }
+        app.launchEnvironment.removeValue(forKey: "TAKO_NO_LAUNCH_NOTICES")
+        app.launch()
+        let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch
+        XCTAssertTrue(wizard.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Your terminal. Your way."].exists)
+        attach(app, name: "Setup welcome")
+        app.buttons["SetupNext"].click()
+        for _ in 0..<4 {
+            let skip = app.buttons["SetupSkip"]
+            XCTAssertTrue(skip.waitForExistence(timeout: 5))
+            skip.click()
+        }
+        XCTAssertTrue(app.staticTexts["You're ready to go."].waitForExistence(timeout: 5))
+        attach(app, name: "Setup optional steps skipped")
+        app.buttons["SetupNext"].click()
+        XCTAssertTrue(wizard.waitForNonExistence(timeout: 5))
+        try await assertKeyboardReturnsToTerminal(app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 8))
+        XCTAssertFalse(wizard.waitForExistence(timeout: 2), "Completed setup must not reappear on relaunch")
+    }
+
+    func testAppearanceAppliesAndEscapeResumesAtTheSameStep() async throws {
+        let app = try isolatedApplication()
+        app.launch()
+        try openSetup(app)
+        app.buttons["SetupStep-appearance"].click()
+        let themes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "SetupTheme-"))
+        XCTAssertTrue(themes.firstMatch.waitForExistence(timeout: 5))
+        let choice = try XCTUnwrap(themes.allElementsBoundByIndex.first { ($0.value as? String) == "Not selected" })
+        let chosenName = choice.label
+        choice.click()
+        let selected = NSPredicate(format: "value == %@", "Selected")
+        let selectedExpectation = expectation(for: selected, evaluatedWith: choice)
+        await fulfillment(of: [selectedExpectation], timeout: 5)
+        let configPath = try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"])
+        let text = try String(contentsOfFile: configPath, encoding: .utf8)
+        XCTAssertTrue(text.contains("theme = \(chosenName)"), "Choosing a preset must persist immediately")
+        attach(app, name: "Setup selected theme")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["SetupNext"].waitForNonExistence(timeout: 5))
+        try openSetup(app)
+        XCTAssertTrue(app.staticTexts["Find your colors."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["SetupTheme-\(chosenName)"].value as? String, "Selected")
+        app.buttons["SetupLater"].click()
+        try await assertKeyboardReturnsToTerminal(app)
+    }
+
+    func testReentryIsSingleInstanceAndNotificationStepIsOptional() async throws {
+        let app = try isolatedApplication()
+        app.launch()
+        app.typeKey(",", modifierFlags: [.command])
+        let setupButton = app.buttons["SettingsSetupButton"]
+        XCTAssertTrue(setupButton.waitForExistence(timeout: 5))
+        setupButton.click()
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+        app.buttons["SetupStep-agents"].click()
+        XCTAssertTrue(app.checkBoxes["SetupAgent-codex"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.checkBoxes["SetupAgent-codex"].isEnabled, "The isolated profile must not connect real-account agents")
+        XCTAssertFalse(app.buttons["SetupConnectAgents"].isEnabled)
+        app.buttons["SetupStep-notifications"].click()
+        XCTAssertTrue(app.staticTexts["Know when you're needed."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "SetupWizard").count, 1)
+        XCTAssertTrue(app.buttons["SetupSkip"].isHittable)
+        // Reading this step must never require answering a macOS consent prompt.
+        XCTAssertTrue(app.buttons["SetupLater"].isHittable)
+        attach(app, name: "Setup notifications")
+        app.buttons["SetupLater"].click()
+        try openSetup(app)
+        XCTAssertTrue(app.staticTexts["Know when you're needed."].waitForExistence(timeout: 5))
+        app.buttons["SetupLater"].click()
+    }
+
+    private func isolatedApplication() throws -> XCUIApplication {
+        let app = try takoApplication()
+        let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"]))
+            .deletingLastPathComponent().appendingPathComponent("setup-agents-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        app.launchEnvironment["TAKO_AGENT_HOOKS_HOME"] = root.path
+        return app
+    }
+
+    private func openSetup(_ app: XCUIApplication) throws {
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 8))
+        app.activate()
+        app.menuBars.menuBarItems.element(boundBy: 1).click()
+        let item = app.menuItems["Set Up Tako…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.click()
+        XCTAssertTrue(app.buttons["SetupNext"].waitForExistence(timeout: 5))
+    }
+
+    private func attach(_ app: XCUIApplication, name: String) {
+        let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch
+        let attachment = XCTAttachment(screenshot: wizard.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func assertKeyboardReturnsToTerminal(_ app: XCUIApplication) async throws {
+        app.typeKey("t", modifierFlags: [.command])
+        let deadline = Date().addingTimeInterval(5)
+        var tab: XCUIElement?
+        while tab == nil && Date() < deadline {
+            tab = app.radioButtons.matching(identifier: "tab-1").allElementsBoundByIndex.first { $0.isHittable }
+            if tab == nil { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        XCTAssertEqual(try XCTUnwrap(tab).value as? Int, 1, "A normal keyboard shortcut must reach the terminal after setup closes")
+        let witness = FileManager.default.temporaryDirectory.appendingPathComponent("setup-keyboard-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: witness) }
+        app.typeText("/usr/bin/printf 'SETUP''-RETURN' > '\(witness.path)'\n")
+        let written = NSPredicate { _, _ in
+            (try? String(contentsOf: witness, encoding: .utf8)) == "SETUP-RETURN"
+        }
+        let wroteFile = XCTNSPredicateExpectation(predicate: written, object: nil)
+        await fulfillment(of: [wroteFile], timeout: 8)
+    }
+}

@@ -80,15 +80,10 @@ targets:
             /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
             /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
           else
-            # Compiling the UI tests is deliberately not held hostage to the
-            # app build: the tests are what this project exists to build, and
-            # they skip themselves outside a manual Xcode IDE run anyway. Fail
-            # loudly in the build log instead, and leave the placeholder
-            # product so the test bundle still has a Target Application.
-            # It still needs signing itself, since CODE_SIGNING_ALLOWED is
-            # off for this whole target (see the setting's own comment above).
-            echo "warning: scripts/build-macapp.py did not produce target/macapp-uitest/Tako.app; the placeholder host app was kept. UI tests cannot launch the real app until that build is fixed -- see macos_uitests/README.md."
-            /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"
+            # Never run a GUI journey against a placeholder or an older app
+            # left by another build when the current candidate failed.
+            echo "error: the current Tako UI-test host could not be built. No UI tests will run."
+            exit 1
           fi
 
   TakoUITests:

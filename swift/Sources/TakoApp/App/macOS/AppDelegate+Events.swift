@@ -192,7 +192,10 @@ extension AppDelegate {
             case .set:
                 DispatchQueue.main.async { self.setDockBadge() }
             case .requestAuthorization:
-                self.requestBadgeAuthorizationAndSet(center)
+                // Setup requests consent only after the person chooses to enable it.
+                if UserDefaults.tako.bool(forKey: SetupProgressStore.notificationOptInKey) {
+                    self.requestBadgeAuthorizationAndSet(center)
+                }
             case .none:
                 break
             }

@@ -163,6 +163,10 @@ The Swift suites need the engine built locally first:
 
 ## Configuration
 
+On first launch, Tako offers a setup guide for appearance, `takoctl`, agent
+connections and optional notifications. Skip any step and return through
+**Tako → Set Up Tako…** or **Settings → Setup…**. See the [setup guide](docs/setup.md).
+
 Tako reads its configuration from `~/.config/tako/config`. 
 
 Press <kbd>Cmd</kbd> + <kbd>,</kbd> inside Tako to open the in-terminal settings dialog. **Themes** lists complete presets. A single click or keyboard selection applies the preset immediately to open terminals; no Save or Return is needed. Opening or filtering the list does not change the current theme.

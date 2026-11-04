@@ -208,7 +208,7 @@ enum AgentHooksTool {
 
     /// Install hooks for targeted or all unconfigured agents.
     @discardableResult
-    static func installHooks(for agentIds: [String]? = nil, baseDir: String? = nil) -> InstallReport {
+    static func installHooks(for agentIds: [String]? = nil, baseDir: String? = nil, includeSkills: Bool = true) -> InstallReport {
         let agents = detectAgents(baseDir: baseDir)
         var report = InstallReport()
 
@@ -246,7 +246,7 @@ enum AgentHooksTool {
             }
         }
         // An agent that is hooked but never told about Tako cannot use it: the skill goes in with the hooks.
-        if baseDir == nil { installSkills(for: targets.map(\.id)) }
+        if includeSkills && baseDir == nil { installSkills(for: targets.map(\.id)) }
         return report
     }
 
