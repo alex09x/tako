@@ -41,13 +41,29 @@ class TakoCustomConfigCase: XCTestCase {
     }
 
     override func tearDown() async throws {
+        logTestProgress("teardown: app state begin")
         let app = XCUIApplication(bundleIdentifier: Self.testBundleID)
-        if app.state != .notRunning { app.terminate() }
+        if app.state != .notRunning {
+            logTestProgress("teardown: terminate begin")
+            app.terminate()
+            logTestProgress("teardown: terminate end")
+        }
+        logTestProgress("teardown: state cleanup begin")
         try removeTestState()
+        logTestProgress("teardown: state cleanup end")
         try resetTestDefaults()
+        logTestProgress("teardown: config cleanup begin")
         try? FileManager.default.removeItem(at: configFile)
+        logTestProgress("teardown: sessions cleanup begin")
         try? FileManager.default.removeItem(at: sessionsHome)
+        logTestProgress("teardown: superclass begin")
         try await super.tearDown()
+        logTestProgress("teardown: superclass end")
+    }
+
+    func logTestProgress(_ message: String) {
+        let line = "[xcui progress \(Date().timeIntervalSince1970)] \(message)\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
     }
 
     private func removeTestState() throws {
@@ -56,7 +72,9 @@ class TakoCustomConfigCase: XCTestCase {
                      "Library/Saved Application State/\(Self.testBundleID).savedState"] {
             let url = home.appendingPathComponent(path)
             if FileManager.default.fileExists(atPath: url.path) {
+                logTestProgress("remove state: \(url.lastPathComponent) begin")
                 try FileManager.default.removeItem(at: url)
+                logTestProgress("remove state: \(url.lastPathComponent) end")
             }
         }
     }
@@ -67,8 +85,10 @@ class TakoCustomConfigCase: XCTestCase {
         var account = passwd()
         var result: UnsafeMutablePointer<passwd>?
         var storage = [CChar](repeating: 0, count: 16_384)
+        logTestProgress("account lookup begin")
         return try storage.withUnsafeMutableBufferPointer { bytes in
             let status = getpwuid_r(getuid(), &account, bytes.baseAddress!, bytes.count, &result)
+            logTestProgress("account lookup end")
             guard status == 0, result != nil, let directory = account.pw_dir else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: status == 0 ? Int(ENOENT) : Int(status))
             }
@@ -79,8 +99,11 @@ class TakoCustomConfigCase: XCTestCase {
     private func resetTestDefaults() throws {
         for domain in [Self.testBundleID, Self.defaultsSuiteName] {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+            logTestProgress("defaults \(domain): remove begin")
             defaults.removePersistentDomain(forName: domain)
+            logTestProgress("defaults \(domain): synchronize begin")
             XCTAssertTrue(defaults.synchronize(), "Could not reset the test preferences domain")
+            logTestProgress("defaults \(domain): synchronize end")
         }
     }
 

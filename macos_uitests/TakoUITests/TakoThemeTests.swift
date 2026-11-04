@@ -27,6 +27,7 @@ final class TakoThemeTests: TakoCustomConfigCase {
     private let lightTheme = "ui-chrome-light-\(UUID().uuidString)"
     private let darkTheme = "ui-chrome-dark-\(UUID().uuidString)"
     private var themeFiles: [URL] = []
+    private var recordsQuickTerminalPixels = false
 
     override func setUp() async throws {
         try await super.setUp()
@@ -44,8 +45,14 @@ final class TakoThemeTests: TakoCustomConfigCase {
     }
 
     override func tearDown() async throws {
-        defer { for file in themeFiles { try? FileManager.default.removeItem(at: file) } }
+        logTestProgress("theme teardown begin")
+        defer {
+            logTestProgress("theme files cleanup begin")
+            for file in themeFiles { try? FileManager.default.removeItem(at: file) }
+            logTestProgress("theme files cleanup end")
+        }
         try await super.tearDown()
+        logTestProgress("theme teardown superclass returned")
     }
 
     private func assertTitlebarAppearance(
@@ -113,10 +120,63 @@ final class TakoThemeTests: TakoCustomConfigCase {
                                  file: StaticString, line: UInt) throws -> NSColor {
         let image = element.screenshot().image
         let cg = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil), file: file, line: line)
-        let bitmap = NSBitmapImageRep(cgImage: cg)
-        let color = try XCTUnwrap(bitmap.colorAt(x: Int(CGFloat(cg.width - 1) * x),
-                                                y: Int(CGFloat(cg.height - 1) * y)), file: file, line: line)
-        return try XCTUnwrap(color.usingColorSpace(.sRGB), file: file, line: line)
+        let pixelX = Int(CGFloat(cg.width - 1) * x)
+        let pixelY = Int(CGFloat(cg.height - 1) * y)
+        let color = try capturedColor(in: cg, x: pixelX, y: pixelY, file: file, line: line)
+        if recordsQuickTerminalPixels {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Sampled \(element.identifier) at \(pixelX),\(pixelY)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            logTestProgress("pixel \(element.identifier) frame=\(element.frame) image=\(cg.width)x\(cg.height) profile=\(String(describing: cg.colorSpace)) alpha=\(cg.alphaInfo.rawValue) point=\(x),\(y) pixel=\(pixelX),\(pixelY) normalizedSRGB=\(color)")
+            if element.identifier == "tab-bar" {
+                for row in 0..<min(10, cg.height) {
+                    let sample = try? capturedColor(in: cg, x: pixelX, y: row, file: file, line: line)
+                    logTestProgress("fixed strip row \(row): \(String(describing: sample))")
+                }
+            }
+        }
+        return color
+    }
+
+    private func capturedColor(in image: CGImage, x: Int, y: Int,
+                               file: StaticString, line: UInt) throws -> NSColor {
+        // colorAt returns a calibrated NSColor even for tagged screenshot
+        // bytes. Normalize through Core Graphics once, then read known sRGB.
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB), file: file, line: line)
+        let context = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue),
+            file: file, line: line)
+        defer { withExtendedLifetime(context) {} }
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let bytes = try XCTUnwrap(context.data, file: file, line: line).assumingMemoryBound(to: UInt8.self)
+        let offset = y * context.bytesPerRow + x * 4
+        let divisor = CGFloat(max(bytes[offset + 3], 1))
+        return NSColor(srgbRed: CGFloat(bytes[offset]) / divisor,
+                       green: CGFloat(bytes[offset + 1]) / divisor,
+                       blue: CGFloat(bytes[offset + 2]) / divisor,
+                       alpha: CGFloat(bytes[offset + 3]) / 255)
+    }
+
+    func testCapturedPixelsKeepTheirDeclaredColorSpace() throws {
+        for (name, red) in [(CGColorSpace.sRGB, UInt8(20)), (CGColorSpace.displayP3, UInt8(19))] {
+            let bytes: [UInt8] = [red, 16, 14, 255, 247, 247, 247, 255,
+                                  255, 0, 0, 255, 0, 0, 255, 255]
+            let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+            let image = try XCTUnwrap(CGImage(width: 2, height: 2, bitsPerComponent: 8,
+                bitsPerPixel: 32, bytesPerRow: 8, space: try XCTUnwrap(CGColorSpace(name: name)),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+            let bar = try capturedColor(in: image, x: 0, y: 0, file: #filePath, line: #line)
+            XCTAssertEqual(bar.redComponent, 20 / 255, accuracy: 1 / 255)
+            XCTAssertEqual(bar.greenComponent, 16 / 255, accuracy: 1 / 255)
+            XCTAssertEqual(bar.blueComponent, 14 / 255, accuracy: 1 / 255)
+            let blue = try capturedColor(in: image, x: 1, y: 1, file: #filePath, line: #line)
+            XCTAssertEqual(blue.redComponent, 0, accuracy: 1 / 255)
+            XCTAssertEqual(blue.blueComponent, 1, accuracy: 1 / 255)
+        }
     }
 
     @MainActor
@@ -232,6 +292,7 @@ final class TakoThemeTests: TakoCustomConfigCase {
 
     @MainActor
     func testQuickTerminalThemeChange() async throws {
+        recordsQuickTerminalPixels = true
         try updateConfig("title=\(windowTitle) \n theme=light:\(lightTheme),dark:\(darkTheme) \n confirm-close-surface=false")
         XCUIDevice.shared.appearance = .light
         let app = try takoApplication()
@@ -243,9 +304,13 @@ final class TakoThemeTests: TakoCustomConfigCase {
         // open quick terminal
         app.menuBarItems["View"].firstMatch.click()
         app.menuItems["Quick Terminal"].firstMatch.click()
+        logTestProgress("quick light assertion begin")
         try assertTitlebarAppearance(.light, for: app)
+        logTestProgress("quick light assertion end; dark appearance begin")
         XCUIDevice.shared.appearance = .dark
         try await Task.sleep(for: .seconds(0.5))
+        logTestProgress("quick dark assertion begin")
         try assertTitlebarAppearance(.dark, for: app)
+        logTestProgress("quick dark assertion end")
     }
 }

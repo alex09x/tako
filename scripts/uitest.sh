@@ -91,14 +91,15 @@ RESULT_BUNDLE="target/uitest.xcresult"
 rm -rf "$RESULT_BUNDLE"
 
 set +e
-python3 scripts/gui_lock.py -- xcodebuild "$ACTION" \
+python3 scripts/gui_lock.py -- python3 scripts/ci-swift-watchdog.py \
+    --diagnostics-dir target/uitest-stall -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
     -scheme TakoUITests-Run \
     -destination platform=macOS \
     -parallel-testing-enabled NO \
     -resultBundlePath "$RESULT_BUNDLE" \
     ${only[@]+"${only[@]}"} 2>&1 | tee "$LOG" \
-    | grep -E "^Test Case .*(passed|failed|skipped)|error:|^\*\* (BUILD|TEST)"
+    | grep -E "^Test Case .*(passed|failed|skipped)|error:|^\*\* (BUILD|TEST)|^\[xcui progress|^\[swift watchdog\]"
 STATUS=${PIPESTATUS[0]}
 set -e
 
@@ -120,7 +121,8 @@ echo "passed=${passed:-0} failed=${failed:-0} skipped=${skipped:-0}"
 echo "Full log: $LOG"
 echo "Result bundle: $RESULT_BUNDLE"
 
-if [ $STATUS -ne 0 ] || [ "${failed:-0}" -gt 0 ] || [ "${passed:-0}" -eq 0 ]; then
+if [ $STATUS -ne 0 ] || [ "${failed:-0}" -gt 0 ] || [ "${passed:-0}" -eq 0 ] \
+    || ! grep -qE '^\*\* TEST SUCCEEDED \*\*$' "$LOG"; then
     echo "FAIL: UI test run failed (exit=$STATUS, passed=${passed:-0}, failed=${failed:-0})" >&2
     exit 1
 fi
