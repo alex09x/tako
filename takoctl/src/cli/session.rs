@@ -182,13 +182,13 @@ pub fn parse(
                     }
                     let argv_vals: Vec<Value> = positional.drain(..).map(Value::String).collect();
                     args.insert("argv".into(), Value::Array(argv_vals));
-                    if !args.contains_key("cwd") {
-                        if let Ok(dir) = std::env::current_dir() {
-                            args.insert(
-                                "cwd".into(),
-                                Value::String(dir.to_string_lossy().to_string()),
-                            );
-                        }
+                    if !args.contains_key("cwd")
+                        && let Ok(dir) = std::env::current_dir()
+                    {
+                        args.insert(
+                            "cwd".into(),
+                            Value::String(dir.to_string_lossy().to_string()),
+                        );
                     }
                     let mut env_map = Map::new();
                     for (k, v) in std::env::vars() {

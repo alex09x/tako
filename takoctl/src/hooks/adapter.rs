@@ -35,13 +35,24 @@ pub struct Adapter {
 impl Adapter {
     pub fn from_json_str(s: &str) -> Result<Self, String> {
         let v: Value = serde_json::from_str(s).map_err(|e| format!("invalid adapter JSON: {e}"))?;
-        let name = v["name"].as_str().ok_or("missing adapter name")?.to_string();
+        let name = v["name"]
+            .as_str()
+            .ok_or("missing adapter name")?
+            .to_string();
         let title = v["title"].as_str().unwrap_or(&name).to_string();
         let aliases = v["aliases"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
             .unwrap_or_default();
-        let config_path = v["config_path"].as_str().ok_or("missing config_path")?.to_string();
+        let config_path = v["config_path"]
+            .as_str()
+            .ok_or("missing config_path")?
+            .to_string();
         let format = v["format"].as_str().unwrap_or("json").to_string();
         let hook_field = v["hook_field"].as_str().unwrap_or("hooks").to_string();
         let hooks = v["hooks"].clone();
@@ -66,12 +77,12 @@ impl Adapter {
         if let Some(p) = override_path {
             return PathBuf::from(p);
         }
-        if self.name == "codex" {
-            if let Ok(codex_home) = std::env::var("CODEX_HOME") {
-                let trimmed = codex_home.trim();
-                if !trimmed.is_empty() {
-                    return PathBuf::from(trimmed).join("hooks.json");
-                }
+        if self.name == "codex"
+            && let Ok(codex_home) = std::env::var("CODEX_HOME")
+        {
+            let trimmed = codex_home.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed).join("hooks.json");
             }
         }
         resolve_home_path(&self.config_path)
@@ -94,12 +105,16 @@ impl Adapter {
             };
             if let Some(hooks_obj) = val.get(&self.hook_field) {
                 let serialized = hooks_obj.to_string();
-                serialized.contains("takoctl status") || serialized.contains("takoctl progress") || serialized.contains("tako-hook")
+                serialized.contains("takoctl status")
+                    || serialized.contains("takoctl progress")
+                    || serialized.contains("tako-hook")
             } else {
                 false
             }
         } else {
-            content.contains("takoctl status") || content.contains("takoctl progress") || content.contains("tako-hook")
+            content.contains("takoctl status")
+                || content.contains("takoctl progress")
+                || content.contains("tako-hook")
         }
     }
 
@@ -125,7 +140,12 @@ impl Adapter {
 
                 for (event, hook_val) in template_obj {
                     if hook_val.is_array() {
-                        let merged = super::merge::merge_event(existing_hooks.get(event), hook_val, &self.name, false)?;
+                        let merged = super::merge::merge_event(
+                            existing_hooks.get(event),
+                            hook_val,
+                            &self.name,
+                            false,
+                        )?;
                         existing_hooks.insert(event.clone(), merged);
                     } else {
                         existing_hooks.insert(event.clone(), hook_val.clone());
@@ -133,7 +153,8 @@ impl Adapter {
                 }
             }
 
-            let mut out = serde_json::to_string_pretty(&root).map_err(|e| format!("serialization error: {e}"))?;
+            let mut out = serde_json::to_string_pretty(&root)
+                .map_err(|e| format!("serialization error: {e}"))?;
             out.push('\n');
             Ok(out)
         } else {
@@ -142,7 +163,10 @@ impl Adapter {
                 for (key, val) in template_obj {
                     let cmd_str = val.as_str().unwrap_or("");
                     let yaml_line = format!("{key}: \"{cmd_str}\"");
-                    if let Some(idx) = lines.iter().position(|l| l.trim_start().starts_with(&format!("{key}:"))) {
+                    if let Some(idx) = lines
+                        .iter()
+                        .position(|l| l.trim_start().starts_with(&format!("{key}:")))
+                    {
                         lines[idx] = yaml_line;
                     } else {
                         lines.push(yaml_line);
@@ -160,15 +184,24 @@ impl Adapter {
     /// Removes Tako hooks from content (fallback when backup is not available).
     pub fn remove_hooks(&self, content: &str) -> Result<String, String> {
         if self.format == "json" {
-            let mut root: Value = serde_json::from_str(content).map_err(|e| format!("cannot parse JSON: {e}"))?;
+            let mut root: Value =
+                serde_json::from_str(content).map_err(|e| format!("cannot parse JSON: {e}"))?;
             let root_obj = root.as_object_mut().ok_or("JSON root must be an object")?;
 
-            if let Some(existing_hooks) = root_obj.get_mut(&self.hook_field).and_then(Value::as_object_mut) {
+            if let Some(existing_hooks) = root_obj
+                .get_mut(&self.hook_field)
+                .and_then(Value::as_object_mut)
+            {
                 if let Some(template_obj) = self.hooks.as_object() {
                     for (event, hook_val) in template_obj {
                         if hook_val.is_array() {
                             if existing_hooks.contains_key(event) {
-                                let remaining = super::merge::merge_event(existing_hooks.get(event), hook_val, &self.name, true)?;
+                                let remaining = super::merge::merge_event(
+                                    existing_hooks.get(event),
+                                    hook_val,
+                                    &self.name,
+                                    true,
+                                )?;
                                 if remaining.as_array().is_some_and(Vec::is_empty) {
                                     existing_hooks.remove(event);
                                 } else {
@@ -193,7 +226,8 @@ impl Adapter {
                 return Ok(String::new());
             }
 
-            let mut out = serde_json::to_string_pretty(&root).map_err(|e| format!("serialization error: {e}"))?;
+            let mut out = serde_json::to_string_pretty(&root)
+                .map_err(|e| format!("serialization error: {e}"))?;
             out.push('\n');
             Ok(out)
         } else {

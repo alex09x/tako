@@ -8,9 +8,34 @@
  * SPDX-License-Identifier: MIT
  */
 
-use super::args;
 use super::super::*;
-use serde_json::{json, Value};
+use super::args;
+
+#[test]
+fn layout_save_keeps_tilde_without_home() {
+    let marker = "TAKO_TEST_HOMELESS_LAYOUT";
+    if std::env::var_os(marker).is_some() {
+        let opts = parse(&args(&["layout", "save", "~/layout.json"])).unwrap();
+        assert_eq!(opts.args["path"], "~/layout.json");
+        return;
+    }
+    // Isolate HOME in a child so parallel tests never observe a changed environment.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "tests::ask_workspace::layout_save_keeps_tilde_without_home",
+            "--test-threads=1",
+        ])
+        .env_remove("HOME")
+        .env(marker, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    assert!(stdout.contains("1 passed; 0 failed"), "{stdout}");
+}
+use serde_json::{Value, json};
 
 #[test]
 fn ask_command_parses_options_and_renders_json() {
@@ -236,9 +261,13 @@ fn workspace_subcommands_and_options_parsed_and_rendered() {
         ]
     });
     let rendered_hist = render("workspace", &history_json);
-    assert!(rendered_hist.contains("#1 12.345: 00000000-0000-0000-0000-000000000001 -> 00000000-0000-0000-0000-000000000002"));
+    assert!(rendered_hist.contains(
+        "#1 12.345: 00000000-0000-0000-0000-000000000001 -> 00000000-0000-0000-0000-000000000002"
+    ));
     assert!(rendered_hist.contains("Tab transitions:"));
-    assert!(rendered_hist.contains("#2 12.385 [00000000-0000-0000-0000-000000000002]: tab-1 -> tab-0"));
+    assert!(
+        rendered_hist.contains("#2 12.385 [00000000-0000-0000-0000-000000000002]: tab-1 -> tab-0")
+    );
 
     // Errors
     assert!(parse(&args(&["workspace", "create"])).is_err());

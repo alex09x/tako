@@ -12,21 +12,22 @@ use serde_json::Value;
 
 pub fn expand_path(file: &str) -> String {
     if let Some(stripped) = file.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{stripped}");
-        }
-    } else if file == "~" {
+        return match std::env::var("HOME") {
+            Ok(home) => format!("{home}/{stripped}"),
+            Err(_) => file.to_string(),
+        };
+    }
+    if file == "~" {
         if let Ok(home) = std::env::var("HOME") {
             return home;
         }
-    } else if !file.starts_with('/') {
-        if let Ok(cwd) = std::env::current_dir() {
-            return cwd.join(file).to_string_lossy().to_string();
-        }
+    } else if !file.starts_with('/')
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        return cwd.join(file).to_string_lossy().to_string();
     }
     file.to_string()
 }
-
 
 pub fn layout_report(result: &Value) -> String {
     if result.get("saved") == Some(&Value::Bool(true)) {
@@ -92,7 +93,6 @@ pub fn layout_report(result: &Value) -> String {
     format!("{result}\n")
 }
 
-
 /// What a pane's bracket says: its status and text, a quiet program's live
 /// state in place of a plain idle (`live ssh alex@ram11 · 38/s`, `live tail ·
 /// quiet 4m`), and a failure's exit code (`error · exit 1`).
@@ -149,7 +149,6 @@ pub fn pane_line(pane: &Value, depth: usize) -> String {
     line.push('\n');
     line
 }
-
 
 pub fn outline(out: &mut String, node: &Value, panes: &[&Value], depth: usize) {
     if let Some(id) = node["pane"].as_str() {

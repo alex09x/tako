@@ -25,26 +25,26 @@ pub fn format_answer(name: &str, answer: &Value) -> Value {
                 "isError": false
             });
         }
-        if name == "tako_screenshot" {
-            if let Some(data) = answer["result"]["data"].as_str() {
-                let id = answer["result"]["id"].as_str().unwrap_or("");
-                let width = answer["result"]["width"].as_f64().unwrap_or(0.0) as u64;
-                let height = answer["result"]["height"].as_f64().unwrap_or(0.0) as u64;
-                return json!({
-                    "content": [
-                        {
-                            "type": "image",
-                            "data": data,
-                            "mimeType": "image/png"
-                        },
-                        {
-                            "type": "text",
-                            "text": format!("Screenshot of pane {id} ({width}x{height} png)")
-                        }
-                    ],
-                    "isError": false
-                });
-            }
+        if name == "tako_screenshot"
+            && let Some(data) = answer["result"]["data"].as_str()
+        {
+            let id = answer["result"]["id"].as_str().unwrap_or("");
+            let width = answer["result"]["width"].as_f64().unwrap_or(0.0) as u64;
+            let height = answer["result"]["height"].as_f64().unwrap_or(0.0) as u64;
+            return json!({
+                "content": [
+                    {
+                        "type": "image",
+                        "data": data,
+                        "mimeType": "image/png"
+                    },
+                    {
+                        "type": "text",
+                        "text": format!("Screenshot of pane {id} ({width}x{height} png)")
+                    }
+                ],
+                "isError": false
+            });
         }
         let text = if let Some(res) = answer.get("result") {
             serde_json::to_string_pretty(res).unwrap_or_else(|_| res.to_string())
@@ -65,7 +65,9 @@ pub fn format_answer(name: &str, answer: &Value) -> Value {
             format!(
                 "{}: {}",
                 err.get("code").and_then(Value::as_str).unwrap_or("error"),
-                err.get("message").and_then(Value::as_str).unwrap_or("command failed")
+                err.get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("command failed")
             )
         } else {
             answer.to_string()
