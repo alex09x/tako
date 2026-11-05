@@ -8,11 +8,23 @@
  */
 
 import AppKit
+import SwiftUI
 import Testing
 @testable import Tako
 
 @Suite @MainActor
 struct SetupAppearanceTests {
+    @Test func setupLabelsRemainReadableOnLightAndLowContrastThemes() {
+        for config in ["background = #f6f4ee\ncursor-color = #e05666",
+                       "background = #f4f3f7\ncursor-color = #e05666",
+                       "background = #222222\ncursor-color = #222222"] {
+            let theme = TerminalTheme.parse(config: config)
+            let colors = SetupPalette(theme: theme)
+            #expect(SetupPalette.contrast(NSColor(colors.message), NSColor(cgColor: theme.background)!) >= 4.5)
+            #expect(SetupPalette.contrast(NSColor(colors.primaryText), NSColor(cgColor: theme.cursorColor)!) >= 4.5)
+        }
+    }
+
     @Test func expandedPresetsLoadAsCompleteThemesInTheSetupCatalog() throws {
         let names = ["Tako Ember", "Tako Paper", "Tako Dawn", "Tako Ink", "Tako Violet"]
         // SwiftPM's test executable is not the packaged app resource bundle.
@@ -53,9 +65,13 @@ struct SetupAppearanceTests {
         #expect(model.previewTheme.fontWeight == 550)
         #expect(abs(after.redComponent - 240.0 / 255) < 0.001)
         #expect(before != after)
+        // A second settings window or editor can update the file while setup is open.
+        var external = try String(contentsOf: config, encoding: .utf8)
+        external = external.replacingOccurrences(of: "font-size = 17", with: "font-size = 23")
+        try external.write(to: config, atomically: true, encoding: .utf8)
         model.chooseTheme("Live Dark")
-        #expect(model.previewTheme.fontSize == 17)
-        #expect(try String(contentsOf: config, encoding: .utf8).contains("font-size = 17"))
+        #expect(model.previewTheme.fontSize == 23)
+        #expect(try String(contentsOf: config, encoding: .utf8).contains("font-size = 23"))
         #expect(model.progress.completed == false)
     }
 }

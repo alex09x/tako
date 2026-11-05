@@ -28,6 +28,8 @@ struct SetupPalette {
     let success: Color
     let border: Color
     let card: Color
+    let primaryText: Color
+    let message: Color
     let isDark: Bool
 
     init(theme: TerminalTheme) {
@@ -36,11 +38,31 @@ struct SetupPalette {
         background = Color(nsColor: bg)
         text = Color(nsColor: fg)
         muted = text.opacity(0.65)
-        accent = Color(nsColor: NSColor(cgColor: theme.cursorColor) ?? Tako.Brand.ember)
+        let accentColor = NSColor(cgColor: theme.cursorColor) ?? Tako.Brand.ember
+        accent = Color(nsColor: accentColor)
+        primaryText = Color(nsColor: Self.readable(bg, against: accentColor))
+        message = Color(nsColor: Self.readable(Tako.Brand.claw, against: bg))
         success = Color(nsColor: theme.palette[2].flatMap { NSColor(cgColor: $0) } ?? Tako.Brand.ok)
         border = text.opacity(0.22)
         card = text.opacity(0.035)
         isDark = bg.redComponent * 0.2126 + bg.greenComponent * 0.7152 + bg.blueComponent * 0.0722 < 0.5
+    }
+
+    private static func readable(_ preferred: NSColor, against background: NSColor) -> NSColor {
+        if contrast(preferred, background) >= 4.5 { return preferred }
+        return contrast(.black, background) >= contrast(.white, background) ? .black : .white
+    }
+
+    static func contrast(_ a: NSColor, _ b: NSColor) -> Double {
+        func luminance(_ color: NSColor) -> Double {
+            let c = color.usingColorSpace(.sRGB) ?? NSColor.black.usingColorSpace(.sRGB)!
+            let components = [c.redComponent, c.greenComponent, c.blueComponent].map {
+                $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4)
+            }
+            return components[0] * 0.2126 + components[1] * 0.7152 + components[2] * 0.0722
+        }
+        let first = luminance(a), second = luminance(b)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
     }
 }
 
@@ -62,7 +84,7 @@ struct SetupButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12, weight: .medium, design: .monospaced))
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .foregroundStyle(primary ? colors.background : colors.text)
+            .foregroundStyle(primary ? colors.primaryText : colors.text)
             .background(primary ? colors.accent.opacity(configuration.isPressed ? 0.7 : 1)
                         : colors.text.opacity(configuration.isPressed ? 0.09 : 0.04), in: .rect(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 5).stroke(primary ? Color.clear : colors.border))

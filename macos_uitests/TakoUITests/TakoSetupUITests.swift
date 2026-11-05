@@ -73,7 +73,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         await fulfillment(of: [expectation(for: changed, evaluatedWith: preview)], timeout: 5)
         XCTAssertFalse(app.popUpButtons["SetupFont"].exists)
         XCTAssertFalse(app.steppers["SetupFontSize"].exists)
-        let light = app.buttons["SetupTheme-Tako Paper"]
+        let light = app.buttons["SetupTheme-Tako Dawn"]
         light.click()
         XCTAssertEqual(light.value as? String, "Selected")
         XCTAssertGreaterThan(try previewBackground(preview).reduce(0, +), 2.4,

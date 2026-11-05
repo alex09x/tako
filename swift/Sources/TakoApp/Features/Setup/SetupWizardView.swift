@@ -27,7 +27,7 @@ struct SetupWizardView: View {
                 }
                 if let message = model.message {
                     Text(message).font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color(nsColor: Tako.Brand.claw))
+                        .foregroundStyle(colors.message)
                         .padding(.horizontal, 28).padding(.vertical, 10)
                         .accessibilityIdentifier("SetupMessage")
                 }

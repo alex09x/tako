@@ -142,7 +142,7 @@ final class SetupModel: ObservableObject {
 
     func chooseTheme(_ name: String) {
         guard !isBusy else { return }
-        if configFile.applySetupColorPreset(name, preserving: previewTheme) {
+        if configFile.applySetupColorPreset(name, preserving: Self.readTheme(configFile)) {
             previewTheme = Self.readTheme(configFile)
             selectedTheme = name
             message = nil
