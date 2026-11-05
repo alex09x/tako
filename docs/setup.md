@@ -34,11 +34,15 @@ Already connected agents are checked without reinstalling them.
 
 ## Permissions
 
+The setup step shows two cards: **AI agents** opens agent setup, and
+**System permissions → Review access** opens a compact permission panel.
+
 | Action | What happens |
 | --- | --- |
-| **Check file access** | Checks Desktop, Documents and Downloads; macOS may request access. |
-| **Full Disk Access → Settings…** | Shows how to enable Tako in macOS Settings. |
-| **Other permissions** | Expands optional microphone, screen, audio, network and automation access. |
+| **Your files → Check access** | Checks Desktop, Documents and Downloads; macOS may request access. |
+| **Protected files → Allow…** | Shows how to enable Tako in macOS Settings. |
+| **Notifications → Allow…** | Requests task alerts, or opens Settings after a previous denial. |
+| **More permissions** | Expands optional microphone, screen, audio, network and automation access. |
 
 The file check opens and closes directory handles without reading file names
 or contents. Results apply to Tako and each tested folder; they do not establish

@@ -1,148 +1,65 @@
-// Tako — macOS permission setup
+// Tako — setup integrations and permissions
 // Copyright (c) 2026 Alexander Panasenko
 // Contact: alex@prod.codes
 // Author: https://prod.codes/about/
 // Project: https://github.com/alex09x/tako
 // SPDX-License-Identifier: MIT
 
-import AppKit
 import SwiftUI
 
 @MainActor
 struct SetupPermissionsStep: View {
     @Environment(\.setupPalette) private var colors
     @ObservedObject var model: SetupModel
-    @StateObject private var service = TerminalPermissionService.live()
-    @State private var checking = false
-    @State private var showDiskHelp = false
+    @State private var showingPermissions = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 0) {
-                fileAccessRow
-                Divider().overlay(colors.border)
-                permissionRow(.fullDiskAccess)
+        HStack(alignment: .top, spacing: 1) {
+            accessCard(title: "AI agents", caption: model.agents.contains(where: \.isReady) ? "Connected" : "Recommended",
+                description: "Give your agents Tako's tools and live status.",
+                action: model.agents.contains(where: \.isReady) ? "Manage agents" : "Connect agents",
+                identifier: "SetupAgentsCard", onPress: { model.select(.agents) }) {
+                HStack(spacing: -4) {
+                    SetupAgentIcon(id: "claude", size: 28)
+                    SetupAgentIcon(id: "codex", size: 28)
+                    SetupAgentIcon(id: "gemini", size: 28)
+                }.frame(height: 48)
             }
-            .padding(.horizontal, 16)
-            .background(colors.card, in: .rect(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(colors.border))
-            DisclosureGroup("Other permissions") {
-                VStack(spacing: 0) {
-                    ForEach(service.rows.filter { ![.protectedFolders, .fullDiskAccess].contains($0.kind) }) { permission in
-                        permissionRow(permission.kind)
-                        if permission.kind != .automation { Divider().overlay(colors.border) }
-                    }
-                }
+            accessCard(title: "System permissions", caption: "Optional",
+                description: "Allow access to your files and task notifications.",
+                action: "Review access", identifier: "SetupSystemPermissionsCard",
+                onPress: { showingPermissions = true }) {
+                Image(systemName: "hand.raised.fill").font(.system(size: 27, weight: .medium))
+                    .foregroundStyle(.white).frame(width: 48, height: 48)
+                    .background(Color.blue.gradient, in: .rect(cornerRadius: 12))
             }
-            Text("Checks apply to Tako. Terminal programs can have separate permissions.")
-                .font(.system(size: 12)).foregroundStyle(colors.muted)
-                .accessibilityIdentifier("SetupPermissionScopeNote")
-            Button(checking ? "Checking…" : "Refresh status") { Task { await refresh() } }
-                .buttonStyle(SetupButtonStyle()).disabled(checking || model.isBusy)
-                .accessibilityIdentifier("SetupRefreshPermissions")
         }
-        .task { await refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await refresh() }
-        }
-        .alert("Enable Full Disk Access", isPresented: $showDiskHelp) {
-            Button("Open Settings") { _ = service.openSettings(.fullDiskAccess) }
-            Button("Show Tako in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Turn on Tako in Full Disk Access. If it isn't listed, press + and add this app. macOS requires this step in Settings.")
+        .background(colors.text.opacity(0.035), in: .rect(cornerRadius: 14))
+        .frame(maxWidth: 540)
+        .frame(maxWidth: .infinity)
+        .sheet(isPresented: $showingPermissions) {
+            SetupPermissionPanel(model: model)
+                .environment(\.setupPalette, colors)
         }
     }
 
-    private var fileAccessRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                Image(systemName: "folder").frame(width: 20).foregroundStyle(colors.muted)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("File access").fontWeight(.medium)
-                    Text("Desktop, Documents and Downloads")
-                        .font(.system(size: 12)).foregroundStyle(colors.muted)
-                }
-                Spacer(minLength: 8)
-                Button(model.folderAccess.isEmpty ? "Check file access" : "Check again") {
-                    Task { await model.checkFolderAccess() }
-                }
-                .buttonStyle(SetupButtonStyle())
-                .help("Check folder access. macOS may ask you to allow it. No files are read.")
-                .accessibilityIdentifier("SetupCheckFileAccess")
+    private func accessCard<Icon: View>(title: String, caption: String, description: String,
+        action: String, identifier: String, onPress: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon) -> some View {
+        VStack(spacing: 12) {
+            icon().padding(.top, 8)
+            VStack(spacing: 6) {
+                Text(title).font(.system(size: 16, weight: .semibold))
+                Text(caption).font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(colors.muted).padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(colors.text.opacity(0.06), in: .capsule)
             }
-            if !model.folderAccess.isEmpty {
-                ForEach(model.folderAccess, id: \.folder) { result in
-                    HStack {
-                        Text(result.folder.lastPathComponent)
-                        Spacer()
-                        SetupBadge(text: result.status == .unknown ? "Unavailable" : result.status.title,
-                                   ready: result.readable, showsSymbol: false)
-                    }
-                    .font(.system(size: 12)).padding(.leading, 34)
-                    .accessibilityIdentifier("SetupFolderResult-\(result.folder.lastPathComponent)")
-                }
-            }
+            Text(description).font(.system(size: 13)).foregroundStyle(colors.muted)
+                .multilineTextAlignment(.center).frame(height: 42)
+            Button(action, action: onPress).buttonStyle(SetupButtonStyle())
+                .disabled(model.isBusy || model.isRefreshing)
+                .accessibilityIdentifier(identifier)
         }
-        .padding(.vertical, 16)
-        .disabled(model.isBusy || model.isRefreshing || checking)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("SetupPermission-protectedFolders")
-    }
-
-    private func permissionRow(_ kind: TerminalPermissionKind) -> some View {
-        let status = service.permission(for: kind)?.status ?? .unknown
-        return HStack(spacing: 14) {
-            Image(systemName: symbol(kind)).frame(width: 20).foregroundStyle(colors.muted)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(kind.title).fontWeight(.medium)
-                Text(kind.explanation).font(.system(size: 12)).foregroundStyle(colors.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            if status == .allowed {
-                SetupBadge(text: "Allowed", ready: true)
-            } else {
-                if ![.managedInSettings, .unknown].contains(status) {
-                    SetupBadge(text: status.title, showsSymbol: false)
-                }
-                Button(kind.canRequestDirectly && ![.denied, .restricted].contains(status) ? "Allow…" : "Settings…") {
-                    if kind.canRequestDirectly && ![.denied, .restricted].contains(status) {
-                        Task { await model.requestPermission(kind, service: service) }
-                    } else if kind == .fullDiskAccess {
-                        showDiskHelp = true
-                    } else if !service.openSettings(kind) {
-                        model.message = "macOS Settings couldn't be opened."
-                    }
-                }
-                .buttonStyle(SetupButtonStyle())
-                .accessibilityIdentifier("SetupPermissionAction-\(kind.id)")
-            }
-        }
-        .padding(.vertical, 16)
-        .disabled(model.isBusy || model.isRefreshing || checking)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("SetupPermission-\(kind.id)")
-    }
-
-    private func refresh() async {
-        guard !checking, !model.isBusy else { return }
-        checking = true
-        await service.snapshot()
-        checking = false
-    }
-
-    private func symbol(_ kind: TerminalPermissionKind) -> String {
-        switch kind {
-        case .protectedFolders: "folder"
-        case .fullDiskAccess: "internaldrive"
-        case .localNetwork: "network"
-        case .microphone: "mic"
-        case .screenCapture: "rectangle.dashed"
-        case .systemAudio: "speaker.wave.2"
-        case .automation: "applescript"
-        }
+        .padding(18).frame(maxWidth: .infinity)
     }
 }

@@ -17,12 +17,17 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         app.launch()
         try openSetup(app)
         app.buttons["SetupStep-permissions"].click()
-        XCTAssertTrue(app.staticTexts["Choose what to allow."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Integrations & permissions"].waitForExistence(timeout: 5))
+        let review = app.buttons["SetupSystemPermissionsCard"]
+        XCTAssertTrue(review.isHittable)
+        XCTAssertTrue(app.buttons["SetupAgentsCard"].isHittable)
+        XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-fullDiskAccess"].exists)
+        review.click()
         let folders = app.descendants(matching: .any)["SetupPermission-protectedFolders"].firstMatch
         XCTAssertTrue(folders.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["SetupChooseFolder"].exists)
-        XCTAssertTrue(app.buttons["SetupCheckFileAccess"].isHittable)
-        let disk = app.buttons["SetupPermissionAction-fullDiskAccess"]
+        XCTAssertTrue(folders.buttons["Check access"].isHittable)
+        let disk = app.descendants(matching: .any)["SetupPermission-fullDiskAccess"].firstMatch.buttons["Allow…"]
         XCTAssertTrue(disk.isHittable)
         disk.click()
         XCTAssertTrue(app.buttons["Show Tako in Finder"].waitForExistence(timeout: 5))
@@ -35,6 +40,8 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue((scopeNote.label + " " + (scopeNote.value as? String ?? ""))
             .contains("Checks apply to Tako"))
         attach(app, name: "Setup optional permission statuses")
+        app.buttons["SetupPermissionsDone"].click()
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
         // Navigation and status inspection must not require allowing an OS prompt.
         app.buttons["SetupStep-notifications"].click()
         let check = app.buttons["SetupRefreshNotifications"]

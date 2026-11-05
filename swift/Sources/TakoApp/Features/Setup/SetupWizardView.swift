@@ -83,15 +83,20 @@ struct SetupWizardView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
+        VStack(alignment: model.step == .permissions ? .center : .leading, spacing: 9) {
+            if model.step == .permissions {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable().frame(width: 64, height: 64).padding(.bottom, 6)
+            } else {
                 Text("SET UP TAKO").font(.system(size: 11, weight: .semibold))
                     .tracking(1.5).foregroundStyle(colors.muted)
             }
             Text(title).font(.system(size: 27, weight: .semibold))
                 .accessibilityIdentifier("SetupStepTitle")
             Text(subtitle).foregroundStyle(colors.muted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(model.step == .permissions ? .center : .leading)
         }
+        .frame(maxWidth: .infinity, alignment: model.step == .permissions ? .center : .leading)
     }
 
     private var footer: some View {
@@ -138,7 +143,7 @@ struct SetupWizardView: View {
         case .appearance: "Find your colors."
         case .commandLine: "Tako, from the command line."
         case .agents: "Bring your agents along."
-        case .permissions: "Choose what to allow."
+        case .permissions: "Integrations & permissions"
         case .notifications: "Know when you're needed."
         case .ready: "You're ready to go."
         }
@@ -149,7 +154,7 @@ struct SetupWizardView: View {
         case .appearance: "Choose your colors. The entire window updates immediately; fonts stay as you configured them."
         case .commandLine: "Open tabs, split panes and control Tako from scripts or another terminal."
         case .agents: "Choose which installed agents can use Tako's commands and report their activity."
-        case .permissions: "Check file access. macOS asks only when you choose to allow it."
+        case .permissions: "Connect your agents and choose what Tako can access."
         case .notifications: "Get a macOS alert when work finishes or an agent needs your attention."
         case .ready: "Your terminal is ready. Optional integrations can be changed whenever you need them."
         }
