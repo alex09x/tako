@@ -69,16 +69,26 @@ struct SetupAgentsStep: View {
                 }
                 ForEach(model.agents) { agent in
                     HStack(alignment: .top, spacing: 12) {
-                        Toggle(isOn: Binding(get: { model.selectedAgents.contains(agent.id) }, set: { selected in
-                            if selected { model.selectedAgents.insert(agent.id) } else { model.selectedAgents.remove(agent.id) }
-                        })) {
+                        Button {
+                            if model.selectedAgents.contains(agent.id) { model.selectedAgents.remove(agent.id) }
+                            else { model.selectedAgents.insert(agent.id) }
+                        } label: {
                             HStack(spacing: 8) {
                                 SetupAgentIcon(id: agent.id)
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if !agent.isReady && model.selectedAgents.contains(agent.id) {
+                                            Image(systemName: "checkmark").font(.system(size: 6, weight: .bold))
+                                                .foregroundStyle(colors.background).frame(width: 8, height: 8)
+                                                .background(colors.accent, in: .circle).offset(x: 3, y: 3)
+                                        }
+                                    }
                                 Text(agent.name).fontWeight(.medium)
                             }
+                            .contentShape(Rectangle())
                         }
-                        .toggleStyle(.checkbox)
+                        .buttonStyle(.plain)
                         .accessibilityLabel(agent.name)
+                        .accessibilityValue(agent.isReady ? "Connected" : model.selectedAgents.contains(agent.id) ? "Selected" : "Not selected")
                         .disabled(!agent.isDetected || agent.isReady || model.isBusy || model.isRefreshing)
                         .accessibilityIdentifier("SetupAgent-\(agent.id)")
                         Spacer(minLength: 0)

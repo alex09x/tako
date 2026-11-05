@@ -191,12 +191,13 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         let connect = app.buttons["SetupConnectAgents"]
         let enabled = NSPredicate(format: "enabled == true")
         await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
-        app.checkBoxes["SetupAgent-codex"].click()
+        XCTAssertEqual(app.checkBoxes.matching(NSPredicate(format: "identifier BEGINSWITH %@", "SetupAgent-")).count, 0)
+        app.buttons["SetupAgent-codex"].click()
         app.buttons["SetupLater"].click()
         try openSetup(app)
-        let codexChoice = app.checkBoxes["SetupAgent-codex"]
+        let codexChoice = app.buttons["SetupAgent-codex"]
         await fulfillment(of: [expectation(for: enabled, evaluatedWith: codexChoice)], timeout: 10)
-        XCTAssertEqual(codexChoice.value as? Int, 0, "An explicitly unselected agent must stay unselected on resume")
+        XCTAssertEqual(codexChoice.value as? String, "Not selected", "An explicitly unselected agent must stay unselected on resume")
         await fulfillment(of: [expectation(for: enabled, evaluatedWith: connect)], timeout: 10)
         connect.click()
         XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 10))
