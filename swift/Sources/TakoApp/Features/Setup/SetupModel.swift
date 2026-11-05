@@ -17,6 +17,7 @@ final class SetupModel: ObservableObject {
     @Published private(set) var agents: [SetupAgentService.Status] = []
     @Published private(set) var notifications = SetupNotificationStatus(access: .unavailable)
     @Published private(set) var folderAccess: [SetupFolderAccessResult] = []
+    @Published private(set) var permissionRequests: Set<TerminalPermissionKind> = []
     @Published private(set) var isBusy = false
     @Published private(set) var isRefreshing = false
     @Published var selectedAgents: Set<String> = [] {
@@ -168,6 +169,7 @@ final class SetupModel: ObservableObject {
         message = nil
         defer { isBusy = false }
         let result = await service.request(kind)
+        if result.didPrompt { permissionRequests.insert(kind) }
         await service.snapshot()
         message = result.message
     }

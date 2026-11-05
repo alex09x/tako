@@ -56,7 +56,7 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
     /// Whether this permission can be prompted directly via public Apple APIs.
     public var canRequestDirectly: Bool {
         switch self {
-        case .microphone, .screenCapture:
+        case .microphone, .screenCapture, .localNetwork:
             return true
         default:
             return false

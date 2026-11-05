@@ -18,6 +18,7 @@ public final class TerminalPermissionService: ObservableObject {
     public typealias AuthorizationHandler = @MainActor @Sendable (AVMediaType) -> AVAuthorizationStatus
     public typealias CheckHandler = @MainActor @Sendable (TerminalPermissionKind) async -> TerminalPermissionStatus?
     public typealias ScreenCaptureCheck = @MainActor @Sendable () -> Bool
+    public typealias NetworkRequestHandler = @MainActor @Sendable () -> Bool
     public typealias RequestHandler = @MainActor @Sendable (AVMediaType) async -> Bool
     public typealias OpenHandler = @MainActor @Sendable (URL) -> Bool
 
@@ -30,6 +31,7 @@ public final class TerminalPermissionService: ObservableObject {
     private let check: CheckHandler?
     private let screenCaptureCheck: ScreenCaptureCheck
     private let screenCaptureRequest: ScreenCaptureCheck
+    private let networkRequest: NetworkRequestHandler
     private let requestAccess: RequestHandler
     private let open: OpenHandler
 
@@ -38,6 +40,7 @@ public final class TerminalPermissionService: ObservableObject {
         check: CheckHandler? = nil,
         screenCaptureCheck: @escaping ScreenCaptureCheck = { CGPreflightScreenCaptureAccess() },
         screenCaptureRequest: @escaping ScreenCaptureCheck = { CGRequestScreenCaptureAccess() },
+        networkRequest: NetworkRequestHandler? = nil,
         request: @escaping RequestHandler = { await AVCaptureDevice.requestAccess(for: $0) },
         open: @escaping OpenHandler = { NSWorkspace.shared.open($0) }
     ) {
@@ -45,6 +48,7 @@ public final class TerminalPermissionService: ObservableObject {
         self.check = check
         self.screenCaptureCheck = screenCaptureCheck
         self.screenCaptureRequest = screenCaptureRequest
+        self.networkRequest = networkRequest ?? { SetupLocalNetworkAccess.request() }
         self.requestAccess = request
         self.open = open
     }
@@ -74,7 +78,10 @@ public final class TerminalPermissionService: ObservableObject {
             // CGPreflightScreenCaptureAccess only returns true (allowed) or false (not allowed).
             // It cannot distinguish between denied and not yet asked. We report notAllowed honestly.
             return screenCaptureCheck() ? .allowed : .notAllowed
-        case .protectedFolders, .fullDiskAccess, .localNetwork, .systemAudio, .automation:
+        case .localNetwork:
+            if #available(macOS 15, *) { return .managedInSettings }
+            return .allowed
+        case .protectedFolders, .fullDiskAccess, .systemAudio, .automation:
             // Public macOS APIs cannot preflight these permissions without intrusive probes
             // (e.g. accessing protected directories, sending network probes, or starting audio recording).
             // We report managedInSettings honestly without performing any disk, TCC, or network probing.
@@ -100,6 +107,18 @@ public final class TerminalPermissionService: ObservableObject {
     /// Explicitly requests microphone or screen access without recording.
     /// Refuses unsupported kinds without prompting.
     public func request(_ kind: TerminalPermissionKind) async -> TerminalPermissionRequestResult {
+        if kind == .localNetwork {
+            let current = await status(for: kind)
+            guard current != .allowed else {
+                return TerminalPermissionRequestResult(kind: kind, status: current,
+                    message: "Local Network access is already available.", didPrompt: false)
+            }
+            let attempted = networkRequest()
+            return TerminalPermissionRequestResult(kind: kind, status: current,
+                message: attempted ? "Local Network request started. Respond to macOS if prompted; manage an existing decision in Settings."
+                    : "No suitable local network interface was available. Connect to Wi-Fi or Ethernet and try again.",
+                didPrompt: attempted)
+        }
         if kind == .screenCapture {
             let current = await status(for: kind)
             if current == .allowed {

@@ -34,15 +34,23 @@ Already connected agents are checked without reinstalling them.
 
 ## Permissions
 
-The setup step shows two cards: **AI agents** opens agent setup, and
-**System permissions → Review access** opens a compact permission panel.
+The setup step shows one icon for each permission. Click an icon to request,
+check or configure that access. Agent setup remains in its separate step.
 
 | Action | What happens |
 | --- | --- |
-| **Your files → Check access** | Checks Desktop, Documents and Downloads; macOS may request access. |
-| **Protected files → Allow…** | Shows how to enable Tako in macOS Settings. |
-| **Notifications → Allow…** | Requests task alerts, or opens Settings after a previous denial. |
-| **More permissions** | Expands optional microphone, screen, audio, network and automation access. |
+| **Your files** | Checks Desktop, Documents and Downloads; macOS may request access. |
+| **Protected files** | Shows this exact app to drag into Full Disk Access, or copy its path for the + file picker. |
+| **Notifications** | Requests task alerts, or opens Settings after a previous denial. |
+| **Microphone** | Uses the native consent dialog, or Settings after denial. |
+| **Local Network** | Attempts Apple's no-traffic UDP consent trigger; an attempt never means permission was granted. |
+| **System Audio** | Explains the recording-time request and opens its Settings page; playback needs no recording access. |
+| **Screen Recording / Automation** | Requests screen access, or explains app-specific automation setup. |
+
+The protected-files helper stays available when Settings opens. Select the
+application bundle shown there, not an arbitrary shell or zmx process. If drag
+and drop is unavailable, press **+** in Full Disk Access, then **⇧⌘G** and paste
+the copied app path. Add the app and turn its switch on.
 
 The file check opens and closes directory handles without reading file names
 or contents. Results apply to Tako and each tested folder; they do not establish
@@ -60,7 +68,7 @@ denied or banners are off, open **macOS Settings** to change them.
 ## Returning to setup
 
 Skipping optional integrations does not prevent ordinary terminal use. Opening
-setup or pressing **Refresh status** does not request access. File checks and
+setup does not request access. File checks and
 permission requests require an explicit action. Camera access is not requested.
 Tako renders screenshots of its own terminal content without reading other
 apps' screens.

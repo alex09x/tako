@@ -23,6 +23,7 @@ struct SetupPermissionServiceTests {
             authorization: { _ in .authorized },
             screenCaptureCheck: { true },
             screenCaptureRequest: { requestCount += 1; return true },
+            networkRequest: { requestCount += 1; return true },
             request: { _ in
                 requestCount += 1
                 return true
@@ -81,7 +82,6 @@ struct SetupPermissionServiceTests {
         let unprovableKinds: [TerminalPermissionKind] = [
             .protectedFolders,
             .fullDiskAccess,
-            .localNetwork,
             .systemAudio,
             .automation,
         ]
@@ -205,7 +205,6 @@ struct SetupPermissionServiceTests {
         let unsupportedKinds: [TerminalPermissionKind] = [
             .protectedFolders,
             .fullDiskAccess,
-            .localNetwork,
             .systemAudio,
             .automation,
         ]
@@ -273,6 +272,37 @@ struct SetupPermissionServiceTests {
             return true
         })
         #expect(!(await service.request(.screenCapture)).didPrompt)
+    }
+
+    @Test func networkRequestNeverTurnsAnAttemptIntoAGrant() async {
+        var calls = 0
+        let service = TerminalPermissionService(check: { $0 == .localNetwork ? .managedInSettings : nil },
+            networkRequest: { calls += 1; return true })
+        await service.snapshot()
+        #expect(calls == 0)
+        let result = await service.request(.localNetwork)
+        #expect(calls == 1)
+        #expect(result.status == .managedInSettings)
+        #expect(!result.isAllowed)
+        #expect(result.message.contains("if prompted"))
+    }
+
+    @Test func missingNetworkInterfaceIsNotAUserDenial() async {
+        let service = TerminalPermissionService(check: { $0 == .localNetwork ? .managedInSettings : nil },
+            networkRequest: { false })
+        let result = await service.request(.localNetwork)
+        #expect(result.status == .managedInSettings)
+        #expect(!result.didPrompt)
+        #expect(result.message.contains("interface"))
+    }
+
+    @Test func networkAvailabilityUsesThePlatformPrivacyBoundary() async {
+        let service = TerminalPermissionService()
+        if #available(macOS 15, *) {
+            #expect(await service.status(for: .localNetwork) == .managedInSettings)
+        } else {
+            #expect(await service.status(for: .localNetwork) == .allowed)
+        }
     }
 
     @Test
