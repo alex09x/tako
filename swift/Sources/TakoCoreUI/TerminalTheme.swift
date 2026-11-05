@@ -14,7 +14,7 @@ import Foundation
 /// Terminal appearance, mirroring the knobs upstream exposes in its
 /// config: colors, font, padding, cursor and window opacity/blur.
 ///
-/// Defaults are upstream's own defaults.
+/// Terminal content is edge-to-edge by default; its host owns outer spacing.
 public struct TerminalTheme {
     /// `window-padding-color`: what shows in the leftover space around the
     /// grid. `extendAlways` always repeats the nearest edge cell's color;
@@ -92,7 +92,7 @@ public struct TerminalTheme {
         fontWeightBoldItalic: Int? = nil,
         cellWidth: CGFloat? = nil,
         cellHeight: CGFloat? = nil,
-        windowPadding: CGFloat = 10,
+        windowPadding: CGFloat = 0,
         windowPaddingBalance: Bool = false,
         windowPaddingColor: WindowPaddingColor = .background,
         windowColorSpace: ColorSpace = .srgb,

@@ -113,6 +113,22 @@ final class TerminalThemeConfigKeysTests: XCTestCase {
         XCTAssertFalse(invalid.windowPaddingBalance)
     }
 
+    func testDefaultGridUsesTheEntireHostWithoutAnImplicitInset() {
+        for theme in [TerminalTheme(), TerminalTheme.takoDefault, TerminalTheme.parse(config: "")] {
+            let size = CGSize(width: 800, height: 600)
+            let layout = TerminalGridLayout(viewSize: size, cellSize: CGSize(width: 10, height: 20), theme: theme)
+            XCTAssertEqual(layout.left, 0)
+            XCTAssertEqual(layout.top, 0)
+            XCTAssertEqual(layout.right(in: size), 0)
+            XCTAssertEqual(layout.bottom(in: size), 0)
+            XCTAssertEqual(layout.cols, 80)
+            XCTAssertEqual(layout.rows, 30)
+        }
+
+        let configured = TerminalTheme.parse(config: "window-padding-x = 3,5\nwindow-padding-y = 7,9")
+        XCTAssertEqual(configured.padding, TerminalPadding(left: 3, right: 5, top: 7, bottom: 9))
+    }
+
     // MARK: - window-padding-color
 
     func testWindowPaddingColorParsesAndDefaultsToBackground() {
