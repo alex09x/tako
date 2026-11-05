@@ -87,9 +87,6 @@ struct SetupWizardView: View {
             HStack {
                 Text("SET UP TAKO").font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(1.5).foregroundStyle(colors.muted)
-                Spacer()
-                Text("\(model.stepIndex + 1) / \(SetupStep.allCases.count)")
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
             }
             Text(title).font(.system(size: 25, weight: .semibold, design: .monospaced))
                 .accessibilityIdentifier("SetupStepTitle")
