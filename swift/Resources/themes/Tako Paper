@@ -1,0 +1,27 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
+window-padding-x = 0
+window-padding-y = 0
+# Tako Paper — a warm cream book page light terminal palette.
+background = #f6f4ee
+foreground = #262320
+cursor-color = #b83a24
+selection-background = #dfd7c6
+selection-foreground = #1a1816
+palette = 0=#262320
+palette = 1=#b9382f
+palette = 2=#3d7a44
+palette = 3=#996814
+palette = 4=#2a639b
+palette = 5=#83477d
+palette = 6=#247875
+palette = 7=#b0a898
+palette = 8=#686259
+palette = 9=#cf493e
+palette = 10=#51944e
+palette = 11=#b57d19
+palette = 12=#3d7ec2
+palette = 13=#9b5a94
+palette = 14=#359491
+palette = 15=#fbfaf7

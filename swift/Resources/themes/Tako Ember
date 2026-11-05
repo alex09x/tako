@@ -1,0 +1,27 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
+window-padding-x = 0
+window-padding-y = 0
+# Tako Ember — a warm charcoal and fiery ember dark terminal palette.
+background = #1c1210
+foreground = #f2e5d5
+cursor-color = #ff5925
+selection-background = #42231b
+selection-foreground = #fff3eb
+palette = 0=#1c1210
+palette = 1=#e05349
+palette = 2=#9bb362
+palette = 3=#e59a3c
+palette = 4=#7898ba
+palette = 5=#c6749d
+palette = 6=#6eb8b0
+palette = 7=#dfd2c4
+palette = 8=#7a665d
+palette = 9=#f26d5c
+palette = 10=#b0cc74
+palette = 11=#fab852
+palette = 12=#94b5db
+palette = 13=#da8fb5
+palette = 14=#8ad4ca
+palette = 15=#fdf6ee

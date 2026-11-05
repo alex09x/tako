@@ -1,0 +1,27 @@
+# tako-preset-version: 1
+font-family = Menlo
+font-size = 13
+window-padding-x = 0
+window-padding-y = 0
+# Tako Dawn — a cool morning lavender-pearl light terminal palette.
+background = #f4f3f7
+foreground = #222436
+cursor-color = #e05666
+selection-background = #dad5ea
+selection-foreground = #181928
+palette = 0=#222436
+palette = 1=#b63d58
+palette = 2=#367b57
+palette = 3=#98681b
+palette = 4=#2e64a8
+palette = 5=#774996
+palette = 6=#1e7885
+palette = 7=#aca7bc
+palette = 8=#676277
+palette = 9=#cf4a69
+palette = 10=#48946e
+palette = 11=#b27d28
+palette = 12=#417ec8
+palette = 13=#905eb0
+palette = 14=#2c91a0
+palette = 15=#f9f8fc
