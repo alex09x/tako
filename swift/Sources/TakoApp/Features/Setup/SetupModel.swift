@@ -27,6 +27,7 @@ final class SetupModel: ObservableObject {
     }
     @Published var message: String?
     @Published var selectedTheme: String
+    @Published private(set) var previewTheme: TerminalTheme
     let store: SetupProgressStore
     let services: SetupServices
     let configFile: KeybindConfigFile
@@ -44,6 +45,7 @@ final class SetupModel: ObservableObject {
         self.progress = store.load()
         self.selectedTheme = TerminalSettingRegistry.setting(for: "theme")
             .flatMap { config.getSettingValue(for: $0) } ?? "TakoCore"
+        self.previewTheme = Self.readTheme(config)
     }
 
     var step: SetupStep { progress.step }
@@ -140,7 +142,8 @@ final class SetupModel: ObservableObject {
 
     func chooseTheme(_ name: String) {
         guard !isBusy else { return }
-        if configFile.applyFullThemePreset(name) {
+        if configFile.applySetupColorPreset(name, preserving: previewTheme) {
+            previewTheme = Self.readTheme(configFile)
             selectedTheme = name
             message = nil
             progress.skipped.remove(.appearance)
@@ -148,5 +151,11 @@ final class SetupModel: ObservableObject {
         } else {
             message = "The theme couldn't be saved. Check that your Tako configuration is writable."
         }
+    }
+
+    private static func readTheme(_ file: KeybindConfigFile) -> TerminalTheme {
+        let text = file.configPath.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
+        return TerminalTheme.parse(config: text, configPath: file.configPath,
+                                   darkAppearance: TakoSystemAppearance.isDark)
     }
 }

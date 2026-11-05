@@ -13,11 +13,12 @@ import SwiftUI
 @MainActor
 struct SetupWizardView: View {
     @ObservedObject var model: SetupModel
+    private var colors: SetupPalette { SetupPalette(theme: model.previewTheme) }
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-            Rectangle().fill(SetupStyle.border).frame(width: 1)
+            Rectangle().fill(colors.border).frame(width: 1)
             VStack(alignment: .leading, spacing: 0) {
                 header.padding(.horizontal, 28).padding(.top, 26).padding(.bottom, 20)
                 ScrollView {
@@ -34,9 +35,11 @@ struct SetupWizardView: View {
             }
         }
         .font(.system(size: 12, design: .monospaced))
-        .foregroundStyle(SetupStyle.text)
-        .tint(SetupStyle.accent)
-        .background(SetupStyle.background)
+        .foregroundStyle(colors.text)
+        .tint(colors.accent)
+        .background(colors.background)
+        .environment(\.setupPalette, colors)
+        .preferredColorScheme(colors.isDark ? .dark : .light)
         .frame(minWidth: 760, minHeight: 560)
         .task { await model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -58,9 +61,9 @@ struct SetupWizardView: View {
                             Text(step.title).lineLimit(1)
                             Spacer(minLength: 0)
                         }
-                        .foregroundStyle(step == model.step ? SetupStyle.text : SetupStyle.muted)
+                        .foregroundStyle(step == model.step ? colors.text : colors.muted)
                         .padding(.horizontal, 11).padding(.vertical, 11)
-                        .background(step == model.step ? SetupStyle.accent.opacity(0.12) : Color.clear,
+                        .background(step == model.step ? colors.accent.opacity(0.12) : Color.clear,
                                     in: .rect(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)
@@ -71,9 +74,9 @@ struct SetupWizardView: View {
             }
             Spacer()
             Text("Make it yours.\nKeep your flow.")
-                .font(.system(size: 10, design: .monospaced)).foregroundStyle(SetupStyle.muted)
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
             Button("Finish later") { model.dismiss() }
-                .buttonStyle(.plain).foregroundStyle(SetupStyle.muted)
+                .buttonStyle(.plain).foregroundStyle(colors.muted)
                 .disabled(model.isBusy).accessibilityIdentifier("SetupLater")
                 .keyboardShortcut(.cancelAction)
         }.padding(20).frame(width: 208)
@@ -83,14 +86,14 @@ struct SetupWizardView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text("SET UP TAKO").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.5).foregroundStyle(SetupStyle.muted)
+                    .tracking(1.5).foregroundStyle(colors.muted)
                 Spacer()
                 Text("\(model.stepIndex + 1) / \(SetupStep.allCases.count)")
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(SetupStyle.muted)
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
             }
             Text(title).font(.system(size: 25, weight: .semibold, design: .monospaced))
                 .accessibilityIdentifier("SetupStepTitle")
-            Text(subtitle).foregroundStyle(SetupStyle.muted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            Text(subtitle).foregroundStyle(colors.muted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -107,7 +110,7 @@ struct SetupWizardView: View {
             Spacer()
             if ![.welcome, .ready].contains(model.step) {
                 Button("Skip for now") { model.next(skipping: true) }
-                    .buttonStyle(.plain).foregroundStyle(SetupStyle.muted)
+                    .buttonStyle(.plain).foregroundStyle(colors.muted)
                     .accessibilityIdentifier("SetupSkip")
             }
             Button(model.step == .ready ? "Start using Tako" : "Continue") { model.next() }
@@ -117,7 +120,7 @@ struct SetupWizardView: View {
         }
         .disabled(model.isBusy)
         .padding(.horizontal, 28).padding(.vertical, 18)
-        .overlay(alignment: .top) { Rectangle().fill(SetupStyle.border).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(colors.border).frame(height: 1) }
     }
 
     @ViewBuilder private var content: some View {
@@ -144,7 +147,7 @@ struct SetupWizardView: View {
     private var subtitle: String {
         switch model.step {
         case .welcome: "Choose a look and connect the tools you use. Every step is optional, and you can return from the Tako menu."
-        case .appearance: "Presets include colors and typography. Pick one to apply it immediately."
+        case .appearance: "Choose your colors. The entire window updates immediately; fonts stay as you configured them."
         case .commandLine: "Open tabs, split panes and control Tako from scripts or another terminal."
         case .agents: "Choose which installed agents can use Tako's commands and report their activity."
         case .notifications: "Get a macOS alert when work finishes or an agent needs your attention."

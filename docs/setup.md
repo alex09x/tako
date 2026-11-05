@@ -9,8 +9,9 @@ If no terminal window is open, explicitly choosing **Set Up Tako…** opens a
 clean terminal for the guide. Automatic setup waits for the first usable
 terminal window; it respects `initial-window = false`.
 
-- **Appearance:** choose a complete theme preset. The choice applies and saves
-  immediately. Custom themes, fonts and sizes remain available in Settings.
+- **Appearance:** choose colors and see the entire guide update immediately.
+  The choice saves automatically while preserving your font, size and layout.
+  Fonts, sizes and complete custom theme editing are available in Settings.
   Workspace and pane overrides retain their priority.
 - **Command line:** optionally link this app's bundled `takoctl` into a writable
   bin directory. The installer protects unrelated files and links. Other shells

@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import XCTest
 
 @MainActor
@@ -39,6 +40,10 @@ final class TakoSetupUITests: TakoCustomConfigCase {
 
     func testAppearanceAppliesAndEscapeResumesAtTheSameStep() async throws {
         let app = try isolatedApplication()
+        let initialConfig = try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"])
+        var initial = try String(contentsOfFile: initialConfig, encoding: .utf8)
+        initial += "\nfont-family = Monaco\nfont-size = 17\nfont-weight = 550\n"
+        try initial.write(toFile: initialConfig, atomically: true, encoding: .utf8)
         app.launch()
         try openSetup(app)
         app.buttons["SetupStep-appearance"].click()
@@ -46,13 +51,37 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(themes.firstMatch.waitForExistence(timeout: 5))
         let choice = try XCTUnwrap(themes.allElementsBoundByIndex.first { ($0.value as? String) == "Not selected" })
         let chosenName = choice.label
-        choice.click()
+        let preview = app.descendants(matching: .any)["SetupWizard"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        let before = try previewBackground(preview)
+        choice.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).click()
         let selected = NSPredicate(format: "value == %@", "Selected")
         let selectedExpectation = expectation(for: selected, evaluatedWith: choice)
         await fulfillment(of: [selectedExpectation], timeout: 5)
         let configPath = try XCTUnwrap(app.launchEnvironment["TAKO_CONFIG_PATH"])
         let text = try String(contentsOfFile: configPath, encoding: .utf8)
         XCTAssertTrue(text.contains("theme = \(chosenName)"), "Choosing a preset must persist immediately")
+        XCTAssertTrue(text.contains("font-family = Monaco"))
+        XCTAssertTrue(text.contains("font-size = 17"))
+        XCTAssertTrue(text.contains("font-weight = 550"))
+        attach(app, name: "Setup whole window after color selection")
+        print("Setup colors before=\(before), after=\(try previewBackground(preview))")
+        let changed = NSPredicate { _, _ in
+            guard let after = try? self.previewBackground(preview) else { return false }
+            return zip(before, after).reduce(0.0) { $0 + abs($1.0 - $1.1) } > 0.03
+        }
+        await fulfillment(of: [expectation(for: changed, evaluatedWith: preview)], timeout: 5)
+        XCTAssertFalse(app.popUpButtons["SetupFont"].exists)
+        XCTAssertFalse(app.steppers["SetupFontSize"].exists)
+        let light = app.buttons["SetupTheme-Tako Paper"]
+        light.click()
+        XCTAssertEqual(light.value as? String, "Selected")
+        XCTAssertGreaterThan(try previewBackground(preview).reduce(0, +), 2.4,
+                             "The whole setup window must use the selected light palette")
+        choice.click()
+        XCTAssertEqual(choice.value as? String, "Selected")
+        XCTAssertLessThan(try previewBackground(preview).reduce(0, +), 1.0,
+                          "Switching back must also recolor the whole window")
         attach(app, name: "Setup selected theme")
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.buttons["SetupNext"].waitForNonExistence(timeout: 5))
@@ -61,6 +90,12 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertEqual(app.buttons["SetupTheme-\(chosenName)"].value as? String, "Selected")
         app.buttons["SetupLater"].click()
         try await assertKeyboardReturnsToTerminal(app)
+    }
+
+    private func previewBackground(_ preview: XCUIElement) throws -> [Double] {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: preview.screenshot().pngRepresentation))
+        let color = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 40, y: 80)?.usingColorSpace(.sRGB))
+        return [color.redComponent, color.greenComponent, color.blueComponent]
     }
 
     func testReentryIsSingleInstanceAndNotificationStepIsOptional() async throws {
