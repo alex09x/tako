@@ -10,7 +10,7 @@
 import Foundation
 
 enum SetupStep: String, CaseIterable, Codable, Identifiable {
-    case welcome, appearance, commandLine, agents, notifications, ready
+    case welcome, appearance, commandLine, agents, permissions, notifications, ready
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -18,6 +18,7 @@ enum SetupStep: String, CaseIterable, Codable, Identifiable {
         case .appearance: "Appearance"
         case .commandLine: "Command line"
         case .agents: "AI agents"
+        case .permissions: "Permissions"
         case .notifications: "Notifications"
         case .ready: "Ready"
         }
@@ -28,6 +29,7 @@ enum SetupStep: String, CaseIterable, Codable, Identifiable {
         case .appearance: "paintpalette"
         case .commandLine: "terminal"
         case .agents: "cpu"
+        case .permissions: "hand.raised"
         case .notifications: "bell"
         case .ready: "checkmark.circle"
         }

@@ -42,6 +42,7 @@ struct SetupServices {
     var checkNotifications: () async -> SetupNotificationStatus
     var enableNotifications: () async -> SetupNotificationStatus
     var openNotificationSettings: () -> Void
+    var sendTestNotification: () async -> String? = { "Test notifications are unavailable." }
 
     static func live(defaults: UserDefaults = .tako) -> Self {
         Self(checkCLI: cliStatus, installCLI: {
@@ -75,7 +76,23 @@ struct SetupServices {
         }, openNotificationSettings: {
             guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") else { return }
             NSWorkspace.shared.open(url)
+        }, sendTestNotification: {
+            guard let center = AppDelegate.notificationCenterProvider() else { return "Notification service is unavailable." }
+            do {
+                try await center.add(testNotificationRequest())
+                return nil
+            } catch { return error.localizedDescription }
         })
+    }
+
+    static func testNotificationRequest() -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = "Tako test notification"
+        content.body = "Your notification test is ready. Tako can let you know when work needs attention."
+        content.sound = .default
+        // This is an explicit user-requested test, including while setup is in front.
+        content.userInfo = [Tako.notificationFromControlKey: true]
+        return UNNotificationRequest(identifier: "tako-setup-test-\(UUID().uuidString)", content: content, trigger: nil)
     }
 
     private static func cliStatus() -> SetupCLIStatus {

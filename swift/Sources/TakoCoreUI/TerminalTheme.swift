@@ -94,7 +94,7 @@ public struct TerminalTheme {
         cellHeight: CGFloat? = nil,
         windowPadding: CGFloat = 0,
         windowPaddingBalance: Bool = false,
-        windowPaddingColor: WindowPaddingColor = .background,
+        windowPaddingColor: WindowPaddingColor = .extend,
         windowColorSpace: ColorSpace = .srgb,
         cursorBlink: Bool = true
     ) {

@@ -108,8 +108,12 @@ struct SetupBadge: View {
     @Environment(\.setupPalette) private var colors
     let text: String
     var ready = false
+    var showsSymbol = true
     var body: some View {
-        Label(text, systemImage: ready ? "checkmark.circle.fill" : "circle")
+        HStack(spacing: 5) {
+            if showsSymbol { Image(systemName: ready ? "checkmark.circle.fill" : "circle") }
+            Text(text)
+        }
             .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundStyle(ready ? colors.success : colors.muted)
             .padding(.horizontal, 8).padding(.vertical, 5)

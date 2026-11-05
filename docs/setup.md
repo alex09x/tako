@@ -20,15 +20,24 @@ terminal window; it respects `initial-window = false`.
   lifecycle hooks and the Tako skill. The guide checks both, shows failures,
   and preserves unrelated configuration. Already connected agents are checked
   without reinstalling them.
+- **Permissions:** review optional macOS access and open the matching Settings
+  page. Camera and microphone access can be requested explicitly; this does not
+  start recording. Other services show when macOS manages their status instead
+  of claiming access is granted. A terminal program can have its own permission
+  entry, separate from Tako.
 - **Notifications:** choose whether to enable macOS alerts, sounds and badges.
   The guide reads current macOS settings; opening the step does not request
   consent. When access was denied or individual options are off, open macOS
   Settings and use **Check again**, or return to Tako to refresh the status.
+  **Check again** sends a test notification when access is allowed, and reports
+  success, disabled banners or an error in the guide. It never requests access
+  by itself.
 
-Skipping optional integrations does not prevent ordinary terminal use. Setup
-does not request camera, microphone, Full Disk Access or screen-recording
-access. Tako renders screenshots of its own terminal content without reading
-other apps' screens.
+Skipping optional integrations does not prevent ordinary terminal use. Opening
+setup or checking statuses never requests camera, microphone, Full Disk Access
+or screen-recording access. Permission requests require an explicit action.
+Tako renders screenshots of its own terminal content without reading other
+apps' screens.
 
 Setup progress records navigation and explicit choices. Installed components
 and permissions are checked again rather than inferred from a previous click.

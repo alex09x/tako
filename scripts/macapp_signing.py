@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import tempfile
 import subprocess
+from macapp_privacy import ENTITLEMENTS
 
 
 def candidate_source(info, metadata=None):
@@ -105,6 +106,6 @@ def sign_bundle(app, identity, runner=subprocess.run):
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
     execute(command + [client])
-    execute(command + [app])
+    execute(command + ["--entitlements", ENTITLEMENTS, app])
     execute(["codesign", "--verify", "--deep", "--strict", app])
     return digest

@@ -13,6 +13,7 @@ that isn't in the bundle.
 """
 import hashlib, json, os, subprocess, sys, shutil, plistlib
 from macapp_signing import sign_bundle
+from macapp_privacy import PRIVACY_USAGE_DESCRIPTIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -223,6 +224,7 @@ run(["xcrun", "actool", "swift/Resources/Assets.xcassets",
 
 with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
     plistlib.dump({
+        **PRIVACY_USAGE_DESCRIPTIONS,
         "CFBundleName": "Tako",
         "CFBundleDisplayName": "Tako",
         "CFBundleIdentifier": os.environ.get("TAKO_BUNDLE_ID", "com.tako-core.terminal"),
@@ -251,12 +253,9 @@ with open(os.path.join(APP, "Contents", "Info.plist"), "wb") as f:
 # to name one explicitly, or to "-" to force an ad-hoc build even where a
 # real certificate exists.
 #
-# No entitlements file. The hardened runtime denies things this app does not
-# do: everything is statically linked so no library is loaded at runtime,
-# there is no JIT, no DYLD_* variable reaches the shell integration, and the
-# children it forks immediately exec system binaries that carry their own
-# signatures. An entitlement here would be a request for a permission
-# nothing asks for, and each one is a thing notarization has to forgive.
+# The main app allows user-requested media and Apple Events capabilities.
+# macOS consent remains separate; signing does not grant privacy access.
+# Helpers retain their own minimal signatures, without those capabilities.
 def codesign_identity():
     forced = os.environ.get("TAKO_CODESIGN_IDENTITY")
     if forced:

@@ -140,6 +140,37 @@ final class SetupModel: ObservableObject {
         isBusy = false
     }
 
+    func checkNotificationsAndSendTest() async {
+        guard !isBusy, !isRefreshing else { return }
+        isBusy = true
+        refreshID = UUID()
+        message = nil
+        defer { isBusy = false }
+        notifications = await services.checkNotifications()
+        switch notifications.access {
+        case .allowed:
+            if let error = await services.sendTestNotification() {
+                message = "Test notification couldn't be sent: \(error)"
+            } else {
+                message = notifications.alerts ? "Test notification sent."
+                    : "Test notification sent. Banners are off in macOS Settings."
+            }
+        case .denied: message = "Notifications are disabled in macOS Settings."
+        case .notAsked: message = "Enable notifications first to receive a test notification."
+        case .unavailable: message = "Notification service is unavailable."
+        }
+    }
+
+    func requestPermission(_ kind: TerminalPermissionKind, service: TerminalPermissionService) async {
+        guard !isBusy, !isRefreshing else { return }
+        isBusy = true
+        message = nil
+        defer { isBusy = false }
+        let result = await service.request(kind)
+        await service.snapshot()
+        message = result.message
+    }
+
     func chooseTheme(_ name: String) {
         guard !isBusy else { return }
         if configFile.applySetupColorPreset(name, preserving: Self.readTheme(configFile)) {

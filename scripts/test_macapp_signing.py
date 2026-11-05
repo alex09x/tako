@@ -23,6 +23,20 @@ from macapp_signing import candidate_source, sign_bundle, verify_source_checkout
 
 
 class SigningTests(unittest.TestCase):
+    def test_privacy_metadata_has_purposes_and_only_requested_capabilities(self):
+        from macapp_privacy import ENTITLEMENTS, PRIVACY_USAGE_DESCRIPTIONS
+
+        for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription",
+                    "NSAudioCaptureUsageDescription", "NSLocalNetworkUsageDescription",
+                    "NSAppleEventsUsageDescription", "NSDocumentsFolderUsageDescription"):
+            self.assertTrue(PRIVACY_USAGE_DESCRIPTIONS[key].strip())
+        entitlements = plistlib.loads(ENTITLEMENTS.read_bytes())
+        self.assertEqual(entitlements, {
+            "com.apple.security.device.camera": True,
+            "com.apple.security.device.audio-input": True,
+            "com.apple.security.automation.apple-events": True,
+        })
+
     def setUp(self):
         self.root = tempfile.TemporaryDirectory()
         self.addCleanup(self.root.cleanup)
@@ -61,6 +75,9 @@ class SigningTests(unittest.TestCase):
                          {k: v for k, v in self.original.items() if k != "sha256"})
         self.assertEqual([Path(c[-1]).name for c in calls if "--force" in c], ["zmx", "takoctl", "Tako.app"])
         self.assertIn("--verify", calls[-1])
+        outer = next(c for c in calls if "--force" in c and Path(c[-1]) == self.app)
+        self.assertIn("--entitlements", outer)
+        self.assertTrue(all("--entitlements" not in c for c in calls if Path(c[-1]).name in ("zmx", "takoctl")))
 
     def test_invalid_manifest_path_and_linked_helper_are_refused_before_signing(self):
         calls = []

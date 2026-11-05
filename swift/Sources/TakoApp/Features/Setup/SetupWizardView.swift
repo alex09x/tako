@@ -126,6 +126,7 @@ struct SetupWizardView: View {
         case .appearance: SetupAppearanceStep(model: model)
         case .commandLine: SetupCommandLineStep(model: model)
         case .agents: SetupAgentsStep(model: model)
+        case .permissions: SetupPermissionsStep(model: model)
         case .notifications: SetupNotificationsStep(model: model)
         case .ready: SetupReadyStep(model: model)
         }
@@ -137,6 +138,7 @@ struct SetupWizardView: View {
         case .appearance: "Find your colors."
         case .commandLine: "Tako, from the command line."
         case .agents: "Bring your agents along."
+        case .permissions: "Choose what to allow."
         case .notifications: "Know when you're needed."
         case .ready: "You're ready to go."
         }
@@ -147,6 +149,7 @@ struct SetupWizardView: View {
         case .appearance: "Choose your colors. The entire window updates immediately; fonts stay as you configured them."
         case .commandLine: "Open tabs, split panes and control Tako from scripts or another terminal."
         case .agents: "Choose which installed agents can use Tako's commands and report their activity."
+        case .permissions: "Review optional macOS access. Nothing is requested just by opening this page."
         case .notifications: "Get a macOS alert when work finishes or an agent needs your attention."
         case .ready: "Your terminal is ready. Optional integrations can be changed whenever you need them."
         }

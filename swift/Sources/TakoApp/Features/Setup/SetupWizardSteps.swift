@@ -71,12 +71,19 @@ struct SetupAgentsStep: View {
                     HStack(alignment: .top, spacing: 12) {
                         Toggle(isOn: Binding(get: { model.selectedAgents.contains(agent.id) }, set: { selected in
                             if selected { model.selectedAgents.insert(agent.id) } else { model.selectedAgents.remove(agent.id) }
-                        })) { Text(agent.name).fontWeight(.medium) }
+                        })) {
+                            HStack(spacing: 8) {
+                                SetupAgentIcon(id: agent.id)
+                                Text(agent.name).fontWeight(.medium)
+                            }
+                        }
                         .toggleStyle(.checkbox)
+                        .accessibilityLabel(agent.name)
                         .disabled(!agent.isDetected || agent.isReady || model.isBusy || model.isRefreshing)
                         .accessibilityIdentifier("SetupAgent-\(agent.id)")
                         Spacer(minLength: 0)
-                        SetupBadge(text: agent.isReady ? "Connected" : agent.isDetected ? "Not connected" : "Not found", ready: agent.isReady)
+                        SetupBadge(text: agent.isReady ? "Connected" : agent.isDetected ? "Not connected" : "Not found",
+                                   ready: agent.isReady, showsSymbol: false)
                     }
                     if agent.isDetected {
                         Text(agent.detail ?? "Hooks: \(agent.hooksInstalled ? "ready" : "not installed") · Skill: \(agent.skillInstalled ? "ready" : "not installed")")
@@ -126,7 +133,7 @@ struct SetupNotificationsStep: View {
                     Button("Open macOS Settings") { model.services.openNotificationSettings() }
                         .buttonStyle(SetupButtonStyle()).accessibilityIdentifier("SetupNotificationSettings")
                 }
-                Button("Check again") { Task { await model.refresh() } }
+                Button("Check again") { Task { await model.checkNotificationsAndSendTest() } }
                     .buttonStyle(SetupButtonStyle()).accessibilityIdentifier("SetupRefreshNotifications")
             }.disabled(model.isBusy || model.isRefreshing)
         }

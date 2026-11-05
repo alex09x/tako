@@ -216,8 +216,10 @@ extension TerminalMetalFramePlanner {
                 continue
             }
             for (col, color) in colors.enumerated() where color != defaultBackground {
+                let width = cellWidth + (margins.left == 0 && margins.top == 0 && col == cells.cols - 1
+                    ? margins.right : 0)
                 backgroundInstances.append(TerminalMetalBackgroundInstance(
-                    x: Float(col) * cellWidth, y: y, width: cellWidth, height: height, color: color
+                    x: Float(col) * cellWidth, y: y, width: width, height: height, color: color
                 ))
             }
         }

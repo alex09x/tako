@@ -174,6 +174,16 @@ final class MetalPaddingAndSelectionTests: XCTestCase {
         XCTAssertEqual(px.at(6 + 4, height - 1), rgb(Self.defaultBackground))
     }
 
+    func testZeroInsetGridFillsTheBottomRightCorner() throws {
+        // A real window rarely ends on an exact cell boundary. These are
+        // fractional-cell leftovers, not intentional outer padding.
+        let margins = TerminalMetalMargins(left: 0, top: 0, right: 3, bottom: 7, fill: .extend)
+        let (px, width, height) = try render(frame(), margins: margins, device: try device())
+        XCTAssertEqual(px.at(width - 1, height - 1), rgb(Self.rowColors[3]))
+        XCTAssertEqual(px.at(width - 1, 1), rgb(Self.rowColors[0]))
+        XCTAssertEqual(px.at(0, height - 1), rgb(Self.rowColors[3]))
+    }
+
     /// A row with a default-background cell -- a prompt, typically -- is not
     /// extended above the grid by `extend`, and is by `extend-always`.
     func testExtendKeepsAPromptLikeRowOutOfTheTopMargin() throws {

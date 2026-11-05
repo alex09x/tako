@@ -12,6 +12,33 @@ import XCTest
 
 @MainActor
 final class TakoSetupUITests: TakoCustomConfigCase {
+    func testPermissionsAreOptionalAndNotificationCheckGivesVisibleFeedback() async throws {
+        let app = try isolatedApplication()
+        app.launch()
+        try openSetup(app)
+        app.buttons["SetupStep-permissions"].click()
+        XCTAssertTrue(app.staticTexts["Choose what to allow."].waitForExistence(timeout: 5))
+        let folders = app.descendants(matching: .any)["SetupPermission-protectedFolders"].firstMatch
+        XCTAssertTrue(folders.waitForExistence(timeout: 5))
+        let scopeNote = app.staticTexts["SetupPermissionScopeNote"]
+        XCTAssertTrue(scopeNote.exists)
+        XCTAssertTrue((scopeNote.label + " " + (scopeNote.value as? String ?? ""))
+            .contains("These checks describe this copy of Tako"))
+        attach(app, name: "Setup optional permission statuses")
+        // Navigation and status inspection must not require allowing an OS prompt.
+        app.buttons["SetupStep-notifications"].click()
+        let check = app.buttons["SetupRefreshNotifications"]
+        XCTAssertTrue(check.waitForExistence(timeout: 5))
+        check.click()
+        XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 5))
+        let feedbackElement = app.staticTexts["SetupMessage"]
+        let feedback = (feedbackElement.label + " " + (feedbackElement.value as? String ?? "")).lowercased()
+        XCTAssertTrue(["test notification", "disabled", "enable notifications", "unavailable"].contains { feedback.contains($0) })
+        attach(app, name: "Setup notification test feedback")
+        app.buttons["SetupLater"].click()
+        try await assertKeyboardReturnsToTerminal(app)
+    }
+
     func testFreshLaunchCanSkipSetupAndKeepUsingTheTerminal() async throws {
         let app = try isolatedApplication()
         app.launchArguments.removeAll { $0 == "--no-launch-notices" }
@@ -71,6 +98,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
             return zip(before, after).reduce(0.0) { $0 + abs($1.0 - $1.1) } > 0.03
         }
         await fulfillment(of: [expectation(for: changed, evaluatedWith: preview)], timeout: 5)
+        let appliedBackground = try previewBackground(preview)
         XCTAssertFalse(app.popUpButtons["SetupFont"].exists)
         XCTAssertFalse(app.steppers["SetupFontSize"].exists)
         let light = app.buttons["SetupTheme-Tako Dawn"]
@@ -85,6 +113,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         attach(app, name: "Setup selected theme")
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.buttons["SetupNext"].waitForNonExistence(timeout: 5))
+        try assertTerminalFillsItsHost(app, background: appliedBackground)
         try openSetup(app)
         XCTAssertTrue(app.staticTexts["Find your colors."].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["SetupTheme-\(chosenName)"].value as? String, "Selected")
@@ -96,6 +125,29 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: preview.screenshot().pngRepresentation))
         let color = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 40, y: 80)?.usingColorSpace(.sRGB))
         return [color.redComponent, color.greenComponent, color.blueComponent]
+    }
+
+    private func assertTerminalFillsItsHost(_ app: XCUIApplication, background: [Double]) throws {
+        let terminal = app.descendants(matching: .any)["terminal"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        let window = app.windows.firstMatch
+        XCTAssertEqual(terminal.frame.minX, window.frame.minX, accuracy: 1.5)
+        XCTAssertEqual(terminal.frame.maxX, window.frame.maxX, accuracy: 1.5)
+        XCTAssertEqual(terminal.frame.maxY, window.frame.maxY, accuracy: 1.5)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: terminal.screenshot().pngRepresentation))
+        // Skip the native window's one-pixel outline and rounded corner.
+        // Exact drawable corners are covered by Metal and CPU bitmap tests.
+        for (x, y) in [(bitmap.pixelsWide - 5, 12), (bitmap.pixelsWide - 28, bitmap.pixelsHigh - 28),
+                       (bitmap.pixelsWide / 2, bitmap.pixelsHigh - 5), (5, bitmap.pixelsHigh / 2)] {
+            let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+            for (actual, expected) in zip([color.redComponent, color.greenComponent, color.blueComponent], background) {
+                XCTAssertEqual(actual, expected, accuracy: 0.035, "Terminal edge at \(x),\(y) must match the selected background")
+            }
+        }
+        let evidence = XCTAttachment(screenshot: terminal.screenshot())
+        evidence.name = "Edge to edge terminal after theme selection"
+        evidence.lifetime = .keepAlways
+        add(evidence)
     }
 
     func testReentryIsSingleInstanceAndNotificationStepIsOptional() async throws {

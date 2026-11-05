@@ -131,8 +131,8 @@ final class TerminalThemeConfigKeysTests: XCTestCase {
 
     // MARK: - window-padding-color
 
-    func testWindowPaddingColorParsesAndDefaultsToBackground() {
-        XCTAssertEqual(TerminalTheme.takoDefault.windowPaddingColor, .background)
+    func testWindowPaddingColorParsesAndDefaultsToExtend() {
+        XCTAssertEqual(TerminalTheme.takoDefault.windowPaddingColor, .extend)
 
         let extend = TerminalTheme.parse(config: "window-padding-color = extend")
         XCTAssertEqual(extend.windowPaddingColor, .extend)
@@ -143,9 +143,9 @@ final class TerminalThemeConfigKeysTests: XCTestCase {
         let background = TerminalTheme.parse(config: "window-padding-color = background")
         XCTAssertEqual(background.windowPaddingColor, .background)
 
-        // Invalid keyword: falls back to the default (background).
+        // Invalid keyword: falls back to the default (extend).
         let invalid = TerminalTheme.parse(config: "window-padding-color = sparkly")
-        XCTAssertEqual(invalid.windowPaddingColor, .background)
+        XCTAssertEqual(invalid.windowPaddingColor, .extend)
     }
 
     // MARK: - window-colorspace
