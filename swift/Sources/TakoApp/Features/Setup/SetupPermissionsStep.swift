@@ -32,13 +32,23 @@ struct SetupPermissionsStep: View {
                     Text(permission.explanation).foregroundStyle(colors.muted)
                         .font(.system(size: 11, design: .monospaced))
                         .fixedSize(horizontal: false, vertical: true)
+                    if permission.kind == .fullDiskAccess {
+                        guidance(permission.kind)
+                    } else {
+                        DisclosureGroup("How to allow this access") { guidance(permission.kind) }
+                    }
                     HStack {
+                        if permission.kind == .protectedFolders {
+                            Button("Choose a folder to check…") { Task { await model.checkSelectedFolder() } }
+                                .buttonStyle(SetupButtonStyle(primary: true))
+                                .accessibilityIdentifier("SetupChooseFolder")
+                        }
                         if permission.canRequest, permission.status == .notAsked {
                             Button("Request access") { Task { await model.requestPermission(permission.kind, service: service) } }
                                 .buttonStyle(SetupButtonStyle(primary: true))
                                 .accessibilityIdentifier("SetupRequestPermission-\(permission.id)")
                         }
-                        Button("Open macOS Settings") {
+                        Button(permission.kind == .fullDiskAccess ? "Open Full Disk Access" : "Open macOS Settings") {
                             if !service.openSettings(permission.kind) {
                                 model.message = "macOS Settings couldn't be opened."
                             }
@@ -63,6 +73,33 @@ struct SetupPermissionsStep: View {
         checking = true
         await service.snapshot()
         checking = false
+    }
+
+    private func guidance(_ kind: TerminalPermissionKind) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(kind.managementSteps, id: \.self) { step in
+                Text(step).font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(colors.muted).fixedSize(horizontal: false, vertical: true)
+            }
+            if kind.needsAppLocation {
+                Text("This copy of Tako:").fontWeight(.medium)
+                Text(Bundle.main.bundleURL.path).font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("SetupAppLocation-\(kind.id)")
+                HStack {
+                    Button("Copy app path") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(Bundle.main.bundleURL.path, forType: .string)
+                    }.buttonStyle(SetupButtonStyle())
+                    Button("Show app in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+                    }.buttonStyle(SetupButtonStyle())
+                        .accessibilityIdentifier("SetupRevealApp-\(kind.id)")
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("SetupPermissionGuide-\(kind.id)")
     }
 
     private func symbol(_ kind: TerminalPermissionKind) -> String {

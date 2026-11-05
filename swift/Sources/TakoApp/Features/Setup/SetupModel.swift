@@ -171,6 +171,15 @@ final class SetupModel: ObservableObject {
         message = result.message
     }
 
+    func checkSelectedFolder(using service: SetupFolderAccess? = nil) async {
+        guard !isBusy, !isRefreshing else { return }
+        isBusy = true
+        message = nil
+        defer { isBusy = false }
+        let result = await (service ?? SetupFolderAccess()).chooseAndCheck()
+        message = result?.message ?? "Folder check canceled. No access was checked or requested."
+    }
+
     func chooseTheme(_ name: String) {
         guard !isBusy else { return }
         if configFile.applySetupColorPreset(name, preserving: Self.readTheme(configFile)) {

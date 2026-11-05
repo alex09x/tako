@@ -20,6 +20,15 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.staticTexts["Choose what to allow."].waitForExistence(timeout: 5))
         let folders = app.descendants(matching: .any)["SetupPermission-protectedFolders"].firstMatch
         XCTAssertTrue(folders.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["SetupChooseFolder"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["SetupPermissionGuide-fullDiskAccess"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["SetupAppLocation-fullDiskAccess"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["SetupRevealApp-fullDiskAccess"].exists)
+        app.buttons["SetupChooseFolder"].click()
+        let chooser = app.buttons["Check folder"].firstMatch
+        XCTAssertTrue(chooser.waitForExistence(timeout: 5))
+        app.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(chooser.waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-camera"].exists)
         XCTAssertFalse(app.buttons["SetupRequestPermission-camera"].exists)
         let scopeNote = app.staticTexts["SetupPermissionScopeNote"]

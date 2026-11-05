@@ -92,6 +92,37 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
         }
     }
+
+    var managementSteps: [String] {
+        switch self {
+        case .fullDiskAccess:
+            ["1. Open Full Disk Access in macOS Settings.",
+             "2. Press + and choose this copy of Tako using the path below.",
+             "3. Turn on its switch. Reopen the app if macOS asks.",
+             "A shell or tool named in a separate request needs its own entry; this does not verify all terminal programs."]
+        case .protectedFolders:
+            ["Choose the folder you actually want to use. macOS handles access to that selection.",
+             "The check reads only that folder for this app; it does not prove Full Disk Access or CLI access."]
+        case .localNetwork:
+            ["Make the local connection you intend to use, such as SSH to your server.",
+             "If macOS asks, choose Allow for the app or program named in that prompt.",
+             "Review that entry in Local Network settings. Opening Settings alone does not grant access."]
+        case .microphone:
+            ["Only needed for a voice or recording feature you choose.",
+             "Request access for Tako with the button below, or manage the program named by macOS in Microphone settings."]
+        case .screenCapture, .systemAudio:
+            ["Open Screen & System Audio Recording in macOS Settings.",
+             "Press + in the required section and select the app or recording tool you intend to use.",
+             "Enable its switch. Tako's own terminal screenshots do not require screen-recording access."]
+        case .automation:
+            ["Run the script that controls the target app; macOS asks for that specific app.",
+             "In Automation settings, expand the requesting program and enable the intended target. There is no blanket permission for every app."]
+        }
+    }
+
+    var needsAppLocation: Bool {
+        self == .fullDiskAccess || self == .screenCapture || self == .systemAudio
+    }
 }
 
 /// The observed access status of a permission.

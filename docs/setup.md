@@ -25,6 +25,12 @@ terminal window; it respects `initial-window = false`.
   start recording. Other services show when macOS manages their status instead
   of claiming access is granted. A terminal program can have its own permission
   entry, separate from Tako.
+  For Full Disk Access, the guide shows the **+ → select app → enable switch**
+  steps, the exact app location, and a **Show app in Finder** action. macOS does
+  not provide a normal in-app Allow dialog for that service.
+  **Choose a folder to check…** opens the system folder chooser, then performs
+  a read check only on the chosen folder. The result applies to this app and
+  that folder; it does not claim access for every CLI or session process.
 - **Notifications:** choose whether to enable macOS alerts, sounds and badges.
   The guide reads current macOS settings; opening the step does not request
   consent. When access was denied or individual options are off, open macOS
