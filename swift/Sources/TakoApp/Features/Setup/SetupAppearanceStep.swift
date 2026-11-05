@@ -33,7 +33,7 @@ struct SetupAppearanceStep: View {
                 }
             }
             Text("This step changes colors only. Fonts and sizes are in Settings (⌘,). Workspace and pane styles keep their priority.")
-                .font(.system(size: 11, design: .monospaced)).foregroundStyle(colors.muted).lineSpacing(4)
+                .font(.system(size: 13)).foregroundStyle(colors.muted).lineSpacing(4)
         }.onAppear {
             guard choices.isEmpty else { return }
             let paths = model.configFile.appearanceThemePaths
@@ -51,7 +51,7 @@ struct SetupAppearanceStep: View {
         let selected = Self.isSelected(choice.name, current: model.selectedTheme)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(choice.name).font(.system(size: 11, weight: .semibold, design: .monospaced)).lineLimit(1)
+                Text(choice.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 4)
                 if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(colors.accent) }
             }.foregroundStyle(colors.text)

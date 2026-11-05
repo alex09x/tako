@@ -16,6 +16,7 @@ final class SetupModel: ObservableObject {
     @Published private(set) var cli = SetupCLIStatus(installed: false, detail: "Checking…")
     @Published private(set) var agents: [SetupAgentService.Status] = []
     @Published private(set) var notifications = SetupNotificationStatus(access: .unavailable)
+    @Published private(set) var folderAccess: [SetupFolderAccessResult] = []
     @Published private(set) var isBusy = false
     @Published private(set) var isRefreshing = false
     @Published var selectedAgents: Set<String> = [] {
@@ -171,13 +172,13 @@ final class SetupModel: ObservableObject {
         message = result.message
     }
 
-    func checkSelectedFolder(using service: SetupFolderAccess? = nil) async {
+    func checkFolderAccess(using service: SetupFolderAccess? = nil) async {
         guard !isBusy, !isRefreshing else { return }
         isBusy = true
         message = nil
         defer { isBusy = false }
-        let result = await (service ?? SetupFolderAccess()).chooseAndCheck()
-        message = result?.message ?? "Folder check canceled. No access was checked or requested."
+        folderAccess = await (service ?? SetupFolderAccess()).checkStandardFolders()
+        message = "File access checked for Tako. Terminal programs may have separate permissions."
     }
 
     func chooseTheme(_ name: String) {

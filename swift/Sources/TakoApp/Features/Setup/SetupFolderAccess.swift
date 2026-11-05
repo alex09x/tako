@@ -7,56 +7,35 @@
  * SPDX-License-Identifier: MIT
  */
 
-import AppKit
+import Darwin
+import Foundation
 
 struct SetupFolderAccessResult: Sendable {
     let folder: URL
-    let readable: Bool
-    let message: String
+    let status: TerminalPermissionStatus
+    var readable: Bool { status == .allowed }
 }
 
 @MainActor
 struct SetupFolderAccess {
-    var choose: () async -> URL? = {
-        let panel = NSOpenPanel()
-        panel.identifier = NSUserInterfaceItemIdentifier("SetupFolderChooser")
-        panel.setAccessibilityIdentifier("SetupFolderChooser")
-        panel.title = "Choose a folder to check"
-        panel.message = "Check whether this copy of Tako can read the folder you choose. This does not grant access to every folder or terminal program."
-        panel.prompt = "Check folder"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        return await withCheckedContinuation { continuation in
-            let completion: (NSApplication.ModalResponse) -> Void = { response in
-                continuation.resume(returning: response == .OK ? panel.url : nil)
-            }
-            if let host = NSApp.keyWindow {
-                panel.beginSheetModal(for: host, completionHandler: completion)
-            } else {
-                panel.begin(completionHandler: completion)
-            }
-        }
+    var folders: [URL] = [FileManager.SearchPathDirectory.desktopDirectory, .documentDirectory, .downloadsDirectory].compactMap {
+        FileManager.default.urls(for: $0, in: .userDomainMask).first
     }
     var check: @Sendable (URL) -> SetupFolderAccessResult = { folder in
-        do {
-            // Only the folder explicitly selected by the user. Names are discarded,
-            // never logged or returned; no private location is probed implicitly.
-            _ = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            return SetupFolderAccessResult(folder: folder, readable: true,
-                message: "Tako can read the selected folder: \(folder.path). Terminal programs must be checked separately.")
-        } catch {
-            return SetupFolderAccessResult(folder: folder, readable: false,
-                message: "Tako couldn't read the selected folder: \(error.localizedDescription)")
+        // Opening the directory may trigger macOS consent. Never enumerate names
+        // or open a file. Run only after the user presses Check file access.
+        if let directory = opendir(folder.path) {
+            closedir(directory)
+            return SetupFolderAccessResult(folder: folder, status: .allowed)
         }
+        let code = errno
+        let status: TerminalPermissionStatus = code == EPERM || code == EACCES ? .notAllowed : .unknown
+        return SetupFolderAccessResult(folder: folder, status: status)
     }
 
-    func chooseAndCheck() async -> SetupFolderAccessResult? {
-        guard let folder = await choose(), folder.isFileURL else { return nil }
-        let scoped = folder.startAccessingSecurityScopedResource()
-        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+    func checkStandardFolders() async -> [SetupFolderAccessResult] {
         let checker = check
-        return await Task.detached(priority: .userInitiated) { checker(folder) }.value
+        let targets = folders
+        return await Task.detached(priority: .userInitiated) { targets.map(checker) }.value
     }
 }

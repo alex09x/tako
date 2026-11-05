@@ -82,7 +82,7 @@ struct SetupButtonStyle: ButtonStyle {
     var primary = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(.system(size: 13, weight: .medium))
             .padding(.horizontal, 14).padding(.vertical, 9)
             .foregroundStyle(primary ? colors.primaryText : colors.text)
             .background(primary ? colors.accent.opacity(configuration.isPressed ? 0.7 : 1)
@@ -114,7 +114,7 @@ struct SetupBadge: View {
             if showsSymbol { Image(systemName: ready ? "checkmark.circle.fill" : "circle") }
             Text(text)
         }
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(ready ? colors.success : colors.muted)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background((ready ? colors.success : colors.muted).opacity(0.08), in: .capsule)

@@ -20,21 +20,20 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.staticTexts["Choose what to allow."].waitForExistence(timeout: 5))
         let folders = app.descendants(matching: .any)["SetupPermission-protectedFolders"].firstMatch
         XCTAssertTrue(folders.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["SetupChooseFolder"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["SetupPermissionGuide-fullDiskAccess"].firstMatch.exists)
-        XCTAssertTrue(app.descendants(matching: .any)["SetupAppLocation-fullDiskAccess"].firstMatch.exists)
-        XCTAssertTrue(app.buttons["SetupRevealApp-fullDiskAccess"].exists)
-        app.buttons["SetupChooseFolder"].click()
-        let chooser = app.buttons["Check folder"].firstMatch
-        XCTAssertTrue(chooser.waitForExistence(timeout: 5))
-        app.buttons["Cancel"].firstMatch.click()
-        XCTAssertTrue(chooser.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["SetupChooseFolder"].exists)
+        XCTAssertTrue(app.buttons["SetupCheckFileAccess"].isHittable)
+        let disk = app.buttons["SetupPermissionAction-fullDiskAccess"]
+        XCTAssertTrue(disk.isHittable)
+        disk.click()
+        XCTAssertTrue(app.buttons["Show Tako in Finder"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(app.buttons["Show Tako in Finder"].waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-camera"].exists)
         XCTAssertFalse(app.buttons["SetupRequestPermission-camera"].exists)
         let scopeNote = app.staticTexts["SetupPermissionScopeNote"]
         XCTAssertTrue(scopeNote.exists)
         XCTAssertTrue((scopeNote.label + " " + (scopeNote.value as? String ?? ""))
-            .contains("These checks describe this copy of Tako"))
+            .contains("Checks apply to Tako"))
         attach(app, name: "Setup optional permission statuses")
         // Navigation and status inspection must not require allowing an OS prompt.
         app.buttons["SetupStep-notifications"].click()

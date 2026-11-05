@@ -9,39 +9,55 @@ If no terminal window is open, explicitly choosing **Set Up Tako…** opens a
 clean terminal for the guide. Automatic setup waits for the first usable
 terminal window; it respects `initial-window = false`.
 
-- **Appearance:** choose colors and see the entire guide update immediately.
-  The choice saves automatically while preserving your font, size and layout.
-  Fonts, sizes and complete custom theme editing are available in Settings.
-  Workspace and pane overrides retain their priority.
-- **Command line:** optionally link this app's bundled `takoctl` into a writable
-  bin directory. The installer protects unrelated files and links. Other shells
-  must include the selected directory in `PATH`.
-- **AI agents:** choose the detected agents to connect. A connection includes
-  lifecycle hooks and the Tako skill. The guide checks both, shows failures,
-  and preserves unrelated configuration. Already connected agents are checked
-  without reinstalling them.
-- **Permissions:** review optional macOS access and open the matching Settings
-  page. Microphone access can be requested explicitly; this does not
-  start recording. Other services show when macOS manages their status instead
-  of claiming access is granted. A terminal program can have its own permission
-  entry, separate from Tako.
-  For Full Disk Access, the guide shows the **+ → select app → enable switch**
-  steps, the exact app location, and a **Show app in Finder** action. macOS does
-  not provide a normal in-app Allow dialog for that service.
-  **Choose a folder to check…** opens the system folder chooser, then performs
-  a read check only on the chosen folder. The result applies to this app and
-  that folder; it does not claim access for every CLI or session process.
-- **Notifications:** choose whether to enable macOS alerts, sounds and badges.
-  The guide reads current macOS settings; opening the step does not request
-  consent. When access was denied or individual options are off, open macOS
-  Settings and use **Check again**, or return to Tako to refresh the status.
-  **Check again** sends a test notification when access is allowed, and reports
-  success, disabled banners or an error in the guide. It never requests access
-  by itself.
+## Appearance
+
+Choose a color preset to preview it immediately. Colors save automatically;
+your terminal font, size and layout stay as configured. Edit full themes and
+typography in **Settings**. Workspace and pane overrides retain their priority.
+
+## Command line
+
+**Install takoctl** links this app's bundled CLI into a writable bin directory.
+It preserves unrelated programs. Add that directory to your shell's `PATH` if needed.
+
+```sh
+takoctl split right
+takoctl workspace list
+takoctl theme list
+```
+
+## AI agents
+
+Choose detected agents and press **Connect selected**. Tako installs its hooks
+and skill, preserves unrelated configuration, and reports each connection's status.
+Already connected agents are checked without reinstalling them.
+
+## Permissions
+
+| Action | What happens |
+| --- | --- |
+| **Check file access** | Checks Desktop, Documents and Downloads; macOS may request access. |
+| **Full Disk Access → Settings…** | Shows how to enable Tako in macOS Settings. |
+| **Other permissions** | Expands optional microphone, screen, audio, network and automation access. |
+
+The file check opens and closes directory handles without reading file names
+or contents. Results apply to Tako and each tested folder; they do not establish
+Full Disk Access or access for every terminal program.
+
+Microphone and screen requests use system consent APIs without recording.
+Permissions without a public status API remain managed in macOS Settings.
+
+## Notifications
+
+**Enable notifications** requests alerts, sounds and badges. **Check again**
+sends a test notification when allowed and displays its result. If access is
+denied or banners are off, open **macOS Settings** to change them.
+
+## Returning to setup
 
 Skipping optional integrations does not prevent ordinary terminal use. Opening
-setup or checking statuses never requests camera, microphone, Full Disk Access
-or screen-recording access. Permission requests require an explicit action.
+setup or pressing **Refresh status** does not request access. File checks and
+permission requests require an explicit action. Camera access is not requested.
 Tako renders screenshots of its own terminal content without reading other
 apps' screens.
 

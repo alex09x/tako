@@ -26,7 +26,7 @@ struct SetupWizardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let message = model.message {
-                    Text(message).font(.system(size: 11, design: .monospaced))
+                    Text(message).font(.system(size: 13))
                         .foregroundStyle(colors.message)
                         .padding(.horizontal, 28).padding(.vertical, 10)
                         .accessibilityIdentifier("SetupMessage")
@@ -34,7 +34,7 @@ struct SetupWizardView: View {
                 footer
             }
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(.system(size: 14))
         .foregroundStyle(colors.text)
         .tint(colors.accent)
         .background(colors.background)
@@ -74,7 +74,7 @@ struct SetupWizardView: View {
             }
             Spacer()
             Text("Make it yours.\nKeep your flow.")
-                .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
+                .font(.system(size: 12)).foregroundStyle(colors.muted)
             Button("Finish later") { model.dismiss() }
                 .buttonStyle(.plain).foregroundStyle(colors.muted)
                 .disabled(model.isBusy).accessibilityIdentifier("SetupLater")
@@ -85,10 +85,10 @@ struct SetupWizardView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("SET UP TAKO").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                Text("SET UP TAKO").font(.system(size: 11, weight: .semibold))
                     .tracking(1.5).foregroundStyle(colors.muted)
             }
-            Text(title).font(.system(size: 25, weight: .semibold, design: .monospaced))
+            Text(title).font(.system(size: 27, weight: .semibold))
                 .accessibilityIdentifier("SetupStepTitle")
             Text(subtitle).foregroundStyle(colors.muted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }
@@ -149,7 +149,7 @@ struct SetupWizardView: View {
         case .appearance: "Choose your colors. The entire window updates immediately; fonts stay as you configured them."
         case .commandLine: "Open tabs, split panes and control Tako from scripts or another terminal."
         case .agents: "Choose which installed agents can use Tako's commands and report their activity."
-        case .permissions: "Review optional macOS access. Nothing is requested just by opening this page."
+        case .permissions: "Check file access. macOS asks only when you choose to allow it."
         case .notifications: "Get a macOS alert when work finishes or an agent needs your attention."
         case .ready: "Your terminal is ready. Optional integrations can be changed whenever you need them."
         }

@@ -46,7 +46,7 @@ struct SetupCommandLineStep: View {
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.black.opacity(0.25), in: .rect(cornerRadius: 5))
             Text("Installation creates a link to this copy of Tako. It won't replace another program. If your shell doesn't include the chosen directory in PATH, add it there.")
-                .font(.system(size: 11, design: .monospaced)).foregroundStyle(colors.muted).lineSpacing(4)
+                .font(.system(size: 13)).foregroundStyle(colors.muted).lineSpacing(4)
             Button(model.cli.installed ? "Check again" : "Install takoctl") {
                 if model.cli.installed { Task { await model.refresh() } } else { model.installCLI() }
             }
@@ -97,7 +97,7 @@ struct SetupAgentsStep: View {
                     }
                     if agent.isDetected {
                         Text(agent.detail ?? "Hooks: \(agent.hooksInstalled ? "ready" : "not installed") · Skill: \(agent.skillInstalled ? "ready" : "not installed")")
-                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
+                            .font(.system(size: 12)).foregroundStyle(colors.muted)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("SetupAgentStatus-\(agent.id)")
                     }
@@ -105,7 +105,7 @@ struct SetupAgentsStep: View {
                 }
             }
             Text("Connect installs Tako's lifecycle hooks and skill in each selected agent's configuration. Existing unrelated settings are preserved.")
-                .foregroundStyle(colors.muted).font(.system(size: 11, design: .monospaced)).lineSpacing(4)
+                .foregroundStyle(colors.muted).font(.system(size: 13)).lineSpacing(4)
             HStack {
                 Button("Connect selected") { Task { await model.connectSelected() } }
                     .buttonStyle(SetupButtonStyle(primary: true))
@@ -132,7 +132,7 @@ struct SetupNotificationsStep: View {
                 .foregroundStyle(colors.muted).lineSpacing(4)
             if model.notifications.access == .allowed {
                 Text("Alerts: \(model.notifications.alerts ? "on" : "off")  ·  Sound: \(model.notifications.sounds ? "on" : "off")  ·  Badge: \(model.notifications.badges ? "on" : "off")")
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
+                    .font(.system(size: 12)).foregroundStyle(colors.muted)
                     .accessibilityIdentifier("SetupNotificationDetails")
             }
             HStack {
@@ -166,7 +166,7 @@ struct SetupReadyStep: View {
             Text("⌘T  new tab     ⌘D  split pane\n⌘,  settings    ⇧⌘P  command palette")
                 .font(.system(size: 11, design: .monospaced)).lineSpacing(8).foregroundStyle(colors.muted)
             Text("Return here any time: Tako → Set Up Tako…")
-                .font(.system(size: 10, design: .monospaced)).foregroundStyle(colors.muted)
+                .font(.system(size: 12)).foregroundStyle(colors.muted)
         }
     }
     private func summary(_ title: String, detail: String, ready: Bool) -> some View {

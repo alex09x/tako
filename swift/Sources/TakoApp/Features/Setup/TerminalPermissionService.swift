@@ -29,6 +29,7 @@ public final class TerminalPermissionService: ObservableObject {
     private let authorization: AuthorizationHandler
     private let check: CheckHandler?
     private let screenCaptureCheck: ScreenCaptureCheck
+    private let screenCaptureRequest: ScreenCaptureCheck
     private let requestAccess: RequestHandler
     private let open: OpenHandler
 
@@ -36,12 +37,14 @@ public final class TerminalPermissionService: ObservableObject {
         authorization: @escaping AuthorizationHandler = { AVCaptureDevice.authorizationStatus(for: $0) },
         check: CheckHandler? = nil,
         screenCaptureCheck: @escaping ScreenCaptureCheck = { CGPreflightScreenCaptureAccess() },
+        screenCaptureRequest: @escaping ScreenCaptureCheck = { CGRequestScreenCaptureAccess() },
         request: @escaping RequestHandler = { await AVCaptureDevice.requestAccess(for: $0) },
         open: @escaping OpenHandler = { NSWorkspace.shared.open($0) }
     ) {
         self.authorization = authorization
         self.check = check
         self.screenCaptureCheck = screenCaptureCheck
+        self.screenCaptureRequest = screenCaptureRequest
         self.requestAccess = request
         self.open = open
     }
@@ -94,9 +97,25 @@ public final class TerminalPermissionService: ObservableObject {
         permissions.first { $0.kind == kind }
     }
 
-    /// Explicitly requests microphone access only.
+    /// Explicitly requests microphone or screen access without recording.
     /// Refuses unsupported kinds without prompting.
     public func request(_ kind: TerminalPermissionKind) async -> TerminalPermissionRequestResult {
+        if kind == .screenCapture {
+            let current = await status(for: kind)
+            if current == .allowed {
+                return TerminalPermissionRequestResult(kind: kind, status: .allowed,
+                    message: "Screen Recording access is already allowed.", didPrompt: false)
+            }
+            let granted = screenCaptureRequest()
+            let fetched = await status(for: kind)
+            let updated: TerminalPermissionStatus = granted ? .allowed : fetched
+            if let index = permissions.firstIndex(where: { $0.kind == kind }) {
+                permissions[index] = TerminalPermission(kind: kind, status: updated)
+            }
+            return TerminalPermissionRequestResult(kind: kind, status: updated,
+                message: updated == .allowed ? "Screen Recording access granted."
+                    : "Enable Tako in Screen Recording settings. Reopen if macOS asks.", didPrompt: true)
+        }
         guard kind.canRequestDirectly, let mediaType = kind.mediaType else {
             let current = await status(for: kind)
             let message = "\(kind.title) cannot be requested directly. Open System Settings to manage access."

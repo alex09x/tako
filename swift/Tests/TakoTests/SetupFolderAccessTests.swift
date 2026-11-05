@@ -13,43 +13,46 @@ import Testing
 
 @Suite @MainActor
 struct SetupFolderAccessTests {
-    @Test func checksOnlyTheUserSelectedFixtureFolder() async throws {
+    @Test func checksConfiguredFoldersWithoutEnumeratingTheirContents() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         try "fixture".write(to: folder.appendingPathComponent("fixture.txt"), atomically: true, encoding: .utf8)
         var service = SetupFolderAccess()
-        service.choose = { folder }
-        let result = try #require(await service.chooseAndCheck())
+        service.folders = [folder]
+        let result = try #require(await service.checkStandardFolders().first)
         #expect(result.readable)
         #expect(result.folder == folder)
-        #expect(result.message.contains("Terminal programs must be checked separately"))
+        #expect(result.status == .allowed)
     }
 
-    @Test func cancelDoesNotReadAnything() async {
+    @Test func constructingTheCheckerDoesNotPerformAProbe() async {
         var service = SetupFolderAccess()
-        service.choose = { nil }
+        service.folders = []
         service.check = { folder in
-            Issue.record("A canceled selection must not perform a read")
-            return SetupFolderAccessResult(folder: folder, readable: false, message: "Unexpected")
+            Issue.record("No configured targets must not perform a probe")
+            return SetupFolderAccessResult(folder: folder, status: .unknown)
         }
-        #expect(await service.chooseAndCheck() == nil)
+        #expect(await service.checkStandardFolders().isEmpty)
     }
 
     @Test func missingFolderIsNotMisreportedAsGranted() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         var service = SetupFolderAccess()
-        service.choose = { folder }
-        let result = try #require(await service.chooseAndCheck())
+        service.folders = [folder]
+        let result = try #require(await service.checkStandardFolders().first)
         #expect(!result.readable)
-        #expect(result.message.contains("couldn't read"))
+        #expect(result.status == .unknown)
     }
 
-    @Test func manualGrantInstructionsIdentifyTheAddAndEnableSteps() {
-        let text = TerminalPermissionKind.fullDiskAccess.managementSteps.joined(separator: "\n")
-        #expect(text.contains("Press +"))
-        #expect(text.contains("Turn on its switch"))
-        #expect(text.contains("separate request"))
-        #expect(TerminalPermissionKind.fullDiskAccess.needsAppLocation)
+    @Test func usesOnlyThreeStandardLocationsAndPreservesIndividualResults() async {
+        var service = SetupFolderAccess()
+        #expect(service.folders.map(\.lastPathComponent) == ["Desktop", "Documents", "Downloads"])
+        let blocked = service.folders[1]
+        service.check = { folder in
+            SetupFolderAccessResult(folder: folder, status: folder == blocked ? .notAllowed : .allowed)
+        }
+        let results = await service.checkStandardFolders()
+        #expect(results.map(\.status) == [.allowed, .notAllowed, .allowed])
     }
 }

@@ -22,6 +22,7 @@ struct SetupPermissionServiceTests {
         let service = TerminalPermissionService(
             authorization: { _ in .authorized },
             screenCaptureCheck: { true },
+            screenCaptureRequest: { requestCount += 1; return true },
             request: { _ in
                 requestCount += 1
                 return true
@@ -205,7 +206,6 @@ struct SetupPermissionServiceTests {
             .protectedFolders,
             .fullDiskAccess,
             .localNetwork,
-            .screenCapture,
             .systemAudio,
             .automation,
         ]
@@ -245,6 +245,34 @@ struct SetupPermissionServiceTests {
         #expect(urlStrings.contains { $0.contains("Privacy_LocalNetwork") })
         #expect(urlStrings.contains { $0.contains("Privacy_AudioCapture") })
         #expect(urlStrings.contains { $0.contains("Privacy_Automation") })
+    }
+
+    @Test func screenRequestUsesSystemConsentWithoutCapturing() async {
+        var calls = 0
+        let service = TerminalPermissionService(screenCaptureCheck: { false },
+            screenCaptureRequest: { calls += 1; return true })
+        await service.snapshot()
+        #expect(calls == 0)
+        let result = await service.request(.screenCapture)
+        #expect(calls == 1)
+        #expect(result.status == .allowed)
+        #expect(result.didPrompt)
+        #expect(service.permission(for: .screenCapture)?.status == .allowed)
+    }
+
+    @Test func screenRequestDoesNotClaimDenialOrPermissionWhenNotGranted() async {
+        let service = TerminalPermissionService(screenCaptureCheck: { false }, screenCaptureRequest: { false })
+        let result = await service.request(.screenCapture)
+        #expect(result.status == .notAllowed)
+        #expect(!result.isAllowed)
+    }
+
+    @Test func authorizedScreenDoesNotRequestAgain() async {
+        let service = TerminalPermissionService(screenCaptureCheck: { true }, screenCaptureRequest: {
+            Issue.record("Already authorized screen access must not prompt")
+            return true
+        })
+        #expect(!(await service.request(.screenCapture)).didPrompt)
     }
 
     @Test
