@@ -18,7 +18,7 @@ struct SetupNotificationFeedbackTests {
             await model.checkNotificationsAndSendTest()
             #expect(calls.sent == 1)
             #expect(calls.permissionRequests == 0)
-            #expect(model.message == "Test notification sent.")
+            #expect(model.message == "Test notification delivered to Notification Center.")
             #expect(!model.isBusy)
         }
     }
@@ -47,12 +47,28 @@ struct SetupNotificationFeedbackTests {
         #expect(Tako.shouldPresent(userInfo: request.content.userInfo, surfaceLookedAt: true))
     }
 
+    @Test func acceptedRequestIsNotReportedAsDelivered() async throws {
+        try await fixture(.init(access: .allowed, alerts: true), result: .submitted) { model, _ in
+            await model.checkNotificationsAndSendTest()
+            #expect(model.message?.contains("delivery is not confirmed") == true)
+            #expect(model.message?.contains("delivered to") == false)
+        }
+    }
+
+    @Test func deliveredTestStillReportsDisabledBanners() async throws {
+        try await fixture(.init(access: .allowed, alerts: false)) { model, _ in
+            await model.checkNotificationsAndSendTest()
+            #expect(model.message?.contains("Banners are off") == true)
+        }
+    }
+
     private final class Calls {
         var sent = 0
         var permissionRequests = 0
     }
 
     private func fixture(_ status: SetupNotificationStatus, error: String? = nil,
+                         result: SetupNotificationTestResult = .delivered,
                          body: (SetupModel, Calls) async throws -> Void) async throws {
         let name = "SetupNotificationFeedbackTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
@@ -62,7 +78,7 @@ struct SetupNotificationFeedbackTests {
             installCLI: { .init(installed: false, detail: "Unused") }, checkAgents: { [] }, connectAgents: { _ in [] },
             checkNotifications: { status },
             enableNotifications: { calls.permissionRequests += 1; return status }, openNotificationSettings: {})
-        services.sendTestNotification = { calls.sent += 1; return error }
+        services.sendTestNotification = { calls.sent += 1; return error.map { .failed($0) } ?? result }
         let model = SetupModel(store: SetupProgressStore(defaults: defaults), services: services,
                                configPath: "/nonexistent/setup-notification-feedback/config")
         try await body(model, calls)

@@ -123,30 +123,52 @@ struct SetupNotificationsStep: View {
     @Environment(\.setupPalette) private var colors
     @ObservedObject var model: SetupModel
     var body: some View {
-        SetupCard {
-            HStack { Label("macOS notifications", systemImage: "bell").fontWeight(.semibold); Spacer()
-                SetupBadge(text: model.notifications.title,
-                           ready: model.notifications.access == .allowed && model.notifications.alerts)
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "bell.badge.fill").font(.system(size: 23))
+                        .foregroundStyle(.white).frame(width: 44, height: 44)
+                        .background(Color.orange.gradient, in: .rect(cornerRadius: 11))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Tako").font(.system(size: 14, weight: .semibold))
+                        Text("Notification preview").font(.system(size: 11)).foregroundStyle(colors.muted)
+                    }
+                    Spacer()
+                    Text("now").font(.system(size: 11)).foregroundStyle(colors.muted)
+                }
+                Text("Your task is ready").font(.system(size: 16, weight: .semibold))
+                Text("Know when work finishes or an agent needs you.")
+                    .font(.system(size: 13)).foregroundStyle(colors.muted)
             }
-            Text("Enable alerts for completed work and requests for your attention. You can keep using Tako with notifications off.")
-                .foregroundStyle(colors.muted).lineSpacing(4)
-            if model.notifications.access == .allowed {
-                Text("Alerts: \(model.notifications.alerts ? "on" : "off")  ·  Sound: \(model.notifications.sounds ? "on" : "off")  ·  Badge: \(model.notifications.badges ? "on" : "off")")
-                    .font(.system(size: 12)).foregroundStyle(colors.muted)
-                    .accessibilityIdentifier("SetupNotificationDetails")
-            }
+            .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            .background(colors.text.opacity(0.045), in: .rect(cornerRadius: 14))
             HStack {
+                Label(model.notifications.title, systemImage: model.notifications.access == .allowed ? "checkmark.circle.fill" : "bell.slash")
+                    .foregroundStyle(model.notifications.access == .allowed ? colors.success : colors.muted)
+                Spacer()
+                if model.notifications.access == .allowed {
+                    Label(model.notifications.alerts ? "Banners on" : "Banners off", systemImage: "rectangle.topthird.inset.filled")
+                        .foregroundStyle(colors.muted)
+                }
+            }
+            .font(.system(size: 12)).accessibilityIdentifier("SetupNotificationDetails")
+            HStack(spacing: 12) {
                 if model.notifications.access == .notAsked {
                     Button("Enable notifications") { Task { await model.enableNotifications() } }
                         .buttonStyle(SetupButtonStyle(primary: true)).accessibilityIdentifier("SetupEnableNotifications")
                 } else if model.notifications.access != .unavailable {
-                    Button("Open macOS Settings") { model.services.openNotificationSettings() }
+                    Button("Settings…") { model.services.openNotificationSettings() }
                         .buttonStyle(SetupButtonStyle()).accessibilityIdentifier("SetupNotificationSettings")
                 }
-                Button("Check again") { Task { await model.checkNotificationsAndSendTest() } }
-                    .buttonStyle(SetupButtonStyle()).accessibilityIdentifier("SetupRefreshNotifications")
+                Button(model.isBusy ? "Sending…" : "Send test notification") { Task { await model.checkNotificationsAndSendTest() } }
+                    .buttonStyle(SetupButtonStyle(primary: model.notifications.access == .allowed))
+                    .accessibilityIdentifier("SetupRefreshNotifications")
             }.disabled(model.isBusy || model.isRefreshing)
+            Text("No banner? macOS can hide notifications during Focus or screen sharing.")
+                .font(.system(size: 12)).foregroundStyle(colors.muted).multilineTextAlignment(.center)
+                .accessibilityIdentifier("SetupNotificationPresentationHint")
         }
+        .frame(maxWidth: 440).frame(maxWidth: .infinity)
     }
 }
 

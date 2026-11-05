@@ -151,11 +151,14 @@ final class SetupModel: ObservableObject {
         notifications = await services.checkNotifications()
         switch notifications.access {
         case .allowed:
-            if let error = await services.sendTestNotification() {
+            switch await services.sendTestNotification() {
+            case .delivered:
+                message = notifications.alerts ? "Test notification delivered to Notification Center."
+                    : "Test notification delivered to Notification Center. Banners are off in macOS Settings."
+            case .submitted:
+                message = "macOS accepted the test notification; delivery is not confirmed."
+            case .failed(let error):
                 message = "Test notification couldn't be sent: \(error)"
-            } else {
-                message = notifications.alerts ? "Test notification sent."
-                    : "Test notification sent. Banners are off in macOS Settings."
             }
         case .denied: message = "Notifications are disabled in macOS Settings."
         case .notAsked: message = "Enable notifications first to receive a test notification."

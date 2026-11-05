@@ -60,6 +60,8 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         app.buttons["SetupStep-notifications"].click()
         let check = app.buttons["SetupRefreshNotifications"]
         XCTAssertTrue(check.waitForExistence(timeout: 5))
+        XCTAssertEqual(check.label, "Send test notification")
+        XCTAssertTrue(app.staticTexts["SetupNotificationPresentationHint"].exists)
         check.click()
         XCTAssertTrue(app.staticTexts["SetupMessage"].waitForExistence(timeout: 5))
         let feedbackElement = app.staticTexts["SetupMessage"]

@@ -14,6 +14,7 @@ import SwiftUI
 struct SetupWizardView: View {
     @ObservedObject var model: SetupModel
     private var colors: SetupPalette { SetupPalette(theme: model.previewTheme) }
+    private var centeredHeader: Bool { [.permissions, .notifications].contains(model.step) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -83,8 +84,8 @@ struct SetupWizardView: View {
     }
 
     private var header: some View {
-        VStack(alignment: model.step == .permissions ? .center : .leading, spacing: 9) {
-            if model.step == .permissions {
+        VStack(alignment: centeredHeader ? .center : .leading, spacing: 9) {
+            if centeredHeader {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().frame(width: 64, height: 64).padding(.bottom, 6)
             } else {
@@ -94,9 +95,9 @@ struct SetupWizardView: View {
             Text(title).font(.system(size: 27, weight: .semibold))
                 .accessibilityIdentifier("SetupStepTitle")
             Text(subtitle).foregroundStyle(colors.muted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(model.step == .permissions ? .center : .leading)
+                .multilineTextAlignment(centeredHeader ? .center : .leading)
         }
-        .frame(maxWidth: .infinity, alignment: model.step == .permissions ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: centeredHeader ? .center : .leading)
     }
 
     private var footer: some View {
@@ -144,7 +145,7 @@ struct SetupWizardView: View {
         case .commandLine: "Tako, from the command line."
         case .agents: "Bring your agents along."
         case .permissions: "Permissions"
-        case .notifications: "Know when you're needed."
+        case .notifications: "Notifications"
         case .ready: "You're ready to go."
         }
     }

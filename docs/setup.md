@@ -61,9 +61,14 @@ Permissions without a public status API remain managed in macOS Settings.
 
 ## Notifications
 
-**Enable notifications** requests alerts, sounds and badges. **Check again**
-sends a test notification when allowed and displays its result. If access is
-denied or banners are off, open **macOS Settings** to change them.
+**Enable notifications** requests alerts, sounds and badges. **Send test notification**
+submits one test and checks for that exact request in macOS Notification Center.
+Delivery is reported only after a matching receipt; acceptance alone is labeled
+unconfirmed. Repeated tests replace only previous setup tests, preserving task alerts.
+
+macOS may hide banners during Focus or screen sharing even when app notifications
+are enabled. The guide links to Settings; it never changes global privacy settings
+or bypasses suppression automatically. Banners also require an enabled alert style.
 
 ## Returning to setup
 
