@@ -21,7 +21,7 @@ terminal window; it respects `initial-window = false`.
   and preserves unrelated configuration. Already connected agents are checked
   without reinstalling them.
 - **Permissions:** review optional macOS access and open the matching Settings
-  page. Camera and microphone access can be requested explicitly; this does not
+  page. Microphone access can be requested explicitly; this does not
   start recording. Other services show when macOS manages their status instead
   of claiming access is granted. A terminal program can have its own permission
   entry, separate from Tako.

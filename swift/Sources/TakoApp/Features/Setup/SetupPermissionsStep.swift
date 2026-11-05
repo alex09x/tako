@@ -71,7 +71,6 @@ struct SetupPermissionsStep: View {
         case .fullDiskAccess: "internaldrive"
         case .localNetwork: "network"
         case .microphone: "mic"
-        case .camera: "camera"
         case .screenCapture: "rectangle.dashed"
         case .systemAudio: "speaker.wave.2"
         case .automation: "applescript"

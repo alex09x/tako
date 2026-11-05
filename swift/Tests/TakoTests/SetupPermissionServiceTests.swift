@@ -17,7 +17,7 @@ import Testing
 struct SetupPermissionServiceTests {
 
     @Test
-    func snapshotDoesNotTriggerRequestsAndReturnsAllEightPermissions() async throws {
+    func snapshotDoesNotTriggerRequestsAndReturnsAllSupportedPermissions() async throws {
         var requestCount = 0
         let service = TerminalPermissionService(
             authorization: { _ in .authorized },
@@ -30,34 +30,11 @@ struct SetupPermissionServiceTests {
 
         let rows = await service.snapshot()
         #expect(requestCount == 0, "snapshot() must never trigger explicit permission requests")
-        #expect(rows.count == 8)
+        #expect(rows.count == 7)
+        #expect(!rows.contains { $0.id == "camera" })
         #expect(rows.map(\.kind) == TerminalPermissionKind.allCases)
         #expect(service.rows == rows)
         #expect(service.permissions == rows)
-    }
-
-    @Test
-    func cameraStatusesMapping() async throws {
-        let statuses: [(AVAuthorizationStatus, TerminalPermissionStatus)] = [
-            (.authorized, .allowed),
-            (.denied, .denied),
-            (.notDetermined, .notAsked),
-            (.restricted, .restricted),
-            (AVAuthorizationStatus(rawValue: 999) ?? .notDetermined, .unknown),
-        ]
-
-        for (avStatus, expected) in statuses {
-            let service = TerminalPermissionService(
-                authorization: { mediaType in
-                    #expect(mediaType == .video)
-                    return avStatus
-                }
-            )
-            let status = await service.status(for: .camera)
-            #expect(status == expected)
-            let checkStatus = await service.check(.camera)
-            #expect(checkStatus == expected)
-        }
     }
 
     @Test
@@ -134,7 +111,7 @@ struct SetupPermissionServiceTests {
     }
 
     @Test
-    func requestCameraSuccessUpdatesStatusAndReturnsCompactResult() async throws {
+    func requestMicrophoneSuccessUpdatesStatusAndReturnsCompactResult() async throws {
         var avStatus: AVAuthorizationStatus = .notDetermined
         var requestMediaType: AVMediaType?
 
@@ -148,16 +125,16 @@ struct SetupPermissionServiceTests {
         )
 
         await service.snapshot()
-        let result = await service.request(.camera)
+        let result = await service.request(.microphone)
 
-        #expect(requestMediaType == .video)
-        #expect(result.kind == .camera)
+        #expect(requestMediaType == .audio)
+        #expect(result.kind == .microphone)
         #expect(result.status == .allowed)
         #expect(result.isAllowed)
         #expect(result.didPrompt)
         #expect(!result.isRefused)
-        #expect(result.message.contains("Camera access granted"))
-        #expect(service.permission(for: .camera)?.status == .allowed)
+        #expect(result.message.contains("Microphone access granted"))
+        #expect(service.permission(for: .microphone)?.status == .allowed)
     }
 
     @Test
@@ -186,7 +163,7 @@ struct SetupPermissionServiceTests {
             var calls = 0
             let service = TerminalPermissionService(authorization: { _ in avStatus },
                 request: { _ in calls += 1; return false })
-            let result = await service.request(.camera)
+            let result = await service.request(.microphone)
             #expect(calls == 0)
             #expect(!result.didPrompt)
             #expect(result.message.contains("System Settings"))
@@ -194,7 +171,7 @@ struct SetupPermissionServiceTests {
     }
 
     @Test
-    func requestCameraDeniedReturnsHelpfulMessage() async throws {
+    func requestMicrophoneDeniedReturnsHelpfulMessage() async throws {
         var avStatus: AVAuthorizationStatus = .notDetermined
 
         let service = TerminalPermissionService(
@@ -205,8 +182,8 @@ struct SetupPermissionServiceTests {
             }
         )
 
-        let result = await service.request(kind: .camera)
-        #expect(result.kind == .camera)
+        let result = await service.request(kind: .microphone)
+        #expect(result.kind == .microphone)
         #expect(result.status == .denied)
         #expect(!result.isAllowed)
         #expect(result.didPrompt)
@@ -261,7 +238,6 @@ struct SetupPermissionServiceTests {
 
         #expect(openedURLs.count == TerminalPermissionKind.allCases.count)
         let urlStrings = openedURLs.map(\.absoluteString)
-        #expect(urlStrings.contains { $0.contains("Privacy_Camera") })
         #expect(urlStrings.contains { $0.contains("Privacy_Microphone") })
         #expect(urlStrings.contains { $0.contains("Privacy_ScreenCapture") })
         #expect(urlStrings.contains { $0.contains("Privacy_AllFiles") })

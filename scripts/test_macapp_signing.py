@@ -26,16 +26,16 @@ class SigningTests(unittest.TestCase):
     def test_privacy_metadata_has_purposes_and_only_requested_capabilities(self):
         from macapp_privacy import ENTITLEMENTS, PRIVACY_USAGE_DESCRIPTIONS
 
-        for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription",
+        for key in ("NSMicrophoneUsageDescription",
                     "NSAudioCaptureUsageDescription", "NSLocalNetworkUsageDescription",
                     "NSAppleEventsUsageDescription", "NSDocumentsFolderUsageDescription"):
             self.assertTrue(PRIVACY_USAGE_DESCRIPTIONS[key].strip())
         entitlements = plistlib.loads(ENTITLEMENTS.read_bytes())
         self.assertEqual(entitlements, {
-            "com.apple.security.device.camera": True,
             "com.apple.security.device.audio-input": True,
             "com.apple.security.automation.apple-events": True,
         })
+        self.assertNotIn("NSCameraUsageDescription", PRIVACY_USAGE_DESCRIPTIONS)
 
     def setUp(self):
         self.root = tempfile.TemporaryDirectory()

@@ -16,7 +16,6 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
     case fullDiskAccess
     case localNetwork
     case microphone
-    case camera
     case screenCapture
     case systemAudio
     case automation
@@ -29,7 +28,6 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
         case .fullDiskAccess: "Full Disk Access"
         case .localNetwork: "Local Network"
         case .microphone: "Microphone"
-        case .camera: "Camera"
         case .screenCapture: "Screen Recording"
         case .systemAudio: "System Audio"
         case .automation: "Automation"
@@ -46,8 +44,6 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
             "Connect to nearby devices, SSH hosts and development services. macOS asks when the app or program makes a local connection."
         case .microphone:
             "Allow audio input for a feature you choose. Requesting permission here does not start recording; terminal programs can have their own permissions."
-        case .camera:
-            "Allow camera input for a feature you choose. Requesting permission here does not start recording; terminal programs can have their own permissions."
         case .screenCapture:
             "For recording or capturing other windows and displays. Screenshots of Tako's own terminal content do not require this access."
         case .systemAudio:
@@ -60,7 +56,7 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
     /// Whether this permission can be prompted directly via public Apple APIs.
     public var canRequestDirectly: Bool {
         switch self {
-        case .camera, .microphone:
+        case .microphone:
             return true
         default:
             return false
@@ -70,8 +66,6 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
     /// Associated AVFoundation media type if applicable.
     public var mediaType: AVMediaType? {
         switch self {
-        case .camera:
-            return .video
         case .microphone:
             return .audio
         default:
@@ -82,8 +76,6 @@ public enum TerminalPermissionKind: String, CaseIterable, Identifiable, Hashable
     /// The System Settings URL query or path for managing this permission.
     public var settingsURL: URL? {
         switch self {
-        case .camera:
-            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
         case .microphone:
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
         case .screenCapture:

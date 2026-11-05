@@ -12,7 +12,6 @@ from pathlib import Path
 ENTITLEMENTS = Path(__file__).resolve().parents[1] / "swift/Resources/Tako.entitlements"
 
 PRIVACY_USAGE_DESCRIPTIONS = {
-    "NSCameraUsageDescription": "Allow camera access for a camera feature you choose. Setup does not start a recording.",
     "NSMicrophoneUsageDescription": "Allow microphone access for an audio feature you choose. Setup does not start a recording.",
     "NSAudioCaptureUsageDescription": "A program you run may request to record system audio. Only allow this when you intend to record.",
     "NSLocalNetworkUsageDescription": "Tako and programs you run use the local network to connect to devices and development services you choose.",

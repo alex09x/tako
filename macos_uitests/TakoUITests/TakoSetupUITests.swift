@@ -20,6 +20,8 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.staticTexts["Choose what to allow."].waitForExistence(timeout: 5))
         let folders = app.descendants(matching: .any)["SetupPermission-protectedFolders"].firstMatch
         XCTAssertTrue(folders.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-camera"].exists)
+        XCTAssertFalse(app.buttons["SetupRequestPermission-camera"].exists)
         let scopeNote = app.staticTexts["SetupPermissionScopeNote"]
         XCTAssertTrue(scopeNote.exists)
         XCTAssertTrue((scopeNote.label + " " + (scopeNote.value as? String ?? ""))

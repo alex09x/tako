@@ -65,8 +65,6 @@ public final class TerminalPermissionService: ObservableObject {
         }
 
         switch kind {
-        case .camera:
-            return mapAVStatus(authorization(.video))
         case .microphone:
             return mapAVStatus(authorization(.audio))
         case .screenCapture:
@@ -96,7 +94,7 @@ public final class TerminalPermissionService: ObservableObject {
         permissions.first { $0.kind == kind }
     }
 
-    /// Explicitly requests access for supported permissions (camera and microphone ONLY).
+    /// Explicitly requests microphone access only.
     /// Refuses unsupported kinds without prompting.
     public func request(_ kind: TerminalPermissionKind) async -> TerminalPermissionRequestResult {
         guard kind.canRequestDirectly, let mediaType = kind.mediaType else {
