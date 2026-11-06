@@ -31,6 +31,8 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         let guide = app.descendants(matching: .any)["SetupDiskAccessGuide"].firstMatch
         XCTAssertTrue(guide.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["SetupDiskDragApp"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["SetupDiskCopyPath"].exists)
+        app.descendants(matching: .any)["SetupDiskAlternative"].firstMatch.click()
         let copy = app.buttons["SetupDiskCopyPath"]
         XCTAssertTrue(copy.isHittable)
         copy.click()

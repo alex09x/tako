@@ -21,19 +21,22 @@ struct SetupDiskAccessGuide: View {
     @Environment(\.dismiss) private var dismiss
     let openSettings: () -> Bool
     @State private var feedback: String?
+    @State private var showAlternative = false
+    @State private var settingsOpened = false
     private let appURL = Bundle.main.bundleURL
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("Add Tako to Full Disk Access").font(.system(size: 21, weight: .semibold))
-            Text("Drag this app into the list in Settings, then turn its switch on.")
+            Image(systemName: "lock.open.fill").font(.system(size: 28)).foregroundStyle(colors.accent)
+            Text("Allow protected file access").font(.system(size: 21, weight: .semibold))
+            Text(settingsOpened ? "Drag Tako into the list, then turn its switch on." : "Open Full Disk Access, then add the app shown below.")
                 .multilineTextAlignment(.center).foregroundStyle(colors.muted)
             HStack(spacing: 12) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable().frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(appURL.deletingPathExtension().lastPathComponent).fontWeight(.semibold)
-                    Text("Drag into Full Disk Access").font(.system(size: 12)).foregroundStyle(colors.muted)
+                    Text("Drag this app into Settings").font(.system(size: 12)).foregroundStyle(colors.muted)
                 }
                 Image(systemName: "arrow.up.right").foregroundStyle(colors.muted)
             }
@@ -45,26 +48,31 @@ struct SetupDiskAccessGuide: View {
             .accessibilityLabel("Drag \(appURL.lastPathComponent) into Full Disk Access")
             .accessibilityIdentifier("SetupDiskDragApp")
             Button("Open Full Disk Access") {
-                if !openSettings() { feedback = "macOS Settings couldn't be opened." }
+                if openSettings() { settingsOpened = true; feedback = nil }
+                else { feedback = "macOS Settings couldn't be opened." }
             }
             .buttonStyle(SetupButtonStyle(primary: true))
             .accessibilityIdentifier("SetupDiskOpenSettings")
-            Text("Or press + in Settings, press ⇧⌘G and paste this app path:")
-                .font(.system(size: 12)).foregroundStyle(colors.muted)
-            Text(appURL.path).font(.system(size: 11, design: .monospaced))
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("SetupDiskAppPath")
-            HStack {
-                Button("Copy app path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(appURL.path, forType: .string)
-                    feedback = "App path copied."
-                }
-                .accessibilityIdentifier("SetupDiskCopyPath")
-                Button("Show app in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([appURL])
-                }
-            }.buttonStyle(SetupButtonStyle())
+            Text("macOS may ask for your administrator password. Reopen Tako if it asks you to.")
+                .font(.system(size: 12)).foregroundStyle(colors.muted).multilineTextAlignment(.center)
+            DisclosureGroup("Another way to add Tako", isExpanded: $showAlternative) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Press + in Settings, then ⇧⌘G and paste this path:")
+                        .font(.system(size: 12)).foregroundStyle(colors.muted)
+                    Text(appURL.path).font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("SetupDiskAppPath")
+                    HStack {
+                        Button("Copy app path") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(appURL.path, forType: .string)
+                            feedback = "App path copied."
+                        }.accessibilityIdentifier("SetupDiskCopyPath")
+                        Button("Show app in Finder") { NSWorkspace.shared.activateFileViewerSelecting([appURL]) }
+                    }.buttonStyle(SetupButtonStyle())
+                }.padding(.top, 10)
+            }
+            .font(.system(size: 12)).accessibilityIdentifier("SetupDiskAlternative")
             if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(colors.message) }
             Button("Back") { dismiss() }.buttonStyle(SetupButtonStyle())
                 .keyboardShortcut(.cancelAction).accessibilityIdentifier("SetupDiskGuideBack")

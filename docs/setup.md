@@ -50,8 +50,11 @@ link; agents and notifications keep their own setup steps.
 
 The protected-files helper stays available when Settings opens. Select the
 application bundle shown there, not an arbitrary shell or zmx process. If drag
-and drop is unavailable, press **+** in Full Disk Access, then **⇧⌘G** and paste
+and drop is unavailable, expand **Another way to add Tako**, press **+** in Full Disk Access, then **⇧⌘G** and paste
 the copied app path. Add the app and turn its switch on.
+macOS may require your administrator password and a normal app reopen. Cards
+show a checkmark only for access the app can actually verify; an attempted
+request or opened Settings page is never treated as a grant.
 
 The file check opens and closes directory handles without reading file names
 or contents. Results apply to Tako and each tested folder; they do not establish

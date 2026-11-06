@@ -24,6 +24,7 @@ struct SetupPermissionPanel: View {
                          .microphone, .screenCapture, .systemAudio]) { kind in
                     tile(title: title(kind), symbol: symbol(kind), tint: tint(kind),
                          purpose: purpose(kind), status: statusText(kind),
+                         action: actionText(kind), allowed: isAllowed(kind),
                          identifier: "SetupPermission-\(kind.id)") { activate(kind) }
                 }
             }
@@ -87,8 +88,8 @@ struct SetupPermissionPanel: View {
     }
 
     private func tile(title: String, symbol: String, tint: Color, purpose: String, status: String,
-                      identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+                      action: String, allowed: Bool, identifier: String, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
             VStack(spacing: 7) {
                 Image(systemName: symbol).font(.system(size: 25, weight: .medium)).foregroundStyle(.white)
                     .frame(width: 46, height: 46).background(tint.gradient, in: .rect(cornerRadius: 12))
@@ -96,14 +97,41 @@ struct SetupPermissionPanel: View {
                     .lineLimit(1)
                 Text(purpose).font(.system(size: 11)).foregroundStyle(colors.muted)
                     .multilineTextAlignment(.center).lineLimit(2).frame(height: 28)
-                Text(status).font(.system(size: 11, weight: .medium)).foregroundStyle(colors.text).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(action)
+                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                }.font(.system(size: 11, weight: .semibold)).foregroundStyle(colors.accent)
             }
             .padding(.horizontal, 10).padding(.vertical, 14).frame(maxWidth: .infinity)
             .background(colors.text.opacity(0.04), in: .rect(cornerRadius: 12))
+            .overlay(alignment: .topTrailing) {
+                if allowed {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(colors.success)
+                        .font(.system(size: 14)).padding(10).accessibilityHidden(true)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(status).accessibilityHint(purpose)
         .accessibilityIdentifier(identifier)
+    }
+
+    private func isAllowed(_ kind: TerminalPermissionKind) -> Bool {
+        if kind == .protectedFolders { return !model.folderAccess.isEmpty && model.folderAccess.allSatisfy(\.readable) }
+        return service.permission(for: kind)?.status == .allowed
+    }
+
+    private func actionText(_ kind: TerminalPermissionKind) -> String {
+        switch kind {
+        case .protectedFolders: return model.folderAccess.isEmpty ? "Check access" : "Check again"
+        case .fullDiskAccess: return "Set up access"
+        case .systemAudio, .automation: return "Set up"
+        case .microphone, .screenCapture, .localNetwork:
+            let status = service.permission(for: kind)?.status ?? .unknown
+            if status == .allowed { return "Manage" }
+            if [.denied, .restricted].contains(status) || kind == .localNetwork && networkRequested { return "Open Settings" }
+            return "Allow access"
+        }
     }
 
     private func statusText(_ kind: TerminalPermissionKind) -> String {
