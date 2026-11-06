@@ -75,7 +75,8 @@ targets:
           # through verbatim: Xcode's log parser turns any bare "error:" line
           # into a build failure, and whether the app build failed is decided
           # below by its exit status, not by grepping its prose.
-          if TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp-uitest/Tako.app" ]; then
+          # Keep Xcode's module-cache and SDK build variables out of the standalone builder.
+          if env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" DEVELOPER_DIR="$DEVELOPER_DIR" LANG="${LANG:-en_US.UTF-8}" TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d "target/macapp-uitest/Tako.app" ]; then
             rm -rf "${DEST}"
             /usr/bin/ditto "target/macapp-uitest/Tako.app" "${DEST}"
             /usr/bin/codesign --force --sign - --timestamp=none "${DEST}"

@@ -95,6 +95,7 @@ python3 scripts/gui_lock.py -- python3 scripts/ci-swift-watchdog.py \
     --diagnostics-dir target/uitest-stall -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
     -scheme TakoUITests-Run \
+    -derivedDataPath target/uitest-derived \
     -destination platform=macOS \
     -parallel-testing-enabled NO \
     -resultBundlePath "$RESULT_BUNDLE" \
