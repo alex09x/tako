@@ -15,6 +15,7 @@ struct SetupPermissionPanel: View {
     @StateObject private var service = TerminalPermissionService.live()
     @State private var showDiskHelp = false
     private var networkRequested: Bool { model.permissionRequests.contains(.localNetwork) }
+    private var screenRequested: Bool { model.permissionRequests.contains(.screenCapture) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -69,7 +70,9 @@ struct SetupPermissionPanel: View {
             } else { model.message = "macOS Settings couldn't be opened. Try again." }
         case .microphone, .screenCapture, .localNetwork:
             let status = service.permission(for: kind)?.status ?? .unknown
-            if [.denied, .restricted, .allowed].contains(status) || kind == .localNetwork && networkRequested {
+            if [.denied, .restricted, .allowed].contains(status)
+                || kind == .localNetwork && networkRequested || kind == .screenCapture && screenRequested {
+                if kind == .localNetwork { model.message = "Privacy & Security → Local Network" }
                 _ = service.openSettings(kind)
             } else {
                 Task { await model.requestPermission(kind, service: service) }
@@ -118,7 +121,8 @@ struct SetupPermissionPanel: View {
         case .microphone, .screenCapture, .localNetwork:
             let status = service.permission(for: kind)?.status ?? .unknown
             if status == .allowed { return "Manage" }
-            if [.denied, .restricted].contains(status) || kind == .localNetwork && networkRequested { return "Open Settings" }
+            if [.denied, .restricted].contains(status)
+                || kind == .localNetwork && networkRequested || kind == .screenCapture && screenRequested { return "Open Settings" }
             return "Allow access"
         }
     }

@@ -13,6 +13,15 @@ import XCTest
 @MainActor
 final class TakoSetupUITests: TakoCustomConfigCase {
     func testPermissionsAreOptionalAndNotificationCheckGivesVisibleFeedback() async throws {
+        let volumePrompt = addUIInterruptionMonitor(withDescription: "Isolated Tako on the external test disk") { alert in
+            let text = ([alert.label] + alert.staticTexts.allElementsBoundByIndex.map(\.label)).joined(separator: " ")
+            guard text.contains("TakoCore"), text.localizedCaseInsensitiveContains("removable volume") else { return false }
+            let allow = alert.buttons["Allow"]
+            guard allow.isHittable else { return false }
+            allow.click()
+            return true
+        }
+        defer { removeUIInterruptionMonitor(volumePrompt) }
         let app = try isolatedApplication()
         app.launch()
         try openSetup(app)

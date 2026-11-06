@@ -70,6 +70,40 @@ scripts/uitest.sh --build-only TakoScopedAppearanceUITests TakoThemePresetUITest
 This is explicitly **compilation only**, not a passing UI run. The wrapper also fails if the
 real host app was not built and Xcode kept the placeholder.
 
+### Native permission requests on the dedicated test Mac
+
+`TakoSetupPermissionRequestUITests` exercises folder, microphone, screen and local-network
+requests, the response after a denial, and the exact Automation Settings route. It is opt-in
+because these are real macOS dialogs. Run on the test Mac with its isolated `.uitest` host:
+
+```sh
+mkdir -p /private/tmp/tkui
+printf deny > /private/tmp/tkui/native-permission-actions.mode
+trap 'printf paused > /private/tmp/tkui/native-permission-actions.mode' EXIT
+scripts/uitest.sh --local TakoSetupPermissionRequestUITests
+```
+
+Only prompts naming the isolated host (`TakoCore` / `Tako`) and the requested capability are
+declined. The armed fixture can allow removable-volume access for its own host/runner so that
+the external build disk does not block testing. Tests do not reset TCC or enter administrator
+credentials. A network attempt must
+not become an “Allowed” receipt, and screen preflight cannot distinguish a previous denial
+from access that has never been requested. Native dialog and Settings screenshots remain in
+the result bundle. Tako controls use AX assertions; native Settings toolbar titles use OCR of
+XCTest screenshots and window bounds to avoid re-entering removable-volume TCC while AX
+enumerates installed apps. On Tahoe the Local Network anchor can open Privacy & Security;
+the test verifies that fallback and Tako's explicit remaining path, not a fictitious grant.
+The host staging phase removes the old executable after renaming it, preserves the real
+app's entitlements, and rejects a bundle that fails deep strict signature verification.
+The ordinary setup test covers optional navigation, the inline Full Disk
+Access app identity, notification feedback, dismissal and typing in the original terminal.
+
+Build products, DerivedData and evidence can stay on the external build disk. If removable-
+volume consent blocks the runner, a short-lived, strictly verified copy of the already built
+host and runner under `/private/tmp/tkui/` can be executed with `test-without-building` and a
+relocated `.xctestrun`; remove only those runtime copies after execution. This is not a second
+build or a substitute for a nonzero passing test result.
+
 ```
 xcodebuild build-for-testing -project macos_uitests/TakoUITests.xcodeproj \
     -scheme TakoUITests -destination platform=macOS

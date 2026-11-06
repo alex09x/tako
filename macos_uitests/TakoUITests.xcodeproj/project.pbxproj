@@ -25,6 +25,7 @@
 		BC43B04C1745403E71613642 /* TakoFontWeightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E796AA8843878596E3DB09B /* TakoFontWeightUITests.swift */; };
 		D7716E59A7BB64B2080F94F7 /* TakoMouseStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFB519D6DD8E0B0553CB4F3C /* TakoMouseStateTests.swift */; };
 		ED37FD03D25D01D2CBC03D50 /* TakoTitleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA2A95F1CAD009E446A60B0 /* TakoTitleUITests.swift */; };
+		F388A854E2131F780590F06F /* TakoSetupPermissionRequestUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80DC6EA94EA07B1425408CEB /* TakoSetupPermissionRequestUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,6 +49,7 @@
 		5E796AA8843878596E3DB09B /* TakoFontWeightUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoFontWeightUITests.swift; sourceTree = "<group>"; };
 		6F12877FE62F4595D377C34E /* TakoWorkspaceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoWorkspaceUITests.swift; sourceTree = "<group>"; };
 		71CB807550E28F278F622ACB /* TakoUITests.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TakoUITests.entitlements; sourceTree = "<group>"; };
+		80DC6EA94EA07B1425408CEB /* TakoSetupPermissionRequestUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoSetupPermissionRequestUITests.swift; sourceTree = "<group>"; };
 		841507330AD935E32F55E17D /* TakoScopedAppearanceVisuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoScopedAppearanceVisuals.swift; sourceTree = "<group>"; };
 		847FB3D2027F3D8FF9CB9286 /* TakoScopedAppearanceHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoScopedAppearanceHelpers.swift; sourceTree = "<group>"; };
 		8CF1565C2F53CAF3C63DA187 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -83,6 +85,7 @@
 				847FB3D2027F3D8FF9CB9286 /* TakoScopedAppearanceHelpers.swift */,
 				1153D4FCF8F59272EB893B61 /* TakoScopedAppearanceUITests.swift */,
 				841507330AD935E32F55E17D /* TakoScopedAppearanceVisuals.swift */,
+				80DC6EA94EA07B1425408CEB /* TakoSetupPermissionRequestUITests.swift */,
 				8D5F0E41E995DC2D42A5E709 /* TakoSetupUITests.swift */,
 				AA0A77BD2A295DF11C1931F8 /* TakoThemePresetUITests.swift */,
 				1DD06307D9D6E2C656AF861C /* TakoThemeTests.swift */,
@@ -211,7 +214,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -uo pipefail\nDEST=\"${BUILT_PRODUCTS_DIR}/TakoCore.app\"\nSRC=\"${SRCROOT}/../target/macapp-uitest/Tako.app\"\nif [ -d \"${DEST}\" ] && [ -d \"${SRC}\" ]; then\n  cp -f \"${SRC}/Contents/Info.plist\" \"${DEST}/Contents/Info.plist\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleExecutable TakoCore\" \"${DEST}/Contents/Info.plist\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Add :CFBundleExecutable string TakoCore\" \"${DEST}/Contents/Info.plist\"\n  rm -f \"${DEST}/Contents/MacOS/TakoCore\"\n  cp -f \"${SRC}/Contents/MacOS/Tako\" \"${DEST}/Contents/MacOS/TakoCore\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nfi\n";
+			shellScript = "set -uo pipefail\nDEST=\"${BUILT_PRODUCTS_DIR}/TakoCore.app\"\nSRC=\"${SRCROOT}/../target/macapp-uitest/Tako.app\"\nif [ -d \"${DEST}\" ] && [ -d \"${SRC}\" ]; then\n  cp -f \"${SRC}/Contents/Info.plist\" \"${DEST}/Contents/Info.plist\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleExecutable TakoCore\" \"${DEST}/Contents/Info.plist\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Add :CFBundleExecutable string TakoCore\" \"${DEST}/Contents/Info.plist\"\n  rm -f \"${DEST}/Contents/MacOS/TakoCore\" \"${DEST}/Contents/MacOS/Tako\"\n  cp -f \"${SRC}/Contents/MacOS/Tako\" \"${DEST}/Contents/MacOS/TakoCore\"\n  /usr/bin/codesign --force --sign - --timestamp=none --entitlements \"${SRCROOT}/../swift/Resources/Tako.entitlements\" \"${DEST}\"\n  /usr/bin/codesign --verify --deep --strict \"${DEST}\"\nfi\n";
 		};
 		1CAB32935CCC4E971F267FC7 /* Build the real app bundle */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -230,7 +233,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\n# Keep Xcode's module-cache and SDK build variables out of the standalone builder.\nif env -i HOME=\"$HOME\" PATH=\"$PATH\" TMPDIR=\"${TMPDIR:-/tmp}\" DEVELOPER_DIR=\"$DEVELOPER_DIR\" LANG=\"${LANG:-en_US.UTF-8}\" TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp-uitest/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp-uitest/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none \"${DEST}\"\nelse\n  # Never run a GUI journey against a placeholder or an older app\n  # left by another build when the current candidate failed.\n  echo \"error: the current Tako UI-test host could not be built. No UI tests will run.\"\n  exit 1\nfi\n";
+			shellScript = "set -uo pipefail\ncd \"${SRCROOT}/..\"\nif [ -z \"${BUILT_PRODUCTS_DIR:-}\" ] || [ -z \"${FULL_PRODUCT_NAME:-}\" ]; then\n  echo \"error: BUILT_PRODUCTS_DIR/FULL_PRODUCT_NAME unset\" >&2\n  exit 1\nfi\nDEST=\"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n# The build script's own output is indented rather than passed\n# through verbatim: Xcode's log parser turns any bare \"error:\" line\n# into a build failure, and whether the app build failed is decided\n# below by its exit status, not by grepping its prose.\n# Keep Xcode's module-cache and SDK build variables out of the standalone builder.\nif env -i HOME=\"$HOME\" PATH=\"$PATH\" TMPDIR=\"${TMPDIR:-/tmp}\" DEVELOPER_DIR=\"$DEVELOPER_DIR\" LANG=\"${LANG:-en_US.UTF-8}\" TAKO_BUNDLE_ID=com.tako-core.terminal.uitest TAKO_APP_DIR=target/macapp-uitest python3 scripts/build-macapp.py 2>&1 | sed 's/^/    build-macapp| /' && [ -d \"target/macapp-uitest/Tako.app\" ]; then\n  rm -rf \"${DEST}\"\n  /usr/bin/ditto \"target/macapp-uitest/Tako.app\" \"${DEST}\"\n  /usr/bin/codesign --force --sign - --timestamp=none --entitlements \"${SRCROOT}/../swift/Resources/Tako.entitlements\" \"${DEST}\"\nelse\n  # Never run a GUI journey against a placeholder or an older app\n  # left by another build when the current candidate failed.\n  echo \"error: the current Tako UI-test host could not be built. No UI tests will run.\"\n  exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -257,6 +260,7 @@
 				99573979C7B2A5F51195BC64 /* TakoScopedAppearanceHelpers.swift in Sources */,
 				214D5A2C6A16BD25A9962D66 /* TakoScopedAppearanceUITests.swift in Sources */,
 				4088021B085F4BCAF2784558 /* TakoScopedAppearanceVisuals.swift in Sources */,
+				F388A854E2131F780590F06F /* TakoSetupPermissionRequestUITests.swift in Sources */,
 				2DDBC60531552051BE464ACA /* TakoSetupUITests.swift in Sources */,
 				7F9156F9346AE5D74503D665 /* TakoThemePresetUITests.swift in Sources */,
 				B1EF81C3B4BB34C47EEBABCE /* TakoThemeTests.swift in Sources */,
