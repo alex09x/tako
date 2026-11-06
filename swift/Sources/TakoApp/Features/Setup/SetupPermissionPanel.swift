@@ -14,11 +14,11 @@ struct SetupPermissionPanel: View {
     @ObservedObject var model: SetupModel
     @StateObject private var service = TerminalPermissionService.live()
     @State private var showDiskHelp = false
-    @State private var explaining: TerminalPermissionKind?
     private var networkRequested: Bool { model.permissionRequests.contains(.localNetwork) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if showDiskHelp { SetupDiskAccessGuide() }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
                 ForEach([TerminalPermissionKind.protectedFolders, .fullDiskAccess, .localNetwork,
                          .microphone, .screenCapture, .systemAudio]) { kind in
@@ -41,7 +41,7 @@ struct SetupPermissionPanel: View {
                     .help("Terminal programs can have separate permissions. Only enable the access your work needs.")
                     .accessibilityIdentifier("SetupPermissionScopeNote")
                 Spacer()
-                Button("App control…") { explaining = .automation }
+                Button("App control…") { activate(.automation) }
                     .buttonStyle(.plain).accessibilityIdentifier("SetupPermission-automation")
             }
             .font(.system(size: 12)).foregroundStyle(colors.muted)
@@ -51,32 +51,22 @@ struct SetupPermissionPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await service.snapshot() }
         }
-        .sheet(isPresented: $showDiskHelp) {
-            SetupDiskAccessGuide(openSettings: { service.openSettings(.fullDiskAccess) })
-                .environment(\.setupPalette, colors)
-        }
-        .sheet(item: $explaining) { kind in
-            VStack(alignment: .leading, spacing: 16) {
-                Label(kind.title, systemImage: symbol(kind)).font(.system(size: 20, weight: .semibold))
-                Text(kind == .systemAudio
-                    ? "macOS asks when a tool starts recording another app's audio. Playing sound and notification alerts do not need this recording permission."
-                    : "macOS asks when a script first controls another app. In Automation settings, enable the target app for the program named in that request.")
-                    .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings") { _ = service.openSettings(kind) }.buttonStyle(SetupButtonStyle())
-                Button("Back") { explaining = nil }.buttonStyle(SetupButtonStyle())
-                    .keyboardShortcut(.cancelAction).accessibilityIdentifier("SetupExplanationBack")
-            }
-            .padding(24).frame(width: 380).foregroundStyle(colors.text).background(colors.background)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("SetupPermissionExplanation-\(kind.id)")
-        }
     }
 
     private func activate(_ kind: TerminalPermissionKind) {
+        model.message = nil
+        if kind != .fullDiskAccess { showDiskHelp = false }
         switch kind {
         case .protectedFolders: Task { await model.checkFolderAccess() }
-        case .fullDiskAccess: showDiskHelp = true
-        case .systemAudio, .automation: explaining = kind
+        case .fullDiskAccess:
+            showDiskHelp = true
+            if !service.openSettings(kind) { model.message = "macOS Settings couldn't be opened. Try again." }
+        case .systemAudio, .automation:
+            if service.openSettings(kind) {
+                model.message = kind == .systemAudio
+                    ? "macOS requests audio access when a tool starts recording. Playback needs no recording permission."
+                    : "macOS requests automation access when a script first controls a target app."
+            } else { model.message = "macOS Settings couldn't be opened. Try again." }
         case .microphone, .screenCapture, .localNetwork:
             let status = service.permission(for: kind)?.status ?? .unknown
             if [.denied, .restricted, .allowed].contains(status) || kind == .localNetwork && networkRequested {
@@ -124,8 +114,7 @@ struct SetupPermissionPanel: View {
     private func actionText(_ kind: TerminalPermissionKind) -> String {
         switch kind {
         case .protectedFolders: return model.folderAccess.isEmpty ? "Check access" : "Check again"
-        case .fullDiskAccess: return "Set up access"
-        case .systemAudio, .automation: return "Set up"
+        case .fullDiskAccess, .systemAudio, .automation: return "Open Settings"
         case .microphone, .screenCapture, .localNetwork:
             let status = service.permission(for: kind)?.status ?? .unknown
             if status == .allowed { return "Manage" }

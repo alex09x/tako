@@ -27,30 +27,23 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(folders.isHittable)
         let disk = app.buttons["SetupPermission-fullDiskAccess"]
         XCTAssertTrue(disk.isHittable)
-        disk.click()
-        let guide = app.descendants(matching: .any)["SetupDiskAccessGuide"].firstMatch
-        XCTAssertTrue(guide.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["SetupDiskDragApp"].firstMatch.exists)
-        XCTAssertFalse(app.buttons["SetupDiskCopyPath"].exists)
-        app.descendants(matching: .any)["SetupDiskAlternative"].firstMatch.click()
-        let copy = app.buttons["SetupDiskCopyPath"]
-        XCTAssertTrue(copy.isHittable)
-        copy.click()
-        let copiedPath = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
-        XCTAssertTrue(copiedPath.hasPrefix("/"))
-        XCTAssertTrue(copiedPath.hasSuffix(".app"))
-        XCTAssertTrue(app.buttons["SetupDiskOpenSettings"].exists)
-        app.buttons["SetupDiskGuideBack"].click()
-        XCTAssertTrue(guide.waitForNonExistence(timeout: 5))
         for kind in ["localNetwork", "microphone", "systemAudio", "screenCapture", "automation"] {
             XCTAssertTrue(app.buttons["SetupPermission-\(kind)"].isHittable)
         }
+        disk.click()
+        app.activate()
+        let dragApp = app.descendants(matching: .any)["SetupDiskDragApp"].firstMatch
+        XCTAssertTrue(dragApp.waitForExistence(timeout: 5))
+        XCTAssertTrue(dragApp.isHittable)
+        XCTAssertFalse(app.descendants(matching: .any)["SetupDiskAccessGuide"].exists)
+        XCTAssertFalse(app.buttons["SetupDiskCopyPath"].exists)
+        XCTAssertFalse(app.buttons["SetupDiskGuideBack"].exists)
+        app.descendants(matching: .any)["SetupWizard"].firstMatch.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -180)
         let audio = app.buttons["SetupPermission-systemAudio"]
         audio.click()
-        let explanation = app.descendants(matching: .any)["SetupPermissionExplanation-systemAudio"].firstMatch
-        XCTAssertTrue(explanation.waitForExistence(timeout: 5))
-        app.typeKey(.escape, modifierFlags: [])
-        XCTAssertTrue(explanation.waitForNonExistence(timeout: 5))
+        app.activate()
+        XCTAssertFalse(app.descendants(matching: .any)["SetupPermissionExplanation-systemAudio"].exists)
+        XCTAssertTrue(dragApp.waitForNonExistence(timeout: 5))
         XCTAssertTrue(audio.isHittable)
         XCTAssertFalse(app.descendants(matching: .any)["SetupPermission-camera"].exists)
         XCTAssertFalse(app.buttons["SetupRequestPermission-camera"].exists)

@@ -41,18 +41,18 @@ link; agents and notifications keep their own setup steps.
 | Action | What happens |
 | --- | --- |
 | **Your files** | Checks Desktop, Documents and Downloads; macOS may request access. |
-| **Protected files** | Shows this exact app to drag into Full Disk Access, or copy its path for the + file picker. |
+| **Protected files** | Opens Full Disk Access and shows this app's draggable icon on the same setup page. |
 | **Notifications** | Requests task alerts, or opens Settings after a previous denial. |
 | **Microphone** | Uses the native consent dialog, or Settings after denial. |
 | **Local Network** | Attempts Apple's no-traffic UDP consent trigger; an attempt never means permission was granted. |
 | **System Audio** | Explains the recording-time request and opens its Settings page; playback needs no recording access. |
 | **Screen Recording / Automation** | Requests screen access, or explains app-specific automation setup. |
 
-The protected-files helper stays available when Settings opens. Select the
-application bundle shown there, not an arbitrary shell or zmx process. If drag
-and drop is unavailable, expand **Another way to add Tako**, press **+** in Full Disk Access, then **⇧⌘G** and paste
-the copied app path. Add the app and turn its switch on.
-macOS may require your administrator password and a normal app reopen. Cards
+The protected-files action opens Settings directly, without a second guide
+window or Back button. Drag the inline app icon into Full Disk Access and turn
+its switch on. Select this application bundle, not an arbitrary shell or zmx
+process. The icon's context menu keeps **Copy app path** and **Show app in Finder**
+available as fallbacks. Reopen the app only if macOS asks. Cards
 show a checkmark only for access the app can actually verify; an attempted
 request or opened Settings page is never treated as a grant.
 
