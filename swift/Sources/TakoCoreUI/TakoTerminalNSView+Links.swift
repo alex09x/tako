@@ -84,6 +84,10 @@ extension TakoTerminalNSView {
 
     /// `link-url` and OSC 8: the link under `cell`, if any.
     public func linkRange(at cell: (row: Int, col: Int)) -> TerminalLink? {
+        linkRange(at: cell, automaticLinks: nil)
+    }
+
+    func linkRange(at cell: (row: Int, col: Int), automaticLinks: [TerminalLink]?) -> TerminalLink? {
         if let hyperlink = core.getCell(row: UInt32(cell.row), col: UInt32(cell.col))?.hyperlinkUri,
            let url = URL(string: hyperlink) {
             var start = cell.col
@@ -120,15 +124,16 @@ extension TakoTerminalNSView {
         }
 
         guard linkURLDetectionEnabled else { return nil }
-        let (line, columns) = Self.rowText(core.viewportRow(row: UInt32(cell.row)))
+        let links = automaticLinks ?? detectedURLLinks(in: core.viewportRow(row: UInt32(cell.row)), row: cell.row)
+        return links.first { $0.colStart <= cell.col && cell.col <= $0.colEnd }
+    }
+
+    func detectedURLLinks(in cells: [FfiCell], row: Int) -> [TerminalLink] {
+        let (line, columns) = Self.rowText(cells)
         let text = line as NSString
         let matches = Self.urlPattern.matches(in: line, range: NSRange(location: 0, length: text.length))
-        for match in matches {
+        return matches.compactMap { match in
             let first = match.range.location
-            let last = match.range.location + match.range.length - 1
-            guard columns[first] <= cell.col, cell.col <= columns[last] else {
-                continue
-            }
             var matched = text.substring(with: match.range)
             while let lastChar = matched.last, ".,;:!?)]}>'\"".contains(lastChar) {
                 matched.removeLast()
@@ -138,7 +143,7 @@ extension TakoTerminalNSView {
             return TerminalLink(
                 url: url,
                 text: matched,
-                row: cell.row,
+                row: row,
                 colStart: columns[first],
                 colEnd: columns[first + (matched as NSString).length - 1],
                 isOsc8: false,
@@ -146,7 +151,6 @@ extension TakoTerminalNSView {
                 isSchemeAllowedWithoutPrompt: isSafe
             )
         }
-        return nil
     }
 
     /// Updates the bottom-left floating HUD pill showing hovered link destination (E8).
@@ -297,16 +301,9 @@ extension TakoTerminalNSView {
         }
 
         mouseCell = cellAt(point)
-        let linkUnderPointer = mouseCell.flatMap(linkRange(at:))
-        if linkUnderPointer != currentHoveredLink {
-            currentHoveredLink = linkUnderPointer
-            hoveredLinkTarget = linkUnderPointer?.url.absoluteString
-            self.toolTip = linkUnderPointer?.tooltipText
-            updateLinkHUD(link: linkUnderPointer)
-            delegate?.terminalView(self, didHoverLink: hoveredLinkTarget)
-        }
-        let isCmd = commandHeld ?? (NSApp.currentEvent?.modifierFlags.contains(.command) == true || NSEvent.modifierFlags.contains(.command))
-        updateHoveredLink(commandHeld: isCmd)
+        let linkUnderPointer = mouseCell.flatMap { hoverLinkRange(at: $0, force: true) }
+        lastFrameHoverCell = mouseCell
+        applyHoveredLink(linkUnderPointer, commandHeld: commandHeld)
     }
 
     /// After a frame: the link under the pointer can only have changed if
@@ -315,6 +312,7 @@ extension TakoTerminalNSView {
     /// through the FFI; a pointer resting on an unchanged row skips it.
     /// A command-click re-reads the link at the click itself.
     func refreshHoveredLinkAfterFrame(changedRows: IndexSet) {
+        invalidateHoverLinkRow(changedRows: changedRows)
         guard let window else { return refreshHoveredLink() }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard bounds.contains(point) else {
@@ -329,6 +327,8 @@ extension TakoTerminalNSView {
     }
 
     func clearHoveredLink() {
+        hoverLinkRowCache = nil
+        lastFrameHoverCell = nil
         hasPresentedMatchingPreview = false
         mouseCell = nil
         currentHoveredLink = nil

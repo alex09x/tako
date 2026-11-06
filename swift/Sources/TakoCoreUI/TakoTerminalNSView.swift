@@ -94,6 +94,8 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var scrollbarDragStartKnobY: CGFloat = 0.0
     /// The cell the pointer was on when a frame last checked for a link.
     var lastFrameHoverCell: (row: Int, col: Int)?
+    var hoverLinkRowCache: HoverLinkRowCache?
+    var hoverLinkRowReadCount = 0
     /// The pointer is over the scrollbar's track: its line widens.
     var isHoveringScrollbar = false
     var scrollbarDragStartMouseY: CGFloat = 0.0
