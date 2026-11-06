@@ -20,6 +20,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.staticTexts["Permissions"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["SetupAgentsCard"].exists)
         XCTAssertFalse(app.buttons["SetupSystemPermissionsCard"].exists)
+        XCTAssertFalse(app.buttons["SetupPermission-notifications"].exists)
         let folders = app.buttons["SetupPermission-protectedFolders"]
         XCTAssertTrue(folders.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["SetupChooseFolder"].exists)
@@ -39,7 +40,7 @@ final class TakoSetupUITests: TakoCustomConfigCase {
         XCTAssertTrue(app.buttons["SetupDiskOpenSettings"].exists)
         app.buttons["SetupDiskGuideBack"].click()
         XCTAssertTrue(guide.waitForNonExistence(timeout: 5))
-        for kind in ["localNetwork", "microphone", "systemAudio", "screenCapture", "automation", "notifications"] {
+        for kind in ["localNetwork", "microphone", "systemAudio", "screenCapture", "automation"] {
             XCTAssertTrue(app.buttons["SetupPermission-\(kind)"].isHittable)
         }
         let audio = app.buttons["SetupPermission-systemAudio"]

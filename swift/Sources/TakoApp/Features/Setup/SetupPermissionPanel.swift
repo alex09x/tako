@@ -19,16 +19,12 @@ struct SetupPermissionPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                ForEach(TerminalPermissionKind.allCases) { kind in
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+                ForEach([TerminalPermissionKind.protectedFolders, .fullDiskAccess, .localNetwork,
+                         .microphone, .screenCapture, .systemAudio]) { kind in
                     tile(title: title(kind), symbol: symbol(kind), tint: tint(kind),
-                         status: statusText(kind), identifier: "SetupPermission-\(kind.id)") { activate(kind) }
-                }
-                tile(title: "Notifications", symbol: "bell.badge.fill", tint: .orange,
-                     status: model.notifications.title, identifier: "SetupPermission-notifications") {
-                    if model.notifications.access == .notAsked {
-                        Task { await model.enableNotifications() }
-                    } else { model.services.openNotificationSettings() }
+                         purpose: purpose(kind), status: statusText(kind),
+                         identifier: "SetupPermission-\(kind.id)") { activate(kind) }
                 }
             }
             if !model.folderAccess.isEmpty {
@@ -39,9 +35,15 @@ struct SetupPermissionPanel: View {
                     }
                 }.font(.system(size: 11))
             }
-            Text("Choose a permission to request or configure it. Checks apply to Tako; terminal programs can have separate permissions.")
-                .font(.system(size: 12)).foregroundStyle(colors.muted)
-                .accessibilityIdentifier("SetupPermissionScopeNote")
+            HStack {
+                Text("Optional. Checks apply to Tako.")
+                    .help("Terminal programs can have separate permissions. Only enable the access your work needs.")
+                    .accessibilityIdentifier("SetupPermissionScopeNote")
+                Spacer()
+                Button("App control…") { explaining = .automation }
+                    .buttonStyle(.plain).accessibilityIdentifier("SetupPermission-automation")
+            }
+            .font(.system(size: 12)).foregroundStyle(colors.muted)
         }
         .disabled(model.isBusy || model.isRefreshing)
         .task { await service.snapshot() }
@@ -84,21 +86,23 @@ struct SetupPermissionPanel: View {
         }
     }
 
-    private func tile(title: String, symbol: String, tint: Color, status: String,
+    private func tile(title: String, symbol: String, tint: Color, purpose: String, status: String,
                       identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 9) {
+            VStack(spacing: 7) {
                 Image(systemName: symbol).font(.system(size: 25, weight: .medium)).foregroundStyle(.white)
                     .frame(width: 46, height: 46).background(tint.gradient, in: .rect(cornerRadius: 12))
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(colors.text)
-                    .lineLimit(2).multilineTextAlignment(.center).frame(height: 30)
-                Text(status).font(.system(size: 10)).foregroundStyle(colors.muted).lineLimit(1)
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(colors.text)
+                    .lineLimit(1)
+                Text(purpose).font(.system(size: 11)).foregroundStyle(colors.muted)
+                    .multilineTextAlignment(.center).lineLimit(2).frame(height: 28)
+                Text(status).font(.system(size: 11, weight: .medium)).foregroundStyle(colors.text).lineLimit(1)
             }
-            .padding(.vertical, 14).frame(maxWidth: .infinity)
+            .padding(.horizontal, 10).padding(.vertical, 14).frame(maxWidth: .infinity)
             .background(colors.text.opacity(0.04), in: .rect(cornerRadius: 12))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(status)
+        .buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(status).accessibilityHint(purpose)
         .accessibilityIdentifier(identifier)
     }
 
@@ -106,20 +110,32 @@ struct SetupPermissionPanel: View {
         if kind == .protectedFolders {
             return model.folderAccess.isEmpty ? "Check access" : "\(model.folderAccess.filter(\.readable).count) of \(model.folderAccess.count) readable"
         }
-        if kind == .systemAudio { return "When recording" }
+        if kind == .systemAudio { return "Configure" }
         if kind == .automation { return "Per app" }
         let status = service.permission(for: kind)?.status ?? .unknown
         if status == .managedInSettings {
-            return kind == .localNetwork ? networkRequested ? "Open Settings" : "Request access" : "Set up"
+            return kind == .localNetwork ? networkRequested ? "Open Settings" : "Allow access" : "Open Settings"
         }
         return status.title
     }
 
     private func title(_ kind: TerminalPermissionKind) -> String {
         switch kind {
-        case .protectedFolders: "Your files"
-        case .fullDiskAccess: "Protected files"
+        case .protectedFolders: "Folder access"
+        case .fullDiskAccess: "Full file access"
         default: kind.title
+        }
+    }
+
+    private func purpose(_ kind: TerminalPermissionKind) -> String {
+        switch kind {
+        case .protectedFolders: "Desktop, Documents and Downloads"
+        case .fullDiskAccess: "Files beyond standard folders"
+        case .localNetwork: "Nearby computers and services"
+        case .microphone: "Audio from your microphone"
+        case .screenCapture: "Capture windows and displays"
+        case .systemAudio: "Record sound from other apps"
+        case .automation: "Control another app"
         }
     }
 

@@ -34,8 +34,9 @@ Already connected agents are checked without reinstalling them.
 
 ## Permissions
 
-The setup step shows one icon for each permission. Click an icon to request,
-check or configure that access. Agent setup remains in its separate step.
+The setup step shows six access cards with a short purpose and current action.
+Click a card to request, check or configure access. App control is a secondary
+link; agents and notifications keep their own setup steps.
 
 | Action | What happens |
 | --- | --- |
