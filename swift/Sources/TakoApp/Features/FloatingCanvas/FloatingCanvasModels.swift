@@ -130,9 +130,13 @@ enum FloatingPaneResizeEdge: String, CaseIterable, Sendable {
 
 /// Pure geometry calculations for floating panes and the bottom-right minimize shelf.
 enum FloatingPaneGeometry {
-    static let headerHeight: CGFloat = 26
-    static let cornerRadius: CGFloat = 8
+    static let headerHeight: CGFloat = 32
+    static let cornerRadius: CGFloat = 10
     static let shelfBandHeight: CGFloat = 44
+    static let shelfCardHeight: CGFloat = 30
+    static let defaultWidthRatio: CGFloat = 0.55
+    static let defaultHeightRatio: CGFloat = 0.60
+    static let cascadeStep: CGFloat = 24
     static let minSize = CGSize(width: 260, height: 150)
     static let minValidCanvasDimension: CGFloat = 64
     static let fallbackCanvasSize = CGSize(width: 960, height: 640)
@@ -163,22 +167,33 @@ enum FloatingPaneGeometry {
     static func defaultNormalRect(in workArea: CGRect, cascadeIndex: Int = 0) -> CGRect {
         let minW = min(minSize.width, workArea.width)
         let minH = min(minSize.height, workArea.height)
-        let width = max(minW, (workArea.width * 0.80).rounded())
-        let height = max(minH, (workArea.height * 0.78).rounded())
-        let step = CGFloat(cascadeIndex % 6) * 26
+        let width = max(minW, (workArea.width * defaultWidthRatio).rounded())
+        let height = max(minH, (workArea.height * defaultHeightRatio).rounded())
+        let step = CGFloat(cascadeIndex % 6) * cascadeStep
         let baseX = workArea.minX + ((workArea.width - width) * 0.5).rounded() + step
         let baseY = workArea.minY + ((workArea.height - height) * 0.5).rounded() + step
         return clamp(CGRect(x: baseX, y: baseY, width: width, height: height), to: workArea)
     }
 
-    static func cascadedRect(from anchorRect: CGRect, in workArea: CGRect, step: CGFloat = 28) -> CGRect {
+    static func cascadedRect(from anchorRect: CGRect, in workArea: CGRect, step: CGFloat = cascadeStep) -> CGRect {
         let candidate = CGRect(
             x: anchorRect.minX + step,
             y: anchorRect.minY + step,
             width: anchorRect.width,
             height: anchorRect.height
         )
-        return clamp(candidate, to: workArea)
+        let clamped = clamp(candidate, to: workArea)
+        if clamped.origin == anchorRect.origin,
+           (workArea.width > clamped.width + step || workArea.height > clamped.height + step) {
+            let wrapped = CGRect(
+                x: workArea.minX + step,
+                y: workArea.minY + step,
+                width: clamped.width,
+                height: clamped.height
+            )
+            return clamp(wrapped, to: workArea)
+        }
+        return clamped
     }
 
     static func clamp(_ rect: CGRect, to workArea: CGRect) -> CGRect {

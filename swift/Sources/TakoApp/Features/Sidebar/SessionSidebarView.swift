@@ -23,7 +23,7 @@ struct SessionSidebarView: View {
     @ObservedObject var workspaceStore: WorkspaceStore
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
-    @ObservedObject private var animState = LivingAnimationState.shared
+    @ObservedObject var animState = LivingAnimationState.shared
 
     typealias T = Tako.LivingTokens
 
@@ -32,10 +32,13 @@ struct SessionSidebarView: View {
     /// click selects the tab itself, and a cursor left on another row would
     /// read as a second selection.
     @State var showsArrowCursor = false
+    @State var isSearchExpanded = false
+    @State var searchFocusToken: Int = 0
+    @State private var chromeRevision: Int = 0
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
-    @FocusState private var isSearchFocused: Bool
-    @FocusState private var isListFocused: Bool
+    @FocusState var isSearchFocused: Bool
+    @FocusState var isListFocused: Bool
 
     @State private var hostingWindow: NSWindow?
 
@@ -59,15 +62,19 @@ struct SessionSidebarView: View {
         containingWindow ?? hostingWindow ?? NSApp?.keyWindow
     }
 
-    private var filterNeedsAttention: Bool {
+    var filterNeedsAttention: Bool {
         store.filterNeedsAttention(for: targetWindow)
     }
 
-    private var filterText: String {
+    var filterText: String {
         store.filterText(for: targetWindow)
     }
 
-    private var filterTextBinding: Binding<String> {
+    var showsFilterControls: Bool {
+        isSearchExpanded || !filterText.isEmpty || filterNeedsAttention
+    }
+
+    var filterTextBinding: Binding<String> {
         Binding(
             get: { store.filterText(for: targetWindow) },
             set: { store.setFilterText($0, for: targetWindow) }
@@ -94,7 +101,7 @@ struct SessionSidebarView: View {
     }
 
     /// No animation frames anywhere: the window is hidden or the app away.
-    private var motionPaused: Bool {
+    var motionPaused: Bool {
         Self.motionPaused(timelinePaused: animState.isTimelinePaused, isPresented: isPresented)
     }
 
@@ -113,34 +120,42 @@ struct SessionSidebarView: View {
     // The list is built once per change, not per animation frame: only the
     // rings and rows that move redraw on their own (`SessionSidebarRowView`).
     public var body: some View {
+        let _ = chromeRevision
         let groups = workspaceGroups
         let flatItems = groups.flatMap(\.items)
+        let totalSessions = Self.sessionCount(groups, flatItems)
+        let waitingCount = Self.attentionCount(groups, flatItems)
+
         VStack(spacing: 0) {
-            SidebarWindowChromeBar(window: targetWindow)
+            headerView(sessionCount: totalSessions, attentionCount: waitingCount)
+
+            if showsFilterControls {
+                searchAndSegmentsBar(attentionCount: waitingCount)
+            }
 
             VStack(spacing: 0) {
-                headerView(sessionCount: Self.sessionCount(groups, flatItems))
-                searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
                 tabListView(groups: groups, flatItems: flatItems)
                 footerView
             }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contextMenu {
                 Button("New Session") { store.createNewTab(in: targetWindow) }
                 Divider()
                 Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
                 Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(6)
-            .overlay {
-                RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
-                    .padding(6)
-                    .allowsHitTesting(false)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundColor)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color(nsColor: T.hairline))
+                .frame(width: 1)
+                .allowsHitTesting(false)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("SessionSidebar")
         .onAppear {
@@ -149,6 +164,20 @@ struct SessionSidebarView: View {
             }
             followActiveTab()
             isListFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fullscreenDidExit)) { _ in
+            chromeRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notif in
+            if let win = notif.object as? NSWindow, win === targetWindow {
+                chromeRevision &+= 1
+            }
         }
         // Each tab is a window with a sidebar of its own; the one on screen
         // must not keep an arrow-key cursor left from when it was last shown,
@@ -187,106 +216,6 @@ struct SessionSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
             store.objectWillChange.send()
         }
-    }
-
-    // MARK: - Search & Segments (§5.2, §5.3)
-
-    private func searchAndSegmentsBar(attentionCount: Int) -> some View {
-        VStack(spacing: 0) {
-            // Search input: margin 0 12 8, h 26, r 7, bg #1A1512, border 1 #2A211B, padding 0 9
-            HStack(spacing: 7) {
-                Text("⌕")
-                    .font(Font(T.monoFont(size: 11)))
-                    .foregroundColor(Color(nsColor: T.faint))
-
-                ZStack(alignment: .leading) {
-                    if filterText.isEmpty {
-                        Text("Filter sessions…")
-                            .font(Font(T.monoFont(size: 11)))
-                            .foregroundColor(Color(nsColor: T.faint))
-                            .allowsHitTesting(false)
-                    }
-                    TextField("", text: filterTextBinding)
-                        .textFieldStyle(.plain)
-                        .font(Font(T.monoFont(size: 11)))
-                        .foregroundColor(Color(nsColor: T.textActive))
-                        .focused($isSearchFocused)
-                        .onKeyPress(.escape) {
-                            if !filterText.isEmpty {
-                                store.setFilterText("", for: targetWindow)
-                            }
-                            isSearchFocused = false
-                            isListFocused = true
-                            return .handled
-                        }
-                }
-
-                if !filterText.isEmpty {
-                    Button(action: { store.setFilterText("", for: targetWindow) }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(nsColor: T.dim))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Color(nsColor: T.chrome)))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color(nsColor: T.hairline), lineWidth: 1))
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-
-            // Segments: margin 0 12 6, gap 4. Two segments h 22, r 6, padding 0 8, mono 10: "All" and "◎ Needs you · N"
-            HStack(spacing: 4) {
-                segmentButton(isActive: !filterNeedsAttention) {
-                    store.setFilterNeedsAttention(false, for: targetWindow)
-                } content: {
-                    Text("All")
-                        .font(Font(T.monoFont(size: 10, weight: .regular)))
-                }
-
-                segmentButton(isActive: filterNeedsAttention) {
-                    store.setFilterNeedsAttention(!filterNeedsAttention, for: targetWindow)
-                } content: {
-                    HStack(spacing: 6) {
-                        // It pulses only while something waits for you; with
-                        // nothing waiting it rests. Core Animation runs it, as
-                        // a pill's ring: a SwiftUI clock in this row laid the
-                        // sidebar out every frame -- in every tab's window --
-                        // whenever a tab in the background was at work.
-                        let ringRests = Self.headerRingRests(reduceMotion: animState.reduceMotion, waiting: attentionCount)
-                        SidebarStatusLayerView(
-                            state: .waiting, ringCenter: nil, cornerRadius: 0,
-                            reduceMotion: ringRests, paused: motionPaused, pulses: 0,
-                            ringOnly: StatusRingSize.extraSmall.rawValue)
-                            .frame(width: StatusRingSize.extraSmall.rawValue, height: StatusRingSize.extraSmall.rawValue)
-                        Text("Needs you · \(attentionCount)")
-                            .font(Font(T.monoFont(size: 10, weight: .regular)))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                }
-
-                Spacer(minLength: 4)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-        }
-    }
-
-    private func segmentButton<Content: View>(
-        isActive: Bool, action: @escaping () -> Void, @ViewBuilder content: () -> Content
-    ) -> some View {
-        Button(action: action) {
-            content()
-                .foregroundColor(Color(nsColor: isActive ? T.textActive : T.dim))
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 6).fill(isActive ? Color(nsColor: T.surfaceActive) : Color.clear))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isActive ? Color(nsColor: T.hairline) : Color.clear, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Tab List (§5.4 - §5.7)
@@ -371,6 +300,16 @@ struct SessionSidebarView: View {
                         store.setTabSplitsCollapsed(current.tabId, collapsed: false)
                     }
                 }
+                return .handled
+            }
+            .onExitCommand {
+                if showsFilterControls {
+                    collapseSearchAndClearFilter()
+                }
+            }
+            .onKeyPress(.escape) {
+                guard showsFilterControls else { return .ignored }
+                collapseSearchAndClearFilter()
                 return .handled
             }
             .onKeyPress(.return) {

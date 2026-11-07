@@ -254,12 +254,12 @@ struct LivingSurfaceLiveFindingsTests {
     }
 }
 
-/// The session sidebar is 280 wide (4a) and can be dragged within bounds.
+/// The session sidebar defaults to 240 wide and can be dragged within 220...720.
 @Suite
 struct SessionSidebarWidthTests {
     @Test func theWidthStartsAtTheDesignsAndStaysWithinItsBounds() {
-        #expect(SessionSidebarWidth.standard == 280)
-        #expect(SessionSidebarWidth.clamped(100) == 260)
+        #expect(SessionSidebarWidth.standard == 240)
+        #expect(SessionSidebarWidth.clamped(100) == 220)
         #expect(SessionSidebarWidth.clamped(400) == 400)
         #expect(SessionSidebarWidth.clamped(5000) == 720)
     }
@@ -268,11 +268,13 @@ struct SessionSidebarWidthTests {
         let suite = "tako.sidebar-width.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(SessionSidebarWidth.current(in: defaults) == 240)
+        defaults.set(280.0, forKey: SessionSidebarWidth.defaultsKey)
         #expect(SessionSidebarWidth.current(in: defaults) == 280)
         defaults.set(412.0, forKey: SessionSidebarWidth.defaultsKey)
         #expect(SessionSidebarWidth.current(in: defaults) == 412)
         defaults.set(10.0, forKey: SessionSidebarWidth.defaultsKey)
-        #expect(SessionSidebarWidth.current(in: defaults) == 260)
+        #expect(SessionSidebarWidth.current(in: defaults) == 220)
     }
 }
 
@@ -297,15 +299,15 @@ struct SessionSidebarGripTests {
         grip.mouseDragged(with: press(.leftMouseDragged, x: 140))
         #expect(width == 340)
         grip.mouseDragged(with: press(.leftMouseDragged, x: -500))
-        #expect(width == 260, "never narrower than the design's minimum")
+        #expect(width == 220, "never narrower than the design's minimum")
         grip.mouseUp(with: press(.leftMouseUp, x: -500))
 
         // Dragging without a press first does nothing.
         grip.mouseDragged(with: press(.leftMouseDragged, x: 900))
-        #expect(width == 260)
+        #expect(width == 220)
 
         grip.mouseDown(with: press(.leftMouseDown, x: 0, clicks: 2))
-        #expect(width == 280)
+        #expect(width == 240)
         #expect(!grip.mouseDownCanMoveWindow, "a drag on the edge must not move the window")
     }
 

@@ -125,9 +125,10 @@ struct FloatingPaneAndSidebarAXTests {
         let headerNode = try #require(paneDescendants.first { $0.identifier == "FloatingPaneHeader-\(p1Key)" && $0.role == "AXGroup" })
         let headerInWindow = window.convertFromScreen(headerNode.frameInScreen)
         // Header must sit flush at the top edge of FloatingPane (zero 28pt nested NSHostingView safe-area gap!):
+        let h = FloatingPaneGeometry.headerHeight
         #expect(abs(headerInWindow.maxY - maxPaneInWindow.maxY) <= 2,
                 "Header top maxY (\(headerInWindow.maxY)) must match pane top maxY (\(maxPaneInWindow.maxY)) without 28pt safe-area gap; saw: \(summary)")
-        #expect(abs(headerInWindow.height - 26) <= 2)
+        #expect(abs(headerInWindow.height - h) <= 2)
 
         #expect(paneDescendants.contains { $0.identifier == "FloatingPaneMinimize-\(p1Key)" && $0.role == "AXButton" })
         #expect(paneDescendants.contains { $0.identifier == "FloatingPaneMaximize-\(p1Key)" && $0.role == "AXButton" })
@@ -135,10 +136,10 @@ struct FloatingPaneAndSidebarAXTests {
         let maxTextArea = try #require(paneDescendants.first { $0.role == "AXTextArea" })
         let maxTextInWindow = window.convertFromScreen(maxTextArea.frameInScreen)
         #expect(abs(maxTextInWindow.maxY - headerInWindow.minY) <= 2)
-        #expect(abs((maxPaneInWindow.maxY - maxTextInWindow.maxY) - 26) <= 2)
+        #expect(abs((maxPaneInWindow.maxY - maxTextInWindow.maxY) - h) <= 2)
         #expect(abs(maxTextInWindow.minY - maxPaneInWindow.minY) <= 2)
-        #expect(abs(maxTextInWindow.height - (winHeight - 26)) <= 2,
-                "Maximized terminal height (\(maxTextInWindow.height)) must equal winHeight - 26 (\(winHeight - 26)) without losing 28pt to safe area")
+        #expect(abs(maxTextInWindow.height - (winHeight - h)) <= 2,
+                "Maximized terminal height (\(maxTextInWindow.height)) must equal winHeight - \(h) (\(winHeight - h)) without losing 28pt to safe area")
 
         // Verify .normal mode near the top of the .fullSizeContentView window (y = 8 inside titlebar zone!) ALSO has zero safe-area gap:
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
@@ -168,9 +169,9 @@ struct FloatingPaneAndSidebarAXTests {
                 "Normal pane near window top must not incur titlebar safe-area gap")
         let normalText = try #require(updatedDescendants.first { $0.role == "AXTextArea" })
         let normalTextInWindow = window.convertFromScreen(normalText.frameInScreen)
-        #expect(abs((normalPaneInWindow.maxY - normalTextInWindow.maxY) - 26) <= 2)
+        #expect(abs((normalPaneInWindow.maxY - normalTextInWindow.maxY) - h) <= 2)
         #expect(abs(normalTextInWindow.minY - normalPaneInWindow.minY) <= 2)
-        #expect(abs(normalText.frameInScreen.height - 294) <= 2)
+        #expect(abs(normalText.frameInScreen.height - (320 - h)) <= 2)
         #expect(updatedDescendants.contains { $0.identifier == "FloatingPaneResize-bottomTrailing-\(p1Key)" })
 
         // Verify multi-pane sidebar exposes non-duplicated session-pane-<uuid> AXGroups with selected/unselected values:

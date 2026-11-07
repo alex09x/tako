@@ -11,11 +11,11 @@
 import AppKit
 import SwiftUI
 
-/// The session sidebar's width: 280 pt as in the design (4a), dragged wider
-/// or narrower by its right edge, remembered across launches.
+/// The session sidebar's width: 240 pt compact default, dragged wider
+/// or narrower (`220...720` pt) by its right edge, remembered across launches.
 enum SessionSidebarWidth {
-    static let standard: CGFloat = 280
-    static let range: ClosedRange<CGFloat> = 260...720
+    static let standard: CGFloat = 240
+    static let range: ClosedRange<CGFloat> = 220...720
     static let defaultsKey = "TakoSessionSidebarWidth"
 
     static func clamped(_ width: CGFloat) -> CGFloat {

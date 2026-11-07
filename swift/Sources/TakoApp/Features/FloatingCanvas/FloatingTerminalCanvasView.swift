@@ -59,6 +59,8 @@ struct FloatingTerminalCanvasView: View {
                                     canvasSize: canvasSize,
                                     isFocused: controller.focusedSurface === surfaceView,
                                     canMoveToNewWindow: controller.surfaceTree.isSplit,
+                                    activeTransition: store.activeTransition,
+                                    reduceMotion: store.reduceMotionProvider(),
                                     onActivate: {
                                         controller.activateFloatingPane(surfaceView)
                                     },
@@ -96,6 +98,13 @@ struct FloatingTerminalCanvasView: View {
                                 .position(x: frame.midX, y: frame.midY)
                                 .zIndex(Double(pane.zOrder))
                             }
+                        }
+
+                        if let ghost = store.activeTransition,
+                           ghost.kind == .minimizing,
+                           !store.reduceMotionProvider() {
+                            FloatingPaneTransitionGhostView(transition: ghost)
+                                .zIndex(999_999)
                         }
                     }
                     .frame(width: canvasSize.width, height: canvasSize.height, alignment: .topLeading)
@@ -150,6 +159,8 @@ private struct FloatingPaneWindowView: View {
     let canvasSize: CGSize
     let isFocused: Bool
     let canMoveToNewWindow: Bool
+    let activeTransition: FloatingPaneTransition?
+    let reduceMotion: Bool
     let onActivate: () -> Void
     let onDragMove: (CGRect) -> Void
     let onDetachMaximized: (CGFloat, CGFloat) -> CGRect?
@@ -159,7 +170,7 @@ private struct FloatingPaneWindowView: View {
     let onMoveToNewWindow: () -> Void
     let onClose: () -> Void
 
-    private typealias T = Tako.LivingTokens
+    @State private var isDraggingPane = false
 
     private var uuidKey: String {
         surfaceView.id.uuidString.lowercased()
@@ -177,6 +188,13 @@ private struct FloatingPaneWindowView: View {
         isNormal ? FloatingPaneGeometry.cornerRadius : 0
     }
 
+    private var normalBorderColor: Color {
+        if colorScheme == .light {
+            return Color.black.opacity(isDraggingPane ? 0.18 : (isFocused ? 0.14 : 0.08))
+        }
+        return Color.white.opacity(isDraggingPane ? 0.17 : (isFocused ? 0.13 : 0.07))
+    }
+
     private var paneContent: some View {
         VStack(spacing: 0) {
             FloatingPaneHeaderView(
@@ -187,6 +205,7 @@ private struct FloatingPaneWindowView: View {
                 isFocused: isFocused,
                 canvasSize: canvasSize,
                 canMoveToNewWindow: canMoveToNewWindow,
+                onDragStateChange: { isDraggingPane = $0 },
                 onActivate: onActivate,
                 onDragMove: onDragMove,
                 onDetachMaximized: onDetachMaximized,
@@ -208,12 +227,7 @@ private struct FloatingPaneWindowView: View {
         .overlay {
             if isNormal {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? Color(nsColor: T.ember).opacity(0.65)
-                            : Color(nsColor: T.ghostBorder),
-                        lineWidth: 1
-                    )
+                    .strokeBorder(normalBorderColor, lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
@@ -237,6 +251,10 @@ private struct FloatingPaneWindowView: View {
 
     var body: some View {
         FloatingPaneAXContainer(
+            surfaceId: surfaceView.id,
+            settledFrame: frame,
+            activeTransition: activeTransition,
+            reduceMotion: reduceMotion,
             identifier: "FloatingPane-\(uuidKey)",
             label: "\(FloatingPaneGeometry.shortTitle(for: surfaceView)), \(statusValue)",
             value: statusValue
@@ -246,134 +264,16 @@ private struct FloatingPaneWindowView: View {
         .focusedValue(\.takoSurfacePwd, isFocused ? (surfaceView.pwd ?? "") : nil)
         .focusedValue(\.takoSurfaceCellSize, isFocused ? surfaceView.cellSize : nil)
         .shadow(
-            color: isNormal ? Color.black.opacity(isFocused ? 0.36 : 0.22) : .clear,
-            radius: isNormal ? (isFocused ? 14 : 8) : 0,
+            color: isNormal ? Color.black.opacity(isFocused ? 0.22 : 0.12) : .clear,
+            radius: isNormal ? 4 : 0,
             x: 0,
-            y: isNormal ? 4 : 0
+            y: isNormal ? 2 : 0
         )
-    }
-}
-
-/// Real AppKit `AXGroup` container backing `FloatingPane-<uuid>` so macOS Accessibility / XCUITest
-/// reliably exposes the root pane group with its full header+body frame, live status `AXValue`,
-/// and non-duplicated individually reachable child elements.
-final class FloatingPaneAXContainerNSView<Content: View>: NSView {
-    private let hostingView: NSHostingView<Content>
-
-    init(rootView: Content) {
-        self.hostingView = NSHostingView(rootView: rootView)
-        super.init(frame: .zero)
-        hostingView.safeAreaRegions = []
-        hostingView.sizingOptions = []
-        hostingView.translatesAutoresizingMaskIntoConstraints = true
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.frame = bounds
-        addSubview(hostingView)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is unavailable")
-    }
-
-    func update(rootView: Content, identifier: String, label: String, value: String) {
-        hostingView.rootView = rootView
-        setAccessibilityIdentifier(identifier)
-        setAccessibilityLabel(label)
-        setAccessibilityValue(value)
-    }
-
-    override func layout() {
-        super.layout()
-        if hostingView.frame != bounds {
-            hostingView.frame = bounds
-        }
-    }
-
-    override func accessibilityChildren() -> [Any]? {
-        NSAccessibility.unignoredChildren(from: subviews)
-    }
-}
-
-private struct FloatingPaneAXContainer<Content: View>: NSViewRepresentable {
-    let identifier: String
-    let label: String
-    let value: String
-    let content: Content
-
-    init(identifier: String, label: String, value: String, @ViewBuilder content: () -> Content) {
-        self.identifier = identifier
-        self.label = label
-        self.value = value
-        self.content = content()
-    }
-
-    func makeNSView(context: Context) -> FloatingPaneAXContainerNSView<Content> {
-        let view = FloatingPaneAXContainerNSView(rootView: content)
-        view.update(rootView: content, identifier: identifier, label: label, value: value)
-        return view
-    }
-
-    func updateNSView(_ nsView: FloatingPaneAXContainerNSView<Content>, context: Context) {
-        nsView.update(rootView: content, identifier: identifier, label: label, value: value)
-    }
-}
-
-private struct EmptyFloatingCanvasView: View {
-    let onCreateTerminal: () -> Void
-    private typealias T = Tako.LivingTokens
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "macwindow.on.rectangle")
-                .font(.system(size: 26, weight: .regular))
-                .foregroundColor(Color(nsColor: T.dim))
-
-            Text("No open terminals in this session")
-                .font(Font(T.monoFont(size: 13, weight: .medium)))
-                .foregroundColor(Color(nsColor: T.textActive))
-
-            Text("Open a new terminal pane here or press ⌘W to close this empty session.")
-                .font(Font(T.monoFont(size: 11, weight: .regular)))
-                .foregroundColor(Color(nsColor: T.dim))
-                .multilineTextAlignment(.center)
-
-            ZStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("New Terminal")
-                        .font(Font(T.monoFont(size: 11.5, weight: .medium)))
-                }
-                .foregroundColor(Color(nsColor: T.textActive))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color(nsColor: T.surfaceActive))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color(nsColor: T.ghostBorder), lineWidth: 1)
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
-                FloatingActionButtonOverlay(
-                    identifier: "FloatingCanvasNewTerminal",
-                    label: "New Terminal",
-                    value: "",
-                    helpText: "Open a new terminal pane",
-                    onHoverChange: { _ in },
-                    action: onCreateTerminal
-                )
-            }
-            .fixedSize(horizontal: true, vertical: true)
-        }
-        .padding(24)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("FloatingCanvasEmptyState")
+        .shadow(
+            color: isNormal ? Color.black.opacity(isDraggingPane ? 0.52 : (isFocused ? 0.44 : 0.24)) : .clear,
+            radius: isNormal ? (isDraggingPane ? 30 : (isFocused ? 24 : 12)) : 0,
+            x: 0,
+            y: isNormal ? (isDraggingPane ? 14 : (isFocused ? 10 : 5)) : 0
+        )
     }
 }

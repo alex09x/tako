@@ -23,8 +23,62 @@ struct FloatingPaneResizeHandlesView: NSViewRepresentable {
     let onResizeMove: (CGRect) -> Void
     let onResizeCommit: () -> Void
 
+    static let topEdgeHitThickness: CGFloat = 4
     static let edgeHitThickness: CGFloat = 6
     static let cornerHitSize: CGFloat = 12
+
+    private static let nwseFallbackCursor: NSCursor = makeDiagonalCursor(angleDegrees: -45)
+    private static let neswFallbackCursor: NSCursor = makeDiagonalCursor(angleDegrees: 45)
+
+    static func resizeCursor(for edge: FloatingPaneResizeEdge) -> NSCursor {
+        if #available(macOS 15.0, *) {
+            let position: NSCursor.FrameResizePosition = switch edge {
+            case .top: .top
+            case .bottom: .bottom
+            case .leading: .left
+            case .trailing: .right
+            case .topLeading: .topLeft
+            case .topTrailing: .topRight
+            case .bottomLeading: .bottomLeft
+            case .bottomTrailing: .bottomRight
+            }
+            return NSCursor.frameResize(position: position, directions: .all)
+        }
+        return switch edge {
+        case .leading, .trailing: .resizeLeftRight
+        case .top, .bottom: .resizeUpDown
+        case .topLeading, .bottomTrailing: nwseFallbackCursor
+        case .topTrailing, .bottomLeading: neswFallbackCursor
+        }
+    }
+
+    private static func makeDiagonalCursor(angleDegrees: CGFloat) -> NSCursor {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.translateBy(x: 9, y: 9)
+            ctx.rotate(by: angleDegrees * .pi / 180)
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 0, y: -6.5))
+            path.line(to: NSPoint(x: 0, y: 6.5))
+            path.move(to: NSPoint(x: -2.6, y: -3.8))
+            path.line(to: NSPoint(x: 0, y: -6.8))
+            path.line(to: NSPoint(x: 2.6, y: -3.8))
+            path.move(to: NSPoint(x: -2.6, y: 3.8))
+            path.line(to: NSPoint(x: 0, y: 6.8))
+            path.line(to: NSPoint(x: 2.6, y: 3.8))
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            NSColor.white.setStroke()
+            path.lineWidth = 3.0
+            path.stroke()
+            NSColor.black.setStroke()
+            path.lineWidth = 1.5
+            path.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: 9, y: 9))
+    }
 
     func makeNSView(context: Context) -> FloatingPaneResizePerimeterNSView {
         let view = FloatingPaneResizePerimeterNSView(frame: .zero)
@@ -109,10 +163,11 @@ final class FloatingPaneResizePerimeterNSView: NSView {
         super.layout()
         let w = bounds.width
         let h = bounds.height
+        let topEdge = FloatingPaneResizeHandlesView.topEdgeHitThickness
         let e = FloatingPaneResizeHandlesView.edgeHitThickness
         let c = FloatingPaneResizeHandlesView.cornerHitSize
 
-        handleViews[.top]?.frame = CGRect(x: c, y: 0, width: max(0, w - 2 * c), height: e)
+        handleViews[.top]?.frame = CGRect(x: c, y: 0, width: max(0, w - 2 * c), height: topEdge)
         handleViews[.bottom]?.frame = CGRect(x: c, y: max(0, h - e), width: max(0, w - 2 * c), height: e)
         handleViews[.leading]?.frame = CGRect(x: 0, y: c, width: e, height: max(0, h - 2 * c))
         handleViews[.trailing]?.frame = CGRect(x: max(0, w - e), y: c, width: e, height: max(0, h - 2 * c))
@@ -155,6 +210,7 @@ private final class FloatingPaneResizeHandleNSView: NSView {
     var onResizeMove: ((CGRect) -> Void)?
     var onResizeCommit: (() -> Void)?
 
+    private var trackingAreaRef: NSTrackingArea?
     private var startWindowPoint: NSPoint?
     private var startRect: CGRect = .zero
     private var didResize = false
@@ -173,13 +229,27 @@ private final class FloatingPaneResizeHandleNSView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
-    override func resetCursorRects() {
-        let cursor: NSCursor = switch edge {
-        case .leading, .trailing: .resizeLeftRight
-        case .top, .bottom: .resizeUpDown
-        case .topLeading, .bottomTrailing, .topTrailing, .bottomLeading: .crosshair
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingAreaRef {
+            removeTrackingArea(existing)
         }
-        addCursorRect(bounds, cursor: cursor)
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        FloatingPaneResizeHandlesView.resizeCursor(for: edge).set()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: FloatingPaneResizeHandlesView.resizeCursor(for: edge))
     }
 
     override func mouseDown(with event: NSEvent) {

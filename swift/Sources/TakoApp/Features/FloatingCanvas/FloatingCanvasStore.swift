@@ -28,10 +28,14 @@ final class FloatingCanvasStore: ObservableObject {
     }
 
     @Published internal(set) var panes: [FloatingPaneState] = []
+    @Published private(set) var activeTransition: FloatingPaneTransition?
     var lastValidCanvasSize: CGSize?
     private(set) var pendingFocus: PendingFocus?
+    private(set) var transitionGeneration: UInt64 = 0
+    var reduceMotionProvider: () -> Bool = { LivingAnimationState.shared.reduceMotion }
 
     private var focusGeneration: UInt64 = 0
+    private var transitionCleanupTask: Task<Void, Never>?
     private var nextZOrder: Int = 1
     private var needsInitialRectSeeding = false
     private var pendingSplitHint: SplitPlacementHint?
@@ -235,6 +239,7 @@ final class FloatingCanvasStore: ObservableObject {
             if let pending = pendingFocus {
                 cancelPendingFocus(for: pending.surfaceId)
             }
+            cancelTransition()
             if !panes.isEmpty {
                 panes = []
                 onPersistNeeded?()
@@ -252,7 +257,10 @@ final class FloatingCanvasStore: ObservableObject {
         let liveSet = Set(leaves.map(\.id))
         var next = panes.filter { pane in
             let alive = liveSet.contains(pane.surfaceId)
-            if !alive { cancelPendingFocus(for: pane.surfaceId) }
+            if !alive {
+                cancelPendingFocus(for: pane.surfaceId)
+                cancelTransition(for: pane.surfaceId)
+            }
             return alive
         }
 
@@ -276,40 +284,21 @@ final class FloatingCanvasStore: ObservableObject {
                 continue
             }
 
+            let normalCount = next.filter { $0.mode == .normal }.count
+            let newRect: CGRect
             if let hint, hint.newId == newId,
-               let anchorIdx = next.firstIndex(where: { $0.surfaceId == hint.anchorId }) {
-                let visibleIndices = next.indices.filter { next[$0].mode != .minimized }
-                if visibleIndices.count == 1, visibleIndices.first == anchorIdx, next[anchorIdx].mode == .maximized {
-                    let (anchorRect, newRect) = splitPairRects(direction: hint.direction, in: area)
-                    next[anchorIdx].mode = .normal
-                    next[anchorIdx].restoreMode = .normal
-                    next[anchorIdx].rect = anchorRect
-                    next.append(FloatingPaneState(
-                        surfaceId: newId,
-                        mode: .normal,
-                        restoreMode: .normal,
-                        rect: newRect,
-                        zOrder: allocateZOrder()
-                    ))
-                    continue
-                }
-
-                let baseRect = next[anchorIdx].rect
-                next.append(FloatingPaneState(
-                    surfaceId: newId,
-                    mode: .normal,
-                    restoreMode: .normal,
-                    rect: FloatingPaneGeometry.cascadedRect(from: baseRect, in: area),
-                    zOrder: allocateZOrder()
-                ))
-                continue
+               let anchorIdx = next.firstIndex(where: { $0.surfaceId == hint.anchorId }),
+               next[anchorIdx].mode == .normal {
+                newRect = FloatingPaneGeometry.cascadedRect(from: next[anchorIdx].rect, in: area)
+            } else {
+                newRect = FloatingPaneGeometry.defaultNormalRect(in: area, cascadeIndex: normalCount)
             }
 
             next.append(FloatingPaneState(
                 surfaceId: newId,
                 mode: .normal,
                 restoreMode: .normal,
-                rect: FloatingPaneGeometry.defaultNormalRect(in: area, cascadeIndex: next.count),
+                rect: newRect,
                 zOrder: allocateZOrder()
             ))
         }
@@ -318,27 +307,60 @@ final class FloatingCanvasStore: ObservableObject {
         onPersistNeeded?()
     }
 
-    private func splitPairRects(
-        direction: SplitTree<Tako.SurfaceView>.NewDirection,
-        in area: CGRect
-    ) -> (anchor: CGRect, created: CGRect) {
-        let gap: CGFloat = 10
-        let inset = area.insetBy(dx: 8, dy: 8)
-        switch direction {
-        case .right, .left:
-            let half = max(FloatingPaneGeometry.minSize.width, ((inset.width - gap) * 0.5).rounded())
-            let left = FloatingPaneGeometry.clamp(
-                CGRect(x: inset.minX, y: inset.minY, width: half, height: inset.height), to: area)
-            let right = FloatingPaneGeometry.clamp(
-                CGRect(x: inset.maxX - half, y: inset.minY, width: half, height: inset.height), to: area)
-            return direction == .right ? (left, right) : (right, left)
-        case .down, .up:
-            let half = max(FloatingPaneGeometry.minSize.height, ((inset.height - gap) * 0.5).rounded())
-            let top = FloatingPaneGeometry.clamp(
-                CGRect(x: inset.minX, y: inset.minY, width: inset.width, height: half), to: area)
-            let bottom = FloatingPaneGeometry.clamp(
-                CGRect(x: inset.minX, y: inset.maxY - half, width: inset.width, height: half), to: area)
-            return direction == .down ? (top, bottom) : (bottom, top)
+    // MARK: - Transition Tracking (190ms Transform-Only, ReduceMotion & Rapid-Cancel Safe)
+
+    func cancelTransition(for surfaceId: UUID? = nil) {
+        if let surfaceId, activeTransition?.surfaceId != surfaceId {
+            return
+        }
+        transitionGeneration &+= 1
+        transitionCleanupTask?.cancel()
+        transitionCleanupTask = nil
+        if activeTransition != nil {
+            activeTransition = nil
+        }
+    }
+
+    func recordTransition(
+        surfaceId: UUID,
+        kind: FloatingPaneTransitionKind,
+        fromRect: CGRect,
+        toRect: CGRect,
+        title: String = "Terminal",
+        backgroundColor: NSColor = .black,
+        backgroundOpacity: Double = 1.0,
+        statusColor: NSColor = .gray
+    ) {
+        transitionGeneration &+= 1
+        let gen = transitionGeneration
+        transitionCleanupTask?.cancel()
+        transitionCleanupTask = nil
+
+        guard !reduceMotionProvider() else {
+            if activeTransition != nil {
+                activeTransition = nil
+            }
+            return
+        }
+
+        activeTransition = FloatingPaneTransition(
+            generation: gen,
+            surfaceId: surfaceId,
+            kind: kind,
+            fromRect: fromRect,
+            toRect: toRect,
+            title: title,
+            backgroundColor: backgroundColor,
+            backgroundOpacity: backgroundOpacity,
+            statusColor: statusColor
+        )
+
+        let nanos = UInt64((FloatingCanvasMotion.duration + 0.02) * 1_000_000_000)
+        transitionCleanupTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled, let self, self.activeTransition?.generation == gen else { return }
+            self.activeTransition = nil
+            self.transitionCleanupTask = nil
         }
     }
 

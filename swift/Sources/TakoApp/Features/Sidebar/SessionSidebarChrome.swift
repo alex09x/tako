@@ -18,10 +18,25 @@ import SwiftUI
 enum SessionSidebarChrome {
     static let titlebarStripHeight: CGFloat = 32
     static let hiddenTitlebarStripHeight: CGFloat = 16
+    static let compactHeaderMinHeight: CGFloat = 30
+    static let trafficLightLeadingInset: CGFloat = 74
+    static let compactLeadingInset: CGFloat = 12
 
     @MainActor
     static func showsTitlebarStrip(for window: NSWindow?) -> Bool {
         topStripHeight(for: window) > 0
+    }
+
+    @MainActor
+    static func headerBarHeight(for window: NSWindow?) -> CGFloat {
+        max(compactHeaderMinHeight, topStripHeight(for: window))
+    }
+
+    @MainActor
+    static func leadingHeaderInset(for window: NSWindow?) -> CGFloat {
+        topStripHeight(for: window) == titlebarStripHeight
+            ? trafficLightLeadingInset
+            : compactLeadingInset
     }
 
     @MainActor
@@ -101,6 +116,39 @@ struct SidebarTitlebarDragStrip: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: SidebarTitlebarDragView, context: Context) {}
+}
+
+final class SidebarHeaderTitleAXView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityIdentifier("SessionSidebarHeader")
+        setAccessibilityLabel("Sessions")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+struct SidebarHeaderTitleAXOverlay: NSViewRepresentable {
+    let value: String
+
+    func makeNSView(context: Context) -> SidebarHeaderTitleAXView {
+        let view = SidebarHeaderTitleAXView(frame: .zero)
+        view.setAccessibilityValue(value)
+        return view
+    }
+
+    func updateNSView(_ nsView: SidebarHeaderTitleAXView, context: Context) {
+        nsView.setAccessibilityValue(value)
+    }
 }
 
 struct SidebarWindowChromeBar: View {

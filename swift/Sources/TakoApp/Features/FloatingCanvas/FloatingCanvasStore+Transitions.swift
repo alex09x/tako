@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -28,6 +29,7 @@ extension FloatingCanvasStore {
     func setInteractiveRect(_ rect: CGRect, for surfaceId: UUID, in canvasSize: CGSize) {
         guard FloatingPaneGeometry.isValidCanvasSize(canvasSize),
               let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return }
+        cancelTransition(for: surfaceId)
         lastValidCanvasSize = canvasSize
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         let clamped = FloatingPaneGeometry.clamp(rect, to: area)
@@ -59,6 +61,7 @@ extension FloatingCanvasStore {
         guard FloatingPaneGeometry.isValidCanvasSize(canvasSize),
               let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }),
               panes[idx].mode == .maximized else { return nil }
+        cancelTransition(for: surfaceId)
         lastValidCanvasSize = canvasSize
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         let normal = FloatingPaneGeometry.clamp(panes[idx].rect, to: area)
@@ -81,6 +84,14 @@ extension FloatingCanvasStore {
             lastValidCanvasSize = canvasSize
         }
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return }
+        let canvas = effectiveCanvasSize(fallback: canvasSize)
+        let priorPane = panes[idx]
+        let priorHasMin = hasMinimizedPanes
+        let priorMinCount = minimizedPanes.count
+        let fromRect: CGRect = priorPane.mode == .minimized
+            ? FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: priorMinCount)
+            : FloatingPaneGeometry.presentedFrame(for: priorPane, in: canvas, hasMinimizedPanes: priorHasMin)
+
         switch panes[idx].mode {
         case .maximized:
             panes[idx].mode = .normal
@@ -90,15 +101,53 @@ extension FloatingCanvasStore {
             panes[idx].restoreMode = .maximized
         }
         panes[idx].zOrder = allocateZOrder()
+
+        let toRect = FloatingPaneGeometry.presentedFrame(
+            for: panes[idx],
+            in: canvas,
+            hasMinimizedPanes: hasMinimizedPanes
+        )
+        recordTransition(
+            surfaceId: surfaceId,
+            kind: priorPane.mode == .minimized ? .restoring : .modeMorph,
+            fromRect: fromRect,
+            toRect: toRect
+        )
         onPersistNeeded?()
     }
 
-    func minimize(_ surfaceId: UUID) {
+    func minimize(
+        _ surfaceId: UUID,
+        title: String = "Terminal",
+        backgroundColor: NSColor = .black,
+        backgroundOpacity: Double = 1.0,
+        statusColor: NSColor = .gray
+    ) {
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }),
               panes[idx].mode != .minimized else { return }
+        let canvas = effectiveCanvasSize()
+        let departingFrame = FloatingPaneGeometry.presentedFrame(
+            for: panes[idx],
+            in: canvas,
+            hasMinimizedPanes: hasMinimizedPanes
+        )
         cancelPendingFocus(for: surfaceId)
         panes[idx].restoreMode = (panes[idx].mode == .maximized) ? .maximized : .normal
         panes[idx].mode = .minimized
+        let shelfTarget = FloatingCanvasMotion.shelfAnchorRect(
+            in: canvas,
+            minimizedCount: minimizedPanes.count
+        )
+        recordTransition(
+            surfaceId: surfaceId,
+            kind: .minimizing,
+            fromRect: departingFrame,
+            toRect: shelfTarget,
+            title: title,
+            backgroundColor: backgroundColor,
+            backgroundOpacity: backgroundOpacity,
+            statusColor: statusColor
+        )
         onPersistNeeded?()
     }
 
@@ -109,11 +158,29 @@ extension FloatingCanvasStore {
             lastValidCanvasSize = canvasSize
         }
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return nil }
-        if panes[idx].mode == .minimized {
+        let wasMinimized = (panes[idx].mode == .minimized)
+        let priorMinCount = minimizedPanes.count
+        if wasMinimized {
             let targetMode: FloatingPaneMode = (panes[idx].restoreMode == .maximized) ? .maximized : .normal
             panes[idx].mode = targetMode
         }
         panes[idx].zOrder = allocateZOrder()
+
+        if wasMinimized {
+            let canvas = effectiveCanvasSize(fallback: canvasSize)
+            let fromRect = FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: priorMinCount)
+            let toRect = FloatingPaneGeometry.presentedFrame(
+                for: panes[idx],
+                in: canvas,
+                hasMinimizedPanes: hasMinimizedPanes
+            )
+            recordTransition(
+                surfaceId: surfaceId,
+                kind: .restoring,
+                fromRect: fromRect,
+                toRect: toRect
+            )
+        }
         onPersistNeeded?()
         return panes[idx].mode
     }

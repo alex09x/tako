@@ -11,15 +11,13 @@
 import AppKit
 import SwiftUI
 
-/// Fixed-height bottom-right shelf showing minimized internal panes for the active session.
-/// Uses horizontal scrolling when cards overflow so shelf height stays constant (`44pt`)
-/// and never shifts the terminal grid of a maximized or floating pane.
+/// Bottom-right pill shelf showing minimized internal panes for the active session.
+/// Visually renders only right-aligned 30pt stadium pills (no full-width bar or top divider),
+/// while `FloatingPaneGeometry.shelfBandHeight` (`44pt`) keeps terminal rows non-occluded.
 struct FloatingMinimizeShelfView: View {
     let minimizedPanes: [FloatingPaneState]
     let surfaceLookup: (UUID) -> Tako.SurfaceView?
     let onRestore: (Tako.SurfaceView) -> Void
-
-    private typealias T = Tako.LivingTokens
 
     private var cardsRow: some View {
         HStack(spacing: 8) {
@@ -52,23 +50,16 @@ struct FloatingMinimizeShelfView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: FloatingPaneGeometry.shelfBandHeight)
-        .background(
-            Color(nsColor: T.body).opacity(0.92)
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(Color(nsColor: T.hairline))
-                        .frame(height: 1)
-                }
-        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("FloatingMinimizeShelf")
     }
 }
 
-/// Individual minimized terminal card on the bottom-right shelf.
+/// Individual minimized terminal pill card (`30pt` height) on the bottom-right shelf.
 /// Observes the exact same coalesced status/unread publishers (`CrabTracker`, `NotificationStore`,
 /// `AttentionManager`) as `SessionSidebar`, avoiding per-PTY-byte view invalidation.
 private struct FloatingMinimizedCardView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
     @ObservedObject private var notificationStore = NotificationStore.shared
@@ -112,6 +103,15 @@ private struct FloatingMinimizedCardView: View {
         Color(nsColor: FloatingPaneGeometry.statusNSColor(for: crab.paneStatus, surface: surfaceView))
     }
 
+    private var pillBorderColor: Color {
+        if needsAttention {
+            return Color(nsColor: T.claw).opacity(0.65)
+        }
+        return colorScheme == .light
+            ? Color.black.opacity(hovering ? 0.18 : 0.12)
+            : Color.white.opacity(hovering ? 0.16 : 0.11)
+    }
+
     var body: some View {
         ZStack {
             HStack(spacing: 7) {
@@ -136,21 +136,17 @@ private struct FloatingMinimizedCardView: View {
                         .frame(width: 6, height: 6)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
+            .padding(.horizontal, 12)
+            .frame(height: FloatingPaneGeometry.shelfCardHeight)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color(nsColor: hovering ? T.surfaceHover : T.surfaceActive))
+                Capsule(style: .continuous)
+                    .fill(Color(nsColor: hovering ? T.surfaceHover : T.surfaceActive).opacity(0.96))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(
-                        needsAttention
-                            ? Color(nsColor: T.claw).opacity(0.65)
-                            : Color(nsColor: T.hairline),
-                        lineWidth: 1
-                    )
+                Capsule(style: .continuous)
+                    .strokeBorder(pillBorderColor, lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(hovering ? 0.34 : 0.26), radius: 8, x: 0, y: 3)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 

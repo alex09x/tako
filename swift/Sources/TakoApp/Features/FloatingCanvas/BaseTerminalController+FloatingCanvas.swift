@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import TakoKit
 
 extension BaseTerminalController {
@@ -105,7 +106,17 @@ extension BaseTerminalController {
 
     func minimizeFloatingPane(_ surface: Tako.SurfaceView) {
         guard usesFloatingCanvas, surfaceTree.contains(surface) else { return }
-        floatingCanvas.minimize(surface.id)
+        if let est = estimatedFloatingCanvasSize(), floatingCanvas.lastValidCanvasSize == nil {
+            floatingCanvas.lastValidCanvasSize = est
+        }
+        let bgColor = NSColor(surface.backgroundColor ?? surface.derivedConfig.backgroundColor)
+        floatingCanvas.minimize(
+            surface.id,
+            title: FloatingPaneGeometry.shortTitle(for: surface),
+            backgroundColor: bgColor,
+            backgroundOpacity: surface.derivedConfig.backgroundOpacity,
+            statusColor: FloatingPaneGeometry.statusNSColor(for: surface.crab.paneStatus, surface: surface)
+        )
 
         // Explicit minimized visibility & focus policy (Correction #3):
         // drop focus and pause presentation immediately, preserving the live PTY and last grid size.
