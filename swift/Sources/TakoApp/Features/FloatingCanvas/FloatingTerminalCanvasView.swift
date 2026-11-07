@@ -58,6 +58,7 @@ struct FloatingTerminalCanvasView: View {
                                     workArea: workArea,
                                     canvasSize: canvasSize,
                                     isFocused: controller.focusedSurface === surfaceView,
+                                    canMoveToNewWindow: controller.surfaceTree.isSplit,
                                     onActivate: {
                                         controller.activateFloatingPane(surfaceView)
                                     },
@@ -80,6 +81,12 @@ struct FloatingTerminalCanvasView: View {
                                     },
                                     onToggleMaximize: {
                                         controller.toggleMaximizeFloatingPane(surfaceView, in: canvasSize)
+                                    },
+                                    onMoveToNewWindow: {
+                                        NotificationCenter.default.post(
+                                            name: .takoSurfaceDragEndedNoTarget,
+                                            object: surfaceView
+                                        )
                                     },
                                     onClose: {
                                         controller.closeFloatingPane(surfaceView)
@@ -139,12 +146,14 @@ private struct FloatingPaneWindowView: View {
     let workArea: CGRect
     let canvasSize: CGSize
     let isFocused: Bool
+    let canMoveToNewWindow: Bool
     let onActivate: () -> Void
     let onDragMove: (CGRect) -> Void
     let onDetachMaximized: (CGFloat, CGFloat) -> CGRect?
     let onGestureCommit: () -> Void
     let onMinimize: () -> Void
     let onToggleMaximize: () -> Void
+    let onMoveToNewWindow: () -> Void
     let onClose: () -> Void
 
     private typealias T = Tako.LivingTokens
@@ -171,14 +180,17 @@ private struct FloatingPaneWindowView: View {
                 surfaceView: surfaceView,
                 crab: surfaceView.crab,
                 pane: pane,
+                presentedFrame: frame,
                 isFocused: isFocused,
                 canvasSize: canvasSize,
+                canMoveToNewWindow: canMoveToNewWindow,
                 onActivate: onActivate,
                 onDragMove: onDragMove,
                 onDetachMaximized: onDetachMaximized,
                 onDragCommit: onGestureCommit,
                 onMinimize: onMinimize,
                 onToggleMaximize: onToggleMaximize,
+                onMoveToNewWindow: onMoveToNewWindow,
                 onClose: onClose
             )
 

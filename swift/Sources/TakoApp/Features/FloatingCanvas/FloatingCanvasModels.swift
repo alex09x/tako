@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -229,6 +230,28 @@ enum FloatingPaneGeometry {
         case .disconnected: return "Offline"
         case .idle, .unknown: return "Idle"
         }
+    }
+
+    @MainActor
+    static func statusNSColor(for status: Tako.PaneStatus, surface: Tako.SurfaceView? = nil) -> NSColor {
+        Tako.tabStatusColor(for: status.dotKey, surface: surface)
+    }
+
+    /// Sanitizes decoded preferred `.normal` rects without clamping them to transient work areas
+    /// (such as temporary shelf height reservation or temporary window shrinkage).
+    static func sanitizePreferredRect(_ rect: CGRect, fallback: CGRect) -> CGRect {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.size.width.isFinite, rect.size.height.isFinite,
+              rect.size.width > 0, rect.size.height > 0
+        else {
+            return fallback
+        }
+        return CGRect(
+            x: rect.origin.x.rounded(),
+            y: rect.origin.y.rounded(),
+            width: max(minSize.width, rect.size.width.rounded()),
+            height: max(minSize.height, rect.size.height.rounded())
+        )
     }
 
     @MainActor

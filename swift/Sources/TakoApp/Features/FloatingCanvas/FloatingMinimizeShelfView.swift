@@ -21,24 +21,32 @@ struct FloatingMinimizeShelfView: View {
 
     private typealias T = Tako.LivingTokens
 
-    var body: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 12)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(minimizedPanes, id: \.surfaceId) { entry in
-                        if let surface = surfaceLookup(entry.surfaceId) {
-                            FloatingMinimizedCardView(
-                                surfaceView: surface,
-                                crab: surface.crab,
-                                paneState: entry,
-                                onRestore: { onRestore(surface) }
-                            )
-                        }
-                    }
+    private var cardsRow: some View {
+        HStack(spacing: 8) {
+            ForEach(minimizedPanes, id: \.surfaceId) { entry in
+                if let surface = surfaceLookup(entry.surfaceId) {
+                    FloatingMinimizedCardView(
+                        surfaceView: surface,
+                        crab: surface.crab,
+                        paneState: entry,
+                        onRestore: { onRestore(surface) }
+                    )
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 12)
+                cardsRow
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                cardsRow
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -101,15 +109,7 @@ private struct FloatingMinimizedCardView: View {
     }
 
     private var statusColor: Color {
-        let dot: String = switch crab.paneStatus {
-        case .running, .working: "running"
-        case .waitingForInput, .needsApproval: "attention"
-        case .done: "done"
-        case .error: "failed"
-        case .disconnected: "ghost"
-        case .idle, .unknown: "idle"
-        }
-        return Color(nsColor: Tako.tabStatusColor(for: dot, surface: surfaceView))
+        Color(nsColor: FloatingPaneGeometry.statusNSColor(for: crab.paneStatus, surface: surfaceView))
     }
 
     var body: some View {

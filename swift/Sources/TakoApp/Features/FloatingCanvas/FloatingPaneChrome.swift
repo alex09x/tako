@@ -17,14 +17,17 @@ struct FloatingPaneHeaderView: View {
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
     let pane: FloatingPaneState
+    let presentedFrame: CGRect
     let isFocused: Bool
     let canvasSize: CGSize
+    let canMoveToNewWindow: Bool
     let onActivate: () -> Void
     let onDragMove: (_ rect: CGRect) -> Void
     let onDetachMaximized: (_ pointerXInCanvas: CGFloat, _ pointerYInHeader: CGFloat) -> CGRect?
     let onDragCommit: () -> Void
     let onMinimize: () -> Void
     let onToggleMaximize: () -> Void
+    let onMoveToNewWindow: () -> Void
     let onClose: () -> Void
 
     private typealias T = Tako.LivingTokens
@@ -45,15 +48,7 @@ struct FloatingPaneHeaderView: View {
     }
 
     private var statusColor: Color {
-        let dot: String = switch crab.paneStatus {
-        case .running, .working: "running"
-        case .waitingForInput, .needsApproval: "attention"
-        case .done: "done"
-        case .error: "failed"
-        case .disconnected: "ghost"
-        case .idle, .unknown: "idle"
-        }
-        return Color(nsColor: Tako.tabStatusColor(for: dot, surface: surfaceView))
+        Color(nsColor: FloatingPaneGeometry.statusNSColor(for: crab.paneStatus, surface: surfaceView))
     }
 
     private var statusValue: String {
@@ -68,13 +63,15 @@ struct FloatingPaneHeaderView: View {
                     accessibilityLabel: "\(displayTitle), \(statusValue)",
                     accessibilityValue: statusValue,
                     paneMode: pane.mode,
-                    paneRect: pane.rect,
+                    paneRect: presentedFrame,
                     canvasSize: canvasSize,
+                    canMoveToNewWindow: canMoveToNewWindow,
                     onActivate: onActivate,
                     onDragMove: onDragMove,
                     onDetachMaximized: onDetachMaximized,
                     onDragCommit: onDragCommit,
-                    onDoubleClick: onToggleMaximize
+                    onDoubleClick: onToggleMaximize,
+                    onMoveToNewWindow: onMoveToNewWindow
                 )
 
                 HStack(spacing: 7) {
@@ -204,11 +201,13 @@ final class FloatingPaneHeaderDragNSView: NSView {
     var paneMode: FloatingPaneMode = .normal
     var paneRect: CGRect = .zero
     var canvasSize: CGSize = .zero
+    var canMoveToNewWindow = false
     var onActivate: (() -> Void)?
     var onDragMove: ((CGRect) -> Void)?
     var onDetachMaximized: ((CGFloat, CGFloat) -> CGRect?)?
     var onDragCommit: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+    var onMoveToNewWindow: (() -> Void)?
 
     private var dragStartWindowPoint: NSPoint?
     private var dragStartRect: CGRect = .zero
@@ -283,6 +282,26 @@ final class FloatingPaneHeaderDragNSView: NSView {
             onDragCommit?()
         }
     }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        onActivate?()
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let moveItem = NSMenuItem(
+            title: "Move Pane to New Window",
+            action: #selector(movePaneToNewWindowAction(_:)),
+            keyEquivalent: ""
+        )
+        moveItem.target = self
+        moveItem.isEnabled = canMoveToNewWindow
+        menu.addItem(moveItem)
+        return menu
+    }
+
+    @objc private func movePaneToNewWindowAction(_ sender: Any?) {
+        guard canMoveToNewWindow else { return }
+        onMoveToNewWindow?()
+    }
 }
 
 private struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
@@ -292,11 +311,13 @@ private struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
     let paneMode: FloatingPaneMode
     let paneRect: CGRect
     let canvasSize: CGSize
+    let canMoveToNewWindow: Bool
     let onActivate: () -> Void
     let onDragMove: (CGRect) -> Void
     let onDetachMaximized: (CGFloat, CGFloat) -> CGRect?
     let onDragCommit: () -> Void
     let onDoubleClick: () -> Void
+    let onMoveToNewWindow: () -> Void
 
     func makeNSView(context: Context) -> FloatingPaneHeaderDragNSView {
         let view = FloatingPaneHeaderDragNSView(frame: .zero)
@@ -315,10 +336,12 @@ private struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
         view.paneMode = paneMode
         view.paneRect = paneRect
         view.canvasSize = canvasSize
+        view.canMoveToNewWindow = canMoveToNewWindow
         view.onActivate = onActivate
         view.onDragMove = onDragMove
         view.onDetachMaximized = onDetachMaximized
         view.onDragCommit = onDragCommit
         view.onDoubleClick = onDoubleClick
+        view.onMoveToNewWindow = onMoveToNewWindow
     }
 }

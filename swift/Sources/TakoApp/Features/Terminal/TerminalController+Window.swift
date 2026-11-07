@@ -76,8 +76,9 @@ extension TerminalController {
         // without waiting for @FocusedValue to propagate through the
         // SwiftUI focus chain.
         let sidebarWidth = sessionSidebarIsShowing ? SessionSidebarWidth.current() : 0
+        let paneChromeHeight = usesFloatingCanvas ? FloatingPaneGeometry.headerHeight : 0
         container.initialContentSize = focusedSurface?.initialSize.map {
-            NSSize(width: $0.width + sidebarWidth, height: $0.height)
+            NSSize(width: $0.width + sidebarWidth, height: $0.height + paneChromeHeight)
         }
 
         window.contentView = container

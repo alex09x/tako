@@ -36,22 +36,31 @@ struct WindowSizeAndInheritanceCoverageTests {
         defer { TerminalTestSupport.tearDown(controller, window) }
 
         let surface = try #require(controller.focusedSurface)
+        let contentView = try #require(window.contentView)
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        contentView.layoutSubtreeIfNeeded()
+        controller.reflowSurfaces(forcePtyResize: true)
+
         // A grid small enough to fit the screen without window constraints.
         let padding = surface.theme.padding
         let expected = NSSize(
             width: surface.cellSize.width * 80 + padding.left + padding.right,
             height: surface.cellSize.height * 20 + padding.top + padding.bottom)
-        // The initial sizing hint is consumed by windowDidLoad. Check the
-        // applied window, rather than reading that cleared temporary hint.
         let sidebarWidth = SessionSidebarWidth.current()
         let contentSize = window.contentRect(forFrameRect: window.frame).size
         #expect(contentSize.width == expected.width + sidebarWidth)
-        #expect(contentSize.height == expected.height)
-        let terminalSize = NSSize(width: contentSize.width - sidebarWidth,
-                                  height: contentSize.height)
-        let fitted = TerminalGridLayout(viewSize: terminalSize, cellSize: surface.cellSize, theme: surface.theme)
+        #expect(contentSize.height == expected.height + FloatingPaneGeometry.headerHeight)
+
+        // Verify the real mounted SurfaceView body dimensions and terminal cell grid,
+        // accounting for the 26pt internal floating pane header above the terminal body.
+        #expect(abs(surface.bounds.width - expected.width) < 1.0)
+        #expect(abs(surface.bounds.height - expected.height) < 1.0)
+        let fitted = TerminalGridLayout(viewSize: surface.bounds.size, cellSize: surface.cellSize, theme: surface.theme)
         #expect(fitted.cols == 80)
         #expect(fitted.rows == 20)
+        #expect(surface.cols == 80)
+        #expect(surface.rows == 20)
     }
 
     @Test func windowWidthAloneWithoutWindowHeightDoesNothing() throws {

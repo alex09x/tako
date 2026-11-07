@@ -89,16 +89,24 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
 
         app.typeKey("d", modifierFlags: .command)
         let source = try activeWindow(app)
-        let handles = source.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pane-drag-handle-'"))
-        XCTAssertEqual(handles.count, 2)
-        let movedID = handles.element(boundBy: 1).identifier
+        let headers = paneHeaders(in: source)
+        XCTAssertEqual(headers.count, 2, "Splitting must produce two floating pane headers")
 
-        // Cross-window detach drags the split pane outside the window into a new window with its own permanent sidebar.
+        // Dragging a floating pane header outside the window bounds must keep it clamped in-canvas and never detach externally.
         let outside = source.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
             .withOffset(CGVector(dx: 60, dy: 0))
-        source.buttons[movedID].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        headers[1].coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
             .press(forDuration: 0.2, thenDragTo: outside)
-        XCTAssertTrue(app.wait(for: \.windows.count, toEqual: 2, timeout: 2), "Detaching a pane must open a second visible window")
+        XCTAssertEqual(app.windows.count, 1, "Dragging FloatingPaneHeader must stay inside the floating canvas")
+
+        // Explicit pane header context-menu action detaches the pane into a new window with its own permanent sidebar.
+        let detachHeader = try XCTUnwrap(paneHeaders(in: try activeWindow(app)).last)
+        detachHeader.rightClick()
+        let detachItem = app.menuItems["Move Pane to New Window"].firstMatch
+        XCTAssertTrue(detachItem.waitForExistence(timeout: 3) && detachItem.isEnabled,
+                      "Split floating pane header must expose enabled Move Pane to New Window menu item")
+        detachItem.click()
+        XCTAssertTrue(app.wait(for: \.windows.count, toEqual: 2, timeout: 3), "Detaching a pane must open a second visible window")
         let detached = try activeWindow(app)
         XCTAssertEqual(detached.textViews.count, 1)
         XCTAssertTrue(detached.textViews.firstMatch.isHittable)
@@ -225,16 +233,38 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
             XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1)
             XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
             app.typeKey("\n", modifierFlags: [.command, .shift])
-            XCTAssertEqual(try activeWindow(app).textViews.count, 1, "Zoom must show only the focused pane")
+            XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1,
+                           "Internal maximize keeps non-minimized floating panes mounted underneath")
+            XCTAssertTrue(maximizeButtons(in: try activeWindow(app)).contains { ($0.value as? String) == "maximized" },
+                          "Zoom shortcut must maximize the focused floating pane")
             XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
             app.typeKey("\n", modifierFlags: [.command, .shift])
-            XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1, "Reset zoom must restore every pane")
+            XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1,
+                           "Reset zoom keeps every visible floating pane mounted")
+            XCTAssertFalse(maximizeButtons(in: try activeWindow(app)).contains { ($0.value as? String) == "maximized" },
+                           "Reset zoom must return the focused floating pane to normal mode")
             XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
         }
         let attachment = XCTAttachment(screenshot: try activeWindow(app).screenshot())
-        attachment.name = "Permanent sidebar and edge-to-edge terminal after selection, split and zoom"
+        attachment.name = "Permanent sidebar and floating terminal canvas after selection, split and maximize"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func paneHeaders(in window: XCUIElement) -> [XCUIElement] {
+        var seen: Set<String> = []
+        return window.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'FloatingPaneHeader-'"))
+            .allElementsBoundByIndex
+            .filter { !$0.identifier.isEmpty && seen.insert($0.identifier).inserted }
+    }
+
+    private func maximizeButtons(in window: XCUIElement) -> [XCUIElement] {
+        var seen: Set<String> = []
+        return window.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'FloatingPaneMaximize-'"))
+            .allElementsBoundByIndex
+            .filter { !$0.identifier.isEmpty && seen.insert($0.identifier).inserted }
     }
 
     private func assertSelection(_ selectedRowID: String, count: Int, in app: XCUIApplication) throws {
@@ -275,17 +305,34 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         XCTAssertEqual(sidebarFrame.maxY, window.frame.maxY, accuracy: 2)
         XCTAssertEqual(sidebarRows(window).count, count)
 
-        let terminals = window.textViews.allElementsBoundByIndex.filter(\.isHittable)
-        XCTAssertFalse(terminals.isEmpty, "At least one hittable terminal view must exist")
-        for terminal in terminals {
+        let canvas = window.descendants(matching: .any)["FloatingTerminalCanvas"].firstMatch
+        XCTAssertTrue(canvas.exists, "FloatingTerminalCanvas must host the right-hand session panes")
+        let headers = paneHeaders(in: window)
+        XCTAssertFalse(headers.isEmpty, "At least one FloatingPaneHeader must exist")
+        for header in headers {
+            XCTAssertGreaterThanOrEqual(header.frame.minX, sidebarFrame.maxX - 2, "Pane header must sit to the right of SessionSidebar")
+            XCTAssertGreaterThanOrEqual(header.frame.minY, window.frame.minY - 2, "Pane header must stay within window top edge")
+            XCTAssertLessThanOrEqual(header.frame.maxY, window.frame.maxY + 2, "Pane header must stay within window bottom edge")
+        }
+
+        let allTerminals = window.textViews.allElementsBoundByIndex
+        let hittableTerminals = allTerminals.filter(\.isHittable)
+        XCTAssertFalse(hittableTerminals.isEmpty, "At least one hittable terminal view must exist")
+        for terminal in allTerminals {
             XCTAssertGreaterThanOrEqual(terminal.frame.minX, sidebarFrame.maxX - 2, "Terminal must sit to the right of SessionSidebar")
-            XCTAssertGreaterThanOrEqual(terminal.frame.minY, window.frame.minY - 2, "Terminal must stay within window top edge")
+            XCTAssertGreaterThanOrEqual(terminal.frame.minY, window.frame.minY + 24, "Terminal body must sit below its 26pt floating pane header")
             XCTAssertLessThanOrEqual(terminal.frame.maxY, window.frame.maxY + 2, "Terminal must stay within window bottom edge")
         }
-        XCTAssertEqual(try XCTUnwrap(terminals.map(\.frame.minY).min()), window.frame.minY, accuracy: 2,
-                       "Right terminal pane must extend all the way to the top edge of the window")
-        XCTAssertEqual(try XCTUnwrap(terminals.map(\.frame.maxY).max()), window.frame.maxY, accuracy: 2,
-                       "Right terminal pane must extend to the bottom edge of the window")
+
+        let hasMaximizedPane = maximizeButtons(in: window).contains { ($0.value as? String) == "maximized" }
+        if hasMaximizedPane {
+            XCTAssertEqual(try XCTUnwrap(headers.map(\.frame.minY).min()), window.frame.minY, accuracy: 2,
+                           "Maximized floating pane header must reach the top edge of the window")
+            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.minY).min()), window.frame.minY + 26, accuracy: 3,
+                           "Maximized terminal body must start immediately below the 26pt pane header")
+            XCTAssertEqual(try XCTUnwrap(allTerminals.map(\.frame.maxY).max()), window.frame.maxY, accuracy: 2,
+                           "Maximized floating pane terminal must extend to the bottom edge of the window")
+        }
         return sidebarFrame
     }
 }

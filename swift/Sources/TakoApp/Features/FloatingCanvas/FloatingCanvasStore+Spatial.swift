@@ -41,13 +41,17 @@ extension FloatingCanvasStore {
                 for: pane, in: canvas, hasMinimizedPanes: hasMin))
         })
 
-        let orderedForCycle = visible.sorted { lhs, rhs in
-            let lf = frames[lhs.surfaceId] ?? .zero
-            let rf = frames[rhs.surfaceId] ?? .zero
-            if abs(lf.minY - rf.minY) > 8 { return lf.minY < rf.minY }
-            if abs(lf.minX - rf.minX) > 8 { return lf.minX < rf.minX }
-            return lhs.zOrder < rhs.zOrder
-        }
+        let orderedForCycle = panes.enumerated()
+            .filter { $0.element.mode != .minimized }
+            .sorted { lhs, rhs in
+                let lf = frames[lhs.element.surfaceId] ?? .zero
+                let rf = frames[rhs.element.surfaceId] ?? .zero
+                if lf.minY != rf.minY { return lf.minY < rf.minY }
+                if lf.minX != rf.minX { return lf.minX < rf.minX }
+                if lhs.offset != rhs.offset { return lhs.offset < rhs.offset }
+                return lhs.element.surfaceId.uuidString < rhs.element.surfaceId.uuidString
+            }
+            .map(\.element)
 
         switch direction {
         case .previous:
@@ -130,7 +134,11 @@ extension FloatingCanvasStore {
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }),
               panes[idx].mode == .normal else { return }
         let area = FloatingPaneGeometry.workArea(in: canvas, hasMinimizedPanes: hasMinimizedPanes)
-        var rect = panes[idx].rect
+        var rect = FloatingPaneGeometry.presentedFrame(
+            for: panes[idx],
+            in: canvas,
+            hasMinimizedPanes: hasMinimizedPanes
+        )
         switch direction {
         case .left:
             rect.origin.x -= amount

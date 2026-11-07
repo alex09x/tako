@@ -123,28 +123,11 @@ final class FloatingCanvasStore: ObservableObject {
 
     func updateCanvasSize(_ size: CGSize, tree: SplitTree<Tako.SurfaceView>) {
         guard FloatingPaneGeometry.isValidCanvasSize(size) else { return }
-        let changed = lastValidCanvasSize != size
         lastValidCanvasSize = size
 
         if needsInitialRectSeeding {
             needsInitialRectSeeding = false
             seedInitialRects(for: tree, in: size)
-            return
-        }
-
-        guard changed, !panes.isEmpty else { return }
-        let area = FloatingPaneGeometry.workArea(in: size, hasMinimizedPanes: hasMinimizedPanes)
-        var updated = panes
-        var mutated = false
-        for idx in updated.indices where updated[idx].mode == .normal {
-            let clamped = FloatingPaneGeometry.clamp(updated[idx].rect, to: area)
-            if clamped != updated[idx].rect {
-                updated[idx].rect = clamped
-                mutated = true
-            }
-        }
-        if mutated {
-            panes = updated
         }
     }
 
@@ -168,28 +151,31 @@ final class FloatingCanvasStore: ObservableObject {
         }
 
         if let snapshot, !snapshot.panes.isEmpty {
+            let cleanArea = FloatingPaneGeometry.workArea(in: canvas, hasMinimizedPanes: false)
             var restored: [FloatingPaneState] = []
             var seen = Set<UUID>()
             for entry in snapshot.panes where liveSet.contains(entry.surfaceId) && seen.insert(entry.surfaceId).inserted {
-                restored.append(entry)
+                var sanitized = entry
+                sanitized.rect = FloatingPaneGeometry.sanitizePreferredRect(
+                    entry.rect,
+                    fallback: FloatingPaneGeometry.defaultNormalRect(in: cleanArea, cascadeIndex: restored.count)
+                )
+                restored.append(sanitized)
             }
+            normalizeZOrders(&restored)
             let hasMin = restored.contains { $0.mode == .minimized }
             let area = FloatingPaneGeometry.workArea(in: canvas, hasMinimizedPanes: hasMin)
-            var maxZ = restored.map(\.zOrder).max() ?? 0
             for id in liveIds where !seen.contains(id) {
-                maxZ += 1
                 let mode: FloatingPaneMode = restored.isEmpty && liveIds.count == 1 ? .maximized : .normal
+                let z = nextZOrder
+                nextZOrder += 1
                 restored.append(FloatingPaneState(
                     surfaceId: id,
                     mode: mode,
                     rect: FloatingPaneGeometry.defaultNormalRect(in: area, cascadeIndex: restored.count),
-                    zOrder: maxZ
+                    zOrder: z
                 ))
             }
-            for idx in restored.indices {
-                restored[idx].rect = FloatingPaneGeometry.clamp(restored[idx].rect, to: area)
-            }
-            nextZOrder = (restored.map(\.zOrder).max() ?? 0) + 1
             needsInitialRectSeeding = false
             panes = restored
             return
@@ -356,7 +342,23 @@ final class FloatingCanvasStore: ObservableObject {
         }
     }
 
+    func normalizeZOrders(_ entries: inout [FloatingPaneState]) {
+        let sortedIndices = entries.indices.sorted { lhs, rhs in
+            if entries[lhs].zOrder != entries[rhs].zOrder {
+                return entries[lhs].zOrder < entries[rhs].zOrder
+            }
+            return lhs < rhs
+        }
+        for (rankOffset, idx) in sortedIndices.enumerated() {
+            entries[idx].zOrder = rankOffset + 1
+        }
+        nextZOrder = entries.count + 1
+    }
+
     func allocateZOrder() -> Int {
+        if nextZOrder >= Int.max - 1024 {
+            normalizeZOrders(&panes)
+        }
         defer { nextZOrder += 1 }
         return nextZOrder
     }

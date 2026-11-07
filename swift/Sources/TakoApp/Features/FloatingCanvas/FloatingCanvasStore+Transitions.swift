@@ -83,11 +83,6 @@ extension FloatingCanvasStore {
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return }
         switch panes[idx].mode {
         case .maximized:
-            let area = FloatingPaneGeometry.workArea(
-                in: effectiveCanvasSize(fallback: canvasSize),
-                hasMinimizedPanes: hasMinimizedPanes
-            )
-            panes[idx].rect = FloatingPaneGeometry.clamp(panes[idx].rect, to: area)
             panes[idx].mode = .normal
             panes[idx].restoreMode = .normal
         case .normal, .minimized:
@@ -107,7 +102,7 @@ extension FloatingCanvasStore {
         onPersistNeeded?()
     }
 
-    /// Restores a minimized pane to its exact prior visible mode (`.maximized` or `.normal` with its saved `rect`).
+    /// Restores a minimized pane to its exact prior visible mode (`.maximized` or `.normal` with its saved preferred `rect`).
     @discardableResult
     func restore(_ surfaceId: UUID, in canvasSize: CGSize? = nil) -> FloatingPaneMode? {
         if let canvasSize, FloatingPaneGeometry.isValidCanvasSize(canvasSize) {
@@ -118,11 +113,6 @@ extension FloatingCanvasStore {
             let targetMode: FloatingPaneMode = (panes[idx].restoreMode == .maximized) ? .maximized : .normal
             panes[idx].mode = targetMode
         }
-        let area = FloatingPaneGeometry.workArea(
-            in: effectiveCanvasSize(fallback: canvasSize),
-            hasMinimizedPanes: panes.contains { $0.mode == .minimized }
-        )
-        panes[idx].rect = FloatingPaneGeometry.clamp(panes[idx].rect, to: area)
         panes[idx].zOrder = allocateZOrder()
         onPersistNeeded?()
         return panes[idx].mode
