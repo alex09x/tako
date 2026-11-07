@@ -27,12 +27,22 @@ class BaseTerminalController: NSWindowController,
     /// The currently focused surface.
     var focusedSurface: Tako.SurfaceView? {
         didSet {
+            if usesFloatingCanvas, let focusedSurface {
+                floatingCanvas.noteExplicitFocusChange(to: focusedSurface.id)
+                floatingCanvas.bringToFront(focusedSurface.id)
+            }
             syncFocusToSurfaceTree()
             if let focusedSurface, focusedSurface != oldValue {
                 focusedSurface.publishEvent(type: "pane_focused", payload: [:])
             }
         }
     }
+
+    /// Whether this controller renders surfaces inside `FloatingTerminalCanvasView`.
+    var usesFloatingCanvas: Bool { false }
+
+    /// Layout state for freely floating, maximized, and minimized panes inside the session canvas.
+    let floatingCanvas = FloatingCanvasStore()
 
     /// The tree of splits within this terminal window.
     @Published var surfaceTree: SplitTree<Tako.SurfaceView> = .init() {
@@ -202,6 +212,7 @@ class BaseTerminalController: NSWindowController,
         self.sessionSidebarIsShowing = self.supportsSessionSidebar
         self.surfaceTree = tree ?? .init(view: Tako.SurfaceView(tako, baseConfig: base))
         for view in surfaceTree { view.adopt(by: tako) }
+        configureFloatingCanvasPersistence()
         setupBellNotificationPublisher()
         setupSidebarStatePublisher()
         setupNotificationObservers()
@@ -222,41 +233,32 @@ class BaseTerminalController: NSWindowController,
         direction: SplitTree<Tako.SurfaceView>.NewDirection,
         baseConfig config: Tako.SurfaceConfiguration? = nil
     ) -> Tako.SurfaceView? {
-        // We can only create new splits for surfaces in our tree.
         guard surfaceTree.root?.node(view: oldView) != nil else { return nil }
-
-        // Create a new surface view
         let newView = Tako.SurfaceView(tako, baseConfig: config)
-
-        // Do the split
         let newTree: SplitTree<Tako.SurfaceView>
         do {
-            newTree = try surfaceTree.inserting(
-                view: newView,
-                at: oldView,
-                direction: direction)
+            newTree = try surfaceTree.inserting(view: newView, at: oldView, direction: direction)
         } catch {
-            // If splitting fails for any reason (it should not), then we just log
-            // and return. The new view we created will be deinitialized and its
-            // no big deal.
             Tako.logger.warning("failed to insert split: \(error, privacy: .public)")
             return nil
         }
 
-        replaceSurfaceTree(
-            newTree,
-            moveFocusTo: newView,
-            moveFocusFrom: oldView,
-            undoAction: "New Split")
-
+        if usesFloatingCanvas {
+            floatingCanvas.setPendingSplitHint(.init(anchorId: oldView.id, newId: newView.id, direction: direction))
+        }
+        replaceSurfaceTree(newTree, moveFocusTo: newView, moveFocusFrom: oldView, undoAction: "New Split")
         return newView
     }
 
     func focusSurface(_ view: Tako.SurfaceView) {
-        // Check if target surface is in our tree
         guard surfaceTree.contains(view) else { return }
-
-        // Move focus to the target surface and activate the window/app
+        if usesFloatingCanvas {
+            revealAndFocusFloatingPane(view)
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
         DispatchQueue.main.async {
             Tako.moveFocus(to: view)
             if let window = view.window {
@@ -270,6 +272,9 @@ class BaseTerminalController: NSWindowController,
 
     func surfaceTreeDidChange(from: SplitTree<Tako.SurfaceView>, to: SplitTree<Tako.SurfaceView>) {
         for view in to { view.adopt(by: tako) }
+        if usesFloatingCanvas {
+            floatingCanvas.sync(with: to, fallbackSize: estimatedFloatingCanvasSize())
+        }
         let added = Set(to).subtracting(Set(from))
         let removed = Set(from).subtracting(Set(to))
         for view in added {
@@ -278,7 +283,6 @@ class BaseTerminalController: NSWindowController,
         for view in removed {
             view.publishEvent(type: "pane_closed", payload: [:])
         }
-        // If our surface tree becomes empty then we have no focused surface.
         if to.isEmpty {
             focusedSurface = nil
         }
@@ -391,10 +395,4 @@ class BaseTerminalController: NSWindowController,
             titleDidChange(to: "👻")
         }
     }
-
-
-    /// Override this to resync any appearance related properties. This will be called automatically
-    /// when certain window properties change that affect appearance. The list below should be updated
-    /// as we add new things:
-    ///
 }

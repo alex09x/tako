@@ -145,7 +145,7 @@ extension TerminalWindow {
             if isVisible && !isKeyWindow && !Tako.CustomTabGroup.suppressWindowOrderingForTesting {
                 makeKeyAndOrderFront(nil)
             }
-            if target.acceptsFirstResponder, firstResponder !== target {
+            if target is Tako.SurfaceView, target.acceptsFirstResponder, firstResponder !== target {
                 _ = makeFirstResponder(target)
             }
             topBandLeftTarget = target

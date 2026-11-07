@@ -39,6 +39,10 @@ extension Tako {
             DispatchQueue.main.async { [weak surfaceView] in
                 guard let surfaceView, let window = surfaceView.window else { return }
                 let controller = window.windowController as? TerminalController
+                if let pending = controller?.floatingCanvas.pendingFocus,
+                   pending.surfaceId != surfaceView.id {
+                    return
+                }
                 if window.firstResponder == nil || window.firstResponder === window.contentView || window.firstResponder is NSWindow {
                     if controller?.focusedSurface == nil || controller?.focusedSurface === surfaceView {
                         window.makeFirstResponder(surfaceView)

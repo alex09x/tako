@@ -39,11 +39,29 @@ final class SurfaceHostingView: NSView {
         ]
         NSLayoutConstraint.activate(edges)
         needsLayout = true
+        if let window {
+            (window.windowController as? BaseTerminalController)?
+                .surfaceDidAttachToWindow(surface, hostBounds: bounds.size)
+        }
         return true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window, let surfaceView, surfaceView.superview === self {
+            (window.windowController as? BaseTerminalController)?
+                .surfaceDidAttachToWindow(surfaceView, hostBounds: bounds.size)
+        }
     }
 
     override func layout() {
         super.layout()
-        if let surfaceView, surfaceView.superview === self { surfaceView.reflowToCurrentBounds() }
+        if let surfaceView, surfaceView.superview === self {
+            surfaceView.reflowToCurrentBounds()
+            if let window {
+                (window.windowController as? BaseTerminalController)?
+                    .surfaceHostDidLayout(surfaceView, hostBounds: bounds.size)
+            }
+        }
     }
 }

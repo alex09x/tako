@@ -92,6 +92,19 @@ extension ControlCommands {
             }()
             windows[w].tabs[t].panes.append(.object(node))
         }
+        for controller in TerminalController.all where controller.surfaceTree.isEmpty {
+            guard let window = controller.window else { continue }
+            let windowID = "window-\(ObjectIdentifier(Tako.CustomTabGroup.group(for: window)).hexString)"
+            let tabID = "tab-\(ObjectIdentifier(controller).hexString)"
+            let w = windows.firstIndex { $0.id == windowID } ?? {
+                windows.append((windowID, []))
+                return windows.count - 1
+            }()
+            if !windows[w].tabs.contains(where: { $0.id == tabID }) {
+                windows[w].tabs.append((tabID, []))
+                tabInfo[tabID] = tabFacts(controller)
+            }
+        }
         return ["windows": .array(windows.map { window in
             // Tabs in the order the tab bar shows them.
             let tabs = window.tabs.sorted {
@@ -118,6 +131,7 @@ extension ControlCommands {
             let group = Tako.CustomTabGroup.group(for: window)
             facts["index"] = .number(Double((group.windows.firstIndex { $0 === window } ?? 0) + 1))
             facts["selected"] = .bool(group.selectedWindow === window || group.windows.count <= 1)
+            facts["stableTabId"] = .string(window.stableTabIdentifier)
             facts["title"] = .string(controller.titleOverride ?? window.title)
             let ws = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) ?? WorkspaceStore.shared.activeWorkspace
             facts["workspace"] = .string(ws.name)

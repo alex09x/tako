@@ -154,7 +154,8 @@ extension BaseTerminalController {
         // If when we become key our first responder is the window itself, then we
         // want to move focus to our focused terminal surface. This works around
         // various weirdness with moving surfaces around.
-        if let window, window.firstResponder == window, let focusedSurface {
+        if let window, window.firstResponder == window, let focusedSurface,
+           !isMinimizedInFloatingCanvas(focusedSurface.id) {
             DispatchQueue.main.async {
                 Tako.moveFocus(to: focusedSurface)
             }
@@ -180,6 +181,14 @@ extension BaseTerminalController {
     func syncSurfaceTreeOcclusionState() {
         let visible = self.window?.occlusionState.contains(.visible) ?? false
         for view in surfaceTree {
+            if isMinimizedInFloatingCanvas(view.id) {
+                view.isPresentationPaused = true
+                if let surface = view.surface, view.isWindowVisible {
+                    tako_surface_set_occlusion(surface, false)
+                }
+                view.isWindowVisible = false
+                continue
+            }
             if let surface = view.surface, view.isWindowVisible != visible {
                 tako_surface_set_occlusion(surface, visible)
                 view.isWindowVisible = visible

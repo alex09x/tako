@@ -50,9 +50,21 @@ extension BaseTerminalController {
             // Nil: a question is already up. It is not an answer -- with the
             // question drawn in the window a second ⌘W reaches us while the
             // first waits -- so nothing closes until that one is answered.
-            guard let response = await confirmCloseAsync(messageText: messageText, informativeText: informativeText, confirmButtonTitle: confirmButtonTitle),
-                  [.alertFirstButtonReturn, .OK].contains(response)
-            else { return }
+            guard let response = await confirmCloseAsync(messageText: messageText, informativeText: informativeText, confirmButtonTitle: confirmButtonTitle) else {
+                return
+            }
+            guard [.alertFirstButtonReturn, .OK].contains(response) else {
+                if self.usesFloatingCanvas,
+                   let surface = self.focusedSurface,
+                   self.surfaceTree.contains(surface),
+                   !self.isMinimizedInFloatingCanvas(surface.id),
+                   let window = self.window,
+                   TerminalDialogView.pending(in: window) == nil {
+                    _ = window.makeFirstResponder(surface)
+                    surface.focusDidChange(window.isKeyWindow && window.firstResponder === surface)
+                }
+                return
+            }
             completion()
         }
     }

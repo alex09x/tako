@@ -204,6 +204,11 @@ extension BaseTerminalController {
         // Check if target surface is in current controller's tree
         guard surfaceTree.contains(target) else { return }
 
+        if usesFloatingCanvas {
+            handleFloatingEqualizeSplits()
+            return
+        }
+
         // Equalize the splits
         surfaceTree = surfaceTree.equalized()
     }
@@ -216,6 +221,11 @@ extension BaseTerminalController {
         // Get the direction from the notification
         guard let directionAny = notification.userInfo?[Tako.Notification.SplitDirectionKey] else { return }
         guard let direction = directionAny as? Tako.SplitFocusDirection else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingFocusSplit(from: target, direction: direction)
+            return
+        }
 
         // Find the node for the target surface
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
@@ -245,6 +255,11 @@ extension BaseTerminalController {
         // The target must be within our tree
         guard let target = notification.object as? Tako.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingToggleZoom(target: target)
+            return
+        }
 
         // Toggle the zoomed state
         if surfaceTree.zoomed == targetNode {
@@ -285,6 +300,11 @@ extension BaseTerminalController {
 
         guard let amountAny = notification.userInfo?[Tako.Notification.ResizeSplitAmountKey] else { return }
         guard let amount = amountAny as? UInt16 else { return }
+
+        if usesFloatingCanvas {
+            handleFloatingResizeSplit(target: target, direction: direction, amount: amount)
+            return
+        }
 
         // Convert Tako.SplitResizeDirection to SplitTree.Spatial.Direction
         let spatialDirection: SplitTree<Tako.SurfaceView>.Spatial.Direction

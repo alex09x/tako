@@ -48,7 +48,7 @@ enum ControlLayout {
     }
 
     static func controller(of surface: Tako.SurfaceView) throws -> BaseTerminalController {
-        guard let controller = surface.window?.windowController as? BaseTerminalController else {
+        guard let controller = BaseTerminalController.owningController(for: surface) else {
             throw ControlError(.notFound, "the pane is not in a window")
         }
         return controller
@@ -62,14 +62,15 @@ enum ControlLayout {
         }
         let config = try config(args)
         let select = args["select"] != .bool(false)
-        guard !(try controller(of: beside) is QuickTerminalController) else {
+        let ownerController = try controller(of: beside)
+        guard !(ownerController is QuickTerminalController) else {
             throw ControlError(.invalid, "the Quick Terminal has no tabs")
         }
         // Unselected, the tab joins hidden and is never shown: showing it and
         // handing the front back afterwards left it on screen under the
         // chosen tab, and with no key window (Tako in the background) left
         // it chosen -- and brought Tako forward over the user's app.
-        guard let created = TerminalController.newTab(app.tako, from: beside.window, withBaseConfig: config, select: select),
+        guard let created = TerminalController.newTab(app.tako, from: ownerController.window, withBaseConfig: config, select: select),
               let pane = created.surfaceTree.first else {
             throw ControlError(.internalError, "the tab was not created")
         }

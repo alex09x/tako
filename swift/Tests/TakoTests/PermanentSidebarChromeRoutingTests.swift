@@ -147,9 +147,12 @@ struct PermanentSidebarChromeRoutingTests {
         #expect(Tako.TabBarController.isInstalled(in: window))
         #expect(!window.isMovable)
 
+        let paneHeader = try #require(findFirst(of: FloatingPaneHeaderDragNSView.self, in: contentView))
+        let headerRect = paneHeader.convert(paneHeader.bounds, to: contentView)
         let surfaceView = try #require(findFirst(of: Tako.SurfaceView.self, in: contentView))
         let surfaceRect = surfaceView.convert(surfaceView.bounds, to: contentView)
-        #expect(abs(surfaceRect.maxY - contentView.bounds.maxY) < 1)
+        #expect(abs(headerRect.maxY - contentView.bounds.maxY) < 1)
+        #expect(abs((surfaceRect.maxY + FloatingPaneGeometry.headerHeight) - contentView.bounds.maxY) < 1)
 
         let dragRegion = try #require(findFirst(of: SidebarTitlebarDragView.self, in: contentView))
         #expect(dragRegion.accessibilityIdentifier() == "SidebarWindowDragRegion")

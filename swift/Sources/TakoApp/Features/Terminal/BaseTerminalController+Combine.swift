@@ -92,6 +92,28 @@ extension BaseTerminalController: NSMenuItemValidation {
             item.state = surface.isAttentionMuted ? .on : .off
             return true
 
+        case #selector(close(_:)):
+            guard usesFloatingCanvas else { return true }
+            if surfaceTree.isEmpty {
+                item.title = "Close Session"
+                return true
+            }
+            item.title = "Close Pane"
+            let activeVisible = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
+                ?? topmostVisibleFloatingSurface()
+            return activeVisible != nil
+
+        case #selector(splitZoom(_:)):
+            guard usesFloatingCanvas else { return focusedSurface != nil }
+            let target = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
+                ?? topmostVisibleFloatingSurface()
+            guard let target, let st = floatingCanvas.state(for: target.id) else {
+                item.title = "Maximize Pane"
+                return false
+            }
+            item.title = (st.mode == .maximized) ? "Restore Pane" : "Maximize Pane"
+            return true
+
         default:
             return true
         }

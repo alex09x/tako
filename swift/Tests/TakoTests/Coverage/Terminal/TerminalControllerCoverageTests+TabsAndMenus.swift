@@ -203,7 +203,7 @@ struct TerminalControllerMultiTabGroupTests {
         #expect(!b.validateMenuItem(item))
     }
 
-    @Test func closeSurfaceOnTheRootWithMultipleTabsClosesJustTheTab() throws {
+    @Test func closeSurfaceOnTheRootWithMultipleTabsRetainsEmptyCanvasUntilTabClosed() throws {
         let (a, aWindow, b, bWindow) = makeJoinedPair()
         defer {
             TerminalTestSupport.tearDown(a, aWindow)
@@ -214,6 +214,11 @@ struct TerminalControllerMultiTabGroupTests {
 
         a.closeSurface(node, withConfirmation: false)
 
+        #expect(a.surfaceTree.isEmpty)
+        #expect(aWindow.isVisible)
+        #expect(bWindow.isVisible)
+
+        a.close(aWindow)
         #expect(!aWindow.isVisible)
         #expect(bWindow.isVisible)
     }

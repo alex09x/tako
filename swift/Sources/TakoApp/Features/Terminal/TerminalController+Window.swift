@@ -244,6 +244,29 @@ extension TerminalController {
             guard let host = surface.superview as? SurfaceHostingView, host.window === window else { return nil }
             return (surface, host)
         }
+        if usesFloatingCanvas {
+            var mountedIds = Set<UUID>()
+            for (surface, host) in mounted where !isMinimizedInFloatingCanvas(surface.id) {
+                mountedIds.insert(surface.id)
+                if host.bounds.width > 0 && host.bounds.height > 0 {
+                    surface.reflow(to: host.bounds.size, forcePtyResize: forcePtyResize)
+                }
+            }
+            let contentBounds = contentView.bounds
+            guard contentBounds.width > 0, contentBounds.height > 0 else { return }
+            var terminalWidth = contentBounds.width
+            if sessionSidebarIsShowing {
+                terminalWidth = max(terminalWidth - SessionSidebarWidth.current(), 100)
+            }
+            let terminalAreaSize = CGSize(width: terminalWidth, height: contentBounds.height)
+            for surface in surfaceTree where !mountedIds.contains(surface.id) && !isMinimizedInFloatingCanvas(surface.id) {
+                if let bodySize = floatingCanvas.presentedBodySize(for: surface.id, in: terminalAreaSize),
+                   bodySize.width > 0, bodySize.height > 0 {
+                    surface.reflow(to: bodySize, forcePtyResize: forcePtyResize)
+                }
+            }
+            return
+        }
         if !mounted.isEmpty {
             // SwiftUI has already allocated room for the strip, sidebar and
             // pane handles. Recomputing slots from the whole window fights

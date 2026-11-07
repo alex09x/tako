@@ -252,9 +252,17 @@ enum LayoutRecorder {
                 controller.titleOverride = state.titleOverride
                 if let tabId = state.tabIdentifier { window.stableTabIdentifier = tabId }
                 if let color = state.tabColor { (window as? TerminalWindow)?.tabColor = color }
+                controller.floatingCanvas.loadRestoredSnapshot(
+                    state.floatingCanvas,
+                    for: controller.surfaceTree,
+                    fallbackSize: controller.estimatedFloatingCanvasSize()
+                )
+                controller.syncSurfaceTreeOcclusionState()
                 if let focused = state.focusedSurface,
-                   let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }) {
+                   let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
+                   !controller.isMinimizedInFloatingCanvas(view.id) {
                     controller.focusedSurface = view
+                    controller.floatingCanvas.requestPendingFocus(for: view.id)
                 }
                 // As undoing a closed window rebuilds its tabs: shown, then
                 // joined to the first, in order.
@@ -313,6 +321,21 @@ enum LayoutRecorder {
                       let state = try? decoder.decode(TerminalRestorableState.self, from: data),
                       let id = state.tabIdentifier,
                       let window = byTab.removeValue(forKey: id) else { continue }
+                if let controller = window.windowController as? TerminalController,
+                   let snapshot = state.floatingCanvas {
+                    controller.floatingCanvas.loadRestoredSnapshot(
+                        snapshot,
+                        for: controller.surfaceTree,
+                        fallbackSize: controller.estimatedFloatingCanvasSize()
+                    )
+                    controller.syncSurfaceTreeOcclusionState()
+                    if let focused = state.focusedSurface,
+                       let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
+                       !controller.isMinimizedInFloatingCanvas(view.id) {
+                        controller.focusedSurface = view
+                        controller.floatingCanvas.requestPendingFocus(for: view.id)
+                    }
+                }
                 windows.append(window)
                 if index == entry.selectedTab { selected = window }
             }

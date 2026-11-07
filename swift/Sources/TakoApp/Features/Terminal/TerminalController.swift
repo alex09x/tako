@@ -16,6 +16,7 @@ import TakoKit
 /// A classic, tabbed terminal experience.
 class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Controller {
     override var supportsSessionSidebar: Bool { true }
+    override var usesFloatingCanvas: Bool { true }
 
     override var windowNibName: NSNib.Name? {
         let defaultValue = "Terminal"
@@ -115,6 +116,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         super.init(tako, baseConfig: base, surfaceTree: tree)
 
+        self.floatingCanvas.onPersistNeeded = { [weak self] in
+            self?.invalidateRestorableState()
+        }
         setupTerminalNotificationObservers()
     }
 
@@ -158,14 +162,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // we want to invalidate our state.
         invalidateRestorableState()
 
-        // Update our zoom state
+        // Update our zoom state while keeping empty-canvas sessions alive.
         if let window = window as? TerminalWindow {
             window.surfaceIsZoomed = to.zoomed != nil
-        }
-
-        // If our surface tree is now nil then we close our window.
-        if to.isEmpty {
-            self.window?.close()
         }
     }
 
@@ -175,13 +174,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         moveFocusFrom oldView: Tako.SurfaceView? = nil,
         undoAction: String? = nil
     ) {
-        // We have a special case if our tree is empty to close our tab immediately.
-        // This makes it so that undo is handled properly.
-        if newTree.isEmpty {
-            closeTabImmediately()
-            return
-        }
-
         super.replaceSurfaceTree(
             newTree,
             moveFocusTo: newView,
@@ -233,23 +225,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         _ node: SplitTree<Tako.SurfaceView>.Node,
         withConfirmation: Bool = true
     ) {
-        // If this isn't the root then we're dealing with a split closure.
-        if surfaceTree.root != node {
-            super.closeSurface(node, withConfirmation: withConfirmation)
-            return
-        }
-
-        // More than 1 window means we have tabs and we're closing a tab
-        if let window, Tako.CustomTabGroup.group(for: window).windows.count > 1 {
-            if withConfirmation {
-                closeTab(nil)
-            } else {
-                closeTabImmediately()
-            }
-            return
-        }
-
-        // Default implementation handles standard window closing
         super.closeSurface(node, withConfirmation: withConfirmation)
     }
 
@@ -257,6 +232,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(closeTab(_:)):
+            item.title = "Close Session"
+            return window != nil
+
         case #selector(closeTabsOnTheRight):
             guard let window else { return false }
             let tabGroup = Tako.CustomTabGroup.group(for: window)

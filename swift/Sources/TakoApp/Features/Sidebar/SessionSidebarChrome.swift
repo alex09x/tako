@@ -25,6 +25,19 @@ enum SessionSidebarChrome {
     }
 
     @MainActor
+    static func ignoresTopSafeArea(for window: NSWindow?) -> Bool {
+        guard let window else { return true }
+        if window.styleMask.contains(.fullScreen) {
+            return false
+        }
+        if let controller = window.windowController as? BaseTerminalController,
+           controller.fullscreenStyle?.isFullscreen == true {
+            return false
+        }
+        return true
+    }
+
+    @MainActor
     static func topStripHeight(for window: NSWindow?) -> CGFloat {
         guard let window else { return 0 }
         guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else {

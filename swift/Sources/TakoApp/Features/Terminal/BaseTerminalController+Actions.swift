@@ -18,6 +18,21 @@ extension BaseTerminalController {
     // silently did nothing. `closeSurface` is the same method the working
     // AppleScript `close` command uses.
     @IBAction func close(_ sender: Any) {
+        if usesFloatingCanvas {
+            if surfaceTree.isEmpty {
+                if let terminalController = self as? TerminalController {
+                    terminalController.closeTab(sender)
+                } else {
+                    closeWindow(sender)
+                }
+                return
+            }
+            let candidate = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
+                ?? topmostVisibleFloatingSurface()
+            guard let surface = candidate else { return }
+            closeSurface(surface, withConfirmation: surface.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(surface.id))
+            return
+        }
         guard let surface = focusedSurface else { return }
         closeSurface(surface, withConfirmation: surface.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(surface.id))
     }
@@ -47,30 +62,34 @@ extension BaseTerminalController {
     // the View > Split menu items never worked. `newSplit(at:direction:)`
     // below is the same call AppleScript's working `split` command uses.
     @IBAction func splitRight(_ sender: Any) {
-        guard let surface = focusedSurface else { return }
-        newSplit(at: surface, direction: .right)
+        performSplitMenuAction(direction: .right)
     }
 
     @IBAction func splitLeft(_ sender: Any) {
-        guard let surface = focusedSurface else { return }
-        newSplit(at: surface, direction: .left)
+        performSplitMenuAction(direction: .left)
     }
 
     @IBAction func splitDown(_ sender: Any) {
-        guard let surface = focusedSurface else { return }
-        newSplit(at: surface, direction: .down)
+        performSplitMenuAction(direction: .down)
     }
 
     @IBAction func splitUp(_ sender: Any) {
-        guard let surface = focusedSurface else { return }
-        newSplit(at: surface, direction: .up)
+        performSplitMenuAction(direction: .up)
+    }
+
+    private func performSplitMenuAction(direction: SplitTree<Tako.SurfaceView>.NewDirection) {
+        if let surface = focusedSurface, !isMinimizedInFloatingCanvas(surface.id) {
+            newSplit(at: surface, direction: direction)
+        } else if usesFloatingCanvas {
+            _ = createSurfaceInCurrentSession(direction: direction)
+        }
     }
 
     // `Tako.App.splitToggleZoom(surface:)` was an unimplemented stub.
     // `didToggleSplitZoom` is the real notification `takoDidToggleSplitZoom`
     // above already listens for and implements correctly.
     @IBAction func splitZoom(_ sender: Any) {
-        guard let surface = focusedSurface else { return }
+        guard let surface = focusedSurface ?? (usesFloatingCanvas ? topmostVisibleFloatingSurface() : nil) else { return }
         NotificationCenter.default.post(name: Tako.Notification.didToggleSplitZoom, object: surface)
     }
 

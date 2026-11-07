@@ -147,13 +147,18 @@ struct PermanentSidebarLayoutTests {
             #expect(titlebarContainer.layer?.isOpaque == false)
         }
 
+        let paneHeader = try #require(findFirst(of: FloatingPaneHeaderDragNSView.self, in: contentView))
+        let headerRect = paneHeader.convert(paneHeader.bounds, to: contentView)
         let surface = try #require(findFirst(of: Tako.SurfaceView.self, in: contentView))
         let surfaceRect = surface.convert(surface.bounds, to: contentView)
         let contentBounds = contentView.bounds
 
-        // Right terminal occupies the full height right up to the top edge of the window.
-        #expect(abs(surfaceRect.maxY - contentBounds.maxY) < 1.5,
-                "terminal maxY=\(surfaceRect.maxY) must reach contentView maxY=\(contentBounds.maxY)")
+        // Right floating canvas occupies the full height right up to the top edge of the window,
+        // with the maximized pane's 26pt internal header flush at contentBounds.maxY and SurfaceView directly beneath it.
+        #expect(abs(headerRect.maxY - contentBounds.maxY) < 1.5,
+                "pane header maxY=\(headerRect.maxY) must reach contentView maxY=\(contentBounds.maxY)")
+        #expect(abs((surfaceRect.maxY + FloatingPaneGeometry.headerHeight) - contentBounds.maxY) < 1.5,
+                "terminal maxY=\(surfaceRect.maxY) + headerHeight=\(FloatingPaneGeometry.headerHeight) must reach contentView maxY=\(contentBounds.maxY)")
         #expect(abs(surfaceRect.minY - contentBounds.minY) < 1.5)
         #expect(surfaceRect.minX >= SessionSidebarWidth.range.lowerBound - 1.5)
 

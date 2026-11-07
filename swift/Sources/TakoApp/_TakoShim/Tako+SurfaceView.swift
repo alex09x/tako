@@ -281,7 +281,9 @@ extension Tako {
             Tako.TabBarController.install(in: window)
             if window.isVisible {
                 let controller = window.windowController as? TerminalController
-                if controller?.focusedSurface == nil {
+                let pendingFocusId = controller?.floatingCanvas.pendingFocus?.surfaceId
+                if controller?.focusedSurface == nil,
+                   pendingFocusId == nil || pendingFocusId == self.id {
                     window.makeFirstResponder(self)
                 }
             }

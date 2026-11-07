@@ -79,6 +79,9 @@ final class TerminalRestorableState: TerminalRestorable {
     var tabIdentifier: String? {
         internalState.tabIdentifier
     }
+    var floatingCanvas: FloatingCanvasSnapshot? {
+        internalState.floatingCanvas
+    }
 
     /// Internal State we use to perform unit tests
     ///
@@ -203,6 +206,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             window.stableTabIdentifier = tabId
         }
 
+        c.floatingCanvas.loadRestoredSnapshot(
+            state.floatingCanvas,
+            for: c.surfaceTree,
+            fallbackSize: c.estimatedFloatingCanvasSize()
+        )
+        c.syncSurfaceTreeOcclusionState()
+
         // Setup our restored state on the controller
         // Find the focused surface in surfaceTree
         if let focusedStr = state.focusedSurface {
@@ -212,8 +222,9 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
                 break
             }
 
-            if let view = foundView {
+            if let view = foundView, !c.isMinimizedInFloatingCanvas(view.id) {
                 c.focusedSurface = view
+                c.floatingCanvas.requestPendingFocus(for: view.id)
                 restoreFocus(to: view, inWindow: window)
             }
         }

@@ -32,7 +32,35 @@ extension SessionSidebarStore {
             target.makeKeyAndOrderFront(nil)
         }
         let allTargetSurfaces = surfaces(in: target)
-        if let sid = item.surfaceId {
+        if let targetController = target.windowController as? BaseTerminalController,
+           targetController.usesFloatingCanvas {
+            if item.isChild,
+               let sid = item.surfaceId,
+               let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) {
+                for s in allTargetSurfaces where s.id != sid {
+                    s.focusDidChange(false)
+                }
+                targetController.revealAndFocusFloatingPane(targetSurface)
+            } else {
+                let candidate: Tako.SurfaceView? = {
+                    if let focused = targetController.focusedSurface,
+                       !targetController.isMinimizedInFloatingCanvas(focused.id),
+                       targetController.surfaceTree.contains(focused) {
+                        return focused
+                    }
+                    return targetController.topmostVisibleFloatingSurface()
+                }()
+                if let candidate {
+                    for s in allTargetSurfaces where s.id != candidate.id {
+                        s.focusDidChange(false)
+                    }
+                    targetController.revealAndFocusFloatingPane(candidate)
+                } else {
+                    for s in allTargetSurfaces { s.focusDidChange(false) }
+                    targetController.focusedSurface = nil
+                }
+            }
+        } else if let sid = item.surfaceId {
             if let targetController = target.windowController as? BaseTerminalController,
                let targetSurface = targetController.surfaceTree.first(where: { $0.id == sid }) ?? allTargetSurfaces.first(where: { $0.id == sid }) {
                 for s in allTargetSurfaces where s.id != sid {
