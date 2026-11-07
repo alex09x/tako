@@ -61,13 +61,13 @@ extension Tako {
 
         var syncOverride = false
 
-        /// there; a property wrapper cannot be added by overriding, so the
-        /// publisher lives here beside it.
-        @Published public private(set) var titleText: String = ""
+        /// Published UI mirror, coalesced across panes. The inherited `title`
+        /// and raw protocol events retain their immediate values.
+        @Published public internal(set) var titleText: String = ""
 
         override public func titleDidChange() {
             if !title.isEmpty { isUserSetTitle = false }
-            titleText = title
+            requestTitlePublication()
         }
         public var isUserSetTitle: Bool = false
 
@@ -197,40 +197,6 @@ extension Tako {
             setupAttentionObservation()
             setupPassiveRegexTriggers()
             setupConfirmPasteHandler()
-        }
-
-        private func setupConfirmPasteHandler() {
-            confirmPasteHandler = { [weak self] text, completion in
-                guard let window = self?.window
-                    ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
-                    ?? TerminalController.preferredParent?.window
-                    ?? NSApp.windows.first(where: { $0.isVisible }) else {
-                    completion(true)
-                    return
-                }
-                let theme = self?.theme ?? (NSApp.delegate as? AppDelegate)?.tako.config.theme
-                let lineCount = text.components(separatedBy: .newlines).count
-                let lines: [TUIText.Line] = [
-                    TUIText.Line(runs: [TUIText.Run(text: "The text to be pasted contains multiple lines or line breaks, and bracketed paste mode is disabled. Pasting it may execute commands immediately without confirmation.", kind: .plain)]),
-                    TUIText.Line(runs: []),
-                    TUIText.Line(runs: [TUIText.Run(text: "Lines: \(lineCount)   Characters: \(text.count)", kind: .muted)])
-                ]
-                Task { @MainActor in
-                    let answer = await TerminalDialogView.choose(
-                        in: window,
-                        title: "Confirm Multiline Paste",
-                        lines: lines,
-                        choices: [
-                            .init(title: "Cancel", kind: .normal),
-                            .init(title: "Paste", kind: .primary)
-                        ],
-                        selected: 1,
-                        cancelIndex: 0,
-                        theme: theme
-                    )
-                    completion(answer == 1)
-                }
-            }
         }
 
         var attentionCancellables: [AnyCancellable] = []
@@ -370,56 +336,23 @@ extension Tako {
         /// If the clipboard contains newlines, safe paste is enabled, and the terminal
         /// is idle at a shell prompt, posts a confirmation request instead of pasting immediately.
         @objc override public func handlePaste(_ text: String) {
-            let isMultiLine = text.contains("\n") || text.contains("\r")
-            if safePaste && isMultiLine && core.cursorIsAtPrompt() && !isCommandRunning {
-                NotificationCenter.default.post(
-                    name: Tako.Notification.confirmClipboard,
-                    object: self,
-                    userInfo: [
-                        Tako.Notification.ConfirmClipboardStrKey: text,
-                        Tako.Notification.ConfirmClipboardRequestKey: Tako.ClipboardRequest.paste,
-                    ]
-                )
-                return
-            }
-            pasteText(text)
+            handleSafePaste(text)
         }
 
         override public func selectionDidFinish() {
-            guard copyOnSelect != .off, let text = core.selectedText(), !text.isEmpty else { return }
-            var targets = [Self.selectionPasteboard]
-            if copyOnSelect == .clipboard {
-                targets.append(clipboard)
-            }
-            for pasteboard in targets {
-                pasteboard.clearContents()
-                pasteboard.setString(text, forType: .string)
-            }
+            copyFinishedSelection()
         }
 
         override open func becomeFirstResponder() -> Bool {
+            let wasFirst = window?.firstResponder === self
             let result = super.becomeFirstResponder()
-            if result {
-                (window?.windowController as? TerminalController)?.focusedSurface = self
-                BroadcastInputStore.shared.setLeader(paneId: id)
-                if isSecureInput {
-                    SecureInput.shared.setScoped(self, isSecure: true, focused: true)
-                }
-                crab.focused()
-                NotificationStore.shared.markRead(surfaceId: self.id)
-                reflowToCurrentBounds(forcePtyResize: true)
-            }
+            if result { didGainSurfaceFocus(flushTitle: !wasFirst) }
             return result
         }
 
         override open func resignFirstResponder() -> Bool {
             let result = super.resignFirstResponder()
-            if result {
-                if isSecureInput {
-                    SecureInput.shared.setScoped(self, isSecure: true, focused: false)
-                }
-                crab.unfocused()
-            }
+            if result { didLoseSurfaceFocus() }
             return result
         }
 
@@ -457,23 +390,7 @@ extension Tako {
         }
 
         override open func keyDown(with event: NSEvent) {
-            let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            if event.keyCode == 53 && mods.isEmpty {
-                // Escape key with no modifiers: if an overlay or diff review is open on this pane, dismiss it
-                if OverlayStore.shared.overlay(for: id) != nil {
-                    OverlayStore.shared.closeOverlay(paneId: id)
-                    return
-                }
-                if DiffReviewStore.shared.session(for: id) != nil {
-                    DiffReviewStore.shared.closeReview(paneId: id)
-                    return
-                }
-            }
-            if Tako.InterruptKeystroke.isInterrupt(keyCode: event.keyCode,
-                                                   character: event.charactersIgnoringModifiers,
-                                                   modifiers: event.modifierFlags) {
-                crab.userInterrupted()
-            }
+            if interceptSurfaceKey(event) { return }
             super.keyDown(with: event)
         }
     }

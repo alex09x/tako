@@ -73,8 +73,8 @@ extension Tako.SurfaceView {
             // event happened to trigger a redraw. A tab's label would sit
             // stale after e.g. `cd`ing to a new directory until something
             // else -- switching tabs, resizing -- forced a repaint.
-            onTitleChange = { (_: Tako.SurfaceView) in
-                Tako.TabBarController.requestRefresh()
+            onTitleChange = { (view: Tako.SurfaceView) in
+                view.requestTitlePublication()
             }
 
             if let program {
