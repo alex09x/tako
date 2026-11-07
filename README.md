@@ -63,9 +63,9 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 
 ## Desktop Navigation
 
-The left sidebar lists workspaces and sessions and stays open. <kbd>Cmd</kbd> + <kbd>T</kbd> creates a session. Inside a session, <kbd>Cmd</kbd> + <kbd>D</kbd> or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> adds a terminal pane. Panes can overlap: drag their headers to move them and their edges or corners to resize them.
+The left sidebar lists workspaces and sessions and stays open. Its search button opens the session filter; Escape clears and closes the filter. <kbd>Cmd</kbd> + <kbd>T</kbd> creates a session. Inside a session, <kbd>Cmd</kbd> + <kbd>D</kbd> or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> adds a compact floating terminal over the current one. Panes can overlap: drag their headers to move them and their edges or corners to resize them.
 
-Each pane has minimize, maximize/restore and close controls. Minimized panes collect on the shelf at the lower right, keep their processes running and continue showing status. Click a shelf card to restore its position and keyboard focus. Maximizing fills the right workspace; double-clicking the pane header also toggles maximize/restore.
+Each pane has minimize, maximize/restore and close controls. Minimized panes collect as capsules at the lower right, keep their processes running and continue showing status. Click a capsule to restore its position and keyboard focus. Maximizing fills the right workspace; double-clicking the pane header also toggles maximize/restore. Transitions respect macOS Reduce Motion.
 
 <kbd>Cmd</kbd> + <kbd>W</kbd> closes the focused pane, <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>W</kbd> closes the session, and <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>W</kbd> closes its window group. Closing the last pane leaves a **New Terminal** action in the workspace. Pane placement and presentation state return with restored sessions. `session-persistence = true` keeps the shell processes alive across an application quit.
 

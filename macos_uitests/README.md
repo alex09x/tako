@@ -32,7 +32,7 @@ native macOS app target that exists only as a wrapper:
 
 1. It compiles `AppHost/main.swift`, a placeholder, so the target links.
 2. A post-build script phase runs `python3 scripts/build-macapp.py` from the
-   repo root and `ditto`s the resulting `target/macapp/Tako.app` over its
+   repo root and `ditto`s the resulting `target/macapp-uitest/Tako.app` over its
    own product in `BUILT_PRODUCTS_DIR`, replacing the placeholder wholesale.
 
 Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
@@ -40,10 +40,8 @@ Its `PRODUCT_BUNDLE_IDENTIFIER` matches the real bundle's
 `TEST_TARGET_NAME = TakoCore`, which is what puts `UITargetAppPath` into the
 generated `.xctestrun`.
 
-If `scripts/build-macapp.py` fails, the script phase emits a warning and keeps
-the placeholder rather than failing the build. Compiling the tests is the point
-of this project and is deliberately not held hostage to the app build; the
-tests skip themselves outside a manual Xcode run anyway (below).
+If `scripts/build-macapp.py` fails, the host phase fails the build. A UI run
+must execute against the current real app, and zero passed cases is a failure.
 
 ## Building and running
 
@@ -69,6 +67,16 @@ scripts/uitest.sh --build-only TakoScopedAppearanceUITests TakoThemePresetUITest
 
 This is explicitly **compilation only**, not a passing UI run. The wrapper also fails if the
 real host app was not built and Xcode kept the placeholder.
+
+For a scoped motion/design review, retain the built-in recording even when a
+test passes:
+
+```sh
+TAKO_UI_SCHEME=TakoUITests-VisualReview scripts/uitest.sh TakoFloatingDesignUITests
+```
+
+This opt-in scheme keeps video in the external `.xcresult` for reviewing
+transitions. The regular CI scheme retains its usual attachment policy.
 
 ### Native permission requests on the dedicated test Mac
 

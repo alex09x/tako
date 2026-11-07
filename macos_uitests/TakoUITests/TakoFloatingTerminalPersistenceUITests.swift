@@ -22,6 +22,7 @@ final class TakoFloatingTerminalPersistenceUITests: TakoFloatingTerminalCase {
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
         let secondProcess = try shellPID(second, phase: "PERSIST_B_BEFORE", in: app)
         try focusThroughSidebar(first, in: app)
+        restorePaneToNormal(first, in: app)
 
         let resize = canvas(in: app).descendants(matching: .any)["FloatingPaneResize-bottomTrailing-\(first)"].firstMatch
         XCTAssertTrue(resize.exists)

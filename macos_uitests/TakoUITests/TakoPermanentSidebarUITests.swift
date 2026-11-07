@@ -43,6 +43,9 @@ final class TakoPermanentSidebarUITests: TakoCustomConfigCase {
 
         app.typeKey("s", modifierFlags: [.command, .option])
         XCTAssertTrue(sidebar.isHittable, "The former sidebar toggle must not hide navigation")
+        let searchToggle = sidebar.buttons["SessionSidebarSearchButton"]
+        XCTAssertTrue(searchToggle.isHittable)
+        searchToggle.click()
         let search = sidebar.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.click()
@@ -50,6 +53,7 @@ final class TakoPermanentSidebarUITests: TakoCustomConfigCase {
         XCTAssertTrue(sidebar.isHittable, "Escape must preserve permanent navigation")
 
         // Inside a floating pane, terminal rows must accept input and selection rather than drag chrome.
+        searchToggle.click()
         search.click()
         let topRow = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.01))
         topRow.click()

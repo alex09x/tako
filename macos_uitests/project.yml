@@ -146,3 +146,20 @@ schemes:
         - TakoUITests
     run:
       config: Debug
+
+  # Opt-in design review retains video from successful scoped UI tests.
+  TakoUITests-VisualReview:
+    build:
+      targets:
+        TakoUITests: all
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: true
+      deleteScreenshotsWhenEachTestSucceeds: false
+      preferredScreenCaptureFormat: screenRecording
+      environmentVariables:
+        IDE_DISABLED_OS_ACTIVITY_DT_MODE: "1"
+      targets:
+        - TakoUITests
+    run:
+      config: Debug

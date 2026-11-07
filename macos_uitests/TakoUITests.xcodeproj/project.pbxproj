@@ -16,6 +16,7 @@
 		637C0279CE23670AA6966F2F /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF1565C2F53CAF3C63DA187 /* main.swift */; };
 		728BB8164DE52889B9703EB9 /* TakoFeatureJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE74F556D662039A0D5E772 /* TakoFeatureJourneysUITests.swift */; };
 		791B6078427C8A66EFA0C103 /* TakoCustomConfigCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A5BAB39F3B7E573BC26B6F2 /* TakoCustomConfigCase.swift */; };
+		7CBC1677629BC477C6D87F3D /* TakoFloatingDesignUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9087ED62752F10E134E020CA /* TakoFloatingDesignUITests.swift */; };
 		7F9156F9346AE5D74503D665 /* TakoThemePresetUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0A77BD2A295DF11C1931F8 /* TakoThemePresetUITests.swift */; };
 		89FC442308EAB82CA55ADBD4 /* AppKitExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB47830164C65595824C6153 /* AppKitExtensions.swift */; };
 		92CA200F7A2A92F893136077 /* TakoCommandPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99FB293B04462CE7E8BF1F47 /* TakoCommandPaletteTests.swift */; };
@@ -61,6 +62,7 @@
 		8B5D8FAE9E9DDA76BBD99BB1 /* TakoFloatingTerminalCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoFloatingTerminalCase.swift; sourceTree = "<group>"; };
 		8CF1565C2F53CAF3C63DA187 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		8D5F0E41E995DC2D42A5E709 /* TakoSetupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoSetupUITests.swift; sourceTree = "<group>"; };
+		9087ED62752F10E134E020CA /* TakoFloatingDesignUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoFloatingDesignUITests.swift; sourceTree = "<group>"; };
 		99FB293B04462CE7E8BF1F47 /* TakoCommandPaletteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoCommandPaletteTests.swift; sourceTree = "<group>"; };
 		9C6B2B7A7856C43105BA714C /* TakoCore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TakoCore.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0A77BD2A295DF11C1931F8 /* TakoThemePresetUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakoThemePresetUITests.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				C90D128AECA5FF70F30C56F4 /* TakoCoreTabBarStressUITests.swift */,
 				4A5BAB39F3B7E573BC26B6F2 /* TakoCustomConfigCase.swift */,
 				2CE74F556D662039A0D5E772 /* TakoFeatureJourneysUITests.swift */,
+				9087ED62752F10E134E020CA /* TakoFloatingDesignUITests.swift */,
 				8B5D8FAE9E9DDA76BBD99BB1 /* TakoFloatingTerminalCase.swift */,
 				C114C27DF5107A41E31A397B /* TakoFloatingTerminalPersistenceUITests.swift */,
 				E56BBEDEE04450E2649B2C61 /* TakoFloatingTerminalUITests.swift */,
@@ -270,6 +273,7 @@
 				59B855A1A247FA31E198C7EA /* TakoCoreTabBarStressUITests.swift in Sources */,
 				791B6078427C8A66EFA0C103 /* TakoCustomConfigCase.swift in Sources */,
 				728BB8164DE52889B9703EB9 /* TakoFeatureJourneysUITests.swift in Sources */,
+				7CBC1677629BC477C6D87F3D /* TakoFloatingDesignUITests.swift in Sources */,
 				ABC692B1289332CF69BDB4C3 /* TakoFloatingTerminalCase.swift in Sources */,
 				AC446F558777C7A999E09794 /* TakoFloatingTerminalPersistenceUITests.swift in Sources */,
 				BF6FC4BEC8F655552AE32662 /* TakoFloatingTerminalUITests.swift in Sources */,

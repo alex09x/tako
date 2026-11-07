@@ -12,6 +12,7 @@ import AppKit
 import XCTest
 
 class TakoFloatingTerminalCase: TakoCustomConfigCase {
+    static let expectedPaneHeaderHeight: CGFloat = 32
     private var launchedApp: XCUIApplication?
     private var persistentFixture = false
     private var loggedWindowInventory = false
@@ -54,13 +55,14 @@ class TakoFloatingTerminalCase: TakoCustomConfigCase {
         """)
         persistentFixture = persistent
         let app = try takoApplication()
-        if persistent {
-            app.launchArguments.removeAll { $0 == "-ApplePersistenceIgnoreState" || $0 == "YES" }
-        }
         launchedApp = app
         app.launch()
         XCTAssertTrue(canvas(in: app).waitForExistence(timeout: 10))
         waitForPaneCount(1, in: app)
+        if persistent {
+            // Start this fixture fresh; only its deliberate subsequent relaunch may restore state.
+            app.launchArguments.removeAll { $0 == "-ApplePersistenceIgnoreState" || $0 == "YES" }
+        }
         return app
     }
 
@@ -112,6 +114,18 @@ class TakoFloatingTerminalCase: TakoCustomConfigCase {
     @MainActor
     func minimizedCard(_ id: String, in app: XCUIApplication) -> XCUIElement {
         canvas(in: app).buttons["FloatingMinimizedCard-\(id)"].firstMatch
+    }
+
+    @MainActor
+    func restorePaneToNormal(_ id: String, in app: XCUIApplication) {
+        let zoom = control("Maximize", pane: id, in: app)
+        if (zoom.value as? String) != "normal" { zoom.click() }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'normal'"), object: zoom)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        let corner = canvas(in: app).descendants(matching: .any)["FloatingPaneResize-bottomTrailing-\(id)"].firstMatch
+        XCTAssertTrue(corner.waitForExistence(timeout: 5))
+        let interactive = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in corner.isHittable }, object: corner)
+        XCTAssertEqual(XCTWaiter.wait(for: [interactive], timeout: 5), .completed)
     }
 
     @MainActor

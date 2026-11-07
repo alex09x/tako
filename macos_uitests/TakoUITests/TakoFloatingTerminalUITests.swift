@@ -20,7 +20,7 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         let firstBody = pane(first, in: app).textViews.firstMatch.frame
         XCTAssertEqual(header(first, in: app).frame.minY, firstFrame.minY, accuracy: 2,
                        "Pane chrome must start at the workspace top without another titlebar inset")
-        XCTAssertEqual(firstBody.minY, firstFrame.minY + 26, accuracy: 2)
+        XCTAssertEqual(firstBody.minY, firstFrame.minY + Self.expectedPaneHeaderHeight, accuracy: 2)
         XCTAssertEqual(firstBody.maxY, firstFrame.maxY, accuracy: 2)
         app.typeKey("d", modifierFlags: .command)
         waitForPaneCount(2, in: app)
@@ -79,6 +79,7 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         let app = try launchFloatingApp()
         let first = try XCTUnwrap(paneIDs(in: app).first)
         let firstProcess = try shellPID(first, phase: "SHELF_A_BEFORE", in: app)
+        restorePaneToNormal(first, in: app)
         app.typeKey("d", modifierFlags: .command)
         waitForPaneCount(2, in: app)
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
@@ -166,6 +167,9 @@ final class TakoFloatingTerminalUITests: TakoFloatingTerminalCase {
         waitForPaneCount(2, in: app)
         let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
         try focusThroughSidebar(first, in: app)
+        restorePaneToNormal(first, in: app)
+        let moveFirst = header(first, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+        moveFirst.press(forDuration: 0.1, thenDragTo: moveFirst.withOffset(CGVector(dx: -100, dy: 0)))
         let backgroundClose = control("Close", pane: second, in: app)
         XCTAssertTrue(backgroundClose.isHittable)
         backgroundClose.click()

@@ -56,6 +56,9 @@ if [ $RUN_LOCAL -eq 0 ]; then
         CMD="$CMD $(printf '%q ' "${TEST_ARGS[@]}")"
         CMD="${CMD% }"
     fi
+    if [ -n "${TAKO_UI_SCHEME:-}" ]; then
+        printf -v CMD 'TAKO_UI_SCHEME=%q %s' "$TAKO_UI_SCHEME" "$CMD"
+    fi
     exec ./scripts/mac-remote.sh "$CMD"
 fi
 
@@ -94,7 +97,7 @@ set +e
 python3 scripts/gui_lock.py -- python3 scripts/ci-swift-watchdog.py \
     --diagnostics-dir target/uitest-stall -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
-    -scheme TakoUITests-Run \
+    -scheme "${TAKO_UI_SCHEME:-TakoUITests-Run}" \
     -derivedDataPath target/uitest-derived \
     -destination platform=macOS \
     -parallel-testing-enabled NO \
