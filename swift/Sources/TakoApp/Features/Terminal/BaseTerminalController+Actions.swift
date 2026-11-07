@@ -191,7 +191,7 @@ extension BaseTerminalController {
     }
 
     @IBAction func toggleSessionSidebar(_ sender: Any?) {
-        sessionSidebarIsShowing.toggle()
+        sessionSidebarIsShowing = supportsSessionSidebar
     }
 
     @IBAction func togglePaneOverview(_ sender: Any?) {

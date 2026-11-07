@@ -15,6 +15,8 @@ import TakoKit
 
 /// A classic, tabbed terminal experience.
 class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Controller {
+    override var supportsSessionSidebar: Bool { true }
+
     override var windowNibName: NSNib.Name? {
         let defaultValue = "Terminal"
 

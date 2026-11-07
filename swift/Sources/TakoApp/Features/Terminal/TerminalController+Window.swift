@@ -75,8 +75,9 @@ extension TerminalController {
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
         // SwiftUI focus chain.
+        let sidebarWidth = sessionSidebarIsShowing ? SessionSidebarWidth.current() : 0
         container.initialContentSize = focusedSurface?.initialSize.map {
-            NSSize(width: $0.width, height: $0.height + Tako.TabBarController.barHeight)
+            NSSize(width: $0.width + sidebarWidth, height: $0.height)
         }
 
         window.contentView = container
@@ -260,15 +261,7 @@ extension TerminalController {
             terminalWidth = max(terminalWidth - SessionSidebarWidth.current(), 100)
         }
 
-        var terminalHeight = contentBounds.height
-        if tako.config.macosTitlebarStyle != .hidden {
-            let topInset = contentView.safeAreaInsets.top
-            if topInset > 0 {
-                terminalHeight = max(terminalHeight - topInset, 50)
-            } else if window.contentLayoutRect.height > 0 && window.contentLayoutRect.height < contentBounds.height {
-                terminalHeight = window.contentLayoutRect.height
-            }
-        }
+        let terminalHeight = contentBounds.height
         let terminalAreaSize = CGSize(width: terminalWidth, height: terminalHeight)
 
         let activeRoot = surfaceTree.zoomed ?? surfaceTree.root

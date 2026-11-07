@@ -61,10 +61,7 @@ extension BaseTerminalController: NSMenuItemValidation {
             return true
 
         case #selector(toggleSessionSidebar(_:)):
-            if let menu = item as? NSMenuItem {
-                menu.state = sessionSidebarIsShowing ? .on : .off
-            }
-            return true
+            return false
 
         case #selector(togglePaneOverview(_:)):
             if let menu = item as? NSMenuItem {
@@ -158,9 +155,12 @@ extension BaseTerminalController {
     func setupSidebarStatePublisher() {
         sidebarStateCancellable = SessionSidebarStore.shared.$isShowing
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] showing in
-                guard let self, self.sessionSidebarIsShowing != showing else { return }
-                self.sessionSidebarIsShowing = showing
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let expected = self.supportsSessionSidebar
+                if self.sessionSidebarIsShowing != expected {
+                    self.sessionSidebarIsShowing = expected
+                }
             }
     }
 

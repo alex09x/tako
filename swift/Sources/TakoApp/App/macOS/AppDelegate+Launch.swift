@@ -229,7 +229,6 @@ extension AppDelegate {
         setupFirstRunMenuItem()
         setupPromptNavigationMenuItems()
         setupNotificationMenuItems()
-        setupSidebarMenuItem()
         setupPaneOverviewMenuItem()
         setupAttentionMenuItems()
         setupWorkspaceTopLevelMenu()

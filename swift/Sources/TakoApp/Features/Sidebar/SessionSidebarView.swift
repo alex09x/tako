@@ -116,28 +116,31 @@ struct SessionSidebarView: View {
         let groups = workspaceGroups
         let flatItems = groups.flatMap(\.items)
         VStack(spacing: 0) {
-            headerView(sessionCount: Self.sessionCount(groups, flatItems))
-            searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
-            tabListView(groups: groups, flatItems: flatItems)
-            footerView
-        }
-        .contextMenu {
-            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
-            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+            SidebarWindowChromeBar(window: targetWindow)
+
+            VStack(spacing: 0) {
+                headerView(sessionCount: Self.sessionCount(groups, flatItems))
+                searchAndSegmentsBar(attentionCount: Self.attentionCount(groups, flatItems))
+                tabListView(groups: groups, flatItems: flatItems)
+                footerView
+            }
+            .contextMenu {
+                Button("New Session") { store.createNewTab(in: targetWindow) }
+                Divider()
+                Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
+                Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(6)
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(6)
         .background(backgroundColor)
-        .overlay {
-            RoundedRectangle(cornerRadius: 3)
-                .strokeBorder(Color(nsColor: T.hairline), lineWidth: 1)
-                .padding(6)
-                .allowsHitTesting(false)
-        }
-        .onKeyPress(.escape) {
-            isPresented = false
-            return .handled
-        }
         .onAppear {
             if hostingWindow == nil {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
@@ -184,32 +187,6 @@ struct SessionSidebarView: View {
         }
     }
 
-    // MARK: - Header (§5.1)
-
-    private func headerView(sessionCount: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("Sessions")
-                .font(T.headerFont(size: 13))
-                .foregroundColor(Color(nsColor: T.textActive))
-                .accessibilityIdentifier("SessionSidebarHeader")
-
-            Spacer()
-
-            Text("\(sessionCount)")
-                .font(Font(T.monoFont(size: 10, weight: .medium)))
-                .foregroundColor(Color(nsColor: T.dim))
-        }
-        .frame(height: 17)
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .contentShape(Rectangle())
-        .contextMenu {
-            Toggle("Show Git Branch & Dirty Status", isOn: $store.optInGit)
-            Toggle("Show Listening TCP Ports", isOn: $store.optInPorts)
-        }
-    }
-
     // MARK: - Search & Segments (§5.2, §5.3)
 
     private func searchAndSegmentsBar(attentionCount: Int) -> some View {
@@ -233,7 +210,11 @@ struct SessionSidebarView: View {
                         .foregroundColor(Color(nsColor: T.textActive))
                         .focused($isSearchFocused)
                         .onKeyPress(.escape) {
-                            isPresented = false
+                            if !filterText.isEmpty {
+                                store.setFilterText("", for: targetWindow)
+                            }
+                            isSearchFocused = false
+                            isListFocused = true
                             return .handled
                         }
                 }
@@ -336,12 +317,18 @@ struct SessionSidebarView: View {
                                         selectedIndex = flatIdx
                                         showsArrowCursor = false
                                         store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
+                                    },
+                                    onClose: {
+                                        store.closeTab(item: item, in: targetWindow)
                                     }
                                 )
                                 .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
                                     onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
                                     canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) }))
+                                    onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
+                                    onNewSession: { store.createNewTab(in: targetWindow) },
+                                    onRename: { store.promptRenameTab(item: item, in: targetWindow) },
+                                    onClose: { store.closeTab(item: item, in: targetWindow) }))
                             }
                         }
                     }
@@ -391,7 +378,6 @@ struct SessionSidebarView: View {
                 }
                 return .handled
             }
-            .onKeyPress(.escape) { isPresented = false; return .handled }
         }
     }
 

@@ -174,9 +174,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)
-            // Terminal windows always own a custom strip, including when the
-            // native titlebar is hidden. Reserve its full height for all panes.
-            .padding(.top, viewModel is BaseTerminalController ? Tako.TabBarController.barHeight : 0)
             .ignoresSafeArea(.container, edges:
                 (viewModel is BaseTerminalController || tako.config.macosTitlebarStyle == .hidden) ? .top : [])
         }

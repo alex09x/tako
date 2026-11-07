@@ -25,6 +25,7 @@ extension Tako {
     enum TabBarController {
         static let barHeight: CGFloat = 38
 
+        private static var installedWindows: Set<ObjectIdentifier> = []
         private static var installed: [ObjectIdentifier: TabBarView] = [:]
         private static var monitor: Any?
         private static let refreshRequests = TabBarRefreshCoalescer { refreshAll() }
@@ -33,13 +34,18 @@ extension Tako {
         /// Explicit navigation/layout changes still use synchronous refreshAll.
         static func requestRefresh() { refreshRequests.request() }
 
+        static func isInstalled(in window: NSWindow) -> Bool {
+            installedWindows.contains(ObjectIdentifier(window))
+        }
+
         static func bar(for window: NSWindow) -> TabBarView? {
             installed[ObjectIdentifier(window)]
         }
 
         static func install(in window: NSWindow) {
             let key = ObjectIdentifier(window)
-            if installed[key] != nil { return }
+            if installedWindows.contains(key) { return }
+            installedWindows.insert(key)
 
             // fullSizeContentView/titlebarAppearsTransparent/titleVisibility
             // are set in `TerminalWindow.awakeFromNib`, not here -- confirmed
@@ -51,28 +57,10 @@ extension Tako {
             window.isMovable = false
             window.isMovableByWindowBackground = false
 
-            // `titlebarAppearsTransparent` alone does not make the native
-            // titlebar see-through here: confirmed live that `NSTitlebarContainerView`
-            // -- a sibling of the content view at the NSThemeFrame level,
-            // drawn *above* it, hosting `NSTitlebarView` (traffic lights) --
-            // has its own CALayer with an explicit opaque gray
-            // `backgroundColor`, set by AppKit independently of that
-            // property. Clearing that layer's background directly is what
-            // actually lets the custom bar drawn inside the content view
-            // show through.
+            // Clear `NSTitlebarContainerView`'s opaque gray CALayer background
+            // so the permanent left sidebar header and edge-to-edge right
+            // terminal render cleanly up to the top window edge.
             clearTitlebarBackground(in: window)
-
-            guard let contentView = window.contentView else { return }
-            let bar = TabBarView(frame: .zero)
-            bar.translatesAutoresizingMaskIntoConstraints = false
-            contentView.addSubview(bar)
-            NSLayoutConstraint.activate([
-                bar.topAnchor.constraint(equalTo: contentView.topAnchor),
-                bar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                bar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                bar.heightAnchor.constraint(equalToConstant: barHeight),
-            ])
-            installed[key] = bar
 
             NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification, object: window, queue: .main
@@ -83,16 +71,13 @@ extension Tako {
                     }
                     Tako.CustomTabGroup.close(window)
                     installed.removeValue(forKey: key)
+                    installedWindows.remove(key)
                     refreshAll()
                 }
             }
 
             // AppKit re-paints `NSTitlebarContainerView`'s opaque background
-            // on its own schedule -- confirmed live it comes back after
-            // ordinary window resize and key/main transitions, not just once
-            // at creation. Fight it on exactly those triggers rather than
-            // continuously (a KVO-driven fight over native tab bar visibility
-            // earlier in this window's history turned into ~887k calls/min).
+            // on its own schedule after window resize and key/main transitions.
             for name: NSNotification.Name in [
                 NSWindow.didResizeNotification,
                 NSWindow.didBecomeKeyNotification,
@@ -110,9 +95,27 @@ extension Tako {
                     }
                 }
             }
+        }
 
-            // The command-number badges need the raw modifier state, which
-            // only a monitor reports while no key is being pressed.
+        /// Mounts a standalone `TabBarView` inside `window` for isolated tab-strip
+        /// motion/rendering unit tests while desktop windows run without a top bar.
+        @discardableResult
+        static func installTabBarForTesting(in window: NSWindow) -> TabBarView? {
+            install(in: window)
+            let key = ObjectIdentifier(window)
+            if let existing = installed[key] { return existing }
+            guard let contentView = window.contentView else { return nil }
+            let bar = TabBarView(frame: .zero)
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(bar)
+            NSLayoutConstraint.activate([
+                bar.topAnchor.constraint(equalTo: contentView.topAnchor),
+                bar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                bar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                bar.heightAnchor.constraint(equalToConstant: barHeight),
+            ])
+            installed[key] = bar
+
             if monitor == nil {
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
                     MainActor.assumeIsolated {
@@ -122,6 +125,7 @@ extension Tako {
                     return event
                 }
             }
+            return bar
         }
 
         /// Redraw every strip. Cheap, and a tab's contents can change in one

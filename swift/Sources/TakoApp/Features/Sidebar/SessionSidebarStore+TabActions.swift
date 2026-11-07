@@ -84,11 +84,61 @@ extension SessionSidebarStore {
         objectWillChange.send()
     }
 
-    /// Closes a tab from the sidebar.
+    /// Creates a new session tab in the target window's tab group.
+    func createNewTab(in window: NSWindow?) {
+        let target = window ?? NSApp?.keyWindow
+        let controller = (target?.windowController as? TerminalController)
+            ?? (target?.delegate as? TerminalController)
+            ?? TerminalController.all.first
+        if let controller {
+            _ = TerminalController.newTab(controller.tako, from: controller.window ?? target)
+        } else {
+            _ = NSApp?.sendAction(#selector(TerminalController.newTab(_:)), to: nil, from: nil)
+        }
+        objectWillChange.send()
+    }
+
+    /// Prompts to rename a session tab from the sidebar.
+    func promptRenameTab(item: SessionSidebarItem, in window: NSWindow?) {
+        guard let target = sidebarWindow(tabId: item.tabId, around: window) else { return }
+        Tako.CustomTabGroup.group(for: target).select(target)
+        let controller = (target.windowController as? BaseTerminalController)
+            ?? (target.delegate as? BaseTerminalController)
+        controller?.promptTabTitle()
+        objectWillChange.send()
+    }
+
+    /// Closes a session tab or split pane from the sidebar without tearing down sibling tabs.
     func closeTab(item: SessionSidebarItem, in window: NSWindow?) {
         // By its tab, not its place: the row may be a tab of another window.
         guard let target = sidebarWindow(tabId: item.tabId, around: window) else { return }
-        target.performClose(nil)
+        if item.isChild,
+           let sid = item.surfaceId,
+           let baseController = (target.windowController as? BaseTerminalController)
+            ?? (target.delegate as? BaseTerminalController),
+           let pane = baseController.surfaceTree.first(where: { $0.id == sid }) {
+            let needsConfirm = pane.needsConfirmClose || SubagentHierarchyStore.shared.hasChildren(pane.id)
+            if needsConfirm {
+                Tako.CustomTabGroup.group(for: target).select(target)
+            }
+            baseController.closeSurface(pane, withConfirmation: needsConfirm)
+            objectWillChange.send()
+            return
+        }
+
+        let controller = (target.windowController as? TerminalController)
+            ?? (target.delegate as? TerminalController)
+        if let controller {
+            if controller.surfaceTree.contains(where: { $0.needsConfirmClose }) {
+                Tako.CustomTabGroup.group(for: target).select(target)
+            }
+            controller.closeTab(nil)
+        } else if target.styleMask.contains(.closable) {
+            target.performClose(nil)
+        } else {
+            Tako.CustomTabGroup.close(target)
+            target.close()
+        }
         objectWillChange.send()
     }
 

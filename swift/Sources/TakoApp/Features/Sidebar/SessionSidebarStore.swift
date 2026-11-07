@@ -25,14 +25,14 @@ final class SessionSidebarStore: ObservableObject {
 
     private let defaults: UserDefaults
 
-    /// Whether the session sidebar is open in terminal windows.
+    /// The session sidebar is permanently open on desktop terminal windows and cannot be hidden.
     @Published var isShowing: Bool {
         didSet {
-            defaults.set(isShowing, forKey: Self.isShowingKey)
             if !isShowing {
-                surfaceSubscriptions.removeAll()
-                surfaceLastStatus.removeAll()
+                isShowing = true
+                return
             }
+            defaults.set(true, forKey: Self.isShowingKey)
         }
     }
 
@@ -142,7 +142,8 @@ final class SessionSidebarStore: ObservableObject {
 
     init(defaults: UserDefaults = .tako) {
         self.defaults = defaults
-        self.isShowing = defaults.bool(forKey: Self.isShowingKey)
+        self.isShowing = true
+        defaults.set(true, forKey: Self.isShowingKey)
         self.optInGit = defaults.bool(forKey: Self.optInGitKey)
         self.optInPorts = defaults.bool(forKey: Self.optInPortsKey)
         self.descriptions = defaults.dictionary(forKey: Self.descriptionsKey) as? [String: String] ?? [:]

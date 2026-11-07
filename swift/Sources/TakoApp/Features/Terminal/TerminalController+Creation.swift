@@ -199,8 +199,8 @@ extension TerminalController {
             if let window = c.window {
                 // If we have a tree size, resize the window's content to match
                 if !c.didApplyInitialWindowSize, let treeSize, treeSize.width > 0, treeSize.height > 0 {
-                    window.setContentSize(NSSize(width: treeSize.width,
-                        height: treeSize.height + Tako.TabBarController.barHeight))
+                    let sidebarWidth = c.sessionSidebarIsShowing ? SessionSidebarWidth.current() : 0
+                    window.setContentSize(NSSize(width: treeSize.width + sidebarWidth, height: treeSize.height))
                     window.constrainToScreen()
                 }
 

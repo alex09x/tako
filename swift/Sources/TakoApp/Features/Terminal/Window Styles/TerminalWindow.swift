@@ -57,6 +57,7 @@ class TerminalWindow: NSWindow {
     /// screen then (it lives in another window in full screen).
     weak var cachedTitlebarContainer: NSView?
     var cachedTitlebarContainerFullScreen = false
+    weak var topBandMouseTarget: NSView?
 
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
@@ -207,31 +208,8 @@ class TerminalWindow: NSWindow {
     override var canBecomeMain: Bool { return true }
 
     override func sendEvent(_ event: NSEvent) {
-        if let bar = Tako.TabBarController.bar(for: self), bar.draggingTabIndex != nil {
-            if event.type == .leftMouseDragged {
-                bar.mouseDragged(with: event)
-                return
-            } else if event.type == .leftMouseUp {
-                bar.mouseUp(with: event)
-                return
-            }
-        }
-
-        if tabTitleEditor.handleMouseDown(event) {
+        if handleInterceptedWindowEvent(event) {
             return
-        }
-
-        if tabTitleEditor.handleRightMouseDown(event) {
-            return
-        }
-
-        if event.type == .leftMouseDown,
-           let bar = Tako.TabBarController.bar(for: self) {
-            let pt = bar.convert(event.locationInWindow, from: nil)
-            if bar.bounds.contains(pt), bar.hitTab(at: pt) != nil {
-                bar.mouseDown(with: event)
-                return
-            }
         }
 
         if !isKeyWindow || !NSApp.isActive, SessionSidebarFirstClick.wants(event, in: self) {

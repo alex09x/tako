@@ -91,7 +91,6 @@ extension SessionSidebarRowView {
                 .foregroundColor(Color(nsColor: T.textActive))
                 .onKeyPress(.escape) {
                     editingItemId = nil
-                    isPresented = false
                     return .handled
                 }
 

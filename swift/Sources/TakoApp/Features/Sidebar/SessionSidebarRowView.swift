@@ -28,12 +28,14 @@ struct SessionSidebarRowView: View {
     /// No frames at all: the window is hidden or the app has been away.
     var motionPaused: Bool = false
     var onSelect: () -> Void = {}
+    var onClose: (() -> Void)? = nil
 
     @ObservedObject var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     /// Bumped when a state that moves once comes to rest, so the row is
     /// drawn again and its frames stop.
     @State private var restCount = 0
+    @State private var isHovering = false
 
     typealias T = Tako.LivingTokens
 
@@ -185,6 +187,10 @@ struct SessionSidebarRowView: View {
                         .fill(Color(nsColor: T.claw))
                         .frame(width: 5, height: 5)
                 }
+
+                if isHovering, let onClose {
+                    closeRowButton(action: onClose, isChild: false)
+                }
             }
             .frame(height: 16)
 
@@ -271,7 +277,9 @@ struct SessionSidebarRowView: View {
         }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
         .onPress(perform: onSelect)
+        .accessibilityAction(named: Text("Close Session")) { onClose?() }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
     }
@@ -315,6 +323,10 @@ struct SessionSidebarRowView: View {
                         .padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: T.badge)))
                 }
+
+                if isHovering, let onClose {
+                    closeRowButton(action: onClose, isChild: true)
+                }
             }
             .frame(height: 15)
 
@@ -356,10 +368,26 @@ struct SessionSidebarRowView: View {
         }
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
         .onPress(perform: onSelect)
+        .accessibilityAction(named: Text("Close Pane")) { onClose?() }
         .padding(.leading, 36)
         .padding(.trailing, 8)
         .padding(.vertical, 1)
+    }
+
+    private func closeRowButton(action: @escaping () -> Void, isChild: Bool) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundColor(Color(nsColor: T.dim))
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SessionSidebarCloseButton")
+        .accessibilityLabel(isChild ? "Close pane" : "Close session")
+        .help(isChild ? "Close pane" : "Close session")
     }
 
 }

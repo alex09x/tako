@@ -244,7 +244,7 @@ extension AppDelegate: NSMenuItemValidation {
             return NotificationStore.shared.latestUnread() != nil
 
         case #selector(toggleSessionSidebar(_:)):
-            return true
+            return false
 
         case #selector(BaseTerminalController.togglePaneOverview(_:)):
             return true

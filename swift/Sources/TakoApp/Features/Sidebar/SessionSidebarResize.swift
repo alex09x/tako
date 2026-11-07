@@ -52,8 +52,8 @@ struct SessionSidebarResizeHandle: NSViewRepresentable {
 
     func updateNSView(_ grip: SessionSidebarGripView, context: Context) {
         let binding = $width
-        grip.currentWidth = { binding.wrappedValue }
-        grip.setWidth = { binding.wrappedValue = $0 }
+        grip.currentWidth = { Double(SessionSidebarWidth.clamped(CGFloat(binding.wrappedValue))) }
+        grip.setWidth = { binding.wrappedValue = Double(SessionSidebarWidth.clamped(CGFloat($0))) }
     }
 }
 

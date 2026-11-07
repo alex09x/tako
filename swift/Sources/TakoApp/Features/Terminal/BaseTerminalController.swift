@@ -64,23 +64,16 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Whether the Session Sidebar panel is showing for this window (B5).
-    @Published var sessionSidebarIsShowing: Bool = SessionSidebarStore.shared.isShowing {
+    /// Whether this terminal window type hosts the permanent Session Sidebar.
+    /// Desktop `TerminalController` windows always show it; `QuickTerminalController` stays separate.
+    var supportsSessionSidebar: Bool { false }
+
+    /// Permanent sidebar state for this window (`true` on desktop windows, `false` on Quick Terminal).
+    @Published var sessionSidebarIsShowing: Bool = false {
         didSet {
-            if SessionSidebarStore.shared.isShowing != sessionSidebarIsShowing {
-                SessionSidebarStore.shared.isShowing = sessionSidebarIsShowing
-            }
-            if let window = self.window {
-                for sibling in Tako.CustomTabGroup.group(for: window).windows where sibling !== window {
-                    if let siblingController = sibling.windowController as? BaseTerminalController,
-                       siblingController.sessionSidebarIsShowing != sessionSidebarIsShowing {
-                        siblingController.sessionSidebarIsShowing = sessionSidebarIsShowing
-                    }
-                }
-            }
-            guard oldValue, !sessionSidebarIsShowing else { return }
-            DispatchQueue.main.async { [weak self] in
-                Tako.moveFocus(to: self?.focusedSurface)
+            let expected = supportsSessionSidebar
+            if sessionSidebarIsShowing != expected {
+                sessionSidebarIsShowing = expected
             }
         }
     }
@@ -206,6 +199,7 @@ class BaseTerminalController: NSWindowController,
         self.tako = tako
         self.baseDerivedConfig = DerivedConfig(tako.config)
         super.init(window: nil)
+        self.sessionSidebarIsShowing = self.supportsSessionSidebar
         self.surfaceTree = tree ?? .init(view: Tako.SurfaceView(tako, baseConfig: base))
         for view in surfaceTree { view.adopt(by: tako) }
         setupBellNotificationPublisher()

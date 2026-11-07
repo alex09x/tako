@@ -106,11 +106,12 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
             let isTransparentTitlebar = derivedConfig.macosTitlebarStyle == .transparent ||
             derivedConfig.macosTitlebarStyle == .tabs
 
-            let showsTakoStrip = Tako.TabBarController.bar(for: self) != nil
-            titlebarView.layer?.backgroundColor = (showsTakoStrip || (isGlassStyle && isTransparentTitlebar))
+            let usesFullSizeDesktopChrome = Tako.TabBarController.isInstalled(in: self) ||
+                (!styleMask.contains(.fullScreen) && tabbingMode == .disallowed)
+            titlebarView.layer?.backgroundColor = (usesFullSizeDesktopChrome || (isGlassStyle && isTransparentTitlebar))
                 ? NSColor.clear.cgColor
                 : preferredBackgroundColor?.cgColor
-            if showsTakoStrip { titlebarView.layer?.isOpaque = false }
+            if usesFullSizeDesktopChrome { titlebarView.layer?.isOpaque = false }
         }
 
         // In all cases, we have to hide the background view since this has multiple subviews
@@ -122,9 +123,13 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
     private func syncAppearanceVentura(_ surfaceConfig: Tako.SurfaceView.DerivedConfig) {
         guard let titlebarContainer else { return }
 
-        // Setup the titlebar background color to match ours
+        let usesFullSizeDesktopChrome = Tako.TabBarController.isInstalled(in: self) ||
+            (!styleMask.contains(.fullScreen) && tabbingMode == .disallowed)
         titlebarContainer.wantsLayer = true
-        titlebarContainer.layer?.backgroundColor = preferredBackgroundColor?.cgColor
+        titlebarContainer.layer?.backgroundColor = usesFullSizeDesktopChrome
+            ? NSColor.clear.cgColor
+            : preferredBackgroundColor?.cgColor
+        if usesFullSizeDesktopChrome { titlebarContainer.layer?.isOpaque = false }
 
         // See the docs for the function that sets this to true on why
         effectViewIsHidden = false

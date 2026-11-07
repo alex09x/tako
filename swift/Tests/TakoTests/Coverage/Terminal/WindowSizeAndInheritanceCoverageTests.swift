@@ -43,11 +43,12 @@ struct WindowSizeAndInheritanceCoverageTests {
             height: surface.cellSize.height * 20 + padding.top + padding.bottom)
         // The initial sizing hint is consumed by windowDidLoad. Check the
         // applied window, rather than reading that cleared temporary hint.
+        let sidebarWidth = SessionSidebarWidth.current()
         let contentSize = window.contentRect(forFrameRect: window.frame).size
-        #expect(contentSize.width == expected.width)
-        #expect(contentSize.height == expected.height + Tako.TabBarController.barHeight)
-        let terminalSize = NSSize(width: contentSize.width,
-                                  height: contentSize.height - Tako.TabBarController.barHeight)
+        #expect(contentSize.width == expected.width + sidebarWidth)
+        #expect(contentSize.height == expected.height)
+        let terminalSize = NSSize(width: contentSize.width - sidebarWidth,
+                                  height: contentSize.height)
         let fitted = TerminalGridLayout(viewSize: terminalSize, cellSize: surface.cellSize, theme: surface.theme)
         #expect(fitted.cols == 80)
         #expect(fitted.rows == 20)

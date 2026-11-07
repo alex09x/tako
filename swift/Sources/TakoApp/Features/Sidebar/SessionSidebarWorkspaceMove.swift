@@ -148,6 +148,9 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
     let onMove: (String, UUID) -> Bool
     let canMoveToWindow: () -> Bool
     let onMoveToWindow: () -> Void
+    var onNewSession: (() -> Void)? = nil
+    var onRename: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
 
     @ViewBuilder func body(content: Content) -> some View {
         if item.isChild {
@@ -160,6 +163,18 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
 
     private func menu<Content: View>(_ content: Content) -> some View {
         content.contextMenu {
+            if let onNewSession {
+                Button("New Session", action: onNewSession)
+            }
+            if !item.isChild, let onRename {
+                Button("Rename Session…", action: onRename)
+            }
+            if let onClose {
+                Button(item.isChild ? "Close Pane" : "Close Session", action: onClose)
+            }
+            if onNewSession != nil || (!item.isChild && onRename != nil) || onClose != nil {
+                Divider()
+            }
             Button(item.isChild ? "Pane Appearance…" : "Terminal Appearance…") {
                 if let id = item.surfaceId { ScopedAppearanceContext.showPane(id) }
             }

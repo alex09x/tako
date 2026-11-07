@@ -238,9 +238,9 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         // on key and main changes; a question answered in a window that was
         // never key -- one restored in the background -- left it hidden until
         // the window was clicked.
-        if let window, let bar = Tako.TabBarController.bar(for: window) {
+        if let window, Tako.TabBarController.isInstalled(in: window) {
             Tako.TabBarController.clearTitlebarBackground(in: window)
-            bar.needsDisplay = true
+            Tako.TabBarController.bar(for: window)?.needsDisplay = true
         }
         pending?(cancelIndex)
     }
