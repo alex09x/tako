@@ -32,6 +32,19 @@ final class TakoNativeAgentSetupUITests: TakoCustomConfigCase {
             XCTAssertTrue(card.isHittable, "The \(id) card must be physically reachable")
             XCTAssertEqual(card.value as? String, "Selected")
         }
+        let wizard = app.descendants(matching: .any)["SetupWizard"].firstMatch
+        let viewport = wizard.scrollViews.firstMatch
+        for _ in 0..<4 {
+            if viewport.frame.contains(CGPoint(x: connect.frame.midX, y: connect.frame.midY)) { break }
+            viewport.scroll(byDeltaX: 0, deltaY: -250)
+        }
+        XCTAssertTrue(connect.isHittable)
+        XCTAssertTrue(viewport.frame.contains(CGPoint(x: connect.frame.midX, y: connect.frame.midY)),
+                      "Connect must be inside the visible scroll viewport before a physical click")
+        let before = XCTAttachment(screenshot: wizard.screenshot())
+        before.name = "Native agent connect visible target"
+        before.lifetime = .keepAlways
+        add(before)
         connect.click()
         await assertConnected(app)
         for root in [".qwen", ".config/muse"] {
@@ -74,8 +87,7 @@ final class TakoNativeAgentSetupUITests: TakoCustomConfigCase {
             while card.value as? String != "Connected" && Date() < deadline {
                 try? await Task.sleep(for: .milliseconds(200))
             }
-            let detail = app.staticTexts["SetupMessage"].firstMatch
-            XCTAssertEqual(card.value as? String, "Connected", "\(id): \(detail.exists ? detail.label : "No setup error")")
+            XCTAssertEqual(card.value as? String, "Connected", id)
         }
     }
 
