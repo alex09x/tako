@@ -73,6 +73,30 @@ Adapters are declarative data files residing in `takoctl/adapters/<agent>.json` 
    - Configuration file: `~/.aider.conf.yml`
    - Hook Key: `notifications-command`.
 
+6. **Qwen Code** (`qwen`, verified with 0.26.9)
+   - Configuration: `~/.qwen/settings.json`; skill: `~/.qwen/skills/tako/SKILL.md`.
+   - Native command hooks report session, prompt, permission/question, tool completion and turn completion/failure events.
+   - Events with a subagent `agent_id` do not overwrite the root terminal's status.
+
+7. **Muse** (`muse`, verified with 1.4.14-R7309.1)
+   - Configuration: `$XDG_CONFIG_HOME/muse/settings.json`, defaulting to `~/.config/muse/settings.json`.
+   - Uses `managed_hooks_path` and a managed hook file, preserving existing user hooks and paths. Native plugins cannot inherit the pane binding.
+   - Adds only `TAKO_SURFACE_ID` and `TAKO_SOCKET` to `managed_hooks_env_vars`; existing entries remain intact. Credentials are not added.
+   - Hooks with different `MUSE_SESSION_ID` and `MUSE_THREAD_ID` belong to internal subagents and cannot change the root pane's status.
+   - Skill: `<Muse config directory>/skills/tako/SKILL.md`.
+
+The app seals `tako-hook.py` in its Resources; hooks installed by its CLI invoke that dispatcher with `/usr/bin/python3` and the matching bundled CLI even if the provider replaces PATH. For a standalone CLI installation, install/update `tako-hook` first using `python3 scripts/install-tako-hook.py`. The dispatcher validates the pane UUID and socket; these adapters deliberately have no direct CLI fallback. Restart the agent session to load changed hooks; installing them does not restart an existing agent or interrupt its work.
+
+```sh
+takoctl hooks install qwen --yes
+takoctl skills install qwen --yes
+takoctl hooks install muse --yes
+takoctl skills install muse --yes
+takoctl hooks status muse --json
+```
+
+Recognition of the foreground command supplies its name and interactive/batch classification. Working, approval and completion badges come from lifecycle hooks, independently of terminal output.
+
 ---
 
 ## 4. Safe Installation and Byte-Identical Uninstallation
@@ -81,7 +105,7 @@ Tako adheres to strict safety guarantees for managing third-party tool configura
 
 1. **Unified Diff Inspection**: Running `takoctl hooks install <agent>` displays a full unified diff of proposed changes before touching any files.
 2. **Interactive Confirmation**: Changes are only written after the user confirms (`[y/N]`), unless `--yes` is explicitly passed.
-3. **Byte-Identical Reversibility**: `takoctl hooks uninstall <agent>` removes exactly what was installed. When no unrelated manual edits were made after installation, the configuration is restored **byte-identical** to its pre-installation state (or deleted if created anew).
+3. **Reversibility**: Existing adapters restore their byte-identical backup when possible. Qwen and Muse remove owned hooks while preserving current user settings and hook siblings; JSON formatting may change. Muse tracks additions in a private receipt so uninstall removes only the environment entries and pointers that Tako added. Original backups remain available.
 4. **Dry-Run Inspection**: `--diff-only` prints the diff and exits with code 0 without modifying the disk.
 
 ---

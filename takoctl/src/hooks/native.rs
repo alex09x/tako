@@ -23,47 +23,48 @@ pub(super) fn muse_root_from(xdg: Option<PathBuf>, fallback: PathBuf) -> PathBuf
         .join("muse")
 }
 
-pub fn adapter(provider: &str) -> Adapter {
-    let claude = Adapter::from_json_str(super::adapter::ADAPTER_CLAUDE).unwrap();
-    let mut hooks = serde_json::Map::new();
-    for (event, dispatch, fallback) in [
-        ("SessionStart", "session_start", "UserPromptSubmit"),
-        ("UserPromptSubmit", "user_prompt_submit", "UserPromptSubmit"),
-        (
-            "PermissionRequest",
-            "permission_request",
-            "PermissionRequest",
-        ),
-        ("PreToolUse", "question", "Elicitation"),
-        ("PostToolUse", "post_tool_use", "UserPromptSubmit"),
-        ("PostToolUseFailure", "post_tool_use", "UserPromptSubmit"),
-        ("Stop", "stop", "Stop"),
-        ("StopFailure", "stop_failure", "Stop"),
-        ("SessionEnd", "session_end", "SessionEnd"),
-    ] {
-        let mut command = claude.hooks[fallback][0]["hooks"][0]["command"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let old = match fallback {
-            "PermissionRequest" => "permission_request",
-            "Elicitation" => "question",
-            "Stop" => "stop",
-            "SessionEnd" => "session_end",
-            _ => "user_prompt_submit",
-        };
-        command = command.replace(
-            &format!("tako-hook claude {old}"),
-            &format!("tako-hook {provider} {dispatch}"),
+fn dispatcher_command(provider: &str, event: &str) -> String {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.parent()?
+                .parent()
+                .map(|contents| contents.join("Resources/tako-hook.py"))
+        })
+        .filter(|path| path.is_file());
+    if let Some(path) = bundled {
+        let quote = |path: &Path| format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
+        // Muse sanitizes the hook environment. Use the exact bundled dispatcher
+        // and ensure its subprocess resolves the matching CLI in the same bundle.
+        let binaries = path.parent().unwrap().parent().unwrap().join("MacOS");
+        return format!(
+            "PATH={}:\"$PATH\" /usr/bin/python3 {} {provider} {event}; :",
+            quote(&binaries),
+            quote(&path)
         );
-        if event == "SessionStart" {
-            command = command
-                .replace("status set working", "status clear")
-                .replace(" --text \"Thinking...\"", "")
-                .replace("progress indeterminate", "progress clear");
-        } else if event == "StopFailure" {
-            command = command.replace("status set done", "status set error");
-        }
+    }
+    format!(
+        "if command -v tako-hook >/dev/null 2>&1; then tako-hook {provider} {event}; \
+             elif [ -x \"$HOME/.local/bin/tako-hook\" ]; then \"$HOME/.local/bin/tako-hook\" {provider} {event}; fi; :"
+    )
+}
+
+pub fn adapter(provider: &str) -> Adapter {
+    let mut hooks = serde_json::Map::new();
+    for (event, dispatch) in [
+        ("SessionStart", "session_start"),
+        ("UserPromptSubmit", "user_prompt_submit"),
+        ("PermissionRequest", "permission_request"),
+        ("PreToolUse", "question"),
+        ("PostToolUse", "post_tool_use"),
+        ("PostToolUseFailure", "post_tool_use"),
+        ("Stop", "stop"),
+        ("StopFailure", "stop_failure"),
+        ("SessionEnd", "session_end"),
+    ] {
+        // The dispatcher validates the recipient and filters internal subagents.
+        // A direct takoctl fallback would bypass both checks.
+        let command = dispatcher_command(provider, dispatch);
         let matcher = if event == "PreToolUse" {
             "^(ask_user_question|request_user_input|ask_question)$"
         } else {
@@ -204,9 +205,16 @@ pub fn status_at(query: &str, override_path: &str, json: bool) -> Result<(), Str
         println!("  Config:    {}", path.display());
         println!(
             "  Status:    {}",
-            if installed { "installed" } else { "not installed" }
+            if installed {
+                "installed"
+            } else {
+                "not installed"
+            }
         );
-        println!("  File exists: {}", if path.exists() { "yes" } else { "no" });
+        println!(
+            "  File exists: {}",
+            if path.exists() { "yes" } else { "no" }
+        );
     }
     Ok(())
 }

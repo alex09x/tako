@@ -75,13 +75,12 @@ fn validate_settings(settings: &Value) -> Result<(), String> {
     {
         return Err("Muse schema_version must be 1".into());
     }
-    if let Some(env) = settings.get("managed_hooks_env_vars") {
-        if !env
+    if let Some(env) = settings.get("managed_hooks_env_vars")
+        && !env
             .as_array()
             .is_some_and(|a| a.iter().all(Value::is_string))
-        {
-            return Err("managed_hooks_env_vars must be an array of strings".into());
-        }
+    {
+        return Err("managed_hooks_env_vars must be an array of strings".into());
     }
     Ok(())
 }

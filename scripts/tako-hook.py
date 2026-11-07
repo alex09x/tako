@@ -48,10 +48,10 @@ def recipient(env):
 
 def commands(event, surface):
     target = ["--target", surface]
-    if event == "session_end":
+    if event in ("session_start", "session_end"):
         return [["status", "clear"] + target, ["progress", "clear"] + target]
     if event in ("user_prompt_submit", "start", "working", "pre_invocation",
-                 "question_answered", "post_question"):
+                 "question_answered", "post_question", "post_tool_use"):
         return [
             ["status", "set", "working", "--text", "Thinking..."] + target,
             ["progress", "indeterminate"] + target,
@@ -63,6 +63,9 @@ def commands(event, surface):
                 ["progress", "clear"] + target]
     if event in ("stop", "done", "post_invocation"):
         return [["status", "set", "done"] + target,
+                ["progress", "clear"] + target]
+    if event == "stop_failure":
+        return [["status", "set", "error", "--text", "Agent failed"] + target,
                 ["progress", "clear"] + target]
     if event in ("permission_request", "approval"):
         return [
@@ -170,10 +173,19 @@ def watch_interrupt(transcript, offset, env, sleep=time.sleep, clock=time.monoto
 
 
 def dispatch(agent, event, env, payload=None):
-    if agent not in ("codex", "claude", "agy", "antigravity", "gemini"):
+    if agent not in ("codex", "claude", "agy", "antigravity", "gemini", "qwen", "muse"):
         return
+    # Qwen documents agent_id only for subagents. Muse gives every hook
+    # its top-level session and its actual chat/thread; only the root owns
+    # this terminal's status, not an internal child finishing a tool/turn.
+    if agent == "qwen" and isinstance(payload, dict) and payload.get("agent_id"):
+        return
+    if agent == "muse":
+        session, thread = env.get("MUSE_SESSION_ID"), env.get("MUSE_THREAD_ID")
+        if (session or thread) and (not session or not thread or session != thread):
+            return
     tool = payload.get("tool_name") if isinstance(payload, dict) else None
-    question_tools = {"AskUserQuestion", "ask_question", "request_user_input"}
+    question_tools = {"AskUserQuestion", "ask_question", "ask_user_question", "request_user_input"}
     if event == "permission_request" and tool in question_tools:
         event = "waiting_for_input"
     # Some provider configs use PreToolUse for question events. Ordinary

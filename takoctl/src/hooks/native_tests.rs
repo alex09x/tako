@@ -31,8 +31,10 @@ fn catalogs_and_event_contracts() {
             let hook = &a.hooks[event][0]["hooks"][0];
             let command = hook["command"].as_str().unwrap();
             assert!(command.contains(&format!("tako-hook {name} {dispatch};")));
-            assert!(command.contains("--target \"$TAKO_SURFACE_ID\""));
-            assert!(command.contains("$TAKO_SOCKET"));
+            assert!(
+                !command.contains("takoctl"),
+                "recipient/subagent checks must not be bypassed"
+            );
             assert_eq!(hook["timeout"], 5);
         }
         assert_eq!(
@@ -43,7 +45,7 @@ fn catalogs_and_event_contracts() {
             a.hooks["PostToolUseFailure"][0]["hooks"][0]["command"]
                 .as_str()
                 .unwrap()
-                .contains("status set working")
+                .contains(" post_tool_use;")
         );
         assert!(
             !a.hooks["SessionStart"][0]["hooks"][0]["command"]
