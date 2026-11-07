@@ -72,34 +72,20 @@ final class TakoThemeTests: TakoCustomConfigCase {
         add(hierarchy)
         XCTAssertFalse(windows.isEmpty, "A visible terminal window is required", file: file, line: line)
         for window in windows {
-            let strip = window.descendants(matching: .any)["tab-bar"]
-            XCTAssertTrue(strip.exists, file: file, line: line)
-            XCTAssertEqual(strip.frame.height, 38, accuracy: 1, file: file, line: line)
+            XCTAssertFalse(window.descendants(matching: .any)["tab-bar"].exists, file: file, line: line)
             let attachment = XCTAttachment(screenshot: window.screenshot())
             attachment.name = "Chrome and terminal, expected \(appearance)"
             attachment.lifetime = .keepAlways
             add(attachment)
 
-            // TabBarView.draw fills Palette.bar (#14100e) regardless of
-            // window-theme or titlebar style. The top 2pt are above all pill
-            // content and buttons. Sample fixed places, not favorable pixels.
-            for x in [CGFloat(0.25), 0.5, 0.75] {
-                let color = try backgroundColor(of: strip, x: x, y: 2 / strip.frame.height,
-                                                file: file, line: line)
-                XCTAssertEqual(color.redComponent, 20 / 255, accuracy: 0.03, file: file, line: line)
-                XCTAssertEqual(color.greenComponent, 16 / 255, accuracy: 0.03, file: file, line: line)
-                XCTAssertEqual(color.blueComponent, 14 / 255, accuracy: 0.03, file: file, line: line)
-            }
-
-            // Theme changes remain observable on the real terminal and on
-            // split-pane drag chrome, whose fill is surface.theme.background.
-            // The fixed dark strip alone cannot prove a light/dark reload.
+            // Theme changes are observable directly on the edge-to-edge terminal
+            // and on split-pane drag chrome, whose fill is surface.theme.background.
             let terminals = window.textViews.allElementsBoundByIndex.filter { $0.isHittable }
             XCTAssertFalse(terminals.isEmpty, "A live terminal is required", file: file, line: line)
             let handles = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pane-drag-handle-'"))
                 .allElementsBoundByIndex.filter { $0.isHittable }
             for element in terminals + handles {
-                XCTAssertGreaterThanOrEqual(element.frame.minY, strip.frame.maxY - 1, file: file, line: line)
+                XCTAssertGreaterThanOrEqual(element.frame.minY, window.frame.minY - 2, file: file, line: line)
                 // Bottom-right terminal background avoids prompt/cursor ink;
                 // the handle's left quarter avoids its centered grip.
                 let isHandle = element.identifier.hasPrefix("pane-drag-handle-")

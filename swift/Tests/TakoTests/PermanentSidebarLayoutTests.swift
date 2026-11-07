@@ -174,8 +174,17 @@ struct PermanentSidebarLayoutTests {
         #expect(abs(surfaceRect.minY - contentBounds.minY) < 1.5)
         #expect(surfaceRect.minX >= SessionSidebarWidth.range.lowerBound - 1.5)
 
-        // Left sidebar drag strip sits above the sidebar column in normal mode and collapses in fullscreen.
+        // Left sidebar drag strip and resize handle expose stable AppKit AX identifiers and frames.
         let dragStrip = try #require(findFirst(of: SidebarTitlebarDragView.self, in: contentView))
+        #expect(dragStrip.accessibilityIdentifier() == "SidebarWindowDragRegion")
+        #expect(dragStrip.accessibilityRole() == .group)
+        let gripView = try #require(findFirst(of: SessionSidebarGripView.self, in: contentView))
+        #expect(gripView.accessibilityIdentifier() == "SessionSidebarResizeHandle")
+        #expect(gripView.accessibilityRole() == .splitter)
+        let gripRect = gripView.convert(gripView.bounds, to: contentView)
+        #expect(gripRect.width == SessionSidebarResizeHandle.hitWidth)
+        #expect(gripRect.height > 100)
+
         let dragRect = dragStrip.convert(dragStrip.bounds, to: contentView)
         #expect(abs(dragRect.height - SessionSidebarChrome.titlebarStripHeight) < 1.0)
         #expect(abs(dragRect.maxY - contentBounds.maxY) < 1.5)
@@ -313,5 +322,21 @@ struct PermanentSidebarLayoutTests {
         store.closeTab(item: secondItem, in: w1)
         #expect(group.windows == [w1])
         #expect(group.selectedWindow === w1)
+
+        // Footer SessionSidebarNewSession button action resolves containingWindow and creates a new session.
+        let sidebarView = SessionSidebarView(
+            isPresented: .constant(true),
+            containingWindow: w1,
+            store: store,
+            workspaceStore: wsStore
+        )
+        #expect(sidebarView.newSessionHint.contains("New session"))
+        sidebarView.triggerNewSession()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(group.windows.count == 2)
+        if let w3 = group.windows.first(where: { $0 !== w1 }) {
+            Tako.CustomTabGroup.leave(w3)
+            w3.orderOut(nil)
+        }
     }
 }

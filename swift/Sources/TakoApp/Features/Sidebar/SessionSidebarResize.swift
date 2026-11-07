@@ -75,6 +75,7 @@ final class SessionSidebarGripView: NSView {
         toolTip = "Drag to resize sidebar; double-click to reset"
         setAccessibilityElement(true)
         setAccessibilityRole(.splitter)
+        setAccessibilityIdentifier("SessionSidebarResizeHandle")
         setAccessibilityLabel("Resize session sidebar")
     }
 

@@ -45,7 +45,7 @@ final class SidebarTitlebarDragView: NSView {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityIdentifier("SessionSidebarDragStrip")
+        setAccessibilityIdentifier("SidebarWindowDragRegion")
         setAccessibilityLabel("Window drag area")
     }
 

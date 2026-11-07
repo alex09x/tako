@@ -78,15 +78,15 @@ final class TakoFeatureJourneysUITests: TakoCustomConfigCase {
         app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should appear")
 
-        // Toggle Session Sidebar via shortcut Cmd+Option+S
-        app.typeKey("s", modifierFlags: [.command, .option])
-
+        let sidebar = app.descendants(matching: .any)["SessionSidebar"].firstMatch
         let sessionsHeader = app.descendants(matching: .any)["SessionSidebarHeader"]
-        XCTAssertTrue(sessionsHeader.waitForExistence(timeout: 5), "Session sidebar header should appear")
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5), "Permanent session sidebar must be visible from launch")
+        XCTAssertTrue(sessionsHeader.exists, "Session sidebar header must be visible from launch")
 
-        // Toggle back to close
+        // Legacy shortcut Cmd+Option+S and Escape must NOT hide the permanent sidebar
         app.typeKey("s", modifierFlags: [.command, .option])
-        XCTAssertTrue(sessionsHeader.waitForNonExistence(timeout: 5), "Session sidebar should disappear after second toggle")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(sidebar.exists && sessionsHeader.exists, "Session sidebar must remain permanently open")
     }
 
     @MainActor

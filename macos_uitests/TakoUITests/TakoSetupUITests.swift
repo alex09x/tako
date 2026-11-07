@@ -336,12 +336,22 @@ final class TakoSetupUITests: TakoCustomConfigCase {
     private func assertKeyboardReturnsToTerminal(_ app: XCUIApplication) async throws {
         app.typeKey("t", modifierFlags: [.command])
         let deadline = Date().addingTimeInterval(5)
-        var tab: XCUIElement?
-        while tab == nil && Date() < deadline {
-            tab = app.radioButtons.matching(identifier: "tab-1").allElementsBoundByIndex.first { $0.isHittable }
-            if tab == nil { try await Task.sleep(for: .milliseconds(50)) }
+        var selectedCount = 0
+        var sessionCount = 0
+        while sessionCount < 2 && Date() < deadline {
+            if let win = app.windows.allElementsBoundByIndex.first(where: { $0.textViews.firstMatch.isHittable }) {
+                var seen: Set<String> = []
+                let rows = win.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier BEGINSWITH 'session-tab-'"))
+                    .allElementsBoundByIndex
+                    .filter { $0.isHittable && seen.insert($0.identifier).inserted }
+                sessionCount = rows.count
+                selectedCount = rows.filter { ($0.value as? String) == "selected" }.count
+            }
+            if sessionCount < 2 { try await Task.sleep(for: .milliseconds(50)) }
         }
-        XCTAssertEqual(try XCTUnwrap(tab).value as? Int, 1, "A normal keyboard shortcut must reach the terminal after setup closes")
+        XCTAssertEqual(sessionCount, 2, "A normal keyboard shortcut must reach the terminal after setup closes")
+        XCTAssertEqual(selectedCount, 1)
         try await assertTypingReachesTheShell(app)
     }
 

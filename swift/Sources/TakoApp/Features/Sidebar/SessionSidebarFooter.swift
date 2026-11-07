@@ -59,7 +59,7 @@ extension SessionSidebarView {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("SessionSidebarNewSessionButton")
+            .accessibilityIdentifier("SessionSidebarHeaderNewSession")
             .accessibilityLabel("New session")
             .help("New session")
         }
@@ -78,8 +78,12 @@ extension SessionSidebarView {
 
     // MARK: - Footer (§5.8)
 
+    func triggerNewSession() {
+        store.createNewTab(in: targetWindow)
+    }
+
     var footerView: some View {
-        Button(action: { store.createNewTab(in: targetWindow) }) {
+        Button(action: triggerNewSession) {
             Text(newSessionHint)
                 .font(Font(T.monoFont(size: 10.5, weight: .regular)))
                 .foregroundColor(Color(nsColor: T.dim))
@@ -89,7 +93,7 @@ extension SessionSidebarView {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("SessionSidebarFooterNewSessionButton")
+        .accessibilityIdentifier("SessionSidebarNewSession")
         .accessibilityLabel("New session")
     }
 

@@ -141,6 +141,8 @@ struct SessionSidebarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundColor)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("SessionSidebar")
         .onAppear {
             if hostingWindow == nil {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow

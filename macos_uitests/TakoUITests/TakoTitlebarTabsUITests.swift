@@ -8,13 +8,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-//
-//  TakoTitlebarTabsUITests.swift
-//  Tako
-//
-//  Created by luca on 16.10.2025.
-//
-
 import AppKit
 import XCTest
 
@@ -37,24 +30,24 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
         app.typeKey("t", modifierFlags: .command)
-        // The drawn title/pill and New Tab control share the 38pt own row.
-        // Split zoom must preserve it without a native title/ResetZoom field.
-        try checkTabsGeometry(app)
+        try checkTabsGeometry(app, expectDragRegion: true)
     }
 
     @MainActor
     func testTabsGeometryInNormalWindow() throws {
         let app = try takoApplication()
         app.launch()
-        app.typeKey("t", modifierFlags: .command)
+        try activeWindow(app).buttons["SessionSidebarNewSession"].click()
         try assertTabCount(2, in: app)
-        try checkTabsGeometry(app)
+        try checkTabsGeometry(app, expectDragRegion: true)
 
-        // The own pill paints a close glyph, not an AX _closeButton child.
-        // Hit its real 20pt close area and verify exactly one tab closes.
-        let tab = try activeWindow(app).radioButtons["tab-1"]
-        tab.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
-            .withOffset(CGVector(dx: -13, dy: 0)).click()
+        // Close the second session via its sidebar row context menu and verify one session remains.
+        let secondRowId = try XCTUnwrap(sidebarRows(try activeWindow(app)).last)
+        let secondRow = try sidebarRowElement(secondRowId, in: try activeWindow(app))
+        secondRow.rightClick()
+        let closeItem = app.menuItems["Close Session"].firstMatch
+        XCTAssertTrue(closeItem.waitForExistence(timeout: 3))
+        closeItem.click()
         try assertTabCount(1, in: app)
         XCTAssertTrue(try activeWindow(app).textViews.firstMatch.isHittable)
     }
@@ -67,15 +60,14 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         try assertTabCount(2, in: app)
         let normalFrame = try activeWindow(app).frame
         app.typeKey("f", modifierFlags: [.command, .control])
-        // Prepare the group before fullscreen reparents its titlebar. This
-        // case checks geometry and selection, not tab creation mid-transition.
         try assertTabCount(2, in: app)
         XCTAssertGreaterThan(try activeWindow(app).frame.height, normalFrame.height,
                              "The geometry check must actually run in fullscreen")
-        try checkTabsGeometry(app)
+        try checkTabsGeometry(app, expectDragRegion: false)
         app.typeKey("f", modifierFlags: [.command, .control])
         XCTAssertEqual(try activeWindow(app).frame.height, normalFrame.height, accuracy: 1,
                        "Exiting fullscreen must restore the original window geometry")
+        try assertSidebarAndTerminalGeometry(app, count: 2, expectDragRegion: true)
     }
 
     @MainActor
@@ -85,79 +77,55 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         app.typeKey("t", modifierFlags: .command)
         app.typeKey("t", modifierFlags: .command)
         try assertTabCount(3, in: app)
-        showSidebar(app)
         let originalRows = Set(sidebarRows(try activeWindow(app)))
         XCTAssertEqual(originalRows.count, 3)
-        showSidebar(app)
 
-        // Track a real pane rather than tab-N, which is an index that changes
-        // when the own bar reorders its group.
         app.typeKey("d", modifierFlags: .command)
         let source = try activeWindow(app)
         let handles = source.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pane-drag-handle-'"))
         XCTAssertEqual(handles.count, 2)
         let movedID = handles.element(boundBy: 1).identifier
-        source.radioButtons["tab-2"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.2, thenDragTo: source.radioButtons["tab-0"].coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)))
-        let reordered = try activeWindow(app)
-        XCTAssertEqual(reordered.radioButtons["tab-0"].value as? Int, 1)
-        XCTAssertTrue(reordered.buttons[movedID].isHittable, "The dragged tab must retain its live split tree")
-        try assertTabCount(3, in: app)
 
-        // Cross-window detach is a pane-drag action. The bar supports in-group
-        // reordering, not AppKit's native inter-window tab dragging.
-        let outside = reordered.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+        // Cross-window detach drags the split pane outside the window into a new window with its own permanent sidebar.
+        let outside = source.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
             .withOffset(CGVector(dx: 60, dy: 0))
-        reordered.buttons[movedID].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        source.buttons[movedID].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.2, thenDragTo: outside)
-        XCTAssertTrue(app.wait(for: \.windows.count, toEqual: 2, timeout: 1), "Detaching a pane must open a second visible window")
-        try assertTabCount(1, in: app)
+        XCTAssertTrue(app.wait(for: \.windows.count, toEqual: 2, timeout: 2), "Detaching a pane must open a second visible window")
         let detached = try activeWindow(app)
         XCTAssertEqual(detached.textViews.count, 1)
         XCTAssertTrue(detached.textViews.firstMatch.isHittable)
-        try assertStripGeometry(app, count: 1)
+        try assertSidebarAndTerminalGeometry(app, count: 4, expectDragRegion: true)
 
-        showSidebar(app)
         let rows = Set(sidebarRows(try activeWindow(app)))
         XCTAssertEqual(rows.subtracting(originalRows).count, 1, "The detached pane must create exactly one new tab identity")
         XCTAssertTrue(originalRows.isSubset(of: rows))
-        // A standalone destination joins the existing multi-tab source group;
-        // moving it must preserve all three original tabs as one group.
+
         try joinTab(try XCTUnwrap(originalRows.sorted().first), in: app)
         try assertTabCount(4, in: app)
         XCTAssertEqual(app.windows.count, 1, "Rejoining must order out sibling windows")
-        showSidebar(app) // hide before exercising the full-width strip
-        try checkTabsGeometry(app)
+        try checkTabsGeometry(app, expectDragRegion: true)
     }
 
     @MainActor
     func testTabsGeometryAfterMergingAllWindows() throws {
         let app = try takoApplication()
         app.launch()
-        showSidebar(app)
         let firstRow = try XCTUnwrap(sidebarRows(try activeWindow(app)).first)
         app.typeKey("n", modifierFlags: .command)
         let secondRow = try XCTUnwrap(sidebarRows(try activeWindow(app)).first { $0 != firstRow })
         app.typeKey("n", modifierFlags: .command)
         XCTAssertEqual(app.windows.count, 3, "Three independent groups must exist before merging")
 
-        // Native mergeAllWindows: is unavailable with tabbingMode.disallowed.
-        // Exercise the shipped sidebar action twice to merge all three groups.
         try joinTab(firstRow, in: app)
-        try assertTabCount(2, in: app)
         XCTAssertEqual(app.windows.count, 2)
         try joinTab(secondRow, in: app)
         try assertTabCount(3, in: app)
         XCTAssertEqual(app.windows.count, 1)
-        showSidebar(app)
-        try checkTabsGeometry(app)
+        try checkTabsGeometry(app, expectDragRegion: true)
     }
 
     private func activeWindow(_ app: XCUIApplication) throws -> XCUIElement {
-        // Requery after selection: each tab owns an NSWindow, and the previous
-        // one is ordered out. Its descendants can still exist in AX.
-        // AppKit's 33pt fullscreen titlebar window can expose a terminal AX
-        // descendant without containing it. Use the physical terminal owner.
         func resolve() -> XCUIElement? {
             let owners = app.windows.matching(identifier: "TerminalWindowRestoration").allElementsBoundByIndex.filter { window in
                 let terminal = window.textViews.firstMatch
@@ -166,8 +134,6 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
             return owners.first { $0.textViews.firstMatch.isHittable } ?? owners.first
         }
         if let window = resolve() { return window }
-        // Native Space transitions briefly expose their target AX geometry
-        // before AppKit accepts mouse input. Wait for physical readiness.
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in resolve() != nil }, object: app)
         let result = XCTWaiter.wait(for: [ready], timeout: 5)
         var screenshotPath = ""
@@ -184,35 +150,44 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         return try XCTUnwrap(resolve())
     }
 
+    private func sidebarRows(_ window: XCUIElement) -> [String] {
+        var seen: Set<String> = []
+        return window.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'session-tab-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isHittable && seen.insert($0.identifier).inserted }
+            .map(\.identifier)
+    }
+
+    private func sidebarRowElement(_ rowID: String, in window: XCUIElement) throws -> XCUIElement {
+        let matches = window.descendants(matching: .any).matching(identifier: rowID).allElementsBoundByIndex.filter(\.isHittable)
+        return try XCTUnwrap(matches.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }))
+    }
+
     private func assertTabCount(_ count: Int, in app: XCUIApplication) throws {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let window = try? self.activeWindow(app) else { return false }
+            return self.sidebarRows(window).count == count
+        }, object: app)
+        let matches = XCTWaiter.wait(for: [ready], timeout: 3) == .completed
         let window = try activeWindow(app)
-        let matches = window.wait(for: \.radioButtons.count, toEqual: count, timeout: 1)
+        let actual = sidebarRows(window).count
         if !matches {
             let hierarchy = XCTAttachment(string: app.debugDescription)
-            hierarchy.name = "Unexpected tab count: expected \(count), actual \(window.radioButtons.count)"
+            hierarchy.name = "Unexpected session count: expected \(count), actual \(actual)"
             hierarchy.lifetime = .keepAlways
             add(hierarchy)
             let image = XCTAttachment(screenshot: window.screenshot())
-            image.name = "Window with unexpected tab count"
+            image.name = "Window with unexpected session count"
             image.lifetime = .keepAlways
             add(image)
         }
-        XCTAssertTrue(matches, "Expected \(count) tabs, actual \(window.radioButtons.count), frame \(window.frame)")
-        XCTAssertEqual(window.radioButtons.count, count)
-    }
-
-    private func showSidebar(_ app: XCUIApplication) {
-        app.menuBarItems["View"].firstMatch.click()
-        app.menuItems["Session Sidebar"].firstMatch.click()
-    }
-
-    private func sidebarRows(_ window: XCUIElement) -> [String] {
-        window.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'session-tab-'"))
-            .allElementsBoundByIndex.filter { $0.isHittable }.map { $0.identifier }
+        XCTAssertTrue(matches, "Expected \(count) sessions in permanent sidebar, actual \(actual), frame \(window.frame)")
+        XCTAssertEqual(actual, count)
     }
 
     private func joinTab(_ rowID: String, in app: XCUIApplication) throws {
-        let row = try activeWindow(app).descendants(matching: .any)[rowID].firstMatch
+        let row = try sidebarRowElement(rowID, in: try activeWindow(app))
         XCTAssertTrue(row.isHittable, "The source session row must be physically accessible")
         row.rightClick()
         let move = app.menuItems["Move to This Window"].firstMatch
@@ -220,81 +195,90 @@ final class TakoTitlebarTabsUITests: TakoCustomConfigCase {
         move.click()
     }
 
-    func checkTabsGeometry(_ app: XCUIApplication) throws {
-        let count = try activeWindow(app).radioButtons.count
-        XCTAssertGreaterThan(count, 1, "Geometry requires multiple tabs")
+    func checkTabsGeometry(_ app: XCUIApplication, expectDragRegion: Bool) throws {
+        let rowIDs = sidebarRows(try activeWindow(app))
+        let count = rowIDs.count
+        XCTAssertGreaterThan(count, 1, "Geometry requires multiple sessions")
         for index in 0..<count {
-            let tab = try activeWindow(app).radioButtons["tab-\(index)"]
-            XCTAssertTrue(tab.isHittable)
-            // Coordinate clicks test the actual mouse hit path, not AXPress.
-            tab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-            try assertSelection(index, count: count, in: app)
+            let rowID = rowIDs[index]
+            let row = try sidebarRowElement(rowID, in: try activeWindow(app))
+            XCTAssertTrue(row.isHittable)
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            try assertSelection(rowID, count: count, in: app)
 
-            // Shortcut badges are painted only while Command is held; there
-            // are no permanent native shortcut-label AX children to align.
-            // Prove numbered navigation by first selecting a different tab.
-            app.typeKey("\((index + 1) % count + 1)", modifierFlags: .command)
-            try assertSelection((index + 1) % count, count: count, in: app)
+            let otherIndex = (index + 1) % count
+            app.typeKey("\(otherIndex + 1)", modifierFlags: .command)
+            try assertSelection(rowIDs[otherIndex], count: count, in: app)
             app.typeKey("\(index + 1)", modifierFlags: .command)
-            try assertSelection(index, count: count, in: app)
+            try assertSelection(rowID, count: count, in: app)
 
             let baseline = try activeWindow(app).textViews.count
-            let frame = try assertStripGeometry(app, count: count)
+            let sidebarFrame = try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion)
             app.typeKey("d", modifierFlags: .command)
             XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1)
-            XCTAssertEqual(try assertStripGeometry(app, count: count), frame)
+            XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
             app.typeKey("\n", modifierFlags: [.command, .shift])
             XCTAssertEqual(try activeWindow(app).textViews.count, 1, "Zoom must show only the focused pane")
-            XCTAssertEqual(try assertStripGeometry(app, count: count), frame)
+            XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
             app.typeKey("\n", modifierFlags: [.command, .shift])
             XCTAssertEqual(try activeWindow(app).textViews.count, baseline + 1, "Reset zoom must restore every pane")
-            XCTAssertEqual(try assertStripGeometry(app, count: count), frame)
+            XCTAssertEqual(try assertSidebarAndTerminalGeometry(app, count: count, expectDragRegion: expectDragRegion), sidebarFrame)
         }
         let attachment = XCTAttachment(screenshot: try activeWindow(app).screenshot())
-        attachment.name = "Custom tabs after selection, split and zoom"
+        attachment.name = "Permanent sidebar and edge-to-edge terminal after selection, split and zoom"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
-    private func assertSelection(_ selected: Int, count: Int, in app: XCUIApplication) throws {
+    private func assertSelection(_ selectedRowID: String, count: Int, in app: XCUIApplication) throws {
         let window = try activeWindow(app)
-        XCTAssertEqual(window.radioButtons.count, count)
-        for index in 0..<count {
-            XCTAssertEqual(window.radioButtons["tab-\(index)"].value as? Int, index == selected ? 1 : 0)
+        let rowIDs = sidebarRows(window)
+        XCTAssertEqual(rowIDs.count, count)
+        for rowID in rowIDs {
+            let row = try sidebarRowElement(rowID, in: window)
+            XCTAssertEqual(row.value as? String, rowID == selectedRowID ? "selected" : "unselected")
         }
         XCTAssertTrue(window.textViews.firstMatch.isHittable)
     }
 
     @discardableResult
-    private func assertStripGeometry(_ app: XCUIApplication, count: Int) throws -> CGRect {
+    private func assertSidebarAndTerminalGeometry(
+        _ app: XCUIApplication,
+        count: Int,
+        expectDragRegion: Bool
+    ) throws -> CGRect {
         let window = try activeWindow(app)
-        let strip = window.descendants(matching: .any)["tab-bar"].frame
-        let plus = window.buttons["new-tab-button"].frame
-        XCTAssertEqual(strip.height, 38, accuracy: 1)
-        XCTAssertEqual(strip.width, window.frame.width, accuracy: 1)
-        XCTAssertEqual(plus.height, 28, accuracy: 1)
-        XCTAssertEqual(plus.midY, strip.midY, accuracy: 1)
-        XCTAssertEqual(window.radioButtons.count, count)
-        var previous: CGRect?
-        for index in 0..<count {
-            let tab = window.radioButtons["tab-\(index)"]
-            let frame = tab.frame
-            XCTAssertTrue(tab.isHittable)
-            XCTAssertGreaterThan(frame.width, 0)
-            XCTAssertEqual(frame.height, 28, accuracy: 1)
-            XCTAssertEqual(frame.midY, plus.midY, accuracy: 1)
-            XCTAssertGreaterThanOrEqual(frame.minX, strip.minX)
-            XCTAssertLessThanOrEqual(frame.maxX, plus.minX)
-            if let previous {
-                XCTAssertGreaterThanOrEqual(frame.minX, previous.maxX, "Tab hit targets must not overlap")
-                XCTAssertEqual(frame.height, previous.height, accuracy: 1)
-            }
-            previous = frame
+        XCTAssertFalse(window.descendants(matching: .any)["tab-bar"].exists, "Visual top tab bar must not exist")
+        XCTAssertFalse(window.buttons["new-tab-button"].exists, "Top new-tab-button must not exist")
+        XCTAssertEqual(window.radioButtons.count, 0, "Top pill radioButtons must not exist")
+
+        let sidebar = window.descendants(matching: .any)["SessionSidebar"].firstMatch
+        let newSession = window.buttons["SessionSidebarNewSession"]
+        let resizeHandle = window.descendants(matching: .any)["SessionSidebarResizeHandle"].firstMatch
+        let dragRegion = window.descendants(matching: .any)["SidebarWindowDragRegion"].firstMatch
+        XCTAssertTrue(sidebar.exists, "Permanent SessionSidebar container must exist")
+        XCTAssertTrue(newSession.exists, "Mouse-accessible SessionSidebarNewSession button must exist")
+        XCTAssertTrue(resizeHandle.exists, "SessionSidebarResizeHandle must exist")
+        XCTAssertEqual(dragRegion.exists, expectDragRegion, "SidebarWindowDragRegion visibility must match fullscreen state")
+
+        let sidebarFrame = sidebar.frame
+        XCTAssertGreaterThanOrEqual(sidebarFrame.width, 260 - 1, "Sidebar width must respect non-zero minimum")
+        XCTAssertEqual(sidebarFrame.minX, window.frame.minX, accuracy: 2)
+        XCTAssertEqual(sidebarFrame.minY, window.frame.minY, accuracy: 2)
+        XCTAssertEqual(sidebarFrame.maxY, window.frame.maxY, accuracy: 2)
+        XCTAssertEqual(sidebarRows(window).count, count)
+
+        let terminals = window.textViews.allElementsBoundByIndex.filter(\.isHittable)
+        XCTAssertFalse(terminals.isEmpty, "At least one hittable terminal view must exist")
+        for terminal in terminals {
+            XCTAssertGreaterThanOrEqual(terminal.frame.minX, sidebarFrame.maxX - 2, "Terminal must sit to the right of SessionSidebar")
+            XCTAssertGreaterThanOrEqual(terminal.frame.minY, window.frame.minY - 2, "Terminal must stay within window top edge")
+            XCTAssertLessThanOrEqual(terminal.frame.maxY, window.frame.maxY + 2, "Terminal must stay within window bottom edge")
         }
-        for terminal in window.textViews.allElementsBoundByIndex {
-            XCTAssertTrue(terminal.isHittable)
-            XCTAssertGreaterThanOrEqual(terminal.frame.minY, strip.maxY - 1, "Terminal content must stay below the own strip")
-        }
-        return strip
+        XCTAssertEqual(try XCTUnwrap(terminals.map(\.frame.minY).min()), window.frame.minY, accuracy: 2,
+                       "Right terminal pane must extend all the way to the top edge of the window")
+        XCTAssertEqual(try XCTUnwrap(terminals.map(\.frame.maxY).max()), window.frame.maxY, accuracy: 2,
+                       "Right terminal pane must extend to the bottom edge of the window")
+        return sidebarFrame
     }
 }

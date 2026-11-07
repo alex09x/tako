@@ -34,14 +34,14 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         app.menuItems["Quick Terminal"].firstMatch.click()
         let quick = app.windows.firstMatch
         XCTAssertTrue(quick.waitForExistence(timeout: 5), "Quick Terminal must open")
-        let strip = quick.descendants(matching: .any)["tab-bar"]
         let terminal = quick.textViews.firstMatch
-        XCTAssertTrue(strip.waitForExistence(timeout: 5))
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        XCTAssertFalse(quick.descendants(matching: .any)["tab-bar"].exists, "Quick Terminal must not mount a top tab strip")
+        XCTAssertFalse(quick.descendants(matching: .any)["SessionSidebar"].exists, "Quick Terminal must stay separate without the permanent desktop sidebar")
         XCTAssertTrue(terminal.isHittable)
         XCTAssertGreaterThan(terminal.frame.height, 0)
-        XCTAssertGreaterThanOrEqual(terminal.frame.minY, strip.frame.maxY - 1,
-                                   "The strip must not cover Quick Terminal's first rows")
+        XCTAssertEqual(terminal.frame.minY, quick.frame.minY, accuracy: 2, "Quick Terminal content must start right at the top edge")
+        XCTAssertEqual(terminal.frame.maxY, quick.frame.maxY, accuracy: 2, "Quick Terminal content must reach the bottom edge")
     }
 
     @MainActor
@@ -49,17 +49,17 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
 
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should exist")
-        let window = app.windows.firstMatch
+        let window = try activeTerminalWindow(app)
         let initialFrame = window.frame
+        let dragRegion = window.descendants(matching: .any)["SidebarWindowDragRegion"].firstMatch
+        XCTAssertTrue(dragRegion.waitForExistence(timeout: 5), "Permanent sidebar header drag region must exist")
 
-        // Drag window by clicking and dragging on the top titlebar row
-        let dragStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.03))
-        let dragEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.15))
+        let dragStart = dragRegion.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5))
+        let dragEnd = dragStart.withOffset(CGVector(dx: 140, dy: 50))
         dragStart.press(forDuration: 0.1, thenDragTo: dragEnd)
 
         let newFrame = window.frame
-        XCTAssertNotEqual(initialFrame.origin, newFrame.origin, "Window origin should change after dragging titlebar")
+        XCTAssertNotEqual(initialFrame.origin, newFrame.origin, "Window origin should change after dragging sidebar header")
     }
 
     @MainActor
@@ -67,26 +67,23 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
 
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should exist")
-        let window = app.windows.firstMatch
+        let initialWindow = try activeTerminalWindow(app)
+        let newSessionBtn = initialWindow.buttons["SessionSidebarNewSession"]
+        XCTAssertTrue(newSessionBtn.waitForExistence(timeout: 5), "SessionSidebarNewSession button must exist")
+        newSessionBtn.click()
 
-        // Create second tab with Cmd+T
-        app.typeKey("t", modifierFlags: .command)
+        let rows = try waitForSessionRows(count: 2, in: app)
+        let row0Id = rows[0].identifier
+        let row1Id = rows[1].identifier
+        XCTAssertNotEqual(row0Id, row1Id)
 
-        let tab0 = window.radioButtons["tab-0"]
-        let tab1 = window.radioButtons["tab-1"]
-        XCTAssertTrue(tab0.waitForExistence(timeout: 5), "First tab element tab-0 must exist")
-        XCTAssertTrue(tab1.waitForExistence(timeout: 5), "Second tab element tab-1 must exist")
+        try sessionRow(row0Id, in: app).click()
+        XCTAssertEqual(try sessionRow(row0Id, in: app).value as? String, "selected", "First session must be selected after clicking it")
+        XCTAssertEqual(try sessionRow(row1Id, in: app).value as? String, "unselected", "Second session must be unselected")
 
-        // Click first tab and assert selection postconditions
-        tab0.click()
-        XCTAssertEqual(tab0.value as? Int, 1, "Tab 0 must be selected after clicking it")
-        XCTAssertEqual(tab1.value as? Int, 0, "Tab 1 must be unselected")
-
-        // Click second tab and assert selection postconditions
-        tab1.click()
-        XCTAssertEqual(tab1.value as? Int, 1, "Tab 1 must be selected after clicking it")
-        XCTAssertEqual(tab0.value as? Int, 0, "Tab 0 must be unselected")
+        try sessionRow(row1Id, in: app).click()
+        XCTAssertEqual(try sessionRow(row1Id, in: app).value as? String, "selected", "Second session must be selected after clicking it")
+        XCTAssertEqual(try sessionRow(row0Id, in: app).value as? String, "unselected", "First session must be unselected")
     }
 
     @MainActor
@@ -94,88 +91,110 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         let app = try takoApplication()
         app.launch()
 
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5), "Terminal window should exist")
-        let defaultWindow = app.windows.firstMatch
+        let defaultWindow = try activeTerminalWindow(app)
+        XCTAssertFalse(defaultWindow.buttons["workspace-pill"].exists, "Top workspace-pill is replaced by permanent sidebar workspace tree")
+        let defaultWsHeader = defaultWindow.descendants(matching: .any)["SessionSidebarWorkspace-Default"].firstMatch
+        XCTAssertTrue(defaultWsHeader.waitForExistence(timeout: 5), "Default workspace header must exist in permanent sidebar")
+        XCTAssertEqual(defaultWsHeader.value as? String, "active")
 
-        // 1. Verify initial workspace pill is Default
-        let wsPill = defaultWindow.buttons["workspace-pill"]
-        XCTAssertTrue(wsPill.waitForExistence(timeout: 5), "Workspace pill must exist in initial window")
-        XCTAssertEqual(wsPill.value as? String, "Default", "Initial workspace should be Default")
-
-        // 2. Create second tab in Default workspace (Tab 1) and select it
+        // Create second session in Default workspace and select it.
         app.typeKey("t", modifierFlags: .command)
-        let tab0_ws1 = defaultWindow.radioButtons["tab-0"]
-        let tab1_ws1 = defaultWindow.radioButtons["tab-1"]
-        XCTAssertTrue(tab0_ws1.waitForExistence(timeout: 5), "Tab 0 must exist")
-        XCTAssertTrue(tab1_ws1.waitForExistence(timeout: 5), "Tab 1 must exist")
-        tab1_ws1.click()
-        XCTAssertEqual(tab1_ws1.value as? Int, 1, "Tab 1 in Default workspace must be selected")
+        let defaultRows = try waitForSessionRows(count: 2, in: app)
+        let rememberedTabId = defaultRows[1].identifier
+        try sessionRow(rememberedTabId, in: app).click()
+        XCTAssertEqual(try sessionRow(rememberedTabId, in: app).value as? String, "selected")
 
-        // 3. Open workspace menu from pill and create a new workspace
-        wsPill.click()
-        let newWsItem = app.menuItems["New Workspace..."]
-        XCTAssertTrue(newWsItem.waitForExistence(timeout: 3), "New Workspace... menu item should appear")
-        newWsItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        // Create a new workspace via the top-level Workspace menu.
+        app.menuBarItems["Workspace"].firstMatch.click()
+        let newWsItem = app.menuItems["New Workspace…"].firstMatch
+        XCTAssertTrue(newWsItem.waitForExistence(timeout: 3), "New Workspace… menu item should appear")
+        newWsItem.click()
 
-        let createBtn = app.buttons["Create"]
-        XCTAssertTrue(createBtn.waitForExistence(timeout: 3), "Create button in modal alert should appear")
+        let createBtn = app.buttons["Create"].firstMatch
+        XCTAssertTrue(createBtn.waitForExistence(timeout: 3), "Create button in workspace prompt should appear")
         createBtn.click()
 
-        // 4. Verify second workspace window appears with distinct workspace name
-        let newWsPill = app.buttons["workspace-pill"]
-        XCTAssertTrue(newWsPill.waitForExistence(timeout: 5), "New workspace pill must appear")
-        guard let newWsName = newWsPill.value as? String, newWsName != "Default" else {
-            XCTFail("New workspace must have distinct identity from Default (got: \(String(describing: newWsPill.value)))")
-            return
-        }
+        let newWsHeaderId = try await waitForActiveWorkspaceHeader(in: app, excluding: "SessionSidebarWorkspace-Default")
+        let newWindow = try activeTerminalWindow(app)
 
-        let newWindow = app.windows.containing(.button, identifier: "workspace-pill").firstMatch
-        XCTAssertTrue(newWindow.exists, "New workspace window must exist")
-
-        // 5. Verify window dragging in new workspace compared against its own pre-drag frame
+        // Drag the new workspace window via its permanent sidebar header drag region.
         let preDragFrame = newWindow.frame
-        let dragStart = newWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.03))
-        let dragEnd = newWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.12))
+        let dragRegion = newWindow.descendants(matching: .any)["SidebarWindowDragRegion"].firstMatch
+        XCTAssertTrue(dragRegion.waitForExistence(timeout: 5))
+        let dragStart = dragRegion.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5))
+        let dragEnd = dragStart.withOffset(CGVector(dx: 120, dy: 40))
         dragStart.press(forDuration: 0.1, thenDragTo: dragEnd)
         let postDragFrame = newWindow.frame
         XCTAssertNotEqual(postDragFrame.origin, preDragFrame.origin, "New workspace window must be draggable")
         XCTAssertGreaterThan(postDragFrame.origin.x, preDragFrame.origin.x + 10, "Window origin X should move right after drag")
-        XCTAssertEqual(postDragFrame.size.width, preDragFrame.size.width, accuracy: 2.0, "Window width should be preserved after drag")
-        XCTAssertEqual(postDragFrame.size.height, preDragFrame.size.height, accuracy: 2.0, "Window height should be preserved after drag")
+        XCTAssertEqual(postDragFrame.size.width, preDragFrame.size.width, accuracy: 2.0)
+        XCTAssertEqual(postDragFrame.size.height, preDragFrame.size.height, accuracy: 2.0)
 
-        // 6. Switch back to Default workspace via Previous Workspace shortcut (Ctrl+Option+[)
+        // Switch back to Default workspace via Previous Workspace shortcut (Ctrl+Option+[).
         app.typeKey("[", modifierFlags: [.control, .option])
-        let restoredDefaultPill = app.buttons["workspace-pill"]
-        XCTAssertTrue(restoredDefaultPill.waitForExistence(timeout: 5), "Default workspace pill should return")
-        await fulfillment(of: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", "Default"), object: restoredDefaultPill)], timeout: 5)
-        XCTAssertEqual(restoredDefaultPill.value as? String, "Default", "Active workspace should return to Default")
+        _ = try await waitForActiveWorkspaceHeader(in: app, matching: "SessionSidebarWorkspace-Default")
+        let restoredTab = try sessionRow(rememberedTabId, in: app)
+        XCTAssertEqual(restoredTab.value as? String, "selected", "Remembered session in Default workspace should stay selected")
 
-        // 7. Verify remembered tab selection in Default workspace (Tab 1 remains selected)
-        // Backend tab windows can retain matching AX identifiers while hidden.
-        // Select a live click target in the currently visible workspace.
-        let tabDeadline = Date().addingTimeInterval(5)
-        var visibleDefaultTab: XCUIElement?
-        while visibleDefaultTab == nil, Date() < tabDeadline {
-            visibleDefaultTab = app.radioButtons.matching(identifier: "tab-1")
-                .allElementsBoundByIndex.first(where: { $0.isHittable })
-            if visibleDefaultTab == nil { try await Task.sleep(for: .milliseconds(50)) }
-        }
-        if visibleDefaultTab == nil {
-            let evidence = XCTAttachment(screenshot: app.screenshot())
-            evidence.name = "DefaultWorkspace-VisibleTabEvidence"
-            evidence.lifetime = .keepAlways
-            add(evidence)
-        }
-        let restoredDefaultTab = try XCTUnwrap(visibleDefaultTab, "The remembered tab must be a visible click target")
-        XCTAssertEqual(restoredDefaultTab.value as? Int, 1, "Tab 1 in Default workspace should still be selected")
-
-        // 8. Switch back to new workspace via Next Workspace shortcut (Ctrl+Option+])
+        // Switch forward to new workspace via Next Workspace shortcut (Ctrl+Option+]).
         app.typeKey("]", modifierFlags: [.control, .option])
-        let returnWsPill = app.buttons["workspace-pill"]
-        XCTAssertTrue(returnWsPill.waitForExistence(timeout: 5), "New workspace pill should return")
-        await fulfillment(of: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", newWsName), object: returnWsPill)], timeout: 5)
-        XCTAssertEqual(returnWsPill.value as? String, newWsName, "Should return to new workspace")
+        _ = try await waitForActiveWorkspaceHeader(in: app, matching: newWsHeaderId)
+    }
+
+    private func activeTerminalWindow(_ app: XCUIApplication) throws -> XCUIElement {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.windows.allElementsBoundByIndex.contains { $0.textViews.firstMatch.isHittable }
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "Expected a hittable terminal window")
+        return try XCTUnwrap(app.windows.allElementsBoundByIndex.first { $0.textViews.firstMatch.isHittable })
+    }
+
+    private func sessionRows(in window: XCUIElement) -> [XCUIElement] {
+        var seen: Set<String> = []
+        return window.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'session-tab-'"))
+            .allElementsBoundByIndex
+            .filter { $0.isHittable && seen.insert($0.identifier).inserted }
+    }
+
+    private func waitForSessionRows(count: Int, in app: XCUIApplication) throws -> [XCUIElement] {
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let win = try? self.activeTerminalWindow(app) else { return false }
+            return self.sessionRows(in: win).count == count
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "Expected \(count) visible session rows")
+        return sessionRows(in: try activeTerminalWindow(app))
+    }
+
+    private func sessionRow(_ identifier: String, in app: XCUIApplication) throws -> XCUIElement {
+        let win = try activeTerminalWindow(app)
+        let matches = win.descendants(matching: .any).matching(identifier: identifier).allElementsBoundByIndex.filter(\.isHittable)
+        return try XCTUnwrap(matches.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }))
+    }
+
+    private func waitForActiveWorkspaceHeader(
+        in app: XCUIApplication,
+        matching exactId: String? = nil,
+        excluding excludedId: String? = nil
+    ) async throws -> String {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if let win = try? activeTerminalWindow(app) {
+                let headers = win.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier BEGINSWITH 'SessionSidebarWorkspace-'"))
+                    .allElementsBoundByIndex
+                if let active = headers.first(where: { el in
+                    guard (el.value as? String) == "active" else { return false }
+                    if let exactId, el.identifier != exactId { return false }
+                    if let excludedId, el.identifier == excludedId { return false }
+                    return true
+                }) {
+                    return active.identifier
+                }
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTFail("Timed out waiting for active workspace header (matching=\(String(describing: exactId)), excluding=\(String(describing: excludedId)))")
+        return ""
     }
 }

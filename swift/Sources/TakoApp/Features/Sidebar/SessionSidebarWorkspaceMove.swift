@@ -127,6 +127,9 @@ struct SidebarWorkspaceDropTarget: View {
             .contextMenu {
                 Button("Workspace Appearance…") { ScopedAppearanceContext.showWorkspace(group.id) }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("SessionSidebarWorkspace-\(group.name)")
+            .accessibilityValue(group.isActive ? "active" : "inactive")
             .background {
                 if targeted {
                     RoundedRectangle(cornerRadius: 6)
@@ -190,6 +193,8 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityValue(item.isSelected ? "selected" : "unselected")
         .accessibilityIdentifier((item.isChild ? "session-pane-" : "session-tab-")
             + (item.surfaceId?.uuidString.lowercased() ?? item.tabId))
     }
