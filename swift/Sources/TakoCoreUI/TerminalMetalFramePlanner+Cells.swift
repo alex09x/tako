@@ -36,6 +36,7 @@ extension TerminalMetalFramePlanner {
         )
 
         let isFullInvalidation = cacheState != currentState || rowCache.count != cells.rows
+            || cachedAtlasGeneration != atlas.generation
         if isFullInvalidation {
             rowCache = Array(repeating: CachedRow(), count: cells.rows)
             cacheState = currentState
@@ -43,19 +44,18 @@ extension TerminalMetalFramePlanner {
         }
 
         var rowsToReplanSet = Set<Int>()
+        // Preserve host invalidation for non-pixel metadata such as OSC 8.
+        for row in snapshot.damagedRows where Int(row) < cells.rows {
+            changedRows.insert(Int(row))
+        }
         if isFullInvalidation {
             rowsToReplanSet = Set(0..<cells.rows)
         } else {
             rowsToReplanSet.reserveCapacity(cells.rows)
-            for row in snapshot.damagedRows {
-                let index = Int(row)
-                if index >= 0 && index < cells.rows {
-                    rowsToReplanSet.insert(index)
-                }
-            }
+            // A TUI can erase/rewrite the entire screen to change one spinner.
+            // Damage is a hint, not proof that the final row needs new passes.
             let bytesPerRow = cells.cols * TerminalCell.byteSize
             for row in 0..<cells.rows {
-                if rowsToReplanSet.contains(row) { continue }
                 let cached = rowCache[row]
                 if !cached.isPopulated {
                     rowsToReplanSet.insert(row)
@@ -205,6 +205,7 @@ extension TerminalMetalFramePlanner {
         stats.shiftedRows = shiftedRows
         stats.replannedCells = replannedCells
         cachedPackedCells = cells.packedData
+        cachedAtlasGeneration = atlas.generation
     }
 
     func appendGlyph(

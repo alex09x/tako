@@ -20,6 +20,8 @@ public final class GlyphAtlas: @unchecked Sendable {
 
     var pages: [GlyphAtlasPage] = []
     var cache: [GlyphAtlasKey: GlyphAtlasEntry] = [:]
+    var fontIdentities: [ObjectIdentifier: FontIdentity] = [:]
+    var fontIdentityReadCount = 0
 
     struct ClusterRequest: Hashable {
         let text: String
@@ -49,7 +51,7 @@ public final class GlyphAtlas: @unchecked Sendable {
 
     /// Checks if a glyph entry is already cached in the atlas.
     public func contains(glyph: CGGlyph, font: CTFont, scale: CGFloat = 1.0, emboldened: Bool = false) -> Bool {
-        let key = GlyphAtlasKey(glyph: glyph, font: font, scale: scale, emboldened: emboldened)
+        let key = glyphKey(glyph, font: font, scale: scale, emboldened: emboldened)
         return cache[key] != nil
     }
 
@@ -61,7 +63,7 @@ public final class GlyphAtlas: @unchecked Sendable {
         scale: CGFloat = 1.0,
         emboldened: Bool = false
     ) -> GlyphAtlasEntry {
-        let key = GlyphAtlasKey(glyph: glyph, font: font, scale: scale, emboldened: emboldened)
+        let key = glyphKey(glyph, font: font, scale: scale, emboldened: emboldened)
         if let existing = cache[key] {
             return existing
         }
@@ -91,14 +93,15 @@ public final class GlyphAtlas: @unchecked Sendable {
         scale: CGFloat = 1.0,
         emboldened: Bool = false
     ) -> GlyphAtlasEntry {
+        let identity = fontIdentity(for: font)
         let request = ClusterRequest(
             text: text,
-            fontName: CTFontCopyPostScriptName(font) as String,
-            fontSize: CTFontGetSize(font),
-            skew: CTFontGetMatrix(font).c,
+            fontName: identity.name,
+            fontSize: identity.size,
+            skew: identity.skew,
             scale: scale,
             emboldened: emboldened,
-            variations: GlyphAtlasKey.variations(of: font)
+            variations: identity.variations
         )
         if let existing = clusterCache[request] {
             return existing
@@ -113,6 +116,7 @@ public final class GlyphAtlas: @unchecked Sendable {
         pages.removeAll()
         cache.removeAll()
         clusterCache.removeAll()
+        fontIdentities.removeAll(keepingCapacity: true)
         generation &+= 1
     }
 

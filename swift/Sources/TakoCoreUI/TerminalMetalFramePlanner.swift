@@ -46,8 +46,8 @@ public final class TerminalMetalFramePlanner {
     public var cellColorsAreDisplayP3 = false
     /// Off only to measure what moving scrolled rows saves.
     var rowShiftEnabled = true
-    /// Viewport rows whose content differs from the previous frame's
-    /// (laid out again or moved in): what a host re-reads under the pointer.
+    /// Rows a host re-reads under the pointer, including advisory damage:
+    /// link metadata can change even when the packed cell bytes are equal.
     public internal(set) var changedRows = IndexSet()
 
     public internal(set) var viewport = TerminalMetalViewport(drawableWidth: 0, drawableHeight: 0)
@@ -92,6 +92,7 @@ public final class TerminalMetalFramePlanner {
 
     var selectedColumnsByRow: [Int: ClosedRange<Int>] = [:]
     var rowCache: [CachedRow] = []
+    var cachedAtlasGeneration: UInt64?
     var cacheState: CacheState?
     var cachedPackedCells: Data?
 
