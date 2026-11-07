@@ -139,6 +139,9 @@ struct FloatingTerminalCanvasView: View {
 }
 
 private struct FloatingPaneWindowView: View {
+    @EnvironmentObject private var tako: Tako.App
+    @Environment(\.takoLastFocusedSurface) private var lastFocusedSurface
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
     let pane: FloatingPaneState
@@ -174,7 +177,7 @@ private struct FloatingPaneWindowView: View {
         isNormal ? FloatingPaneGeometry.cornerRadius : 0
     }
 
-    var body: some View {
+    private var paneContent: some View {
         VStack(spacing: 0) {
             FloatingPaneHeaderView(
                 surfaceView: surfaceView,
@@ -226,16 +229,94 @@ private struct FloatingPaneWindowView: View {
                 )
             }
         }
+        .environmentObject(tako)
+        .takoLastFocusedSurface(lastFocusedSurface)
+        .environment(\.colorScheme, colorScheme)
+    }
+
+    var body: some View {
+        FloatingPaneAXContainer(
+            identifier: "FloatingPane-\(uuidKey)",
+            label: "\(FloatingPaneGeometry.shortTitle(for: surfaceView)), \(statusValue)",
+            value: statusValue
+        ) {
+            paneContent
+        }
+        .focusedValue(\.takoSurfaceView, isFocused ? surfaceView : nil)
+        .focusedValue(\.takoSurfacePwd, isFocused ? (surfaceView.pwd ?? "") : nil)
+        .focusedValue(\.takoSurfaceCellSize, isFocused ? surfaceView.cellSize : nil)
         .shadow(
             color: isNormal ? Color.black.opacity(isFocused ? 0.36 : 0.22) : .clear,
             radius: isNormal ? (isFocused ? 14 : 8) : 0,
             x: 0,
             y: isNormal ? 4 : 0
         )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(FloatingPaneGeometry.shortTitle(for: surfaceView)), \(statusValue)")
-        .accessibilityValue(statusValue)
-        .accessibilityIdentifier("FloatingPane-\(uuidKey)")
+    }
+}
+
+/// Real AppKit `AXGroup` container backing `FloatingPane-<uuid>` so macOS Accessibility / XCUITest
+/// reliably exposes the root pane group with its full header+body frame, live status `AXValue`,
+/// and non-duplicated individually reachable child elements.
+final class FloatingPaneAXContainerNSView<Content: View>: NSView {
+    private let hostingView: NSHostingView<Content>
+
+    init(rootView: Content) {
+        self.hostingView = NSHostingView(rootView: rootView)
+        super.init(frame: .zero)
+        hostingView.sizingOptions = []
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = bounds
+        addSubview(hostingView)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    func update(rootView: Content, identifier: String, label: String, value: String) {
+        hostingView.rootView = rootView
+        setAccessibilityIdentifier(identifier)
+        setAccessibilityLabel(label)
+        setAccessibilityValue(value)
+    }
+
+    override func layout() {
+        super.layout()
+        if hostingView.frame != bounds {
+            hostingView.frame = bounds
+        }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        NSAccessibility.unignoredChildren(from: subviews)
+    }
+}
+
+private struct FloatingPaneAXContainer<Content: View>: NSViewRepresentable {
+    let identifier: String
+    let label: String
+    let value: String
+    let content: Content
+
+    init(identifier: String, label: String, value: String, @ViewBuilder content: () -> Content) {
+        self.identifier = identifier
+        self.label = label
+        self.value = value
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> FloatingPaneAXContainerNSView<Content> {
+        let view = FloatingPaneAXContainerNSView(rootView: content)
+        view.update(rootView: content, identifier: identifier, label: label, value: value)
+        return view
+    }
+
+    func updateNSView(_ nsView: FloatingPaneAXContainerNSView<Content>, context: Context) {
+        nsView.update(rootView: content, identifier: identifier, label: label, value: value)
     }
 }
 

@@ -24,6 +24,8 @@ class BaseTerminalController: NSWindowController,
     /// The app instance that this terminal view will represent.
     let tako: Tako.App
 
+    private var updatingFocusedSurfaceFromDelegate = false
+
     /// The currently focused surface.
     var focusedSurface: Tako.SurfaceView? {
         didSet {
@@ -32,6 +34,9 @@ class BaseTerminalController: NSWindowController,
                 floatingCanvas.bringToFront(focusedSurface.id)
             }
             syncFocusToSurfaceTree()
+            if !updatingFocusedSurfaceFromDelegate, usesFloatingCanvas, focusedSurface !== oldValue {
+                bindFocusedSurfaceSubscriptions(previous: oldValue)
+            }
             if let focusedSurface, focusedSurface != oldValue {
                 focusedSurface.publishEvent(type: "pane_focused", payload: [:])
             }
@@ -367,31 +372,26 @@ class BaseTerminalController: NSWindowController,
 
     func focusedSurfaceDidChange(to: Tako.SurfaceView?) {
         let lastFocusedSurface = focusedSurface
+        updatingFocusedSurfaceFromDelegate = true
         focusedSurface = to
+        updatingFocusedSurfaceFromDelegate = false
+        bindFocusedSurfaceSubscriptions(previous: lastFocusedSurface)
+    }
 
-        if let focused = to {
+    private func bindFocusedSurfaceSubscriptions(previous lastFocusedSurface: Tako.SurfaceView?) {
+        if let focused = focusedSurface {
             NotificationStore.shared.markRead(surfaceId: focused.id)
             AttentionManager.shared.markSeen(surfaceId: focused.id)
         }
         SessionSidebarStore.shared.objectWillChange.send()
-
-        // Important to cancel any prior subscriptions
         focusedSurfaceCancellables = []
-
-        // Setup our title listener. If we have a focused surface we always use that.
-        // Otherwise, we try to use our last focused surface. In either case, we only
-        // want to care if the surface is in the tree so we don't listen to titles of
-        // closed surfaces.
-        if let titleSurface = focusedSurface ?? lastFocusedSurface,
-           surfaceTree.contains(titleSurface) {
-            // If we have a surface, we want to listen for title changes.
+        if let titleSurface = focusedSurface ?? lastFocusedSurface, surfaceTree.contains(titleSurface) {
             titleSurface.$titleText
                 .combineLatest(titleSurface.$bell)
                 .map { [weak self] in self?.computeTitle(title: $0, bell: $1) ?? "" }
                 .sink { [weak self] in self?.titleDidChange(to: $0) }
                 .store(in: &focusedSurfaceCancellables)
         } else {
-            // There is no surface to listen to titles for.
             titleDidChange(to: "👻")
         }
     }

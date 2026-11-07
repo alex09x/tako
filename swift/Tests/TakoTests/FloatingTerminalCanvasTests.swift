@@ -109,7 +109,7 @@ struct FloatingTerminalCanvasTests {
 
     @Test func attachDrivenPendingFocusMinimizedPausePolicyAndAllMinimizedReflowPreservation() throws {
         let (controller, window) = TerminalTestSupport.loaded()
-        defer { TerminalTestSupport.tearDown(controller, window) }
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
         window.setFrame(NSRect(x: 0, y: 0, width: 1200, height: 800), display: false)
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
@@ -174,7 +174,7 @@ struct FloatingTerminalCanvasTests {
 
     @Test func emptySessionCanvasKeepsSidebarAliveSupportsNewPaneAndPreservesCloseKeybindSemantics() throws {
         let (controller, window) = TerminalTestSupport.loaded()
-        defer { TerminalTestSupport.tearDown(controller, window) }
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
         controller.showWindow(nil)
 
         let initial = try #require(controller.focusedSurface)
@@ -218,7 +218,7 @@ struct FloatingTerminalCanvasTests {
 
     @Test func restorableStateLayoutJournalMigrationSpatialFocusAndLiveStatusAccessibility() async throws {
         let (controller, window) = TerminalTestSupport.loaded()
-        defer { TerminalTestSupport.tearDown(controller, window) }
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
         window.setFrame(NSRect(x: 0, y: 0, width: 1200, height: 800), display: false)
         controller.showWindow(nil)
 

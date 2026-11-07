@@ -73,8 +73,8 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         newSessionBtn.click()
 
         let rows = try waitForSessionRows(count: 2, in: app)
-        let row0Id = rows[0].identifier
-        let row1Id = rows[1].identifier
+        let row0Id = try XCTUnwrap(rows.first?.identifier, "Expected first session row")
+        let row1Id = try XCTUnwrap(rows.dropFirst().first?.identifier, "Expected second session row")
         XCTAssertNotEqual(row0Id, row1Id)
 
         try sessionRow(row0Id, in: app).click()
@@ -88,6 +88,7 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
 
     @MainActor
     func testNewWorkspaceWindowAndIsolation() async throws {
+        continueAfterFailure = false
         let app = try takoApplication()
         app.launch()
 
@@ -95,12 +96,17 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
         XCTAssertFalse(defaultWindow.buttons["workspace-pill"].exists, "Top workspace-pill is replaced by permanent sidebar workspace tree")
         let defaultWsHeader = defaultWindow.descendants(matching: .any)["SessionSidebarWorkspace-Default"].firstMatch
         XCTAssertTrue(defaultWsHeader.waitForExistence(timeout: 5), "Default workspace header must exist in permanent sidebar")
-        XCTAssertEqual(defaultWsHeader.value as? String, "active")
+        let defaultWsValue = defaultWsHeader.value as? String
+        XCTAssertEqual(defaultWsValue, "active")
+        guard defaultWsValue == "active" else { return }
 
         // Create second session in Default workspace and select it.
         app.typeKey("t", modifierFlags: .command)
         let defaultRows = try waitForSessionRows(count: 2, in: app)
-        let rememberedTabId = defaultRows[1].identifier
+        let rememberedTabId = try XCTUnwrap(
+            defaultRows.dropFirst().first?.identifier,
+            "Expected second session row in Default workspace"
+        )
         try sessionRow(rememberedTabId, in: app).click()
         XCTAssertEqual(try sessionRow(rememberedTabId, in: app).value as? String, "selected")
 
@@ -162,8 +168,15 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
             guard let win = try? self.activeTerminalWindow(app) else { return false }
             return self.sessionRows(in: win).count == count
         }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "Expected \(count) visible session rows")
-        return sessionRows(in: try activeTerminalWindow(app))
+        let waitResult = XCTWaiter.wait(for: [ready], timeout: 5)
+        XCTAssertEqual(waitResult, .completed, "Expected \(count) visible session rows")
+        let rows = sessionRows(in: try activeTerminalWindow(app))
+        guard waitResult == .completed, rows.count >= count else {
+            throw NSError(domain: "TakoWorkspaceUITests", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Expected \(count) visible session rows, got \(rows.count)"
+            ])
+        }
+        return rows
     }
 
     private func sessionRow(_ identifier: String, in app: XCUIApplication) throws -> XCUIElement {
@@ -195,6 +208,8 @@ final class TakoWorkspaceUITests: TakoCustomConfigCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTFail("Timed out waiting for active workspace header (matching=\(String(describing: exactId)), excluding=\(String(describing: excludedId)))")
-        return ""
+        throw NSError(domain: "TakoWorkspaceUITests", code: 2, userInfo: [
+            NSLocalizedDescriptionKey: "Timed out waiting for active workspace header"
+        ])
     }
 }

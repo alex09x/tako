@@ -48,6 +48,9 @@ extension Tako {
             if installedWindows.contains(key) { return }
             installedWindows.insert(key)
             trackedWindows.add(window)
+            if !(window is QuickTerminalWindow) {
+                _ = Tako.CustomTabGroup.group(for: window)
+            }
 
             // fullSizeContentView/titlebarAppearsTransparent/titleVisibility
             // are set in `TerminalWindow.awakeFromNib`, not here -- confirmed

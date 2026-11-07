@@ -97,6 +97,7 @@ struct FloatingPaneHeaderView: View {
                 .padding(.leading, 10)
                 .padding(.trailing, 4)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

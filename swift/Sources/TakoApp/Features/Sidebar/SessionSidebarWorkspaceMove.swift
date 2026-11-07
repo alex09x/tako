@@ -127,9 +127,7 @@ struct SidebarWorkspaceDropTarget: View {
             .contextMenu {
                 Button("Workspace Appearance…") { ScopedAppearanceContext.showWorkspace(group.id) }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("SessionSidebarWorkspace-\(group.name)")
-            .accessibilityValue(group.isActive ? "active" : "inactive")
+            .background(SidebarWorkspaceAXElement(name: group.name, isActive: group.isActive))
             .background {
                 if targeted {
                     RoundedRectangle(cornerRadius: 6)
@@ -142,6 +140,44 @@ struct SidebarWorkspaceDropTarget: View {
                 guard items.count == 1, let drag = items.first, let tabID = SidebarTabTransfer.decode(drag) else { return false }
                 return onMove(tabID, group.id)
             } isTargeted: { targeted = $0 }
+    }
+}
+
+/// Real AppKit `AXGroup` element exposing `SessionSidebarWorkspace-<name>` with live `"active"` / `"inactive"`
+/// `AXValue` while passing all mouse clicks, context menus, and drag-and-drop gestures through untouched.
+private final class SidebarWorkspaceAXNSView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private struct SidebarWorkspaceAXElement: NSViewRepresentable {
+    let name: String
+    let isActive: Bool
+
+    func makeNSView(context: Context) -> SidebarWorkspaceAXNSView {
+        let view = SidebarWorkspaceAXNSView(frame: .zero)
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: SidebarWorkspaceAXNSView, context: Context) {
+        configure(nsView)
+    }
+
+    private func configure(_ view: SidebarWorkspaceAXNSView) {
+        view.setAccessibilityIdentifier("SessionSidebarWorkspace-\(name)")
+        view.setAccessibilityLabel(name)
+        view.setAccessibilityValue(isActive ? "active" : "inactive")
     }
 }
 
