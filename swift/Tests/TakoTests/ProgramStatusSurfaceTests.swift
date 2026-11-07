@@ -83,8 +83,24 @@ struct ProgramStatusSurfaceTests {
         // Hard reset (RIS, ESC c) clears ProgramStatusTable and osc7501Active, allowing OSC 9;4 again.
         surface.feed(data: Data("\u{1b}c".utf8))
         #expect(surface.programStatusSnapshot().osc7501Active == false)
+        #expect(surface.crab.osc7501StatusActive == false)
         #expect(surface.crab.paneStatus == .idle)
         #expect(surface.progressReport == nil)
+
+        // Even when records were already emptied via state=clear, RIS must still clear host osc7501Active
+        // so subsequent OSC 9;4 progress is no longer suppressed.
+        surface.feed(data: Data("\u{1b}]7501;state=working:app=Codex\u{1b}\\".utf8))
+        surface.feed(data: Data("\u{1b}]7501;state=clear\u{1b}\\".utf8))
+        #expect(surface.crab.osc7501StatusActive == true)
+        surface.feed(data: Data("\u{1b}]9;4;1;40\u{07}".utf8))
+        #expect(surface.activeProgressState == .none)
+
+        surface.feed(data: Data("\u{1b}c".utf8))
+        #expect(surface.programStatusSnapshot().osc7501Active == false)
+        #expect(surface.crab.osc7501StatusActive == false)
+        surface.feed(data: Data("\u{1b}]9;4;1;60\u{07}".utf8))
+        #expect(surface.activeProgressState == .normal)
+        #expect(surface.activeProgressValue == 60)
     }
 
     @Test
@@ -209,5 +225,132 @@ struct ProgramStatusSurfaceTests {
         restoredSurface.showSnapshot(SessionSnapshot(savedAt: Date(), checkpoint: checkpoint))
         #expect(restoredSurface.crab.paneStatus == .needsApproval)
         #expect(NotificationStore.shared.records.filter { $0.surfaceId == restoredSurface.id }.isEmpty)
+    }
+
+    @Test func nativeProgramStatusNotificationsWithdrawOnlyScopedOsc7501IdsOnFocusAckAndResolve() {
+        let surface = makeIsolatedSurface()
+        surface.crab.isFocused = false
+        NotificationStore.shared.clear()
+        NotificationCoalescer.shared.reset()
+
+        let origPosted = Tako.onNotificationPosted
+        let origRemoved = Tako.onNotificationRemoved
+        defer {
+            Tako.onNotificationPosted = origPosted
+            Tako.onNotificationRemoved = origRemoved
+        }
+
+        var postedIds: [String] = []
+        var removedBatches: [[String]] = []
+        Tako.onNotificationPosted = { postedIds.append($0.identifier) }
+        Tako.onNotificationRemoved = { removedBatches.append($0) }
+
+        // Post an unrelated OSC 99 / structured notification alongside an unfocused OSC 7501 blocked report.
+        surface.postStructuredNotification(
+            id: "foreign-1",
+            title: "Build",
+            body: "Foreign notification",
+            appName: "Runner",
+            urgency: 1,
+            actions: [],
+            reportActivation: false,
+            focus: true,
+            reportClose: false,
+            timeoutMs: nil,
+            onlyWhenUnfocused: false
+        )
+        surface.feed(
+            data: Data("\u{1b}]7501;state=blocked:id=gate:kind=permission:app=Claude:msg=\(b64("Approve edit?"))\u{1b}\\".utf8)
+        )
+
+        let foreignReqId = "tako-notif-\(surface.id.uuidString)-foreign-1"
+        let nativeReqId = "tako-notif-\(surface.id.uuidString)-osc7501-\(surface.id.uuidString)-gate"
+        #expect(postedIds.contains(foreignReqId))
+        #expect(postedIds.contains(nativeReqId))
+
+        // Focusing the pane withdraws the native osc7501 banner, preserves foreign-1, AND keeps blocked state intact!
+        surface.didGainSurfaceFocus(flushTitle: false)
+        let flatAfterFocus = removedBatches.flatMap { $0 }
+        #expect(flatAfterFocus.contains(nativeReqId))
+        #expect(!flatAfterFocus.contains(foreignReqId))
+        #expect(surface.programStatusSnapshot().effective?.state == .blocked)
+
+        // Unfocus again, post a new done outcome, then resolve/clear it -> withdraws its banner too.
+        removedBatches.removeAll()
+        surface.crab.isFocused = false
+        surface.feed(data: Data("\u{1b}]7501;state=done:id=gate:app=Claude:msg=\(b64("Finished"))\u{1b}\\".utf8))
+        surface.feed(data: Data("\u{1b}]7501;state=working:id=gate:app=Claude:msg=\(b64("Next turn"))\u{1b}\\".utf8))
+        let flatAfterResolve = removedBatches.flatMap { $0 }
+        #expect(flatAfterResolve.contains(nativeReqId))
+        #expect(!flatAfterResolve.contains(foreignReqId))
+    }
+
+    @Test func persistentSessionClientExitPreservesLiveOsc7501WhileConfirmedProcessExitClearsWorkingAndBlocked() throws {
+        let root = URL(fileURLWithPath: "/tmp/tkx-ps75-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let runtimeID = "0.8.1-cc9574e03dfb2480"
+        let namespace = try SessionNamespace.open(runtimeID: runtimeID, home: root)
+        let records = SessionRecordStore(directory: root.appendingPathComponent("records"))
+        let runtime = root.appendingPathComponent("zmx")
+        try Data("#!/bin/sh\nprintf 'session_name=abc\\tpid=12345\\n'\n".utf8).write(to: runtime)
+        chmod(runtime.path, 0o755)
+
+        TakoTerminalNSView.isMetalDisabledForTesting = true
+        var config = Tako.SurfaceConfiguration()
+        config.allowsSessionPersistence = false
+        config.program = ["/usr/bin/true"]
+        let surface = Tako.SurfaceView(nil, baseConfig: config, uuid: UUID(), theme: nil)
+        surface.onExit = nil
+        let attachedPty = surface.pty
+        attachedPty?.terminate()
+        surface.resetTerminal()
+
+        let record = SessionRecord(id: surface.id, runtimeID: runtimeID, generation: "g", state: .attached, createdAt: Date())
+        try records.write(record)
+        let session = SurfaceSession(
+            runtime: runtime,
+            guardedRuntime: runtime,
+            namespace: namespace,
+            name: "abc",
+            owner: try SessionOwnerLock(namespace: namespace, name: "abc"),
+            records: records,
+            record: record
+        )
+        surface.persistence = session
+
+        let previousDetaching = SurfaceSession.appIsDetaching
+        SurfaceSession.appIsDetaching = true
+        defer {
+            SurfaceSession.appIsDetaching = previousDetaching
+            session.ended = true
+            surface.pty = nil
+        }
+
+        surface.feed(data: Data("\u{1b}]7501;state=working:id=main:app=Codex:msg=\(b64("Still alive in zmx"))\u{1b}\\".utf8))
+        surface.feed(data: Data("\u{1b}]7501;state=blocked:id=gate:kind=permission:app=Codex:msg=\(b64("Approve"))\u{1b}\\".utf8))
+        #expect(surface.programStatusSnapshot().records.count == 2)
+
+        surface.childDidExit(attachedPty)
+
+        // Persistent session is still alive during attach-client exit: live working + blocked records MUST survive!
+        #expect(surface.programStatusSnapshot().records.count == 2)
+        #expect(surface.programStatusSnapshot().effective?.state == .blocked)
+
+        // Non-persistent surface exit (persistence == nil) clears working + blocked while retaining done.
+        SurfaceSession.appIsDetaching = false
+        let plainSurface = Tako.SurfaceView(nil, baseConfig: config, uuid: UUID(), theme: nil)
+        plainSurface.onExit = nil
+        let plainPty = plainSurface.pty
+        plainPty?.terminate()
+        plainSurface.resetTerminal()
+        defer { plainSurface.pty = nil }
+
+        plainSurface.feed(data: Data("\u{1b}]7501;state=working:id=w1:app=Codex\u{1b}\\".utf8))
+        plainSurface.feed(data: Data("\u{1b}]7501;state=blocked:id=b1:kind=question:app=Codex\u{1b}\\".utf8))
+        plainSurface.feed(data: Data("\u{1b}]7501;state=done:id=d1:app=Codex:msg=\(b64("Done"))\u{1b}\\".utf8))
+        plainSurface.childDidExit(plainPty)
+        #expect(plainSurface.programStatusSnapshot().records.map(\.id) == ["d1"])
     }
 }

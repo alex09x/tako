@@ -12,6 +12,14 @@ use serde_json::{Value, json};
 
 use super::adapter::{all_adapters, find_adapter};
 
+fn effective_installed(a: &super::adapter::Adapter, p: &std::path::Path) -> bool {
+    if a.uses_native_osc7501() {
+        a.is_installed(p) || super::osc7501_migration::has_legacy_artifacts(a, p)
+    } else {
+        a.is_installed(p)
+    }
+}
+
 pub fn list(json: bool) -> Result<(), String> {
     let adapters = all_adapters();
     if json {
@@ -24,7 +32,7 @@ pub fn list(json: bool) -> Result<(), String> {
                     "title": a.title,
                     "aliases": a.aliases,
                     "config_path": p.display().to_string(),
-                    "installed": a.is_installed(&p),
+                    "installed": effective_installed(a, &p),
                     "native_osc7501": a.uses_native_osc7501(),
                 })
             })
@@ -44,7 +52,7 @@ pub fn list(json: bool) -> Result<(), String> {
     for a in &adapters {
         let p = a.resolve_path(None);
         let status = if a.uses_native_osc7501() {
-            if a.is_installed(&p) {
+            if effective_installed(a, &p) {
                 "legacy hooks"
             } else {
                 "native (7501)"
@@ -83,7 +91,7 @@ pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
                     "name": a.name,
                     "title": a.title,
                     "config_path": p.display().to_string(),
-                    "installed": a.is_installed(&p),
+                    "installed": effective_installed(a, &p),
                     "native_osc7501": a.uses_native_osc7501(),
                     "file_exists": p.exists(),
                 })
@@ -98,7 +106,7 @@ pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
 
     for a in &adapters {
         let p = a.resolve_path(None);
-        let installed = a.is_installed(&p);
+        let installed = effective_installed(a, &p);
         println!("{} ({})", a.title, a.name);
         println!("  Config:    {}", p.display());
         let label = if a.uses_native_osc7501() {

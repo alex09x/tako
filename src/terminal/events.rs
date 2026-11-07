@@ -8,7 +8,30 @@
  * SPDX-License-Identifier: MIT
  */
 
-use super::program_status::ProgramStatusUpdate;
+use super::program_status::{ProgramStatusRecord, ProgramStatusSnapshot, ProgramStatusUpdate};
+
+/// Paired `OSC 7501` update and authoritative snapshot captured at that exact revision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramStatusChangedEvent {
+    pub update: ProgramStatusUpdate,
+    pub snapshot: ProgramStatusSnapshot,
+}
+
+impl ProgramStatusChangedEvent {
+    pub(crate) fn boxed_heap_bytes(&self) -> u64 {
+        let mut snapshot_bytes = (self.snapshot.records.capacity() as u64)
+            .saturating_mul(std::mem::size_of::<ProgramStatusRecord>() as u64);
+        for rec in &self.snapshot.records {
+            snapshot_bytes = snapshot_bytes.saturating_add(rec.heap_bytes());
+        }
+        if let Some(eff) = &self.snapshot.effective {
+            snapshot_bytes = snapshot_bytes.saturating_add(eff.heap_bytes());
+        }
+        (std::mem::size_of::<Self>() as u64)
+            .saturating_add(self.update.heap_bytes())
+            .saturating_add(snapshot_bytes)
+    }
+}
 
 /// A frame in the hierarchical context stack (OSC 3008, C5).
 /// Represents where pane output comes from (host, container, SSH, elevated shell).
@@ -89,6 +112,6 @@ pub enum TerminalEvent {
     ContextPop,
     /// OSC 3008 context stack cleared (C5).
     ContextClear,
-    /// OSC 7501 Program Status Protocol record mutation(s) and effective projection.
-    ProgramStatusChanged(ProgramStatusUpdate),
+    /// OSC 7501 Program Status Protocol record mutation(s) and point-in-time snapshot.
+    ProgramStatusChanged(Box<ProgramStatusChangedEvent>),
 }

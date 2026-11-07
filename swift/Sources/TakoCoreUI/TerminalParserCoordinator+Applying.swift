@@ -18,9 +18,18 @@ extension TerminalParserCoordinator {
         holdingToken: Bool,
         upTo boundary: (any BarrierPublication)? = nil
     ) {
+        let enteredExclusively = enterApplicationGateIfNeeded()
+        defer {
+            if enteredExclusively {
+                leaveApplicationGate()
+            }
+        }
+
         lock.lock()
         let handler = applyOnMain
         let restoreHandler = onCheckpointRestored
+        let restoreWithStatusHandler = onCheckpointRestoredWithStatus
+        let programStatusHandler = onProgramStatus
         let resizeHandler = onResized
         lock.unlock()
 
@@ -66,10 +75,14 @@ extension TerminalParserCoordinator {
                         continue
                     }
                     run.append(outcome)
-                case .restored(let restore, let request):
+                case .restored(let restore, let restoredStatus, let request):
                     flushRun()
                     request.markPublished()
-                    restoreHandler?(restore)
+                    if let restoreWithStatusHandler {
+                        restoreWithStatusHandler(restore, restoredStatus)
+                    } else {
+                        restoreHandler?(restore)
+                    }
                 case .rejectedImport(let request):
                     flushRun()
                     request.markPublished()
@@ -77,6 +90,18 @@ extension TerminalParserCoordinator {
                     flushRun()
                     request.markPublished()
                     resizeHandler?(cols, rows)
+                case .programStatusLifecycle(let event, let itemEpoch, let request):
+                    flushRun()
+                    request.markPublished()
+                    guard itemEpoch == epoch else {
+                        lock.lock()
+                        outcomesSuppressed += 1
+                        lock.unlock()
+                        break
+                    }
+                    if let event {
+                        programStatusHandler?(event)
+                    }
                 }
 
                 guard let boundary, boundary.isPublished else { continue }
@@ -122,5 +147,28 @@ extension TerminalParserCoordinator {
         guard mainApplicationActive else { return }
         mainApplicationActive = false
         outstandingMainApplications -= 1
+    }
+
+    private func enterApplicationGateIfNeeded() -> Bool {
+        guard serializeConcurrentApplication else { return false }
+        let current = Thread.current
+        applicationCondition.lock()
+        if activeApplicationThread === current {
+            applicationCondition.unlock()
+            return false
+        }
+        while activeApplicationThread != nil {
+            applicationCondition.wait()
+        }
+        activeApplicationThread = current
+        applicationCondition.unlock()
+        return true
+    }
+
+    private func leaveApplicationGate() {
+        applicationCondition.lock()
+        activeApplicationThread = nil
+        applicationCondition.broadcast()
+        applicationCondition.unlock()
     }
 }

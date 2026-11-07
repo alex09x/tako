@@ -11,7 +11,7 @@
 //! Program Status Protocol (`OSC 7501`, revision 0.4) state table and drain.
 
 mod apply;
-mod parse;
+pub(crate) mod parse;
 #[cfg(test)]
 mod tests;
 

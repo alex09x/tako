@@ -215,3 +215,53 @@ fn capi_classified_replies_consume_once_overflow_and_checkpoint_restore() {
 
     prod_vt_free(vt);
 }
+
+#[test]
+fn capi_overflow_then_legacy_drain_preserves_sticky_loss_count() {
+    let vt = prod_vt_new(80, 24, 128);
+    assert!(!vt.is_null());
+
+    let mut spam = Vec::new();
+    for _ in 0..(MAX_QUEUED_REPLIES + 44) {
+        spam.extend_from_slice(b"\x1b[5n");
+    }
+    prod_vt_write(vt, spam.as_ptr(), spam.len());
+
+    // Legacy caller drains preserved reply bytes first.
+    let mut flat: *mut u8 = std::ptr::null_mut();
+    let mut flat_len: usize = 0;
+    assert_eq!(prod_vt_drain_responses(vt, &mut flat, &mut flat_len), 1);
+    assert_eq!(flat_len, MAX_QUEUED_REPLIES * 4);
+    prod_vt_buffer_free(flat);
+
+    // Sticky overflow loss count (44) must NOT be erased by legacy prod_vt_drain_responses.
+    let mut loss_batch: *mut ProdVtReplyBatch = std::ptr::null_mut();
+    assert_eq!(
+        prod_vt_drain_classified_replies(vt, 16, &mut loss_batch),
+        PROD_VT_ERR_REPLY_OVERFLOW
+    );
+    let lb = unsafe { &*loss_batch };
+    assert_eq!(lb.replies_len, 0);
+    assert_eq!(lb.overflow_dropped_count, 44);
+    prod_vt_reply_batch_free(loss_batch);
+
+    // Also verify explicit sticky loss accessor prod_vt_take_reply_overflow_count after legacy drain.
+    prod_vt_write(vt, spam.as_ptr(), spam.len());
+    let mut flat2: *mut u8 = std::ptr::null_mut();
+    let mut flat2_len: usize = 0;
+    assert_eq!(prod_vt_drain_responses(vt, &mut flat2, &mut flat2_len), 1);
+    prod_vt_buffer_free(flat2);
+    let mut dropped: u32 = 0;
+    assert_eq!(
+        prod_vt_take_reply_overflow_count(vt, &mut dropped),
+        PROD_VT_ERR_REPLY_OVERFLOW
+    );
+    assert_eq!(dropped, 44);
+    assert_eq!(
+        prod_vt_take_reply_overflow_count(vt, &mut dropped),
+        PROD_VT_OK
+    );
+    assert_eq!(dropped, 0);
+
+    prod_vt_free(vt);
+}

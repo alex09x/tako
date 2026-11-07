@@ -1111,9 +1111,16 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func takeEvents()  -> [FfiEvent]
 
     /**
-     * Drains and returns any queued device-reply bytes.
+     * Drains and returns any queued device-reply bytes (keeping sticky overflow count intact).
      */
     func takeOutput()  -> Data
+
+    /**
+     * Consumes and resets sticky reply-queue overflow count for legacy `take_output` callers.
+     */
+    func takeReplyOverflowCount()  -> UInt32
+
+    func applyProgramStatusLifecycle(lifecycle: FfiProgramStatusLifecycle)  -> FfiProgramStatusLifecycleOutcome?
 
     func drainClassifiedReplies(maxReplies: UInt32)  -> FfiClassifiedReplyDrain
 
@@ -1936,13 +1943,35 @@ open func takeEvents() -> [FfiEvent]  {
 }
 
     /**
-     * Drains and returns any queued device-reply bytes.
+     * Drains and returns any queued device-reply bytes (keeping sticky overflow count intact).
      */
 open func takeOutput() -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_take_output(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Consumes and resets sticky reply-queue overflow count for legacy `take_output` callers.
+     */
+open func takeReplyOverflowCount() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_take_reply_overflow_count(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func applyProgramStatusLifecycle(lifecycle: FfiProgramStatusLifecycle) -> FfiProgramStatusLifecycleOutcome?  {
+    return try!  FfiConverterOptionTypeFfiProgramStatusLifecycleOutcome.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_apply_program_status_lifecycle(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeFfiProgramStatusLifecycle_lower(lifecycle),uniffiCallStatus
     )
 })
 }
@@ -3992,6 +4021,64 @@ public func FfiConverterTypeFfiProgramStatusDrainBatch_lower(_ value: FfiProgram
 }
 
 
+public struct FfiProgramStatusLifecycleOutcome: Equatable, Hashable {
+    public var update: FfiProgramStatusUpdate
+    public var snapshot: FfiProgramStatusSnapshot
+    public var epoch: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(update: FfiProgramStatusUpdate, snapshot: FfiProgramStatusSnapshot, epoch: UInt64) {
+        self.update = update
+        self.snapshot = snapshot
+        self.epoch = epoch
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusLifecycleOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusLifecycleOutcome: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusLifecycleOutcome {
+        return
+            try FfiProgramStatusLifecycleOutcome(
+                update: FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf),
+                snapshot: FfiConverterTypeFfiProgramStatusSnapshot.read(from: &buf),
+                epoch: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiProgramStatusLifecycleOutcome, into buf: inout [UInt8]) {
+        FfiConverterTypeFfiProgramStatusUpdate.write(value.update, into: &buf)
+        FfiConverterTypeFfiProgramStatusSnapshot.write(value.snapshot, into: &buf)
+        FfiConverterUInt64.write(value.epoch, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusLifecycleOutcome_lift(_ buf: RustBuffer) throws -> FfiProgramStatusLifecycleOutcome {
+    return try FfiConverterTypeFfiProgramStatusLifecycleOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusLifecycleOutcome_lower(_ value: FfiProgramStatusLifecycleOutcome) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusLifecycleOutcome.lower(value)
+}
+
+
 public struct FfiProgramStatusRecord: Equatable, Hashable {
     public var id: String
     public var state: FfiProgramStatusState
@@ -5357,7 +5444,7 @@ public enum FfiEvent: Equatable, Hashable {
     )
     case contextPop
     case contextClear
-    case programStatusChanged(update: FfiProgramStatusUpdate
+    case programStatusChanged(update: FfiProgramStatusUpdate, snapshot: FfiProgramStatusSnapshot
     )
 
 
@@ -5425,7 +5512,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
 
         case 17: return .contextClear
 
-        case 18: return .programStatusChanged(update: try FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf)
+        case 18: return .programStatusChanged(update: try FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf), snapshot: try FfiConverterTypeFfiProgramStatusSnapshot.read(from: &buf)
         )
 
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -5529,9 +5616,10 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(17))
 
 
-        case let .programStatusChanged(update):
+        case let .programStatusChanged(update,snapshot):
             writeInt(&buf, Int32(18))
             FfiConverterTypeFfiProgramStatusUpdate.write(update, into: &buf)
+            FfiConverterTypeFfiProgramStatusSnapshot.write(snapshot, into: &buf)
 
         }
     }
@@ -6439,6 +6527,79 @@ public func FfiConverterTypeFfiProgramStatusBlockedKind_lift(_ buf: RustBuffer) 
 #endif
 public func FfiConverterTypeFfiProgramStatusBlockedKind_lower(_ value: FfiProgramStatusBlockedKind) -> RustBuffer {
     return FfiConverterTypeFfiProgramStatusBlockedKind.lower(value)
+}
+
+
+
+
+public enum FfiProgramStatusLifecycle: Equatable, Hashable {
+
+    case processExited
+    case interrupted
+    case acknowledged
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusLifecycle: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusLifecycle: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusLifecycle
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusLifecycle {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .processExited
+
+        case 2: return .interrupted
+
+        case 3: return .acknowledged
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiProgramStatusLifecycle, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .processExited:
+            writeInt(&buf, Int32(1))
+
+
+        case .interrupted:
+            writeInt(&buf, Int32(2))
+
+
+        case .acknowledged:
+            writeInt(&buf, Int32(3))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusLifecycle_lift(_ buf: RustBuffer) throws -> FfiProgramStatusLifecycle {
+    return try FfiConverterTypeFfiProgramStatusLifecycle.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusLifecycle_lower(_ value: FfiProgramStatusLifecycle) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusLifecycle.lower(value)
 }
 
 
@@ -7660,6 +7821,30 @@ fileprivate struct FfiConverterOptionTypeFfiGraphicsImageMetadata: FfiConverterR
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFfiProgramStatusLifecycleOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusLifecycleOutcome?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiProgramStatusLifecycleOutcome.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiProgramStatusLifecycleOutcome.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeFfiProgramStatusRecord: FfiConverterRustBuffer {
     typealias SwiftType = FfiProgramStatusRecord?
 
@@ -8357,7 +8542,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tako_core_checksum_method_takocore_take_events() != 47530) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tako_core_checksum_method_takocore_take_output() != 52915) {
+    if (uniffi_tako_core_checksum_method_takocore_take_output() != 14868) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_take_reply_overflow_count() != 41891) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_apply_program_status_lifecycle() != 52311) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_drain_classified_replies() != 49488) {

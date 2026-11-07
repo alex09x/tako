@@ -27,27 +27,19 @@ extension TakoTerminalView {
     }
 
     public func notifyProgramStatusProcessExited() {
-        guard let ffiUpdate = core.programStatusProcessExited() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.processExited)
     }
 
     public func notifyProgramStatusInterrupted() {
-        guard let ffiUpdate = core.programStatusInterrupted() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.interrupted)
     }
 
     public func notifyProgramStatusAcknowledged() {
-        guard let ffiUpdate = core.programStatusAcknowledged() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.acknowledged)
     }
 
-    private func emitDirectProgramStatusLifecycleUpdate(_ ffiUpdate: FfiProgramStatusUpdate) {
-        _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
-        let snapshot = programStatusSnapshot()
-        delegate?.terminalView(
-            self,
-            didUpdateProgramStatus: .updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot)
-        )
+    func applyCoordinatorProgramStatus(_ event: TerminalProgramStatusEvent) {
+        delegate?.terminalView(self, didUpdateProgramStatus: event)
     }
 
     private func deliverFeedReplies(_ outcome: FfiFeedOutcome) {
@@ -69,7 +61,10 @@ extension TakoTerminalView {
         }
     }
 
-    func applyCheckpointRestore(_ restore: TerminalCheckpointRestore) {
+    func applyCheckpointRestore(
+        _ restore: TerminalCheckpointRestore,
+        restoredStatus: TerminalProgramStatusSnapshot
+    ) {
         pendingResizeWorkItem?.cancel()
         pendingResizeWorkItem = nil
         pendingGridSize = nil
@@ -80,7 +75,6 @@ extension TakoTerminalView {
         rows = restore.rows
         lastReportedScrollPosition = core.scrollPosition()
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
-        let restoredStatus = programStatusSnapshot()
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
         delegate?.terminalView(self, didUpdateProgramStatus: .restored(restoredStatus))
         delegate?.terminalViewDidChangeContent(self)
@@ -136,8 +130,8 @@ extension TakoTerminalView {
                     delegate?.terminalView(self, didReportStatus: status, text: text)
                 case .statusClear:
                     delegate?.terminalViewDidClearStatus(self)
-                case .programStatusChanged(let ffiUpdate):
-                    let snapshot = programStatusSnapshot()
+                case let .programStatusChanged(ffiUpdate, ffiSnapshot):
+                    let snapshot = TerminalProgramStatusSnapshot(ffi: ffiSnapshot)
                     delegate?.terminalView(
                         self,
                         didUpdateProgramStatus: .updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot)
@@ -146,9 +140,8 @@ extension TakoTerminalView {
                     break
                 }
             }
-            if outcome.statusOverflowCoalesced {
-                let snapshot = outcome.statusResyncSnapshot.map(TerminalProgramStatusSnapshot.init(ffi:))
-                    ?? programStatusSnapshot()
+            if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
+                let snapshot = TerminalProgramStatusSnapshot(ffi: ffiResync)
                 delegate?.terminalView(
                     self,
                     didUpdateProgramStatus: .overflowCoalesced(

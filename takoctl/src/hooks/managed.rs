@@ -151,7 +151,16 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
             .map_err(|e| format!("invalid Qwen ownership receipt: {e}"))?;
         let input = super::ownership::relocate(adapter, &settings, prior.as_ref())?;
         let after = if remove {
-            adapter.remove_hooks(&input)?
+            let mut stripped = adapter.remove_hooks(&input)?;
+            if !stripped.is_empty() {
+                let (swept, _) = super::osc7501_migration::remove_owned_json_hooks(
+                    &stripped,
+                    &adapter.name,
+                    &adapter.hook_field,
+                )?;
+                stripped = swept;
+            }
+            stripped
         } else {
             adapter.apply_hooks(&input)?
         };
@@ -206,7 +215,16 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
     ownership["dispatcher_hooks"] = adapter.hooks.clone();
     let hooks_after;
     if remove {
-        hooks_after = adapter.remove_hooks(&input)?;
+        let mut stripped = adapter.remove_hooks(&input)?;
+        if !stripped.is_empty() {
+            let (swept, _) = super::osc7501_migration::remove_owned_json_hooks(
+                &stripped,
+                &adapter.name,
+                &adapter.hook_field,
+            )?;
+            stripped = swept;
+        }
+        hooks_after = stripped;
         if let Some(r) = &existing_receipt {
             if let Some(env) = settings
                 .get_mut("managed_hooks_env_vars")
@@ -309,6 +327,14 @@ fn with_backups(mut changes: Vec<Change>, remove: bool) -> Result<Vec<Change>, S
     Ok(changes)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunOutcome {
+    Applied,
+    NoChanges,
+    Cancelled,
+    DiffOnly,
+}
+
 pub fn run(
     adapter: &Adapter,
     path: &Path,
@@ -317,21 +343,35 @@ pub fn run(
     diff_only: bool,
     json: bool,
 ) -> Result<(), String> {
+    run_with_outcome(adapter, path, remove, yes, diff_only, json).map(|_| ())
+}
+
+pub fn run_with_outcome(
+    adapter: &Adapter,
+    path: &Path,
+    remove: bool,
+    yes: bool,
+    diff_only: bool,
+    json: bool,
+) -> Result<RunOutcome, String> {
     let changes = plan(adapter, path, remove)?;
     let changed = changes.iter().any(Change::changed);
     let diff: String = changes.iter().map(Change::diff).collect();
-    let status = if diff_only {
-        "diff_only"
+    let (status, outcome) = if diff_only {
+        ("diff_only", RunOutcome::DiffOnly)
     } else if !changed {
-        if remove {
-            "not_installed"
-        } else {
-            "already_installed"
-        }
+        (
+            if remove {
+                "not_installed"
+            } else {
+                "already_installed"
+            },
+            RunOutcome::NoChanges,
+        )
     } else if remove {
-        "uninstalled"
+        ("uninstalled", RunOutcome::Applied)
     } else {
-        "installed"
+        ("installed", RunOutcome::Applied)
     };
     if changed && !diff_only {
         if !yes {
@@ -343,7 +383,7 @@ pub fn run(
                 .read_line(&mut answer)
                 .map_err(|e| e.to_string())?;
             if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
-                return Ok(());
+                return Ok(RunOutcome::Cancelled);
             }
         }
         transaction::commit(&changes, None)?;
@@ -356,5 +396,5 @@ pub fn run(
     } else {
         println!("{status}: {}\n{diff}", path.display());
     }
-    Ok(())
+    Ok(outcome)
 }

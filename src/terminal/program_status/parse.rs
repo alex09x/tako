@@ -129,6 +129,22 @@ fn validate_id(raw: &[u8]) -> Option<String> {
     std::str::from_utf8(raw).ok().map(String::from)
 }
 
+pub(crate) fn is_valid_record_id(id: &str) -> bool {
+    id.is_empty() || validate_id(id.as_bytes()).is_some()
+}
+
+pub(crate) fn is_valid_app_name(app: &str) -> bool {
+    !app.is_empty() && app.len() <= MAX_APP_BYTES && app.bytes().all(|b| is_id_or_app_byte(&b))
+}
+
+pub(crate) fn is_valid_clean_text(text: &str, max_bytes: usize) -> bool {
+    !text.is_empty()
+        && text.len() <= max_bytes
+        && !text
+            .chars()
+            .any(|c| is_forbidden_control_char(c) || is_disarmed_formatting_char(c))
+}
+
 pub(super) fn parse_report(body: &[u8]) -> Option<ParsedAction> {
     let mut raw_state: Option<&[u8]> = None;
     let mut id = String::new();

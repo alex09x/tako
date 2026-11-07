@@ -20,6 +20,7 @@ import OSLog
 final class TerminalParserCoordinator: @unchecked Sendable {
     /// The most bytes handed to one `feedWithOutcome` call.
     static let maxBatchBytes = 4 * 1024 * 1024
+    private static let parserQueueKey = DispatchSpecificKey<ObjectIdentifier>()
 
     let core: TakoCore
     /// Serial, and this coordinator's alone: batch order is queue order.
@@ -36,6 +37,8 @@ final class TerminalParserCoordinator: @unchecked Sendable {
     var isShutDown = false
     var applyOnMain: (([FfiFeedOutcome]) -> Void)?
     var onCheckpointRestored: ((TerminalCheckpointRestore) -> Void)?
+    var onCheckpointRestoredWithStatus: ((TerminalCheckpointRestore, TerminalProgramStatusSnapshot) -> Void)?
+    var onProgramStatus: ((TerminalProgramStatusEvent) -> Void)?
     var onResized: ((Int, Int) -> Void)?
 
     // Counters, for tests and for a host that wants to log them.
@@ -50,15 +53,23 @@ final class TerminalParserCoordinator: @unchecked Sendable {
     var outcomesSuppressed = 0
     var resizesApplied = 0
 
+    let serializeConcurrentApplication: Bool
+    let applicationCondition = NSCondition()
+    var activeApplicationThread: Thread?
+
     init(
         core: TakoCore,
+        serializeConcurrentApplication: Bool = false,
         mainDispatch: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
     ) {
         self.core = core
-        self.parserQueue = DispatchQueue(
+        self.serializeConcurrentApplication = serializeConcurrentApplication
+        let queue = DispatchQueue(
             label: "org.tako.terminal.parser.\(UUID().uuidString)",
             qos: .userInitiated
         )
+        queue.setSpecific(key: Self.parserQueueKey, value: ObjectIdentifier(queue))
+        self.parserQueue = queue
         self.mainDispatch = mainDispatch
     }
 
@@ -75,6 +86,23 @@ final class TerminalParserCoordinator: @unchecked Sendable {
     func setCheckpointRestoreHandler(_ handler: @escaping (TerminalCheckpointRestore) -> Void) {
         lock.lock()
         onCheckpointRestored = handler
+        onCheckpointRestoredWithStatus = nil
+        lock.unlock()
+    }
+
+    func setCheckpointRestoreWithStatusHandler(
+        _ handler: @escaping (TerminalCheckpointRestore, TerminalProgramStatusSnapshot) -> Void
+    ) {
+        lock.lock()
+        onCheckpointRestoredWithStatus = handler
+        onCheckpointRestored = nil
+        lock.unlock()
+    }
+
+    /// Install the handler ordered `OSC 7501` lifecycle transitions are reported through.
+    func setProgramStatusHandler(_ handler: @escaping (TerminalProgramStatusEvent) -> Void) {
+        lock.lock()
+        onProgramStatus = handler
         lock.unlock()
     }
 
@@ -177,6 +205,49 @@ final class TerminalParserCoordinator: @unchecked Sendable {
         request.wait()
     }
 
+    // MARK: - Program status lifecycle serialization
+
+    /// Ordered barrier for `@MainActor` views: parses all queued work through
+    /// `lifecycle` and drains outcomes up to `lifecycle` on Main before returning.
+    func applyProgramStatusLifecycleBarrier(_ lifecycle: FfiProgramStatusLifecycle) {
+        lock.lock()
+        guard !isShutDown else { lock.unlock(); return }
+        let request = ProgramStatusLifecycleRequest(lifecycle: lifecycle)
+        pendingWork.append(.programStatusLifecycle(request))
+        let startPass = !parsePassActive
+        if startPass { parsePassActive = true }
+        let holdsToken = claimMainApplicationLocked()
+        lock.unlock()
+
+        if startPass {
+            parserQueue.async { [self] in runParsePass() }
+        }
+
+        defer { applyPendingOutcomes(holdingToken: holdsToken, upTo: request) }
+        request.wait()
+    }
+
+    /// Ordered lifecycle transition for headless sessions: serializes the engine
+    /// mutation on `parserQueue` behind queued bytes and routes callback delivery
+    /// exclusively through `mainDispatch` (`deliveryDispatch`) in FIFO order.
+    func enqueueProgramStatusLifecycle(_ lifecycle: FfiProgramStatusLifecycle) {
+        lock.lock()
+        guard !isShutDown else { lock.unlock(); return }
+        let request = ProgramStatusLifecycleRequest(lifecycle: lifecycle)
+        pendingWork.append(.programStatusLifecycle(request))
+        let startPass = !parsePassActive
+        if startPass { parsePassActive = true }
+        lock.unlock()
+
+        if startPass {
+            parserQueue.async { [self] in runParsePass() }
+        }
+
+        if DispatchQueue.getSpecific(key: Self.parserQueueKey) != ObjectIdentifier(parserQueue) {
+            request.wait()
+        }
+    }
+
     // MARK: - Teardown
 
     func shutDown() {
@@ -190,10 +261,16 @@ final class TerminalParserCoordinator: @unchecked Sendable {
             if case .resize(let request) = work { return request }
             return nil
         }
+        let abandonedLifecycles = pendingWork.compactMap { work -> ProgramStatusLifecycleRequest? in
+            if case .programStatusLifecycle(let request) = work { return request }
+            return nil
+        }
         pendingWork.removeAll()
         pendingApplications.removeAll()
         applyOnMain = nil
         onCheckpointRestored = nil
+        onCheckpointRestoredWithStatus = nil
+        onProgramStatus = nil
         onResized = nil
         lock.unlock()
 
@@ -201,6 +278,9 @@ final class TerminalParserCoordinator: @unchecked Sendable {
             request.complete(.failure(TerminalCheckpointImportError.shutDown))
         }
         for request in abandonedResizes {
+            request.complete()
+        }
+        for request in abandonedLifecycles {
             request.complete()
         }
     }

@@ -59,27 +59,94 @@ fn is_three_word_tako_hook_call(clause: &str, agent: &str) -> bool {
     is_dispatcher && same_agent && DISPATCHER_EVENTS.contains(&words[2])
 }
 
+const TOKEN_PREAMBLE: &str = "tako_hook_token=\"${TAKO_CONTROL_TOKEN-${TAKO_AUTH_TOKEN-}}\"; case \"$tako_hook_token\" in *[!0-9a-f]*) tako_hook_token=\"\";; esac; ";
+
+/// Exact literal closed set of historical inline `takoctl` hook bodies emitted by
+/// `AgentHooksTool` and `takoctl/adapters/*.json` prior to `OSC 7501`.
+/// Arbitrary user-appended shell statements (e.g. `; /usr/bin/touch ...`) never match.
+const LEGACY_INLINE_TEMPLATES: &[&str] = &[
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --target "$TAKO_SURFACE_ID" --text "Thinking..." >/dev/null 2>&1 || true; takoctl progress indeterminate --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set working --target "$TAKO_SURFACE_ID" --text "Thinking..." >/dev/null 2>&1 || true; takoctl progress indeterminate --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set done --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set done --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set idle --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set needs_approval --target "$TAKO_SURFACE_ID" --text "Approval requested" >/dev/null 2>&1 || true; takoctl progress pause --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set needs_approval --target "$TAKO_SURFACE_ID" --text "Approval requested" >/dev/null 2>&1 || true; takoctl progress pause --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set waiting_for_input --target "$TAKO_SURFACE_ID" --text "Question" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set waiting_for_input --target "$TAKO_SURFACE_ID" --text "Question" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl notify "$CLAUDE_NOTIFICATION" --title "Claude Code" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --target "$TAKO_SURFACE_ID" --text "Thinking..." >/dev/null 2>&1; takoctl progress indeterminate --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; fi; echo "{}""#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set working --target "$TAKO_SURFACE_ID" --text "Thinking..." >/dev/null 2>&1; takoctl progress indeterminate --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; fi; echo "{}""#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set done --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; fi; echo "{}""#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set done --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1; fi; echo "{}""#,
+    "[ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi; echo \"{}\"",
+    "[ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi; echo \"{}\"",
+    "[ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi; echo \"{}\"",
+    "[ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID 2>/dev/null | tr \" \" \"\\n\" | grep -E \"^TAKO_(SOCKET|SURFACE_ID)=\"); export TAKO_SOCKET TAKO_SURFACE_ID; if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ] && [ \"${#tako_hook_token}\" -eq 64 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi; echo \"{}\"",
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --text "Thinking..." >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set working --text "Thinking..." >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ] && [ "${#tako_hook_token}" -eq 64 ]; then takoctl status set idle >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --text "Thinking..." >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ]; then takoctl status set working --target "$TAKO_SURFACE_ID" --text "Thinking..." >/dev/null 2>&1 || true; takoctl progress indeterminate --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ]; then takoctl status set idle --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; takoctl progress clear --target "$TAKO_SURFACE_ID" >/dev/null 2>&1 || true; fi; :"#,
+    r#"if [ -n "$TAKO_SOCKET" ]; then takoctl status set working --text "Thinking..." >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ]; then takoctl status set done >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi"#,
+    r#"if [ -n "$TAKO_SOCKET" ]; then takoctl status set working; fi"#,
+    r#"takoctl status set working --text "Thinking..." && takoctl progress indeterminate"#,
+    r#"takoctl status clear && takoctl progress clear"#,
+    r#"takoctl status set done --text "Turn complete" && takoctl notify "Claude finished turn" --title "Claude Code" && takoctl progress clear"#,
+    r#"takoctl status set needs_approval --text "Approval requested" && takoctl notify "Claude requested tool approval" --title "Claude Approval" && takoctl progress pause"#,
+    r#"takoctl status set done --text "Done" && takoctl notify "Codex completed turn" --title "Codex" && takoctl progress clear"#,
+    r#"takoctl status set needs_approval --text "Approval requested" && takoctl notify "Codex requested approval" --title "Approval Needed" && takoctl progress pause"#,
+    r#"takoctl status set waiting_for_input --text "Waiting for input" && takoctl notify "Codex waiting for input" --title "Input Needed" && takoctl progress clear"#,
+    r#"takoctl status set done --text "Done" && takoctl notify "Antigravity completed task" --title "Task Complete" && takoctl progress clear"#,
+    r#"takoctl status set needs_approval --text "Approval requested" && takoctl notify "Antigravity requested tool approval" --title "Approval Required" && takoctl progress pause"#,
+    r#"takoctl status set waiting_for_input --text "Waiting for input" && takoctl notify "Antigravity waiting for input" --title "Input Needed" && takoctl progress clear"#,
+];
+
 fn is_legacy_inline_takoctl_fallback(clause: &str) -> bool {
     let trimmed = clause.trim();
-    if let Some(rest) = trimmed
-        .strip_prefix("if [ -n \"$TAKO_SOCKET\" ] && [ \"${#TAKO_SURFACE_ID}\" -eq 36 ]; then ")
+    let body = trimmed.strip_prefix(TOKEN_PREAMBLE).unwrap_or(trimmed);
+    LEGACY_INLINE_TEMPLATES.contains(&body)
+}
+
+fn is_bundled_python_dispatcher(trimmed: &str, agent: &str) -> bool {
+    let rest = if let Some(after_path) = trimmed.strip_prefix("PATH='") {
+        let Some((macos_dir, after_colon)) =
+            after_path.split_once("':\"$PATH\" /usr/bin/python3 '")
+        else {
+            return false;
+        };
+        let decoded_macos = macos_dir.replace("'\\''", "'");
+        let macos_path = Path::new(&decoded_macos);
+        if !macos_path.is_absolute() || macos_path.file_name().is_none_or(|n| n != "MacOS") {
+            return false;
+        }
+        after_colon
+    } else if let Some(after_py) = trimmed.strip_prefix("/usr/bin/python3 '") {
+        after_py
+    } else {
+        return false;
+    };
+    let Some(without_end) = rest.strip_suffix("; :") else {
+        return false;
+    };
+    let Some((script_quoted, args_str)) = without_end.rsplit_once("' ") else {
+        return false;
+    };
+    let decoded_script = script_quoted.replace("'\\''", "'");
+    if !decoded_script.ends_with("/Contents/Resources/tako-hook.py")
+        || !Path::new(&decoded_script).is_absolute()
     {
-        let valid_end = rest.ends_with("; fi; :")
-            || rest.ends_with("; fi")
-            || rest.ends_with("; fi; echo \"{}\"");
-        return valid_end
-            && (rest.starts_with("takoctl status ")
-                || rest.starts_with(
-                    "takoctl notify \"$CLAUDE_NOTIFICATION\" --title \"Claude Code\"",
-                ));
+        return false;
     }
-    if trimmed.starts_with("[ -z \"$TAKO_SOCKET\" ] && eval $(ps eww -p $PPID")
-        && trimmed.contains("takoctl status set ")
-        && trimmed.ends_with("echo \"{}\"")
-    {
-        return true;
-    }
-    false
+    let parts: Vec<&str> = args_str.split_whitespace().collect();
+    let same_agent =
+        parts.len() == 2 && (parts[0] == agent || (agent == "antigravity" && parts[0] == "agy"));
+    same_agent && DISPATCHER_EVENTS.contains(&parts[1])
 }
 
 /// Closed-set recognition of Tako-owned status hook commands across historical
@@ -87,25 +154,50 @@ fn is_legacy_inline_takoctl_fallback(clause: &str) -> bool {
 /// hooks (`prod-code-guard`, `prod-raw-agent-events`), and Rex hooks return `false`.
 pub fn is_tako_owned_status_command(command: &str, agent: &str) -> bool {
     let trimmed = command.trim();
-    if is_three_word_tako_hook_call(trimmed, agent) {
+    let body = trimmed.strip_prefix(TOKEN_PREAMBLE).unwrap_or(trimmed);
+    if is_three_word_tako_hook_call(body, agent) {
         return true;
     }
-    if matches!(agent, "qwen" | "muse") && super::native::generated_command_owned(trimmed, agent) {
+    if matches!(agent, "qwen" | "muse") && super::native::generated_command_owned(body, agent) {
         return true;
     }
-    if is_legacy_inline_takoctl_fallback(trimmed) {
+    if is_bundled_python_dispatcher(body, agent) {
         return true;
     }
-    if let Some(after_if) = trimmed.strip_prefix("if command -v tako-hook >/dev/null 2>&1; then ")
-        && let Some((then_part, else_tail)) = after_if.split_once("; else ")
-        && let Some(else_part) = else_tail.strip_suffix("; fi; :")
-        && is_three_word_tako_hook_call(then_part.trim(), agent)
+    if is_legacy_inline_takoctl_fallback(body) {
+        return true;
+    }
+    if let Some(after_if) = body.strip_prefix("if command -v tako-hook >/dev/null 2>&1; then ")
+        && let Some(inner) = after_if.strip_suffix("; fi; :")
     {
-        let else_trimmed = else_part.trim();
-        if is_three_word_tako_hook_call(else_trimmed, agent)
-            || is_legacy_inline_takoctl_fallback(else_trimmed)
+        if let Some((then_part, elif_part)) =
+            inner.split_once("; elif [ -x \"$HOME/.local/bin/tako-hook\" ]; then ")
+            && let Some(rest_args) = elif_part
+                .trim()
+                .strip_prefix("\"$HOME/.local/bin/tako-hook\" ")
         {
-            return true;
+            let parts: Vec<&str> = rest_args.split_whitespace().collect();
+            let same_agent = parts.len() == 2
+                && (parts[0] == agent || (agent == "antigravity" && parts[0] == "agy"));
+            return is_three_word_tako_hook_call(then_part.trim(), agent)
+                && same_agent
+                && DISPATCHER_EVENTS.contains(&parts[1]);
+        }
+        if let Some((then_part, else_tail)) = inner.split_once("; else ")
+            && is_three_word_tako_hook_call(then_part.trim(), agent)
+        {
+            let raw_else = else_tail.trim();
+            if is_three_word_tako_hook_call(raw_else, agent)
+                || is_legacy_inline_takoctl_fallback(raw_else)
+            {
+                return true;
+            }
+            if let Some(stripped) = raw_else.strip_suffix("; :").map(str::trim)
+                && (is_three_word_tako_hook_call(stripped, agent)
+                    || is_legacy_inline_takoctl_fallback(stripped))
+            {
+                return true;
+            }
         }
     }
     false

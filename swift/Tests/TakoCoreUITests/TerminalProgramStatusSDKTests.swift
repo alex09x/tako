@@ -212,4 +212,193 @@ final class TerminalProgramStatusSDKTests: XCTestCase {
         consumer.feedSynchronously(Data("\u{1b}]7501;state=working\u{1b}\\".utf8))
         XCTAssertTrue(events.isEmpty)
     }
+
+    func testDeferredDeliveryPreservesPerUpdateSnapshotsAndSerializesLifecycleTransitions() {
+        let queueLock = NSLock()
+        var pendingClosures: [() -> Void] = []
+        func drainClosures() {
+            while true {
+                queueLock.lock()
+                let next = pendingClosures.isEmpty ? nil : pendingClosures.removeFirst()
+                queueLock.unlock()
+                guard let next else { break }
+                next()
+            }
+        }
+
+        let session = TerminalHeadlessSession(
+            cols: 80,
+            rows: 24,
+            deliveryDispatch: { work in
+                queueLock.lock()
+                pendingClosures.append(work)
+                queueLock.unlock()
+            }
+        )
+        defer { session.shutDown() }
+
+        var events: [TerminalProgramStatusEvent] = []
+        session.onProgramStatusEvent = { events.append($0) }
+
+        // 1. Two async reports parsed before delivery closures drain:
+        // update revision 1 must still carry snapshot revision 1 ("Step 1"), not live snapshot revision 2 ("Step 2").
+        session.enqueue(
+            Data("\u{1b}]7501;state=working:id=main:app=Codex:msg=\(b64("Step 1"))\u{1b}\\".utf8)
+        )
+        session.parserCoordinator.waitForParserQuiescence()
+        session.enqueue(
+            Data("\u{1b}]7501;state=done:id=main:app=Codex:msg=\(b64("Step 2"))\u{1b}\\".utf8)
+        )
+        session.parserCoordinator.waitForParserQuiescence()
+        XCTAssertTrue(events.isEmpty, "No events may bypass injected deliveryDispatch before closures drain")
+
+        drainClosures()
+        XCTAssertEqual(events.count, 2)
+        if events.count == 2,
+           case .updated(let u1, let s1) = events[0],
+           case .updated(let u2, let s2) = events[1] {
+            XCTAssertEqual(u1.revision, 1)
+            XCTAssertEqual(s1.revision, 1)
+            XCTAssertEqual(s1.effective?.state, .working)
+            XCTAssertEqual(s1.effective?.msg, "Step 1")
+            XCTAssertEqual(u2.revision, 2)
+            XCTAssertEqual(s2.revision, 2)
+            XCTAssertEqual(s2.effective?.state, .done)
+            XCTAssertEqual(s2.effective?.msg, "Step 2")
+        } else {
+            XCTFail("Expected two ordered .updated events, got \(events)")
+        }
+
+        // 2. Async report parsed, then notifyUserInterrupted() called BEFORE delivery closures drain:
+        // must not emit revision 4 ahead of revision 3 or bypass deliveryDispatch.
+        events.removeAll()
+        session.enqueue(
+            Data("\u{1b}]7501;state=working:id=main:app=Codex:msg=\(b64("Step 3"))\u{1b}\\".utf8)
+        )
+        session.parserCoordinator.waitForParserQuiescence()
+        session.notifyUserInterrupted()
+        XCTAssertTrue(events.isEmpty, "notifyUserInterrupted must deliver through deliveryDispatch in FIFO order")
+
+        drainClosures()
+        XCTAssertEqual(events.count, 2)
+        if events.count == 2,
+           case .updated(let u3, let s3) = events[0],
+           case .updated(let u4, let s4) = events[1] {
+            XCTAssertEqual(u3.revision, 3)
+            XCTAssertEqual(s3.revision, 3)
+            XCTAssertEqual(s3.effective?.state, .working)
+            XCTAssertEqual(s3.effective?.msg, "Step 3")
+            XCTAssertEqual(u4.revision, 4)
+            XCTAssertEqual(s4.revision, 4)
+            XCTAssertNil(s4.effective)
+        } else {
+            XCTFail("Expected ordered [working rev 3, interrupted rev 4], got \(events)")
+        }
+
+        // 3. Same serialization guarantee for notifyProcessExited().
+        events.removeAll()
+        session.enqueue(
+            Data("\u{1b}]7501;state=blocked:id=main:kind=permission:app=Codex:msg=\(b64("Approve?"))\u{1b}\\".utf8)
+        )
+        session.parserCoordinator.waitForParserQuiescence()
+        session.notifyProcessExited()
+        XCTAssertTrue(events.isEmpty, "notifyProcessExited must deliver through deliveryDispatch in FIFO order")
+
+        drainClosures()
+        XCTAssertEqual(events.count, 2)
+        if events.count == 2,
+           case .updated(let u5, let s5) = events[0],
+           case .updated(let u6, let s6) = events[1] {
+            XCTAssertEqual(u5.revision, 5)
+            XCTAssertEqual(s5.revision, 5)
+            XCTAssertEqual(s5.effective?.state, .blocked)
+            XCTAssertEqual(u6.revision, 6)
+            XCTAssertEqual(s6.revision, 6)
+            XCTAssertNil(s6.effective)
+        } else {
+            XCTFail("Expected ordered [blocked rev 5, exited rev 6], got \(events)")
+        }
+    }
+
+    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+    @MainActor
+    func testNSViewDeferredMainDeliverySerializesSnapshotsAndLifecycle() {
+        TakoTerminalNSView.isMetalDisabledForTesting = true
+        let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
+        let delegate = MockTerminalNSViewDelegate()
+        view.delegate = delegate
+
+        // Enqueue two reports while holding @MainActor, then trigger notifyProgramStatusInterrupted() before RunLoop drains.
+        view.enqueue(data: Data("\u{1b}]7501;state=working:id=main:msg=\(b64("One"))\u{1b}\\".utf8))
+        view.parserCoordinator.waitForParserQuiescence()
+        view.enqueue(data: Data("\u{1b}]7501;state=working:id=main:msg=\(b64("Two"))\u{1b}\\".utf8))
+        view.parserCoordinator.waitForParserQuiescence()
+        view.notifyProgramStatusInterrupted()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+
+        XCTAssertEqual(delegate.programStatusEvents.count, 3)
+        if delegate.programStatusEvents.count == 3,
+           case .updated(let u1, let s1) = delegate.programStatusEvents[0],
+           case .updated(let u2, let s2) = delegate.programStatusEvents[1],
+           case .updated(let u3, let s3) = delegate.programStatusEvents[2] {
+            XCTAssertEqual([u1.revision, u2.revision, u3.revision], [1, 2, 3])
+            XCTAssertEqual([s1.revision, s2.revision, s3.revision], [1, 2, 3])
+            XCTAssertEqual(s1.effective?.msg, "One")
+            XCTAssertEqual(s2.effective?.msg, "Two")
+            XCTAssertNil(s3.effective)
+        } else {
+            XCTFail("Expected monotonic [rev 1, rev 2, rev 3] on NSView delegate, got \(delegate.programStatusEvents)")
+        }
+    }
+    #endif
+
+    func testHeadlessSessionConcurrentFeedSynchronouslySerializesWithActiveAsyncDelivery() {
+        let session = TerminalHeadlessSession(cols: 80, rows: 24)
+        defer { session.shutDown() }
+        let enteredFirst = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let stateLock = NSLock()
+        var activeCallbacks = 0, maxConcurrentCallbacks = 0
+        var revisions: [UInt64] = []
+
+        session.onProgramStatusEvent = { event in
+            stateLock.lock()
+            activeCallbacks += 1
+            maxConcurrentCallbacks = max(maxConcurrentCallbacks, activeCallbacks)
+            let callbackIndex = revisions.count
+            if case .updated(let update, let snapshot) = event {
+                XCTAssertEqual(update.revision, snapshot.revision)
+                revisions.append(update.revision)
+            }
+            stateLock.unlock()
+            if callbackIndex == 0 {
+                enteredFirst.signal()
+                _ = releaseFirst.wait(timeout: .now() + 2.0)
+            }
+            stateLock.lock()
+            activeCallbacks -= 1
+            stateLock.unlock()
+        }
+
+        session.enqueue(Data("\u{1b}]7501;state=working:id=main:msg=\(b64("Async 1"))\u{1b}\\".utf8))
+        XCTAssertEqual(enteredFirst.wait(timeout: .now() + 2.0), .success)
+
+        let syncPayload = Data("\u{1b}]7501;state=done:id=main:msg=\(b64("Sync 2"))\u{1b}\\".utf8)
+        let syncFinished = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.feedSynchronously(syncPayload)
+            syncFinished.signal()
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+        stateLock.lock()
+        let (concurrentWhileParked, countWhileParked) = (maxConcurrentCallbacks, revisions.count)
+        stateLock.unlock()
+
+        releaseFirst.signal()
+        XCTAssertEqual(syncFinished.wait(timeout: .now() + 2.0), .success)
+        XCTAssertEqual(concurrentWhileParked, 1, "feedSynchronously must not overlap parked async delivery callback")
+        XCTAssertEqual(countWhileParked, 1, "Second callback must wait until first callback finishes")
+        XCTAssertEqual(maxConcurrentCallbacks, 1)
+        XCTAssertEqual(revisions, [1, 2])
+    }
 }

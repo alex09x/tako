@@ -158,4 +158,116 @@ struct QwenMuseAgentTests {
         #expect(Set(detected.map(\.id)) == ["qwen", "muse"])
         #expect(detected.allSatisfy { $0.isConfigured })
     }
+
+    @Test func exact507QwenAndMuseManagedHooksAndReceiptsAreCleanedWhileUserInlineMarkerPreserved() async throws {
+        let base = try home()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        // 1. Exact 507 Qwen PATH=... python wrapper + sidecar .tako-qwen-receipt
+        let qwenSettings = base.appendingPathComponent(".qwen/settings.json")
+        let qwenReceipt = base.appendingPathComponent(".qwen/settings.json.tako-qwen-receipt")
+        let qwenCmd = #"PATH='/Applications/Tako.app/Contents/MacOS':"$PATH" /usr/bin/python3 '/Applications/Tako.app/Contents/Resources/tako-hook.py' qwen user_prompt_submit; :"#
+        let qwenJSON: [String: Any] = [
+            "hooks": [
+                "UserPromptSubmit": [
+                    [
+                        "matcher": "*",
+                        "hooks": [
+                            ["type": "command", "command": qwenCmd, "timeout": 5],
+                            ["type": "command", "command": "echo keep-qwen-user"]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let qwenReceiptJSON: [String: Any] = [
+            "UserPromptSubmit": [
+                ["matcher": "*", "hooks": [["type": "command", "command": qwenCmd, "timeout": 5]]]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: qwenJSON, options: [.prettyPrinted]).write(to: qwenSettings)
+        try JSONSerialization.data(withJSONObject: qwenReceiptJSON, options: [.prettyPrinted]).write(to: qwenReceipt)
+
+        // 2. Exact 507 Muse settings.json -> managed_hooks_path + .tako-muse-receipt
+        let museDir = base.appendingPathComponent(".config/muse")
+        let museSettings = museDir.appendingPathComponent("settings.json")
+        let museManaged = museDir.appendingPathComponent("tako-managed-hooks.json")
+        let museReceipt = museDir.appendingPathComponent("settings.json.tako-muse-receipt")
+        let museCmd = #"PATH='/Applications/Tako.app/Contents/MacOS':"$PATH" /usr/bin/python3 '/Applications/Tako.app/Contents/Resources/tako-hook.py' muse start; :"#
+        let museSettingsJSON: [String: Any] = [
+            "managed_hooks_path": "tako-managed-hooks.json",
+            "managed_hooks_env_vars": ["CUSTOM_ENV", "TAKO_SURFACE_ID", "TAKO_SOCKET"],
+            "schema_version": 1
+        ]
+        let museManagedJSON: [String: Any] = [
+            "hooks": [
+                "BeforeAgent": [
+                    ["matcher": "*", "hooks": [["type": "command", "command": museCmd]]]
+                ]
+            ]
+        ]
+        let museReceiptJSON: [String: Any] = [
+            "version": 1,
+            "managed_path": museManaged.path,
+            "added_env": ["TAKO_SURFACE_ID", "TAKO_SOCKET"],
+            "pointer_added": true,
+            "schema_added": true,
+            "env_added": false,
+            "dispatcher_hooks": [:]
+        ]
+        try JSONSerialization.data(withJSONObject: museSettingsJSON, options: [.prettyPrinted]).write(to: museSettings)
+        try JSONSerialization.data(withJSONObject: museManagedJSON, options: [.prettyPrinted]).write(to: museManaged)
+        try JSONSerialization.data(withJSONObject: museReceiptJSON, options: [.prettyPrinted]).write(to: museReceipt)
+
+        // 3. Claude settings.json with user-modified inline takoctl command that MUST NOT be deleted
+        let claudeDir = base.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let claudeSettings = claudeDir.appendingPathComponent("settings.json")
+        let userInlineCmd = #"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --target "$TAKO_SURFACE_ID"; /usr/bin/touch /tmp/user-owned-marker; fi; :"#
+        let claudeJSON: [String: Any] = [
+            "hooks": [
+                "UserPromptSubmit": [
+                    ["matcher": "", "hooks": [["type": "command", "command": userInlineCmd]]]
+                ]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: claudeJSON, options: [.prettyPrinted]).write(to: claudeSettings)
+
+        #expect(AgentHooksTool.hasLegacyOwnedStatusHooks(for: "qwen", baseDir: base.path))
+        #expect(AgentHooksTool.hasLegacyOwnedStatusHooks(for: "muse", baseDir: base.path))
+        #expect(!AgentHooksTool.hasLegacyOwnedStatusHooks(for: "claude", baseDir: base.path))
+
+        let fake = NativeSetupRunner()
+        let before = await SetupAgentService.statuses(baseDir: base.path, runner: { try await fake.run($0) })
+        #expect(before.first { $0.id == "qwen" }?.hasLegacyHooks == true)
+        #expect(before.first { $0.id == "muse" }?.hasLegacyHooks == true)
+
+        let after = await SetupAgentService.connect(
+            ids: ["qwen", "muse"], baseDir: base.path, runner: { try await fake.run($0) }
+        )
+        #expect(after.filter { ["qwen", "muse"].contains($0.id) }.allSatisfy { $0.isReady && !$0.hasLegacyHooks })
+        #expect(!FileManager.default.fileExists(atPath: qwenReceipt.path))
+        #expect(!FileManager.default.fileExists(atPath: museReceipt.path))
+        #expect(!FileManager.default.fileExists(atPath: museManaged.path))
+
+        let qwenAfter = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: qwenSettings)) as? [String: Any])
+        #expect(qwenAfter["disableAllHooks"] == nil)
+        let qwenAfterText = try String(contentsOf: qwenSettings, encoding: .utf8)
+        #expect(qwenAfterText.contains("echo keep-qwen-user"))
+        #expect(!qwenAfterText.contains("tako-hook.py"))
+
+        let museAfter = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: museSettings)) as? [String: Any])
+        #expect(museAfter["managed_hooks_path"] == nil)
+        #expect(museAfter["schema_version"] == nil)
+        #expect(museAfter["managed_hooks_env_vars"] as? [String] == ["CUSTOM_ENV"])
+
+        #expect(AgentHooksTool.cleanupLegacyStatusHooks(for: "claude", baseDir: base.path))
+        let claudeAfter = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: claudeSettings)) as? [String: Any]
+        )
+        let claudeHooks = try #require(claudeAfter["hooks"] as? [String: Any])
+        let promptGroups = try #require(claudeHooks["UserPromptSubmit"] as? [[String: Any]])
+        let promptInner = try #require(promptGroups.first?["hooks"] as? [[String: Any]])
+        #expect(promptInner.first?["command"] as? String == userInlineCmd)
+    }
 }

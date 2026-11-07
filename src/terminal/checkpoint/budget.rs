@@ -158,7 +158,7 @@ pub fn retained_cost(term: &Terminal) -> u64 {
 fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
     use crate::terminal::TerminalEvent as E;
     match event {
-        E::ProgramStatusChanged(u) => u.heap_bytes(),
+        E::ProgramStatusChanged(ev) => ev.boxed_heap_bytes(),
         E::TitleChanged(s) | E::ClipboardSet(s) | E::PwdChanged(s) => s.capacity() as u64,
         E::Notification { title, body } => {
             (title.capacity() as u64).saturating_add(body.capacity() as u64)

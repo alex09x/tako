@@ -251,11 +251,12 @@ fn lru_eviction_caps_records_at_256_and_refreshes_on_duplicate() {
     assert!(snap.records.iter().any(|r| r.id == "overflow"));
 
     let events = term.take_events();
-    let Some(TerminalEvent::ProgramStatusChanged(upd)) = events.last() else {
+    let Some(TerminalEvent::ProgramStatusChanged(ev)) = events.last() else {
         panic!("expected ProgramStatusChanged");
     };
+    assert_eq!(ev.snapshot.revision, ev.update.revision);
     assert!(matches!(
-        &upd.mutations[0],
+        &ev.update.mutations[0],
         ProgramStatusMutation::Removed {
             id,
             reason: ProgramStatusRemovalReason::Evicted,

@@ -98,6 +98,7 @@ extension Tako.CrabTracker {
     func applyProgramStatusSnapshot(_ snapshot: TerminalProgramStatusSnapshot) {
         let wasActive = osc7501StatusActive
         osc7501StatusActive = snapshot.osc7501Active
+        lastProgramStatusSnapshot = snapshot
 
         guard let effective = snapshot.effective else {
             lastProgramStatusNotificationKey = nil

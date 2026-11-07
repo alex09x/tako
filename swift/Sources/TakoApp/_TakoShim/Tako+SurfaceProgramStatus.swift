@@ -20,10 +20,37 @@ extension Tako.SurfaceView {
     }
 
     func acknowledgeProgramStatusOutcome() {
+        withdrawAllProgramStatusNotifications()
         notifyProgramStatusAcknowledged()
     }
 
+    func withdrawProgramStatusNotifications(forRecordIDs recordIDs: Set<String>) {
+        guard !recordIDs.isEmpty else { return }
+        for recordID in recordIDs {
+            crab.activeProgramStatusNotificationIDs.remove(recordID)
+            if crab.lastProgramStatusNotificationKey?.id == recordID {
+                crab.lastProgramStatusNotificationKey = nil
+            }
+            closeStructuredNotification(
+                id: "osc7501-\(id.uuidString)-\(recordID)",
+                reportClose: false
+            )
+        }
+    }
+
+    func withdrawAllProgramStatusNotifications() {
+        let active = crab.activeProgramStatusNotificationIDs
+        guard !active.isEmpty else { return }
+        withdrawProgramStatusNotifications(forRecordIDs: active)
+    }
+
     func applyProgramStatusEvent(_ event: TerminalProgramStatusEvent) {
+        let snapshot = event.snapshot
+        if event.isLiveTransition,
+           let prev = crab.lastProgramStatusSnapshot,
+           snapshot.revision < prev.revision {
+            return
+        }
         if window != nil {
             crab.isFocused = isBeingLookedAt
         }
@@ -31,10 +58,21 @@ extension Tako.SurfaceView {
         let previousText = crab.statusText
         let previousUnread = crab.unread
 
-        let snapshot = event.snapshot
         crab.applyProgramStatusSnapshot(snapshot)
         syncProgressReportFromProgramStatus(snapshot)
         applyProgramStatusProgressBar(from: snapshot)
+
+        if crab.isFocused {
+            withdrawAllProgramStatusNotifications()
+        } else if !crab.activeProgramStatusNotificationIDs.isEmpty {
+            let stillNotifiable = Set(
+                snapshot.records
+                    .filter { [.blocked, .done, .error].contains($0.state) }
+                    .map(\.id)
+            )
+            let resolved = crab.activeProgramStatusNotificationIDs.subtracting(stillNotifiable)
+            withdrawProgramStatusNotifications(forRecordIDs: resolved)
+        }
 
         if event.isLiveTransition, !crab.isFocused, let effective = snapshot.effective {
             maybePostProgramStatusNotification(for: effective)
@@ -92,6 +130,7 @@ extension Tako.SurfaceView {
         )
         guard crab.lastProgramStatusNotificationKey != key else { return }
         crab.lastProgramStatusNotificationKey = key
+        crab.activeProgramStatusNotificationIDs.insert(effective.id)
 
         let appLabel = effective.resolvedApp ?? effective.app
         let notifTitle = Self.programStatusNotificationTitle(for: effective, appLabel: appLabel)

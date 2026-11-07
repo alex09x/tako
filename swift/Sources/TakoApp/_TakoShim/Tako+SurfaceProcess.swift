@@ -229,7 +229,7 @@ extension Tako.SurfaceView {
                             case let .notificationClose(id, reportClose):
                                 self.closeStructuredNotification(id: id, reportClose: reportClose)
                             case .progress(let state, let value):
-                                guard !self.core.programStatusSnapshot().osc7501Active else { break }
+                                guard !self.crab.osc7501StatusActive else { break }
                                 self.crab.progressReported(state: state, value: value)
                                 self.progressReport = state == 0 ? nil : .init(
                                     state: state == 2 ? .error : (state == 3 ? .indeterminate : (state == 4 ? .pause : .set)),
@@ -272,11 +272,11 @@ extension Tako.SurfaceView {
                                 self.crab.isFocused = self.isBeingLookedAt
                                 let kind = self.crab.commandKind ?? .batch
                                 self.crab.commandEnded(exitCode: exitCode)
-                                if self.core.programStatusSnapshot().effective == nil {
+                                if let statusSnap = self.crab.lastProgramStatusSnapshot, statusSnap.effective != nil {
+                                    self.applyProgramStatusProgressBar(from: statusSnap)
+                                } else {
                                     self.progressReport = nil
                                     self.updateProgressBar(state: .none, progress: nil)
-                                } else {
-                                    self.applyProgramStatusProgressBar(from: self.programStatusSnapshot())
                                 }
                                 (NSApp.delegate as? AppDelegate)?.setDockBadge()
                                 Tako.TabBarController.refreshAll()
@@ -321,20 +321,20 @@ extension Tako.SurfaceView {
                             case .contextPush, .contextPop, .contextClear:
                                 self.updateContextState()
                                 self.publishEvent(type: "context", payload: self.currentContextPayload())
-                            case .programStatusChanged(let ffiUpdate):
-                                let snapshot = self.programStatusSnapshot()
+                            case .programStatusChanged(let ffiUpdate, let ffiSnapshot):
                                 self.applyProgramStatusEvent(
-                                    .updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot)
+                                    .updated(
+                                        TerminalProgramStatusUpdate(ffi: ffiUpdate),
+                                        snapshot: TerminalProgramStatusSnapshot(ffi: ffiSnapshot)
+                                    )
                                 )
                             }
                         }
-                        if outcome.statusOverflowCoalesced {
-                            let snapshot = outcome.statusResyncSnapshot.map(TerminalProgramStatusSnapshot.init(ffi:))
-                                ?? self.programStatusSnapshot()
+                        if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
                             self.applyProgramStatusEvent(
                                 .overflowCoalesced(
                                     fromRevision: outcome.statusOverflowFromRevision,
-                                    snapshot: snapshot
+                                    snapshot: TerminalProgramStatusSnapshot(ffi: ffiResync)
                                 )
                             )
                         }

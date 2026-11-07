@@ -101,8 +101,13 @@ extension TakoTerminalNSView {
         parserCoordinator.setMainApplicationHandler { [weak self] outcomes in
             MainActor.assumeIsolated { self?.apply(outcomes) }
         }
-        parserCoordinator.setCheckpointRestoreHandler { [weak self] restore in
-            MainActor.assumeIsolated { self?.applyCheckpointRestore(restore) }
+        parserCoordinator.setCheckpointRestoreWithStatusHandler { [weak self] restore, restoredStatus in
+            MainActor.assumeIsolated {
+                self?.applyCheckpointRestore(restore, restoredStatus: restoredStatus)
+            }
+        }
+        parserCoordinator.setProgramStatusHandler { [weak self] event in
+            MainActor.assumeIsolated { self?.applyCoordinatorProgramStatus(event) }
         }
         parserCoordinator.setResizeHandler { [weak self] cols, rows in
             MainActor.assumeIsolated { self?.applyOrderedResize(cols: cols, rows: rows) }

@@ -222,7 +222,12 @@ pub fn status_at(query: &str, override_path: &str, json: bool) -> Result<(), Str
     let adapter = super::adapter::find_adapter(query)
         .ok_or_else(|| format!("unknown agent '{query}' (use 'takoctl hooks list')"))?;
     let path = adapter.resolve_path(Some(override_path));
-    let installed = adapter.is_installed(&path);
+    let installed = if adapter.uses_native_osc7501() {
+        adapter.is_installed(&path)
+            || super::osc7501_migration::has_legacy_artifacts(&adapter, &path)
+    } else {
+        adapter.is_installed(&path)
+    };
     if json {
         println!(
             "{}",

@@ -242,3 +242,104 @@ fn native_cleanup_rejects_symlinks() {
     let err = install("claude", Some(cfg.to_str().unwrap()), true, false, true).unwrap_err();
     assert!(err.contains("refusing to use symlink"));
 }
+
+#[cfg(unix)]
+#[test]
+fn partial_legacy_qwen_and_muse_decline_prompt_preserves_backup_and_files() {
+    let dir = TempDir::new("partial-decline");
+
+    let qwen_cfg = dir.0.join("qwen-settings.json");
+    let qwen_bak = backup_path(&qwen_cfg);
+    let qwen_seed = r#"{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {"type": "command", "command": "PATH='/Applications/Tako.app/Contents/MacOS':\"$PATH\" /usr/bin/python3 '/Applications/Tako.app/Contents/Resources/tako-hook.py' qwen user_prompt_submit; :"}
+        ]
+      }
+    ]
+  }
+}
+"#;
+    fs::write(&qwen_cfg, qwen_seed).unwrap();
+    fs::write(&qwen_bak, b"{\"user_backup\":true}\n").unwrap();
+
+    let muse_dir = dir.0.join("muse");
+    fs::create_dir_all(&muse_dir).unwrap();
+    let muse_cfg = muse_dir.join("settings.json");
+    let muse_bak = backup_path(&muse_cfg);
+    let muse_managed = muse_dir.join("tako-managed-hooks.json");
+    let muse_seed = "{\"managed_hooks_path\":\"tako-managed-hooks.json\",\"managed_hooks_env_vars\":[\"TAKO_SURFACE_ID\",\"TAKO_SOCKET\"],\"schema_version\":1}\n";
+    let muse_managed_seed = "{\"hooks\":{\"UserPromptSubmit\":[{\"matcher\":\"*\",\"hooks\":[{\"type\":\"command\",\"command\":\"PATH='/Applications/Tako.app/Contents/MacOS':\\\"$PATH\\\" /usr/bin/python3 '/Applications/Tako.app/Contents/Resources/tako-hook.py' muse user_prompt_submit; :\"}]}]}}\n";
+    fs::write(&muse_cfg, muse_seed).unwrap();
+    fs::write(&muse_managed, muse_managed_seed).unwrap();
+    fs::write(&muse_bak, b"{\"muse_backup\":true}\n").unwrap();
+
+    unsafe {
+        let mut fds = [0i32; 2];
+        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
+        let saved_stdin = libc::dup(0);
+        assert!(saved_stdin >= 0);
+        assert_eq!(libc::write(fds[1], b"n\nn\n".as_ptr().cast(), 4), 4);
+        libc::close(fds[1]);
+        assert!(libc::dup2(fds[0], 0) >= 0);
+        libc::close(fds[0]);
+        let r1 = install("qwen", Some(qwen_cfg.to_str().unwrap()), false, false, true);
+        let r2 = uninstall("muse", Some(muse_cfg.to_str().unwrap()), false, false, true);
+        libc::dup2(saved_stdin, 0);
+        libc::close(saved_stdin);
+        r1.unwrap();
+        r2.unwrap();
+    }
+
+    assert_eq!(fs::read_to_string(&qwen_cfg).unwrap(), qwen_seed);
+    assert!(
+        qwen_bak.exists(),
+        ".tako-bak must NOT be deleted when user answers 'n' on partial Qwen config"
+    );
+    assert_eq!(fs::read_to_string(&muse_cfg).unwrap(), muse_seed);
+    assert_eq!(
+        fs::read_to_string(&muse_managed).unwrap(),
+        muse_managed_seed
+    );
+    assert!(
+        muse_bak.exists(),
+        ".tako-bak must NOT be deleted when user answers 'n' on partial Muse config"
+    );
+}
+
+#[test]
+fn user_modified_inline_takoctl_wrapper_is_preserved_untouched() {
+    let dir = TempDir::new("closed-set");
+    let claude_cfg = dir.0.join("claude-settings.json");
+    let user_cmd = r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --target "$TAKO_SURFACE_ID"; /usr/bin/touch /tmp/user-owned-marker; fi; :"#;
+    let seed = json!({
+        "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {"type": "command", "command": user_cmd}
+                    ]
+                }
+            ]
+        }
+    });
+    fs::write(&claude_cfg, serde_json::to_string_pretty(&seed).unwrap()).unwrap();
+
+    uninstall(
+        "claude",
+        Some(claude_cfg.to_str().unwrap()),
+        true,
+        false,
+        true,
+    )
+    .unwrap();
+    let after = fs::read_to_string(&claude_cfg).unwrap();
+    assert!(
+        after.contains("/usr/bin/touch /tmp/user-owned-marker"),
+        "user-edited inline takoctl command must never be deleted: {after}"
+    );
+}

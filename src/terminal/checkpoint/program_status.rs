@@ -8,13 +8,17 @@
  * SPDX-License-Identifier: MIT
  */
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::reader::Reader;
 use super::types::{CheckpointError, map_spine};
 use super::writer::Writer;
+use crate::terminal::program_status::parse::{
+    is_valid_app_name, is_valid_clean_text, is_valid_record_id,
+};
 use crate::terminal::program_status::{
-    MAX_RECORDS, ProgramStatusBlockedKind, ProgramStatusState, ProgramStatusTable, StoredRecord,
+    MAX_APP_BYTES, MAX_ID_BYTES, MAX_MSG_DECODED_BYTES, MAX_RECORDS, MAX_TITLE_DECODED_BYTES,
+    ProgramStatusBlockedKind, ProgramStatusState, ProgramStatusTable, StoredRecord,
 };
 
 pub const PS75_MAGIC: [u8; 4] = *b"PS75";
@@ -50,9 +54,26 @@ fn write_opt_str(w: &mut Writer, opt: Option<&str>) {
     }
 }
 
-fn read_opt_str(r: &mut Reader<'_>) -> Result<Option<String>, CheckpointError> {
+fn read_bounded_str(
+    r: &mut Reader<'_>,
+    max_bytes: usize,
+    err_msg: &'static str,
+) -> Result<String, CheckpointError> {
+    let bytes = r.read_bytes_budgeted()?;
+    if bytes.len() > max_bytes {
+        return Err(CheckpointError::InvalidData(err_msg));
+    }
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| CheckpointError::InvalidData("non-utf8 string in checkpoint"))
+}
+
+fn read_opt_bounded_str(
+    r: &mut Reader<'_>,
+    max_bytes: usize,
+    err_msg: &'static str,
+) -> Result<Option<String>, CheckpointError> {
     if r.read_bool()? {
-        Ok(Some(r.read_string_budgeted()?))
+        Ok(Some(read_bounded_str(r, max_bytes, err_msg)?))
     } else {
         Ok(None)
     }
@@ -112,7 +133,17 @@ pub(crate) fn read_program_status(
     r.pos += PS75_MAGIC.len();
 
     let osc7501_active = r.read_bool()?;
+    if !osc7501_active {
+        return Err(CheckpointError::InvalidData(
+            "inactive program status trailer",
+        ));
+    }
     let revision = r.read_u64()?;
+    if revision == 0 {
+        return Err(CheckpointError::InvalidData(
+            "zero revision in active program status trailer",
+        ));
+    }
     let lru_clock = r.read_u64()?;
     let count = r.read_u32()? as usize;
     if count > MAX_RECORDS {
@@ -120,12 +151,27 @@ pub(crate) fn read_program_status(
             "program status record count exceeds cap",
         ));
     }
+    if (count as u64) > revision || (count as u64) > lru_clock {
+        return Err(CheckpointError::InvalidData(
+            "program status clocks precede record count",
+        ));
+    }
     r.check_count(count, MIN_BYTES_PER_RECORD)?;
     r.charge(map_spine(count as u64, PROGRAM_STATUS_ENTRY))?;
 
     let mut records = HashMap::with_capacity(count);
+    let mut seen_revisions = HashSet::with_capacity(count);
+    let mut seen_lru_ticks = HashSet::with_capacity(count);
     for _ in 0..count {
-        let id = r.read_string_budgeted()?;
+        let id = read_bounded_str(r, MAX_ID_BYTES, "program status id exceeds cap")?;
+        if !is_valid_record_id(&id) {
+            return Err(CheckpointError::InvalidData("invalid program status id"));
+        }
+        if records.contains_key(&id) {
+            return Err(CheckpointError::InvalidData(
+                "duplicate program status record id",
+            ));
+        }
         r.charge(id.len() as u64)?;
         let state = match r.read_u8()? {
             0 => ProgramStatusState::Idle,
@@ -142,6 +188,11 @@ pub(crate) fn read_program_status(
             3 => Some(ProgramStatusBlockedKind::Auth),
             _ => return Err(CheckpointError::InvalidData("invalid program status kind")),
         };
+        if kind.is_some() && state != ProgramStatusState::Blocked {
+            return Err(CheckpointError::InvalidData(
+                "program status kind on non-blocked state",
+            ));
+        }
         let progress = if r.read_bool()? {
             let pct = r.read_u8()?;
             if pct > 100 {
@@ -153,11 +204,50 @@ pub(crate) fn read_program_status(
         } else {
             None
         };
-        let app = read_opt_str(r)?;
-        let title = read_opt_str(r)?;
-        let msg = read_opt_str(r)?;
+        if progress.is_some()
+            && !matches!(
+                state,
+                ProgramStatusState::Working | ProgramStatusState::Blocked
+            )
+        {
+            return Err(CheckpointError::InvalidData(
+                "program status progress on non-progress state",
+            ));
+        }
+        let app = read_opt_bounded_str(r, MAX_APP_BYTES, "program status app exceeds cap")?;
+        if let Some(ref app_str) = app
+            && !is_valid_app_name(app_str)
+        {
+            return Err(CheckpointError::InvalidData("invalid program status app"));
+        }
+        let title = read_opt_bounded_str(
+            r,
+            MAX_TITLE_DECODED_BYTES,
+            "program status title exceeds cap",
+        )?;
+        if let Some(ref title_str) = title
+            && !is_valid_clean_text(title_str, MAX_TITLE_DECODED_BYTES)
+        {
+            return Err(CheckpointError::InvalidData("invalid program status title"));
+        }
+        let msg = read_opt_bounded_str(r, MAX_MSG_DECODED_BYTES, "program status msg exceeds cap")?;
+        if let Some(ref msg_str) = msg
+            && !is_valid_clean_text(msg_str, MAX_MSG_DECODED_BYTES)
+        {
+            return Err(CheckpointError::InvalidData("invalid program status msg"));
+        }
         let rec_rev = r.read_u64()?;
+        if rec_rev == 0 || rec_rev > revision || !seen_revisions.insert(rec_rev) {
+            return Err(CheckpointError::InvalidData(
+                "inconsistent program status record revision",
+            ));
+        }
         let lru_tick = r.read_u64()?;
+        if lru_tick == 0 || lru_tick > lru_clock || !seen_lru_ticks.insert(lru_tick) {
+            return Err(CheckpointError::InvalidData(
+                "inconsistent program status lru_tick",
+            ));
+        }
         let key = id.clone();
         records.insert(
             key,

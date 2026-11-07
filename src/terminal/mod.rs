@@ -51,7 +51,7 @@ pub use crate::response::{
 pub use crate::tabstops::TabStops;
 pub use crate::title_stack::{self, TitleStack};
 pub use dump::TextTail;
-pub use events::{ContextFrame, TerminalEvent};
+pub use events::{ContextFrame, ProgramStatusChangedEvent, TerminalEvent};
 pub use program_status::{
     ProgramStatusBlockedKind, ProgramStatusDrainBatch, ProgramStatusMutation, ProgramStatusRecord,
     ProgramStatusRemovalReason, ProgramStatusSnapshot, ProgramStatusState, ProgramStatusUpdate,

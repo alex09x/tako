@@ -63,6 +63,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
     public internal(set) var activeProgressState: ProgressState = .none
     public internal(set) var activeProgressValue: Int? = nil
+    var deliveredOsc7501Active = false
 
     public let contextTintLayer = CALayer()
     public let contextBreadcrumbsLayer = CALayer()

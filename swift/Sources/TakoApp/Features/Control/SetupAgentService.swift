@@ -154,7 +154,9 @@ enum SetupAgentService {
                 continue
             }
             if agent.usesNativeStatus {
-                guard AgentHooksTool.cleanupLegacyStatusHooks(for: agent.id, baseDir: base) else {
+                guard AgentHooksTool.cleanupLegacyStatusHooks(
+                    for: agent.id, baseDir: base, executableURL: executableURL
+                ) else {
                     failures[agent.id] = "Agent configuration could not be validated; no configuration was changed."
                     hookFailures.insert(agent.id)
                     continue

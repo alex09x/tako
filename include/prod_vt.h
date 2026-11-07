@@ -56,7 +56,10 @@ void prod_vt_free(ProdVt *vt);
 void prod_vt_write(ProdVt *vt, const uint8_t *data, size_t len);
 
 /* Replies the terminal owes the program (device attributes, cursor reports,
- * ...): write these to the program's input. Call after every prod_vt_write. */
+ * ...): write these to the program's input. Call after every prod_vt_write.
+ * Bounded reply-queue overflow loss stays sticky across prod_vt_drain_responses();
+ * inspect loss with prod_vt_take_reply_overflow_count() or use
+ * prod_vt_drain_classified_replies() from prod_vt_program_status.h. */
 int prod_vt_drain_responses(ProdVt *vt, uint8_t **out, size_t *out_len);
 
 /* Drop queued notifications (bell, title, clipboard, ...) a host does not

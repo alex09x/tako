@@ -27,30 +27,24 @@ extension TakoTerminalNSView {
 
     /// Notify the engine that the foreground/PTY process exited (`working`/`blocked`/`idle` dropped, `done`/`error` kept).
     public func notifyProgramStatusProcessExited() {
-        guard let ffiUpdate = core.programStatusProcessExited() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.processExited)
     }
 
     /// Notify the engine that the user pressed `Esc`/`Ctrl-C` (`working`/`blocked` dropped).
     public func notifyProgramStatusInterrupted() {
-        guard let ffiUpdate = core.programStatusInterrupted() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.interrupted)
     }
 
     /// Notify the engine that the user acknowledged finished/failed output (`done`/`error` dropped).
     public func notifyProgramStatusAcknowledged() {
-        guard let ffiUpdate = core.programStatusAcknowledged() else { return }
-        emitDirectProgramStatusLifecycleUpdate(ffiUpdate)
+        parserCoordinator.applyProgramStatusLifecycleBarrier(.acknowledged)
     }
 
-    private func emitDirectProgramStatusLifecycleUpdate(_ ffiUpdate: FfiProgramStatusUpdate) {
-        _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
-        let snapshot = programStatusSnapshot()
+    func applyCoordinatorProgramStatus(_ event: TerminalProgramStatusEvent) {
+        let snapshot = event.snapshot
+        deliveredOsc7501Active = snapshot.osc7501Active
         applyProgramStatusProgressBar(from: snapshot)
-        delegate?.terminalView(
-            self,
-            didUpdateProgramStatus: .updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot)
-        )
+        delegate?.terminalView(self, didUpdateProgramStatus: event)
     }
 
     func applyProgramStatusProgressBar(from snapshot: TerminalProgramStatusSnapshot) {
@@ -77,7 +71,7 @@ extension TakoTerminalNSView {
     }
 
     func applyOsc9ProgressIfAllowed(state: UInt8, value: UInt8?) {
-        guard !core.programStatusSnapshot().osc7501Active else { return }
+        guard !deliveredOsc7501Active else { return }
         switch state {
         case 1:
             updateProgressBar(state: .normal, progress: value.map(Int.init))

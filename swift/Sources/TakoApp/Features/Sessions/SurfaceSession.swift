@@ -67,13 +67,15 @@ final class SurfaceSession {
                 case false:
                     // A missing list entry alone does not prove the shell is gone.
                     // Keep the record and protect its screen in either case.
-                    try? self.save(.detached)
                     if let shell = self.shellPID, kill(shell, 0) == -1, errno == ESRCH {
+                        surface.handleConfirmedProcessExit()
+                        try? self.save(.detached)
                         self.confirmedLive = false
                         (NSApp?.delegate as? AppDelegate)?.sessionSaver.protect(id: surface.id)
                         self.ended = true
                         surface.onExit?(surface)
                     } else {
+                        try? self.save(.detached)
                         surface.awaitReconnect("This session is not listed and may still be running. Press Return to check again, or open a new tab.")
                     }
                 case true:

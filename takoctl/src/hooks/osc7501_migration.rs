@@ -118,8 +118,49 @@ fn ensure_not_symlink(path: &Path, label: &str) -> Result<bool, String> {
     }
 }
 
+/// Returns `true` when any legacy Tako-owned hook entry or sidecar ownership
+/// receipt remains on disk for a native `OSC 7501` agent (including partial installs).
+pub fn has_legacy_artifacts(adapter: &Adapter, path: &Path) -> bool {
+    if !adapter.uses_native_osc7501() {
+        return adapter.is_installed(path);
+    }
+    if adapter.name == "qwen" || adapter.name == "muse" {
+        let mut receipt_name = path.as_os_str().to_os_string();
+        receipt_name.push(if adapter.name == "qwen" {
+            ".tako-qwen-receipt"
+        } else {
+            ".tako-muse-receipt"
+        });
+        if Path::new(&receipt_name).exists() {
+            return true;
+        }
+        if let Ok(changes) = managed::plan(adapter, path, true)
+            && changes.iter().any(super::transaction::Change::changed)
+        {
+            return true;
+        }
+        if let Ok(content) = fs::read_to_string(path)
+            && let Ok(val) = serde_json::from_str::<Value>(&content)
+        {
+            if json_contains_owned_hooks(&val, &adapter.name, &adapter.hook_field) {
+                return true;
+            }
+            if adapter.name == "muse"
+                && let Ok(managed_file) = super::native::managed_path(&val, path)
+                && let Ok(mc) = fs::read_to_string(&managed_file)
+                && let Ok(mv) = serde_json::from_str::<Value>(&mc)
+                && json_contains_owned_hooks(&mv, "muse", &adapter.hook_field)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    adapter.is_installed(path)
+}
+
 fn cleanup_managed_orphans(adapter: &Adapter, path: &Path) -> Result<(), String> {
-    if adapter.is_installed(path) {
+    if has_legacy_artifacts(adapter, path) {
         return Ok(());
     }
     let bak = backup_path(path);
@@ -169,8 +210,11 @@ pub fn run_native_cleanup(
     from_install: bool,
 ) -> Result<(), String> {
     if adapter.name == "qwen" || adapter.name == "muse" {
-        managed::run(adapter, path, true, yes, diff_only, json)?;
-        if !diff_only {
+        let outcome = managed::run_with_outcome(adapter, path, true, yes, diff_only, json)?;
+        if matches!(
+            outcome,
+            managed::RunOutcome::Applied | managed::RunOutcome::NoChanges
+        ) {
             cleanup_managed_orphans(adapter, path)?;
         }
         return Ok(());

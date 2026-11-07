@@ -11,7 +11,7 @@
 use std::borrow::Cow;
 
 use crate::response::TerminalReplyClass;
-use crate::terminal::events::TerminalEvent;
+use crate::terminal::events::{ProgramStatusChangedEvent, TerminalEvent};
 use crate::terminal::state::Terminal;
 
 use super::parse::{ParsedAction, parse_report, trim_ascii};
@@ -29,9 +29,9 @@ fn is_subtree_member(record_id: &str, target_id: &str) -> bool {
 
 impl ProgramStatusTable {
     pub(crate) fn hard_reset(&mut self) -> Option<ProgramStatusUpdate> {
-        self.osc7501_active = false;
+        let was_active = std::mem::replace(&mut self.osc7501_active, false);
         let removed_count = self.records.len() as u32;
-        if removed_count == 0 {
+        if removed_count == 0 && !was_active {
             return None;
         }
         self.records.clear();
@@ -96,8 +96,11 @@ impl Terminal {
         let _ = self.program_status.record_update(update.clone());
         if self.program_status.events_emitted_since_take < super::MAX_PENDING_STATUS_UPDATES {
             self.program_status.events_emitted_since_take += 1;
+            let snapshot = self.program_status.snapshot();
             self.events
-                .push(TerminalEvent::ProgramStatusChanged(update));
+                .push(TerminalEvent::ProgramStatusChanged(Box::new(
+                    ProgramStatusChangedEvent { update, snapshot },
+                )));
         }
     }
 
@@ -133,13 +136,13 @@ impl Terminal {
             return;
         };
 
-        self.program_status.osc7501_active = true;
+        let was_active = std::mem::replace(&mut self.program_status.osc7501_active, true);
 
         match action {
             ParsedAction::Clear { id } => {
                 if id.is_empty() {
                     let removed_count = self.program_status.records.len() as u32;
-                    if removed_count == 0 {
+                    if removed_count == 0 && was_active {
                         return;
                     }
                     self.program_status.records.clear();
@@ -159,6 +162,16 @@ impl Terminal {
                     })
                 {
                     self.emit_program_status_stream_update(update);
+                } else if !was_active {
+                    let revision = self.program_status.bump_revision();
+                    self.emit_program_status_stream_update(ProgramStatusUpdate {
+                        revision,
+                        mutations: vec![ProgramStatusMutation::Reset {
+                            removed_count: 0,
+                            reason: ProgramStatusRemovalReason::ExplicitClear,
+                        }],
+                        effective: None,
+                    });
                 }
             }
             ParsedAction::Upsert {

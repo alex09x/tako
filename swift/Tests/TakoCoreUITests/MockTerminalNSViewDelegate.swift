@@ -78,6 +78,7 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var promptMarkCount = 0
     var reportedStatuses: [(status: String, text: String?)] = []
     var clearStatusCount = 0
+    var programStatusEvents: [TerminalProgramStatusEvent] = []
 
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {
         lastWorkingDirectory = url
@@ -109,6 +110,10 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalView(_ view: TakoTerminalNSView, didDropOverflowedReplies droppedCount: UInt32) {
         replyOverflowCounts.append(droppedCount)
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didUpdateProgramStatus event: TerminalProgramStatusEvent) {
+        programStatusEvents.append(event)
     }
 }
 #endif

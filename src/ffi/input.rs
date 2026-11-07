@@ -65,9 +65,14 @@ impl TakoCore {
         }
     }
 
-    /// Drains and returns any queued device-reply bytes.
+    /// Drains and returns any queued device-reply bytes (keeping sticky overflow count intact).
     pub fn take_output(&self) -> Vec<u8> {
         lock_recover(&self.inner).take_output()
+    }
+
+    /// Consumes and resets sticky reply-queue overflow count for legacy `take_output` callers.
+    pub fn take_reply_overflow_count(&self) -> u32 {
+        lock_recover(&self.inner).take_reply_overflow_count()
     }
 
     /// The Kitty keyboard protocol's currently active flags.

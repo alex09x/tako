@@ -106,7 +106,9 @@ extension Tako {
         var explicitStatus: (status: PaneStatus, text: String?)?
         var ttlTimer: Timer?
         var osc7501StatusActive = false
+        var lastProgramStatusSnapshot: TerminalProgramStatusSnapshot?
         var lastProgramStatusNotificationKey: ProgramStatusNotificationKey?
+        var activeProgramStatusNotificationIDs: Set<String> = []
         var onAcknowledgedOutcome: (() -> Void)?
 
         /// Whether this pane is currently focused / looked at by user.

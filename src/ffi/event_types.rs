@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-use super::program_status_types::FfiProgramStatusUpdate;
+use super::program_status_types::{FfiProgramStatusSnapshot, FfiProgramStatusUpdate};
 use crate::terminal::TerminalEvent;
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
@@ -30,6 +30,7 @@ impl From<crate::terminal::ContextFrame> for FfiContextFrame {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
 pub enum FfiEvent {
     Bell,
@@ -87,6 +88,7 @@ pub enum FfiEvent {
     ContextClear,
     ProgramStatusChanged {
         update: FfiProgramStatusUpdate,
+        snapshot: FfiProgramStatusSnapshot,
     },
 }
 
@@ -138,8 +140,9 @@ impl From<TerminalEvent> for FfiEvent {
             },
             TerminalEvent::ContextPop => FfiEvent::ContextPop,
             TerminalEvent::ContextClear => FfiEvent::ContextClear,
-            TerminalEvent::ProgramStatusChanged(update) => FfiEvent::ProgramStatusChanged {
-                update: update.into(),
+            TerminalEvent::ProgramStatusChanged(ev) => FfiEvent::ProgramStatusChanged {
+                update: ev.update.into(),
+                snapshot: ev.snapshot.into(),
             },
         }
     }

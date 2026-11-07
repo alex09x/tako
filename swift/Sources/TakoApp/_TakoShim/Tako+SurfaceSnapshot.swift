@@ -47,12 +47,7 @@ extension Tako.SurfaceView {
             reflowToCurrentBounds(forcePtyResize: true)
         }
 
-        /// The process ended. A persistent session's client may end on
-        /// purpose (a reattach check); only otherwise is the surface closed.
-        func childDidExit(_ process: PTY?) {
-            // Only the current process decides: one replaced since (a
-            // reattach check, a session that started anew) is history.
-            guard let process, process === pty else { return }
+        func handleConfirmedProcessExit() {
             notifyProgramStatusProcessExited()
             if programStatusSnapshot().effective == nil {
                 self.progressReport = nil
@@ -61,7 +56,16 @@ extension Tako.SurfaceView {
             }
             (NSApp?.delegate as? AppDelegate)?.setDockBadge()
             Tako.TabBarController.refreshAll()
+        }
+
+        /// The process ended. A persistent session's client may end on
+        /// purpose (a reattach check); only otherwise is the surface closed.
+        func childDidExit(_ process: PTY?) {
+            // Only the current process decides: one replaced since (a
+            // reattach check, a session that started anew) is history.
+            guard let process, process === pty else { return }
             if persistence?.clientExited(self) == true { return }
+            handleConfirmedProcessExit()
             onExit?(self)
         }
 
@@ -70,6 +74,7 @@ extension Tako.SurfaceView {
         }
 
         public func close() {
+            withdrawAllProgramStatusNotifications()
             BroadcastInputStore.shared.paneClosed(id)
             InputOwnershipStore.shared.remove(paneId: id)
             OverlayStore.shared.closeOverlay(paneId: id)

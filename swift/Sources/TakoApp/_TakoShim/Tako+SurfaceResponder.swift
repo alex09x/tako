@@ -17,6 +17,7 @@ extension Tako.SurfaceView {
         BroadcastInputStore.shared.setLeader(paneId: id)
         if isSecureInput { SecureInput.shared.setScoped(self, isSecure: true, focused: true) }
         crab.focused()
+        withdrawAllProgramStatusNotifications()
         NotificationStore.shared.markRead(surfaceId: self.id)
         reflowToCurrentBounds(forcePtyResize: true)
     }
@@ -41,6 +42,7 @@ extension Tako.SurfaceView {
         if Tako.InterruptKeystroke.isInterrupt(keyCode: event.keyCode,
                                                character: event.charactersIgnoringModifiers,
                                                modifiers: event.modifierFlags) {
+            withdrawAllProgramStatusNotifications()
             notifyProgramStatusInterrupted()
             crab.userInterrupted()
         }

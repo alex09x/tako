@@ -50,13 +50,20 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
         self.core = core
         self.deliveryQueue = queue
         let dispatch = deliveryDispatch ?? { work in queue.async(execute: work) }
-        self.parserCoordinator = TerminalParserCoordinator(core: core, mainDispatch: dispatch)
+        self.parserCoordinator = TerminalParserCoordinator(
+            core: core,
+            serializeConcurrentApplication: true,
+            mainDispatch: dispatch
+        )
 
         parserCoordinator.setMainApplicationHandler { [weak self] outcomes in
             self?.apply(outcomes)
         }
-        parserCoordinator.setCheckpointRestoreHandler { [weak self] restore in
-            self?.applyCheckpointRestore(restore)
+        parserCoordinator.setCheckpointRestoreWithStatusHandler { [weak self] restore, restoredStatus in
+            self?.applyCheckpointRestore(restore, restoredStatus: restoredStatus)
+        }
+        parserCoordinator.setProgramStatusHandler { [weak self] event in
+            self?.applyProgramStatus(event)
         }
         parserCoordinator.setResizeHandler { [weak self] newCols, newRows in
             self?.applyResize(cols: newCols, rows: newRows)
@@ -146,18 +153,15 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
     }
 
     public func notifyProcessExited() {
-        guard let ffiUpdate = core.programStatusProcessExited() else { return }
-        emitDirectLifecycleUpdate(ffiUpdate)
+        parserCoordinator.enqueueProgramStatusLifecycle(.processExited)
     }
 
     public func notifyUserInterrupted() {
-        guard let ffiUpdate = core.programStatusInterrupted() else { return }
-        emitDirectLifecycleUpdate(ffiUpdate)
+        parserCoordinator.enqueueProgramStatusLifecycle(.interrupted)
     }
 
     public func notifyUserAcknowledged() {
-        guard let ffiUpdate = core.programStatusAcknowledged() else { return }
-        emitDirectLifecycleUpdate(ffiUpdate)
+        parserCoordinator.enqueueProgramStatusLifecycle(.acknowledged)
     }
 
     public func shutDown() {
@@ -175,14 +179,12 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
 
     // MARK: - Internal Delivery (Outside Locks)
 
-    private func emitDirectLifecycleUpdate(_ ffiUpdate: FfiProgramStatusUpdate) {
-        _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
-        let snapshot = TerminalProgramStatusSnapshot(ffi: core.programStatusSnapshot())
+    private func applyProgramStatus(_ event: TerminalProgramStatusEvent) {
         let handler = callbackLock.withLock { () -> ((TerminalProgramStatusEvent) -> Void)? in
             guard !isShutDownState else { return nil }
             return programStatusHandler
         }
-        handler?(.updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot))
+        handler?(event)
     }
 
     private func apply(_ outcomes: [FfiFeedOutcome]) {
@@ -224,22 +226,31 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
 
             if let statusHandler = handlers.status {
                 for event in outcome.events {
-                    if case .programStatusChanged(let ffiUpdate) = event {
-                        let snapshot = TerminalProgramStatusSnapshot(ffi: core.programStatusSnapshot())
-                        statusHandler(.updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot))
+                    if case .programStatusChanged(let ffiUpdate, let ffiSnapshot) = event {
+                        statusHandler(
+                            .updated(
+                                TerminalProgramStatusUpdate(ffi: ffiUpdate),
+                                snapshot: TerminalProgramStatusSnapshot(ffi: ffiSnapshot)
+                            )
+                        )
                     }
                 }
-                if outcome.statusOverflowCoalesced {
-                    let snapshot = outcome.statusResyncSnapshot.map(TerminalProgramStatusSnapshot.init(ffi:))
-                        ?? TerminalProgramStatusSnapshot(ffi: core.programStatusSnapshot())
-                    statusHandler(.overflowCoalesced(fromRevision: outcome.statusOverflowFromRevision, snapshot: snapshot))
+                if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
+                    statusHandler(
+                        .overflowCoalesced(
+                            fromRevision: outcome.statusOverflowFromRevision,
+                            snapshot: TerminalProgramStatusSnapshot(ffi: ffiResync)
+                        )
+                    )
                 }
             }
         }
     }
 
-    private func applyCheckpointRestore(_ restore: TerminalCheckpointRestore) {
-        let snapshot = TerminalProgramStatusSnapshot(ffi: core.programStatusSnapshot())
+    private func applyCheckpointRestore(
+        _ restore: TerminalCheckpointRestore,
+        restoredStatus: TerminalProgramStatusSnapshot
+    ) {
         let handlers = callbackLock.withLock { () -> (
             restore: ((TerminalCheckpointRestore) -> Void)?,
             status: ((TerminalProgramStatusEvent) -> Void)?
@@ -249,7 +260,7 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
         }
         guard let handlers else { return }
         handlers.restore?(restore)
-        handlers.status?(.restored(snapshot))
+        handlers.status?(.restored(restoredStatus))
     }
 
     private func applyResize(cols: Int, rows: Int) {

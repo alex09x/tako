@@ -257,6 +257,20 @@ impl From<ProgramStatusDrainBatch> for FfiProgramStatusDrainBatch {
     }
 }
 
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiProgramStatusLifecycle {
+    ProcessExited,
+    Interrupted,
+    Acknowledged,
+}
+
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiProgramStatusLifecycleOutcome {
+    pub update: FfiProgramStatusUpdate,
+    pub snapshot: FfiProgramStatusSnapshot,
+    pub epoch: u64,
+}
+
 #[uniffi::export]
 impl TakoCore {
     pub fn program_status_snapshot(&self) -> FfiProgramStatusSnapshot {
@@ -281,6 +295,26 @@ impl TakoCore {
         lock_recover(&self.inner)
             .drain_classified_replies(max_replies as usize)
             .into()
+    }
+
+    pub fn apply_program_status_lifecycle(
+        &self,
+        lifecycle: FfiProgramStatusLifecycle,
+    ) -> Option<FfiProgramStatusLifecycleOutcome> {
+        let mut engine = lock_recover(&self.inner);
+        let update = match lifecycle {
+            FfiProgramStatusLifecycle::ProcessExited => engine.program_status_process_exited()?,
+            FfiProgramStatusLifecycle::Interrupted => engine.program_status_interrupted()?,
+            FfiProgramStatusLifecycle::Acknowledged => engine.program_status_acknowledged()?,
+        };
+        engine.discard_program_status_updates();
+        let snapshot = engine.program_status_snapshot().into();
+        let epoch = engine.epoch;
+        Some(FfiProgramStatusLifecycleOutcome {
+            update: update.into(),
+            snapshot,
+            epoch,
+        })
     }
 
     pub fn program_status_process_exited(&self) -> Option<FfiProgramStatusUpdate> {

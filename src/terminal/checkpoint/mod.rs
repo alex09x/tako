@@ -25,6 +25,8 @@ pub(crate) mod types;
 pub(crate) mod writer;
 
 #[cfg(test)]
+mod program_status_tests;
+#[cfg(test)]
 mod tests;
 
 pub use api::{

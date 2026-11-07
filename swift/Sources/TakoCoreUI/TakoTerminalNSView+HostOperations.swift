@@ -57,7 +57,10 @@ extension TakoTerminalNSView {
     }
 
     /// Adopt a completed restore on Main, in parser order.
-    func applyCheckpointRestore(_ restore: TerminalCheckpointRestore) {
+    func applyCheckpointRestore(
+        _ restore: TerminalCheckpointRestore,
+        restoredStatus: TerminalProgramStatusSnapshot
+    ) {
         pendingResizeWorkItem?.cancel()
         pendingResizeWorkItem = nil
         pendingGridSize = nil
@@ -101,7 +104,7 @@ extension TakoTerminalNSView {
         }
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
-        let restoredStatus = programStatusSnapshot()
+        deliveredOsc7501Active = restoredStatus.osc7501Active
         applyProgramStatusProgressBar(from: restoredStatus)
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
         delegate?.terminalView(self, didUpdateProgramStatus: .restored(restoredStatus))
@@ -258,8 +261,9 @@ extension TakoTerminalNSView {
                     delegate?.terminalViewDidClearStatus(self)
                 case let .progress(state, value):
                     applyOsc9ProgressIfAllowed(state: state, value: value)
-                case .programStatusChanged(let ffiUpdate):
-                    let snapshot = programStatusSnapshot()
+                case let .programStatusChanged(ffiUpdate, ffiSnapshot):
+                    let snapshot = TerminalProgramStatusSnapshot(ffi: ffiSnapshot)
+                    deliveredOsc7501Active = snapshot.osc7501Active
                     applyProgramStatusProgressBar(from: snapshot)
                     delegate?.terminalView(
                         self,
@@ -269,9 +273,9 @@ extension TakoTerminalNSView {
                     break
                 }
             }
-            if outcome.statusOverflowCoalesced {
-                let snapshot = outcome.statusResyncSnapshot.map(TerminalProgramStatusSnapshot.init(ffi:))
-                    ?? programStatusSnapshot()
+            if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
+                let snapshot = TerminalProgramStatusSnapshot(ffi: ffiResync)
+                deliveredOsc7501Active = snapshot.osc7501Active
                 applyProgramStatusProgressBar(from: snapshot)
                 delegate?.terminalView(
                     self,

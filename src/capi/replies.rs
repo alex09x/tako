@@ -134,3 +134,30 @@ pub extern "C" fn prod_vt_reply_batch_free(batch: *mut ProdVtReplyBatch) {
         }
     })
 }
+
+/// Consume and reset sticky reply-queue overflow count for callers using legacy
+/// `prod_vt_drain_responses()`. Returns `PROD_VT_OK` (`0`) when `dropped == 0`,
+/// `PROD_VT_ERR_REPLY_OVERFLOW` (`-12`) when `dropped > 0` (populating `*dropped_out`),
+/// or `PROD_VT_ERR_NULL_ARGUMENT` (`-1`) on a NULL pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn prod_vt_take_reply_overflow_count(
+    vt: *mut ProdVt,
+    dropped_out: *mut u32,
+) -> c_int {
+    guarded(PROD_VT_ERR_NULL_ARGUMENT, || {
+        if dropped_out.is_null() {
+            return PROD_VT_ERR_NULL_ARGUMENT;
+        }
+        unsafe { *dropped_out = 0 };
+        let Some(t) = (unsafe { term(vt) }) else {
+            return PROD_VT_ERR_NULL_ARGUMENT;
+        };
+        let dropped = t.take_reply_overflow_count();
+        unsafe { *dropped_out = dropped };
+        if dropped > 0 {
+            PROD_VT_ERR_REPLY_OVERFLOW
+        } else {
+            PROD_VT_OK
+        }
+    })
+}

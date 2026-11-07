@@ -134,15 +134,24 @@ impl ResponseQueue {
     }
 
     /// Legacy flat consume-once drain: concatenates and removes all queued
-    /// replies from the same FIFO queue.
+    /// replies from the same FIFO queue without erasing sticky overflow loss.
+    ///
+    /// Callers using `take()` / `prod_vt_drain_responses` must inspect overflow
+    /// loss via [`Self::take_overflow_dropped_count`] (`prod_vt_take_reply_overflow_count`)
+    /// or [`Self::drain_classified`] (`prod_vt_drain_classified_replies`).
     pub fn take(&mut self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.queued_bytes);
         while let Some(item) = self.items.pop_front() {
             out.extend_from_slice(&item.bytes);
         }
         self.queued_bytes = 0;
-        self.overflow_dropped_count = 0;
         out
+    }
+
+    /// Consume and reset sticky reply-queue overflow count accumulated since the
+    /// previous classified drain, explicit overflow check, or hard reset.
+    pub fn take_overflow_dropped_count(&mut self) -> u32 {
+        std::mem::take(&mut self.overflow_dropped_count)
     }
 
     pub fn clear(&mut self) {
