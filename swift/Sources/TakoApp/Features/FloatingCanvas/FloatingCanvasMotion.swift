@@ -214,19 +214,23 @@ enum FloatingCanvasMotion {
     }
 }
 
-/// Non-interactive AppKit outgoing ghost card mounted per `transition.generation` during `minimize`.
-/// Each generation gets a distinct `NSView` instance via `.id(ghost.generation)` so rapid `minA -> minB`
-/// immediately tears down `A` and starts `B` cleanly from `B.fromRect` without reusing collapsed state.
+/// Non-interactive AppKit outgoing ghost card mounted at `transition.fromRect` per `transition.generation`.
+/// Keeps 1:1 unstretched initial geometry (`10pt` continuous corners, `32pt` header, `7x7pt` dot, `11pt` mono title)
+/// at `CATransform3DIdentity` and animates `Identity -> initialLayerTransform(from: toRect, to: fromRect)` + opacity.
 final class FloatingPaneGhostNSView: NSView {
     private(set) var transition: FloatingPaneTransition
     private(set) var lastAppliedGeneration: UInt64 = 0
 
-    private let cardLayer = CALayer()
-    private let dotLayer = CALayer()
-    private let titleLayer = CATextLayer()
+    private let dotView = NSView(frame: .zero)
+    private let titleField = NSTextField(labelWithString: "")
 
     var generation: UInt64 { transition.generation }
     var surfaceId: UUID { transition.surfaceId }
+    var cardCornerRadius: CGFloat { layer?.cornerRadius ?? 0 }
+    var headerHeightUsed: CGFloat { min(FloatingPaneGeometry.headerHeight, bounds.height) }
+    var dotFrame: CGRect { dotView.frame }
+    var titleFontSize: CGFloat { titleField.font?.pointSize ?? 0 }
+    var dotLayer: CALayer? { dotView.layer }
 
     override var isFlipped: Bool { true }
 
@@ -234,9 +238,9 @@ final class FloatingPaneGhostNSView: NSView {
         self.transition = transition
         super.init(frame: .zero)
         wantsLayer = true
-        clipsToBounds = false
+        clipsToBounds = true
         setAccessibilityElement(false)
-        setupSublayers()
+        setupSubviews()
     }
 
     @available(*, unavailable)
@@ -248,35 +252,42 @@ final class FloatingPaneGhostNSView: NSView {
     override func isAccessibilityHidden() -> Bool { true }
     override func accessibilityChildren() -> [Any]? { [] }
 
-    private func setupSublayers() {
-        guard let root = layer else { return }
-        root.masksToBounds = false
+    private func setupSubviews() {
+        if let root = layer {
+            root.cornerCurve = .continuous
+            root.cornerRadius = FloatingPaneGeometry.cornerRadius
+            root.masksToBounds = true
+            root.borderWidth = 1
+        }
 
-        cardLayer.cornerCurve = .continuous
-        cardLayer.cornerRadius = 15
-        cardLayer.masksToBounds = true
-        cardLayer.borderWidth = 1
-        root.addSublayer(cardLayer)
+        dotView.wantsLayer = true
+        dotView.layer?.cornerRadius = 3.5
+        dotView.setAccessibilityElement(false)
+        addSubview(dotView)
 
-        dotLayer.cornerRadius = 3.5
-        cardLayer.addSublayer(dotLayer)
-
-        titleLayer.fontSize = 11
-        titleLayer.truncationMode = .end
-        titleLayer.alignmentMode = .left
-        titleLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        cardLayer.addSublayer(titleLayer)
+        titleField.isBordered = false
+        titleField.isBezeled = false
+        titleField.drawsBackground = false
+        titleField.isEditable = false
+        titleField.isSelectable = false
+        titleField.lineBreakMode = .byTruncatingMiddle
+        titleField.maximumNumberOfLines = 1
+        titleField.setAccessibilityElement(false)
+        addSubview(titleField)
     }
 
     func configure(with transition: FloatingPaneTransition) {
         self.transition = transition
-        let bg = transition.backgroundColor.withAlphaComponent(CGFloat(transition.backgroundOpacity))
-        cardLayer.backgroundColor = bg.cgColor
-        cardLayer.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
-        dotLayer.backgroundColor = transition.statusColor.cgColor
-        titleLayer.foregroundColor = Tako.LivingTokens.textInactive.cgColor
-        titleLayer.font = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
-        titleLayer.string = transition.title
+        if let root = layer {
+            let bg = transition.backgroundColor.withAlphaComponent(CGFloat(transition.backgroundOpacity))
+            root.backgroundColor = bg.cgColor
+            root.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+            root.cornerRadius = FloatingPaneGeometry.cornerRadius
+        }
+        dotView.layer?.backgroundColor = transition.statusColor.cgColor
+        titleField.textColor = Tako.LivingTokens.textInactive
+        titleField.font = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
+        titleField.stringValue = transition.title
         needsLayout = true
         startGhostMorphIfReady()
     }
@@ -288,24 +299,21 @@ final class FloatingPaneGhostNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let scale = window?.backingScaleFactor {
-            titleLayer.contentsScale = scale
+        if window == nil {
+            layer?.removeAnimation(forKey: FloatingCanvasMotion.ghostAnimationKey)
+            return
         }
         startGhostMorphIfReady()
     }
 
     override func layout() {
         super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        cardLayer.frame = bounds
         let headerH = min(FloatingPaneGeometry.headerHeight, bounds.height)
         let dotY = max(2, (headerH - 7) * 0.5)
-        dotLayer.frame = CGRect(x: 12, y: dotY, width: 7, height: 7)
-        let titleH: CGFloat = 14
-        let titleY = max(1, (headerH - titleH) * 0.5)
-        titleLayer.frame = CGRect(x: 26, y: titleY, width: max(0, bounds.width - 36), height: titleH)
-        CATransaction.commit()
+        dotView.frame = CGRect(x: 14, y: dotY, width: 7, height: 7)
+        let fittingH = max(14, ceil(titleField.intrinsicContentSize.height))
+        let titleY = max(1, (headerH - fittingH) * 0.5)
+        titleField.frame = CGRect(x: 28, y: titleY, width: max(0, bounds.width - 42), height: fittingH)
         startGhostMorphIfReady()
     }
 
@@ -320,28 +328,34 @@ final class FloatingPaneGhostNSView: NSView {
 
         lastAppliedGeneration = transition.generation
         root.removeAnimation(forKey: FloatingCanvasMotion.ghostAnimationKey)
-        root.opacity = 0.14
 
-        let startTransform = FloatingCanvasMotion.initialLayerTransform(
-            from: transition.fromRect,
-            to: transition.toRect,
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        root.transform = CATransform3DIdentity
+        root.opacity = 0.0
+        CATransaction.commit()
+
+        let endTransform = FloatingCanvasMotion.initialLayerTransform(
+            from: transition.toRect,
+            to: transition.fromRect,
             anchorPoint: root.anchorPoint,
             superviewIsFlipped: FloatingCanvasMotion.effectiveSuperlayerYPointsDown(for: root, fallbackView: self)
         )
 
         let transformAnim = CABasicAnimation(keyPath: "transform")
-        transformAnim.fromValue = NSValue(caTransform3D: startTransform)
-        transformAnim.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        transformAnim.fromValue = NSValue(caTransform3D: CATransform3DIdentity)
+        transformAnim.toValue = NSValue(caTransform3D: endTransform)
 
         let opacityAnim = CABasicAnimation(keyPath: "opacity")
-        opacityAnim.fromValue = 0.94
-        opacityAnim.toValue = 0.14
+        opacityAnim.fromValue = 0.95
+        opacityAnim.toValue = 0.0
 
         let group = CAAnimationGroup()
         group.animations = [transformAnim, opacityAnim]
         group.duration = FloatingCanvasMotion.duration
         group.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        group.isRemovedOnCompletion = true
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
         root.add(group, forKey: FloatingCanvasMotion.ghostAnimationKey)
     }
 }

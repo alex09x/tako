@@ -338,11 +338,23 @@ struct FloatingRexPolishTests {
         let gen1 = try #require(store.activeTransition?.generation)
         #expect(store.activeTransition?.kind == .modeMorph)
 
-        // Rapid sequence: minimize -> restore -> toggleMaximize cancels prior generations cleanly
+        // Outgoing minimize ghost mounts at 1:1 unstretched departing rect (10pt/32pt/11pt/7pt) and animates Identity -> shelf
+        let p2NormalFrame = try #require(store.activeTransition?.toRect)
         controller.minimizeFloatingPane(p2)
         let gen2 = try #require(store.activeTransition?.generation)
         #expect(gen2 > gen1 && store.activeTransition?.kind == .minimizing)
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        contentView.layoutSubtreeIfNeeded()
+        let ghostView = try #require(findFirst(of: FloatingPaneGhostNSView.self, in: contentView))
+        #expect(ghostView.bounds.size == p2NormalFrame.size,
+                "Ghost model bounds must match departing pane size (\(p2NormalFrame.size)), not 168x30 shelf pill")
+        #expect(ghostView.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
+        #expect(ghostView.headerHeightUsed == FloatingPaneGeometry.headerHeight)
+        #expect(ghostView.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        #expect(ghostView.titleFontSize == 11)
 
+        // Rapid sequence: minimize -> restore -> toggleMaximize cancels prior generations cleanly
         controller.revealAndFocusFloatingPane(p2, in: canvas)
         let gen3 = try #require(store.activeTransition?.generation)
         #expect(gen3 > gen2 && store.activeTransition?.kind == .restoring)

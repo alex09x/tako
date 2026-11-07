@@ -57,20 +57,21 @@ struct FloatingCanvasMotionTests {
         return (controller, window)
     }
 
-    private func startTransform(from groupAnim: CAAnimation?) -> CATransform3D? {
+    private func transformEndpoints(from groupAnim: CAAnimation?) -> (from: CATransform3D, to: CATransform3D)? {
         guard let group = groupAnim as? CAAnimationGroup,
               let transformAnim = group.animations?.compactMap({ $0 as? CABasicAnimation })
                 .first(where: { $0.keyPath == "transform" }),
-              let value = transformAnim.fromValue as? NSValue
+              let fromValue = transformAnim.fromValue as? NSValue,
+              let toValue = transformAnim.toValue as? NSValue
         else { return nil }
-        return value.caTransform3DValue
+        return (fromValue.caTransform3DValue, toValue.caTransform3DValue)
     }
 
     /// Evaluates the actual QuartzCore bounding rect of `view.layer` inside `contentView` (top-down canvas coordinates)
     /// when `view.layer.transform` is temporarily set to `transform`.
-    private func liveCanvasRectAtTransformStart(
+    private func liveCanvasRect(
         of view: NSView,
-        transform: CATransform3D,
+        withTransform transform: CATransform3D,
         in contentView: NSView,
         sidebarWidth: CGFloat
     ) throws -> CGRect {
@@ -191,9 +192,10 @@ struct FloatingCanvasMotionTests {
         RunLoop.current.run(until: Date().addingTimeInterval(0.04))
         contentView.layoutSubtreeIfNeeded()
 
-        // 1. Minimize p2 (genA): mounts GhostView A starting from rect2
+        // 1. Minimize p2 (genA): mounts GhostView A at unstretched rect2 (Identity -> shelfA)
         controller.minimizeFloatingPane(p2)
         let genA = try #require(store.activeTransition?.generation)
+        let expectedShelfA = FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: 1)
         contentView.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
         contentView.layoutSubtreeIfNeeded()
@@ -204,18 +206,30 @@ struct FloatingCanvasMotionTests {
         let ghostA = try #require(ghostsAfterA.first)
         #expect(ghostA.generation == genA && ghostA.surfaceId == p2.id)
         #expect(ghostA.hitTest(NSPoint(x: 10, y: 10)) == nil)
+        #expect(ghostA.bounds.size == rect2.size)
+        #expect(ghostA.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
+        #expect(ghostA.headerHeightUsed == FloatingPaneGeometry.headerHeight)
+        #expect(ghostA.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        #expect(ghostA.titleFontSize == 11)
 
-        let ghostAStart = try #require(startTransform(from: ghostA.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))
-        let ghostALiveStartRect = try liveCanvasRectAtTransformStart(
-            of: ghostA, transform: ghostAStart, in: contentView, sidebarWidth: sidebarWidth
+        let ghostAAnim = try #require(transformEndpoints(from: ghostA.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))
+        #expect(CATransform3DIsIdentity(ghostAAnim.from), "Outgoing ghost must start at CATransform3DIdentity so glyphs/dot are never stretched")
+        let ghostALiveStartRect = try liveCanvasRect(
+            of: ghostA, withTransform: ghostAAnim.from, in: contentView, sidebarWidth: sidebarWidth
         )
         #expect(abs(ghostALiveStartRect.minX - rect2.minX) <= 2 && abs(ghostALiveStartRect.minY - rect2.minY) <= 2)
         #expect(abs(ghostALiveStartRect.width - rect2.width) <= 2 && abs(ghostALiveStartRect.height - rect2.height) <= 2)
+        let ghostALiveEndRect = try liveCanvasRect(
+            of: ghostA, withTransform: ghostAAnim.to, in: contentView, sidebarWidth: sidebarWidth
+        )
+        #expect(abs(ghostALiveEndRect.minX - expectedShelfA.minX) <= 2 && abs(ghostALiveEndRect.minY - expectedShelfA.minY) <= 2)
+        #expect(abs(ghostALiveEndRect.width - expectedShelfA.width) <= 2 && abs(ghostALiveEndRect.height - expectedShelfA.height) <= 2)
 
         // 2. Immediately minimize p3 (genB > genA) while ghostA is still active:
-        //    ghostA must tear down immediately and a brand-new ghostB must start from rect3 (NOT shelfA!)
+        //    ghostA must tear down immediately and a brand-new ghostB must mount at unstretched rect3 (Identity -> shelfB)
         controller.minimizeFloatingPane(p3)
         let genB = try #require(store.activeTransition?.generation)
+        let expectedShelfB = FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: 2)
         #expect(genB > genA)
         contentView.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
@@ -228,18 +242,27 @@ struct FloatingCanvasMotionTests {
         let ghostB = try #require(ghostsAfterB.first)
         #expect(ghostB !== ghostA)
         #expect(ghostB.generation == genB && ghostB.surfaceId == p3.id)
+        #expect(ghostB.bounds.size == rect3.size)
+        #expect(ghostB.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
+        #expect(ghostB.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        #expect(ghostB.titleFontSize == 11)
 
-        let ghostBStart = try #require(startTransform(from: ghostB.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))
-        let ghostBLiveStartRect = try liveCanvasRectAtTransformStart(
-            of: ghostB, transform: ghostBStart, in: contentView, sidebarWidth: sidebarWidth
+        let ghostBAnim = try #require(transformEndpoints(from: ghostB.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))
+        #expect(CATransform3DIsIdentity(ghostBAnim.from))
+        let ghostBLiveStartRect = try liveCanvasRect(
+            of: ghostB, withTransform: ghostBAnim.from, in: contentView, sidebarWidth: sidebarWidth
         )
         #expect(abs(ghostBLiveStartRect.minX - rect3.minX) <= 2 && abs(ghostBLiveStartRect.minY - rect3.minY) <= 2,
                 "Second sequential minimize ghost must start at p3's rect3 (\(rect3)), got \(ghostBLiveStartRect)")
         #expect(abs(ghostBLiveStartRect.width - rect3.width) <= 2 && abs(ghostBLiveStartRect.height - rect3.height) <= 2)
+        let ghostBLiveEndRect = try liveCanvasRect(
+            of: ghostB, withTransform: ghostBAnim.to, in: contentView, sidebarWidth: sidebarWidth
+        )
+        #expect(abs(ghostBLiveEndRect.minX - expectedShelfB.minX) <= 2 && abs(ghostBLiveEndRect.minY - expectedShelfB.minY) <= 2)
+        #expect(abs(ghostBLiveEndRect.width - expectedShelfB.width) <= 2 && abs(ghostBLiveEndRect.height - expectedShelfB.height) <= 2)
 
         // 3. Fresh NSView restore of p3 from minimized shelf:
         //    verifies post-attach morph starts at the bottom-right shelf anchor (right orientation & timing)
-        let expectedShelfOrigin = FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: 2)
         controller.revealAndFocusFloatingPane(p3, in: canvas)
         contentView.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
@@ -252,12 +275,13 @@ struct FloatingCanvasMotionTests {
         let p3Key = p3.id.uuidString.lowercased()
         let p3Container = try #require(findView(identifier: "FloatingPane-\(p3Key)", in: contentView))
         #expect(p3Container.window === window && p3Container.bounds.size == rect3.size)
-        let restoreStart = try #require(startTransform(from: p3Container.layer?.animation(forKey: FloatingCanvasMotion.layerAnimationKey)))
-        let restoreLiveStartRect = try liveCanvasRectAtTransformStart(
-            of: p3Container, transform: restoreStart, in: contentView, sidebarWidth: sidebarWidth
+        let restoreAnim = try #require(transformEndpoints(from: p3Container.layer?.animation(forKey: FloatingCanvasMotion.layerAnimationKey)))
+        #expect(CATransform3DIsIdentity(restoreAnim.to))
+        let restoreLiveStartRect = try liveCanvasRect(
+            of: p3Container, withTransform: restoreAnim.from, in: contentView, sidebarWidth: sidebarWidth
         )
-        #expect(abs(restoreLiveStartRect.minX - expectedShelfOrigin.minX) <= 2 && abs(restoreLiveStartRect.minY - expectedShelfOrigin.minY) <= 2,
-                "Freshly restored NSView must start morphing from bottom-right shelf anchor (\(expectedShelfOrigin)), got \(restoreLiveStartRect)")
-        #expect(abs(restoreLiveStartRect.width - expectedShelfOrigin.width) <= 2 && abs(restoreLiveStartRect.height - expectedShelfOrigin.height) <= 2)
+        #expect(abs(restoreLiveStartRect.minX - expectedShelfB.minX) <= 2 && abs(restoreLiveStartRect.minY - expectedShelfB.minY) <= 2,
+                "Freshly restored NSView must start morphing from bottom-right shelf anchor (\(expectedShelfB)), got \(restoreLiveStartRect)")
+        #expect(abs(restoreLiveStartRect.width - expectedShelfB.width) <= 2 && abs(restoreLiveStartRect.height - expectedShelfB.height) <= 2)
     }
 }
