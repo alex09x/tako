@@ -37,6 +37,7 @@ struct FloatingPaneTransition: Equatable {
 enum FloatingCanvasMotion {
     static let duration: TimeInterval = 0.19
     static let layerAnimationKey = "takoFloatingPaneMorph"
+    static let ghostAnimationKey = "takoFloatingPaneGhostMorph"
     static let shelfGhostWidth: CGFloat = 168
 
     /// Approximate bottom-right shelf pill rect used as the morph anchor for minimize/restore.
@@ -51,19 +52,43 @@ enum FloatingCanvasMotion {
         return CGRect(x: x, y: y, width: cardW, height: cardH)
     }
 
-    /// Computes the initial CoreAnimation `CATransform3D` mapping `toRect` (the view's settled model frame)
-    /// onto `fromRect` around `anchorPoint` without mutating `NSView.frame` or `bounds`.
+    /// Determines whether `+Y` in `layer.superlayer` moves downward on screen by Parity (XOR)
+    /// of `CALayer.isGeometryFlipped` across the ancestor layer chain, falling back to `view.superview?.isFlipped`.
+    static func effectiveSuperlayerYPointsDown(for layer: CALayer, fallbackView: NSView?) -> Bool {
+        guard let superlayer = layer.superlayer else {
+            return fallbackView?.superview?.isFlipped ?? false
+        }
+        var yPointsDown = false
+        var current: CALayer? = superlayer
+        while let ancestor = current {
+            if ancestor.isGeometryFlipped {
+                yPointsDown.toggle()
+            }
+            current = ancestor.superlayer
+        }
+        return yPointsDown
+    }
+
+    /// Computes the exact CoreAnimation `CATransform3D` mapping `toRect` (settled top-down canvas frame)
+    /// onto `fromRect` around `anchorPoint` without ratio clamping or mutating `NSView.frame` / `bounds`.
     static func initialLayerTransform(
         from fromRect: CGRect,
         to toRect: CGRect,
         anchorPoint: CGPoint,
         superviewIsFlipped: Bool
     ) -> CATransform3D {
-        guard toRect.width > 1, toRect.height > 1, fromRect.width > 1, fromRect.height > 1 else {
+        guard toRect.width.isFinite, toRect.height.isFinite,
+              fromRect.width.isFinite, fromRect.height.isFinite,
+              toRect.width > 0, toRect.height > 0,
+              fromRect.width > 0, fromRect.height > 0
+        else {
             return CATransform3DIdentity
         }
-        let sx = min(max(fromRect.width / toRect.width, 0.08), 2.5)
-        let sy = min(max(fromRect.height / toRect.height, 0.05), 2.5)
+        let sx = fromRect.width / toRect.width
+        let sy = fromRect.height / toRect.height
+        guard sx.isFinite, sy.isFinite, sx > 0, sy > 0 else {
+            return CATransform3DIdentity
+        }
 
         let toAnchorX = toRect.minX + anchorPoint.x * toRect.width
         let fromAnchorX = fromRect.minX + anchorPoint.x * fromRect.width
@@ -83,6 +108,39 @@ enum FloatingCanvasMotion {
         let scale = CATransform3DMakeScale(sx, sy, 1)
         let translate = CATransform3DMakeTranslation(tx, ty, 0)
         return CATransform3DConcat(scale, translate)
+    }
+
+    /// Pure verification helper mapping a normalized corner `(u, v)` (`0...1` in superlayer axes)
+    /// of a view settled at top-down canvas `toRect` under `transform` back into top-down canvas coordinates.
+    static func transformedCanvasCorner(
+        u: CGFloat,
+        v: CGFloat,
+        settledCanvasRect toRect: CGRect,
+        transform: CATransform3D,
+        anchorPoint: CGPoint,
+        superviewIsFlipped: Bool,
+        canvasHeight: CGFloat = 1000
+    ) -> CGPoint {
+        let localRel = CGPoint(
+            x: (u - anchorPoint.x) * toRect.width,
+            y: (v - anchorPoint.y) * toRect.height
+        )
+        let transformedRelX = localRel.x * transform.m11 + localRel.y * transform.m21 + transform.m41
+        let transformedRelY = localRel.x * transform.m12 + localRel.y * transform.m22 + transform.m42
+
+        let posX = toRect.minX + anchorPoint.x * toRect.width
+        let superX = posX + transformedRelX
+
+        if superviewIsFlipped {
+            let posY = toRect.minY + anchorPoint.y * toRect.height
+            let superY = posY + transformedRelY
+            return CGPoint(x: superX, y: superY)
+        } else {
+            let settledMinYUnflipped = canvasHeight - toRect.maxY
+            let posY = settledMinYUnflipped + anchorPoint.y * toRect.height
+            let superY = posY + transformedRelY
+            return CGPoint(x: superX, y: canvasHeight - superY)
+        }
     }
 
     @MainActor
@@ -108,9 +166,20 @@ enum FloatingCanvasMotion {
             return
         }
 
+        // Wait until the NSView is attached to its live window/superlayer and has non-zero bounds
+        // so fresh restore mounts never evaluate superlayer flip or anchor offset prematurely.
+        guard view.window != nil,
+              view.superview != nil,
+              view.bounds.width > 1,
+              view.bounds.height > 1
+        else {
+            return
+        }
+
         guard lastAppliedGeneration != transition.generation else { return }
         lastAppliedGeneration = transition.generation
         layer.removeAnimation(forKey: layerAnimationKey)
+        layer.masksToBounds = false
 
         guard settledFrame.width > 1, settledFrame.height > 1,
               abs(transition.fromRect.minX - settledFrame.minX) > 0.5
@@ -125,7 +194,7 @@ enum FloatingCanvasMotion {
             from: transition.fromRect,
             to: settledFrame,
             anchorPoint: layer.anchorPoint,
-            superviewIsFlipped: view.superview?.isFlipped ?? false
+            superviewIsFlipped: effectiveSuperlayerYPointsDown(for: layer, fallbackView: view)
         )
 
         let transformAnim = CABasicAnimation(keyPath: "transform")
@@ -145,66 +214,148 @@ enum FloatingCanvasMotion {
     }
 }
 
-/// Non-interactive outgoing visual card animated toward the bottom-right shelf during `minimize`.
-/// Uses app-only surface/header styling so the single live `SurfaceView` detaches cleanly once
-/// without `CAMetalLayer` framebuffer readback or intermediate PTY resizes.
-struct FloatingPaneTransitionGhostView: View {
-    @Environment(\.colorScheme) private var colorScheme
+/// Non-interactive AppKit outgoing ghost card mounted per `transition.generation` during `minimize`.
+/// Each generation gets a distinct `NSView` instance via `.id(ghost.generation)` so rapid `minA -> minB`
+/// immediately tears down `A` and starts `B` cleanly from `B.fromRect` without reusing collapsed state.
+final class FloatingPaneGhostNSView: NSView {
+    private(set) var transition: FloatingPaneTransition
+    private(set) var lastAppliedGeneration: UInt64 = 0
+
+    private let cardLayer = CALayer()
+    private let dotLayer = CALayer()
+    private let titleLayer = CATextLayer()
+
+    var generation: UInt64 { transition.generation }
+    var surfaceId: UUID { transition.surfaceId }
+
+    override var isFlipped: Bool { true }
+
+    init(transition: FloatingPaneTransition) {
+        self.transition = transition
+        super.init(frame: .zero)
+        wantsLayer = true
+        clipsToBounds = false
+        setAccessibilityElement(false)
+        setupSublayers()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func isAccessibilityHidden() -> Bool { true }
+    override func accessibilityChildren() -> [Any]? { [] }
+
+    private func setupSublayers() {
+        guard let root = layer else { return }
+        root.masksToBounds = false
+
+        cardLayer.cornerCurve = .continuous
+        cardLayer.cornerRadius = 15
+        cardLayer.masksToBounds = true
+        cardLayer.borderWidth = 1
+        root.addSublayer(cardLayer)
+
+        dotLayer.cornerRadius = 3.5
+        cardLayer.addSublayer(dotLayer)
+
+        titleLayer.fontSize = 11
+        titleLayer.truncationMode = .end
+        titleLayer.alignmentMode = .left
+        titleLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        cardLayer.addSublayer(titleLayer)
+    }
+
+    func configure(with transition: FloatingPaneTransition) {
+        self.transition = transition
+        let bg = transition.backgroundColor.withAlphaComponent(CGFloat(transition.backgroundOpacity))
+        cardLayer.backgroundColor = bg.cgColor
+        cardLayer.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        dotLayer.backgroundColor = transition.statusColor.cgColor
+        titleLayer.foregroundColor = Tako.LivingTokens.textInactive.cgColor
+        titleLayer.font = Tako.LivingTokens.monoFont(size: 11, weight: .medium)
+        titleLayer.string = transition.title
+        needsLayout = true
+        startGhostMorphIfReady()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        startGhostMorphIfReady()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let scale = window?.backingScaleFactor {
+            titleLayer.contentsScale = scale
+        }
+        startGhostMorphIfReady()
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cardLayer.frame = bounds
+        let headerH = min(FloatingPaneGeometry.headerHeight, bounds.height)
+        let dotY = max(2, (headerH - 7) * 0.5)
+        dotLayer.frame = CGRect(x: 12, y: dotY, width: 7, height: 7)
+        let titleH: CGFloat = 14
+        let titleY = max(1, (headerH - titleH) * 0.5)
+        titleLayer.frame = CGRect(x: 26, y: titleY, width: max(0, bounds.width - 36), height: titleH)
+        CATransaction.commit()
+        startGhostMorphIfReady()
+    }
+
+    private func startGhostMorphIfReady() {
+        guard let root = layer,
+              window != nil,
+              superview != nil,
+              bounds.width > 1,
+              bounds.height > 1,
+              lastAppliedGeneration != transition.generation
+        else { return }
+
+        lastAppliedGeneration = transition.generation
+        root.removeAnimation(forKey: FloatingCanvasMotion.ghostAnimationKey)
+        root.opacity = 0.14
+
+        let startTransform = FloatingCanvasMotion.initialLayerTransform(
+            from: transition.fromRect,
+            to: transition.toRect,
+            anchorPoint: root.anchorPoint,
+            superviewIsFlipped: FloatingCanvasMotion.effectiveSuperlayerYPointsDown(for: root, fallbackView: self)
+        )
+
+        let transformAnim = CABasicAnimation(keyPath: "transform")
+        transformAnim.fromValue = NSValue(caTransform3D: startTransform)
+        transformAnim.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+
+        let opacityAnim = CABasicAnimation(keyPath: "opacity")
+        opacityAnim.fromValue = 0.94
+        opacityAnim.toValue = 0.14
+
+        let group = CAAnimationGroup()
+        group.animations = [transformAnim, opacityAnim]
+        group.duration = FloatingCanvasMotion.duration
+        group.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        group.isRemovedOnCompletion = true
+        root.add(group, forKey: FloatingCanvasMotion.ghostAnimationKey)
+    }
+}
+
+struct FloatingPaneTransitionGhostView: NSViewRepresentable {
     let transition: FloatingPaneTransition
-    @State private var collapsedToShelf = false
 
-    private typealias T = Tako.LivingTokens
+    func makeNSView(context: Context) -> FloatingPaneGhostNSView {
+        let view = FloatingPaneGhostNSView(transition: transition)
+        view.configure(with: transition)
+        return view
+    }
 
-    var body: some View {
-        let currentRect = collapsedToShelf ? transition.toRect : transition.fromRect
-        let cornerRadius: CGFloat = collapsedToShelf ? 15 : FloatingPaneGeometry.cornerRadius
-
-        VStack(spacing: 0) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Color(nsColor: transition.statusColor))
-                    .frame(width: 7, height: 7)
-                Text(transition.title)
-                    .font(Font(T.monoFont(size: 11, weight: .medium)))
-                    .foregroundColor(Color(nsColor: T.textInactive))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .frame(height: min(FloatingPaneGeometry.headerHeight, currentRect.height))
-
-            Spacer(minLength: 0)
-        }
-        .frame(width: max(1, currentRect.width), height: max(1, currentRect.height))
-        .background(
-            Color(nsColor: transition.backgroundColor)
-                .opacity(transition.backgroundOpacity)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    colorScheme == .light
-                        ? Color.black.opacity(0.10)
-                        : Color.white.opacity(0.10),
-                    lineWidth: 1
-                )
-        )
-        .opacity(collapsedToShelf ? 0.14 : 0.94)
-        .position(x: currentRect.midX, y: currentRect.midY)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .onAppear {
-            collapsedToShelf = false
-            withAnimation(.easeIn(duration: FloatingCanvasMotion.duration)) {
-                collapsedToShelf = true
-            }
-        }
-        .onChange(of: transition.generation) { _, _ in
-            collapsedToShelf = false
-            withAnimation(.easeIn(duration: FloatingCanvasMotion.duration)) {
-                collapsedToShelf = true
-            }
-        }
+    func updateNSView(_ nsView: FloatingPaneGhostNSView, context: Context) {
+        nsView.configure(with: transition)
     }
 }

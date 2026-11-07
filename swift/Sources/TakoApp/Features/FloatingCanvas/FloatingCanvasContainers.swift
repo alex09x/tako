@@ -17,11 +17,16 @@ import SwiftUI
 final class FloatingPaneAXContainerNSView<Content: View>: NSView {
     private let hostingView: NSHostingView<Content>
     private(set) var lastAppliedTransitionGeneration: UInt64 = 0
+    private var pendingSurfaceId = UUID()
+    private var pendingSettledFrame: CGRect = .zero
+    private var pendingTransition: FloatingPaneTransition?
+    private var pendingReduceMotion = false
 
     init(rootView: Content) {
         self.hostingView = NSHostingView(rootView: rootView)
         super.init(frame: .zero)
         wantsLayer = true
+        clipsToBounds = false
         hostingView.safeAreaRegions = []
         hostingView.sizingOptions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = true
@@ -51,14 +56,21 @@ final class FloatingPaneAXContainerNSView<Content: View>: NSView {
         setAccessibilityIdentifier(identifier)
         setAccessibilityLabel(label)
         setAccessibilityValue(value)
-        FloatingCanvasMotion.applyOrCancelLayerMorph(
-            on: self,
-            surfaceId: surfaceId,
-            settledFrame: settledFrame,
-            transition: activeTransition,
-            lastAppliedGeneration: &lastAppliedTransitionGeneration,
-            reduceMotion: reduceMotion
-        )
+        pendingSurfaceId = surfaceId
+        pendingSettledFrame = settledFrame
+        pendingTransition = activeTransition
+        pendingReduceMotion = reduceMotion
+        syncLayerMorph()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        syncLayerMorph()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncLayerMorph()
     }
 
     override func layout() {
@@ -66,6 +78,18 @@ final class FloatingPaneAXContainerNSView<Content: View>: NSView {
         if hostingView.frame != bounds {
             hostingView.frame = bounds
         }
+        syncLayerMorph()
+    }
+
+    private func syncLayerMorph() {
+        FloatingCanvasMotion.applyOrCancelLayerMorph(
+            on: self,
+            surfaceId: pendingSurfaceId,
+            settledFrame: pendingSettledFrame,
+            transition: pendingTransition,
+            lastAppliedGeneration: &lastAppliedTransitionGeneration,
+            reduceMotion: pendingReduceMotion
+        )
     }
 
     override func accessibilityChildren() -> [Any]? {

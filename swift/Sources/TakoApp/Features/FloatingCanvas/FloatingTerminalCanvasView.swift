@@ -104,6 +104,11 @@ struct FloatingTerminalCanvasView: View {
                            ghost.kind == .minimizing,
                            !store.reduceMotionProvider() {
                             FloatingPaneTransitionGhostView(transition: ghost)
+                                .frame(width: max(1, ghost.toRect.width), height: max(1, ghost.toRect.height))
+                                .position(x: ghost.toRect.midX, y: ghost.toRect.midY)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                                .id(ghost.generation)
                                 .zIndex(999_999)
                         }
                     }
