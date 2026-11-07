@@ -55,9 +55,12 @@ class TerminalWindow: NSWindow {
 
     /// The titlebar container found last, and whether the window was full
     /// screen then (it lives in another window in full screen).
+    struct WeakViewBox { weak var view: NSView? }
     weak var cachedTitlebarContainer: NSView?
     var cachedTitlebarContainerFullScreen = false
-    weak var topBandMouseTarget: NSView?
+    weak var topBandLeftTarget: NSView?
+    weak var topBandRightTarget: NSView?
+    var topBandOtherTargets: [Int: WeakViewBox] = [:]
 
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {

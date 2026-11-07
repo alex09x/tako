@@ -195,7 +195,24 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
         }
         .accessibilityElement(children: .contain)
         .accessibilityValue(item.isSelected ? "selected" : "unselected")
+        .accessibilityHint(Self.statusDotHint(for: item))
         .accessibilityIdentifier((item.isChild ? "session-pane-" : "session-tab-")
             + (item.surfaceId?.uuidString.lowercased() ?? item.tabId))
+    }
+
+    @MainActor
+    private static func statusDotHint(for item: SessionSidebarItem) -> String {
+        let dot: String
+        switch item.status {
+        case .working, .running: dot = "ember"
+        case .waitingForInput, .needsApproval: dot = "claw"
+        case .done: dot = "ok"
+        case .error, .disconnected: dot = "error"
+        case .idle, .unknown: dot = item.needsAttention ? "claw" : "dim"
+        }
+        let surface = item.surfaceId.flatMap { id in
+            TerminalController.all.flatMap { $0.surfaceTree.map { $0 } }.first { $0.id == id }
+        }
+        return "dot:\(Tako.tabStatusHex(for: dot, surface: surface))"
     }
 }

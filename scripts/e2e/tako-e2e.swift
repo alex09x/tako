@@ -3886,9 +3886,8 @@ let scenarios: [Scenario] = [
         guard let f1 = d.windowFrame() else {
             throw Failure("no window frame discovered for initial window in Default workspace")
         }
-        // The first tab occupies x=250 in pill style. Drag the empty space
-        // between the tabs and the controls at the right edge instead.
-        let dragStart1 = CGPoint(x: f1.maxX - 150, y: f1.origin.y + 18)
+        // Drag the permanent sidebar's top window-drag strip (clear of traffic lights).
+        let dragStart1 = CGPoint(x: f1.origin.x + 180, y: f1.origin.y + 16)
         let dragEnd1 = CGPoint(x: dragStart1.x + 80, y: dragStart1.y + 40)
         try d.drag(from: dragStart1, to: dragEnd1, steps: 12)
         usleep(500_000)
@@ -4041,7 +4040,7 @@ let scenarios: [Scenario] = [
         guard let preDragF2 = d.windowFrame() else {
             throw Failure("no window frame before dragging Workspace 2 window")
         }
-        let dragStart2 = CGPoint(x: preDragF2.maxX - 150, y: preDragF2.origin.y + 18)
+        let dragStart2 = CGPoint(x: preDragF2.origin.x + 180, y: preDragF2.origin.y + 16)
         let dragEnd2 = CGPoint(x: dragStart2.x + 100, y: dragStart2.y + 52)
         try d.drag(from: dragStart2, to: dragEnd2, steps: 16)
         usleep(500_000)
@@ -4075,7 +4074,7 @@ let scenarios: [Scenario] = [
         guard ws2_tab0_switched == ws2_tab0 else {
             let workspaces = (try? d.workspaceList()) ?? []
             let transitions = (try? d.tabTransitions()) ?? []
-            let selected: NSNumber? = d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) }
+            let selected: String? = d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) }
             throw Failure("mouse click on Workspace 2 Tab 0 failed to route input (got: \(ws2_tab0_switched), expected: \(ws2_tab0), tab1: \(ws2_tab1)); tab0 selected: \(String(describing: selected)); focus: \(d.debugFocusState()); workspaces: \(workspaces); transitions: \(transitions)")
         }
 

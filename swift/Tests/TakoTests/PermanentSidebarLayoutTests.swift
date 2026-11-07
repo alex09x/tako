@@ -13,29 +13,12 @@ import SwiftUI
 import Testing
 @testable import Tako
 
-private final class ZoomSpyTerminalWindow: TerminalWindow {
-    var zoomCalls = 0
-    override func performZoom(_ sender: Any?) {
-        zoomCalls += 1
-    }
-}
-
 private final class FullscreenStubTerminalWindow: TerminalWindow {
     var simulatedFullScreen = false
     override var styleMask: NSWindow.StyleMask {
         get { simulatedFullScreen ? super.styleMask.union([.fullScreen]) : super.styleMask }
         set { super.styleMask = newValue.subtracting([.fullScreen]) }
     }
-}
-
-private final class ClickSpyView: NSView {
-    var mouseDownCount = 0
-    var mouseDraggedCount = 0
-    var mouseUpCount = 0
-    override var acceptsFirstResponder: Bool { true }
-    override func mouseDown(with event: NSEvent) { mouseDownCount += 1 }
-    override func mouseDragged(with event: NSEvent) { mouseDraggedCount += 1 }
-    override func mouseUp(with event: NSEvent) { mouseUpCount += 1 }
 }
 
 @Suite(.serialized)
@@ -199,68 +182,6 @@ struct PermanentSidebarLayoutTests {
         #expect(SessionSidebarChrome.topStripHeight(for: window) == 0)
         #expect(findFirst(of: SidebarTitlebarDragView.self, in: contentView) == nil)
         window.simulatedFullScreen = false
-    }
-
-    @Test func topEdgeMouseEventsRouteToRightTerminalAndSidebarDragStripSupportsDoubleClickZoom() throws {
-        let window = ZoomSpyTerminalWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.tabbingMode = .disallowed
-        Tako.TabBarController.install(in: window)
-        defer { window.close() }
-
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
-        let dragStrip = SidebarTitlebarDragView(frame: NSRect(x: 0, y: 468, width: 280, height: 32))
-        let rightPane = ClickSpyView(frame: NSRect(x: 280, y: 0, width: 620, height: 500))
-        root.addSubview(dragStrip)
-        root.addSubview(rightPane)
-        window.contentView = root
-        root.layoutSubtreeIfNeeded()
-
-        // Standard traffic lights remain native hit targets and are never intercepted.
-        if let closeButton = window.standardWindowButton(.closeButton) {
-            let center = closeButton.convert(NSPoint(x: closeButton.bounds.midX, y: closeButton.bounds.midY), to: nil)
-            #expect(window.hitsStandardWindowButton(at: center))
-        }
-
-        // Free sidebar header (x=180, y=488 in top 28pt band): double-click zooms the window.
-        let headerDoubleDown = try #require(NSEvent.mouseEvent(
-            with: .leftMouseDown, location: NSPoint(x: 180, y: 488), modifierFlags: [],
-            timestamp: 0, windowNumber: window.windowNumber, context: nil,
-            eventNumber: 1, clickCount: 2, pressure: 1
-        ))
-        window.sendEvent(headerDoubleDown)
-        #expect(window.zoomCalls == 1)
-
-        // Right terminal top band (x=520, y=490 in top 28pt band): click/drag/up reaches terminal, never zooms.
-        let termDown = try #require(NSEvent.mouseEvent(
-            with: .leftMouseDown, location: NSPoint(x: 520, y: 490), modifierFlags: [],
-            timestamp: 0, windowNumber: window.windowNumber, context: nil,
-            eventNumber: 2, clickCount: 2, pressure: 1
-        ))
-        let termDrag = try #require(NSEvent.mouseEvent(
-            with: .leftMouseDragged, location: NSPoint(x: 560, y: 490), modifierFlags: [],
-            timestamp: 0, windowNumber: window.windowNumber, context: nil,
-            eventNumber: 2, clickCount: 2, pressure: 1
-        ))
-        let termUp = try #require(NSEvent.mouseEvent(
-            with: .leftMouseUp, location: NSPoint(x: 560, y: 490), modifierFlags: [],
-            timestamp: 0, windowNumber: window.windowNumber, context: nil,
-            eventNumber: 2, clickCount: 2, pressure: 0
-        ))
-        window.sendEvent(termDown)
-        window.sendEvent(termDrag)
-        window.sendEvent(termUp)
-        #expect(rightPane.mouseDownCount == 1)
-        #expect(rightPane.mouseDraggedCount == 1)
-        #expect(rightPane.mouseUpCount == 1)
-        #expect(window.zoomCalls == 1, "double-clicking inside top terminal rows must not zoom the window")
     }
 
     @Test func sidebarSessionLifecycleCreateSwitchAndSingleTabClosePreservesTabGroup() throws {

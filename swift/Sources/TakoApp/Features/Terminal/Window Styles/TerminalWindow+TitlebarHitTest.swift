@@ -42,15 +42,8 @@ extension TerminalWindow {
             }
         }
 
-        if let tracked = topBandMouseTarget {
-            if event.type == .leftMouseDragged {
-                tracked.mouseDragged(with: event)
-                return true
-            } else if event.type == .leftMouseUp {
-                topBandMouseTarget = nil
-                tracked.mouseUp(with: event)
-                return true
-            }
+        if routeTrackedTopBandContinuation(event) {
+            return true
         }
 
         if Tako.TabBarController.bar(for: self) == nil,
@@ -58,7 +51,6 @@ extension TerminalWindow {
            styleMask.contains(.titled) {
             let point = event.locationInWindow
             if !hitsStandardWindowButton(at: point),
-               isInTitlebarBand(at: point),
                let target = contentHitTarget(at: point) {
                 if let dragView = target as? SidebarTitlebarDragView {
                     if event.type == .leftMouseDown {
@@ -68,13 +60,46 @@ extension TerminalWindow {
                     if event.type == .leftMouseDragged || event.type == .leftMouseUp {
                         return true
                     }
-                } else if routeTopBandContentEvent(event, to: target) {
+                } else if isInTitlebarBand(at: point), routeTopBandContentEvent(event, to: target) {
                     return true
                 }
             }
         }
 
         return false
+    }
+
+    private func routeTrackedTopBandContinuation(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDragged:
+            guard let tracked = topBandLeftTarget else { return false }
+            tracked.mouseDragged(with: event)
+            return true
+        case .leftMouseUp:
+            guard let tracked = topBandLeftTarget else { return false }
+            topBandLeftTarget = nil
+            tracked.mouseUp(with: event)
+            return true
+        case .rightMouseDragged:
+            guard let tracked = topBandRightTarget else { return false }
+            tracked.rightMouseDragged(with: event)
+            return true
+        case .rightMouseUp:
+            guard let tracked = topBandRightTarget else { return false }
+            topBandRightTarget = nil
+            tracked.rightMouseUp(with: event)
+            return true
+        case .otherMouseDragged:
+            guard let tracked = topBandOtherTargets[event.buttonNumber]?.view else { return false }
+            tracked.otherMouseDragged(with: event)
+            return true
+        case .otherMouseUp:
+            guard let tracked = topBandOtherTargets.removeValue(forKey: event.buttonNumber)?.view else { return false }
+            tracked.otherMouseUp(with: event)
+            return true
+        default:
+            return false
+        }
     }
 
     func hitsStandardWindowButton(at windowPoint: NSPoint) -> Bool {
@@ -123,14 +148,25 @@ extension TerminalWindow {
             if target.acceptsFirstResponder, firstResponder !== target {
                 _ = makeFirstResponder(target)
             }
-            topBandMouseTarget = target
+            topBandLeftTarget = target
             target.mouseDown(with: event)
             return true
         case .rightMouseDown:
+            topBandRightTarget = target
             target.rightMouseDown(with: event)
             return true
+        case .rightMouseDragged:
+            target.rightMouseDragged(with: event)
+            return true
+        case .rightMouseUp:
+            target.rightMouseUp(with: event)
+            return true
         case .otherMouseDown:
+            topBandOtherTargets[event.buttonNumber] = WeakViewBox(view: target)
             target.otherMouseDown(with: event)
+            return true
+        case .otherMouseDragged:
+            target.otherMouseDragged(with: event)
             return true
         case .otherMouseUp:
             target.otherMouseUp(with: event)

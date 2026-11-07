@@ -37,21 +37,11 @@ private func launchCleanHumanWindow(_ d: Driver, size: CGSize = CGSize(width: 84
     d.setSize(size)
     d.focus()
     usleep(800_000)
-    if d.hasText(containing: "Sessions") {
-        d.key(Key.s, [.maskCommand, .maskAlternate])
-        _ = d.wait(for: { !d.hasText(containing: "Sessions") }, timeout: 3)
-    }
     return "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
 }
 
 func runSidebarInteractionScenario(_ d: Driver) throws {
     let ctl = try launchCleanHumanWindow(d)
-    defer {
-        if d.hasText(containing: "Sessions") {
-            d.key(Key.s, [.maskCommand, .maskAlternate])
-            usleep(200_000)
-        }
-    }
     let alphaDir = d.path("sb_alpha_dir")
     let betaDir = d.path("sb_beta_dir")
     try FileManager.default.createDirectory(atPath: alphaDir, withIntermediateDirectories: true)
@@ -76,8 +66,7 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
         throw Failure("Tab 1 did not create distinct pane/TTY")
     }
 
-    // Open Session Sidebar via Cmd+Opt+S
-    d.key(Key.s, [.maskCommand, .maskAlternate])
+    // Session Sidebar is permanently open and must display Sessions + sub-worker immediately.
     guard d.wait(for: { d.hasText(containing: "Sessions") && d.hasText(containing: "sub-worker") }, timeout: 5) else {
         let texts = d.onScreenWindows().flatMap { d.descendants(of: $0, role: kAXStaticTextRole as String) }
             .compactMap { (d.attribute($0, kAXValueAttribute) as String?) }.filter { !$0.isEmpty }.prefix(40)
@@ -133,10 +122,11 @@ func runSidebarInteractionScenario(_ d: Driver) throws {
         throw Failure("clicking sb_alpha_dir row in Session Sidebar did not switch active pane to pane0")
     }
 
-    // The sidebar has no close button of its own: the shortcut that opened it closes it.
+    // Session Sidebar is permanent: Cmd+Opt+S must NOT hide it.
     d.key(Key.s, [.maskCommand, .maskAlternate])
-    guard d.wait(for: { !d.hasText(containing: "Sessions") }, timeout: 5) else {
-        throw Failure("Session Sidebar did not close on Cmd+Opt+S")
+    usleep(300_000)
+    guard d.hasText(containing: "Sessions") else {
+        throw Failure("Permanent Session Sidebar unexpectedly closed on Cmd+Opt+S")
     }
     try d.run("tty > \(d.path("sb_rec_tty")) && echo 'sidebar_human_ok' > \(d.path("sb_witness"))")
     try d.expect("sb_witness", "sidebar_human_ok\n", "unassisted keyboard input after sidebar selection")

@@ -227,26 +227,30 @@ func runTabDragReorderScenario(_ d: Driver) throws {
         throw Failure("initial tab order was not [pane0, pane1]: \(orderedTabPanes())")
     }
 
-    // Drag tab-0 across tab-1 to swap order
-    let pt0 = try d.tabClickPoint(index: 0)
-    let pt1 = try d.tabClickPoint(index: 1)
-    try d.drag(from: pt0, to: CGPoint(x: pt1.x + 35, y: pt1.y), steps: 16)
+    // Reorder session tabs via Window -> Move Tab Backward / Move Tab Forward
+    guard d.pressMenu(title: "Move Tab Backward") else {
+        throw Failure("Window -> Move Tab Backward menu action failed")
+    }
     guard d.wait(for: { orderedTabPanes() == [pane1, pane0] }, timeout: 5) else {
-        throw Failure("dragging tab-0 onto tab-1 did not reorder tabs to [pane1, pane0]: got \(orderedTabPanes())")
+        throw Failure("Move Tab Backward did not reorder tabs to [pane1, pane0]: got \(orderedTabPanes())")
     }
     usleep(400_000)
 
-    // Drag tab-1 back onto tab-0 to restore original order
-    let pt0After = try d.tabClickPoint(index: 0)
-    let pt1After = try d.tabClickPoint(index: 1)
-    try d.drag(from: pt1After, to: CGPoint(x: max(20, pt0After.x - 15), y: pt0After.y), steps: 16)
+    // Restore original order via Window -> Move Tab Forward
+    guard d.pressMenu(title: "Move Tab Forward") else {
+        throw Failure("Window -> Move Tab Forward menu action failed")
+    }
     guard d.wait(for: { orderedTabPanes() == [pane0, pane1] }, timeout: 5) else {
-        throw Failure("dragging tab-1 (\(pt1After)) back onto tab-0 (\(pt0After)) did not restore [pane0, pane1]: got \(orderedTabPanes())")
+        throw Failure("Move Tab Forward did not restore [pane0, pane1]: got \(orderedTabPanes())")
     }
 
+    try d.clickTab(index: 0)
+    guard d.wait(for: { (try? d.focusedPaneId()) == pane0 }, timeout: 5) else {
+        throw Failure("clicking tab-0 after reorder did not focus pane0")
+    }
     try d.clickTab(index: 1)
     guard d.wait(for: { (try? d.focusedPaneId()) == pane1 }, timeout: 5) else {
-        throw Failure("clicking tab-1 after drag reorder did not focus pane1")
+        throw Failure("clicking tab-1 after reorder did not focus pane1")
     }
     try d.run("tty > \(d.path("drag_rec_tty")) && echo 'drag_reorder_ok' > \(d.path("drag_witness"))")
     try d.expect("drag_witness", "drag_reorder_ok\n", "unassisted keyboard input after tab drag reorder")

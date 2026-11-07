@@ -26,6 +26,7 @@ extension Tako {
         static let barHeight: CGFloat = 38
 
         private static var installedWindows: Set<ObjectIdentifier> = []
+        private static let trackedWindows = NSHashTable<NSWindow>.weakObjects()
         private static var installed: [ObjectIdentifier: TabBarView] = [:]
         private static var monitor: Any?
         private static let refreshRequests = TabBarRefreshCoalescer { refreshAll() }
@@ -46,6 +47,7 @@ extension Tako {
             let key = ObjectIdentifier(window)
             if installedWindows.contains(key) { return }
             installedWindows.insert(key)
+            trackedWindows.add(window)
 
             // fullSizeContentView/titlebarAppearsTransparent/titleVisibility
             // are set in `TerminalWindow.awakeFromNib`, not here -- confirmed
@@ -61,6 +63,10 @@ extension Tako {
             // so the permanent left sidebar header and edge-to-edge right
             // terminal render cleanly up to the top window edge.
             clearTitlebarBackground(in: window)
+            DispatchQueue.main.async { [weak window] in
+                guard let window else { return }
+                clearTitlebarBackground(in: window)
+            }
 
             NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification, object: window, queue: .main
@@ -72,12 +78,13 @@ extension Tako {
                     Tako.CustomTabGroup.close(window)
                     installed.removeValue(forKey: key)
                     installedWindows.remove(key)
+                    trackedWindows.remove(window)
                     refreshAll()
                 }
             }
 
             // AppKit re-paints `NSTitlebarContainerView`'s opaque background
-            // on its own schedule after window resize and key/main transitions.
+            // on its own schedule after window resize, fullscreen exit, and key/main transitions.
             for name: NSNotification.Name in [
                 NSWindow.didResizeNotification,
                 NSWindow.didBecomeKeyNotification,
@@ -85,6 +92,7 @@ extension Tako {
                 NSWindow.didBecomeMainNotification,
                 NSWindow.didResignMainNotification,
                 NSWindow.didEndLiveResizeNotification,
+                NSWindow.didExitFullScreenNotification,
             ] {
                 NotificationCenter.default.addObserver(
                     forName: name, object: window, queue: .main
@@ -131,6 +139,9 @@ extension Tako {
         /// Redraw every strip. Cheap, and a tab's contents can change in one
         /// window while another is the one being looked at.
         static func refreshAll() {
+            for window in trackedWindows.allObjects {
+                clearTitlebarBackground(in: window)
+            }
             for bar in installed.values {
                 if LivingAnimationState.shared.isTimelinePaused { bar.finishMotion() }
                 if let window = bar.window { clearTitlebarBackground(in: window) }

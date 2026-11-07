@@ -17,26 +17,30 @@ import SwiftUI
 /// while leaving the right-hand terminal pane completely edge-to-edge.
 enum SessionSidebarChrome {
     static let titlebarStripHeight: CGFloat = 32
+    static let hiddenTitlebarStripHeight: CGFloat = 16
 
     @MainActor
     static func showsTitlebarStrip(for window: NSWindow?) -> Bool {
-        guard let window else { return false }
-        guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else {
-            return false
-        }
-        if let controller = window.windowController as? BaseTerminalController,
-           controller.fullscreenStyle?.isFullscreen == true {
-            return false
-        }
-        if window is HiddenTitlebarTerminalWindow {
-            return false
-        }
-        return (window is TerminalWindow) || window.styleMask.contains(.fullSizeContentView)
+        topStripHeight(for: window) > 0
     }
 
     @MainActor
     static func topStripHeight(for window: NSWindow?) -> CGFloat {
-        showsTitlebarStrip(for: window) ? titlebarStripHeight : 0
+        guard let window else { return 0 }
+        guard window.styleMask.contains(.titled), !window.styleMask.contains(.fullScreen) else {
+            return 0
+        }
+        if let controller = window.windowController as? BaseTerminalController,
+           controller.fullscreenStyle?.isFullscreen == true {
+            return 0
+        }
+        if window is HiddenTitlebarTerminalWindow {
+            return hiddenTitlebarStripHeight
+        }
+        if (window is TerminalWindow) || window.styleMask.contains(.fullSizeContentView) {
+            return titlebarStripHeight
+        }
+        return 0
     }
 }
 
