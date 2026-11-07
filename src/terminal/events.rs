@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+use super::program_status::ProgramStatusUpdate;
+
 /// A frame in the hierarchical context stack (OSC 3008, C5).
 /// Represents where pane output comes from (host, container, SSH, elevated shell).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,4 +89,6 @@ pub enum TerminalEvent {
     ContextPop,
     /// OSC 3008 context stack cleared (C5).
     ContextClear,
+    /// OSC 7501 Program Status Protocol record mutation(s) and effective projection.
+    ProgramStatusChanged(ProgramStatusUpdate),
 }

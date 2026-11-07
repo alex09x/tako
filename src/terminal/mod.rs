@@ -13,6 +13,7 @@ pub mod checksum;
 pub mod commands;
 mod dsr;
 mod dump;
+pub mod program_status;
 mod select;
 
 pub(crate) mod checkpoint_api;
@@ -44,11 +45,17 @@ pub use crate::charset::Charset;
 pub use crate::cursor_style::{CursorShape, CursorStyle};
 pub use crate::modes::{self, MouseTracking};
 pub use crate::palette::{self, Palette};
-pub use crate::response::ResponseQueue;
+pub use crate::response::{
+    ClassifiedReply, ClassifiedReplyDrain, ResponseQueue, TerminalReplyClass,
+};
 pub use crate::tabstops::TabStops;
 pub use crate::title_stack::{self, TitleStack};
 pub use dump::TextTail;
 pub use events::{ContextFrame, TerminalEvent};
+pub use program_status::{
+    ProgramStatusBlockedKind, ProgramStatusDrainBatch, ProgramStatusMutation, ProgramStatusRecord,
+    ProgramStatusRemovalReason, ProgramStatusSnapshot, ProgramStatusState, ProgramStatusUpdate,
+};
 pub use state::Terminal;
 pub use types::{
     ClipboardPolicy, CommandMark, CommandMarkStatus, Cursor, GraphemeWidthMethod,

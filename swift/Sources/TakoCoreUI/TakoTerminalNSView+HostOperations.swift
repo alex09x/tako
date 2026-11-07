@@ -15,6 +15,10 @@ import OSLog
 import AppKit
 
 extension TakoTerminalNSView {
+    var trackedCommandsCountForTesting: Int { trackedCommands.count }
+    var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
+    var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
+
     // MARK: - Core Host Operations
 
     /// Feed raw bytes received from the PTY host connection synchronously.
@@ -97,7 +101,10 @@ extension TakoTerminalNSView {
         }
         TakoLog.resize.info("checkpoint restored \(restore.cols)×\(restore.rows)")
         updateScroller()
+        let restoredStatus = programStatusSnapshot()
+        applyProgramStatusProgressBar(from: restoredStatus)
         delegate?.terminalView(self, didRestoreCheckpoint: restore)
+        delegate?.terminalView(self, didUpdateProgramStatus: .restored(restoredStatus))
         // The host decides when to fit the restored screen to its live pane.
         // Import itself must not enqueue a resize against stale view bounds.
         delegate?.terminalViewDidChangeContent(self)
@@ -108,10 +115,7 @@ extension TakoTerminalNSView {
     /// told to a program that set mode 2031 -- sent now, not with whatever
     /// the program prints next.
     func sendQueuedReplies() {
-        let queued = core.takeOutput()
-        if !queued.isEmpty {
-            delegate?.terminalView(self, sendDeviceReplyData: queued)
-        }
+        deliverQueuedReplies()
     }
 
     /// The one place a parsed batch becomes AppKit state, always on Main and
@@ -120,9 +124,7 @@ extension TakoTerminalNSView {
         var totalDamage = false
         var commandStatusChanged = false
         for outcome in outcomes {
-            if !outcome.output.isEmpty {
-                delegate?.terminalView(self, sendDeviceReplyData: outcome.output)
-            }
+            deliverFeedReplies(outcome)
 
             for event in outcome.events {
                 switch event {
@@ -254,9 +256,30 @@ extension TakoTerminalNSView {
                     delegate?.terminalView(self, didReportStatus: status, text: text)
                 case .statusClear:
                     delegate?.terminalViewDidClearStatus(self)
+                case let .progress(state, value):
+                    applyOsc9ProgressIfAllowed(state: state, value: value)
+                case .programStatusChanged(let ffiUpdate):
+                    let snapshot = programStatusSnapshot()
+                    applyProgramStatusProgressBar(from: snapshot)
+                    delegate?.terminalView(
+                        self,
+                        didUpdateProgramStatus: .updated(TerminalProgramStatusUpdate(ffi: ffiUpdate), snapshot: snapshot)
+                    )
                 default:
                     break
                 }
+            }
+            if outcome.statusOverflowCoalesced {
+                let snapshot = outcome.statusResyncSnapshot.map(TerminalProgramStatusSnapshot.init(ffi:))
+                    ?? programStatusSnapshot()
+                applyProgramStatusProgressBar(from: snapshot)
+                delegate?.terminalView(
+                    self,
+                    didUpdateProgramStatus: .overflowCoalesced(
+                        fromRevision: outcome.statusOverflowFromRevision,
+                        snapshot: snapshot
+                    )
+                )
             }
 
             if stickyCommandHeaderEnabled && outcome.hasDamage {

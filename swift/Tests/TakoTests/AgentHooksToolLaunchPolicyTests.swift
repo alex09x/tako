@@ -33,94 +33,77 @@ struct AgentHooksToolLaunchPolicyTests {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        // Automatic test harness suppression (XCTestCase active in testing)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: [:], userDefaults: defaults, isTesting: true) == false)
-
-        // Default clean state without test harness
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: [:], userDefaults: defaults, isTesting: false) == true)
-
-        // CLI flags suppression
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako", "--no-launch-notices"], environment: [:], userDefaults: defaults, isTesting: false) == false)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako", "--no-update"], environment: [:], userDefaults: defaults, isTesting: false) == false)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako", "--selftest"], environment: [:], userDefaults: defaults, isTesting: false) == false)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako", "--selftest-run"], environment: [:], userDefaults: defaults, isTesting: false) == false)
-
-        // Environment variables suppression
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: ["TAKO_NO_LAUNCH_NOTICES": "1"], userDefaults: defaults, isTesting: false) == false)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: ["TAKO_NO_UPDATE": "1"], userDefaults: defaults, isTesting: false) == false)
 
-        // Declined user preference suppression
         defaults.set(true, forKey: AgentHooksTool.declinedKey)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: [:], userDefaults: defaults, isTesting: false) == false)
     }
 
     @Test
-    func disabledMatcherGroupIsNotSilentlyReEnabled() throws {
+    func disabledGeminiMatcherGroupIsNotSilentlyReEnabled() throws {
         let sandbox = createSandbox()
         defer { cleanupSandbox(sandbox) }
 
-        let claudeDir = sandbox.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
-        let settingsFile = claudeDir.appendingPathComponent("settings.json")
+        let geminiDir = sandbox.appendingPathComponent(".gemini")
+        try FileManager.default.createDirectory(at: geminiDir, withIntermediateDirectories: true)
+        let settingsFile = geminiDir.appendingPathComponent("settings.json")
 
-        // Matcher group explicitly disabled by user
         let disabledGroupConfig: [String: Any] = [
             "hooks": [
-                "UserPromptSubmit": [
+                "BeforeAgent": [
                     [
-                        "matcher": "",
+                        "matcher": "*",
                         "enabled": false,
                         "hooks": [
-                            ["type": "command", "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi"]
+                            ["type": "command", "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; fi"]
                         ]
                     ]
                 ],
-                "Stop": [
+                "AfterAgent": [
                     [
-                        "matcher": "",
+                        "matcher": "*",
                         "hooks": [
-                            ["type": "command", "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set done >/dev/null 2>&1; takoctl progress clear >/dev/null 2>&1; fi"]
+                            ["type": "command", "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set idle >/dev/null 2>&1; fi"]
                         ]
                     ]
                 ]
             ]
         ]
-        let data = try JSONSerialization.data(withJSONObject: disabledGroupConfig)
-        try data.write(to: settingsFile)
+        try JSONSerialization.data(withJSONObject: disabledGroupConfig).write(to: settingsFile)
 
-        // Pre-check: must be detected as unconfigured
-        let detectedBefore = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedBefore.first { $0.id == "claude" }?.isConfigured == false)
+        #expect(AgentHooksTool.detectAgents(baseDir: sandbox.path).first { $0.id == "gemini" }?.isConfigured == false)
 
-        // Install should respect deliberate disabled configuration and NOT claim newlyInstalled
-        let report = AgentHooksTool.installHooks(for: ["claude"], baseDir: sandbox.path)
-        #expect(!report.newlyInstalled.contains("Claude Code"))
-        #expect(report.failed.contains("Claude Code"))
-
-        // Post-check: must remain unconfigured
-        let detectedAfter = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedAfter.first { $0.id == "claude" }?.isConfigured == false)
+        let report = AgentHooksTool.installHooks(for: ["gemini"], baseDir: sandbox.path, includeSkills: false)
+        #expect(!report.newlyInstalled.contains("Gemini CLI"))
+        #expect(report.failed.contains("Gemini CLI"))
+        #expect(AgentHooksTool.detectAgents(baseDir: sandbox.path).first { $0.id == "gemini" }?.isConfigured == false)
     }
 
     @Test
-    func disabledMatcherHandlerIsNotSilentlyReEnabled() throws {
+    func disabledGeminiMatcherHandlerIsNotSilentlyReEnabled() throws {
         let sandbox = createSandbox()
         defer { cleanupSandbox(sandbox) }
 
-        let claudeDir = sandbox.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
-        let settingsFile = claudeDir.appendingPathComponent("settings.json")
+        let geminiDir = sandbox.appendingPathComponent(".gemini")
+        try FileManager.default.createDirectory(at: geminiDir, withIntermediateDirectories: true)
+        let settingsFile = geminiDir.appendingPathComponent("settings.json")
 
-        // Hook handler inside matcher group explicitly disabled by user
         let disabledHandlerConfig: [String: Any] = [
             "hooks": [
-                "UserPromptSubmit": [
+                "BeforeAgent": [
                     [
-                        "matcher": "",
+                        "matcher": "*",
                         "hooks": [
                             [
                                 "type": "command",
-                                "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; takoctl progress indeterminate >/dev/null 2>&1; fi",
+                                "command": "if [ -n \"$TAKO_SOCKET\" ]; then takoctl status set working --text \"Thinking...\" >/dev/null 2>&1; fi",
                                 "enabled": false
                             ]
                         ]
@@ -128,96 +111,33 @@ struct AgentHooksToolLaunchPolicyTests {
                 ]
             ]
         ]
-        let data = try JSONSerialization.data(withJSONObject: disabledHandlerConfig)
-        try data.write(to: settingsFile)
+        try JSONSerialization.data(withJSONObject: disabledHandlerConfig).write(to: settingsFile)
 
-        let detectedBefore = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedBefore.first { $0.id == "claude" }?.isConfigured == false)
+        #expect(AgentHooksTool.detectAgents(baseDir: sandbox.path).first { $0.id == "gemini" }?.isConfigured == false)
 
-        let report = AgentHooksTool.installHooks(for: ["claude"], baseDir: sandbox.path)
-        #expect(!report.newlyInstalled.contains("Claude Code"))
-        #expect(report.failed.contains("Claude Code"))
-
-        let detectedAfter = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedAfter.first { $0.id == "claude" }?.isConfigured == false)
+        let report = AgentHooksTool.installHooks(for: ["gemini"], baseDir: sandbox.path, includeSkills: false)
+        #expect(!report.newlyInstalled.contains("Gemini CLI"))
+        #expect(report.failed.contains("Gemini CLI"))
+        #expect(AgentHooksTool.detectAgents(baseDir: sandbox.path).first { $0.id == "gemini" }?.isConfigured == false)
     }
 
     @Test
-    func disabledDirectGroupIsNotSilentlyReEnabled() throws {
+    func cleanNative7501AgentsDoNotTriggerUnconfiguredLaunchOffer() throws {
         let sandbox = createSandbox()
         defer { cleanupSandbox(sandbox) }
 
-        let agyConfigDir = sandbox.appendingPathComponent(".gemini/config")
-        try FileManager.default.createDirectory(at: agyConfigDir, withIntermediateDirectories: true)
-        let hooksFile = agyConfigDir.appendingPathComponent("hooks.json")
+        for dir in [".claude", ".codex", ".gemini/config", ".qwen", ".config/muse"] {
+            try FileManager.default.createDirectory(at: sandbox.appendingPathComponent(dir), withIntermediateDirectories: true)
+        }
+        try "{}".write(to: sandbox.appendingPathComponent(".gemini/config/hooks.json"), atomically: true, encoding: .utf8)
 
-        // Antigravity tako-status group explicitly disabled by user
-        let disabledAgy: [String: Any] = [
-            "tako-status": [
-                "enabled": false,
-                "PreInvocation": [
-                    ["type": "command", "command": "takoctl status set working"]
-                ],
-                "Stop": [
-                    ["type": "command", "command": "takoctl status set idle"]
-                ]
-            ]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: disabledAgy)
-        try data.write(to: hooksFile)
-
-        let detectedBefore = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedBefore.first { $0.id == "antigravity" }?.isConfigured == false)
-
-        let report = AgentHooksTool.installHooks(for: ["antigravity"], baseDir: sandbox.path)
-        #expect(!report.newlyInstalled.contains("Antigravity"))
-        #expect(report.failed.contains("Antigravity"))
-
-        let detectedAfter = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedAfter.first { $0.id == "antigravity" }?.isConfigured == false)
+        let detected = AgentHooksTool.detectAgents(baseDir: sandbox.path)
+        #expect(Set(detected.map(\.id)) == ["antigravity", "claude", "codex", "qwen", "muse"])
+        #expect(detected.allSatisfy { $0.isConfigured })
     }
 
     @Test
-    func disabledDirectHandlerIsNotSilentlyReEnabled() throws {
-        let sandbox = createSandbox()
-        defer { cleanupSandbox(sandbox) }
-
-        let agyConfigDir = sandbox.appendingPathComponent(".gemini/config")
-        try FileManager.default.createDirectory(at: agyConfigDir, withIntermediateDirectories: true)
-        let hooksFile = agyConfigDir.appendingPathComponent("hooks.json")
-
-        // Handler inside PreInvocation explicitly disabled by user
-        let disabledHandlerAgy: [String: Any] = [
-            "tako-status": [
-                "enabled": true,
-                "PreInvocation": [
-                    [
-                        "type": "command",
-                        "command": "takoctl status set working",
-                        "enabled": false
-                    ]
-                ],
-                "Stop": [
-                    ["type": "command", "command": "takoctl status set idle"]
-                ]
-            ]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: disabledHandlerAgy)
-        try data.write(to: hooksFile)
-
-        let detectedBefore = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedBefore.first { $0.id == "antigravity" }?.isConfigured == false)
-
-        let report = AgentHooksTool.installHooks(for: ["antigravity"], baseDir: sandbox.path)
-        #expect(!report.newlyInstalled.contains("Antigravity"))
-        #expect(report.failed.contains("Antigravity"))
-
-        let detectedAfter = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(detectedAfter.first { $0.id == "antigravity" }?.isConfigured == false)
-    }
-
-    @Test
-    func deliberateConnectInstallAndDeclinePreferenceBehavior() throws {
+    func deliberateGeminiConnectInstallAndDeclinePreferenceBehavior() throws {
         let sandbox = createSandbox()
         defer { cleanupSandbox(sandbox) }
 
@@ -225,26 +145,20 @@ struct AgentHooksToolLaunchPolicyTests {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        // 1. Initial state: not declined
         #expect(defaults.bool(forKey: AgentHooksTool.declinedKey) == false)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: [:], userDefaults: defaults, isTesting: false) == true)
 
-        // 2. Decline preference ("Don't Ask Again") sets key and suppresses future prompts
         defaults.set(true, forKey: AgentHooksTool.declinedKey)
         #expect(defaults.bool(forKey: AgentHooksTool.declinedKey) == true)
         #expect(AgentHooksTool.shouldOfferAtLaunch(arguments: ["tako"], environment: [:], userDefaults: defaults, isTesting: false) == false)
 
-        // 3. Deliberate connect in sandbox installs hooks cleanly
-        let configDir = sandbox.appendingPathComponent(".gemini/config")
-        try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        let hooksFile = configDir.appendingPathComponent("hooks.json")
-        try "{}".write(to: hooksFile, atomically: true, encoding: .utf8)
+        let geminiDir = sandbox.appendingPathComponent(".gemini")
+        try FileManager.default.createDirectory(at: geminiDir, withIntermediateDirectories: true)
+        try "{}".write(to: geminiDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
 
-        let report = AgentHooksTool.installHooks(for: ["antigravity"], baseDir: sandbox.path)
-        #expect(report.newlyInstalled.contains("Antigravity"))
-        #expect(!report.failed.contains("Antigravity"))
-
-        let agents = AgentHooksTool.detectAgents(baseDir: sandbox.path)
-        #expect(agents.first { $0.id == "antigravity" }?.isConfigured == true)
+        let report = AgentHooksTool.installHooks(for: ["gemini"], baseDir: sandbox.path, includeSkills: false)
+        #expect(report.newlyInstalled.contains("Gemini CLI"))
+        #expect(!report.failed.contains("Gemini CLI"))
+        #expect(AgentHooksTool.detectAgents(baseDir: sandbox.path).first { $0.id == "gemini" }?.isConfigured == true)
     }
 }

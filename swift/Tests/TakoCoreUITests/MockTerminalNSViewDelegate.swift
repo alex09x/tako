@@ -25,6 +25,7 @@ import AppKit
 final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var inputDataReceived = Data()
     var deviceReplyDataReceived = Data()
+    var replyOverflowCounts: [UInt32] = []
     var lastResizedCols: Int?
     var lastResizedRows: Int?
     var resizeCount = 0
@@ -104,6 +105,10 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalViewDidClearStatus(_ view: TakoTerminalNSView) {
         clearStatusCount += 1
+    }
+
+    func terminalView(_ view: TakoTerminalNSView, didDropOverflowedReplies droppedCount: UInt32) {
+        replyOverflowCounts.append(droppedCount)
     }
 }
 #endif

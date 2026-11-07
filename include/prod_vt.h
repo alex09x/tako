@@ -103,4 +103,6 @@ void prod_vt_buffer_free(uint8_t *data);
 }
 #endif
 
+#include "prod_vt_program_status.h"
+
 #endif /* PROD_VT_H */

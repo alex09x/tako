@@ -1,8 +1,8 @@
 # Tako Agent Hook Adapters & Vendor-Neutral Contract
 
-Tako coordinates coding agents and human developers seamlessly within a rich terminal interface. Unlike legacy multiplexers or terminals that attempt to guess what an agent is doing by scraping scrollback buffers or parsing ANSI strings, Tako uses an **explicit, vendor-neutral lifecycle contract**.
+Tako coordinates coding agents and human developers seamlessly within a rich terminal interface. Unlike legacy multiplexers or terminals that attempt to guess what an agent is doing by scraping scrollback buffers or parsing ANSI strings, Tako uses **built-in `OSC 7501` Program Status** (revision 0.4) alongside an explicit `takoctl` CLI contract for custom scripts and older tools.
 
-Agent tools (such as Claude Code, Gemini CLI / Antigravity, Codex, and Aider) run hook commands on lifecycle transitions. These hooks invoke `takoctl` to update pane status, display progress indicators, and post system notifications.
+Modern coding agents (**Claude Code**, **Codex CLI**, **Antigravity**, **Qwen Code**, and **Muse Code**) emit structured status, progress, and blocked prompts directly over the terminal stream via `OSC 7501` — requiring **zero status hook scripts** in user configuration files. Running `takoctl hooks install` or `takoctl hooks uninstall` for those five agents idempotently cleans up any legacy Tako-owned status hooks while preserving user, Prod, and third-party hooks. Legacy hook installation remains supported for **Gemini CLI** (`gemini`) and **Aider** (`aider`).
 
 ---
 

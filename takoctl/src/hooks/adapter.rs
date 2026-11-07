@@ -91,6 +91,11 @@ impl Adapter {
         resolve_home_path(&self.config_path)
     }
 
+    /// Returns `true` when this agent emits status natively via `OSC 7501`.
+    pub fn uses_native_osc7501(&self) -> bool {
+        super::osc7501_migration::uses_native_osc7501(&self.name)
+    }
+
     /// Checks whether Tako hooks are currently installed in the target file.
     pub fn is_installed(&self, path: &Path) -> bool {
         if self.name == "muse" {
@@ -112,7 +117,13 @@ impl Adapter {
                 Ok(v) => v,
                 Err(_) => return false,
             };
-            if let Some(hooks_obj) = val.get(&self.hook_field) {
+            if self.uses_native_osc7501() {
+                super::osc7501_migration::json_contains_owned_hooks(
+                    &val,
+                    &self.name,
+                    &self.hook_field,
+                )
+            } else if let Some(hooks_obj) = val.get(&self.hook_field) {
                 let serialized = hooks_obj.to_string();
                 serialized.contains("takoctl status")
                     || serialized.contains("takoctl progress")

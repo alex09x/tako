@@ -99,6 +99,10 @@ pub(crate) fn allocation_cost(term: &Terminal, version: u32) -> u64 {
         }
         bytes = bytes.saturating_add(term.last_cwd.as_ref().map_or(0, |c| c.len() as u64));
     }
+    bytes = bytes.saturating_add(super::program_status::import_cost_bytes(
+        &term.program_status,
+        version,
+    ));
     total.saturating_add(bytes)
 }
 
@@ -147,12 +151,14 @@ pub fn retained_cost(term: &Terminal) -> u64 {
         total = total.saturating_add(event_payload_bytes(event));
     }
     total = total.saturating_add(term.commands.heap_bytes());
+    total = total.saturating_add(term.program_status.retained_capacity_bytes());
     total.saturating_add(term.last_cwd.as_ref().map_or(0, |c| c.capacity() as u64))
 }
 
 fn event_payload_bytes(event: &crate::terminal::TerminalEvent) -> u64 {
     use crate::terminal::TerminalEvent as E;
     match event {
+        E::ProgramStatusChanged(u) => u.heap_bytes(),
         E::TitleChanged(s) | E::ClipboardSet(s) | E::PwdChanged(s) => s.capacity() as u64,
         E::Notification { title, body } => {
             (title.capacity() as u64).saturating_add(body.capacity() as u64)

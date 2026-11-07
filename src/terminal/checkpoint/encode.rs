@@ -174,6 +174,7 @@ pub(crate) fn encode(
     if version >= 4 {
         write_commands(&mut w, term, version);
     }
+    super::program_status::write_program_status(&mut w, &term.program_status, version);
 
     if w.overflowed() {
         return Err(CheckpointError::TooLarge {

@@ -1115,6 +1115,22 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
      */
     func takeOutput()  -> Data
 
+    func drainClassifiedReplies(maxReplies: UInt32)  -> FfiClassifiedReplyDrain
+
+    func drainProgramStatusUpdates(maxUpdates: UInt32)  -> FfiProgramStatusDrainBatch
+
+    func isProgramStatusProbeReplyEnabled()  -> Bool
+
+    func programStatusAcknowledged()  -> FfiProgramStatusUpdate?
+
+    func programStatusInterrupted()  -> FfiProgramStatusUpdate?
+
+    func programStatusProcessExited()  -> FfiProgramStatusUpdate?
+
+    func programStatusSnapshot()  -> FfiProgramStatusSnapshot
+
+    func setProgramStatusProbeReplyEnabled(enabled: Bool)
+
     /**
      * Forces a full redraw on the next `takeDamage()`.
      */
@@ -1929,6 +1945,80 @@ open func takeOutput() -> Data  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+
+open func drainClassifiedReplies(maxReplies: UInt32) -> FfiClassifiedReplyDrain  {
+    return try!  FfiConverterTypeFfiClassifiedReplyDrain_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_drain_classified_replies(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxReplies),uniffiCallStatus
+    )
+})
+}
+
+open func drainProgramStatusUpdates(maxUpdates: UInt32) -> FfiProgramStatusDrainBatch  {
+    return try!  FfiConverterTypeFfiProgramStatusDrainBatch_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_drain_program_status_updates(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxUpdates),uniffiCallStatus
+    )
+})
+}
+
+open func isProgramStatusProbeReplyEnabled() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_is_program_status_probe_reply_enabled(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func programStatusAcknowledged() -> FfiProgramStatusUpdate?  {
+    return try!  FfiConverterOptionTypeFfiProgramStatusUpdate.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_program_status_acknowledged(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func programStatusInterrupted() -> FfiProgramStatusUpdate?  {
+    return try!  FfiConverterOptionTypeFfiProgramStatusUpdate.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_program_status_interrupted(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func programStatusProcessExited() -> FfiProgramStatusUpdate?  {
+    return try!  FfiConverterOptionTypeFfiProgramStatusUpdate.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_program_status_process_exited(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func programStatusSnapshot() -> FfiProgramStatusSnapshot  {
+    return try!  FfiConverterTypeFfiProgramStatusSnapshot_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_program_status_snapshot(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func setProgramStatusProbeReplyEnabled(enabled: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_tako_core_fn_method_takocore_set_program_status_probe_reply_enabled(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(enabled),uniffiCallStatus
+    )
+}
 }
 
     /**
@@ -2841,6 +2931,122 @@ public func FfiConverterTypeFfiCheckpointInfo_lower(_ value: FfiCheckpointInfo) 
 }
 
 
+public struct FfiClassifiedReply: Equatable, Hashable {
+    public var seq: UInt64
+    public var replyClass: FfiTerminalReplyClass
+    public var bytes: Data
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(seq: UInt64, replyClass: FfiTerminalReplyClass, bytes: Data) {
+        self.seq = seq
+        self.replyClass = replyClass
+        self.bytes = bytes
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiClassifiedReply: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiClassifiedReply: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiClassifiedReply {
+        return
+            try FfiClassifiedReply(
+                seq: FfiConverterUInt64.read(from: &buf),
+                replyClass: FfiConverterTypeFfiTerminalReplyClass.read(from: &buf),
+                bytes: FfiConverterData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiClassifiedReply, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.seq, into: &buf)
+        FfiConverterTypeFfiTerminalReplyClass.write(value.replyClass, into: &buf)
+        FfiConverterData.write(value.bytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiClassifiedReply_lift(_ buf: RustBuffer) throws -> FfiClassifiedReply {
+    return try FfiConverterTypeFfiClassifiedReply.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiClassifiedReply_lower(_ value: FfiClassifiedReply) -> RustBuffer {
+    return FfiConverterTypeFfiClassifiedReply.lower(value)
+}
+
+
+public struct FfiClassifiedReplyDrain: Equatable, Hashable {
+    public var replies: [FfiClassifiedReply]
+    public var hasMore: Bool
+    public var overflowDroppedCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(replies: [FfiClassifiedReply], hasMore: Bool, overflowDroppedCount: UInt32) {
+        self.replies = replies
+        self.hasMore = hasMore
+        self.overflowDroppedCount = overflowDroppedCount
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiClassifiedReplyDrain: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiClassifiedReplyDrain: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiClassifiedReplyDrain {
+        return
+            try FfiClassifiedReplyDrain(
+                replies: FfiConverterSequenceTypeFfiClassifiedReply.read(from: &buf),
+                hasMore: FfiConverterBool.read(from: &buf),
+                overflowDroppedCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiClassifiedReplyDrain, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeFfiClassifiedReply.write(value.replies, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+        FfiConverterUInt32.write(value.overflowDroppedCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiClassifiedReplyDrain_lift(_ buf: RustBuffer) throws -> FfiClassifiedReplyDrain {
+    return try FfiConverterTypeFfiClassifiedReplyDrain.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiClassifiedReplyDrain_lower(_ value: FfiClassifiedReplyDrain) -> RustBuffer {
+    return FfiConverterTypeFfiClassifiedReplyDrain.lower(value)
+}
+
+
 public struct FfiCommandInfo: Equatable, Hashable {
     public var id: UInt64
     public var epoch: UInt64
@@ -3179,8 +3385,20 @@ public func FfiConverterTypeFfiCursorStyle_lower(_ value: FfiCursorStyle) -> Rus
 }
 
 
+/**
+ * Result of feeding a byte batch through [`TakoCore::feed_with_outcome`].
+ *
+ * `output` is the flat concatenation of `replies` from this feed turn for
+ * legacy hosts; hosts consuming classified `replies` must write from `replies`
+ * and ignore `output` so replies are never written twice.
+ */
 public struct FfiFeedOutcome: Equatable, Hashable {
     public var output: Data
+    public var replies: [FfiClassifiedReply]
+    public var replyOverflowCount: UInt32
+    public var statusOverflowCoalesced: Bool
+    public var statusOverflowFromRevision: UInt64
+    public var statusResyncSnapshot: FfiProgramStatusSnapshot?
     public var events: [FfiEvent]
     public var hasDamage: Bool
     public var synchronizedOutputActive: Bool
@@ -3188,8 +3406,13 @@ public struct FfiFeedOutcome: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(output: Data, events: [FfiEvent], hasDamage: Bool, synchronizedOutputActive: Bool, epoch: UInt64) {
+    public init(output: Data, replies: [FfiClassifiedReply], replyOverflowCount: UInt32, statusOverflowCoalesced: Bool, statusOverflowFromRevision: UInt64, statusResyncSnapshot: FfiProgramStatusSnapshot?, events: [FfiEvent], hasDamage: Bool, synchronizedOutputActive: Bool, epoch: UInt64) {
         self.output = output
+        self.replies = replies
+        self.replyOverflowCount = replyOverflowCount
+        self.statusOverflowCoalesced = statusOverflowCoalesced
+        self.statusOverflowFromRevision = statusOverflowFromRevision
+        self.statusResyncSnapshot = statusResyncSnapshot
         self.events = events
         self.hasDamage = hasDamage
         self.synchronizedOutputActive = synchronizedOutputActive
@@ -3213,6 +3436,11 @@ public struct FfiConverterTypeFfiFeedOutcome: FfiConverterRustBuffer {
         return
             try FfiFeedOutcome(
                 output: FfiConverterData.read(from: &buf),
+                replies: FfiConverterSequenceTypeFfiClassifiedReply.read(from: &buf),
+                replyOverflowCount: FfiConverterUInt32.read(from: &buf),
+                statusOverflowCoalesced: FfiConverterBool.read(from: &buf),
+                statusOverflowFromRevision: FfiConverterUInt64.read(from: &buf),
+                statusResyncSnapshot: FfiConverterOptionTypeFfiProgramStatusSnapshot.read(from: &buf),
                 events: FfiConverterSequenceTypeFfiEvent.read(from: &buf),
                 hasDamage: FfiConverterBool.read(from: &buf),
                 synchronizedOutputActive: FfiConverterBool.read(from: &buf),
@@ -3222,6 +3450,11 @@ public struct FfiConverterTypeFfiFeedOutcome: FfiConverterRustBuffer {
 
     public static func write(_ value: FfiFeedOutcome, into buf: inout [UInt8]) {
         FfiConverterData.write(value.output, into: &buf)
+        FfiConverterSequenceTypeFfiClassifiedReply.write(value.replies, into: &buf)
+        FfiConverterUInt32.write(value.replyOverflowCount, into: &buf)
+        FfiConverterBool.write(value.statusOverflowCoalesced, into: &buf)
+        FfiConverterUInt64.write(value.statusOverflowFromRevision, into: &buf)
+        FfiConverterOptionTypeFfiProgramStatusSnapshot.write(value.statusResyncSnapshot, into: &buf)
         FfiConverterSequenceTypeFfiEvent.write(value.events, into: &buf)
         FfiConverterBool.write(value.hasDamage, into: &buf)
         FfiConverterBool.write(value.synchronizedOutputActive, into: &buf)
@@ -3686,6 +3919,278 @@ public func FfiConverterTypeFfiPaletteEntry_lift(_ buf: RustBuffer) throws -> Ff
 #endif
 public func FfiConverterTypeFfiPaletteEntry_lower(_ value: FfiPaletteEntry) -> RustBuffer {
     return FfiConverterTypeFfiPaletteEntry.lower(value)
+}
+
+
+public struct FfiProgramStatusDrainBatch: Equatable, Hashable {
+    public var snapshotRevision: UInt64
+    public var updates: [FfiProgramStatusUpdate]
+    public var hasMore: Bool
+    public var overflowCoalesced: Bool
+    public var overflowFromRevision: UInt64
+    public var resyncSnapshot: FfiProgramStatusSnapshot?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(snapshotRevision: UInt64, updates: [FfiProgramStatusUpdate], hasMore: Bool, overflowCoalesced: Bool, overflowFromRevision: UInt64, resyncSnapshot: FfiProgramStatusSnapshot?) {
+        self.snapshotRevision = snapshotRevision
+        self.updates = updates
+        self.hasMore = hasMore
+        self.overflowCoalesced = overflowCoalesced
+        self.overflowFromRevision = overflowFromRevision
+        self.resyncSnapshot = resyncSnapshot
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusDrainBatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusDrainBatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusDrainBatch {
+        return
+            try FfiProgramStatusDrainBatch(
+                snapshotRevision: FfiConverterUInt64.read(from: &buf),
+                updates: FfiConverterSequenceTypeFfiProgramStatusUpdate.read(from: &buf),
+                hasMore: FfiConverterBool.read(from: &buf),
+                overflowCoalesced: FfiConverterBool.read(from: &buf),
+                overflowFromRevision: FfiConverterUInt64.read(from: &buf),
+                resyncSnapshot: FfiConverterOptionTypeFfiProgramStatusSnapshot.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiProgramStatusDrainBatch, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.snapshotRevision, into: &buf)
+        FfiConverterSequenceTypeFfiProgramStatusUpdate.write(value.updates, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+        FfiConverterBool.write(value.overflowCoalesced, into: &buf)
+        FfiConverterUInt64.write(value.overflowFromRevision, into: &buf)
+        FfiConverterOptionTypeFfiProgramStatusSnapshot.write(value.resyncSnapshot, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusDrainBatch_lift(_ buf: RustBuffer) throws -> FfiProgramStatusDrainBatch {
+    return try FfiConverterTypeFfiProgramStatusDrainBatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusDrainBatch_lower(_ value: FfiProgramStatusDrainBatch) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusDrainBatch.lower(value)
+}
+
+
+public struct FfiProgramStatusRecord: Equatable, Hashable {
+    public var id: String
+    public var state: FfiProgramStatusState
+    public var kind: FfiProgramStatusBlockedKind?
+    public var progress: UInt8?
+    public var app: String?
+    public var resolvedApp: String?
+    public var title: String?
+    public var msg: String?
+    public var revision: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, state: FfiProgramStatusState, kind: FfiProgramStatusBlockedKind?, progress: UInt8?, app: String?, resolvedApp: String?, title: String?, msg: String?, revision: UInt64) {
+        self.id = id
+        self.state = state
+        self.kind = kind
+        self.progress = progress
+        self.app = app
+        self.resolvedApp = resolvedApp
+        self.title = title
+        self.msg = msg
+        self.revision = revision
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusRecord {
+        return
+            try FfiProgramStatusRecord(
+                id: FfiConverterString.read(from: &buf),
+                state: FfiConverterTypeFfiProgramStatusState.read(from: &buf),
+                kind: FfiConverterOptionTypeFfiProgramStatusBlockedKind.read(from: &buf),
+                progress: FfiConverterOptionUInt8.read(from: &buf),
+                app: FfiConverterOptionString.read(from: &buf),
+                resolvedApp: FfiConverterOptionString.read(from: &buf),
+                title: FfiConverterOptionString.read(from: &buf),
+                msg: FfiConverterOptionString.read(from: &buf),
+                revision: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiProgramStatusRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeFfiProgramStatusState.write(value.state, into: &buf)
+        FfiConverterOptionTypeFfiProgramStatusBlockedKind.write(value.kind, into: &buf)
+        FfiConverterOptionUInt8.write(value.progress, into: &buf)
+        FfiConverterOptionString.write(value.app, into: &buf)
+        FfiConverterOptionString.write(value.resolvedApp, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.msg, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusRecord_lift(_ buf: RustBuffer) throws -> FfiProgramStatusRecord {
+    return try FfiConverterTypeFfiProgramStatusRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusRecord_lower(_ value: FfiProgramStatusRecord) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusRecord.lower(value)
+}
+
+
+public struct FfiProgramStatusSnapshot: Equatable, Hashable {
+    public var revision: UInt64
+    public var osc7501Active: Bool
+    public var effective: FfiProgramStatusRecord?
+    public var records: [FfiProgramStatusRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(revision: UInt64, osc7501Active: Bool, effective: FfiProgramStatusRecord?, records: [FfiProgramStatusRecord]) {
+        self.revision = revision
+        self.osc7501Active = osc7501Active
+        self.effective = effective
+        self.records = records
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusSnapshot {
+        return
+            try FfiProgramStatusSnapshot(
+                revision: FfiConverterUInt64.read(from: &buf),
+                osc7501Active: FfiConverterBool.read(from: &buf),
+                effective: FfiConverterOptionTypeFfiProgramStatusRecord.read(from: &buf),
+                records: FfiConverterSequenceTypeFfiProgramStatusRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiProgramStatusSnapshot, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterBool.write(value.osc7501Active, into: &buf)
+        FfiConverterOptionTypeFfiProgramStatusRecord.write(value.effective, into: &buf)
+        FfiConverterSequenceTypeFfiProgramStatusRecord.write(value.records, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusSnapshot_lift(_ buf: RustBuffer) throws -> FfiProgramStatusSnapshot {
+    return try FfiConverterTypeFfiProgramStatusSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusSnapshot_lower(_ value: FfiProgramStatusSnapshot) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusSnapshot.lower(value)
+}
+
+
+public struct FfiProgramStatusUpdate: Equatable, Hashable {
+    public var revision: UInt64
+    public var mutations: [FfiProgramStatusMutation]
+    public var effective: FfiProgramStatusRecord?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(revision: UInt64, mutations: [FfiProgramStatusMutation], effective: FfiProgramStatusRecord?) {
+        self.revision = revision
+        self.mutations = mutations
+        self.effective = effective
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusUpdate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusUpdate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusUpdate {
+        return
+            try FfiProgramStatusUpdate(
+                revision: FfiConverterUInt64.read(from: &buf),
+                mutations: FfiConverterSequenceTypeFfiProgramStatusMutation.read(from: &buf),
+                effective: FfiConverterOptionTypeFfiProgramStatusRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FfiProgramStatusUpdate, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterSequenceTypeFfiProgramStatusMutation.write(value.mutations, into: &buf)
+        FfiConverterOptionTypeFfiProgramStatusRecord.write(value.effective, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusUpdate_lift(_ buf: RustBuffer) throws -> FfiProgramStatusUpdate {
+    return try FfiConverterTypeFfiProgramStatusUpdate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusUpdate_lower(_ value: FfiProgramStatusUpdate) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusUpdate.lower(value)
 }
 
 
@@ -4852,6 +5357,8 @@ public enum FfiEvent: Equatable, Hashable {
     )
     case contextPop
     case contextClear
+    case programStatusChanged(update: FfiProgramStatusUpdate
+    )
 
 
 
@@ -4917,6 +5424,9 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 16: return .contextPop
 
         case 17: return .contextClear
+
+        case 18: return .programStatusChanged(update: try FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf)
+        )
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5017,6 +5527,11 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
 
         case .contextClear:
             writeInt(&buf, Int32(17))
+
+
+        case let .programStatusChanged(update):
+            writeInt(&buf, Int32(18))
+            FfiConverterTypeFfiProgramStatusUpdate.write(update, into: &buf)
 
         }
     }
@@ -5856,6 +6371,352 @@ public func FfiConverterTypeFfiMouseTracking_lower(_ value: FfiMouseTracking) ->
 
 
 
+public enum FfiProgramStatusBlockedKind: Equatable, Hashable {
+
+    case permission
+    case question
+    case auth
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusBlockedKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusBlockedKind: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusBlockedKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusBlockedKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .permission
+
+        case 2: return .question
+
+        case 3: return .auth
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiProgramStatusBlockedKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .permission:
+            writeInt(&buf, Int32(1))
+
+
+        case .question:
+            writeInt(&buf, Int32(2))
+
+
+        case .auth:
+            writeInt(&buf, Int32(3))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusBlockedKind_lift(_ buf: RustBuffer) throws -> FfiProgramStatusBlockedKind {
+    return try FfiConverterTypeFfiProgramStatusBlockedKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusBlockedKind_lower(_ value: FfiProgramStatusBlockedKind) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusBlockedKind.lower(value)
+}
+
+
+
+
+public enum FfiProgramStatusMutation: Equatable, Hashable {
+
+    case upserted(record: FfiProgramStatusRecord
+    )
+    case removed(id: String, previous: FfiProgramStatusRecord, reason: FfiProgramStatusRemovalReason
+    )
+    case reset(removedCount: UInt32, reason: FfiProgramStatusRemovalReason
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusMutation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusMutation: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusMutation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusMutation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .upserted(record: try FfiConverterTypeFfiProgramStatusRecord.read(from: &buf)
+        )
+
+        case 2: return .removed(id: try FfiConverterString.read(from: &buf), previous: try FfiConverterTypeFfiProgramStatusRecord.read(from: &buf), reason: try FfiConverterTypeFfiProgramStatusRemovalReason.read(from: &buf)
+        )
+
+        case 3: return .reset(removedCount: try FfiConverterUInt32.read(from: &buf), reason: try FfiConverterTypeFfiProgramStatusRemovalReason.read(from: &buf)
+        )
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiProgramStatusMutation, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case let .upserted(record):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeFfiProgramStatusRecord.write(record, into: &buf)
+
+
+        case let .removed(id,previous,reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeFfiProgramStatusRecord.write(previous, into: &buf)
+            FfiConverterTypeFfiProgramStatusRemovalReason.write(reason, into: &buf)
+
+
+        case let .reset(removedCount,reason):
+            writeInt(&buf, Int32(3))
+            FfiConverterUInt32.write(removedCount, into: &buf)
+            FfiConverterTypeFfiProgramStatusRemovalReason.write(reason, into: &buf)
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusMutation_lift(_ buf: RustBuffer) throws -> FfiProgramStatusMutation {
+    return try FfiConverterTypeFfiProgramStatusMutation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusMutation_lower(_ value: FfiProgramStatusMutation) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusMutation.lower(value)
+}
+
+
+
+
+public enum FfiProgramStatusRemovalReason: Equatable, Hashable {
+
+    case explicitClear
+    case promptReturn
+    case processExit
+    case interrupted
+    case acknowledged
+    case hardReset
+    case evicted
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusRemovalReason: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusRemovalReason: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusRemovalReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusRemovalReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .explicitClear
+
+        case 2: return .promptReturn
+
+        case 3: return .processExit
+
+        case 4: return .interrupted
+
+        case 5: return .acknowledged
+
+        case 6: return .hardReset
+
+        case 7: return .evicted
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiProgramStatusRemovalReason, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .explicitClear:
+            writeInt(&buf, Int32(1))
+
+
+        case .promptReturn:
+            writeInt(&buf, Int32(2))
+
+
+        case .processExit:
+            writeInt(&buf, Int32(3))
+
+
+        case .interrupted:
+            writeInt(&buf, Int32(4))
+
+
+        case .acknowledged:
+            writeInt(&buf, Int32(5))
+
+
+        case .hardReset:
+            writeInt(&buf, Int32(6))
+
+
+        case .evicted:
+            writeInt(&buf, Int32(7))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusRemovalReason_lift(_ buf: RustBuffer) throws -> FfiProgramStatusRemovalReason {
+    return try FfiConverterTypeFfiProgramStatusRemovalReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusRemovalReason_lower(_ value: FfiProgramStatusRemovalReason) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusRemovalReason.lower(value)
+}
+
+
+
+
+public enum FfiProgramStatusState: Equatable, Hashable {
+
+    case idle
+    case working
+    case done
+    case blocked
+    case error
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiProgramStatusState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiProgramStatusState: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiProgramStatusState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .idle
+
+        case 2: return .working
+
+        case 3: return .done
+
+        case 4: return .blocked
+
+        case 5: return .error
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiProgramStatusState, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .idle:
+            writeInt(&buf, Int32(1))
+
+
+        case .working:
+            writeInt(&buf, Int32(2))
+
+
+        case .done:
+            writeInt(&buf, Int32(3))
+
+
+        case .blocked:
+            writeInt(&buf, Int32(4))
+
+
+        case .error:
+            writeInt(&buf, Int32(5))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusState_lift(_ buf: RustBuffer) throws -> FfiProgramStatusState {
+    return try FfiConverterTypeFfiProgramStatusState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiProgramStatusState_lower(_ value: FfiProgramStatusState) -> RustBuffer {
+    return FfiConverterTypeFfiProgramStatusState.lower(value)
+}
+
+
+
+
 public enum FfiResyncReason: Equatable, Hashable {
 
     case delta
@@ -6032,6 +6893,72 @@ public func FfiConverterTypeFfiSelectionMode_lift(_ buf: RustBuffer) throws -> F
 #endif
 public func FfiConverterTypeFfiSelectionMode_lower(_ value: FfiSelectionMode) -> RustBuffer {
     return FfiConverterTypeFfiSelectionMode.lower(value)
+}
+
+
+
+
+public enum FfiTerminalReplyClass: Equatable, Hashable {
+
+    case standardDevice
+    case programStatusCapability
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FfiTerminalReplyClass: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFfiTerminalReplyClass: FfiConverterRustBuffer {
+    typealias SwiftType = FfiTerminalReplyClass
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FfiTerminalReplyClass {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .standardDevice
+
+        case 2: return .programStatusCapability
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FfiTerminalReplyClass, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .standardDevice:
+            writeInt(&buf, Int32(1))
+
+
+        case .programStatusCapability:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiTerminalReplyClass_lift(_ buf: RustBuffer) throws -> FfiTerminalReplyClass {
+    return try FfiConverterTypeFfiTerminalReplyClass.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFfiTerminalReplyClass_lower(_ value: FfiTerminalReplyClass) -> RustBuffer {
+    return FfiConverterTypeFfiTerminalReplyClass.lower(value)
 }
 
 
@@ -6733,6 +7660,78 @@ fileprivate struct FfiConverterOptionTypeFfiGraphicsImageMetadata: FfiConverterR
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFfiProgramStatusRecord: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiProgramStatusRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiProgramStatusRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeFfiProgramStatusSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusSnapshot?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiProgramStatusSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiProgramStatusSnapshot.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeFfiProgramStatusUpdate: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusUpdate?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiProgramStatusUpdate.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeFfiRgb: FfiConverterRustBuffer {
     typealias SwiftType = FfiRgb?
 
@@ -6797,6 +7796,30 @@ fileprivate struct FfiConverterOptionTypeFfiStoredImage: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeFfiStoredImage.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeFfiProgramStatusBlockedKind: FfiConverterRustBuffer {
+    typealias SwiftType = FfiProgramStatusBlockedKind?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFfiProgramStatusBlockedKind.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFfiProgramStatusBlockedKind.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -6872,6 +7895,31 @@ fileprivate struct FfiConverterSequenceTypeFfiCell: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFfiCell.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFfiClassifiedReply: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiClassifiedReply]
+
+    public static func write(_ value: [FfiClassifiedReply], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiClassifiedReply.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiClassifiedReply] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiClassifiedReply]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiClassifiedReply.read(from: &buf))
         }
         return seq
     }
@@ -7005,6 +8053,56 @@ fileprivate struct FfiConverterSequenceTypeFfiPaletteEntry: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFfiProgramStatusRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiProgramStatusRecord]
+
+    public static func write(_ value: [FfiProgramStatusRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiProgramStatusRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiProgramStatusRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiProgramStatusRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiProgramStatusRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFfiProgramStatusUpdate: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiProgramStatusUpdate]
+
+    public static func write(_ value: [FfiProgramStatusUpdate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiProgramStatusUpdate.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiProgramStatusUpdate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiProgramStatusUpdate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiProgramStatusUpdate.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeFfiRowRange: FfiConverterRustBuffer {
     typealias SwiftType = [FfiRowRange]
 
@@ -7097,6 +8195,31 @@ fileprivate struct FfiConverterSequenceTypeFfiEvent: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFfiEvent.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFfiProgramStatusMutation: FfiConverterRustBuffer {
+    typealias SwiftType = [FfiProgramStatusMutation]
+
+    public static func write(_ value: [FfiProgramStatusMutation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFfiProgramStatusMutation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FfiProgramStatusMutation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FfiProgramStatusMutation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFfiProgramStatusMutation.read(from: &buf))
         }
         return seq
     }
@@ -7235,6 +8358,30 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_take_output() != 52915) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_drain_classified_replies() != 49488) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_drain_program_status_updates() != 31658) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_is_program_status_probe_reply_enabled() != 29046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_program_status_acknowledged() != 22956) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_program_status_interrupted() != 2474) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_program_status_process_exited() != 61657) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_program_status_snapshot() != 54793) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tako_core_checksum_method_takocore_set_program_status_probe_reply_enabled() != 2682) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_mark_all_damaged() != 25411) {

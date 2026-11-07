@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
@@ -43,6 +53,14 @@ extension Tako {
         // Its colours, figure and motion: Tako.CrabPainter and Tako.CrabLayer.
     }
 
+    struct ProgramStatusNotificationKey: Equatable, Sendable {
+        let id: String
+        let state: TerminalProgramStatusState
+        let kind: TerminalProgramStatusBlockedKind?
+        let title: String?
+        let msg: String?
+    }
+
     /// Tracks one surface's command lifecycle and turns it into a crab state,
     /// pane status, and elapsed time.
     @MainActor
@@ -62,37 +80,41 @@ extension Tako {
         var linger: TimeInterval = successLinger
         var liveSampleInterval: TimeInterval = 1
 
-        @Published private(set) var state: CrabState = .idle
+        @Published var state: CrabState = .idle
         public typealias ProgressState = TakoTerminalNSView.ProgressState
 
         /// Seconds since the running command started, or nil when idle.
-        @Published private(set) var elapsed: TimeInterval?
-        /// 0...100 from OSC 9;4, when the program reports it.
-        @Published public private(set) var progress: Int?
-        /// The progress state from OSC 9;4.
-        @Published public private(set) var progressState: ProgressState = .none
+        @Published var elapsed: TimeInterval?
+        /// 0...100 from OSC 9;4 or OSC 7501, when the program reports it.
+        @Published public internal(set) var progress: Int?
+        /// The progress state from OSC 9;4 or OSC 7501.
+        @Published public internal(set) var progressState: ProgressState = .none
         /// Set when something happened that the user has not looked at.
-        @Published private(set) var unread = false
+        @Published var unread = false
 
-        /// Explicit pane status model (B1).
-        @Published public private(set) var paneStatus: PaneStatus = .idle
-        @Published public private(set) var statusText: String?
-        @Published public private(set) var statusExpiresAt: Date?
+        /// Explicit pane status model (B1 / OSC 7501).
+        @Published public internal(set) var paneStatus: PaneStatus = .idle
+        @Published public internal(set) var statusText: String?
+        @Published public internal(set) var statusExpiresAt: Date?
 
         var signalStatus: PaneStatus = .idle {
             didSet {
+                guard signalStatus != oldValue else { return }
                 recomputeEffectiveStatus()
             }
         }
-        private var explicitStatus: (status: PaneStatus, text: String?)?
-        private var ttlTimer: Timer?
+        var explicitStatus: (status: PaneStatus, text: String?)?
+        var ttlTimer: Timer?
+        var osc7501StatusActive = false
+        var lastProgramStatusNotificationKey: ProgramStatusNotificationKey?
+        var onAcknowledgedOutcome: (() -> Void)?
 
         /// Whether this pane is currently focused / looked at by user.
         public var isFocused: Bool = false
 
-        private var startedAt: Date?
+        var startedAt: Date?
         /// What the running command is; nil when none runs.
-        private(set) var commandKind: CommandKind?
+        var commandKind: CommandKind?
         /// The pane, as the running command's tracking reads it: whether it
         /// shows its alternate screen -- a job that turns full-screen (`git
         /// log` paging, `make menuconfig`) is one the user is inside,
@@ -114,8 +136,8 @@ extension Tako {
         /// it outlives a restart of Tako; told nil when the program ends.
         var onQuietSince: ((Date?) -> Void)?
         var liveQuietSinceToldAt: Date?
-        private var ticker: Timer?
-        private var successTimer: Timer?
+        var ticker: Timer?
+        var successTimer: Timer?
 
         /// Injected so tests can run without a real clock.
         let now: () -> Date
@@ -149,11 +171,11 @@ extension Tako {
             commandKind = kind
             liveProbe = probe
             stopLive()
-            elapsed = nil
-            progress = nil
+            if elapsed != nil { elapsed = nil }
+            if progress != nil { progress = nil }
             successTimer?.invalidate()
             signalStatus = kind == .batch ? .running : .idle
-            unread = false
+            if unread { unread = false }
             if explicitStatus?.status == .done || explicitStatus?.status == .idle {
                 explicitStatus = nil
             }
@@ -188,43 +210,53 @@ extension Tako {
             ticker = nil
             let ran = startedAt.map { now().timeIntervalSince($0) }
             startedAt = nil
-            elapsed = nil
-            progress = nil
-            progressState = .none
+            if elapsed != nil { elapsed = nil }
+            if !osc7501StatusActive || explicitStatus?.status != .error {
+                if progress != nil { progress = nil }
+                if progressState != .none { progressState = .none }
+            }
 
             if let exitCode, kind.fails(exitCode) {
                 signalStatus = .error
-                state = .failed(code: exitCode)
-                unread = true
+                if state != .failed(code: exitCode) { state = .failed(code: exitCode) }
+                if !unread { unread = true }
                 recomputeEffectiveStatus()
                 if isFocused { fadeWhileFocused() }
                 return
             }
 
-            // Leaving vim or ssh, or stopping a server, is not news.
+            // Leaving vim or ssh, or stopping a server, is not news -- unless
+            // a TUI agent explicitly reported a terminal/blocked outcome right
+            // before exiting, in which case `unread` and `explicitStatus` stay.
             guard kind == .batch else {
                 signalStatus = .idle
-                state = .idle
-                unread = false
-                recomputeEffectiveStatus()
+                if let explicit = explicitStatus,
+                   [.done, .error, .needsApproval, .waitingForInput].contains(explicit.status) {
+                    recomputeEffectiveStatus()
+                } else {
+                    if state != .idle { state = .idle }
+                    if unread { unread = false }
+                    recomputeEffectiveStatus()
+                }
                 return
             }
 
             // Shown as done in a focused tab too, for `successLinger`; in a
             // background one it waits to be seen.
             signalStatus = .done
-            unread = !isFocused
+            let shouldBeUnread = !isFocused
+            if unread != shouldBeUnread { unread = shouldBeUnread }
 
             // A command too short to have shown as running should not flash
             // green either.
             guard let ran, ran >= Self.minimumVisibleDuration else {
                 signalStatus = .idle
-                state = .idle
-                unread = false
+                if state != .idle { state = .idle }
+                if unread { unread = false }
                 recomputeEffectiveStatus()
                 return
             }
-            state = .succeeded
+            if state != .succeeded { state = .succeeded }
             recomputeEffectiveStatus()
             if isFocused { fadeWhileFocused() }
         }
@@ -232,84 +264,12 @@ extension Tako {
         /// In the focused tab a finished command's "done" or "failed" is
         /// seen as it happens: it goes quiet after `successLinger`, unless
         /// something newer replaced it or the tab lost focus meanwhile.
-        private func fadeWhileFocused() {
+        func fadeWhileFocused() {
             successTimer?.invalidate()
             successTimer = Timer.scheduledTimer(withTimeInterval: linger, repeats: false) {
                 [weak self] _ in
                 MainActor.assumeIsolated { self?.fadeSeenOutcome() }
             }
-        }
-
-        /// Whether a fade is armed, for tests.
-        var isFadePending: Bool { successTimer?.isValid == true }
-        /// When the armed fade goes off, for tests.
-        var fadeDue: Date? { isFadePending ? successTimer?.fireDate : nil }
-
-        /// What the fade does when it fires. Internal so a test can fire it
-        /// without waiting on a real timer.
-        func fadeSeenOutcome() {
-            guard isFocused else { return }
-            if explicitStatus?.status == .done || explicitStatus?.status == .error {
-                explicitStatus = (status: .idle, text: nil)
-            }
-            if signalStatus == .done || signalStatus == .error {
-                signalStatus = .idle
-            }
-            switch state {
-            case .succeeded, .failed: state = .idle
-            default: break
-            }
-            unread = false
-            recomputeEffectiveStatus()
-        }
-
-        func bellRang() {
-            // Never override something more important.
-            if CrabState.attention.priority > state.priority { state = .attention }
-            unread = true
-        }
-
-        func progressReported(state: UInt8, value: UInt8?) {
-            switch state {
-            case 0:
-                progressState = .none
-                progress = nil
-            case 1:
-                progressState = .normal
-                progress = value.map(Int.init)
-            case 2:
-                progressState = .error
-                progress = value.map(Int.init)
-            case 3:
-                progressState = .indeterminate
-                progress = value.map(Int.init)
-            case 4:
-                progressState = .paused
-                progress = value.map(Int.init)
-            default:
-                progressState = .none
-                progress = nil
-            }
-        }
-
-        func connectionLost() {
-            stopLive()
-            progress = nil
-            progressState = .none
-            signalStatus = .disconnected
-            state = .ghost
-            unread = true
-            recomputeEffectiveStatus()
-        }
-
-        func reconnecting() {
-            state = .reconnecting
-        }
-
-        /// Set explicit pane status, with optional text and TTL.
-        func setStatus(_ statusString: String, text: String?, ttl: TimeInterval? = nil) {
-            guard let parsed = PaneStatus.parse(statusString) else { return }
-            setStatus(parsed, text: text, ttl: ttl)
         }
 
         /// Set explicit pane status, with optional text and TTL.
@@ -319,17 +279,19 @@ extension Tako {
 
             let sanitizedText = text.flatMap(Tako.sanitizeStatusText)
             if status == .done {
-                ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
+                ticker?.invalidate(); ticker = nil; startedAt = nil
+                if elapsed != nil { elapsed = nil }
                 explicitStatus = (status: .done, text: sanitizedText)
-                unread = !isFocused
+                let nextUnread = !isFocused
+                if unread != nextUnread { unread = nextUnread }
                 if isFocused { fadeWhileFocused() }
             } else {
                 explicitStatus = (status: status, text: sanitizedText)
                 if status == .working || status == .running || status == .needsApproval || status == .waitingForInput {
-                    // A question waits for you; work in progress does not. A
-                    // working agent in a tab or workspace you left is no
-                    // "needs you" -- its outcome will be, once it comes.
-                    if status == .needsApproval || status == .waitingForInput { unread = !isFocused }
+                    if status == .needsApproval || status == .waitingForInput {
+                        let nextUnread = !isFocused
+                        if unread != nextUnread { unread = nextUnread }
+                    }
                     if startedAt == nil { startedAt = now() }
                     if ticker == nil {
                         ticker = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
@@ -337,164 +299,30 @@ extension Tako {
                         }
                     }
                 } else {
-                    ticker?.invalidate(); ticker = nil; startedAt = nil; elapsed = nil
+                    ticker?.invalidate(); ticker = nil; startedAt = nil
+                    if elapsed != nil { elapsed = nil }
                 }
-                // An explicit failure fades on the focused tab like one from
-                // a command's exit.
-                if status == .error && isFocused { fadeWhileFocused() }
+                if status == .error {
+                    let nextUnread = !isFocused
+                    if unread != nextUnread { unread = nextUnread }
+                    if isFocused { fadeWhileFocused() }
+                }
             }
-            statusText = sanitizedText
-            // An agent that stopped prints no more, whatever it printed the
-            // moment before: its live ring starts quiet instead of glowing
-            // through the rest of the window (a turn stopped with Esc kept
-            // it bright for 3 s).
+            if statusText != sanitizedText { statusText = sanitizedText }
             if status == .idle || status == .done { quietLive() }
 
             if let ttl, ttl > 0 {
                 let expires = now().addingTimeInterval(ttl)
-                statusExpiresAt = expires
+                if statusExpiresAt != expires { statusExpiresAt = expires }
                 ttlTimer = Timer.scheduledTimer(withTimeInterval: ttl, repeats: false) { [weak self] _ in
                     MainActor.assumeIsolated {
                         self?.ttlExpired()
                     }
                 }
-            } else {
+            } else if statusExpiresAt != nil {
                 statusExpiresAt = nil
             }
             recomputeEffectiveStatus()
-        }
-
-        /// The user pressed Escape or Ctrl-C in this pane. An agent its hooks
-        /// left working, or waiting on a question, has been stopped: nothing
-        /// else says so for Claude Code or Antigravity. If it goes on after
-        /// all, its next hook sets working again.
-        func userInterrupted() {
-            guard let explicit = explicitStatus else { return }
-            switch explicit.status {
-            case .working, .running, .needsApproval, .waitingForInput:
-                setStatus(.idle, text: nil)
-                progressReported(state: 0, value: nil)
-            default:
-                break
-            }
-        }
-
-        /// Clears explicit status, reverting to signal-derived state.
-        func clearStatus() {
-            ttlTimer?.invalidate()
-            ttlTimer = nil
-            explicitStatus = nil
-            statusText = nil
-            statusExpiresAt = nil
-            recomputeEffectiveStatus()
-        }
-
-        /// Called when TTL timer fires: status expires to unknown.
-        func ttlExpired() {
-            ttlTimer?.invalidate()
-            ttlTimer = nil
-            explicitStatus = (status: .unknown, text: nil)
-            statusText = nil
-            statusExpiresAt = nil
-            recomputeEffectiveStatus()
-        }
-
-        /// Remaining seconds on the TTL timer, or nil if none is armed.
-        public var remainingTTL: TimeInterval? {
-            guard let expiresAt = statusExpiresAt else { return nil }
-            let remaining = expiresAt.timeIntervalSince(now())
-            return max(0, remaining)
-        }
-
-        private func recomputeEffectiveStatus() {
-            if let explicit = explicitStatus {
-                paneStatus = explicit.status
-                statusText = explicit.text
-                state = paneStatus.crabState
-            } else {
-                paneStatus = signalStatus
-                statusText = nil
-                if case .failed = state, signalStatus == .error {
-                    // keep failed state
-                } else if case .succeeded = state {
-                    // keep succeeded state
-                } else if case .ghost = state, signalStatus == .disconnected {
-                    // keep ghost state
-                } else if case .running = state, signalStatus == .running {
-                    // keep running state
-                } else if signalStatus == .running {
-                    // Command has not yet reached minimum visible duration
-                    state = .idle
-                } else {
-                    state = paneStatus.crabState
-                }
-            }
-        }
-
-        /// The user looked at this tab/pane: clear what was waiting for them.
-        func focused() {
-            isFocused = true
-            unread = false
-            if explicitStatus?.status == .done {
-                explicitStatus = (status: .idle, text: nil)
-            }
-            if signalStatus == .done || signalStatus == .error {
-                signalStatus = .idle
-            }
-            switch state {
-            case .succeeded, .failed, .attention: state = .idle
-            default: break
-            }
-            recomputeEffectiveStatus()
-        }
-
-        func unfocused() {
-            isFocused = false
-        }
-
-        /// Advance the running clock. Public so a test can drive it without
-        /// waiting on a real timer.
-        func tick() {
-            guard let startedAt else { return }
-            if commandKind == .batch, liveProbe?.isAlternateScreen() == true { settleQuiet() }
-            let ran = now().timeIntervalSince(startedAt)
-            guard ran >= Self.minimumVisibleDuration else { return }
-            // An agent's own status keeps its clock whatever its kind.
-            if explicitStatus != nil {
-                elapsed = ran
-                return
-            }
-            guard commandKind == nil || commandKind == .batch else { return }
-            elapsed = ran
-            if CrabState.running.priority > state.priority || state == .idle {
-                state = .running
-            }
-        }
-
-        /// The running job turned out to be quiet, read off its process --
-        /// `tail -f`, ssh -- the shell having named none: it goes live as it
-        /// would have from its start had the shell named it.
-        func commandIdentified(as kind: CommandKind, probe: LiveProbe) {
-            guard kind != .batch, commandKind == .batch, startedAt != nil else { return }
-            liveProbe = probe
-            settleQuiet(as: kind)
-        }
-
-        /// The running job turned out to be one the user is inside.
-        private func settleQuiet(as kind: CommandKind = .quiet) {
-            commandKind = kind
-            if explicitStatus == nil {
-                ticker?.invalidate()
-                ticker = nil
-                elapsed = nil
-            }
-            startLive()
-            if state == .running { state = .idle }
-            signalStatus = .idle
-        }
-
-        func setElapsed(_ seconds: TimeInterval?) {
-            elapsed = seconds
         }
     }
 }

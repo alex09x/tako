@@ -173,6 +173,7 @@ extension Tako {
             // computed and then dropped on the floor.
             delegate = self
             crab.onQuietSince = { [weak self] in self?.persistence?.saveQuietSince($0) }
+            crab.onAcknowledgedOutcome = { [weak self] in self?.acknowledgeProgramStatusOutcome() }
             if let app {
                 applySurfaceConfig(app.config)
             }

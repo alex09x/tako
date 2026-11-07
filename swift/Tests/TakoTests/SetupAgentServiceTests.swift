@@ -55,18 +55,17 @@ struct SetupAgentServiceTests {
     }
 
     @Test
-    func hooksWithoutSkillAreNotReadyAndRefreshDoesNotWrite() async throws {
+    func nativeStatusAgentWithoutSkillIsNotReadyAndRefreshDoesNotWrite() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".claude/settings.json", home: home)
-        AgentHooksTool.installHooks(for: ["claude"], baseDir: home.path, includeSkills: false)
         let settings = home.appendingPathComponent(".claude/settings.json")
         let original = try Data(contentsOf: settings)
         let declined = UserDefaults.standard.object(forKey: AgentHooksTool.declinedKey) as? Bool
         let fake = SetupSkillRunner()
         let statuses = await SetupAgentService.statuses(baseDir: home.path, runner: { try await fake.run($0) })
         let claude = try #require(statuses.first { $0.id == "claude" })
-        #expect(claude.hooksInstalled)
+        #expect(claude.usesNativeStatus && !claude.hasLegacyHooks && !claude.hooksInstalled)
         #expect(!claude.skillInstalled && !claude.isReady)
         #expect(claude.detail?.contains("skill") == true)
         #expect(try Data(contentsOf: settings) == original)
@@ -79,38 +78,61 @@ struct SetupAgentServiceTests {
     }
 
     @Test
-    func connectOnlySelectedAgentPreservesUnrelatedHooksAndReturnsAllStatuses() async throws {
+    func connectStripsLegacyStatusHooksPreservesUnrelatedHooksAndInstallsSkill() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
-        let custom = #"{"theme":"dark","hooks":{"Stop":[{"matcher":"custom","hooks":[{"type":"command","command":"echo user-hook"}]}]}}"#
-        try write(custom, ".claude/settings.json", home: home)
+        let mixed = """
+        {
+          "theme": "dark",
+          "hooks": {
+            "Stop": [
+              {
+                "matcher": "custom",
+                "hooks": [
+                  {"type": "command", "command": "echo user-hook"},
+                  {"type": "command", "command": "tako-hook claude stop"}
+                ]
+              }
+            ]
+          }
+        }
+        """
+        try write(mixed, ".claude/settings.json", home: home)
         try write("{}", ".codex/hooks.json", home: home)
         let codexFile = home.appendingPathComponent(".codex/hooks.json")
         let beforeCodex = try Data(contentsOf: codexFile)
         let fake = SetupSkillRunner()
+
+        let pre = await SetupAgentService.statuses(baseDir: home.path, runner: { try await fake.run($0) })
+        let preClaude = try #require(pre.first { $0.id == "claude" })
+        #expect(preClaude.hasLegacyHooks && !preClaude.isReady)
+
         let statuses = await SetupAgentService.connect(
             ids: ["claude", "claude", "unknown"], baseDir: home.path, runner: { try await fake.run($0) }
         )
         #expect(statuses.map(\.id) == ["antigravity", "gemini", "claude", "codex", "qwen", "muse"])
         let claude = try #require(statuses.first { $0.id == "claude" })
-        #expect(claude.isDetected && claude.hooksInstalled && claude.skillInstalled && claude.isReady)
+        #expect(claude.isDetected && claude.usesNativeStatus && !claude.hasLegacyHooks && claude.skillInstalled && claude.isReady)
         #expect(claude.detail == nil)
         #expect(statuses.first { $0.id == "codex" }?.isReady == false)
         #expect(try Data(contentsOf: codexFile) == beforeCodex)
+
         let data = try Data(contentsOf: home.appendingPathComponent(".claude/settings.json"))
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["theme"] as? String == "dark")
         let hooks = try #require(json["hooks"] as? [String: Any])
         let stops = try #require(hooks["Stop"] as? [[String: Any]])
         #expect(stops.contains { ($0["matcher"] as? String) == "custom" })
-        #expect(String(decoding: data, as: UTF8.self).contains("echo user-hook"))
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.contains("echo user-hook"))
+        #expect(!text.contains("tako-hook"))
         let commands = await fake.recorded()
         #expect(commands.filter { $0.arguments.starts(with: ["skills", "install"]) }.map(\.arguments)
                 == [["skills", "install", "claude", "--yes", "--json"]])
     }
 
     @Test
-    func skillFailureRemainsVisibleAfterHooksSucceed() async throws {
+    func skillFailureRemainsVisibleAfterNativeMigrationSucceeds() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".claude/settings.json", home: home)
@@ -119,16 +141,15 @@ struct SetupAgentServiceTests {
             ids: ["claude"], baseDir: home.path, runner: { try await fake.run($0) }
         )
         let claude = try #require(statuses.first { $0.id == "claude" })
-        #expect(claude.hooksInstalled && !claude.skillInstalled && !claude.isReady)
+        #expect(!claude.hasLegacyHooks && !claude.skillInstalled && !claude.isReady)
         #expect(claude.detail == "Skill installation exited with code 23.")
     }
 
     @Test
-    func readyAgentsDoNotReinstall() async throws {
+    func readyNativeAgentsDoNotReinstall() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".claude/settings.json", home: home)
-        AgentHooksTool.installHooks(for: ["claude"], baseDir: home.path, includeSkills: false)
         let settings = home.appendingPathComponent(".claude/settings.json")
         let original = try Data(contentsOf: settings)
         let fake = SetupSkillRunner(installed: ["claude"])
@@ -142,11 +163,10 @@ struct SetupAgentServiceTests {
     }
 
     @Test
-    func malformedIncompleteAndFailedStatusCannotMarkHookedAgentReady() async throws {
+    func malformedIncompleteAndFailedSkillStatusCannotMarkAgentReady() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".claude/settings.json", home: home)
-        AgentHooksTool.installHooks(for: ["claude"], baseDir: home.path, includeSkills: false)
         let responses: [SetupAgentService.CommandResult] = [
             .init(stdout: Data("not JSON".utf8)),
             .init(stdout: Data(#"[{"name":"claude","installed":"true","skill_path":"x"}]"#.utf8)),
@@ -158,7 +178,7 @@ struct SetupAgentServiceTests {
         for response in responses {
             let statuses = await SetupAgentService.statuses(baseDir: home.path, runner: { _ in response })
             let claude = try #require(statuses.first { $0.id == "claude" })
-            #expect(claude.hooksInstalled && !claude.skillInstalled && !claude.isReady)
+            #expect(!claude.skillInstalled && !claude.isReady)
             #expect(claude.detail != nil)
         }
         struct LaunchFailure: Error {}
@@ -168,29 +188,34 @@ struct SetupAgentServiceTests {
     }
 
     @Test
-    func hookFailurePreservesMalformedConfigurationAndSkipsSkillInstall() async throws {
+    func malformedSettingsJsonPreservesFileAndSkipsSkillInstallOnBothNativeAndHookAgents() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("not JSON", ".claude/settings.json", home: home)
+        try write("not JSON", ".gemini/settings.json", home: home)
         let fake = SetupSkillRunner()
         let statuses = await SetupAgentService.connect(
-            ids: ["claude"], baseDir: home.path, runner: { try await fake.run($0) }
+            ids: ["claude", "gemini"], baseDir: home.path, runner: { try await fake.run($0) }
         )
         let claude = try #require(statuses.first { $0.id == "claude" })
-        #expect(!claude.isReady && !claude.hooksInstalled)
-        #expect(claude.detail == "Required Tako hooks could not be installed.")
-        let text = try String(contentsOf: home.appendingPathComponent(".claude/settings.json"), encoding: .utf8)
-        #expect(text == "not JSON")
+        #expect(!claude.isReady && claude.hasLegacyHooks)
+        #expect(try String(contentsOf: home.appendingPathComponent(".claude/settings.json"), encoding: .utf8) == "not JSON")
+
+        let gemini = try #require(statuses.first { $0.id == "gemini" })
+        #expect(!gemini.isReady && !gemini.hooksInstalled)
+        #expect(gemini.detail == "Required Tako hooks could not be installed.")
+        #expect(try String(contentsOf: home.appendingPathComponent(".gemini/settings.json"), encoding: .utf8) == "not JSON")
+
         let commands = await fake.recorded()
         #expect(!commands.contains { $0.arguments.contains("install") })
     }
 
     @Test
-    func antigravityUsesGeminiSkillWithoutInstallingGeminiHooks() async throws {
+    func antigravityUsesGeminiSkillWithoutInstallingGeminiHooksAndGeminiStillRequiresHooks() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".gemini/config/hooks.json", home: home)
-        try write("{}", ".gemini/settings.json", home: home)
+        try write(#"{"note":"takoctl status set working; takoctl status set idle"}"#, ".gemini/settings.json", home: home)
         let fake = SetupSkillRunner()
         let statuses = await SetupAgentService.connect(
             ids: ["antigravity"], baseDir: home.path, runner: { try await fake.run($0) }
@@ -204,23 +229,10 @@ struct SetupAgentServiceTests {
     }
 
     @Test
-    func incompleteHookCommandsAreNotTreatedAsConfigured() async throws {
-        let home = try sandbox()
-        defer { try? FileManager.default.removeItem(at: home) }
-        try write(#"{"note":"takoctl status set working; takoctl status set done"}"#,
-                  ".claude/settings.json", home: home)
-        let fake = SetupSkillRunner(installed: ["claude"])
-        let statuses = await SetupAgentService.statuses(baseDir: home.path, runner: { try await fake.run($0) })
-        let claude = try #require(statuses.first { $0.id == "claude" })
-        #expect(claude.skillInstalled && !claude.hooksInstalled && !claude.isReady)
-    }
-
-    @Test
     func missingExecutableIsVisibleWithoutLaunchingAnInstaller() async throws {
         let home = try sandbox()
         defer { try? FileManager.default.removeItem(at: home) }
         try write("{}", ".claude/settings.json", home: home)
-        AgentHooksTool.installHooks(for: ["claude"], baseDir: home.path, includeSkills: false)
         let statuses = await SetupAgentService.statuses(
             baseDir: home.path, executableURL: home.appendingPathComponent("missing-takoctl")
         )

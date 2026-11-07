@@ -19,6 +19,7 @@ pub(crate) mod encode;
 pub(crate) mod encode_graphics;
 pub(crate) mod grid;
 pub(crate) mod host;
+pub(crate) mod program_status;
 pub(crate) mod reader;
 pub(crate) mod types;
 pub(crate) mod writer;

@@ -23,6 +23,8 @@ import simd
 @MainActor
 public class TakoTerminalView: UIView, UIKeyInput {
     public weak var delegate: TakoTerminalViewDelegate?
+    /// Optional typed consume-once reply handler. When installed, replies are routed here instead of `sendDeviceReplyData`.
+    public var onClassifiedReplies: ((TerminalClassifiedReplyBatch) -> Void)?
 
     public let core: TakoCore
 

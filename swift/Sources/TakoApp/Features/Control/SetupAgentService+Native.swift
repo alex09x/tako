@@ -62,12 +62,11 @@ extension SetupAgentService {
     }
 
     static func nativeHookStatus(_ id: String, baseDir: String?) -> Bool {
-        nativeHooksInstalled(runBlocking(nativeCommand("status", id: id, baseDir: baseDir)), id: id, baseDir: baseDir)
+        !AgentHooksTool.hasLegacyOwnedStatusHooks(for: id, baseDir: baseDir)
     }
 
     static func installNativeHooks(_ id: String, baseDir: String?) -> Bool {
-        let result = runBlocking(nativeCommand("install", id: id, baseDir: baseDir))
-        return result.failure == nil && result.exitCode == 0 && nativeHookStatus(id, baseDir: baseDir)
+        AgentHooksTool.cleanupLegacyStatusHooks(for: id, baseDir: baseDir)
     }
 
     static func installNativeSkill(_ id: String, baseDir: String?) {

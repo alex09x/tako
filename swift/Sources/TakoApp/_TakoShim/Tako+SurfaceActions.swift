@@ -84,6 +84,8 @@ extension Tako.SurfaceView {
     /// holds them as base colors, which a reset returns to.
     public func resetTerminal() {
         core.reset()
+        _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
+        applyProgramStatusEvent(.restored(programStatusSnapshot()))
         core.markAllDamaged()
         currentSearchMatch = nil
         if let needle = searchState?.needle { runSearch(needle) }

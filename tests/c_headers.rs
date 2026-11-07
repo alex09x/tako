@@ -40,9 +40,13 @@ fn exported() -> Vec<String> {
 
 #[test]
 fn every_exported_function_is_declared_in_a_header() {
-    let headers = ["include/prod_vt.h", "include/prod_vt_checkpoint.h"]
-        .map(|h| std::fs::read_to_string(Path::new(ROOT).join(h)).unwrap())
-        .join("\n");
+    let headers = [
+        "include/prod_vt.h",
+        "include/prod_vt_checkpoint.h",
+        "include/prod_vt_program_status.h",
+    ]
+    .map(|h| std::fs::read_to_string(Path::new(ROOT).join(h)).unwrap())
+    .join("\n");
     let names = exported();
     assert!(names.len() > 20, "found {names:?}");
     for name in names {
@@ -64,8 +68,10 @@ fn the_c_example_compiles_against_the_headers() {
             "-Wextra",
             "-Werror",
             "-pedantic",
-            "-I",
+            "-include",
         ])
+        .arg(Path::new(ROOT).join("include/prod_vt_program_status.h"))
+        .arg("-I")
         .arg(Path::new(ROOT).join("include"))
         .arg(Path::new(ROOT).join("examples/c/headless.c"))
         .output();

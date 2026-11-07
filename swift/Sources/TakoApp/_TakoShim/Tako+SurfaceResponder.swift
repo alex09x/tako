@@ -41,6 +41,7 @@ extension Tako.SurfaceView {
         if Tako.InterruptKeystroke.isInterrupt(keyCode: event.keyCode,
                                                character: event.charactersIgnoringModifiers,
                                                modifiers: event.modifierFlags) {
+            notifyProgramStatusInterrupted()
             crab.userInterrupted()
         }
         return false

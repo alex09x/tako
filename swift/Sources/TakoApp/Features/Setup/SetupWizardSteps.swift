@@ -96,7 +96,10 @@ struct SetupAgentsStep: View {
                                    ready: agent.isReady, showsSymbol: false)
                     }
                     if agent.isDetected {
-                        Text(agent.detail ?? "Hooks: \(agent.hooksInstalled ? "ready" : "not installed") · Skill: \(agent.skillInstalled ? "ready" : "not installed")")
+                        let statusSummary = agent.usesNativeStatus
+                            ? "Status: built-in (OSC 7501) · Skill: \(agent.skillInstalled ? "ready" : "not installed")"
+                            : "Hooks: \(agent.hooksInstalled ? "ready" : "not installed") · Skill: \(agent.skillInstalled ? "ready" : "not installed")"
+                        Text(agent.detail ?? statusSummary)
                             .font(.system(size: 12)).foregroundStyle(colors.muted)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("SetupAgentStatus-\(agent.id)")
@@ -104,7 +107,7 @@ struct SetupAgentsStep: View {
                     if agent.id != model.agents.last?.id { Divider().overlay(colors.border) }
                 }
             }
-            Text("Connect installs Tako's lifecycle hooks and skill in each selected agent's configuration. Existing unrelated settings are preserved.")
+            Text("Connect installs Tako's skill for selected agents and configures lifecycle hooks where needed. Existing unrelated settings are preserved.")
                 .foregroundStyle(colors.muted).font(.system(size: 13)).lineSpacing(4)
             HStack {
                 Button("Connect selected") { Task { await model.connectSelected() } }

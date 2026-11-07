@@ -21,6 +21,8 @@ import simd
 @MainActor
 open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public weak var delegate: TakoTerminalNSViewDelegate?
+    /// Optional typed consume-once reply handler. When installed, replies are routed here instead of `sendDeviceReplyData`.
+    public var onClassifiedReplies: ((TerminalClassifiedReplyBatch) -> Void)?
     public let core: TakoCore
     let parserCoordinator: TerminalParserCoordinator
 
@@ -83,9 +85,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     }
     var trackedCommands: [UInt64: TrackedCommandOutput] = [:]
     var trackedCommandsEpoch: UInt64 = 0
-    var trackedCommandsCountForTesting: Int { trackedCommands.count }
-    var activeTrackedCommandsCountForTesting: Int { trackedCommands.values.filter { !$0.hasNoOutput }.count }
-    var trackedCommandsForTesting: [UInt64: TrackedCommandOutput] { trackedCommands }
     var activeRunningCommandId: UInt64? = nil
     var commandDurations: [UInt64: TimeInterval] = [:]
     var gutterCommandMarksByRow: [Int: (commandId: UInt64, status: UInt8, exitCode: Int32?, duration: TimeInterval?, startedAt: Date?)] = [:]

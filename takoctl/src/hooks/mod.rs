@@ -14,6 +14,7 @@
 
 pub mod adapter;
 pub mod fs_util;
+mod inspect;
 mod managed;
 #[cfg(test)]
 mod managed_tests;
@@ -23,6 +24,10 @@ mod merge_tests;
 pub(crate) mod native;
 #[cfg(test)]
 mod native_tests;
+pub mod osc7501_migration;
+#[cfg(test)]
+mod osc7501_migration_tests;
+mod osc7501_ownership;
 mod ownership;
 #[cfg(test)]
 mod tests;
@@ -31,7 +36,7 @@ mod transaction;
 use std::fs;
 use std::io::{self, BufRead, Write};
 
-use serde_json::{Value, json};
+use serde_json::json;
 
 #[allow(unused_imports)]
 pub use adapter::{
@@ -40,102 +45,9 @@ pub use adapter::{
 };
 pub use fs_util::unified_diff;
 use fs_util::{backup_path, file_mode, harden_owner_only_mode, new_marker_path, write_secure};
+pub use inspect::{list, status};
 
-// MARK: - Actions: List, Status, Install, Uninstall
-
-pub fn list(json: bool) -> Result<(), String> {
-    let adapters = all_adapters();
-    if json {
-        let items: Vec<Value> = adapters
-            .iter()
-            .map(|a| {
-                let p = a.resolve_path(None);
-                json!({
-                    "name": a.name,
-                    "title": a.title,
-                    "aliases": a.aliases,
-                    "config_path": p.display().to_string(),
-                    "installed": a.is_installed(&p),
-                })
-            })
-            .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&items).unwrap_or_default()
-        );
-        return Ok(());
-    }
-
-    println!(
-        "{:<12} {:<24} {:<10} {:<30}",
-        "AGENT", "NAME", "STATUS", "CONFIG FILE"
-    );
-    println!("{:-<12} {:-<24} {:-<10} {:-<30}", "", "", "", "");
-    for a in &adapters {
-        let p = a.resolve_path(None);
-        let status = if a.is_installed(&p) {
-            "installed"
-        } else {
-            "not installed"
-        };
-        println!(
-            "{:<12} {:<24} {:<10} {:<30}",
-            a.name,
-            a.title,
-            status,
-            p.display()
-        );
-    }
-    Ok(())
-}
-
-pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
-    let adapters = if let Some(q) = agent_query {
-        let a = find_adapter(q)
-            .ok_or_else(|| format!("unknown agent '{q}' (use 'takoctl hooks list')"))?;
-        vec![a]
-    } else {
-        all_adapters()
-    };
-
-    if json {
-        let items: Vec<Value> = adapters
-            .iter()
-            .map(|a| {
-                let p = a.resolve_path(None);
-                json!({
-                    "name": a.name,
-                    "title": a.title,
-                    "config_path": p.display().to_string(),
-                    "installed": a.is_installed(&p),
-                    "file_exists": p.exists(),
-                })
-            })
-            .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&items).unwrap_or_default()
-        );
-        return Ok(());
-    }
-
-    for a in &adapters {
-        let p = a.resolve_path(None);
-        let installed = a.is_installed(&p);
-        println!("{} ({})", a.title, a.name);
-        println!("  Config:    {}", p.display());
-        println!(
-            "  Status:    {}",
-            if installed {
-                "installed"
-            } else {
-                "not installed"
-            }
-        );
-        println!("  File exists: {}", if p.exists() { "yes" } else { "no" });
-    }
-    Ok(())
-}
+// MARK: - Actions: Install, Uninstall
 
 pub fn install(
     agent_query: &str,
@@ -148,6 +60,9 @@ pub fn install(
         .ok_or_else(|| format!("unknown agent '{agent_query}' (use 'takoctl hooks list')"))?;
 
     let path = adapter.resolve_path(config_override);
+    if adapter.uses_native_osc7501() {
+        return osc7501_migration::run_native_cleanup(&adapter, &path, yes, diff_only, json, true);
+    }
     if adapter.name == "muse" || adapter.name == "qwen" {
         return managed::run(&adapter, &path, false, yes, diff_only, json);
     }
@@ -266,6 +181,9 @@ pub fn uninstall(
         .ok_or_else(|| format!("unknown agent '{agent_query}' (use 'takoctl hooks list')"))?;
 
     let path = adapter.resolve_path(config_override);
+    if adapter.uses_native_osc7501() {
+        return osc7501_migration::run_native_cleanup(&adapter, &path, yes, diff_only, json, false);
+    }
     if adapter.name == "muse" || adapter.name == "qwen" {
         return managed::run(&adapter, &path, true, yes, diff_only, json);
     }

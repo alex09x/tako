@@ -192,6 +192,7 @@ impl Terminal {
 
     /// Drains queued host-visible events.
     pub fn take_events(&mut self) -> Vec<TerminalEvent> {
+        self.program_status.events_emitted_since_take = 0;
         std::mem::take(&mut self.events)
     }
 

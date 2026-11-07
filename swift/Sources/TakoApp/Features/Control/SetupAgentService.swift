@@ -20,7 +20,39 @@ enum SetupAgentService {
         let hooksInstalled: Bool
         let skillInstalled: Bool
         let detail: String?
-        var isReady: Bool { hooksInstalled && skillInstalled }
+        let usesNativeStatus: Bool
+        let hasLegacyHooks: Bool
+
+        init(
+            id: String,
+            name: String,
+            isDetected: Bool,
+            hooksInstalled: Bool,
+            skillInstalled: Bool,
+            detail: String?,
+            usesNativeStatus: Bool? = nil,
+            hasLegacyHooks: Bool = false
+        ) {
+            self.id = id
+            self.name = name
+            self.isDetected = isDetected
+            self.hooksInstalled = hooksInstalled
+            self.skillInstalled = skillInstalled
+            self.detail = detail
+            self.usesNativeStatus = usesNativeStatus ?? SetupAgentService.usesNativeStatus(id)
+            self.hasLegacyHooks = hasLegacyHooks
+        }
+
+        var isReady: Bool {
+            if usesNativeStatus {
+                return !hasLegacyHooks && skillInstalled
+            }
+            return hooksInstalled && skillInstalled
+        }
+    }
+
+    nonisolated static func usesNativeStatus(_ id: String) -> Bool {
+        AgentHooksTool.usesNativeOsc7501Status(id)
     }
 
     struct Command: Sendable {
@@ -70,15 +102,11 @@ enum SetupAgentService {
         } else {
             failure = "Skill status returned malformed JSON."
         }
-        var nativeHooks: [String: Bool] = [:]
-        for id in ["qwen", "muse"] where detected.contains(where: { $0.id == id }) {
-            let result = await execute(nativeHookArguments("status", id: id, baseDir: base),
-                                       baseDir: base, executableURL: executableURL, runner: runner)
-            nativeHooks[id] = nativeHooksInstalled(result, id: id, baseDir: base)
-        }
         return agents.map { id, name in
             let agent = detected.first { $0.id == id }
-            let hooks = nativeHooks[id] ?? (agent?.isConfigured ?? false)
+            let nativeStatus = usesNativeStatus(id)
+            let legacyHooks = nativeStatus && AgentHooksTool.hasLegacyOwnedStatusHooks(for: id, baseDir: base)
+            let hooks = nativeStatus ? false : (agent?.isConfigured ?? false)
             let skill = skills[adapter(id)]
             var installed = skill?.installed ?? false
             if ["qwen", "muse"].contains(id) {
@@ -88,12 +116,26 @@ enum SetupAgentService {
             if id == "codex", let path = customCodexSkill(baseDir: base), skill != nil {
                 installed = isSkillInstalled(at: path)
             }
+            let missingHookDetail: String?
+            if nativeStatus {
+                missingHookDetail = legacyHooks ? "Legacy Tako status hooks need cleanup." : nil
+            } else {
+                missingHookDetail = !hooks ? "Required Tako hooks are missing." : nil
+            }
             let detail = failure ?? (skill == nil ? "Skill status omitted this agent." : nil)
                 ?? (agent == nil ? "Agent not detected." : nil)
-                ?? (!hooks ? "Required Tako hooks are missing." : nil)
+                ?? missingHookDetail
                 ?? (!installed ? "Tako skill is missing." : nil)
-            return Status(id: id, name: name, isDetected: agent != nil,
-                          hooksInstalled: hooks, skillInstalled: installed, detail: detail)
+            return Status(
+                id: id,
+                name: name,
+                isDetected: agent != nil,
+                hooksInstalled: hooks,
+                skillInstalled: installed,
+                detail: detail,
+                usesNativeStatus: nativeStatus,
+                hasLegacyHooks: legacyHooks
+            )
         }
     }
 
@@ -111,20 +153,16 @@ enum SetupAgentService {
                 failures[agent.id] = "Agent not detected; no configuration was changed."
                 continue
             }
-            if !agent.hooksInstalled {
-                let succeeded: Bool
-                if ["qwen", "muse"].contains(agent.id) {
-                    let install = await execute(nativeHookArguments("install", id: agent.id, baseDir: base),
-                                                baseDir: base, executableURL: executableURL, runner: runner)
-                    let check = await execute(nativeHookArguments("status", id: agent.id, baseDir: base),
-                                              baseDir: base, executableURL: executableURL, runner: runner)
-                    succeeded = install.failure == nil && install.exitCode == 0
-                        && nativeHooksInstalled(check, id: agent.id, baseDir: base)
-                } else {
-                    let report = AgentHooksTool.installHooks(for: [agent.id], baseDir: base, includeSkills: false)
-                    succeeded = report.failed.isEmpty && AgentHooksTool.detectAgents(baseDir: base)
-                        .first(where: { $0.id == agent.id })?.isConfigured == true
+            if agent.usesNativeStatus {
+                guard AgentHooksTool.cleanupLegacyStatusHooks(for: agent.id, baseDir: base) else {
+                    failures[agent.id] = "Agent configuration could not be validated; no configuration was changed."
+                    hookFailures.insert(agent.id)
+                    continue
                 }
+            } else if !agent.hooksInstalled {
+                let report = AgentHooksTool.installHooks(for: [agent.id], baseDir: base, includeSkills: false)
+                let succeeded = report.failed.isEmpty && AgentHooksTool.detectAgents(baseDir: base)
+                    .first(where: { $0.id == agent.id })?.isConfigured == true
                 guard succeeded else {
                     failures[agent.id] = "Required Tako hooks could not be installed."
                     hookFailures.insert(agent.id)
@@ -155,9 +193,16 @@ enum SetupAgentService {
         let after = await statuses(baseDir: base, executableURL: executableURL, runner: runner)
         return after.map { agent in
             guard let failure = failures[agent.id] else { return agent }
-            return Status(id: agent.id, name: agent.name, isDetected: agent.isDetected,
-                          hooksInstalled: agent.hooksInstalled && !hookFailures.contains(agent.id),
-                          skillInstalled: agent.skillInstalled && !skillFailures.contains(agent.id), detail: failure)
+            return Status(
+                id: agent.id,
+                name: agent.name,
+                isDetected: agent.isDetected,
+                hooksInstalled: agent.hooksInstalled && !hookFailures.contains(agent.id),
+                skillInstalled: agent.skillInstalled && !skillFailures.contains(agent.id),
+                detail: failure,
+                usesNativeStatus: agent.usesNativeStatus,
+                hasLegacyHooks: agent.hasLegacyHooks || (agent.usesNativeStatus && hookFailures.contains(agent.id))
+            )
         }
     }
 
