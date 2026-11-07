@@ -142,13 +142,23 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
     let original = transaction::read(&path)?;
     let mut settings = parse(original.as_deref())?;
     if adapter.name == "qwen" {
+        let receipt_path = super::ownership::qwen_receipt_path(&path);
+        let prior = transaction::read(&receipt_path)?;
+        let prior = prior.as_deref().map(serde_json::from_str::<Value>)
+            .transpose().map_err(|e| format!("invalid Qwen ownership receipt: {e}"))?;
+        let input = super::ownership::relocate(adapter, &settings, prior.as_ref())?;
         let after = if remove {
-            adapter.remove_hooks(original.as_deref().unwrap_or("{}"))?
+            adapter.remove_hooks(&input)?
         } else {
-            adapter.apply_hooks(original.as_deref().unwrap_or(""))?
+            adapter.apply_hooks(&input)?
         };
         return with_backups(
-            vec![Change::new(path, preserved(&original, after))?],
+            vec![
+                Change::new(path, preserved(&original, after))?,
+                Change::secure(receipt_path, if remove { None } else {
+                    Some(encode(&adapter.hooks))
+                })?,
+            ],
             remove,
         );
     }
@@ -184,9 +194,11 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
             "env_added": settings.get("managed_hooks_env_vars").is_none()
         })
     });
+    let input = super::ownership::relocate(adapter, &hooks, ownership.get("dispatcher_hooks"))?;
+    ownership["dispatcher_hooks"] = adapter.hooks.clone();
     let hooks_after;
     if remove {
-        hooks_after = adapter.remove_hooks(&encode(&hooks))?;
+        hooks_after = adapter.remove_hooks(&input)?;
         if let Some(r) = &existing_receipt {
             if let Some(env) = settings
                 .get_mut("managed_hooks_env_vars")
@@ -225,7 +237,7 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
         if settings["disableAllHooks"] == true {
             return Err("Muse hooks are disabled".into());
         }
-        hooks_after = adapter.apply_hooks(&encode(&hooks))?;
+        hooks_after = adapter.apply_hooks(&input)?;
         let obj = settings.as_object_mut().unwrap();
         obj.entry("schema_version").or_insert(json!(1));
         obj.entry("managed_hooks_path")
@@ -269,7 +281,7 @@ fn with_backups(mut changes: Vec<Change>, remove: bool) -> Result<Vec<Change>, S
         let mut backups = Vec::new();
         for change in changes
             .iter()
-            .filter(|c| c.changed() && !c.path.to_string_lossy().ends_with(".tako-muse-receipt"))
+            .filter(|c| c.changed() && !super::ownership::is_receipt(&c.path))
         {
             if let Some(before) = &change.before {
                 let backup = super::fs_util::backup_path(&change.path);

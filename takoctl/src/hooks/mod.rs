@@ -21,6 +21,7 @@ mod merge;
 #[cfg(test)]
 mod merge_tests;
 pub(crate) mod native;
+mod ownership;
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]

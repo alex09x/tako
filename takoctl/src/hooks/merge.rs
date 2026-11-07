@@ -25,6 +25,9 @@ fn owned(hook: &Value, replacement: &Value, agent: &str) -> bool {
     if replacement.get("command").and_then(Value::as_str) == Some(command) {
         return true;
     }
+    if matches!(agent, "qwen" | "muse") && super::native::generated_command_owned(command, agent) {
+        return true;
+    }
     let words: Vec<_> = command.split_whitespace().collect();
     if words.len() != 3
         || words
@@ -117,9 +120,10 @@ pub fn merge_event(
                     if !remove && (disabled || hook.get("enabled") == Some(&Value::Bool(false))) {
                         return Err("Tako hook is disabled; refusing to re-enable it".into());
                     }
+                    let duplicate = found && matches!(agent, "qwen" | "muse");
                     found = true;
                     changed = true;
-                    if !remove {
+                    if !remove && !duplicate {
                         kept.push(replacement.clone());
                     }
                 } else {
@@ -135,8 +139,9 @@ pub fn merge_event(
             if !remove && disabled {
                 return Err("Tako hook is disabled; refusing to re-enable it".into());
             }
+            let duplicate = found && matches!(agent, "qwen" | "muse");
             found = true;
-            if !remove {
+            if !remove && !duplicate {
                 if first.get("hooks").is_some() {
                     result.push(first.clone());
                 } else {

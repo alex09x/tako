@@ -11,6 +11,154 @@ use super::{adapter::find_adapter, managed, native, transaction};
 use serde_json::json;
 use std::fs;
 
+fn relocated_adapter(provider: &str, bundle: Option<&str>) -> super::adapter::Adapter {
+    let mut adapter = native::adapter(provider);
+    for (event, dispatch) in [
+        ("SessionStart", "session_start"),
+        ("UserPromptSubmit", "user_prompt_submit"),
+        ("PermissionRequest", "permission_request"),
+        ("PreToolUse", "question"),
+        ("PostToolUse", "post_tool_use"),
+        ("PostToolUseFailure", "post_tool_use"),
+        ("Stop", "stop"),
+        ("StopFailure", "stop_failure"),
+        ("SessionEnd", "session_end"),
+    ] {
+        adapter.hooks[event][0]["hooks"][0]["command"] = json!(
+            native::dispatcher_command_at(provider, dispatch, bundle.map(std::path::Path::new))
+        );
+    }
+    adapter
+}
+
+#[test]
+fn relocation_deduplicates_owned_hooks_and_keeps_mixed_siblings() {
+    for provider in ["qwen", "muse"] {
+        let f = Fixture::new();
+        let path = f.settings();
+        let hooks_path = if provider == "muse" {
+            path.with_file_name("tako-managed-hooks.json")
+        } else {
+            path.clone()
+        };
+        let old = relocated_adapter(provider, Some("/absent/Tako.app/Contents/Resources/tako-hook.py"));
+        transaction::commit(&managed::plan(&old, &path, false).unwrap(), None).unwrap();
+        let mut root = value(&hooks_path);
+        let owned = root["hooks"]["Stop"][0]["hooks"][0].clone();
+        let unknown = json!({"type":"command", "command":format!("{} echo custom", owned["command"].as_str().unwrap())});
+        root["hooks"]["Stop"][0]["note"] = json!("keep mixed metadata");
+        root["hooks"]["Stop"][0]["hooks"] = json!([owned, unknown, owned]);
+        fs::write(&hooks_path, root.to_string()).unwrap();
+        let new = relocated_adapter(provider, None);
+        transaction::commit(&managed::plan(&new, &path, false).unwrap(), None).unwrap();
+        let root = value(&hooks_path);
+        assert_eq!(root["hooks"]["Stop"][0]["note"], "keep mixed metadata");
+        assert_eq!(root["hooks"]["Stop"][0]["hooks"].as_array().unwrap().len(), 2);
+        assert_eq!(root["hooks"]["Stop"][0]["hooks"][1], unknown);
+        transaction::commit(&managed::plan(&old, &path, true).unwrap(), None).unwrap();
+        let root = value(&hooks_path);
+        assert_eq!(root["hooks"]["Stop"][0]["hooks"], json!([unknown]));
+        assert_eq!(root["hooks"]["Stop"][0]["note"], "keep mixed metadata");
+    }
+}
+
+#[test]
+fn relocation_failure_restores_receipts_configs_and_backups() {
+    for provider in ["qwen", "muse"] {
+        let f = Fixture::new();
+        let path = f.settings();
+        let old = relocated_adapter(provider, Some("/absent/Old.app/Contents/Resources/tako-hook.py"));
+        transaction::commit(&managed::plan(&old, &path, false).unwrap(), None).unwrap();
+        let new = relocated_adapter(provider, None);
+        let plan = managed::plan(&new, &path, false).unwrap();
+        for failure in 0..plan.iter().filter(|change| change.changed()).count() {
+            assert!(transaction::commit(&plan, Some(failure)).is_err());
+            for change in &plan {
+                assert_eq!(transaction::read(&change.path).unwrap(), change.before);
+            }
+        }
+    }
+}
+
+#[test]
+fn legacy_generated_templates_are_owned_without_a_receipt_or_old_app() {
+    for provider in ["qwen", "muse"] {
+        let old = relocated_adapter(provider, Some("/absent/Old 'Tako.app/Contents/Resources/tako-hook.py"));
+        let new = relocated_adapter(provider, None);
+        let generated = old.apply_hooks("{}").unwrap();
+        let upgraded = new.apply_hooks(&generated).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&upgraded).unwrap();
+        for (event, template) in new.hooks.as_object().unwrap() {
+            assert_eq!(&root["hooks"][event], template);
+        }
+        assert_eq!(new.remove_hooks(&generated).unwrap(), "");
+        for command in [
+            "echo tako-hook muse stop",
+            "PATH='/user/MacOS':\"$PATH\" /usr/bin/python3 '/user/custom.py' muse stop; :",
+            "if command -v tako-hook; then echo custom; fi",
+        ] {
+            assert!(!native::generated_command_owned(command, provider));
+        }
+    }
+}
+
+#[test]
+fn native_receipts_follow_bundle_moves_and_standalone_switches() {
+    for provider in ["qwen", "muse"] {
+        let f = Fixture::new();
+        let path = f.settings();
+        let hooks_path = if provider == "muse" {
+            path.with_file_name("custom-hooks.json")
+        } else {
+            path.clone()
+        };
+        let initial = json!({"theme":"dark", "hooks":{"Stop":[{
+            "matcher":"", "note":"keep group metadata", "hooks":[
+                {"type":"command", "command":"echo user mentions tako-hook"}
+            ]
+        }]}});
+        fs::write(&hooks_path, initial.to_string()).unwrap();
+        if provider == "muse" {
+            fs::write(&path, json!({
+                "schema_version":1, "managed_hooks_path":"custom-hooks.json",
+                "managed_hooks_env_vars":["USER_KEEP"], "theme":"dark"
+            }).to_string()).unwrap();
+        }
+        let locations = [
+            Some("/missing/First Tako.app/Contents/Resources/tako-hook.py"),
+            Some("/missing/Second 'Tako.app/Contents/Resources/tako-hook.py"),
+            None,
+            Some("/missing/First Tako.app/Contents/Resources/tako-hook.py"),
+        ];
+        for location in locations {
+            let adapter = relocated_adapter(provider, location);
+            transaction::commit(&managed::plan(&adapter, &path, false).unwrap(), None).unwrap();
+            let once = fs::read_to_string(&hooks_path).unwrap();
+            transaction::commit(&managed::plan(&adapter, &path, false).unwrap(), None).unwrap();
+            assert_eq!(fs::read_to_string(&hooks_path).unwrap(), once);
+            let root = value(&hooks_path);
+            for (event, template) in adapter.hooks.as_object().unwrap() {
+                let expected = &template[0]["hooks"][0]["command"];
+                let count = root["hooks"][event].as_array().unwrap().iter()
+                    .flat_map(|group| group["hooks"].as_array().unwrap())
+                    .filter(|hook| &hook["command"] == expected).count();
+                assert_eq!(count, 1, "{provider} {event}");
+                assert_eq!(root["hooks"][event].as_array().unwrap().len(), if event == "Stop" { 2 } else { 1 });
+            }
+            assert_eq!(root["hooks"]["Stop"][0]["note"], "keep group metadata");
+        }
+        // The last installed app is absent; uninstall from a different CLI form.
+        let adapter = relocated_adapter(provider, None);
+        transaction::commit(&managed::plan(&adapter, &path, true).unwrap(), None).unwrap();
+        assert_eq!(value(&hooks_path), initial);
+        if provider == "muse" {
+            let settings = value(&path);
+            assert_eq!(settings["managed_hooks_path"], "custom-hooks.json");
+            assert_eq!(settings["managed_hooks_env_vars"], json!(["USER_KEEP"]));
+        }
+    }
+}
+
 #[test]
 fn catalogs_and_event_contracts() {
     for name in ["qwen", "muse"] {

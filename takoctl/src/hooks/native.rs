@@ -32,6 +32,10 @@ fn dispatcher_command(provider: &str, event: &str) -> String {
                 .map(|contents| contents.join("Resources/tako-hook.py"))
         })
         .filter(|path| path.is_file());
+    dispatcher_command_at(provider, event, bundled.as_deref())
+}
+
+pub(super) fn dispatcher_command_at(provider: &str, event: &str, bundled: Option<&Path>) -> String {
     if let Some(path) = bundled {
         let quote = |path: &Path| format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
         // Muse sanitizes the hook environment. Use the exact bundled dispatcher
@@ -47,6 +51,27 @@ fn dispatcher_command(provider: &str, event: &str) -> String {
         "if command -v tako-hook >/dev/null 2>&1; then tako-hook {provider} {event}; \
              elif [ -x \"$HOME/.local/bin/tako-hook\" ]; then \"$HOME/.local/bin/tako-hook\" {provider} {event}; fi; :"
     )
+}
+
+// Recognize only a byte-for-byte reconstruction of a released shell template.
+// This also migrates installs predating receipts, without consulting the old app.
+pub(super) fn generated_command_owned(command: &str, provider: &str) -> bool {
+    let bundled = command.strip_prefix("PATH=").and_then(|tail| {
+        let (quoted, _) = tail.split_once(":\"$PATH\" /usr/bin/python3 ")?;
+        let decoded = quoted.strip_prefix('\'')?.strip_suffix('\'')?
+            .replace("'\\''", "'");
+        let binaries = PathBuf::from(decoded);
+        if !binaries.is_absolute() || binaries.file_name()? != "MacOS" {
+            return None;
+        }
+        Some(binaries.parent()?.join("Resources/tako-hook.py"))
+    });
+    [
+        "session_start", "user_prompt_submit", "permission_request", "question",
+        "post_tool_use", "stop", "stop_failure", "session_end",
+    ].iter().any(|event| {
+        command == dispatcher_command_at(provider, event, bundled.as_deref())
+    })
 }
 
 pub fn adapter(provider: &str) -> Adapter {
