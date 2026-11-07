@@ -10,16 +10,22 @@
 
 //! Agent hook adapters and configuration management for `takoctl hooks`.
 //!
-//! Provides inspection, diffing, installation, and byte-identical uninstallation
-//! of Tako lifecycle hooks into coding-agent tools (Claude Code, Gemini CLI, Codex, Aider).
+//! Inspect and manage Tako lifecycle hooks while preserving agent configuration.
 
 pub mod adapter;
 pub mod fs_util;
+mod managed;
+#[cfg(test)]
+mod managed_tests;
 mod merge;
 #[cfg(test)]
 mod merge_tests;
+pub(crate) mod native;
+#[cfg(test)]
+mod native_tests;
 #[cfg(test)]
 mod tests;
+mod transaction;
 
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -28,12 +34,11 @@ use serde_json::{Value, json};
 
 #[allow(unused_imports)]
 pub use adapter::{
-    ADAPTER_AIDER, ADAPTER_CLAUDE, ADAPTER_CODEX, ADAPTER_GEMINI, Adapter, all_adapters, find_adapter,
+    ADAPTER_AIDER, ADAPTER_CLAUDE, ADAPTER_CODEX, ADAPTER_GEMINI, Adapter, all_adapters,
+    find_adapter,
 };
 pub use fs_util::unified_diff;
-use fs_util::{
-    backup_path, file_mode, harden_owner_only_mode, new_marker_path, write_secure,
-};
+use fs_util::{backup_path, file_mode, harden_owner_only_mode, new_marker_path, write_secure};
 
 // MARK: - Actions: List, Status, Install, Uninstall
 
@@ -53,23 +58,40 @@ pub fn list(json: bool) -> Result<(), String> {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&items).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&items).unwrap_or_default()
+        );
         return Ok(());
     }
 
-    println!("{:<12} {:<24} {:<10} {:<30}", "AGENT", "NAME", "STATUS", "CONFIG FILE");
+    println!(
+        "{:<12} {:<24} {:<10} {:<30}",
+        "AGENT", "NAME", "STATUS", "CONFIG FILE"
+    );
     println!("{:-<12} {:-<24} {:-<10} {:-<30}", "", "", "", "");
     for a in &adapters {
         let p = a.resolve_path(None);
-        let status = if a.is_installed(&p) { "installed" } else { "not installed" };
-        println!("{:<12} {:<24} {:<10} {:<30}", a.name, a.title, status, p.display());
+        let status = if a.is_installed(&p) {
+            "installed"
+        } else {
+            "not installed"
+        };
+        println!(
+            "{:<12} {:<24} {:<10} {:<30}",
+            a.name,
+            a.title,
+            status,
+            p.display()
+        );
     }
     Ok(())
 }
 
 pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
     let adapters = if let Some(q) = agent_query {
-        let a = find_adapter(q).ok_or_else(|| format!("unknown agent '{q}' (use 'takoctl hooks list')"))?;
+        let a = find_adapter(q)
+            .ok_or_else(|| format!("unknown agent '{q}' (use 'takoctl hooks list')"))?;
         vec![a]
     } else {
         all_adapters()
@@ -89,7 +111,10 @@ pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&items).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&items).unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -98,7 +123,14 @@ pub fn status(agent_query: Option<&str>, json: bool) -> Result<(), String> {
         let installed = a.is_installed(&p);
         println!("{} ({})", a.title, a.name);
         println!("  Config:    {}", p.display());
-        println!("  Status:    {}", if installed { "installed" } else { "not installed" });
+        println!(
+            "  Status:    {}",
+            if installed {
+                "installed"
+            } else {
+                "not installed"
+            }
+        );
         println!("  File exists: {}", if p.exists() { "yes" } else { "no" });
     }
     Ok(())
@@ -115,6 +147,9 @@ pub fn install(
         .ok_or_else(|| format!("unknown agent '{agent_query}' (use 'takoctl hooks list')"))?;
 
     let path = adapter.resolve_path(config_override);
+    if adapter.name == "muse" || adapter.name == "qwen" {
+        return managed::run(&adapter, &path, false, yes, diff_only, json);
+    }
     let path_display = path.display().to_string();
     let bak = backup_path(&path);
     let marker = new_marker_path(&path);
@@ -136,7 +171,10 @@ pub fn install(
             harden_owner_only_mode(&marker)?;
         }
         if json {
-            println!("{}", json!({"status": "already_installed", "config": path_display, "diff": ""}));
+            println!(
+                "{}",
+                json!({"status": "already_installed", "config": path_display, "diff": ""})
+            );
         } else {
             println!("Tako hooks are already installed in {path_display}");
         }
@@ -147,7 +185,10 @@ pub fn install(
 
     if diff_only {
         if json {
-            println!("{}", json!({"status": "diff_only", "config": path_display, "diff": diff}));
+            println!(
+                "{}",
+                json!({"status": "diff_only", "config": path_display, "diff": diff})
+            );
         } else {
             print!("{diff}");
         }
@@ -164,7 +205,10 @@ pub fn install(
         io::stdout().flush().map_err(|e| e.to_string())?;
         let mut line = String::new();
         let stdin = io::stdin();
-        stdin.lock().read_line(&mut line).map_err(|e| e.to_string())?;
+        stdin
+            .lock()
+            .read_line(&mut line)
+            .map_err(|e| e.to_string())?;
         let answer = line.trim().to_lowercase();
         if answer != "y" && answer != "yes" {
             println!("Installation cancelled.");
@@ -172,28 +216,22 @@ pub fn install(
         }
     }
 
-    // Ensure parent directories exist
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("cannot create directory {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create directory {}: {e}", parent.display()))?;
     }
 
-    // Capture original mode before modifying files
     let orig_mode = file_mode(&path);
 
     // Save byte-identical restoration backup with restrictive permissions (0600):
     if path.exists() {
-        // If a backup doesn't already exist, preserve the original pre-Tako bytes
         if !bak.exists() {
-            // Backup should strictly have owner-only permissions (0600 or orig_mode & 0600)
             let bak_mode = orig_mode.map(|m| m & 0o600).unwrap_or(0o600);
             write_secure(&bak, original_content.as_bytes(), Some(bak_mode))?;
         } else {
-            // Pre-existing backup might have over-permissive mode from an earlier install or outside tool.
-            // Enforce restrictive owner-only permissions before proceeding, failing closed if permissions cannot be tightened.
             harden_owner_only_mode(&bak)?;
         }
     } else {
-        // Record that this file was created anew by Tako
         if !marker.exists() {
             write_secure(&marker, b"new", Some(0o600))?;
         } else {
@@ -201,12 +239,14 @@ pub fn install(
         }
     }
 
-    // Write new content preserving source mode or defaulting to 0600
     let target_mode = orig_mode.unwrap_or(0o600);
     write_secure(&path, new_content.as_bytes(), Some(target_mode))?;
 
     if json {
-        println!("{}", json!({"status": "installed", "config": path_display, "diff": diff}));
+        println!(
+            "{}",
+            json!({"status": "installed", "config": path_display, "diff": diff})
+        );
     } else {
         println!("Successfully installed Tako hooks into {path_display}");
     }
@@ -225,19 +265,21 @@ pub fn uninstall(
         .ok_or_else(|| format!("unknown agent '{agent_query}' (use 'takoctl hooks list')"))?;
 
     let path = adapter.resolve_path(config_override);
+    if adapter.name == "muse" || adapter.name == "qwen" {
+        return managed::run(&adapter, &path, true, yes, diff_only, json);
+    }
     let path_display = path.display().to_string();
 
     if !path.exists() {
         return Err(format!("configuration file {path_display} does not exist"));
     }
 
-    let current_content = fs::read_to_string(&path)
-        .map_err(|e| format!("cannot read {path_display}: {e}"))? ;
+    let current_content =
+        fs::read_to_string(&path).map_err(|e| format!("cannot read {path_display}: {e}"))?;
 
     let bak = backup_path(&path);
     let marker = new_marker_path(&path);
 
-    // Determine target restored state
     enum RestoreAction {
         DeleteFile,
         WriteBytes(String),
@@ -249,13 +291,15 @@ pub fn uninstall(
         if meta.file_type().is_symlink() {
             return Err(format!("refusing to use symlink at {}", marker.display()));
         }
-        // The file was created anew by Tako
         RestoreAction::DeleteFile
     } else if bak.exists() {
         let meta = fs::symlink_metadata(&bak)
             .map_err(|e| format!("cannot inspect backup {}: {e}", bak.display()))?;
         if meta.file_type().is_symlink() {
-            return Err(format!("refusing to restore from symlink at {}", bak.display()));
+            return Err(format!(
+                "refusing to restore from symlink at {}",
+                bak.display()
+            ));
         }
         if !meta.is_file() {
             return Err(format!("expected regular file backup at {}", bak.display()));
@@ -263,7 +307,6 @@ pub fn uninstall(
         // Enforce owner-only permissions on backup before reading
         harden_owner_only_mode(&bak)?;
 
-        // We have the exact original bytes saved
         let orig = fs::read_to_string(&bak).map_err(|e| format!("cannot read backup: {e}"))?;
         RestoreAction::WriteBytes(orig)
     } else {
@@ -283,7 +326,10 @@ pub fn uninstall(
 
     if current_content == target_str {
         if json {
-            println!("{}", json!({"status": "not_installed", "config": path_display, "diff": ""}));
+            println!(
+                "{}",
+                json!({"status": "not_installed", "config": path_display, "diff": ""})
+            );
         } else {
             println!("No Tako hooks found in {path_display}");
         }
@@ -294,7 +340,10 @@ pub fn uninstall(
 
     if diff_only {
         if json {
-            println!("{}", json!({"status": "diff_only", "config": path_display, "diff": diff}));
+            println!(
+                "{}",
+                json!({"status": "diff_only", "config": path_display, "diff": diff})
+            );
         } else {
             print!("{diff}");
         }
@@ -311,7 +360,10 @@ pub fn uninstall(
         io::stdout().flush().map_err(|e| e.to_string())?;
         let mut line = String::new();
         let stdin = io::stdin();
-        stdin.lock().read_line(&mut line).map_err(|e| e.to_string())?;
+        stdin
+            .lock()
+            .read_line(&mut line)
+            .map_err(|e| e.to_string())?;
         let answer = line.trim().to_lowercase();
         if answer != "y" && answer != "yes" {
             println!("Uninstallation cancelled.");
@@ -321,7 +373,6 @@ pub fn uninstall(
 
     let orig_mode = file_mode(&bak).or_else(|| file_mode(&path));
 
-    // Apply the uninstallation
     match action {
         RestoreAction::DeleteFile => {
             fs::remove_file(&path).map_err(|e| format!("cannot remove {path_display}: {e}"))?;
@@ -332,12 +383,14 @@ pub fn uninstall(
         }
     }
 
-    // Clean up backup / marker files
     let _ = fs::remove_file(&bak);
     let _ = fs::remove_file(&marker);
 
     if json {
-        println!("{}", json!({"status": "uninstalled", "config": path_display, "diff": diff}));
+        println!(
+            "{}",
+            json!({"status": "uninstalled", "config": path_display, "diff": diff})
+        );
     } else {
         println!("Successfully uninstalled Tako hooks from {path_display}");
     }

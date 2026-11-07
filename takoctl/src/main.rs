@@ -61,6 +61,9 @@ fn run_hooks(opts: &Options) -> Result<(), String> {
         "list" => hooks::list(opts.json),
         "status" => {
             let agent = opts.args.get("agent").and_then(Value::as_str);
+            if let (Some(agent), Some(path)) = (agent, config_override) {
+                return hooks::native::status_at(agent, path, opts.json);
+            }
             hooks::status(agent, opts.json)
         }
         "install" => {

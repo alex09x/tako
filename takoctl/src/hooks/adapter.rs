@@ -77,6 +77,9 @@ impl Adapter {
         if let Some(p) = override_path {
             return PathBuf::from(p);
         }
+        if self.name == "muse" {
+            return super::native::muse_root().join("settings.json");
+        }
         if self.name == "codex"
             && let Ok(codex_home) = std::env::var("CODEX_HOME")
         {
@@ -90,6 +93,9 @@ impl Adapter {
 
     /// Checks whether Tako hooks are currently installed in the target file.
     pub fn is_installed(&self, path: &Path) -> bool {
+        if self.name == "muse" {
+            return super::managed::installed(self, path);
+        }
         if !path.exists() {
             return false;
         }
@@ -97,6 +103,9 @@ impl Adapter {
             Ok(c) => c,
             Err(_) => return false,
         };
+        if self.name == "qwen" {
+            return serde_json::from_str(&content).is_ok_and(|v| super::native::active(self, &v));
+        }
 
         if self.format == "json" {
             let val: Value = match serde_json::from_str(&content) {
@@ -128,6 +137,12 @@ impl Adapter {
             };
 
             let root_obj = root.as_object_mut().ok_or("JSON root must be an object")?;
+            if self.name == "qwen" || self.name == "muse" {
+                super::native::validate(&Value::Object(root_obj.clone()))?;
+                if root_obj.get("disableAllHooks") == Some(&Value::Bool(true)) {
+                    return Err("hooks are disabled; refusing to re-enable them".into());
+                }
+            }
 
             if let Some(template_obj) = self.hooks.as_object() {
                 let hooks_entry = root_obj
@@ -153,6 +168,12 @@ impl Adapter {
                 }
             }
 
+            if (self.name == "qwen" || self.name == "muse") && !super::native::active(self, &root) {
+                return Err(
+                    "existing Tako hook matcher or activation flags conflict with required events"
+                        .into(),
+                );
+            }
             let mut out = serde_json::to_string_pretty(&root)
                 .map_err(|e| format!("serialization error: {e}"))?;
             out.push('\n');
@@ -249,6 +270,8 @@ pub fn all_adapters() -> Vec<Adapter> {
         Adapter::from_json_str(ADAPTER_ANTIGRAVITY).expect("valid antigravity adapter"),
         Adapter::from_json_str(ADAPTER_CODEX).expect("valid codex adapter"),
         Adapter::from_json_str(ADAPTER_AIDER).expect("valid aider adapter"),
+        super::native::adapter("qwen"),
+        super::native::adapter("muse"),
     ]
 }
 

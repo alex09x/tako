@@ -12,25 +12,54 @@ use serde_json::Value;
 // Ownership is determined from a command field, never serialized group metadata.
 // Unknown/custom shell programs are preserved, even if they mention Tako.
 fn owned(hook: &Value, replacement: &Value, agent: &str) -> bool {
-    let Some(command) = hook.get("command").and_then(Value::as_str) else { return false };
-    if hook.get("type").and_then(Value::as_str).is_some_and(|t| t != "command") {
+    let Some(command) = hook.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    if hook
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|t| t != "command")
+    {
         return false;
     }
     if replacement.get("command").and_then(Value::as_str) == Some(command) {
         return true;
     }
     let words: Vec<_> = command.split_whitespace().collect();
-    if words.len() != 3 || words.iter().any(|w| w.contains([';', '|', '&', '$', '`', '\'', '"', '<', '>'])) {
+    if words.len() != 3
+        || words
+            .iter()
+            .any(|w| w.contains([';', '|', '&', '$', '`', '\'', '"', '<', '>']))
+    {
         return false;
     }
     let executable = std::path::Path::new(words[0]);
     let is_dispatcher = executable.file_name().is_some_and(|n| n == "tako-hook")
         && (executable.is_absolute() || words[0] == "tako-hook");
     let same_agent = words[1] == agent || (agent == "antigravity" && words[1] == "agy");
-    is_dispatcher && same_agent && matches!(words[2],
-        "user_prompt_submit" | "start" | "working" | "pre_invocation" |
-        "stop" | "done" | "post_invocation" | "permission_request" | "approval" |
-        "question" | "waiting_for_input" | "ask" | "question_answered" | "post_question")
+    is_dispatcher
+        && same_agent
+        && matches!(
+            words[2],
+            "user_prompt_submit"
+                | "start"
+                | "working"
+                | "pre_invocation"
+                | "stop"
+                | "done"
+                | "post_invocation"
+                | "permission_request"
+                | "approval"
+                | "question"
+                | "waiting_for_input"
+                | "ask"
+                | "question_answered"
+                | "post_question"
+                | "session_start"
+                | "session_end"
+                | "post_tool_use"
+                | "stop_failure"
+        )
 }
 
 fn validate(items: &[Value]) -> Result<(), String> {
@@ -49,15 +78,31 @@ fn validate(items: &[Value]) -> Result<(), String> {
 }
 
 /// Update only recognized commands; retain matcher metadata and all user siblings.
-pub fn merge_event(existing: Option<&Value>, template: &Value, agent: &str, remove: bool) -> Result<Value, String> {
-    let groups = template.as_array().ok_or("template event must be an array")?;
+pub fn merge_event(
+    existing: Option<&Value>,
+    template: &Value,
+    agent: &str,
+    remove: bool,
+) -> Result<Value, String> {
+    let groups = template
+        .as_array()
+        .ok_or("template event must be an array")?;
     let first = groups.first().ok_or("empty hook template")?;
-    let replacement = first.get("hooks").and_then(Value::as_array)
-        .and_then(|a| a.first()).unwrap_or(first);
+    let replacement = first
+        .get("hooks")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .unwrap_or(first);
     let Some(existing) = existing else {
-        return Ok(if remove { Value::Array(vec![]) } else { template.clone() });
+        return Ok(if remove {
+            Value::Array(vec![])
+        } else {
+            template.clone()
+        });
     };
-    let items = existing.as_array().ok_or("existing event must be an array; refusing to overwrite")?;
+    let items = existing
+        .as_array()
+        .ok_or("existing event must be an array; refusing to overwrite")?;
     validate(items)?;
     let mut result = Vec::new();
     let mut found = false;
@@ -74,7 +119,9 @@ pub fn merge_event(existing: Option<&Value>, template: &Value, agent: &str, remo
                     }
                     found = true;
                     changed = true;
-                    if !remove { kept.push(replacement.clone()); }
+                    if !remove {
+                        kept.push(replacement.clone());
+                    }
                 } else {
                     kept.push(hook.clone());
                 }
@@ -90,13 +137,18 @@ pub fn merge_event(existing: Option<&Value>, template: &Value, agent: &str, remo
             }
             found = true;
             if !remove {
-                if first.get("hooks").is_some() { result.push(first.clone()); }
-                else { result.push(replacement.clone()); }
+                if first.get("hooks").is_some() {
+                    result.push(first.clone());
+                } else {
+                    result.push(replacement.clone());
+                }
             }
         } else {
             result.push(item.clone());
         }
     }
-    if !remove && !found { result.extend(groups.iter().cloned()); }
+    if !remove && !found {
+        result.extend(groups.iter().cloned());
+    }
     Ok(Value::Array(result))
 }

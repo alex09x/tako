@@ -10,14 +10,14 @@
 
 use super::*;
 use std::fs;
-use std::path::PathBuf;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 #[test]
 fn all_adapters_parse_valid_json() {
     let adapters = all_adapters();
-    assert_eq!(adapters.len(), 5);
+    assert_eq!(adapters.len(), 7);
     assert!(find_adapter("claude").is_some());
     assert!(find_adapter("gemini").is_some());
     assert!(find_adapter("antigravity").is_some());
@@ -109,7 +109,10 @@ fn codex_adapter_injects_and_removes_hooks() {
     unsafe {
         std::env::set_var("CODEX_HOME", custom_dir);
     }
-    assert_eq!(adapter.resolve_path(None), PathBuf::from(custom_dir).join("hooks.json"));
+    assert_eq!(
+        adapter.resolve_path(None),
+        PathBuf::from(custom_dir).join("hooks.json")
+    );
     unsafe {
         std::env::remove_var("CODEX_HOME");
     }
@@ -228,7 +231,8 @@ fn install_reports_already_installed_when_run_twice() {
 
 #[test]
 fn uninstall_on_file_without_hooks_succeeds_cleanly() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-nohooks-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-nohooks-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("no-hooks.json");
     let path_str = config_file.to_str().unwrap();
@@ -245,7 +249,8 @@ fn uninstall_on_file_without_hooks_succeeds_cleanly() {
 
 #[test]
 fn invalid_json_returns_error_without_panicking() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-invalid-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-invalid-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("corrupted.json");
     let path_str = config_file.to_str().unwrap();
@@ -288,7 +293,11 @@ fn test_backup_created_with_restrictive_permissions() {
     let bak_meta = fs::metadata(&bak).unwrap();
     let mode = bak_meta.permissions().mode() & 0o777;
     // Mode must be restrictive: no group or other read/write/execute (0600)
-    assert_eq!(mode & 0o077, 0, "backup must not be readable/writable by group or others");
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "backup must not be readable/writable by group or others"
+    );
     assert_eq!(mode, 0o600);
 
     // Uninstall
@@ -301,7 +310,8 @@ fn test_backup_created_with_restrictive_permissions() {
 #[cfg(unix)]
 #[test]
 fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-preexist-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-preexist-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("legacy-config.json");
     let path_str = config_file.to_str().unwrap();
@@ -320,7 +330,11 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
 
     // Verify the pre-existing backup was tightened to owner-only (0600)
     let mode = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode & 0o077, 0, "existing backup must be hardened to no group/other access");
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "existing backup must be hardened to no group/other access"
+    );
     assert_eq!(mode, 0o600);
 
     // Now test when hooks are ALREADY installed:
@@ -331,7 +345,11 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
     // Running install again (which detects already_installed) must also harden existing backup
     install("claude", Some(path_str), true, false, false).unwrap();
     let mode_again = fs::metadata(&bak).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode_again & 0o077, 0, "backup must be hardened even when already installed");
+    assert_eq!(
+        mode_again & 0o077,
+        0,
+        "backup must be hardened even when already installed"
+    );
     assert_eq!(mode_again, 0o600);
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -340,7 +358,8 @@ fn test_pre_existing_overpermissive_backup_is_hardened_on_install() {
 #[cfg(unix)]
 #[test]
 fn test_symlink_backup_is_rejected_and_fails_closed() {
-    let temp_dir = std::env::temp_dir().join(format!("takoctl-test-symlink-{}", std::process::id()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("takoctl-test-symlink-{}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
     let config_file = temp_dir.join("config.json");
     let path_str = config_file.to_str().unwrap();
@@ -361,7 +380,11 @@ fn test_symlink_backup_is_rejected_and_fails_closed() {
     // Uninstall must also fail closed and reject the symlink
     let uninst_res = uninstall("claude", Some(path_str), true, false, false);
     assert!(uninst_res.is_err());
-    assert!(uninst_res.unwrap_err().contains("refusing to restore from symlink"));
+    assert!(
+        uninst_res
+            .unwrap_err()
+            .contains("refusing to restore from symlink")
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
