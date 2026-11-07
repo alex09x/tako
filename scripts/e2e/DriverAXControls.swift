@@ -250,11 +250,10 @@ extension Driver {
         } else if let firstInactive = sortedHeaders.first {
             scoped = scoped.filter { $0.pos.y < firstInactive.y }
         }
-        if let allowed = allowedPaneIds, !allowed.isEmpty {
-            let groupScoped = scoped.filter {
+        if let allowed = allowedPaneIds {
+            scoped = scoped.filter {
                 allowed.contains(String($0.id.dropFirst("session-tab-".count)).lowercased())
             }
-            if !groupScoped.isEmpty { scoped = groupScoped }
         }
         return scoped.map(\.elem)
     }
@@ -264,15 +263,18 @@ extension Driver {
         guard let js = try? exec("\(ctl) tree --json"), let data = js.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let wins = ((obj["result"] as? [String: Any]) ?? obj)["windows"] as? [[String: Any]] else { return nil }
-        let selectedPane = selectedRowId.map { String($0.dropFirst("session-tab-".count)).lowercased() }
+        let selectedKey = selectedRowId.map { String($0.dropFirst("session-tab-".count)).lowercased() }
         for w in wins {
-            let panes = ((w["tabs"] as? [[String: Any]]) ?? []).flatMap { ($0["panes"] as? [[String: Any]]) ?? [] }
-            let ids = Set(panes.compactMap { ($0["id"] as? String)?.lowercased() })
+            let tabs = (w["tabs"] as? [[String: Any]]) ?? []
+            let panes = tabs.flatMap { ($0["panes"] as? [[String: Any]]) ?? [] }
+            let tabIds = tabs.flatMap { [($0["stableTabId"] as? String), ($0["id"] as? String)].compactMap { $0?.lowercased() } }
+            let ids = Set(panes.compactMap { ($0["id"] as? String)?.lowercased() } + tabIds)
             let hasFocused = panes.contains { ($0["focused"] as? Bool) == true }
-            if let sel = selectedPane, ids.contains(sel) { return ids }
-            if selectedPane == nil && hasFocused { return ids }
+                || (panes.isEmpty && tabs.contains { ($0["selected"] as? Bool) == true })
+            if let sel = selectedKey, ids.contains(sel) { return ids }
+            if selectedKey == nil && hasFocused { return ids }
         }
-        return nil
+        return []
     }
 
     private func sidebarSessionRows(in window: AXUIElement? = nil) -> [AXUIElement] {
@@ -307,7 +309,7 @@ extension Driver {
             walk(root, depth: 28)
             if !rowsById.isEmpty {
                 let selectedId = rowsById.first(where: { $0.value.isSelected })?.key
-                let allowed = onScreen.count > 1 ? activeGroupPaneIds(selectedRowId: selectedId) : nil
+                let allowed = onScreen.count > 1 ? (activeGroupPaneIds(selectedRowId: selectedId) ?? []) : nil
                 return Self.filterActiveWorkspaceRows(
                     headers: headersById.map { ($0.key, $0.value.isActive, $0.value.y) },
                     rows: rowsById.map { ($0.key, $0.value.elem, $0.value.pos) },
@@ -324,18 +326,14 @@ extension Driver {
     }
 
     func tabClickPoint(index: Int, in window: AXUIElement? = nil) throws -> CGPoint {
-        guard let tab = tabElement(index: index, in: window) else {
-            throw Failure("session-tab[\(index)] accessibility element not found")
+        let rows = sidebarSessionRows(in: window)
+        guard rows.indices.contains(index) else {
+            throw Failure("session-tab[\(index)] accessibility element not found in active workspace/group (matched \(rows.count) rows)")
         }
-        guard let tabPos: AXValue = attribute(tab, kAXPositionAttribute),
-              let tabSize: AXValue = attribute(tab, kAXSizeAttribute) else {
+        guard let f = axFrame(rows[index]) else {
             throw Failure("cannot get frame for session-tab[\(index)]")
         }
-        var pos = CGPoint.zero
-        var size = CGSize.zero
-        AXValueGetValue(tabPos, .cgPoint, &pos)
-        AXValueGetValue(tabSize, .cgSize, &size)
-        return CGPoint(x: pos.x + min(40, size.width / 3), y: pos.y + size.height / 2)
+        return CGPoint(x: f.origin.x + min(40, f.width / 3), y: f.midY)
     }
 
     func clickTab(index: Int, in window: AXUIElement? = nil) throws {
