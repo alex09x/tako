@@ -143,45 +143,8 @@ struct SidebarWorkspaceDropTarget: View {
     }
 }
 
-/// Real AppKit `AXGroup` element exposing `SessionSidebarWorkspace-<name>` with live `"active"` / `"inactive"`
-/// `AXValue` while passing all mouse clicks, context menus, and drag-and-drop gestures through untouched.
-private final class SidebarWorkspaceAXNSView: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is unavailable")
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private struct SidebarWorkspaceAXElement: NSViewRepresentable {
-    let name: String
-    let isActive: Bool
-
-    func makeNSView(context: Context) -> SidebarWorkspaceAXNSView {
-        let view = SidebarWorkspaceAXNSView(frame: .zero)
-        configure(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: SidebarWorkspaceAXNSView, context: Context) {
-        configure(nsView)
-    }
-
-    private func configure(_ view: SidebarWorkspaceAXNSView) {
-        view.setAccessibilityIdentifier("SessionSidebarWorkspace-\(name)")
-        view.setAccessibilityLabel(name)
-        view.setAccessibilityValue(isActive ? "active" : "inactive")
-    }
-}
-
 struct SidebarWorkspaceMoveModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     let item: SessionSidebarItem
     let workspaces: [Workspace]
     let onMove: (String, UUID) -> Bool
@@ -191,7 +154,28 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
     var onRename: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
-    @ViewBuilder func body(content: Content) -> some View {
+    private var rowIdentifier: String {
+        (item.isChild ? "session-pane-" : "session-tab-")
+            + (item.surfaceId?.uuidString.lowercased() ?? item.tabId)
+    }
+
+    func body(content: Content) -> some View {
+        SidebarRowAXContainer(
+            identifier: rowIdentifier,
+            label: item.title,
+            value: item.isSelected ? "selected" : "unselected",
+            help: Self.statusDotHint(for: item),
+            closeActionName: onClose != nil ? (item.isChild ? "Close Pane" : "Close Session") : nil,
+            onClose: onClose
+        ) {
+            rowBody(content)
+                .ignoresSafeArea()
+                .environment(\.colorScheme, colorScheme)
+        }
+    }
+
+    @ViewBuilder
+    private func rowBody(_ content: Content) -> some View {
         if item.isChild {
             menu(content)
         } else {
@@ -200,7 +184,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
         }
     }
 
-    private func menu<Content: View>(_ content: Content) -> some View {
+    private func menu<RowContent: View>(_ content: RowContent) -> some View {
         content.contextMenu {
             if let onNewSession {
                 Button("New Session", action: onNewSession)
@@ -229,11 +213,6 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityValue(item.isSelected ? "selected" : "unselected")
-        .accessibilityHint(Self.statusDotHint(for: item))
-        .accessibilityIdentifier((item.isChild ? "session-pane-" : "session-tab-")
-            + (item.surfaceId?.uuidString.lowercased() ?? item.tabId))
     }
 
     @MainActor

@@ -229,6 +229,7 @@ private struct FloatingPaneWindowView: View {
                 )
             }
         }
+        .ignoresSafeArea()
         .environmentObject(tako)
         .takoLastFocusedSurface(lastFocusedSurface)
         .environment(\.colorScheme, colorScheme)
@@ -242,7 +243,6 @@ private struct FloatingPaneWindowView: View {
         ) {
             paneContent
         }
-        .focusedValue(\.takoSurfaceView, isFocused ? surfaceView : nil)
         .focusedValue(\.takoSurfacePwd, isFocused ? (surfaceView.pwd ?? "") : nil)
         .focusedValue(\.takoSurfaceCellSize, isFocused ? surfaceView.cellSize : nil)
         .shadow(
@@ -263,6 +263,7 @@ final class FloatingPaneAXContainerNSView<Content: View>: NSView {
     init(rootView: Content) {
         self.hostingView = NSHostingView(rootView: rootView)
         super.init(frame: .zero)
+        hostingView.safeAreaRegions = []
         hostingView.sizingOptions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.autoresizingMask = [.width, .height]

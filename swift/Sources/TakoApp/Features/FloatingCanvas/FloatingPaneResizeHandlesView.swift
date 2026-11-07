@@ -12,7 +12,10 @@ import AppKit
 import SwiftUI
 
 /// Eight-way edge and corner resize perimeter for `.normal` floating panes.
-struct FloatingPaneResizeHandlesView: View {
+/// Implemented as a single AppKit `NSView` (`setAccessibilityElement(false)`) that only hits
+/// inside the 8 edge/corner handle strips for both pointer `hitTest` and `accessibilityHitTest`,
+/// so no full-pane AXGroup ever intercepts header buttons or terminal AX hit-testing.
+struct FloatingPaneResizeHandlesView: NSViewRepresentable {
     let surfaceId: UUID
     let paneRect: CGRect
     let workArea: CGRect
@@ -20,69 +23,127 @@ struct FloatingPaneResizeHandlesView: View {
     let onResizeMove: (CGRect) -> Void
     let onResizeCommit: () -> Void
 
-    private static let edgeHitThickness: CGFloat = 6
-    private static let cornerHitSize: CGFloat = 12
+    static let edgeHitThickness: CGFloat = 6
+    static let cornerHitSize: CGFloat = 12
 
-    private var uuidKey: String {
-        surfaceId.uuidString.lowercased()
+    func makeNSView(context: Context) -> FloatingPaneResizePerimeterNSView {
+        let view = FloatingPaneResizePerimeterNSView(frame: .zero)
+        configure(view)
+        return view
     }
 
-    var body: some View {
-        ZStack {
-            handle(.top)
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.edgeHitThickness)
-                .padding(.horizontal, Self.cornerHitSize)
-                .frame(maxHeight: .infinity, alignment: .top)
-
-            handle(.bottom)
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.edgeHitThickness)
-                .padding(.horizontal, Self.cornerHitSize)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-
-            handle(.leading)
-                .frame(width: Self.edgeHitThickness)
-                .frame(maxHeight: .infinity)
-                .padding(.vertical, Self.cornerHitSize)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            handle(.trailing)
-                .frame(width: Self.edgeHitThickness)
-                .frame(maxHeight: .infinity)
-                .padding(.vertical, Self.cornerHitSize)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-
-            handle(.topLeading)
-                .frame(width: Self.cornerHitSize, height: Self.cornerHitSize)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            handle(.topTrailing)
-                .frame(width: Self.cornerHitSize, height: Self.cornerHitSize)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-
-            handle(.bottomLeading)
-                .frame(width: Self.cornerHitSize, height: Self.cornerHitSize)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-
-            handle(.bottomTrailing)
-                .frame(width: Self.cornerHitSize, height: Self.cornerHitSize)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("FloatingPaneResize-\(uuidKey)")
+    func updateNSView(_ nsView: FloatingPaneResizePerimeterNSView, context: Context) {
+        configure(nsView)
     }
 
-    private func handle(_ edge: FloatingPaneResizeEdge) -> some View {
-        FloatingPaneResizeHandleStrip(
-            edge: edge,
-            identifier: "FloatingPaneResize-\(edge.rawValue)-\(uuidKey)",
+    private func configure(_ view: FloatingPaneResizePerimeterNSView) {
+        view.configure(
+            uuidKey: surfaceId.uuidString.lowercased(),
             paneRect: paneRect,
             workArea: workArea,
             onActivate: onActivate,
             onResizeMove: onResizeMove,
             onResizeCommit: onResizeCommit
         )
+    }
+}
+
+final class FloatingPaneResizePerimeterNSView: NSView {
+    private static let edgeOrder: [FloatingPaneResizeEdge] = [
+        .top, .bottom, .leading, .trailing,
+        .topLeading, .topTrailing, .bottomLeading, .bottomTrailing
+    ]
+
+    private let handleViews: [FloatingPaneResizeEdge: FloatingPaneResizeHandleNSView]
+    private let orderedHandles: [FloatingPaneResizeHandleNSView]
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        var map: [FloatingPaneResizeEdge: FloatingPaneResizeHandleNSView] = [:]
+        var list: [FloatingPaneResizeHandleNSView] = []
+        for edge in Self.edgeOrder {
+            let handle = FloatingPaneResizeHandleNSView(frame: .zero)
+            handle.edge = edge
+            map[edge] = handle
+            list.append(handle)
+        }
+        self.handleViews = map
+        self.orderedHandles = list
+        super.init(frame: frameRect)
+        setAccessibilityElement(false)
+        for handle in list {
+            addSubview(handle)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    func configure(
+        uuidKey: String,
+        paneRect: CGRect,
+        workArea: CGRect,
+        onActivate: @escaping () -> Void,
+        onResizeMove: @escaping (CGRect) -> Void,
+        onResizeCommit: @escaping () -> Void
+    ) {
+        for edge in Self.edgeOrder {
+            guard let handle = handleViews[edge] else { continue }
+            handle.setAccessibilityIdentifier("FloatingPaneResize-\(edge.rawValue)-\(uuidKey)")
+            handle.setAccessibilityLabel("Resize \(edge.rawValue)")
+            handle.edge = edge
+            handle.paneRect = paneRect
+            handle.workArea = workArea
+            handle.onActivate = onActivate
+            handle.onResizeMove = onResizeMove
+            handle.onResizeCommit = onResizeCommit
+            handle.window?.invalidateCursorRects(for: handle)
+        }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let w = bounds.width
+        let h = bounds.height
+        let e = FloatingPaneResizeHandlesView.edgeHitThickness
+        let c = FloatingPaneResizeHandlesView.cornerHitSize
+
+        handleViews[.top]?.frame = CGRect(x: c, y: 0, width: max(0, w - 2 * c), height: e)
+        handleViews[.bottom]?.frame = CGRect(x: c, y: max(0, h - e), width: max(0, w - 2 * c), height: e)
+        handleViews[.leading]?.frame = CGRect(x: 0, y: c, width: e, height: max(0, h - 2 * c))
+        handleViews[.trailing]?.frame = CGRect(x: max(0, w - e), y: c, width: e, height: max(0, h - 2 * c))
+        handleViews[.topLeading]?.frame = CGRect(x: 0, y: 0, width: c, height: c)
+        handleViews[.topTrailing]?.frame = CGRect(x: max(0, w - c), y: 0, width: c, height: c)
+        handleViews[.bottomLeading]?.frame = CGRect(x: 0, y: max(0, h - c), width: c, height: c)
+        handleViews[.bottomTrailing]?.frame = CGRect(x: max(0, w - c), y: max(0, h - c), width: c, height: c)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        guard bounds.contains(local) else { return nil }
+        for handle in orderedHandles.reversed() where handle.frame.contains(local) {
+            return handle
+        }
+        return nil
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        orderedHandles
+    }
+
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        guard let window else { return nil }
+        let winPt = window.convertPoint(fromScreen: point)
+        let local = convert(winPt, from: nil)
+        guard bounds.contains(local) else { return nil }
+        for handle in orderedHandles.reversed() where handle.frame.contains(local) {
+            return handle
+        }
+        return nil
     }
 }
 
@@ -104,6 +165,7 @@ private final class FloatingPaneResizeHandleNSView: NSView {
         setAccessibilityRole(.handle)
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is unavailable")
     }
@@ -144,37 +206,5 @@ private final class FloatingPaneResizeHandleNSView: NSView {
         if shouldCommit {
             onResizeCommit?()
         }
-    }
-}
-
-private struct FloatingPaneResizeHandleStrip: NSViewRepresentable {
-    let edge: FloatingPaneResizeEdge
-    let identifier: String
-    let paneRect: CGRect
-    let workArea: CGRect
-    let onActivate: () -> Void
-    let onResizeMove: (CGRect) -> Void
-    let onResizeCommit: () -> Void
-
-    func makeNSView(context: Context) -> FloatingPaneResizeHandleNSView {
-        let view = FloatingPaneResizeHandleNSView(frame: .zero)
-        configure(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: FloatingPaneResizeHandleNSView, context: Context) {
-        configure(nsView)
-    }
-
-    private func configure(_ view: FloatingPaneResizeHandleNSView) {
-        view.setAccessibilityIdentifier(identifier)
-        view.setAccessibilityLabel("Resize \(edge.rawValue)")
-        view.edge = edge
-        view.paneRect = paneRect
-        view.workArea = workArea
-        view.onActivate = onActivate
-        view.onResizeMove = onResizeMove
-        view.onResizeCommit = onResizeCommit
-        view.window?.invalidateCursorRects(for: view)
     }
 }

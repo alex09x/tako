@@ -34,8 +34,9 @@ class BaseTerminalController: NSWindowController,
                 floatingCanvas.bringToFront(focusedSurface.id)
             }
             syncFocusToSurfaceTree()
-            if !updatingFocusedSurfaceFromDelegate, usesFloatingCanvas, focusedSurface !== oldValue {
-                bindFocusedSurfaceSubscriptions(previous: oldValue)
+            if usesFloatingCanvas, focusedSurface !== oldValue {
+                objectWillChange.send()
+                if !updatingFocusedSurfaceFromDelegate { bindFocusedSurfaceSubscriptions(previous: oldValue) }
             }
             if let focusedSurface, focusedSurface != oldValue {
                 focusedSurface.publishEvent(type: "pane_focused", payload: [:])

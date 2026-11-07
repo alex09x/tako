@@ -115,7 +115,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             ZStack {
                 HStack(spacing: 0) {
                     if viewModel.sessionSidebarIsShowing {
-                        let activeSidebarSurface = [focusedSurface, lastFocusedSurface?.value]
+                        let controllerFocused = (viewModel as? BaseTerminalController).flatMap { $0.usesFloatingCanvas ? $0.focusedSurface : nil }
+                        let activeSidebarSurface = [controllerFocused, focusedSurface, lastFocusedSurface?.value]
                             .compactMap { $0 }
                             .first(where: { viewModel.surfaceTree.contains($0) })
                             ?? viewModel.surfaceTree.first(where: { _ in true })
@@ -223,6 +224,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     /// closures during a live view update cycle, which a plain `view.body`
     /// construction in a test host never triggers.
     func handleFocusedSurfaceChange(_ newValue: Tako.SurfaceView?) {
+        if let base = viewModel as? BaseTerminalController, base.usesFloatingCanvas {
+            return
+        }
         // We want to keep track of our last focused surface so even if
         // we lose focus we keep this set to the last non-nil value.
         guard newValue != nil else { return }
