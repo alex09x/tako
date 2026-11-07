@@ -27,18 +27,14 @@ final class TerminalProgramStatusSDKTests: XCTestCase {
     func testHeadlessSessionCapabilityAndDA1PreserveFIFOAndSinglePathExclusivity() {
         let session = TerminalHeadlessSession(cols: 80, rows: 24, deliveryDispatch: { $0() })
         defer { session.shutDown() }
-
         var classifiedBatches: [TerminalClassifiedReplyBatch] = []
         var legacyBytes = Data()
         session.onClassifiedReplies = { classifiedBatches.append($0) }
         session.onDeviceReplyData = { legacyBytes.append($0) }
-
         let stream = Data("\u{1b}]7501;?\u{1b}\\\u{1b}[c".utf8)
         session.feedSynchronously(stream)
-
         XCTAssertEqual(classifiedBatches.count, 1)
         XCTAssertTrue(legacyBytes.isEmpty, "onDeviceReplyData must never fire when onClassifiedReplies is installed")
-
         let batch = classifiedBatches[0]
         XCTAssertFalse(batch.hasOverflowLoss)
         XCTAssertEqual(batch.replies.map(\.replyClass), [.programStatusCapability, .standardDevice])
@@ -59,10 +55,8 @@ final class TerminalProgramStatusSDKTests: XCTestCase {
         let view = TakoTerminalNSView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
         let delegate = MockTerminalNSViewDelegate()
         view.delegate = delegate
-
         var classifiedBatches: [TerminalClassifiedReplyBatch] = []
         view.onClassifiedReplies = { classifiedBatches.append($0) }
-
         view.feed(data: Data("\u{1b}]7501;?\u{1b}\\\u{1b}[c".utf8))
         XCTAssertEqual(classifiedBatches.count, 1)
         XCTAssertEqual(classifiedBatches[0].replies.count, 2)
