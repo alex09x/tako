@@ -24,9 +24,11 @@ fn relocated_adapter(provider: &str, bundle: Option<&str>) -> super::adapter::Ad
         ("StopFailure", "stop_failure"),
         ("SessionEnd", "session_end"),
     ] {
-        adapter.hooks[event][0]["hooks"][0]["command"] = json!(
-            native::dispatcher_command_at(provider, dispatch, bundle.map(std::path::Path::new))
-        );
+        adapter.hooks[event][0]["hooks"][0]["command"] = json!(native::dispatcher_command_at(
+            provider,
+            dispatch,
+            bundle.map(std::path::Path::new)
+        ));
     }
     adapter
 }
@@ -41,7 +43,10 @@ fn relocation_deduplicates_owned_hooks_and_keeps_mixed_siblings() {
         } else {
             path.clone()
         };
-        let old = relocated_adapter(provider, Some("/absent/Tako.app/Contents/Resources/tako-hook.py"));
+        let old = relocated_adapter(
+            provider,
+            Some("/absent/Tako.app/Contents/Resources/tako-hook.py"),
+        );
         transaction::commit(&managed::plan(&old, &path, false).unwrap(), None).unwrap();
         let mut root = value(&hooks_path);
         let owned = root["hooks"]["Stop"][0]["hooks"][0].clone();
@@ -53,7 +58,10 @@ fn relocation_deduplicates_owned_hooks_and_keeps_mixed_siblings() {
         transaction::commit(&managed::plan(&new, &path, false).unwrap(), None).unwrap();
         let root = value(&hooks_path);
         assert_eq!(root["hooks"]["Stop"][0]["note"], "keep mixed metadata");
-        assert_eq!(root["hooks"]["Stop"][0]["hooks"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            root["hooks"]["Stop"][0]["hooks"].as_array().unwrap().len(),
+            2
+        );
         assert_eq!(root["hooks"]["Stop"][0]["hooks"][1], unknown);
         transaction::commit(&managed::plan(&old, &path, true).unwrap(), None).unwrap();
         let root = value(&hooks_path);
@@ -67,7 +75,10 @@ fn relocation_failure_restores_receipts_configs_and_backups() {
     for provider in ["qwen", "muse"] {
         let f = Fixture::new();
         let path = f.settings();
-        let old = relocated_adapter(provider, Some("/absent/Old.app/Contents/Resources/tako-hook.py"));
+        let old = relocated_adapter(
+            provider,
+            Some("/absent/Old.app/Contents/Resources/tako-hook.py"),
+        );
         transaction::commit(&managed::plan(&old, &path, false).unwrap(), None).unwrap();
         let new = relocated_adapter(provider, None);
         let plan = managed::plan(&new, &path, false).unwrap();
@@ -83,7 +94,10 @@ fn relocation_failure_restores_receipts_configs_and_backups() {
 #[test]
 fn legacy_generated_templates_are_owned_without_a_receipt_or_old_app() {
     for provider in ["qwen", "muse"] {
-        let old = relocated_adapter(provider, Some("/absent/Old 'Tako.app/Contents/Resources/tako-hook.py"));
+        let old = relocated_adapter(
+            provider,
+            Some("/absent/Old 'Tako.app/Contents/Resources/tako-hook.py"),
+        );
         let new = relocated_adapter(provider, None);
         let generated = old.apply_hooks("{}").unwrap();
         let upgraded = new.apply_hooks(&generated).unwrap();
@@ -119,10 +133,15 @@ fn native_receipts_follow_bundle_moves_and_standalone_switches() {
         }]}});
         fs::write(&hooks_path, initial.to_string()).unwrap();
         if provider == "muse" {
-            fs::write(&path, json!({
-                "schema_version":1, "managed_hooks_path":"custom-hooks.json",
-                "managed_hooks_env_vars":["USER_KEEP"], "theme":"dark"
-            }).to_string()).unwrap();
+            fs::write(
+                &path,
+                json!({
+                    "schema_version":1, "managed_hooks_path":"custom-hooks.json",
+                    "managed_hooks_env_vars":["USER_KEEP"], "theme":"dark"
+                })
+                .to_string(),
+            )
+            .unwrap();
         }
         let locations = [
             Some("/missing/First Tako.app/Contents/Resources/tako-hook.py"),
@@ -139,11 +158,18 @@ fn native_receipts_follow_bundle_moves_and_standalone_switches() {
             let root = value(&hooks_path);
             for (event, template) in adapter.hooks.as_object().unwrap() {
                 let expected = &template[0]["hooks"][0]["command"];
-                let count = root["hooks"][event].as_array().unwrap().iter()
+                let count = root["hooks"][event]
+                    .as_array()
+                    .unwrap()
+                    .iter()
                     .flat_map(|group| group["hooks"].as_array().unwrap())
-                    .filter(|hook| &hook["command"] == expected).count();
+                    .filter(|hook| &hook["command"] == expected)
+                    .count();
                 assert_eq!(count, 1, "{provider} {event}");
-                assert_eq!(root["hooks"][event].as_array().unwrap().len(), if event == "Stop" { 2 } else { 1 });
+                assert_eq!(
+                    root["hooks"][event].as_array().unwrap().len(),
+                    if event == "Stop" { 2 } else { 1 }
+                );
             }
             assert_eq!(root["hooks"]["Stop"][0]["note"], "keep group metadata");
         }

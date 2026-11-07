@@ -144,8 +144,11 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
     if adapter.name == "qwen" {
         let receipt_path = super::ownership::qwen_receipt_path(&path);
         let prior = transaction::read(&receipt_path)?;
-        let prior = prior.as_deref().map(serde_json::from_str::<Value>)
-            .transpose().map_err(|e| format!("invalid Qwen ownership receipt: {e}"))?;
+        let prior = prior
+            .as_deref()
+            .map(serde_json::from_str::<Value>)
+            .transpose()
+            .map_err(|e| format!("invalid Qwen ownership receipt: {e}"))?;
         let input = super::ownership::relocate(adapter, &settings, prior.as_ref())?;
         let after = if remove {
             adapter.remove_hooks(&input)?
@@ -155,9 +158,14 @@ pub fn plan(adapter: &Adapter, path: &Path, remove: bool) -> Result<Vec<Change>,
         return with_backups(
             vec![
                 Change::new(path, preserved(&original, after))?,
-                Change::secure(receipt_path, if remove { None } else {
-                    Some(encode(&adapter.hooks))
-                })?,
+                Change::secure(
+                    receipt_path,
+                    if remove {
+                        None
+                    } else {
+                        Some(encode(&adapter.hooks))
+                    },
+                )?,
             ],
             remove,
         );

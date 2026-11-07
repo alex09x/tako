@@ -26,12 +26,20 @@ pub fn is_receipt(path: &Path) -> bool {
 pub fn relocate(adapter: &Adapter, root: &Value, prior: Option<&Value>) -> Result<String, String> {
     let mut root = root.clone();
     if let Some(prior) = prior {
-        let prior = prior.as_object().ok_or("invalid dispatcher ownership receipt")?;
-        if let Some(events) = root.get_mut(&adapter.hook_field).and_then(Value::as_object_mut) {
+        let prior = prior
+            .as_object()
+            .ok_or("invalid dispatcher ownership receipt")?;
+        if let Some(events) = root
+            .get_mut(&adapter.hook_field)
+            .and_then(Value::as_object_mut)
+        {
             for (event, template) in adapter.hooks.as_object().unwrap() {
                 let replacement = &template[0]["hooks"][0]["command"];
-                let Some(old) = prior.get(event) else { continue };
-                let old = old[0]["hooks"][0]["command"].as_str()
+                let Some(old) = prior.get(event) else {
+                    continue;
+                };
+                let old = old[0]["hooks"][0]["command"]
+                    .as_str()
                     .ok_or("invalid dispatcher ownership receipt command")?;
                 if let Some(groups) = events.get_mut(event).and_then(Value::as_array_mut) {
                     for group in groups {
@@ -51,7 +59,10 @@ pub fn relocate(adapter: &Adapter, root: &Value, prior: Option<&Value>) -> Resul
 }
 
 fn replace(hook: &mut Value, old: &str, replacement: &Value) {
-    if hook.get("type").and_then(Value::as_str).is_none_or(|t| t == "command")
+    if hook
+        .get("type")
+        .and_then(Value::as_str)
+        .is_none_or(|t| t == "command")
         && hook.get("command").and_then(Value::as_str) == Some(old)
     {
         hook["command"] = replacement.clone();

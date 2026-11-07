@@ -44,7 +44,7 @@ pub(super) fn dispatcher_command_at(provider: &str, event: &str, bundled: Option
         return format!(
             "PATH={}:\"$PATH\" /usr/bin/python3 {} {provider} {event}; :",
             quote(&binaries),
-            quote(&path)
+            quote(path)
         );
     }
     format!(
@@ -58,7 +58,9 @@ pub(super) fn dispatcher_command_at(provider: &str, event: &str, bundled: Option
 pub(super) fn generated_command_owned(command: &str, provider: &str) -> bool {
     let bundled = command.strip_prefix("PATH=").and_then(|tail| {
         let (quoted, _) = tail.split_once(":\"$PATH\" /usr/bin/python3 ")?;
-        let decoded = quoted.strip_prefix('\'')?.strip_suffix('\'')?
+        let decoded = quoted
+            .strip_prefix('\'')?
+            .strip_suffix('\'')?
             .replace("'\\''", "'");
         let binaries = PathBuf::from(decoded);
         if !binaries.is_absolute() || binaries.file_name()? != "MacOS" {
@@ -67,11 +69,17 @@ pub(super) fn generated_command_owned(command: &str, provider: &str) -> bool {
         Some(binaries.parent()?.join("Resources/tako-hook.py"))
     });
     [
-        "session_start", "user_prompt_submit", "permission_request", "question",
-        "post_tool_use", "stop", "stop_failure", "session_end",
-    ].iter().any(|event| {
-        command == dispatcher_command_at(provider, event, bundled.as_deref())
-    })
+        "session_start",
+        "user_prompt_submit",
+        "permission_request",
+        "question",
+        "post_tool_use",
+        "stop",
+        "stop_failure",
+        "session_end",
+    ]
+    .iter()
+    .any(|event| command == dispatcher_command_at(provider, event, bundled.as_deref()))
 }
 
 pub fn adapter(provider: &str) -> Adapter {
