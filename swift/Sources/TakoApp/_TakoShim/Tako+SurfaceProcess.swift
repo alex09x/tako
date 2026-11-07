@@ -186,8 +186,7 @@ extension Tako.SurfaceView {
                                 }
                                 self.publishEvent(type: "cwd", payload: ["cwd": .string(self.pwd ?? url)])
                             case .titleChanged(let title):
-                                self.title = title
-                                self.onTitleChange?(self)
+                                self.applyTerminalTitle(title)
                                 self.publishEvent(type: "title", payload: ["title": .string(title)])
                             case .clipboardSet(let text):
                                 NSPasteboard.general.clearContents()

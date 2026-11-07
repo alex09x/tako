@@ -74,7 +74,7 @@ extension Tako.SurfaceView {
             // stale after e.g. `cd`ing to a new directory until something
             // else -- switching tabs, resizing -- forced a repaint.
             onTitleChange = { (_: Tako.SurfaceView) in
-                Tako.TabBarController.refreshAll()
+                Tako.TabBarController.requestRefresh()
             }
 
             if let program {
@@ -115,6 +115,14 @@ extension Tako.SurfaceView {
 
             // Cursor blinking is the inherited surface's, driven by its own
             // display link and suppressed inside a Synchronized Output frame.
+        }
+
+        /// Programs may repeat OSC titles on every repaint. Keep protocol
+        /// events intact, but publish UI state only when its value changes.
+        func applyTerminalTitle(_ value: String) {
+            guard title != value else { return }
+            title = value
+            onTitleChange?(self)
         }
 
         /// Starts the terminal's process and the loop that reads it: the

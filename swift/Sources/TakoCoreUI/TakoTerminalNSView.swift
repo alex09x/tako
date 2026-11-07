@@ -172,7 +172,7 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     public internal(set) var cols: Int = 80
     public internal(set) var rows: Int = 24
     public var title: String = "" {
-        didSet { titleDidChange() }
+        didSet { if title != oldValue { titleDidChange() } }
     }
     open func titleDidChange() {}
     open var workingDirectory: String?

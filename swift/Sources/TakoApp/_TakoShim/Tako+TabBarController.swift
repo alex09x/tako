@@ -27,6 +27,11 @@ extension Tako {
 
         private static var installed: [ObjectIdentifier: TabBarView] = [:]
         private static var monitor: Any?
+        private static let refreshRequests = TabBarRefreshCoalescer { refreshAll() }
+
+        /// Title bursts need at most one chrome layout per display frame.
+        /// Explicit navigation/layout changes still use synchronous refreshAll.
+        static func requestRefresh() { refreshRequests.request() }
 
         static func bar(for window: NSWindow) -> TabBarView? {
             installed[ObjectIdentifier(window)]
