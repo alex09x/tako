@@ -91,7 +91,7 @@ struct SetupAgentServiceTests {
         let statuses = await SetupAgentService.connect(
             ids: ["claude", "claude", "unknown"], baseDir: home.path, runner: { try await fake.run($0) }
         )
-        #expect(statuses.map(\.id) == ["antigravity", "gemini", "claude", "codex"])
+        #expect(statuses.map(\.id) == ["antigravity", "gemini", "claude", "codex", "qwen", "muse"])
         let claude = try #require(statuses.first { $0.id == "claude" })
         #expect(claude.isDetected && claude.hooksInstalled && claude.skillInstalled && claude.isReady)
         #expect(claude.detail == nil)

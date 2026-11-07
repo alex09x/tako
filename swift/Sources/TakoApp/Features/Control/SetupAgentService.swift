@@ -39,6 +39,7 @@ enum SetupAgentService {
     private static let agents = [
         ("antigravity", "Antigravity"), ("gemini", "Gemini CLI"),
         ("claude", "Claude Code"), ("codex", "Codex CLI"),
+        ("qwen", "Qwen Code"), ("muse", "Muse Code"),
     ]
 
     private struct Skill: Decodable {
@@ -52,7 +53,7 @@ enum SetupAgentService {
         baseDir: String? = nil, executableURL: URL? = nil, runner: Runner = { try await SetupAgentService.run($0) }
     ) async -> [Status] {
         let base = AgentHooksTool.resolvedBaseDir(baseDir)
-        let detected = AgentHooksTool.detectAgents(baseDir: base)
+        let detected = AgentHooksTool.detectAgents(baseDir: base, checkNativeStatus: false)
         var skills: [String: Skill] = [:]
         var failure: String?
         let result = await execute(
@@ -69,11 +70,20 @@ enum SetupAgentService {
         } else {
             failure = "Skill status returned malformed JSON."
         }
+        var nativeHooks: [String: Bool] = [:]
+        for id in ["qwen", "muse"] where detected.contains(where: { $0.id == id }) {
+            let result = await execute(nativeHookArguments("status", id: id, baseDir: base),
+                                       baseDir: base, executableURL: executableURL, runner: runner)
+            nativeHooks[id] = nativeHooksInstalled(result, id: id, baseDir: base)
+        }
         return agents.map { id, name in
             let agent = detected.first { $0.id == id }
-            let hooks = agent?.isConfigured ?? false
+            let hooks = nativeHooks[id] ?? (agent?.isConfigured ?? false)
             let skill = skills[adapter(id)]
             var installed = skill?.installed ?? false
+            if ["qwen", "muse"].contains(id) {
+                installed = installed && skill?.skill_path == nativeRoot(id, baseDir: base) + "/skills/tako/SKILL.md"
+            }
             // Status has no path override and resolves ~/.codex, not CODEX_HOME.
             if id == "codex", let path = customCodexSkill(baseDir: base), skill != nil {
                 installed = isSkillInstalled(at: path)
@@ -102,9 +112,20 @@ enum SetupAgentService {
                 continue
             }
             if !agent.hooksInstalled {
-                let report = AgentHooksTool.installHooks(for: [agent.id], baseDir: base, includeSkills: false)
-                guard report.failed.isEmpty,
-                      AgentHooksTool.detectAgents(baseDir: base).first(where: { $0.id == agent.id })?.isConfigured == true else {
+                let succeeded: Bool
+                if ["qwen", "muse"].contains(agent.id) {
+                    let install = await execute(nativeHookArguments("install", id: agent.id, baseDir: base),
+                                                baseDir: base, executableURL: executableURL, runner: runner)
+                    let check = await execute(nativeHookArguments("status", id: agent.id, baseDir: base),
+                                              baseDir: base, executableURL: executableURL, runner: runner)
+                    succeeded = install.failure == nil && install.exitCode == 0
+                        && nativeHooksInstalled(check, id: agent.id, baseDir: base)
+                } else {
+                    let report = AgentHooksTool.installHooks(for: [agent.id], baseDir: base, includeSkills: false)
+                    succeeded = report.failed.isEmpty && AgentHooksTool.detectAgents(baseDir: base)
+                        .first(where: { $0.id == agent.id })?.isConfigured == true
+                }
+                guard succeeded else {
                     failures[agent.id] = "Required Tako hooks could not be installed."
                     hookFailures.insert(agent.id)
                     continue
@@ -113,6 +134,9 @@ enum SetupAgentService {
             let target = adapter(agent.id)
             if !agent.skillInstalled && !installedAdapters.contains(target) {
                 var arguments = ["skills", "install", target, "--yes", "--json"]
+                if ["qwen", "muse"].contains(agent.id) {
+                    arguments += ["--skill-path", nativeRoot(agent.id, baseDir: base) + "/skills/tako/SKILL.md"]
+                }
                 if agent.id == "codex", let path = customCodexSkill(baseDir: base) {
                     arguments += ["--skill-path", path]
                 }
@@ -163,6 +187,7 @@ enum SetupAgentService {
         if let baseDir {
             environment["HOME"] = baseDir
             environment.removeValue(forKey: "CODEX_HOME")
+            environment.removeValue(forKey: "XDG_CONFIG_HOME")
         }
         let executable = executableURL ?? Bundle.main.executableURL?
             .deletingLastPathComponent().appendingPathComponent("takoctl")
@@ -180,7 +205,7 @@ enum SetupAgentService {
         await Task.detached(priority: .utility) { runBlocking(command) }.value
     }
 
-    nonisolated private static func runBlocking(_ command: Command) -> CommandResult {
+    nonisolated static func runBlocking(_ command: Command) -> CommandResult {
         guard let executable = command.executable,
               FileManager.default.isExecutableFile(atPath: executable.path) else {
             return CommandResult(failure: "The bundled takoctl executable is missing or not executable.")

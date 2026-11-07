@@ -22,6 +22,6 @@ struct SetupAgentIconTests {
             let data = try #require(image.tiffRepresentation)
             representations.insert(data)
         }
-        #expect(representations.count == 4)
+        #expect(representations.count == 6)
     }
 }

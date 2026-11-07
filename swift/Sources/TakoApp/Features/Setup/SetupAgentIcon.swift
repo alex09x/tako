@@ -17,6 +17,8 @@ public enum SetupAgentProvider: String, CaseIterable, Identifiable, Sendable {
     case gemini
     case claude
     case codex
+    case qwen
+    case muse
 
     public var id: String { rawValue }
 
@@ -26,6 +28,8 @@ public enum SetupAgentProvider: String, CaseIterable, Identifiable, Sendable {
         case .gemini: return "Gemini CLI"
         case .claude: return "Claude Code"
         case .codex: return "Codex CLI"
+        case .qwen: return "Qwen Code"
+        case .muse: return "Muse Code"
         }
     }
 
@@ -35,11 +39,14 @@ public enum SetupAgentProvider: String, CaseIterable, Identifiable, Sendable {
         case .gemini: return "AgentGemini"
         case .claude: return "AgentClaude"
         case .codex: return "AgentCodex"
+        case .qwen: return "AgentQwen"
+        case .muse: return "AgentMuse"
         }
     }
 
     public var bundleIdentifiers: [String] {
         switch self {
+        case .qwen, .muse: return []
         case .antigravity:
             return ["com.google.antigravity", "com.google.Antigravity", "antigravity"]
         case .gemini:
@@ -57,6 +64,7 @@ public enum SetupAgentProvider: String, CaseIterable, Identifiable, Sendable {
         case .gemini: return ["Gemini.app", "Google Gemini.app"]
         case .claude: return ["Claude.app", "Claude for Desktop.app"]
         case .codex: return ["ChatGPT.app", "Codex.app", "OpenAI Codex.app"]
+        case .qwen, .muse: return []
         }
     }
 
@@ -66,6 +74,8 @@ public enum SetupAgentProvider: String, CaseIterable, Identifiable, Sendable {
         if lower.contains("antigravity") || lower == "agy" { return .antigravity }
         if lower.contains("gemini") { return .gemini }
         if lower.contains("claude") { return .claude }
+        if lower.contains("qwen") { return .qwen }
+        if lower.contains("muse") { return .muse }
         if lower.contains("codex") || lower.contains("chatgpt") || lower.contains("openai") { return .codex }
         return nil
     }
@@ -166,6 +176,8 @@ public enum SetupAgentIconResolver {
         let bgPath = CGPath(roundedRect: insetRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
 
         switch provider {
+        case .qwen, .muse:
+            drawNativeGlyph(provider: provider, in: rect, context: context)
         case .antigravity:
             context.addPath(bgPath)
             context.setFillColor(red: 0.14, green: 0.17, blue: 0.38, alpha: 1.0)

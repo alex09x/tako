@@ -17,7 +17,6 @@ import Foundation
 @MainActor
 enum AgentHooksTool {
     static let declinedKey = "TakoAgentHooksInstallDeclined"
-
     struct AgentInfo: Identifiable, Sendable {
         let id: String
         let name: String
@@ -63,7 +62,7 @@ enum AgentHooksTool {
     }
 
     /// Checks which agents exist on the host and whether Tako hooks are configured.
-    static func detectAgents(baseDir: String? = nil) -> [AgentInfo] {
+    static func detectAgents(baseDir: String? = nil, checkNativeStatus: Bool = true) -> [AgentInfo] {
         let fm = FileManager.default
         let effectiveBase = resolvedBaseDir(baseDir)
         let home = effectiveBase ?? fm.homeDirectoryForCurrentUser.path
@@ -107,6 +106,15 @@ enum AgentHooksTool {
         }
         if codexInstalled {
             list.append(AgentInfo(id: "codex", name: "Codex CLI", isDetected: true, isConfigured: codexConfigured))
+        }
+        for (id, name) in [("qwen", "Qwen Code"), ("muse", "Muse Code")] {
+            let root = SetupAgentService.nativeRoot(id, baseDir: effectiveBase)
+            var isDirectory: ObjCBool = false
+            let exists = fm.fileExists(atPath: root, isDirectory: &isDirectory) && isDirectory.boolValue
+            if exists || (effectiveBase == nil && (binaryExists(id) || SetupAgentService.nativeExecutableExists(id))) {
+                list.append(AgentInfo(id: id, name: name, isDetected: true,
+                                      isConfigured: checkNativeStatus && SetupAgentService.nativeHookStatus(id, baseDir: effectiveBase)))
+            }
         }
         return list
     }
@@ -231,6 +239,8 @@ enum AgentHooksTool {
                 success = installClaudeHooks(baseDir: baseDir)
             case "codex":
                 success = installCodexHooks(baseDir: baseDir)
+            case "qwen", "muse":
+                success = SetupAgentService.installNativeHooks(agent.id, baseDir: resolvedBaseDir(baseDir))
             default:
                 success = false
             }
@@ -246,7 +256,10 @@ enum AgentHooksTool {
             }
         }
         // An agent that is hooked but never told about Tako cannot use it: the skill goes in with the hooks.
-        if includeSkills && baseDir == nil { installSkills(for: targets.map(\.id)) }
+        if includeSkills {
+            for id in targets.map(\.id) where ["qwen", "muse"].contains(id) { SetupAgentService.installNativeSkill(id, baseDir: resolvedBaseDir(baseDir)) }
+            if baseDir == nil { installSkills(for: targets.map(\.id).filter { !["qwen", "muse"].contains($0) }) }
+        }
         return report
     }
 
@@ -256,6 +269,7 @@ enum AgentHooksTool {
         let ctl = dir.appendingPathComponent("takoctl")
         guard FileManager.default.isExecutableFile(atPath: ctl.path) else { return }
         for id in agentIds {
+            if ["qwen", "muse"].contains(id) { SetupAgentService.installNativeSkill(id, baseDir: resolvedBaseDir(nil)); continue }
             let process = Process()
             process.executableURL = ctl
             process.arguments = ["skills", "install", id == "antigravity" ? "gemini" : id, "--yes"]
@@ -266,7 +280,7 @@ enum AgentHooksTool {
         }
     }
 
-    /// At launch: offers to connect detected AI coding agents if any are unconfigured
+    /// Offers to connect detected AI coding agents if any are unconfigured
     /// using Tako's signature in-terminal TUI dialog (`TerminalDialogView`).
     static func offerAtLaunch(
         theme: TerminalTheme?,
