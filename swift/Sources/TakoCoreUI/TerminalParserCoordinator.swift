@@ -56,6 +56,18 @@ final class TerminalParserCoordinator: @unchecked Sendable {
     let serializeConcurrentApplication: Bool
     let applicationCondition = NSCondition()
     var activeApplicationThread: Thread?
+    var deferredReentrantUnboundedDrain = false
+    var deferredReentrantHoldingToken = false
+    var deferredReentrantBoundaries: [any BarrierPublication] = []
+
+    func reclassifyMidRunSuppressedOutcome() {
+        lock.lock()
+        if outcomesApplied > 0 {
+            outcomesApplied -= 1
+        }
+        outcomesSuppressed += 1
+        lock.unlock()
+    }
 
     init(
         core: TakoCore,

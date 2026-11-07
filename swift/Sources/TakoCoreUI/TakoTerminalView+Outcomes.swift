@@ -105,9 +105,14 @@ extension TakoTerminalView {
     func apply(_ outcomes: [FfiFeedOutcome]) {
         var totalDamage = false
         for outcome in outcomes {
+            guard outcome.epoch == core.stateEpoch() else {
+                parserCoordinator.reclassifyMidRunSuppressedOutcome()
+                continue
+            }
             deliverFeedReplies(outcome)
 
             for event in outcome.events {
+                guard outcome.epoch == core.stateEpoch() else { break }
                 switch event {
                 case .titleChanged(let title):
                     TakoLog.feed.info("title → \"\(title)\"")
@@ -140,6 +145,7 @@ extension TakoTerminalView {
                     break
                 }
             }
+            guard outcome.epoch == core.stateEpoch() else { continue }
             if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
                 let snapshot = TerminalProgramStatusSnapshot(ffi: ffiResync)
                 delegate?.terminalView(

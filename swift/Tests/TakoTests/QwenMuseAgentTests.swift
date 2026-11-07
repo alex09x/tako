@@ -163,11 +163,12 @@ struct QwenMuseAgentTests {
         let base = try home()
         defer { try? FileManager.default.removeItem(at: base) }
 
-        // 1. Exact 507 Qwen PATH=... python wrapper + sidecar .tako-qwen-receipt
+        // 1. Exact 507 Qwen PATH=... python wrapper + sidecar .tako-qwen-receipt + user disableAllHooks=false
         let qwenSettings = base.appendingPathComponent(".qwen/settings.json")
         let qwenReceipt = base.appendingPathComponent(".qwen/settings.json.tako-qwen-receipt")
         let qwenCmd = #"PATH='/Applications/Tako.app/Contents/MacOS':"$PATH" /usr/bin/python3 '/Applications/Tako.app/Contents/Resources/tako-hook.py' qwen user_prompt_submit; :"#
         let qwenJSON: [String: Any] = [
+            "disableAllHooks": false,
             "hooks": [
                 "UserPromptSubmit": [
                     [
@@ -233,6 +234,8 @@ struct QwenMuseAgentTests {
         ]
         try JSONSerialization.data(withJSONObject: claudeJSON, options: [.prettyPrinted]).write(to: claudeSettings)
 
+        let claudeRawBefore = try Data(contentsOf: claudeSettings)
+
         #expect(AgentHooksTool.hasLegacyOwnedStatusHooks(for: "qwen", baseDir: base.path))
         #expect(AgentHooksTool.hasLegacyOwnedStatusHooks(for: "muse", baseDir: base.path))
         #expect(!AgentHooksTool.hasLegacyOwnedStatusHooks(for: "claude", baseDir: base.path))
@@ -251,10 +254,27 @@ struct QwenMuseAgentTests {
         #expect(!FileManager.default.fileExists(atPath: museManaged.path))
 
         let qwenAfter = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: qwenSettings)) as? [String: Any])
-        #expect(qwenAfter["disableAllHooks"] == nil)
+        #expect(qwenAfter["disableAllHooks"] as? Bool == false)
         let qwenAfterText = try String(contentsOf: qwenSettings, encoding: .utf8)
         #expect(qwenAfterText.contains("echo keep-qwen-user"))
         #expect(!qwenAfterText.contains("tako-hook.py"))
+
+        // Also verify disableAllHooks=false is preserved when Tako owned the ONLY hook in Qwen settings.json.
+        let qwenOnlyTako: [String: Any] = [
+            "disableAllHooks": false,
+            "hooks": [
+                "UserPromptSubmit": [
+                    ["matcher": "*", "hooks": [["type": "command", "command": qwenCmd, "timeout": 5]]]
+                ]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: qwenOnlyTako, options: [.prettyPrinted]).write(to: qwenSettings)
+        #expect(AgentHooksTool.cleanupLegacyStatusHooks(for: "qwen", baseDir: base.path))
+        let qwenEmptyHooksAfter = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: qwenSettings)) as? [String: Any]
+        )
+        #expect(qwenEmptyHooksAfter["hooks"] == nil)
+        #expect(qwenEmptyHooksAfter["disableAllHooks"] as? Bool == false)
 
         let museAfter = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: museSettings)) as? [String: Any])
         #expect(museAfter["managed_hooks_path"] == nil)
@@ -262,6 +282,8 @@ struct QwenMuseAgentTests {
         #expect(museAfter["managed_hooks_env_vars"] as? [String] == ["CUSTOM_ENV"])
 
         #expect(AgentHooksTool.cleanupLegacyStatusHooks(for: "claude", baseDir: base.path))
+        #expect(try Data(contentsOf: claudeSettings) == claudeRawBefore)
+        #expect(!FileManager.default.fileExists(atPath: claudeSettings.path + ".tako-bak"))
         let claudeAfter = try #require(
             try JSONSerialization.jsonObject(with: Data(contentsOf: claudeSettings)) as? [String: Any]
         )

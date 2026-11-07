@@ -127,9 +127,14 @@ extension TakoTerminalNSView {
         var totalDamage = false
         var commandStatusChanged = false
         for outcome in outcomes {
+            guard outcome.epoch == core.stateEpoch() else {
+                parserCoordinator.reclassifyMidRunSuppressedOutcome()
+                continue
+            }
             deliverFeedReplies(outcome)
 
             for event in outcome.events {
+                guard outcome.epoch == core.stateEpoch() else { break }
                 switch event {
                 case .titleChanged(let title):
                     self.title = title
@@ -273,6 +278,7 @@ extension TakoTerminalNSView {
                     break
                 }
             }
+            guard outcome.epoch == core.stateEpoch() else { continue }
             if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
                 let snapshot = TerminalProgramStatusSnapshot(ffi: ffiResync)
                 deliveredOsc7501Active = snapshot.osc7501Active

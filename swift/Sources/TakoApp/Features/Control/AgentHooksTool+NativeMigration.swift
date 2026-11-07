@@ -215,7 +215,6 @@ extension AgentHooksTool {
             || isSymbolicLink(atPath: path + ".tako-bak")
             || isSymbolicLink(atPath: path + ".tako-new") { return false }
         var extraCommands: Set<String> = []
-        var receiptAddedDisableFalse = false
         if let sidecar = sidecarReceiptPath(for: agentId, settingsPath: path) {
             if isSymbolicLink(atPath: sidecar) { return false }
             if fm.fileExists(atPath: sidecar) {
@@ -224,18 +223,13 @@ extension AgentHooksTool {
                     return false
                 }
                 extraCommands = extractReceiptOwnedCommands(from: rJson)
-                receiptAddedDisableFalse = (rJson["added_disable_false"] as? Bool) == true
             }
         }
         if fm.fileExists(atPath: path) {
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   validateHookContainerStructure(root, agent: agentId) else { return false }
-            var (cleaned, removedAny) = stripOwnedHooks(from: root, agent: agentId, extraExactCommands: extraCommands)
-            if receiptAddedDisableFalse, (cleaned["disableAllHooks"] as? Bool) == false {
-                cleaned.removeValue(forKey: "disableAllHooks")
-                removedAny = true
-            }
+            let (cleaned, removedAny) = stripOwnedHooks(from: root, agent: agentId, extraExactCommands: extraCommands)
             if removedAny {
                 let markerPath = path + ".tako-new"
                 if cleaned.isEmpty && fm.fileExists(atPath: markerPath) {
@@ -326,14 +320,6 @@ extension AgentHooksTool {
         }
         if hooks.isEmpty {
             updatedRoot.removeValue(forKey: "hooks")
-            if ["qwen", "muse"].contains(agent) {
-                if (updatedRoot["allowManagedHooksOnly"] as? Bool) == false {
-                    updatedRoot.removeValue(forKey: "allowManagedHooksOnly")
-                }
-                if (updatedRoot["disableAllHooks"] as? Bool) == false {
-                    updatedRoot.removeValue(forKey: "disableAllHooks")
-                }
-            }
         } else {
             updatedRoot["hooks"] = hooks
         }

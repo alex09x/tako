@@ -196,20 +196,22 @@ fn qwen_and_muse_legacy_hooks_and_receipts_are_cleaned_via_public_install_and_un
     let qwen_cfg = dir.0.join("qwen-settings.json");
     fs::write(
         &qwen_cfg,
-        r#"{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"user-qwen-hook"}]}]}}"#,
+        r#"{"disableAllHooks":false,"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"user-qwen-hook"}]}]}}"#,
     )
     .unwrap();
     let qwen = native::adapter("qwen");
     managed::run(&qwen, &qwen_cfg, false, true, false, true).unwrap();
     assert!(qwen.is_installed(&qwen_cfg));
 
-    // Public `install("qwen", ...)` now migrates legacy Qwen hooks + receipt away!
+    // Public `install("qwen", ...)` now migrates legacy Qwen hooks + receipt away while preserving user keys!
     install("qwen", Some(qwen_cfg.to_str().unwrap()), true, false, true).unwrap();
     assert!(!qwen.is_installed(&qwen_cfg));
     assert!(!super::ownership::qwen_receipt_path(&qwen_cfg).exists());
     let qwen_after = fs::read_to_string(&qwen_cfg).unwrap();
     assert!(qwen_after.contains("user-qwen-hook"));
     assert!(!qwen_after.contains("tako-hook"));
+    let qwen_after_json: Value = serde_json::from_str(&qwen_after).unwrap();
+    assert_eq!(qwen_after_json["disableAllHooks"], json!(false));
 
     // Seed legacy Muse install via internal managed::run(remove = false) with custom env var.
     let muse_dir = dir.0.join("muse");
@@ -314,20 +316,8 @@ fn partial_legacy_qwen_and_muse_decline_prompt_preserves_backup_and_files() {
 fn user_modified_inline_takoctl_wrapper_is_preserved_untouched() {
     let dir = TempDir::new("closed-set");
     let claude_cfg = dir.0.join("claude-settings.json");
-    let user_cmd = r#"if [ -n "$TAKO_SOCKET" ] && [ "${#TAKO_SURFACE_ID}" -eq 36 ]; then takoctl status set working --target "$TAKO_SURFACE_ID"; /usr/bin/touch /tmp/user-owned-marker; fi; :"#;
-    let seed = json!({
-        "hooks": {
-            "UserPromptSubmit": [
-                {
-                    "matcher": "",
-                    "hooks": [
-                        {"type": "command", "command": user_cmd}
-                    ]
-                }
-            ]
-        }
-    });
-    fs::write(&claude_cfg, serde_json::to_string_pretty(&seed).unwrap()).unwrap();
+    let raw_with_custom_whitespace = "{\n    \"customFormattingKey\" :  42,\n    \"hooks\": {\n      \"UserPromptSubmit\": [{\"matcher\": \"\", \"hooks\": [{\"type\": \"command\", \"command\": \"if [ -n \\\"$TAKO_SOCKET\\\" ] && [ \\\"${#TAKO_SURFACE_ID}\\\" -eq 36 ]; then takoctl status set working --target \\\"$TAKO_SURFACE_ID\\\"; /usr/bin/touch /tmp/user-owned-marker; fi; :\"}]}]\n    }\n}\n";
+    fs::write(&claude_cfg, raw_with_custom_whitespace).unwrap();
 
     uninstall(
         "claude",
@@ -338,8 +328,12 @@ fn user_modified_inline_takoctl_wrapper_is_preserved_untouched() {
     )
     .unwrap();
     let after = fs::read_to_string(&claude_cfg).unwrap();
+    assert_eq!(
+        after, raw_with_custom_whitespace,
+        "when zero Tako-owned hooks exist, CLI uninstall must not rewrite or reformat the file"
+    );
     assert!(
-        after.contains("/usr/bin/touch /tmp/user-owned-marker"),
-        "user-edited inline takoctl command must never be deleted: {after}"
+        !dir.0.join("claude-settings.json.tako-bak").exists(),
+        "no backup sidecar should be created when no owned hooks are removed"
     );
 }

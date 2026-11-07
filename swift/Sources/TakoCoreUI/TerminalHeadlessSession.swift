@@ -131,6 +131,10 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
         parserCoordinator.enqueue(data)
     }
 
+    /// Feed raw PTY bytes synchronously on `parserQueue`.
+    ///
+    /// If invoked re-entrantly from an active session callback, parsing completes
+    /// before returning while callback delivery is deferred behind the in-flight batch.
     public func feedSynchronously(_ data: Data) {
         parserCoordinator.feedSynchronously(data)
     }
@@ -139,6 +143,10 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
         parserCoordinator.resize(cols: cols, rows: rows)
     }
 
+    /// Replace session state from a checkpoint in stream order.
+    ///
+    /// Retires the previous `stateEpoch()` immediately so any remaining events
+    /// from the retired epoch in an in-flight batch are suppressed.
     @discardableResult
     public func importCheckpoint(_ blob: Data) throws -> TerminalCheckpointRestore {
         try parserCoordinator.importCheckpoint(blob)
@@ -188,9 +196,11 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
     }
 
     private func apply(_ outcomes: [FfiFeedOutcome]) {
-        let currentEpoch = core.stateEpoch()
         for outcome in outcomes {
-            guard outcome.epoch == currentEpoch else { continue }
+            guard outcome.epoch == core.stateEpoch() else {
+                parserCoordinator.reclassifyMidRunSuppressedOutcome()
+                continue
+            }
             let handlers = callbackLock.withLock { () -> (
                 classified: ((TerminalClassifiedReplyBatch) -> Void)?,
                 legacy: ((Data) -> Void)?,
@@ -226,6 +236,7 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
 
             if let statusHandler = handlers.status {
                 for event in outcome.events {
+                    guard outcome.epoch == core.stateEpoch() else { break }
                     if case .programStatusChanged(let ffiUpdate, let ffiSnapshot) = event {
                         statusHandler(
                             .updated(
@@ -235,7 +246,9 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
                         )
                     }
                 }
-                if outcome.statusOverflowCoalesced, let ffiResync = outcome.statusResyncSnapshot {
+                if outcome.epoch == core.stateEpoch(),
+                   outcome.statusOverflowCoalesced,
+                   let ffiResync = outcome.statusResyncSnapshot {
                     statusHandler(
                         .overflowCoalesced(
                             fromRevision: outcome.statusOverflowFromRevision,

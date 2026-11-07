@@ -79,6 +79,7 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
     var reportedStatuses: [(status: String, text: String?)] = []
     var clearStatusCount = 0
     var programStatusEvents: [TerminalProgramStatusEvent] = []
+    var onProgramStatusEvent: ((TakoTerminalNSView, TerminalProgramStatusEvent) -> Void)?
 
     func terminalView(_ view: TakoTerminalNSView, didChangeWorkingDirectory url: String) {
         lastWorkingDirectory = url
@@ -114,6 +115,7 @@ final class MockTerminalNSViewDelegate: TakoTerminalNSViewDelegate {
 
     func terminalView(_ view: TakoTerminalNSView, didUpdateProgramStatus event: TerminalProgramStatusEvent) {
         programStatusEvents.append(event)
+        onProgramStatusEvent?(view, event)
     }
 }
 #endif

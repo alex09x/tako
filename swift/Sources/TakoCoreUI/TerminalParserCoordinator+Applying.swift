@@ -18,11 +18,11 @@ extension TerminalParserCoordinator {
         holdingToken: Bool,
         upTo boundary: (any BarrierPublication)? = nil
     ) {
-        let enteredExclusively = enterApplicationGateIfNeeded()
+        guard enterApplicationGate(holdingToken: holdingToken, upTo: boundary) else {
+            return
+        }
         defer {
-            if enteredExclusively {
-                leaveApplicationGate()
-            }
+            leaveApplicationGate()
         }
 
         lock.lock()
@@ -34,9 +34,11 @@ extension TerminalParserCoordinator {
         lock.unlock()
 
         while true {
+            let stopBeforeBatch = shouldStopAtBoundary(boundary)
+            let holdsEffectiveToken = holdingToken || hasDeferredReentrantHoldingToken()
             lock.lock()
-            if let boundary, boundary.isPublished {
-                let schedule = handOffRemainderLocked(holdingToken: holdingToken)
+            if stopBeforeBatch {
+                let schedule = handOffRemainderLocked(holdingToken: holdsEffectiveToken)
                 lock.unlock()
                 if schedule {
                     mainDispatch { [self] in applyPendingOutcomes(holdingToken: true) }
@@ -44,7 +46,7 @@ extension TerminalParserCoordinator {
                 return
             }
             if isShutDown || pendingApplications.isEmpty {
-                if holdingToken { releaseMainApplicationLocked() }
+                if holdsEffectiveToken { releaseMainApplicationLocked() }
                 lock.unlock()
                 return
             }
@@ -52,23 +54,36 @@ extension TerminalParserCoordinator {
             pendingApplications.removeAll(keepingCapacity: true)
             lock.unlock()
 
-            let epoch = core.stateEpoch()
             var run: [FfiFeedOutcome] = []
 
             func flushRun() {
                 guard !run.isEmpty else { return }
-                lock.lock()
-                outcomesApplied += run.count
-                lock.unlock()
-                handler?(run)
+                let liveEpoch = core.stateEpoch()
+                var liveRun: [FfiFeedOutcome] = []
+                liveRun.reserveCapacity(run.count)
+                var droppedInFlush = 0
+                for item in run {
+                    if item.epoch == liveEpoch {
+                        liveRun.append(item)
+                    } else {
+                        droppedInFlush += 1
+                    }
+                }
                 run.removeAll(keepingCapacity: true)
+                lock.lock()
+                outcomesApplied += liveRun.count
+                outcomesSuppressed += droppedInFlush
+                lock.unlock()
+                if !liveRun.isEmpty {
+                    handler?(liveRun)
+                }
             }
 
             var stoppedAtBoundary = false
             for (index, item) in batch.enumerated() {
                 switch item {
                 case .outcome(let outcome):
-                    guard outcome.epoch == epoch else {
+                    guard outcome.epoch == core.stateEpoch() else {
                         lock.lock()
                         outcomesSuppressed += 1
                         lock.unlock()
@@ -93,7 +108,7 @@ extension TerminalParserCoordinator {
                 case .programStatusLifecycle(let event, let itemEpoch, let request):
                     flushRun()
                     request.markPublished()
-                    guard itemEpoch == epoch else {
+                    guard itemEpoch == core.stateEpoch() else {
                         lock.lock()
                         outcomesSuppressed += 1
                         lock.unlock()
@@ -104,14 +119,15 @@ extension TerminalParserCoordinator {
                     }
                 }
 
-                guard let boundary, boundary.isPublished else { continue }
+                guard shouldStopAtBoundary(boundary) else { continue }
                 flushRun()
                 let remainder = batch[batch.index(after: index)...]
+                let holdsTokenNow = holdingToken || hasDeferredReentrantHoldingToken()
                 lock.lock()
                 if !remainder.isEmpty {
                     pendingApplications.insert(contentsOf: remainder, at: 0)
                 }
-                let schedule = handOffRemainderLocked(holdingToken: holdingToken)
+                let schedule = handOffRemainderLocked(holdingToken: holdsTokenNow)
                 lock.unlock()
                 if schedule {
                     mainDispatch { [self] in applyPendingOutcomes(holdingToken: true) }
@@ -149,25 +165,62 @@ extension TerminalParserCoordinator {
         outstandingMainApplications -= 1
     }
 
-    private func enterApplicationGateIfNeeded() -> Bool {
-        guard serializeConcurrentApplication else { return false }
+    private func enterApplicationGate(
+        holdingToken: Bool,
+        upTo boundary: (any BarrierPublication)?
+    ) -> Bool {
         let current = Thread.current
         applicationCondition.lock()
         if activeApplicationThread === current {
+            if let boundary {
+                deferredReentrantBoundaries.append(boundary)
+            } else {
+                deferredReentrantUnboundedDrain = true
+            }
+            if holdingToken {
+                deferredReentrantHoldingToken = true
+            }
             applicationCondition.unlock()
             return false
         }
-        while activeApplicationThread != nil {
-            applicationCondition.wait()
+        if serializeConcurrentApplication {
+            while activeApplicationThread != nil {
+                applicationCondition.wait()
+            }
         }
         activeApplicationThread = current
+        deferredReentrantUnboundedDrain = false
+        deferredReentrantHoldingToken = false
+        deferredReentrantBoundaries.removeAll(keepingCapacity: true)
         applicationCondition.unlock()
         return true
+    }
+
+    private func shouldStopAtBoundary(_ primary: (any BarrierPublication)?) -> Bool {
+        applicationCondition.lock()
+        defer { applicationCondition.unlock() }
+        if deferredReentrantUnboundedDrain {
+            return false
+        }
+        if primary == nil && deferredReentrantBoundaries.isEmpty {
+            return false
+        }
+        let primaryDone = primary?.isPublished ?? true
+        return primaryDone && deferredReentrantBoundaries.allSatisfy(\.isPublished)
+    }
+
+    private func hasDeferredReentrantHoldingToken() -> Bool {
+        applicationCondition.lock()
+        defer { applicationCondition.unlock() }
+        return deferredReentrantHoldingToken
     }
 
     private func leaveApplicationGate() {
         applicationCondition.lock()
         activeApplicationThread = nil
+        deferredReentrantUnboundedDrain = false
+        deferredReentrantHoldingToken = false
+        deferredReentrantBoundaries.removeAll(keepingCapacity: true)
         applicationCondition.broadcast()
         applicationCondition.unlock()
     }
