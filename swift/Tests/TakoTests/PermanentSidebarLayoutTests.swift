@@ -260,4 +260,53 @@ struct PermanentSidebarLayoutTests {
             w3.orderOut(nil)
         }
     }
+
+    @Test func multiWorkspaceSidebarGroupsMarkOnlyActiveWorkspaceForScopedTabIndexing() throws {
+        let previousSystem = TerminalController.system
+        let previousSuppress = Tako.CustomTabGroup.suppressWindowOrderingForTesting
+        TerminalController.system = TerminalTestSupport.injectedWindowSystem()
+        Tako.CustomTabGroup.suppressWindowOrderingForTesting = true
+        defer {
+            TerminalController.system = previousSystem
+            Tako.CustomTabGroup.suppressWindowOrderingForTesting = previousSuppress
+        }
+
+        let defaults = makeDefaults()
+        let store = SessionSidebarStore(defaults: defaults)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-perm-multiws-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let wsStore = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
+        wsStore.resetForTesting()
+
+        let (_, defW1) = TerminalTestSupport.loaded()
+        let (_, defW2) = TerminalTestSupport.loaded()
+        Tako.CustomTabGroup.insert(defW2, into: defW1, at: 1, select: false)
+        wsStore.assignTab(tabIdentifier: defW1.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+        wsStore.assignTab(tabIdentifier: defW2.stableTabIdentifier, to: WorkspaceStore.defaultWorkspaceId)
+
+        let ws2 = wsStore.createWorkspace(name: "Workspace 2")
+        let (_, ws2W1) = TerminalTestSupport.loaded()
+        let (_, ws2W2) = TerminalTestSupport.loaded()
+        Tako.CustomTabGroup.insert(ws2W2, into: ws2W1, at: 1, select: false)
+        wsStore.assignTab(tabIdentifier: ws2W1.stableTabIdentifier, to: ws2.id)
+        wsStore.assignTab(tabIdentifier: ws2W2.stableTabIdentifier, to: ws2.id)
+        #expect(wsStore.switchWorkspace(to: ws2.id))
+
+        defer {
+            for w in [defW1, defW2, ws2W1, ws2W2] {
+                Tako.CustomTabGroup.leave(w)
+                w.orderOut(nil)
+            }
+        }
+
+        let groups = store.workspaceGroups(for: ws2W1, workspaceStore: wsStore)
+        #expect(groups.map(\.name) == ["Default", "Workspace 2"])
+        #expect(groups.map(\.isActive) == [false, true])
+        #expect(groups.allSatisfy { !$0.isCollapsed })
+
+        let activeGroup = try #require(groups.first { $0.isActive })
+        let activeItems = activeGroup.items.filter { !$0.isChild }
+        #expect(activeItems.map(\.tabId) == [ws2W1.stableTabIdentifier, ws2W2.stableTabIdentifier])
+    }
 }

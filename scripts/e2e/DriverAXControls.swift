@@ -170,19 +170,21 @@ extension Driver {
         return matching.last ?? matching.first
     }
 
+    private func axFrame(_ elem: AXUIElement) -> CGRect? {
+        guard let posVal: AXValue = attribute(elem, kAXPositionAttribute),
+              let sizeVal: AXValue = attribute(elem, kAXSizeAttribute) else { return nil }
+        var pos = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(posVal, .cgPoint, &pos)
+        AXValueGetValue(sizeVal, .cgSize, &size)
+        return CGRect(origin: pos, size: size)
+    }
+
     func clickOpenMenuItem(titled title: String) throws {
         guard wait(for: { self.openMenuItem(titled: title) != nil }, timeout: 5) else {
             let allItems = descendants(of: axApp, role: kAXMenuItemRole as String).map { (elem: AXUIElement) -> String in
                 let t: String = self.attribute(elem, kAXTitleAttribute) ?? "nil"
-                var s = CGSize.zero
-                if let sizeVal: AXValue = self.attribute(elem, kAXSizeAttribute) {
-                    AXValueGetValue(sizeVal, .cgSize, &s)
-                }
-                var p = CGPoint.zero
-                if let posVal: AXValue = self.attribute(elem, kAXPositionAttribute) {
-                    AXValueGetValue(posVal, .cgPoint, &p)
-                }
-                return "\(t) (\(s.width)x\(s.height) at \(p.x),\(p.y))"
+                let r = self.axFrame(elem) ?? .zero
+                return "\(t) (\(r.width)x\(r.height) at \(r.origin.x),\(r.origin.y))"
             }
             throw Failure("open menu item '\(title)' not found (found menu items: \(allItems))")
         }
@@ -190,35 +192,21 @@ extension Driver {
             throw Failure("open menu item '\(title)' not found")
         }
         press(item)
-        if let itemPos: AXValue = attribute(item, kAXPositionAttribute),
-           let itemSize: AXValue = attribute(item, kAXSizeAttribute) {
-            var pos = CGPoint.zero
-            var size = CGSize.zero
-            AXValueGetValue(itemPos, .cgPoint, &pos)
-            AXValueGetValue(itemSize, .cgSize, &size)
-            let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-            try? click(at: center)
+        if let f = axFrame(item) {
+            try? click(at: CGPoint(x: f.midX, y: f.midY))
         }
         usleep(500_000)
     }
 
     func clickWorkspacePill(in window: AXUIElement? = nil) throws {
-        if let window {
-            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        }
+        if let window { _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString) }
         guard let bar: AXUIElement = attribute(axApp, kAXMenuBarAttribute) else {
             throw Failure("Workspace menu bar not accessible")
         }
-        for top in (attribute(bar, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
-            let title: String? = attribute(top, kAXTitleAttribute)
-            guard title == "Workspace" else { continue }
-            if let itemPos: AXValue = attribute(top, kAXPositionAttribute),
-               let itemSize: AXValue = attribute(top, kAXSizeAttribute) {
-                var pos = CGPoint.zero
-                var size = CGSize.zero
-                AXValueGetValue(itemPos, .cgPoint, &pos)
-                AXValueGetValue(itemSize, .cgSize, &size)
-                let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
+        for top in (attribute(bar, kAXChildrenAttribute) as [AXUIElement]?) ?? []
+        where (attribute(top, kAXTitleAttribute) as String?) == "Workspace" {
+            if let f = axFrame(top) {
+                let center = CGPoint(x: f.midX, y: f.midY)
                 traceClick(at: center, expected: window ?? activeWindow(), target: top)
                 try click(at: center)
                 usleep(600_000)
@@ -238,22 +226,53 @@ extension Driver {
         for id in ["SessionSidebarNewSession", "SessionSidebarHeaderNewSession"] {
             for root in roots {
                 if let elem = element(withIdentifier: id, root: root),
-                   let btnPos: AXValue = attribute(elem, kAXPositionAttribute),
-                   let btnSize: AXValue = attribute(elem, kAXSizeAttribute) {
-                    var pos = CGPoint.zero
-                    var size = CGSize.zero
-                    AXValueGetValue(btnPos, .cgPoint, &pos)
-                    AXValueGetValue(btnSize, .cgSize, &size)
-                    if size.width > 4 && size.height > 4 {
-                        let center = CGPoint(x: pos.x + size.width / 2, y: pos.y + size.height / 2)
-                        try click(at: center)
-                        usleep(1_000_000)
-                        return
-                    }
+                   let f = axFrame(elem), f.width > 4, f.height > 4 {
+                    try click(at: CGPoint(x: f.midX, y: f.midY))
+                    usleep(1_000_000)
+                    return
                 }
             }
         }
         throw Failure("SessionSidebarNewSession button not found in window")
+    }
+
+    static func filterActiveWorkspaceRows<T>(
+        headers: [(id: String, isActive: Bool, y: CGFloat)],
+        rows: [(id: String, elem: T, pos: CGPoint)],
+        allowedPaneIds: Set<String>? = nil
+    ) -> [T] {
+        let sortedHeaders = headers.sorted { $0.y < $1.y }
+        var scoped = rows.sorted { $0.pos.y == $1.pos.y ? $0.pos.x < $1.pos.x : $0.pos.y < $1.pos.y }
+        if let idx = sortedHeaders.firstIndex(where: \.isActive) {
+            let minY = sortedHeaders[idx].y
+            let maxY = (idx + 1 < sortedHeaders.count) ? sortedHeaders[idx + 1].y : .greatestFiniteMagnitude
+            scoped = scoped.filter { $0.pos.y > minY && $0.pos.y < maxY }
+        } else if let firstInactive = sortedHeaders.first {
+            scoped = scoped.filter { $0.pos.y < firstInactive.y }
+        }
+        if let allowed = allowedPaneIds, !allowed.isEmpty {
+            let groupScoped = scoped.filter {
+                allowed.contains(String($0.id.dropFirst("session-tab-".count)).lowercased())
+            }
+            if !groupScoped.isEmpty { scoped = groupScoped }
+        }
+        return scoped.map(\.elem)
+    }
+
+    private func activeGroupPaneIds(selectedRowId: String?) -> Set<String>? {
+        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        guard let js = try? exec("\(ctl) tree --json"), let data = js.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let wins = ((obj["result"] as? [String: Any]) ?? obj)["windows"] as? [[String: Any]] else { return nil }
+        let selectedPane = selectedRowId.map { String($0.dropFirst("session-tab-".count)).lowercased() }
+        for w in wins {
+            let panes = ((w["tabs"] as? [[String: Any]]) ?? []).flatMap { ($0["panes"] as? [[String: Any]]) ?? [] }
+            let ids = Set(panes.compactMap { ($0["id"] as? String)?.lowercased() })
+            let hasFocused = panes.contains { ($0["focused"] as? Bool) == true }
+            if let sel = selectedPane, ids.contains(sel) { return ids }
+            if selectedPane == nil && hasFocused { return ids }
+        }
+        return nil
     }
 
     private func sidebarSessionRows(in window: AXUIElement? = nil) -> [AXUIElement] {
@@ -261,20 +280,23 @@ extension Driver {
         let onScreen = onScreenWindows()
         let roots = win.map { [$0] } ?? (onScreen.isEmpty ? windows() : onScreen)
         for root in roots {
-            var byId: [String: (elem: AXUIElement, pos: CGPoint, area: CGFloat)] = [:]
+            var headersById: [String: (isActive: Bool, y: CGFloat, area: CGFloat)] = [:]
+            var rowsById: [String: (elem: AXUIElement, pos: CGPoint, isSelected: Bool, area: CGFloat)] = [:]
             func walk(_ node: AXUIElement, depth: Int) {
                 if let id: String = attribute(node, "AXIdentifier"),
-                   id.hasPrefix("session-tab-"),
                    let posVal: AXValue = attribute(node, kAXPositionAttribute),
                    let sizeVal: AXValue = attribute(node, kAXSizeAttribute) {
-                    var pos = CGPoint.zero
-                    var size = CGSize.zero
+                    var pos = CGPoint.zero, size = CGSize.zero
                     AXValueGetValue(posVal, .cgPoint, &pos)
                     AXValueGetValue(sizeVal, .cgSize, &size)
                     let area = size.width * size.height
-                    if size.width > 10 && size.height > 10,
-                       byId[id].map({ area > $0.area }) ?? true {
-                        byId[id] = (node, pos, area)
+                    if size.width > 10 && size.height > 10 {
+                        let val = (attribute(node, kAXValueAttribute) as String?) ?? ""
+                        if id.hasPrefix("SessionSidebarWorkspace-"), headersById[id].map({ area > $0.area }) ?? true {
+                            headersById[id] = (val == "active", pos.y, area)
+                        } else if id.hasPrefix("session-tab-"), rowsById[id].map({ area > $0.area }) ?? true {
+                            rowsById[id] = (node, pos, val == "selected", area)
+                        }
                     }
                 }
                 guard depth > 0 else { return }
@@ -283,10 +305,14 @@ extension Driver {
                 }
             }
             walk(root, depth: 28)
-            if !byId.isEmpty {
-                return byId.values
-                    .sorted { $0.pos.y == $1.pos.y ? $0.pos.x < $1.pos.x : $0.pos.y < $1.pos.y }
-                    .map(\.elem)
+            if !rowsById.isEmpty {
+                let selectedId = rowsById.first(where: { $0.value.isSelected })?.key
+                let allowed = onScreen.count > 1 ? activeGroupPaneIds(selectedRowId: selectedId) : nil
+                return Self.filterActiveWorkspaceRows(
+                    headers: headersById.map { ($0.key, $0.value.isActive, $0.value.y) },
+                    rows: rowsById.map { ($0.key, $0.value.elem, $0.value.pos) },
+                    allowedPaneIds: allowed
+                )
             }
         }
         return []

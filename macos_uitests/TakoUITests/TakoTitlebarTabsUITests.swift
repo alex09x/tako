@@ -8,6 +8,13 @@
  * SPDX-License-Identifier: MIT
  */
 
+//
+//  TakoTitlebarTabsUITests.swift
+//  Tako
+//
+//  Created by luca on 16.10.2025.
+//
+
 import AppKit
 import XCTest
 

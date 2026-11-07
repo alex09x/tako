@@ -4295,15 +4295,18 @@ let scenarios: [Scenario] = [
         // Verify Tab 1 accessibility state indicates selection
         let selectedTab1 = d.wait(for: {
             guard let tab1Elem = d.tabElement(index: 1) else { return false }
+            if let str = d.attribute(tab1Elem, kAXValueAttribute) as String? {
+                return str == "selected"
+            }
             let val = d.attribute(tab1Elem, kAXValueAttribute) as NSNumber?
             return val?.intValue == 1
         }, timeout: 2.0)
         guard selectedTab1 else {
-            let v = (d.tabElement(index: 1).flatMap { d.attribute($0, kAXValueAttribute) as NSNumber? })?.intValue ?? -1
-            let v0 = (d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) as NSNumber? })?.intValue ?? -1
+            let v: String = d.tabElement(index: 1).flatMap { d.attribute($0, kAXValueAttribute) } ?? "nil"
+            let v0: String = d.tabElement(index: 0).flatMap { d.attribute($0, kAXValueAttribute) } ?? "nil"
             let onScreen = d.onScreenWindowNumbers()
             let focus = d.debugFocusState()
-            throw Failure("tab-1 AX value is \(v), tab-0 AX value is \(v0), onScreen: \(onScreen), focus: \(focus), expected 1 (selected)")
+            throw Failure("tab-1 AX value is \(v), tab-0 AX value is \(v0), onScreen: \(onScreen), focus: \(focus), expected selected")
         }
 
         // Verify unassisted keyboard typing routes to Tab 1
