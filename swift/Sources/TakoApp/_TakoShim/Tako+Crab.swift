@@ -110,6 +110,9 @@ extension Tako {
         var lastProgramStatusNotificationKey: ProgramStatusNotificationKey?
         var activeProgramStatusNotificationIDs: Set<String> = []
         var onAcknowledgedOutcome: (() -> Void)?
+        /// False while a restored status is applied (checkpoint, reset): what
+        /// changes then is state brought back, not news, so nothing announces it.
+        var announcesStatusChanges = true
 
         /// Whether this pane is currently focused / looked at by user.
         public var isFocused: Bool = false

@@ -58,7 +58,10 @@ extension Tako.SurfaceView {
         let previousText = crab.statusText
         let previousUnread = crab.unread
 
+        // A restored table brings state back; its status changes are not announced (toasts).
+        crab.announcesStatusChanges = event.isLiveTransition
         crab.applyProgramStatusSnapshot(snapshot)
+        crab.announcesStatusChanges = true
         syncProgressReportFromProgramStatus(snapshot)
         applyProgramStatusProgressBar(from: snapshot)
 

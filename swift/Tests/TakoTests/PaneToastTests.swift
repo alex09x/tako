@@ -69,7 +69,8 @@ struct PaneToastTests {
         center.statusChanged(surface, to: .error)
         #expect(center.toasts.map(\.state) == [.failed])
         #expect(center.toasts.first?.headline.hasPrefix("миграции — error") == true, "the toast ignores the pane's name")
-        #expect(center.toasts.first?.message == "процесс завершился с ошибкой")
+        #expect(center.toasts.first?.message == "The terminal reported an error", "an error that is no exit was called one")
+        #expect(center.toasts.first?.headline.contains("exit") == false)
         center.seen(surface.id)
         #expect(center.toasts.isEmpty)
     }
@@ -93,6 +94,41 @@ struct PaneToastTests {
         TerminalTestSupport.waitUntil(timeout: 1) { !controller.isMinimizedInFloatingCanvas(p2.id) }
         #expect(!controller.isMinimizedInFloatingCanvas(p2.id), "the toast did not bring its pane back")
         #expect(controller.focusedSurface === p2)
+    }
+
+    /// A checkpoint restore brings a pane's status back; it is no news. A
+    /// live status from the program is, and says what the program said.
+    /// Async: the status sink posts to the main queue, which runs only once
+    /// this test (itself a main-queue job) suspends; a nested run loop would not.
+    @Test func aRestoredStatusMakesNoToastAndALiveOneDoes() async throws {
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        let surface = try #require(controller.focusedSurface)
+        surface.crab.isFocused = false
+        PaneToastCenter.shared.resetForTesting()
+        defer { PaneToastCenter.shared.resetForTesting() }
+        func error(_ revision: UInt64, _ msg: String) -> TerminalProgramStatusSnapshot {
+            let record = TerminalProgramStatusRecord(id: "default", state: .error, app: "AGY", resolvedApp: "AGY",
+                                                     msg: msg, revision: revision)
+            return TerminalProgramStatusSnapshot(revision: revision, osc7501Active: true, effective: record, records: [record])
+        }
+
+        surface.applyProgramStatusEvent(.restored(error(1, "restored failure")))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(surface.crab.paneStatus == .error, "the restored status was not applied")
+        #expect(PaneToastCenter.shared.toasts.isEmpty, "a restored status was announced: \(PaneToastCenter.shared.toasts)")
+
+        surface.applyProgramStatusEvent(.restored(TerminalProgramStatusSnapshot(revision: 2, osc7501Active: true,
+                                                                                effective: nil, records: [])))
+        let cleared = surface.crab.paneStatus
+        let live = error(3, "migration failed")
+        surface.applyProgramStatusEvent(.updated(TerminalProgramStatusUpdate(revision: 3, mutations: [], effective: live.effective),
+                                                 snapshot: live))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let toast = try #require(PaneToastCenter.shared.toasts.first,
+                                 "a live error made no toast: cleared \(cleared), now \(surface.crab.paneStatus)")
+        #expect(toast.message == "migration failed")
+        #expect(!toast.headline.contains("exit"), "a program's error showed an exit code: \(toast.headline)")
     }
 
     @Test func aToastEasesIn220msAndReduceMotionShowsItAtOnce() {

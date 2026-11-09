@@ -55,19 +55,24 @@ final class PaneToastCenter: ObservableObject {
         let elsewhere = controller?.window.map { !$0.isKeyWindow || !NSApp.isActive } ?? true
         let place = minimized ? "minimized" : (elsewhere && !session.isEmpty ? session : "in the background")
         let title = surface.paneTitleOverride ?? (surface.title.isEmpty ? "terminal" : surface.title)
-        let exit = Self.exitCode(surface.crab.state)
+        // A program's own status (OSC 7501) is not a process exit: no exit code, its own words.
+        let reported = surface.crab.explicitStatus != nil
+        let exit = reported ? nil : Self.exitCode(surface.crab.state)
+        let said = surface.crab.statusText.flatMap { $0.isEmpty ? nil : $0 }
         let toast: PaneToast
         switch kind {
         case .waiting:
             toast = .init(id: UUID(), surfaceID: surface.id, state: .waiting, headline: "\(title) — needs your attention",
-                          message: surface.crab.statusText ?? "", place: place)
+                          message: said ?? "", place: place)
         case .done:
             toast = .init(id: UUID(), surfaceID: surface.id, state: .done,
-                          headline: "\(title) — done\(exit.map { " · exit \($0)" } ?? "")", message: session, place: place)
+                          headline: "\(title) — done\(exit.map { " · exit \($0)" } ?? "")",
+                          message: said ?? session, place: place)
         case .failed:
+            let message = said ?? (exit != nil ? "The command exited with an error" : "The terminal reported an error")
             toast = .init(id: UUID(), surfaceID: surface.id, state: .failed,
                           headline: "\(title) — error\(exit.map { " · exit \($0)" } ?? "")",
-                          message: "процесс завершился с ошибкой", place: place)
+                          message: message, place: place)
         }
         show(toast)
     }
