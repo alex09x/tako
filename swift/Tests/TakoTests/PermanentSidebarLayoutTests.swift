@@ -250,14 +250,13 @@ struct PermanentSidebarLayoutTests {
         #expect(group.windows == [w1])
         #expect(group.selectedWindow === w1)
 
-        // Footer SessionSidebarNewSession button action resolves containingWindow and creates a new session.
+        // The + menu's «Новая сессия» resolves containingWindow and creates a new session.
         let sidebarView = SessionSidebarView(
             isPresented: .constant(true),
             containingWindow: w1,
             store: store,
             workspaceStore: wsStore
         )
-        #expect(sidebarView.newSessionHint.contains("New session"))
         sidebarView.triggerNewSession()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         #expect(group.windows.count == 2)

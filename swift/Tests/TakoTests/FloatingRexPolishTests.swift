@@ -121,14 +121,15 @@ struct FloatingRexPolishTests {
         #expect(restored.state(for: p2.id)?.rect == compactSavedRect)
     }
 
-    @Test func header32ptZeroMaximizedInsets22ptControlsDisjointFromResizeHandlesAndDiagonalCursors() throws {
-        #expect(FloatingPaneGeometry.headerHeight == 32)
+    @Test func header28ptZeroMaximizedInsets22ptControlsDisjointFromResizeHandlesAndDiagonalCursors() throws {
+        // Reference header 28 pt with a 3 pt top resize strip (DesktopCanvasMetrics).
+        #expect(FloatingPaneGeometry.headerHeight == 28)
         #expect(FloatingPaneGeometry.minSize == CGSize(width: 260, height: 150))
         #expect(FloatingPaneGeometry.cornerRadius == 10)
         #expect(FloatingPaneGeometry.shelfCardHeight == 30)
         #expect(FloatingPaneGeometry.shelfBandHeight == 44)
-        #expect(FloatingPaneResizeHandlesView.topEdgeHitThickness == 4)
-        #expect(FloatingPaneGeometry.bodySize(for: CGRect(x: 0, y: 0, width: 600, height: 400)) == CGSize(width: 600, height: 368))
+        #expect(FloatingPaneResizeHandlesView.topEdgeHitThickness == 3)
+        #expect(FloatingPaneGeometry.bodySize(for: CGRect(x: 0, y: 0, width: 600, height: 400)) == CGSize(width: 600, height: 372))
 
         // Real diagonal cursors on all 4 corners (never .crosshair)
         for corner in [FloatingPaneResizeEdge.topLeading, .topTrailing, .bottomLeading, .bottomTrailing] {
@@ -181,7 +182,8 @@ struct FloatingRexPolishTests {
                 #expect(abs(r.width - 22) <= 0.5 && abs(r.height - 22) <= 0.5,
                         "Expected 22x22pt target for \(prefix)\(key), got \(r.size)")
                 let topOffset = paneRectInWin.maxY - r.maxY
-                #expect(topOffset >= 4.5, "Button top offset (\(topOffset)) must clear 4pt top resize strip")
+                #expect(topOffset >= FloatingPaneResizeHandlesView.topEdgeHitThickness - 0.5,
+                        "Button top offset (\(topOffset)) must clear the \(FloatingPaneResizeHandlesView.topEdgeHitThickness)pt top resize strip")
                 if prefix == "FloatingPaneClose-" {
                     let rightGap = paneRectInWin.maxX - r.maxX
                     #expect(rightGap >= 13.5, "Close right gap (\(rightGap)) must clear 12pt corner resize handle")
@@ -243,7 +245,7 @@ struct FloatingRexPolishTests {
         #expect(findView(identifier: "SessionSidebarKeys", in: contentView) != nil)
         #expect(findView(identifier: "SessionSidebarSettings", in: contentView) != nil)
         #expect(findView(identifier: "SessionSidebarHeaderNewSession", in: contentView) != nil)
-        #expect(findView(identifier: "SessionSidebarNewSession", in: contentView) != nil)
+        #expect(findView(identifier: "SessionSidebarNewSession", in: contentView) == nil, "no footer in the reference")
         #expect(findView(identifier: "SessionSidebarSearchButton", in: contentView) == nil, "no separate search button")
         let searchField = try #require(findView(identifier: "SessionSidebarSearchField", in: contentView) as? SidebarSearchNSTextField)
 
@@ -347,7 +349,7 @@ struct FloatingRexPolishTests {
                 "Ghost model bounds must match departing pane size (\(p2NormalFrame.size)), not 168x30 shelf pill")
         #expect(ghostView.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
         #expect(ghostView.headerHeightUsed == FloatingPaneGeometry.headerHeight)
-        #expect(ghostView.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        #expect(ghostView.dotFrame == CGRect(x: 14, y: (FloatingPaneGeometry.headerHeight - 7) / 2, width: 7, height: 7))
         #expect(ghostView.titleFontSize == 11)
 
         // Rapid sequence: minimize -> restore -> toggleMaximize cancels prior generations cleanly

@@ -61,37 +61,9 @@ extension SessionSidebarView {
         isListFocused = true
     }
 
-    // MARK: - Footer (§5.8)
-
+    /// A new session in this sidebar's window (the + menu's «New Session»).
+    /// The reference has no footer; the old «[⌘T] New session» row is gone.
     func triggerNewSession() {
         store.createNewTab(in: targetWindow)
-    }
-
-    var footerView: some View {
-        ZStack(alignment: .leading) {
-            Text(newSessionHint)
-                .font(Font(T.monoFont(size: 10.5, weight: .regular)))
-                .foregroundColor(Color(nsColor: T.dim))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 7)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
-            FloatingActionButtonOverlay(
-                identifier: "SessionSidebarNewSession",
-                label: "New session",
-                value: "",
-                helpText: "New session",
-                onHoverChange: { _ in },
-                action: triggerNewSession
-            )
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    var newSessionHint: String {
-        guard let newSessionShortcut else { return "New session" }
-        return "[\(KeybindRegistry.format(shortcut: newSessionShortcut))]  New session"
     }
 }

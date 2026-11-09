@@ -137,7 +137,6 @@ struct SessionSidebarView: View {
 
             VStack(spacing: 0) {
                 tabListView(groups: groups, flatItems: flatItems)
-                footerView
             }
             .padding(.horizontal, 6)
             .padding(.top, 4)
