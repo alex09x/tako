@@ -38,22 +38,16 @@ extension ScopedAppearanceStore {
     /// session's own explicit fields, so later splits in the same session keep
     /// it too and pane records are left exactly as their owners wrote them.
     ///
-    /// Boundary: when the session has its own preset, the source workspace's
-    /// colors and preset were already replaced by it; only font fields the
-    /// session preset does not define are carried. Destination fields the
-    /// source never set still apply after the move.
+    /// Boundary: a full session preset already replaced every source value.
+    /// A partial legacy session preset keeps every source value it does not
+    /// restate (see `portableSessionFields`). Destination fields the source
+    /// never set still apply after the move.
     @discardableResult
     func preserveWorkspaceStyle(from workspaceID: UUID, session sessionID: String) throws -> Bool {
         try verifyDiskIsCurrent()
         guard let inherited = document.overrides(for: .workspace(workspaceID)), !inherited.isEmpty else { return false }
         let local = document.overrides(for: .session(sessionID)) ?? [:]
-        var carried = inherited
-        if let preset = local["theme"] {
-            let typed = TerminalTheme.presetContainsTypography(named: preset,
-                searchPaths: themeSearchPaths ?? TerminalTheme.themeSearchPaths)
-            carried = typed ? [:] : inherited.filter { $0.key == "font-family" || $0.key == "font-size" }
-        }
-        let portable = carried.merging(local) { _, own in own }
+        let portable = portableSessionFields(inherited: inherited, local: local)
         guard portable != local else { return false }
         var draft = document
         for (key, value) in portable { draft.setOverride(value, for: key, scope: .session(sessionID)) }

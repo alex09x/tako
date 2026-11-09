@@ -42,9 +42,10 @@ extension Tako.SurfaceView {
     /// a tab, including one split later, shares it; titles and focus do not
     /// participate. Unmounted panes are found through their controller.
     var appearanceSessionID: String? {
-        let controller = window?.windowController as? BaseTerminalController
-            ?? TerminalController.all.first { $0.surfaceTree.contains { $0 === self } }
-        return controller?.window?.stableTabIdentifier
+        if let controller = window?.windowController as? BaseTerminalController {
+            return controller.window?.stableTabIdentifier
+        }
+        return ThemeControlService.liveSessionIdentity(ofPane: id)
     }
 }
 

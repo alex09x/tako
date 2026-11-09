@@ -224,4 +224,94 @@ import Testing
             workspaceStore: scene.workspaces, appearanceStore: styles))
         #expect(styles.document.overrides(for: .session(ownedID)) == ["theme": "Paper", "font-size": "19"])
     }
+
+    private func line(_ key: String, _ config: String) -> String? {
+        config.components(separatedBy: .newlines).first { $0.hasPrefix("\(key) = ") }
+    }
+
+    @Test func controlCurrentResolvesTheOwningSessionAndMatchesTheRenderedTheme() throws {
+        let scene = WorkspaceSwitchVisualScene(); defer { scene.tearDown() }
+        let styles = ScopedAppearanceStore(fileURL: scene.dir.appendingPathComponent("Appearance.json"))
+        let service = ThemeControlService(configURL: scene.dir.appendingPathComponent("config"), appearances: styles,
+                                          workspaces: scene.workspaces, themePaths: [])
+        let mounted = scene.surface("mounted", .idle), loose = scene.surface("unmounted", .idle)
+        let tab = scene.addTab(mounted, split: loose, to: scene.main)
+        loose.removeFromSuperview()
+        #expect(loose.window == nil, "The split stays in the tree without a window")
+        let tabID = tab.window.stableTabIdentifier
+        for surface in [mounted, loose] {
+            surface.configObserver = SurfaceAppearanceObservation(surface: surface, store: styles, workspaceID: { scene.main.id })
+        }
+        try styles.setValue("#121212", for: "background", scope: .workspace(scene.main.id))
+        try styles.setValue("#00ee00", for: "foreground", scope: .session(tabID))
+        for surface in [mounted, loose] {
+            let result = try service.handle(["action": .string("current")], scope: .pane(surface.id, workspaceID: scene.main.id))
+            #expect(result["session_id"]?.string == tabID)
+            let config = result["effective_config"]?.string ?? ""
+            let rendered = ThemePresetConfig.configuration(from: surface.theme)
+            #expect(surface.theme.foreground == color("#00ee00"))
+            for key in ["background", "foreground"] {
+                #expect(line(key, config) != nil && line(key, config) == line(key, rendered), "\(key) agrees with the pane")
+            }
+        }
+        let synthetic = try service.handle(["action": .string("current")], scope: .pane(UUID(), workspaceID: scene.main.id))
+        #expect({ if case .null? = synthetic["session_id"] { return true }; return false }())
+        let workspaceOnly = ThemePresetConfig.configuration(from: styles.effectiveTheme(global: try service.baseTheme(),
+            workspaceID: scene.main.id, paneID: nil))
+        #expect(line("foreground", synthetic["effective_config"]?.string ?? "") == line("foreground", workspaceOnly))
+    }
+
+    @Test func movingAPartialLegacySessionPresetKeepsTheFullSourcePresetBeneathIt() throws {
+        let scene = WorkspaceSwitchVisualScene(); defer { scene.tearDown() }
+        let themes = scene.dir.appendingPathComponent("themes")
+        let presets = ThemePresetStore(directory: themes, searchPaths: [])
+        _ = try presets.save(name: "Source", config: "background = #112233\nforeground = #aabbcc\npalette = 1=#ff1122\nfont-family = Monaco\nfont-size = 21\n")
+        _ = try presets.save(name: "Dest", config: "background = #eeeeee\nforeground = #222222\npalette = 1=#00ffaa\nfont-family = Menlo\nfont-size = 11\n")
+        try "foreground = #00ff00\n".write(to: themes.appendingPathComponent("Fg"), atomically: true, encoding: .utf8)
+        let styles = ScopedAppearanceStore(fileURL: scene.dir.appendingPathComponent("Appearance.json"), themeSearchPaths: [themes.path])
+        try styles.setValue("Source", for: "theme", scope: .workspace(scene.main.id))
+        try styles.setValue("Dest", for: "theme", scope: .workspace(scene.legal.id))
+        let tab = scene.addTab(scene.surface("moved", .idle), to: scene.main)
+        let id = tab.window.stableTabIdentifier, pane = tab.surfaces[0].id
+        try styles.setValue("Fg", for: "theme", scope: .session(id))
+        try styles.setValue("#333333", for: "cursor-color", scope: .session(id))
+        func theme(_ ws: UUID) -> TerminalTheme {
+            styles.effectiveTheme(global: .takoDefault, workspaceID: ws, sessionID: id, paneID: pane)
+        }
+        let before = theme(scene.main.id)
+        #expect(before.background == color("#112233") && before.foreground == color("#00ff00"))
+        #expect(before.fontSize == 21 && before.fontFamily == "Monaco" && before.palette[1] == color("#ff1122"))
+
+        #expect(scene.store.moveTab(id, to: scene.legal.id, around: scene.anchor,
+            workspaceStore: scene.workspaces, appearanceStore: styles))
+        let after = theme(scene.legal.id)
+        #expect(after.background == before.background && after.foreground == before.foreground)
+        #expect(after.cursorColor == before.cursorColor && after.palette[1] == before.palette[1])
+        #expect(after.fontFamily == before.fontFamily && after.fontSize == before.fontSize)
+        #expect(ThemePresetConfig.configuration(from: after) == ThemePresetConfig.configuration(from: before))
+        #expect(styles.document.overrides(for: .session(id))?["cursor-color"] == "#333333", "Own fields stay on top")
+        #expect(styles.references(toPreset: "Source").contains(.session(id)), "The carried preset stays reference-tracked")
+        #expect(styles.document.overrides(for: .workspace(scene.main.id)) == ["theme": "Source"])
+        #expect(styles.document.overrides(for: .workspace(scene.legal.id)) == ["theme": "Dest"])
+        #expect(styles.document.panes.isEmpty)
+    }
+
+    @Test func detachCarryKeepsTheOldSessionStyleUnderThePanesOwnFields() throws {
+        let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ScopedAppearanceStore(fileURL: dir.appendingPathComponent("Appearance.json"))
+        let ws = UUID(), pane = UUID(), owned = UUID()
+        try store.setValue("#010101", for: "background", scope: .session("old"))
+        try store.setValue("17", for: "font-size", scope: .session("old"))
+        try store.setValue("#0a0a0a", for: "foreground", scope: .pane(pane))
+        try store.setValue("Anything", for: "theme", scope: .pane(owned))
+        let before = store.effectiveTheme(global: .takoDefault, workspaceID: ws, sessionID: "old", paneID: pane)
+        #expect(try store.carrySessionStyle(from: "old", toPane: pane))
+        #expect(try !store.carrySessionStyle(from: "old", toPane: owned), "A pane preset is left as written")
+        #expect(try !store.carrySessionStyle(from: "none", toPane: pane))
+        let after = store.effectiveTheme(global: .takoDefault, workspaceID: ws, sessionID: "new", paneID: pane)
+        #expect(after.background == before.background && after.fontSize == before.fontSize && after.foreground == before.foreground)
+        #expect(store.document.overrides(for: .pane(owned)) == ["theme": "Anything"])
+        #expect(store.document.overrides(for: .session("old"))?["background"] == "#010101", "Source record untouched")
+        #expect(try !store.carrySessionStyle(from: "old", toPane: pane), "Idempotent")
+    }
 }
