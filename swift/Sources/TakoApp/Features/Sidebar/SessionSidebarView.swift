@@ -132,10 +132,8 @@ struct SessionSidebarView: View {
 
         VStack(spacing: 0) {
             headerView(sessionCount: totalSessions, attentionCount: waitingCount)
-
-            if showsFilterControls {
-                searchAndSegmentsBar(attentionCount: waitingCount, counts: counts)
-            }
+            searchBar
+            segmentsRow(attentionCount: waitingCount, counts: counts)
 
             VStack(spacing: 0) {
                 tabListView(groups: groups, flatItems: flatItems)

@@ -220,7 +220,7 @@ struct FloatingRexPolishTests {
         #expect(window.frame == outerWindowFrameBefore, "Dragging a floating pane header must never move outer NSWindow")
     }
 
-    @Test func compactSidebarIdleWorkspaceTopOffsetCollapsibleSearchEscapeAndPreservedAX() throws {
+    @Test func referenceSidebarTopAlwaysShownSearchEscapeAndPreservedAX() throws {
         func topDistanceFromWindowContentTop(of view: NSView, in contentView: NSView) -> CGFloat {
             let r = view.convert(view.bounds, to: contentView)
             return contentView.isFlipped ? r.minY : (contentView.bounds.maxY - r.maxY)
@@ -236,25 +236,21 @@ struct FloatingRexPolishTests {
         let contentView = try #require(win.contentView)
         let wsName = scene.main.name
 
-        // Idle state: compact header present, search field collapsed, first workspace <= 72pt from window top
+        // Reference A01: a 44 pt header with keys / settings / + icons, the
+        // «Filter sessions… ⌘K» field always shown, «All» beside the counters,
+        // and the first workspace header at 116 pt from the top.
         #expect(findView(identifier: "SessionSidebarHeader", in: contentView) != nil)
+        #expect(findView(identifier: "SessionSidebarKeys", in: contentView) != nil)
+        #expect(findView(identifier: "SessionSidebarSettings", in: contentView) != nil)
         #expect(findView(identifier: "SessionSidebarHeaderNewSession", in: contentView) != nil)
         #expect(findView(identifier: "SessionSidebarNewSession", in: contentView) != nil)
-        let searchButton = try #require(findView(identifier: "SessionSidebarSearchButton", in: contentView) as? FloatingActionButtonNSView)
-        #expect(searchButton.accessibilityLabel() == "Search sessions")
-        #expect(findView(identifier: "SessionSidebarAttentionToggle", in: contentView) != nil)
-        #expect(findView(identifier: "SessionSidebarSearchField", in: contentView) == nil,
-                "Search editor must stay collapsed in idle when query and filters are empty")
+        #expect(findView(identifier: "SessionSidebarSearchButton", in: contentView) == nil, "no separate search button")
+        let searchField = try #require(findView(identifier: "SessionSidebarSearchField", in: contentView) as? SidebarSearchNSTextField)
 
         let wsViewIdle = try #require(findView(identifier: "SessionSidebarWorkspace-\(wsName)", in: contentView))
         let idleTopDistance = topDistanceFromWindowContentTop(of: wsViewIdle, in: contentView)
-        #expect(idleTopDistance > 0 && idleTopDistance <= 72,
-                "Expected idle first workspace top <= 72pt from window top, got \(idleTopDistance)pt")
-
-        // Expanding search via header Search button reveals Filter sessions field & segments and focuses the field
-        #expect(searchButton.accessibilityPerformPress() == true)
-        scene.settle()
-        let searchField = try #require(findView(identifier: "SessionSidebarSearchField", in: contentView) as? SidebarSearchNSTextField)
+        #expect(idleTopDistance >= 104 && idleTopDistance <= 128,
+                "Expected the first workspace about 116pt from the top (reference A01), got \(idleTopDistance)pt")
 
         // Typing query updates filter for targetWindow; real Escape key press in field editor clears & collapses back to idle
         _ = win.makeFirstResponder(searchField)
@@ -275,12 +271,12 @@ struct FloatingRexPolishTests {
         win.sendEvent(escDown)
         scene.settle()
         #expect(scene.store.filterText(for: scene.anchor).isEmpty)
-        #expect(findView(identifier: "SessionSidebarSearchField", in: contentView) == nil)
+        #expect(findView(identifier: "SessionSidebarSearchField", in: contentView) != nil, "the field stays")
         let wsViewAfterCollapse = try #require(findView(identifier: "SessionSidebarWorkspace-\(wsName)", in: contentView))
         let collapsedTopDistance = topDistanceFromWindowContentTop(of: wsViewAfterCollapse, in: contentView)
-        #expect(collapsedTopDistance > 0 && collapsedTopDistance <= 72)
+        #expect(collapsedTopDistance == idleTopDistance, "clearing does not move the list")
 
-        // Verify full TerminalWindow also keeps idle top <= 72pt, SidebarWindowDragRegion & SessionSidebarResizeHandle intact
+        // The TerminalWindow keeps the same top, SidebarWindowDragRegion & SessionSidebarResizeHandle intact
         let (controller, termWin) = makeLoadedDesktopWindow(canvasWidth: 900, height: 640)
         defer { termWin.close(); TerminalTestSupport.tearDown(controller, termWin) }
         let termContent = try #require(termWin.contentView)
@@ -293,8 +289,8 @@ struct FloatingRexPolishTests {
         if let termWs = findView(identifier: "SessionSidebarWorkspace-\(WorkspaceStore.shared.activeWorkspace.name)", in: termContent) {
             let termWsInWin = termWs.convert(termWs.bounds, to: nil)
             let termTopDist = termWin.frame.height - termWsInWin.maxY
-            #expect(termTopDist > 0 && termTopDist <= 72,
-                    "Expected TerminalWindow idle first workspace <= 72pt from top, got \(termTopDist)pt")
+            #expect(termTopDist >= 104 && termTopDist <= 128,
+                    "Expected TerminalWindow first workspace about 116pt from top (reference A01), got \(termTopDist)pt")
         }
     }
 

@@ -363,7 +363,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
                     .frame(width: 7, height: 7)
 
                 Text(group.name.uppercased())
-                    .font(Font(T.monoFont(size: 10, weight: .bold)))
+                    .font(Font(T.monoFont(size: 10.5, weight: .semibold)))
                     .tracking(0.8)
                     .foregroundColor(Color(nsColor: T.dim))
                     .lineLimit(1)
@@ -386,7 +386,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
                     }
 
                     Text("\(group.sessionCount)")
-                        .font(Font(T.monoFont(size: 10, weight: .medium)))
+                        .font(Font(T.monoFont(size: 10.5, weight: .medium)))
                         .foregroundColor(Color(nsColor: T.dim))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)

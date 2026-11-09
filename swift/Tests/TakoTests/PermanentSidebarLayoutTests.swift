@@ -174,7 +174,8 @@ struct PermanentSidebarLayoutTests {
         #expect(gripRect.height > 100)
 
         let dragRect = dragStrip.convert(dragStrip.bounds, to: contentView)
-        #expect(abs(dragRect.height - SessionSidebarChrome.titlebarStripHeight) < 1.0)
+        // The whole 44 pt reference header (A01 `.sb-hd`) drags the window.
+        #expect(abs(dragRect.height - SessionSidebarView.referenceHeaderHeight) < 1.0)
         #expect(abs(dragRect.maxY - contentBounds.maxY) < 1.5)
         #expect(dragRect.maxX <= surfaceRect.minX + 1.5)
 
