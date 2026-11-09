@@ -12,8 +12,8 @@ import AppKit
 import QuartzCore
 
 extension Tako {
-    /// How the tab strip moves as its tabs change (Terminal UI, «Вкладки:
-    /// анатомия, состояния, переходы»): a new tab grows from nothing in
+    /// How the tab strip moves as its tabs change (Terminal UI, «Tabs:
+    /// Structure, States and Transitions»): a new tab grows from nothing in
     /// 160 ms, ease-out; a closed one collapses in 140 ms, ease-in, its
     /// neighbours closing up; the active bar travels to a newly chosen tab
     /// in 120 ms while the content changes at once; a dragged tab is lifted

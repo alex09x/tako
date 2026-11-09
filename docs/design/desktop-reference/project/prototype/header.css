@@ -1,0 +1,19 @@
+/* Tako desktop prototype — window title bar: only what carries information */
+.fw-hd{height:28px;padding:0 10px;gap:7px}
+.fw-hd .t{flex:none;max-width:60%}
+.fw-hd .cwd{flex:0 1 auto}
+.fw-hd .chip,.fw-hd .wb.mx{display:none}
+.fw-hd .src{background:none;padding:0;border-radius:0;color:var(--mute);font:11px var(--mono)}
+.fw-hd .num{margin-left:auto;flex:none;font:500 11px var(--mono);font-variant-numeric:tabular-nums}
+.fw-hd .num:empty{display:none}
+.fw-hd .n-prog{color:var(--ember)}
+.fw-hd .n-err{color:#E88A8D}
+/* controls appear on hover, laid over the right end of the bar */
+.fw .fw-btns{position:absolute;right:4px;top:3px;margin:0;padding-left:18px;gap:1px;opacity:0;pointer-events:none;background:linear-gradient(90deg,transparent,var(--term) 16px);transition:opacity .12s}
+.fw .fw-hd:hover .fw-btns{opacity:1;pointer-events:auto}
+.fw .wb{width:22px;height:22px}
+.fw-hd .ren{flex:none;width:200px;font:500 12px var(--mono);color:var(--text);background:#14100E;border:0;outline:1px solid rgba(255,122,61,.6);border-radius:4px;padding:1px 5px}
+/* minimized title pills: ring + name, the restore arrow on hover */
+.pill .cwd{display:none}
+.pill .up{opacity:0;transition:opacity .12s}
+.pill:hover .up{opacity:1}

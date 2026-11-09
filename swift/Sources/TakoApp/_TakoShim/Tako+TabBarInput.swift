@@ -233,7 +233,7 @@ extension Tako.TabBarView {
         super.mouseUp(with: event)
     }
 
-    /// How long ⌘ is held before the tab numbers show (Terminal UI: "задержка 150ms"),
+    /// How long ⌘ is held before the tab numbers show (Terminal UI: "150 ms delay"),
     /// so a ⌘ shortcut typed at speed does not flash them.
     static let commandBadgeDelay: TimeInterval = 0.15
 

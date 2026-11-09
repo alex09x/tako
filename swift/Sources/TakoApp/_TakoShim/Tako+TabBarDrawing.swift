@@ -243,7 +243,7 @@ extension Tako.TabBarView {
             width: Metrics.crabSize, height: Metrics.crabSize)
         drawClassicStatus(for: tab, state: state, in: slot, shakeDX: shakeDX, ctx: ctx)
 
-        // "✕ — только на ховере и на активной": the close glyph shows on
+        // "✕ appears only on hover or on the active tab": the close glyph shows on
         // whichever tab is hovered, plus always on the active tab (not
         // just on hover of the active tab specifically).
         // A tab too narrow for both keeps the ring and drops the close.

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas" /><link rel="preconnect" href="https://fonts.googleapis.com" /><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap" rel="stylesheet" /><style>
+@property --p{syntax:'<number>';inherits:false;initial-value:0}
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+body{margin:0;background:#EDE8E2;font-family:'Space Grotesk',sans-serif;color:#1A1512}
+a{color:#C23E0E} a:hover{color:#F4581C}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(26,21,18,.1)}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}
+.dv-tid{font:600 10px 'JetBrains Mono',monospace;padding:3px 7px;background:#1A1512;color:#FAF7F2;border-radius:4px;text-decoration:none}
+.dv-tname{font:700 18px/1.2 'Space Grotesk',sans-serif;color:#1A1512}
+.dv-intro{font:13px/1.55 'JetBrains Mono',monospace;color:#6B6259;max-width:1100px;margin:0 0 22px}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px}
+.dv-oid{font:600 10.5px 'JetBrains Mono',monospace;padding:3px 7px;background:rgba(26,21,18,.08);color:#1A1512;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:600 13px/1.3 'Space Grotesk',sans-serif;color:#1A1512}
+.desc{font:12px/1.55 'JetBrains Mono',monospace;color:#6B6259}
+.dv-next{margin:22px 0 0;font:12px/1.5 'JetBrains Mono',monospace;color:#8A7F76}
+
+/* terminal text */
+.ln{min-height:1.5em;white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.c-dim{color:#8A7F76}.c-sub{color:#B7ACA1}.c-claw{color:#FF7A3D}.c-ember{color:#F4581C}.c-ok{color:#7BD88F}.c-err{color:#D54E53}.c-br{color:#B294BB}
+
+/* app chrome */
+.win{width:1100px;background:#14100E;border-radius:12px;overflow:hidden;box-shadow:0 18px 40px rgba(26,21,18,.28)}
+.tbar{height:38px;display:flex;align-items:center;gap:6px;padding:0 8px 0 20px;border-bottom:1px solid #2A211B;background:#14100E}
+.lights{display:flex;gap:8px;margin-right:22px;flex:none}
+.light{width:12px;height:12px;border-radius:50%;background:#3A2F27}
+.ws{flex:none;height:28px;display:flex;align-items:center;gap:6px;padding:0 9px 0 8px;border-radius:6px;background:#241C16;font:500 11px 'JetBrains Mono',monospace;color:#B7ACA1;margin-right:6px}
+.wsdot{width:7px;height:7px;border-radius:50%;flex:none}
+.cnt{font:700 9.5px 'JetBrains Mono',monospace;color:#14100E;background:#FF7A3D;border-radius:4px;padding:1px 4px}
+.btns{margin-left:auto;display:flex;gap:4px;flex:none}
+.btn{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font:15px 'JetBrains Mono',monospace;color:#8A7F76}
+.body{padding:14px 16px;font:12.5px/19px 'JetBrains Mono',monospace;color:#EDE6DF}
+
+/* ===== the 1b system: a living surface — pill, row or card ===== */
+.pill{flex:none;position:relative;height:28px;display:flex;align-items:center;gap:7px;padding:0 9px 0 8px;border-radius:6px;font:400 11.5px 'JetBrains Mono',monospace;color:#B7ACA1;box-sizing:border-box}
+.pill.on{background:#241C16;color:#FAF7F2;font-weight:500;box-shadow:inset 0 0 0 1px #2A211B}
+.pill.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-5px;height:2px;border-radius:2px;background:#F4581C}
+.pt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.tm{font-size:10px;color:#8A7F76;flex:none}
+.x{font-size:10px;color:#8A7F76;flex:none}
+
+/* working: Ember comet running along the edge */
+.sweep{border:1px solid transparent;background:linear-gradient(var(--bg,#14100E),var(--bg,#14100E)) padding-box,conic-gradient(from var(--a),var(--bg,#14100E) 0 62%,#C23E0E 78%,#FF7A3D 88%,var(--bg,#14100E) 100%) border-box;animation:orbit 2.2s linear infinite}
+/* waiting for you: Claw edge breathing with a soft glow */
+.glow{animation:breathe 1.6s ease-in-out infinite}
+/* done: one green glint across the surface */
+.shim{overflow:hidden}
+.shim::before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(123,216,143,.26) 50%,transparent 70%);background-size:250% 100%;animation:shimmer 3.2s ease-out infinite;border-radius:inherit;pointer-events:none}
+/* failed: red baseline + one shake */
+.errline{box-shadow:inset 0 -2px 0 #D54E53;animation:shake 3.2s ease-in-out infinite}
+/* progress (OSC 9;4): thin Rust→Ember line along the bottom */
+.pfill{position:absolute;left:0;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,#C23E0E,#F4581C);animation:grow 5s cubic-bezier(.4,0,.2,1) infinite}
+/* offline */
+.ghost{border:1px dashed #3A2F27;color:#6B6259}
+
+/* status ring inside every surface */
+.ring{flex:none;width:14px;height:14px;border-radius:50%;position:relative;box-sizing:border-box}
+.ring.lg{width:18px;height:18px}
+.ring.sm{width:11px;height:11px}
+.r-idle{border:1.5px solid #5A4D43}
+.r-work{background:conic-gradient(from 0deg,rgba(244,88,28,0) 0deg,#F4581C 280deg,rgba(244,88,28,0) 281deg);box-shadow:inset 0 0 0 2.5px rgba(244,88,28,.16);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));animation:spin .9s linear infinite}
+.r-prog{background:conic-gradient(#C23E0E 0%,#F4581C calc(var(--p)*1%),#3A2E26 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));mask:radial-gradient(farthest-side,transparent calc(100% - 2.6px),#000 calc(100% - 2.4px));animation:fill 5s cubic-bezier(.4,0,.2,1) infinite}
+.r-attn{border:2px solid #FF7A3D}
+.r-attn::before{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:#FF7A3D;animation:blink 1.6s ease-in-out infinite}
+.r-attn::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid #FF7A3D;animation:halo 1.6s ease-out infinite}
+.ring.sm.r-attn{border-width:1.5px}.ring.sm.r-attn::before{width:3px;height:3px;margin:-1.5px 0 0 -1.5px}
+.r-done{background:#7BD88F;animation:pop 3.2s cubic-bezier(.3,1.6,.5,1) infinite}
+.r-done::after{content:"";position:absolute;left:4.6px;top:2.4px;width:3px;height:6px;border-right:2px solid #14100E;border-bottom:2px solid #14100E;transform:rotate(45deg)}
+.ring.lg.r-done::after{left:6.2px;top:3.4px;width:4px;height:8px}
+.r-err{background:#D54E53}
+.r-err::before{content:"";position:absolute;left:50%;top:3px;width:2px;height:5px;margin-left:-1px;border-radius:1px;background:#14100E}
+.r-err::after{content:"";position:absolute;left:50%;bottom:2.5px;width:2px;height:2px;margin-left:-1px;border-radius:1px;background:#14100E}
+.ring.lg.r-err::before{top:4px;height:6px}.ring.lg.r-err::after{bottom:3.5px}
+.r-ghost{border:1.5px dashed #6B6259}
+.unread{width:5px;height:5px;border-radius:50%;background:#FF7A3D;flex:none}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:99px;font:500 10px 'JetBrains Mono',monospace;white-space:nowrap;flex:none;box-sizing:border-box}
+.ch-attn{color:#FF7A3D;background:rgba(255,122,61,.1);border:1px solid rgba(255,122,61,.28)}
+.ch-work{color:#F4581C;background:rgba(244,88,28,.08);border:1px solid rgba(244,88,28,.22)}
+.ch-done{color:#7BD88F;background:rgba(123,216,143,.1);border:1px solid rgba(123,216,143,.25)}
+.ch-err{color:#D54E53;background:rgba(213,78,83,.1);border:1px solid rgba(213,78,83,.25)}
+.ch-idle{color:#8A7F76;border:1px solid #352B23}
+.tag{font:500 9.5px 'JetBrains Mono',monospace;color:#B7ACA1;background:#352B23;border-radius:4px;padding:1px 5px;white-space:nowrap;flex:none}
+
+/* sidebar */
+.sb{width:280px;height:720px;background:#14100E;border-radius:12px;overflow:hidden;box-shadow:0 18px 40px rgba(26,21,18,.28);display:flex;flex-direction:column;font-family:'JetBrains Mono',monospace}
+.sb-hd{display:flex;align-items:center;gap:8px;padding:12px 12px 8px;font:700 13px 'Space Grotesk',sans-serif;color:#FAF7F2}
+.sb-hd .num{font:500 10px 'JetBrains Mono',monospace;color:#8A7F76;margin-left:auto}
+.sb-search{margin:0 12px 8px;height:26px;border-radius:7px;background:#1A1512;box-shadow:inset 0 0 0 1px #2A211B;display:flex;align-items:center;gap:7px;padding:0 9px;font-size:11px;color:#6B6259}
+.sb-seg{margin:0 12px 6px;display:flex;gap:4px}
+.seg{height:22px;padding:0 8px;border-radius:6px;display:flex;align-items:center;gap:6px;font-size:10px;color:#8A7F76}
+.seg.on{background:#241C16;color:#FAF7F2;box-shadow:inset 0 0 0 1px #2A211B}
+.wsrow{display:flex;align-items:center;gap:7px;padding:10px 14px 5px;font:700 10px 'JetBrains Mono',monospace;letter-spacing:.08em;color:#8A7F76;text-transform:uppercase}
+.wsrow .n{margin-left:auto;font-weight:500;letter-spacing:0;display:flex;gap:6px;align-items:center}
+.chev{width:10px;color:#6B6259;font-size:9px;flex:none;text-align:center}
+.row{position:relative;margin:2px 8px;padding:6px 8px;border-radius:7px;display:flex;flex-direction:column;gap:3px;box-sizing:border-box;--bg:#14100E}
+.row.on{background:#241C16;--bg:#241C16}
+.row.on::after{content:"";position:absolute;left:-8px;top:8px;bottom:8px;width:2px;border-radius:2px;background:#F4581C}
+.row.on.sweep{background:linear-gradient(#241C16,#241C16) padding-box,conic-gradient(from var(--a),#241C16 0 62%,#C23E0E 78%,#FF7A3D 88%,#241C16 100%) border-box}
+.r1{display:flex;align-items:center;gap:7px;min-width:0}
+.r1 .t{font-size:12px;color:#B7ACA1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.row.on .r1 .t{color:#FAF7F2;font-weight:500}
+.r2{display:flex;align-items:center;gap:6px;padding-left:31px;font-size:10.5px;color:#8A7F76;min-width:0}
+.r2 .p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.kid{position:relative;margin:1px 8px 1px 36px;padding:4px 8px;border-radius:6px;display:flex;align-items:center;gap:7px;min-width:0;box-sizing:border-box;--bg:#14100E}
+.kid::before{content:"";position:absolute;left:-12px;top:-4px;bottom:50%;width:9px;border-left:1px solid #352B23;border-bottom:1px solid #352B23;border-bottom-left-radius:4px}
+.kid .t{font-size:11px;color:#B7ACA1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.sb-ft{margin-top:auto;border-top:1px solid #2A211B;display:flex;align-items:center;justify-content:space-between;padding:9px 12px;font-size:10.5px;color:#8A7F76}
+
+/* overview */
+.ov{width:1100px;background:#1A1512;border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(26,21,18,.4),inset 0 0 0 1px #2A211B;font-family:'JetBrains Mono',monospace}
+.ov-hd{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #2A211B}
+.ov-title{font:700 15px 'Space Grotesk',sans-serif;color:#FAF7F2;flex:none}
+.ov-search{flex:1;height:30px;border-radius:8px;background:#14100E;box-shadow:inset 0 0 0 1px #2A211B;display:flex;align-items:center;gap:8px;padding:0 11px;font-size:11.5px;color:#6B6259}
+.ov-sum{display:flex;gap:6px;flex:none}
+.ov-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:20px}
+.card{position:relative;background:#241C16;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:9px;box-shadow:inset 0 0 0 1px #2A211B;min-width:0;box-sizing:border-box;--bg:#241C16}
+.card.sweep{box-shadow:none;border-width:1.5px;background:linear-gradient(var(--bg),var(--bg)) padding-box,conic-gradient(from var(--a),var(--bg) 0 62%,#C23E0E 78%,#FF7A3D 88%,var(--bg) 100%) border-box}
+.card.errline{box-shadow:inset 0 0 0 1px #2A211B,inset 0 -2px 0 #D54E53;animation:none}
+.card.errline .ring{animation:shake 3.2s ease-in-out infinite}
+.card.sel{box-shadow:inset 0 0 0 2px #F4581C}
+.card.sel.glow{animation:breatheSel 1.6s ease-in-out infinite}
+.c1{display:flex;align-items:center;gap:8px;min-width:0}
+.c1 .t{font:600 13px 'JetBrains Mono',monospace;color:#FAF7F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.c2{display:flex;align-items:center;gap:7px;min-width:0}
+.c2 .s{font-size:10.5px;color:#8A7F76;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pv{position:relative;height:112px;background:#14100E;border-radius:7px;box-shadow:inset 0 0 0 1px #2A211B;padding:8px 10px;font:10px/15px 'JetBrains Mono',monospace;color:#EDE6DF;overflow:hidden;box-sizing:border-box}
+.pv::after{content:"";position:absolute;left:0;right:0;bottom:0;height:24px;background:linear-gradient(transparent,#14100E)}
+.pbar{position:absolute;left:10px;right:10px;bottom:8px;height:3px;border-radius:3px;background:#2A211B;z-index:1;overflow:hidden}
+.pbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#C23E0E,#F4581C);animation:grow 5s cubic-bezier(.4,0,.2,1) infinite}
+.cft{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#8A7F76;min-width:0}
+.cft .p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cft .w{margin-left:auto;flex:none;color:#6B6259}
+.ov-ft{display:flex;align-items:center;gap:16px;padding:10px 18px;border-top:1px solid #2A211B;font-size:10.5px;color:#8A7F76}
+.k{font:500 9.5px 'JetBrains Mono',monospace;color:#EDE6DF;background:#352B23;border-radius:4px;padding:1px 5px;margin-right:5px}
+
+/* legend + spec */
+.legend{width:1100px;background:#14100E;border-radius:12px;padding:18px 20px;box-sizing:border-box;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:14px}
+.lg-cell{display:flex;flex-direction:column;gap:9px;align-items:stretch;min-width:0}
+.lg-cell .pill{width:100%}
+.lg-name{font:500 11px 'JetBrains Mono',monospace;color:#EDE6DF}
+.lg-note{font:10px/1.45 'JetBrains Mono',monospace;color:#8A7F76}
+.spec{width:1100px;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 22px;box-sizing:border-box;display:grid;grid-template-columns:170px minmax(0,1fr);gap:8px 18px;font:12px/1.55 'JetBrains Mono',monospace;color:#4A4238}
+.spec b{color:#C23E0E;font-weight:700}
+
+/* ===== 5a: plain sessions — the ring answers the data ===== */
+.l5{width:1100px;background:#14100E;border-radius:12px;box-shadow:0 18px 40px rgba(26,21,18,.28);padding:16px 18px 14px;box-sizing:border-box;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
+.l5-cell{display:flex;flex-direction:column;gap:8px;min-width:0}
+.l5-step{font:600 9.5px 'JetBrains Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:#6B6259}
+.l5-note{font:10px/1.45 'JetBrains Mono',monospace;color:#8A7F76}
+.l5-pill{position:relative;height:28px;display:flex;align-items:center;gap:7px;padding:0 9px 0 8px;border-radius:6px;font:400 11.5px 'JetBrains Mono',monospace;color:#B7ACA1;box-sizing:border-box;background:#1A1512;min-width:0;overflow:hidden}
+.l5-row{position:relative;padding:6px 8px;border-radius:7px;display:flex;flex-direction:column;gap:3px;box-sizing:border-box;background:#1A1512;font-family:'JetBrains Mono',monospace;min-width:0;overflow:hidden}
+.l5-row .r1 .t{font-size:11.5px}
+.l5-row .r2{padding-left:21px;font-size:10px}
+.rate{font:500 10px 'JetBrains Mono',monospace;color:#F4581C;flex:none}
+.code{flex:none;font:600 9.5px 'JetBrains Mono',monospace;padding:1px 5px;border-radius:4px;color:#D54E53;background:rgba(213,78,83,.12);box-shadow:inset 0 0 0 1px rgba(213,78,83,.3)}
+.ch-live{color:#F4581C;border:1px solid rgba(244,88,28,.3)}
+.r-calm{border:1.5px solid rgba(244,88,28,.45)}
+.r-flow{border:1.5px solid #F4581C}
+.r-flow::after{content:"";position:absolute;inset:-1.5px;border-radius:50%;border:1.5px solid #FF7A3D;opacity:0;animation:tick 1s linear infinite}
+.r-flow.slow::after{animation-duration:2.4s}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes orbit{to{--a:360deg}}
+@keyframes fill{0%{--p:4}70%{--p:92}100%{--p:92}}
+@keyframes grow{0%{width:4%}70%{width:92%}100%{width:92%}}
+@keyframes halo{0%{transform:scale(1);opacity:.75}100%{transform:scale(2.1);opacity:0}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes pop{0%,100%{transform:scale(1)}6%{transform:scale(.55)}14%{transform:scale(1.25)}22%{transform:scale(1)}}
+@keyframes shake{0%,14%,100%{transform:translateX(0)}2%{transform:translateX(-2px)}4%{transform:translateX(2px)}6%{transform:translateX(-2px)}8%{transform:translateX(2px)}10%{transform:translateX(-1px)}}
+@keyframes breathe{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,122,61,.4),0 0 0 0 rgba(255,122,61,0)}50%{box-shadow:inset 0 0 0 1px rgba(255,122,61,.95),0 0 16px 1px rgba(255,122,61,.3)}}
+@keyframes breatheSel{0%,100%{box-shadow:inset 0 0 0 2px #F4581C,0 0 0 0 rgba(255,122,61,0)}50%{box-shadow:inset 0 0 0 2px #FF7A3D,0 0 22px 2px rgba(255,122,61,.32)}}
+@keyframes shimmer{0%{background-position:120% 0}30%,100%{background-position:-60% 0}}
+@keyframes tick{0%{opacity:.95;transform:scale(1)}30%{opacity:0;transform:scale(1.7)}100%{opacity:0;transform:scale(1.7)}}
+@media (prefers-reduced-motion: reduce){.ring,.ring::before,.ring::after,.sweep,.glow,.shim::before,.errline,.pfill,.pbar i{animation:none!important}}
+</style></helmet>
+
+<section class="dv-turn" id="t5" data-screen-label="Обычные сессии — 5a">
+<div class="dv-thd"><a class="dv-tid" href="#t5">5</a><span class="dv-tname">Обычные сессии (без агента) — выбран <a class="dv-oid" href="#5a">5a</a></span></div>
+<p class="dv-intro">ssh, vim, tail -f и dev-серверы идут часами, это не «работает» из 1b. У такой вкладки состояние «живёт»: в тишине тусклое Ember-кольцо, на каждую порцию вывода кольцо вспыхивает и пускает волну, рядом скорость строк. Ненулевой выход — ошибка из 1b и чип «exit N». Агенты и сборки живут по 1b без изменений — ниже они рядом для сравнения.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="5a" style="width:1100px">
+<div class="dv-olabel"><a class="dv-oid" href="#5a">5a</a>Вкладки: кольцо отвечает на данные</div>
+<div class="win">
+<div class="tbar">
+<div class="lights"><span class="light"></span><span class="light"></span><span class="light"></span></div>
+<div class="ws"><span class="wsdot" style="background:#8ABEB7"></span>Default</div>
+<div class="pill on" style="width:176px"><span class="ring r-flow"></span><span class="pt">ram11</span><span class="rate">38/s</span><span class="x">✕</span></div>
+<div class="pill" style="width:160px"><span class="ring r-calm"></span><span class="pt">voice-p.log</span><span class="tm">tail</span></div>
+<div class="pill errline" style="width:170px"><span class="ring r-err"></span><span class="pt">npm run dev</span><span class="code">exit 1</span></div>
+<div class="pill sweep" style="width:150px"><span class="ring r-work"></span><span class="pt">cargo build</span><span class="tm">41s</span></div>
+<div class="pill" style="width:100px"><span class="ring r-idle"></span><span class="pt">~/tako</span></div>
+<div class="btns"><span class="btn">◫</span><span class="btn">+</span></div>
+</div>
+<div class="body"><div class="ln c-sub">alex09x@ram11:~/solana/hl-order-book-server$ tail -f server.log</div><div class="ln">[10:31:42Z <span class="c-ok">INFO</span>  p2p_stream3::live] Live Block: round=1491060807 height=1187514647</div><div class="ln">[10:31:42Z <span class="c-claw">WARN</span>  p2p_stream::diagnostics] event=batch_rejected phase=conversion</div><div class="ln">[10:31:43Z <span class="c-ok">INFO</span>  p2p_stream3::live] Live Block: round=1491060808 height=1187514648</div><div class="ln">[10:31:43Z <span class="c-ok">INFO</span>  server::p2p::snapshot] snapshot_download progress: 829.0 MB / 1212.8 MB</div></div>
+</div>
+<div class="desc">ram11 (активная): данные идут — кольцо яркое с волной, справа «38/s». voice-p.log: tail запущен, но молчит — тусклое кольцо и подпись программы. npm run dev упал — ошибка из 1b и код вместо таймера. cargo build и ~/tako — как в 1b.</div>
+</div>
+
+<div class="dv-opt" style="width:280px">
+<div class="dv-olabel">Сайдбар (4a)</div>
+<div class="sb">
+<div class="sb-hd">Sessions<span class="num">6</span></div>
+<div class="sb-search">⌕ Filter sessions…</div>
+<div class="sb-seg"><span class="seg on">All</span><span class="seg"><span class="ring sm r-attn"></span>Needs you · 1</span></div>
+<div class="wsrow"><span class="chev">▾</span><span class="wsdot" style="background:#8ABEB7"></span>Default<span class="n"><span class="cnt">1</span>6</span></div>
+<div class="row on">
+<div class="r1"><span class="chev"></span><span class="ring r-flow"></span><span class="t">ram11 · hl-order-book</span><span class="rate">38/s</span></div>
+<div class="r2"><span class="p">ssh · alex09x@ram11</span></div>
+</div>
+<div class="row">
+<div class="r1"><span class="chev"></span><span class="ring r-calm"></span><span class="t">voice-p.log</span><span class="tm">tail</span></div>
+<div class="r2"><span class="p">тихо 4m</span></div>
+</div>
+<div class="row errline">
+<div class="r1"><span class="chev"></span><span class="ring r-err"></span><span class="t">npm run dev</span><span class="code">exit 1</span></div>
+<div class="r2"><span class="p">~/web-ui</span></div>
+</div>
+<div class="row glow">
+<div class="r1"><span class="chev"></span><span class="ring r-attn"></span><span class="t">claude · auth refactor</span><span class="tm">1m 14s</span></div>
+<div class="r2"><span class="p c-claw">Allow cargo test --package auth?</span></div>
+</div>
+<div class="row sweep">
+<div class="r1"><span class="chev"></span><span class="ring r-work"></span><span class="t">cargo build --release</span><span class="tm">41s</span></div>
+<div class="r2"><span class="p">~/tako-core</span></div>
+</div>
+<div class="row">
+<div class="r1"><span class="chev"></span><span class="ring r-idle"></span><span class="t">~/tako</span></div>
+</div>
+<div class="sb-ft"><span>+ New session</span><span>⌥⏎ next waiting</span></div>
+</div>
+<div class="desc">Вторая строка: пока идут данные — программа и хост или путь; в тишине — сколько уже тихо. «Живёт» не попадает в Needs you и в счётчик workspace.</div>
+</div>
+
+<div class="dv-opt" style="width:1100px">
+<div class="dv-olabel">Pane Overview (4b)</div>
+<div class="ov">
+<div class="ov-hd"><span class="ov-title">Pane Overview</span><div class="ov-search">⌕ Filter by title, directory or status…</div><div class="ov-sum"><span class="chip ch-err">1 failed</span><span class="chip ch-idle">3 panes</span></div></div>
+<div class="ov-grid">
+
+<div class="card sel">
+<div class="c1"><span class="ring lg r-flow"></span><span class="t">ram11</span><span class="rate">38/s</span></div>
+<div class="c2"><span class="chip ch-live">ssh</span><span class="s">alex09x@ram11</span></div>
+<div class="pv"><div class="ln">Live Block: round=1491060807</div><div class="ln"><span class="c-claw">WARN</span> batch_rejected phase=conversion</div><div class="ln">Live Block: round=1491060808</div><div class="ln">snapshot_download 829.0 / 1212.8 MB</div></div>
+<div class="cft"><span class="p">~/solana/hl-order-book-server</span><span class="w">Default › 1</span></div>
+</div>
+
+<div class="card">
+<div class="c1"><span class="ring lg r-calm"></span><span class="t">voice-p.log</span><span class="tm">тихо 4m</span></div>
+<div class="c2"><span class="chip ch-live">tail</span><span class="s">~/G/CodeHaus/logs</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> tail -f logs/voice-p.log</div><div class="ln">INFO voice: chunk 1024 ms, rms 0.31</div><div class="ln">INFO voice: chunk 1024 ms, rms 0.28</div><div class="ln">INFO voice: session closed</div></div>
+<div class="cft"><span class="p">~/GolandProjects/CodeHaus</span><span class="w">Default › 2</span></div>
+</div>
+
+<div class="card errline">
+<div class="c1"><span class="ring lg r-err"></span><span class="t">npm run dev</span><span class="code">exit 1</span></div>
+<div class="c2"><span class="chip ch-err">Failed</span><span class="s">vite --port 3000</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> npm run dev</div><div class="ln">&gt; web-ui@0.4.0 dev</div><div class="ln">&gt; vite --port 3000</div><div class="ln"><span class="c-err">Error: listen EADDRINUSE :::3000</span></div></div>
+<div class="cft"><span class="p">~/web-ui</span><span class="w">Default › 3</span></div>
+</div>
+
+</div>
+</div>
+<div class="desc">Живая карточка без рамки и свечения: всё на кольце 18px. Чип — имя программы Ember-контуром, рядом хост или папка. В превью те же последние строки, что на экране. В счётчики шапки «живёт» не входит.</div>
+</div>
+
+<div class="dv-opt" style="width:1100px">
+<div class="dv-olabel">Жизнь вкладки (сверху вкладка, снизу строка сайдбара)</div>
+<div class="l5">
+<div class="l5-cell"><span class="l5-step">шелл открыт</span><div class="l5-pill"><span class="ring r-idle"></span><span class="pt">~/tako</span></div><div class="l5-row"><div class="r1"><span class="ring r-idle"></span><span class="t">~/tako</span></div></div><span class="l5-note">покой из 1b</span></div>
+<div class="l5-cell"><span class="l5-step">запущено, тишина</span><div class="l5-pill"><span class="ring r-calm"></span><span class="pt">ram11</span><span class="tm">ssh</span></div><div class="l5-row"><div class="r1"><span class="ring r-calm"></span><span class="t">ram11</span><span class="tm">ssh</span></div><div class="r2">тихо 4m</div></div><span class="l5-note">тусклое Ember, без движения</span></div>
+<div class="l5-cell"><span class="l5-step">пошли данные</span><div class="l5-pill"><span class="ring r-flow"></span><span class="pt">ram11</span><span class="rate">38/s</span></div><div class="l5-row"><div class="r1"><span class="ring r-flow"></span><span class="t">ram11</span><span class="rate">38/s</span></div><div class="r2">ssh · alex09x@ram11</div></div><span class="l5-note">волна на порцию, не чаще раза в секунду</span></div>
+<div class="l5-cell"><span class="l5-step">редкие строки</span><div class="l5-pill"><span class="ring r-flow slow"></span><span class="pt">voice-p.log</span><span class="tm">tail</span></div><div class="l5-row"><div class="r1"><span class="ring r-flow slow"></span><span class="t">voice-p.log</span><span class="tm">tail</span></div><div class="r2">tail · ~/G/CodeHaus</div></div><span class="l5-note">строка раз в пару секунд — и волна так же; скорость не показываем</span></div>
+<div class="l5-cell"><span class="l5-step">вышла с ошибкой</span><div class="l5-pill errline"><span class="ring r-err"></span><span class="pt">npm run dev</span><span class="code">exit 1</span></div><div class="l5-row errline"><div class="r1"><span class="ring r-err"></span><span class="t">npm run dev</span><span class="code">exit 1</span></div></div><span class="l5-note">только код, без текста ошибки</span></div>
+<div class="l5-cell"><span class="l5-step">обрыв ssh</span><div class="l5-pill errline"><span class="ring r-err"></span><span class="pt">ram11</span><span class="code">exit 255</span></div><div class="l5-row errline"><div class="r1"><span class="ring r-err"></span><span class="t">ram11</span><span class="code">exit 255</span></div></div><span class="l5-note">exit 0, выход из vim и Ctrl-C — сразу покой</span></div>
+</div>
+</div>
+
+<div class="dv-opt" style="width:1100px">
+<div class="dv-olabel">Спека для программиста</div>
+<div class="spec">
+<b>когда</b><span>В панели запущена тихая программа: внутри которой сидишь (ssh, vim, less, htop, REPL), поток (tail -f, logs -f) или сервер (npm run dev). Определяется по тексту команды (OSC 133) и по альтернативному экрану; списки quiet-commands / busy-commands. Явный статус агента всегда важнее.</span>
+<b>тишина</b><span>Кольцо 14/18px, stroke 1.5px Ember #F4581C α 0.45, без движения. Справа имя программы на переднем плане (ssh, vim, tail), 10px #8A7F76 — на месте таймера. В сайдбаре вторая строка «тихо 4m» — время с последнего вывода, в формате таймера.</span>
+<b>данные</b><span>Кольцо stroke 1.5px Ember 100%. На порцию вывода — волна: второе кольцо Claw #FF7A3D 1.5px, scale 1→1.7, opacity 0.95→0 за 0.3s ease-out, не чаще раза в секунду. Справа скорость «38/s» 10px/500 Ember, когда строк ≥ 2 в секунду (окно 3 с); реже — имя программы. Тихо больше 3 с — обратно в тишину. Вторая строка сайдбара: «программа · хост или папка».</span>
+<b>что считается</b><span>Строки вывода этой панели, одинаково для любой программы. Вывод в течение 150ms после нажатия клавиши — эхо набора — не считается, иначе вкладка мигала бы на каждую букву в ssh или vim.</span>
+<b>код выхода</b><span>Ошибка из 1b (кольцо, красная линия, дрожь) и чип «exit N» на месте таймера: 9.5px/600 #D54E53, фон α 0.12, рамка α 0.3, r4. Держится до фокуса. Текст ошибки не показываем. exit 0, 130 (Ctrl-C), 141, 143 — сразу покой; у ssh ошибка только 255.</span>
+<b>приоритет</b><span>офлайн &gt; ошибка &gt; ждёт тебя &gt; работает &gt; прогресс &gt; готово &gt; живёт &gt; покой. «Живёт» не входит в Needs you, счётчики workspace, бейдж дока и «working» в Overview.</span>
+<b>производительность</b><span>Волна — одна короткая анимация на событие, между волнами ничего не крутится. Скорость пересчитывается раз в секунду. Скрытые и перекрытые окна не анимируются, как в 1b.</span>
+<b>reduce motion</b><span>Без волны: кольцо 100% Ember, пока идут данные, и 45% в тишине.</span>
+</div>
+</div>
+
+</div>
+</section>
+
+<section class="dv-turn" id="t4" data-screen-label="Всё в стиле 1b">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Sidebar и Pane Overview в стиле <a class="dv-oid" href="#1b">1b</a></span></div>
+<p class="dv-intro">Один язык на всё: строка сайдбара и карточка Overview живут так же, как вкладка в 1b. По рамке работающего бежит Ember-комета. Ждущий тебя дышит Claw-свечением. По готовому один раз проходит зелёный блик. У упавшего красная линия снизу и дрожь. Прогресс OSC 9;4 идёт тонкой полосой Rust→Ember. Всё остальное тихое, поэтому видно, где жизнь и где нужен ты.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="4a" style="width:280px">
+<div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Session Sidebar ⌘⌥S</div>
+<div class="sb">
+<div class="sb-hd">Sessions<span class="num">9</span></div>
+<div class="sb-search">⌕ Filter sessions…</div>
+<div class="sb-seg"><span class="seg on">All</span><span class="seg"><span class="ring sm r-attn"></span>Needs you · 3</span></div>
+
+<div class="wsrow"><span class="chev">▾</span><span class="wsdot" style="background:#8ABEB7"></span>Default<span class="n"><span class="cnt">2</span>5</span></div>
+<div class="row on glow">
+<div class="r1"><span class="chev">▾</span><span class="ring r-attn"></span><span class="t">claude · auth refactor</span><span class="tm">1m 14s</span></div>
+<div class="r2"><span class="p c-claw">Allow cargo test --package auth?</span></div>
+</div>
+<div class="kid"><span class="ring r-attn"></span><span class="t">claude</span><span class="tag">1</span></div>
+<div class="kid sweep"><span class="ring r-work"></span><span class="t">codex review</span><span class="tm">38s</span><span class="tag">2</span></div>
+<div class="kid errline"><span class="ring r-err"></span><span class="t">cargo test</span><span class="unread"></span><span class="tag">3</span></div>
+<div class="row sweep">
+<div class="r1"><span class="chev"></span><span class="ring r-prog"></span><span class="t">cargo build --release</span><span class="tm">68%</span></div>
+<div class="r2"><span class="p">~/tako-core · ⎇ feat/sidebar ±3</span></div>
+<span class="pfill" style="left:8px"></span>
+</div>
+<div class="row shim">
+<div class="r1"><span class="chev"></span><span class="ring r-done"></span><span class="t">psql migrations</span><span class="tm">2s</span></div>
+<div class="r2"><span class="p">~/tako-db · ⎇ main</span></div>
+</div>
+<div class="row">
+<div class="r1"><span class="chev"></span><span class="ring r-idle"></span><span class="t">~/tako</span></div>
+</div>
+
+<div class="wsrow"><span class="chev">▾</span><span class="wsdot" style="background:#B294BB"></span>Frontend<span class="n"><span class="cnt">1</span>2</span></div>
+<div class="row glow">
+<div class="r1"><span class="chev">▾</span><span class="ring r-attn"></span><span class="t">gemini · a11y audit</span><span class="tm">2m</span></div>
+<div class="r2"><span class="p c-claw">Which palette should we apply?</span></div>
+</div>
+<div class="kid"><span class="ring r-attn"></span><span class="t">gemini</span><span class="tag">1</span></div>
+<div class="kid"><span class="ring r-idle"></span><span class="t">npm run dev</span><span class="tm">:3000</span><span class="tag">2</span></div>
+
+<div class="wsrow"><span class="chev">▸</span><span class="wsdot" style="background:#F0C674"></span>Infra (k8s)<span class="n">2</span></div>
+<div class="row ghost">
+<div class="r1"><span class="chev"></span><span class="ring r-ghost"></span><span class="t" style="color:#6B6259">prod-1 · offline</span></div>
+</div>
+
+<div class="sb-ft"><span>+ New session</span><span>⌥⏎ next waiting</span></div>
+</div>
+<div class="desc">Активная сессия: #241C16 и Ember-полоса 2px слева (вертикальный аналог полосы под вкладкой). У ждущей сессии вместо пути сам вопрос агента, Claw-текстом. Номер панели — тег справа, без слова «pane». cwd у панелей скрыт, если совпадает с родительским. Workspace: точка, имя, счётчик внимания и число сессий, без бейджа статуса.</div>
+</div>
+
+<div class="dv-opt" id="4b" style="width:1100px">
+<div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Pane Overview ⇧⌘O</div>
+<div class="ov">
+<div class="ov-hd"><span class="ov-title">Pane Overview</span><div class="ov-search">⌕ Filter by title, directory or status…</div><div class="ov-sum"><span class="chip ch-attn">2 need you</span><span class="chip ch-work">2 working</span><span class="chip ch-idle">6 panes</span></div></div>
+<div class="ov-grid">
+
+<div class="card sel glow">
+<div class="c1"><span class="ring lg r-attn"></span><span class="t">claude</span><span class="tm">1m 14s</span></div>
+<div class="c2"><span class="chip ch-attn">Approval</span><span class="s">Allow bash: cargo test --package auth</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> claude "Refactor auth middleware"</div><div class="ln"><span class="c-dim">●</span> Reading src/auth/jwt.rs (142 lines)</div><div class="ln"><span class="c-dim">●</span> Proposed edit src/auth/jwt.rs (+38 −12)</div><div class="ln c-claw">? Allow command: cargo test --package auth? [y/n]</div></div>
+<div class="cft"><span class="p">~/tako-backend</span><span class="w">Default › 1</span></div>
+</div>
+
+<div class="card sweep">
+<div class="c1"><span class="ring lg r-work"></span><span class="t">codex review</span><span class="tm">38s</span></div>
+<div class="c2"><span class="chip ch-work">Working</span><span class="s">Scanning 14 files</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> codex review --base main</div><div class="ln">Analyzing diff across 14 changed files…</div><div class="ln">Checking P0/P1 invariants in</div><div class="ln">SessionSidebarTree.swift</div><div class="ln">Running static type checks…</div></div>
+<div class="cft"><span class="p">~/tako-backend</span><span class="w">Default › 1</span></div>
+</div>
+
+<div class="card errline">
+<div class="c1"><span class="ring lg r-err"></span><span class="t">cargo test --workspace</span><span class="tm">12s</span></div>
+<div class="c2"><span class="chip ch-err">Failed</span><span class="s">exit 101</span></div>
+<div class="pv"><div class="ln">running 48 tests</div><div class="ln">test parser::osc133 … <span class="c-ok">ok</span></div><div class="ln">test grid::reflow_wide_char … <span class="c-err">FAILED</span></div><div class="ln"><span class="c-err">error:</span> test failed, to rerun pass `--lib`</div></div>
+<div class="cft"><span class="p">~/tako-core</span><span class="w">Default › 1</span></div>
+</div>
+
+<div class="card sweep">
+<div class="c1"><span class="ring lg r-prog"></span><span class="t">cargo build --release</span><span class="tm">68%</span></div>
+<div class="c2"><span class="chip ch-work">Working</span><span class="s">Compiling tako-core</span></div>
+<div class="pv"><div class="ln">   Compiling libc v0.2.161</div><div class="ln">   Compiling vte v0.13.0</div><div class="ln">   Compiling tako-core v0.9.2</div><div class="ln">   Building [=========&gt;     ] 212/310</div><span class="pbar"><i></i></span></div>
+<div class="cft"><span class="p">~/tako-core</span><span class="w">Default › 2</span></div>
+</div>
+
+<div class="card glow">
+<div class="c1"><span class="ring lg r-attn"></span><span class="t">gemini</span><span class="tm">2m 05s</span></div>
+<div class="c2"><span class="chip ch-attn">Needs input</span><span class="s">Which palette should we apply?</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> gemini "Audit accessibility contrast"</div><div class="ln">Found 3 contrast ratios below 4.5:1.</div><div class="ln">Which palette should we apply?</div><div class="ln"><span class="c-claw">❯ 1. High Contrast Ember</span>   2. Warm Slate</div></div>
+<div class="cft"><span class="p">~/web-ui</span><span class="w">Frontend › 1</span></div>
+</div>
+
+<div class="card shim">
+<div class="c1"><span class="ring lg r-done"></span><span class="t">psql migrations</span><span class="tm">2s</span></div>
+<div class="c2"><span class="chip ch-done">Done</span><span class="s">exit 0</span></div>
+<div class="pv"><div class="ln"><span class="c-dim">$</span> sqlx migrate run</div><div class="ln">Applied 2026101401_add_workspace_tree</div><div class="ln">Applied 2026101402_add_pane_badges</div><div class="ln">All migrations applied successfully.</div></div>
+<div class="cft"><span class="p">~/tako-db</span><span class="w">Default › 3</span></div>
+</div>
+
+</div>
+<div class="ov-ft"><span><span class="k">↑↓←→</span>navigate</span><span><span class="k">⏎</span>jump to pane</span><span><span class="k">⌥⏎</span>next waiting</span><span><span class="k">esc</span>close</span><span style="margin-left:auto;color:#EDE6DF">claude · Default › 1</span></div>
+</div>
+<div class="desc">Выбор с клавиатуры — сплошная Ember-рамка 2px. Если выбранная карточка ещё и ждёт тебя, рамка дышит Ember↔Claw. Модалка #1A1512, карточка #241C16, превью #14100E с текстом #EDE6DF: те же токены, что у вкладок. Таймер в цвете dim, «Workspace › Tab» в футере. Чипы в шапке («2 need you», «2 working») заодно работают как фильтры.</div>
+</div>
+</div>
+<p class="dv-next">Дальше: «вход в Overview: карточки разлетаются из текущих панелей» · «живое превью: строки печатаются в реальном времени» · «узкий режим сайдбара: только кольца»</p>
+</section>
+
+<section class="dv-turn" id="t1" data-screen-label="Вкладки — 1b">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Вкладки — выбран <a class="dv-oid" href="#1b">1b</a></span></div>
+<div class="dv-opts">
+<div class="dv-opt" id="1b" style="width:1100px">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Живёт вся вкладка, а не только точка</div>
+<div class="win">
+<div class="tbar">
+<div class="lights"><span class="light"></span><span class="light"></span><span class="light"></span></div>
+<div class="ws"><span class="wsdot" style="background:#8ABEB7"></span>Default<span class="cnt">2</span></div>
+<div class="pill on glow" style="width:200px"><span class="ring r-attn"></span><span class="pt">claude · auth</span><span class="tm">1m 14s</span><span class="x">✕</span></div>
+<div class="pill sweep" style="width:166px"><span class="ring r-work"></span><span class="pt">codex review</span><span class="tm">38s</span></div>
+<div class="pill" style="width:160px;background:#1A1512"><span class="ring r-prog"></span><span class="pt">cargo build</span><span class="tm">68%</span><span class="pfill"></span></div>
+<div class="pill errline" style="width:138px"><span class="ring r-err"></span><span class="pt">cargo test</span><span class="unread"></span></div>
+<div class="pill shim" style="width:110px"><span class="ring r-done"></span><span class="pt">psql</span></div>
+<div class="btns"><span class="btn">◫</span><span class="btn">+</span></div>
+</div>
+<div class="body"><div class="ln"><span class="c-sub">╭ ~/tako-backend </span><span class="c-dim">git:(</span><span class="c-br">main</span><span class="c-dim">)</span></div><div class="ln"><span class="c-sub">╰ </span><span class="c-ember">❯</span> claude "Refactor auth middleware"</div><div class="ln c-dim">● Reading src/auth/jwt.rs (142 lines)</div><div class="ln c-dim">● Proposed edit to src/auth/jwt.rs (+38 −12)</div><div class="ln c-claw">? Allow command: cargo test --package auth? [y/n]</div></div>
+</div>
+<div class="desc">Работает: по рамке бежит Ember-«комета», один круг за 2.2s. Ждёт тебя: Claw-рамка дышит со свечением, это видно боковым зрением даже с другого монитора. Прогресс: тонкая полоса по низу. Готово: по вкладке один раз проходит зелёный блик. Ошибка: красная линия снизу и дрожь. На активной вкладке «готово» и «ошибка» гаснут через 2s, на фоновых держатся до фокуса.</div>
+</div>
+</div>
+
+<div class="dv-olabel" style="margin:28px 0 10px">Все состояния — одна поверхность (вкладка, строка, карточка)</div>
+<div class="legend">
+<div class="lg-cell"><span class="pill" style="background:#1A1512"><span class="ring r-idle"></span><span class="pt">~/tako</span></span><span class="lg-name">покой</span><span class="lg-note">без рамки и движения</span></div>
+<div class="lg-cell"><span class="pill sweep"><span class="ring r-work"></span><span class="pt">codex</span></span><span class="lg-name">работает</span><span class="lg-note">комета по рамке 2.2s/круг, кольцо 0.9s; только если команда идёт &gt;3s</span></div>
+<div class="lg-cell"><span class="pill" style="background:#1A1512"><span class="ring r-prog"></span><span class="pt">build</span><span class="pfill"></span></span><span class="lg-name">прогресс</span><span class="lg-note">OSC 9;4: линия 2px Rust→Ember снизу</span></div>
+<div class="lg-cell"><span class="pill glow"><span class="ring r-attn"></span><span class="pt">claude</span></span><span class="lg-name">ждёт тебя</span><span class="lg-note">Claw-рамка дышит 1.6s, свечение 16px 30%</span></div>
+<div class="lg-cell"><span class="pill shim" style="background:#1A1512"><span class="ring r-done"></span><span class="pt">psql</span></span><span class="lg-name">готово</span><span class="lg-note">зелёный блик 0.9s один раз, кольцо подпрыгивает</span></div>
+<div class="lg-cell"><span class="pill errline"><span class="ring r-err"></span><span class="pt">test</span></span><span class="lg-name">ошибка</span><span class="lg-note">красная линия 2px снизу, дрожь 0.4s один раз</span></div>
+<div class="lg-cell"><span class="pill ghost"><span class="ring r-ghost"></span><span class="pt">prod-1</span></span><span class="lg-name">офлайн</span><span class="lg-note">пунктирная рамка, текст #6B6259</span></div>
+</div>
+
+<div class="dv-olabel" style="margin:24px 0 10px">Спека для программиста</div>
+<div class="spec">
+<b>где</b><span>Одни и те же 7 состояний на трёх поверхностях: pill-вкладка, строка сайдбара, карточка Overview. Строки-панели в сайдбаре показывают только «работает» и «ошибка», остальные состояния — кольцом.</span>
+<b>комета</b><span>CAGradientLayer type .conic (Rust→Claw на 25% круга, остальное прозрачно), маска — CAShapeLayer со stroke 1px по пути скруглённого прямоугольника. Крутится сам градиентный слой: transform.rotation 2π за 2.2s, linear, repeat. На карточке stroke 1.5px.</span>
+<b>дыхание</b><span>borderColor #FF7A3D α 0.4↔0.95 и shadowOpacity 0↔0.3 (shadowRadius 8, цвет Claw), CABasicAnimation 0.8s, autoreverses, easeInEaseOut. Выбранная ждущая карточка: рамка 2px Ember↔Claw.</span>
+<b>блик</b><span>CAGradientLayer linear 100°, цвет #7BD88F α 0.26 в центре, анимируются locations за 0.9s, один раз. Потом поверхность тихая, кольцо остаётся зелёным.</span>
+<b>ошибка</b><span>Линия 2px #D54E53 по нижней кромке и CAKeyframeAnimation position.x: 0, −2, 2, −2, 2, −1, 0 за 0.4s, один раз. Точка непрочитанного Claw 5px держится до фокуса.</span>
+<b>приоритет</b><span>офлайн &gt; ошибка &gt; ждёт тебя &gt; работает &gt; прогресс &gt; готово &gt; покой. На поверхности одно состояние, эффекты не складываются.</span>
+<b>производительность</b><span>Только Core Animation на GPU, без перерисовки в draw(_:). Когда окно перекрыто (NSWindow.occlusionState) или приложение неактивно дольше 30s, анимации ставятся на паузу (speed = 0), остаётся статичный кадр.</span>
+<b>reduce motion</b><span>Без движения. Работает: статичная Ember-рамка 1px. Ждёт: Claw-рамка 1px и свечение 20%. Готово и ошибка: только цвет кольца и линия.</span>
+<b>workspace</b><span>Цвета из палитры Tomorrow: teal #8ABEB7, purple #B294BB, yellow #F0C674, green #7BD88F, red #D54E53, claw #FF7A3D. Без systemBlue и systemPurple.</span>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

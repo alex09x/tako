@@ -175,7 +175,7 @@ extension TerminalMetalFramePlanner {
         switch snapshot.cursorStyle.shape {
         case .block:
             guard isFocused else {
-                // Terminal UI: "в расфокусе — контур 1px", a point thick
+                // Terminal UI: "Unfocused: 1 px outline", a point thick
                 // unless the cursor's thickness is set.
                 let edge = cursorThickness.map { max(1, Float($0) * Float(metrics.scale)) }
                     ?? max(1, Float(metrics.scale).rounded())

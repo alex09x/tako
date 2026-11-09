@@ -117,6 +117,7 @@ extension AppDelegate {
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
         // Initial config loading
+        DesktopPresentation.shared.configure(tako.config)
         takoConfigDidChange(config: tako.config)
 
         // Register our service provider. This must happen after everything is initialized.

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#EDE8E2; font-family:'Space Grotesk',sans-serif; color:#1A1512; }
+  a { color:#C23E0E; } a:hover { color:#F4581C; }
+</style>
+</helmet>
+<div style="max-width:1280px;margin:0 auto;padding:56px 40px 80px;display:flex;flex-direction:column;gap:56px">
+
+  <div data-screen-label="Header" style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1A1512;padding-bottom:20px">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">BRAND SHEET / V1</div>
+      <div style="font-size:40px;font-weight:700;margin-top:4px">TakoCore</div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76">pure-Rust terminal engine · 2026</div>
+  </div>
+
+  <div data-screen-label="Logo" style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">01 / ЛОГОТИП — PIXEL CRAB</div>
+    <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:16px">
+      <div style="background:#1A1512;border-radius:16px;display:flex;align-items:center;justify-content:center;min-height:340px">
+        <svg viewBox="0 0 120 120" width="220" height="220">
+          <g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g>
+          <g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g>
+          <g fill="#1A1512"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="flex:1;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:16px;display:flex;align-items:center;justify-content:center">
+          <svg viewBox="0 0 120 120" width="110" height="110">
+            <g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g>
+            <g fill="#C23E0E"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g>
+            <g fill="#1A1512"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g>
+          </svg>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;text-align:center">на светлом: тело #C23E0E</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="flex:1;background:#1A1512;border-radius:16px;display:flex;align-items:center;justify-content:center">
+          <svg viewBox="0 0 120 120" width="110" height="110">
+            <g fill="#FAF7F2"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g>
+          </svg>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;text-align:center">монохром: один цвет, глаза — фон</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px">
+      <div style="flex:1;background:#1A1512;border-radius:12px;padding:18px 24px;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:26px;color:#FAF7F2;letter-spacing:0.04em;display:flex;align-items:center;gap:14px">
+        <svg viewBox="0 0 120 120" width="36" height="36"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g><g fill="#1A1512"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g></svg>
+        <span>TAKO<span style="color:#F4581C">CORE</span></span>
+      </div>
+      <div style="flex:1;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:18px 24px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:26px;color:#1A1512;display:flex;align-items:center">tako<span style="color:#C23E0E">::</span>core<span style="font-size:13px;font-weight:400;color:#8A7F76;margin-left:auto">вариант для кода и README</span></div>
+    </div>
+  </div>
+
+  <div data-screen-label="Palette" style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">02 / ПАЛИТРА</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px">
+      <div style="border-radius:12px;overflow:hidden;border:1px solid #DDD5CB"><div style="height:110px;background:#F4581C"></div><div style="padding:10px 14px;background:#FAF7F2"><div style="font-weight:700;font-size:14px">Ember</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">#F4581C</div></div></div>
+      <div style="border-radius:12px;overflow:hidden;border:1px solid #DDD5CB"><div style="height:110px;background:#FF7A3D"></div><div style="padding:10px 14px;background:#FAF7F2"><div style="font-weight:700;font-size:14px">Claw</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">#FF7A3D</div></div></div>
+      <div style="border-radius:12px;overflow:hidden;border:1px solid #DDD5CB"><div style="height:110px;background:#C23E0E"></div><div style="padding:10px 14px;background:#FAF7F2"><div style="font-weight:700;font-size:14px">Rust</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">#C23E0E</div></div></div>
+      <div style="border-radius:12px;overflow:hidden;border:1px solid #DDD5CB"><div style="height:110px;background:#1A1512"></div><div style="padding:10px 14px;background:#FAF7F2"><div style="font-weight:700;font-size:14px">Ink</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">#1A1512</div></div></div>
+      <div style="border-radius:12px;overflow:hidden;border:1px solid #DDD5CB"><div style="height:110px;background:#FAF7F2"></div><div style="padding:10px 14px;background:#FAF7F2;border-top:1px solid #DDD5CB"><div style="font-weight:700;font-size:14px">Paper</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">#FAF7F2</div></div></div>
+    </div>
+  </div>
+
+  <div data-screen-label="Typography" style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">03 / ТИПОГРАФИКА</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:24px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-bottom:10px">PRIMARY — WORDMARK / CODE / UI</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:32px">JetBrains Mono</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:15px;color:#6B6259;margin-top:8px">ABCDEFGHIJKLM abcdefghijklm 0123456789 -&gt; :: {}</div>
+      </div>
+      <div style="background:#FAF7F2;border:1px solid #DDD5CB;border-radius:12px;padding:24px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76;margin-bottom:10px">SECONDARY — ЗАГОЛОВКИ / ТЕКСТ</div>
+        <div style="font-weight:700;font-size:32px">Space Grotesk</div>
+        <div style="font-size:15px;color:#6B6259;margin-top:8px">ABCDEFGHIJKLM abcdefghijklm 0123456789</div>
+      </div>
+    </div>
+  </div>
+
+  <div data-screen-label="App icons" style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">04 / ИКОНКИ ПРИЛОЖЕНИЯ (MACOS / IOS)</div>
+    <div style="display:flex;gap:24px;align-items:flex-end;background:#FAF7F2;border:1px solid #DDD5CB;border-radius:16px;padding:28px">
+      <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+        <div style="width:160px;height:160px;border-radius:36px;background:linear-gradient(160deg,#2A211B,#120F0D);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(26,21,18,0.3)">
+          <svg viewBox="0 0 120 120" width="104" height="104"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g><g fill="#120F0D"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g></svg>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">macOS · ink</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+        <div style="width:160px;height:160px;border-radius:36px;background:linear-gradient(160deg,#FF7A3D,#C23E0E);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(194,62,14,0.35)">
+          <svg viewBox="0 0 120 120" width="104" height="104"><g fill="#FAF7F2"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g></svg>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">iOS · ember</div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div style="width:72px;height:72px;border-radius:16px;background:linear-gradient(160deg,#2A211B,#120F0D);display:flex;align-items:center;justify-content:center">
+            <svg viewBox="0 0 120 120" width="48" height="48"><g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g><g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g><g fill="#120F0D"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g></svg>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">64</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div style="width:36px;height:36px;border-radius:9px;background:#120F0D;display:flex;align-items:center;justify-content:center">
+            <svg viewBox="0 0 120 120" width="26" height="26"><g fill="#F4581C"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g></svg>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">32 — упрощение: один цвет</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-screen-label="README banner" style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#8A7F76;letter-spacing:0.08em">05 / GITHUB README HERO — 1280×640</div>
+    <div style="width:1200px;height:600px;background:#14100E;border-radius:16px;position:relative;overflow:hidden;display:flex;align-items:center">
+      <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(250,247,242,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(250,247,242,0.03) 1px,transparent 1px);background-size:40px 40px"></div>
+      <div style="position:relative;padding:0 0 0 80px;flex:1;display:flex;flex-direction:column;gap:26px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:16px;color:#8A7F76">// pure-Rust terminal engine</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-weight:800;font-size:66px;line-height:1;color:#FAF7F2;letter-spacing:0.02em">TAKO<span style="color:#F4581C">CORE</span><span style="display:inline-block;width:26px;height:58px;background:#F4581C;margin-left:14px;vertical-align:-6px"></span></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:19px;color:#B7ACA1;max-width:560px;line-height:1.5">Парсер, грид, скроллбэк и энкодеры ввода — в Rust. Рендер — в Swift. Ничего между ними.</div>
+        <div style="display:inline-flex;align-self:flex-start;align-items:center;gap:12px;background:#1F1915;border:1px solid #352B23;border-radius:10px;padding:14px 20px;font-family:'JetBrains Mono',monospace;font-size:17px;color:#FAF7F2"><span style="color:#8A7F76">$</span> cargo add <span style="color:#FF7A3D;font-weight:700">tako-core</span></div>
+        <div style="display:flex;gap:10px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#7BD88F;background:rgba(123,216,143,0.1);border:1px solid rgba(123,216,143,0.25);border-radius:999px;padding:5px 14px">429 tests green</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#FF7A3D;background:rgba(255,122,61,0.1);border:1px solid rgba(255,122,61,0.25);border-radius:999px;padding:5px 14px">VT parity c upstream</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#B7ACA1;background:rgba(183,172,161,0.08);border:1px solid rgba(183,172,161,0.2);border-radius:999px;padding:5px 14px">UniFFI → Swift</span>
+        </div>
+      </div>
+      <div style="position:relative;width:440px;display:flex;align-items:center;justify-content:center">
+        <svg viewBox="0 0 120 120" width="330" height="330">
+          <g fill="#FF7A3D"><rect x="5" y="21" width="10" height="10" rx="2"/><rect x="16" y="21" width="10" height="10" rx="2"/><rect x="5" y="32" width="10" height="10" rx="2"/><rect x="93" y="21" width="10" height="10" rx="2"/><rect x="104" y="21" width="10" height="10" rx="2"/><rect x="104" y="32" width="10" height="10" rx="2"/></g>
+          <g fill="#F4581C"><rect x="16" y="43" width="10" height="10" rx="2"/><rect x="93" y="43" width="10" height="10" rx="2"/><rect x="27" y="54" width="10" height="10" rx="2"/><rect x="38" y="54" width="10" height="10" rx="2"/><rect x="49" y="54" width="10" height="10" rx="2"/><rect x="60" y="54" width="10" height="10" rx="2"/><rect x="71" y="54" width="10" height="10" rx="2"/><rect x="82" y="54" width="10" height="10" rx="2"/><rect x="27" y="65" width="10" height="10" rx="2"/><rect x="49" y="65" width="10" height="10" rx="2"/><rect x="60" y="65" width="10" height="10" rx="2"/><rect x="82" y="65" width="10" height="10" rx="2"/><rect x="27" y="76" width="10" height="10" rx="2"/><rect x="38" y="76" width="10" height="10" rx="2"/><rect x="49" y="76" width="10" height="10" rx="2"/><rect x="60" y="76" width="10" height="10" rx="2"/><rect x="71" y="76" width="10" height="10" rx="2"/><rect x="82" y="76" width="10" height="10" rx="2"/><rect x="16" y="87" width="10" height="10" rx="2"/><rect x="38" y="87" width="10" height="10" rx="2"/><rect x="71" y="87" width="10" height="10" rx="2"/><rect x="93" y="87" width="10" height="10" rx="2"/></g>
+          <g fill="#14100E"><rect x="38" y="65" width="10" height="10" rx="2"/><rect x="71" y="65" width="10" height="10" rx="2"/></g>
+        </svg>
+      </div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A7F76">Могу выгрузить как PNG 1280×640 для README / social preview — скажи.</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -184,6 +184,8 @@ let knownTakoConfigKeys: Set<String> = [
     "workspace-sync-window-frame", "workspace-inherit-window-frame",
     "tab-status-color-working", "tab-status-color-waiting", "tab-status-color-done",
     "tab-status-color-error", "tab-status-color-idle",
+    "app-appearance", "status-show", "status-animate",
+    "sidebar-count-waiting", "sidebar-count-error", "sidebar-count-done",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.
