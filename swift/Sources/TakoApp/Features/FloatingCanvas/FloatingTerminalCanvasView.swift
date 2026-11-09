@@ -157,10 +157,6 @@ struct FloatingTerminalCanvasView: View {
                     }
                 }
             }
-            // What finishes or waits out of sight (reference `.toasts`, top right).
-            .overlay(alignment: .topTrailing) {
-                PaneToastStack().shellScheme().zIndex(2_000_000)
-            }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
             .onAppear {

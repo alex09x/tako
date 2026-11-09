@@ -166,6 +166,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 )
                             }
                         }
+                        // What finishes or waits out of sight (reference `.toasts`, top right).
+                        .overlay(alignment: .topTrailing) { PaneToastStack().shellScheme() }
                         .environmentObject(tako)
                         .takoLastFocusedSurface(lastFocusedSurface)
                         .focused($focused)
