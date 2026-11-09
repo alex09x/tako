@@ -26,6 +26,8 @@ struct FloatingTerminalCanvasView: View {
             let hasMinimized = store.hasMinimizedPanes
             let workArea = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimized)
             let frames = store.presentedFrames(in: canvasSize)
+            let orderedPanes = store.visiblePanesSortedByZ
+            let layerRanks = Dictionary(uniqueKeysWithValues: orderedPanes.enumerated().map { ($0.element.surfaceId, Double($0.offset)) })
 
             ZStack(alignment: .bottomTrailing) {
                 // The field under the terminals is the shell's (app-appearance),
@@ -48,7 +50,7 @@ struct FloatingTerminalCanvasView: View {
                         Color.clear
                             .frame(width: canvasSize.width, height: canvasSize.height)
 
-                        ForEach(store.visiblePanesSortedByZ, id: \.surfaceId) { pane in
+                        ForEach(orderedPanes, id: \.surfaceId) { pane in
                             if let surfaceView = controller.surfaceTree.first(where: { $0.id == pane.surfaceId }) {
                                 let frame = frames[pane.surfaceId] ?? FloatingPaneGeometry.presentedFrame(
                                     for: pane,
@@ -74,11 +76,12 @@ struct FloatingTerminalCanvasView: View {
                                         store.setInteractiveRect(rect, for: surfaceView.id, in: canvasSize)
                                     },
                                     onHeaderDrag: { rect in
-                                        store.setInteractiveRect(rect, for: surfaceView.id, in: canvasSize)
+                                        store.setHeaderDragRect(rect, for: surfaceView.id, in: canvasSize)
                                         controller.updateCanvasDrop(for: surfaceView, in: canvasSize)
                                     },
                                     onDetachMaximized: { px, py in
-                                        store.detachMaximizedForDrag(
+                                        store.beginHeaderDrag(for: surfaceView.id)
+                                        return store.detachMaximizedForDrag(
                                             surfaceView.id,
                                             pointerXInCanvas: px,
                                             pointerYInHeader: py,
@@ -86,10 +89,11 @@ struct FloatingTerminalCanvasView: View {
                                         )
                                     },
                                     onGestureCommit: {
-                                        if let target = store.dropTarget {
-                                            _ = controller.dockCanvasPane(surfaceView, at: target)
+                                        var docked = false
+                                        if store.canDockHeaderDrag(surfaceView.id), let target = store.dropTarget {
+                                            docked = controller.dockCanvasPane(surfaceView, at: target)
                                         }
-                                        store.dropTarget = nil
+                                        store.finishHeaderDrag(for: surfaceView.id, docked: docked)
                                         store.commitInteractiveRect(for: surfaceView.id, in: canvasSize)
                                     },
                                     onMinimize: {
@@ -113,7 +117,7 @@ struct FloatingTerminalCanvasView: View {
                                 )
                                 .frame(width: frame.width, height: frame.height)
                                 .position(x: frame.midX, y: frame.midY)
-                                .zIndex(Double(pane.zOrder))
+                                .zIndex(layerRanks[pane.surfaceId] ?? 0)
                             }
                         }
 

@@ -90,12 +90,11 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         XCTAssertEqual(toggle.value as? String, "floating")
         let before = pane(second, in: app).frame
         let drag = header(second, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
-        XCUIElement.perform(withKeyModifiers: .option) {
-            drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: -35, dy: 20)))
-        }
+        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: -35, dy: 20)))
         let after = pane(second, in: app).frame
         XCTAssertEqual(after.minX, before.minX - 35, accuracy: 5)
         XCTAssertEqual(after.minY, before.minY + 20, accuracy: 5)
+        XCTAssertEqual(toggle.value as? String, "floating")
         toggle.click()
         XCTAssertEqual(toggle.value as? String, "tiled")
         XCTAssertFalse(pane(first, in: app).frame.intersects(pane(second, in: app).frame))

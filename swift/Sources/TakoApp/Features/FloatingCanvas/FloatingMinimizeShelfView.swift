@@ -263,6 +263,7 @@ struct FloatingActionButtonOverlay: NSViewRepresentable {
     let label: String
     let value: String
     let helpText: String
+    var isSelected = false
     let onHoverChange: (Bool) -> Void
     let action: () -> Void
 
@@ -280,6 +281,7 @@ struct FloatingActionButtonOverlay: NSViewRepresentable {
         view.setAccessibilityIdentifier(identifier)
         view.setAccessibilityLabel(label)
         view.setAccessibilityValue(value)
+        view.setAccessibilitySelected(isSelected)
         view.toolTip = helpText
         view.onHoverChange = onHoverChange
         view.onAction = action

@@ -27,14 +27,23 @@ extension FloatingCanvasStore {
     }
 
     func setInteractiveRect(_ rect: CGRect, for surfaceId: UUID, in canvasSize: CGSize) {
+        applyInteractiveRect(rect, for: surfaceId, in: canvasSize, detachFromGrid: true)
+    }
+
+    func setHeaderDragRect(_ rect: CGRect, for surfaceId: UUID, in canvasSize: CGSize) {
+        beginHeaderDrag(for: surfaceId)
+        applyInteractiveRect(rect, for: surfaceId, in: canvasSize, detachFromGrid: false)
+    }
+
+    private func applyInteractiveRect(_ rect: CGRect, for surfaceId: UUID, in canvasSize: CGSize, detachFromGrid: Bool) {
         guard FloatingPaneGeometry.isValidCanvasSize(canvasSize),
               let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return }
         cancelTransition(for: surfaceId)
         lastValidCanvasSize = canvasSize
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         let clamped = FloatingPaneGeometry.clamp(rect, to: area)
-        // Dragging a pane out of the grid detaches it.
-        if tiledIds.contains(surfaceId) { tiledIds.remove(surfaceId) }
+        // Explicit rect edits detach; header drags choose their final mode on release.
+        if detachFromGrid && tiledIds.contains(surfaceId) { tiledIds.remove(surfaceId) }
         var updated = panes[idx]
         updated.mode = .normal
         updated.restoreMode = .normal
@@ -74,7 +83,7 @@ extension FloatingCanvasStore {
             CGRect(x: originX.rounded(), y: originY.rounded(), width: normal.width, height: normal.height),
             to: area
         )
-        tiledIds.remove(surfaceId)
+        if !canDockHeaderDrag(surfaceId) { tiledIds.remove(surfaceId) }
         panes[idx].mode = .normal
         panes[idx].restoreMode = .normal
         panes[idx].rect = detached
@@ -93,6 +102,7 @@ extension FloatingCanvasStore {
         let fromRect: CGRect = priorPane.mode == .minimized
             ? FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: priorMinCount)
             : presentedFrame(of: surfaceId, in: canvas)
+        cancelHeaderDrag(for: surfaceId)
 
         switch panes[idx].mode {
         case .maximized:
@@ -125,6 +135,7 @@ extension FloatingCanvasStore {
               panes[idx].mode != .minimized else { return }
         let canvas = effectiveCanvasSize()
         let departingFrame = presentedFrame(of: surfaceId, in: canvas)
+        cancelHeaderDrag(for: surfaceId)
         cancelPendingFocus(for: surfaceId)
         panes[idx].restoreMode = (panes[idx].mode == .maximized) ? .maximized : .normal
         panes[idx].mode = .minimized

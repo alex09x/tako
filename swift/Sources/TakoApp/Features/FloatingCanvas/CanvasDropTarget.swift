@@ -61,8 +61,12 @@ struct CanvasDropTarget: Equatable {
 
 extension BaseTerminalController {
     func updateCanvasDrop(for surface: Tako.SurfaceView, in size: CGSize) {
+        guard floatingCanvas.canDockHeaderDrag(surface.id) else {
+            floatingCanvas.updateHeaderDropTarget(nil, for: surface.id)
+            return
+        }
         guard let window, let event = NSApp.currentEvent, !event.modifierFlags.contains(.option) else {
-            floatingCanvas.dropTarget = nil
+            floatingCanvas.updateHeaderDropTarget(nil, for: surface.id)
             return
         }
         let width = window.contentView?.bounds.width ?? size.width
@@ -72,7 +76,7 @@ extension BaseTerminalController {
         frames = frames.filter { $0.key != surface.id && floatingCanvas.isTiled($0.key) }
         let area = FloatingCanvasStore.gridArea(in: FloatingPaneGeometry.workArea(in: size,
             hasMinimizedPanes: floatingCanvas.hasMinimizedPanes))
-        floatingCanvas.dropTarget = CanvasDropTarget.pick(at: point, frames: frames, area: area)
+        floatingCanvas.updateHeaderDropTarget(CanvasDropTarget.pick(at: point, frames: frames, area: area), for: surface.id)
     }
 
     @discardableResult

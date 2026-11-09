@@ -68,7 +68,9 @@ extension FloatingCanvasStore {
         var maximized: [UUID] = []
         for pane in panes {
             var p = presentation(of: pane)
-            if p.mode == .maximized {
+            if headerDragSession?.surfaceId == pane.surfaceId {
+                p.mode = .floating
+            } else if p.mode == .maximized {
                 maximized.append(pane.surfaceId)
                 p.mode = p.restoreMode == .tiled ? .tiled : .floating
             }
@@ -101,6 +103,7 @@ extension FloatingCanvasStore {
               panes[idx].mode != .minimized else { return }
         let canvas = effectiveCanvasSize(fallback: canvasSize)
         let fromRect = presentedFrame(of: surfaceId, in: canvas)
+        cancelHeaderDrag(for: surfaceId)
         if tiledIds.contains(surfaceId) {
             tiledIds.remove(surfaceId)
         } else {

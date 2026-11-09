@@ -32,6 +32,7 @@ final class FloatingCanvasStore: ObservableObject {
     /// `.normal` panes in this set are tiled by the split grid; the rest float.
     @Published internal(set) var tiledIds: Set<UUID> = []
     @Published var dropTarget: CanvasDropTarget?
+    @Published var headerDragSession: HeaderDragSession?
     /// Identity mirror of the controller's `SplitTree`, used for tile allocation.
     internal(set) var tileTree: CanvasTileNode<UUID>?
     var lastValidCanvasSize: CGSize?
@@ -55,6 +56,9 @@ final class FloatingCanvasStore: ObservableObject {
             .enumerated()
             .filter { $0.element.mode != .minimized }
             .sorted { lhs, rhs in
+                let lhsFree = !tiledIds.contains(lhs.element.surfaceId)
+                let rhsFree = !tiledIds.contains(rhs.element.surfaceId)
+                if lhsFree != rhsFree { return !lhsFree }
                 if lhs.element.zOrder != rhs.element.zOrder {
                     return lhs.element.zOrder < rhs.element.zOrder
                 }
@@ -241,6 +245,7 @@ final class FloatingCanvasStore: ObservableObject {
         let leaves = Array(tree)
         tileTree = tree.root.map { CanvasTileNode<UUID>($0) }
         if leaves.isEmpty {
+            cancelHeaderDrag()
             if let pending = pendingFocus {
                 cancelPendingFocus(for: pending.surfaceId)
             }
@@ -263,6 +268,7 @@ final class FloatingCanvasStore: ObservableObject {
         var next = panes.filter { pane in
             let alive = liveSet.contains(pane.surfaceId)
             if !alive {
+                cancelHeaderDrag(for: pane.surfaceId)
                 cancelPendingFocus(for: pane.surfaceId)
                 cancelTransition(for: pane.surfaceId)
             }

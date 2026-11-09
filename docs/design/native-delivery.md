@@ -18,6 +18,19 @@ it requires a real persistent identity and migration, not copying parent values.
 Terminal SDK padding stays zero. Any spacing taken from the desktop reference
 belongs to the application layout and must be accounted for in terminal sizing.
 
+## Free-window behavior
+
+The overlapping-windows control is always visible. It is subdued in the grid and
+stays selected with a Claw fill and border in free mode, including without focus
+or hover. Returning to the grid clears its selected state.
+
+An explicitly free pane never proposes edge or peer docking. Grid-origin header
+drags retain docking previews; releasing outside a target enters free mode.
+Free panes form a separate layer above every grid pane in their own session,
+including maximized grid panes. Focus raises panes only within their layer.
+Minimize/restore preserves free membership, preferred rectangle and process
+identity. These are application-internal panes, not globally floating macOS windows.
+
 ## Verification
 
 Use the existing remote MacBook workflow with build/cache/evidence on its external
@@ -80,6 +93,7 @@ the successful reruns:
 | `final-workflows.xcresult` | Five successful scenarios: persistent pane names, custom-theme rename/delete protection, toast restore/focus and expiry |
 | `sidebar-list-final.xcresult` | Three successful scenarios: search, session switch-back with process/focus continuity, and active-row visibility with sixteen sessions |
 | `shelf-overlay-final.xcresult` | Overlay pill placement, full terminal height, normal grid reflow, bottom click/focus, maximize and process identity |
+| `free-mode.xcresult` | Five passing scenarios: persistent selected-mode pixels, ordinary free drag without docking, grid docking, free/grid layering and free-sibling focus, minimize/restore with the same process |
 
 The final five executed with zero failures and an explicit successful Xcode test
 result. Retained videos and attachment manifests support the AX assertions.

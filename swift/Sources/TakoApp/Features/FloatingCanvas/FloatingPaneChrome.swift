@@ -91,7 +91,7 @@ struct FloatingPaneHeaderView: View {
     }
 
     private var controlsProminent: Bool {
-        isFocused || isStripHovered || hoveredControlId != nil
+        isStripHovered || hoveredControlId != nil
     }
 
     var body: some View {
@@ -160,13 +160,14 @@ struct FloatingPaneHeaderView: View {
             HStack(spacing: 1) {
                 // One compact system icon (reference m15226): pressed while floating.
                 FloatingHeaderIconButton(
-                    symbolName: "rectangle.on.rectangle",
+                    symbolName: isTiled ? "rectangle.on.rectangle" : "rectangle.on.rectangle.fill",
                     identifier: "FloatingPaneFloat-\(uuidKey)",
-                    label: isTiled ? "Плавающее окно" : "Expand",
+                    label: isTiled ? "Float Terminal" : "Return to Grid",
                     value: isTiled ? "tiled" : "floating",
-                    helpText: isTiled ? "Плавающее окно" : "Развернуть — вернуть в сетку сессии",
+                    helpText: isTiled ? "Float Terminal — move freely above the grid" : "Return to the Session Grid",
                     isProminent: controlsProminent,
                     isPressed: !isTiled,
+                    isAlwaysVisible: true,
                     onHoverStateChange: { updateControlHover(id: "float", hovering: $0) },
                     action: onToggleFloating
                 )
@@ -230,6 +231,7 @@ private struct FloatingHeaderIconButton: View {
     let isProminent: Bool
     /// A toggle that is on (the float icon while floating): drawn raised.
     var isPressed: Bool = false
+    var isAlwaysVisible: Bool = false
     var isClose: Bool = false
     let onHoverStateChange: (Bool) -> Void
     let action: () -> Void
@@ -248,6 +250,9 @@ private struct FloatingHeaderIconButton: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(hoverBackground)
                 )
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(isPressed ? Color(nsColor: T.claw).opacity(0.55) : .clear, lineWidth: 1))
+                .opacity(isAlwaysVisible || isProminent || hovering ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -256,6 +261,7 @@ private struct FloatingHeaderIconButton: View {
                 label: label,
                 value: value ?? "",
                 helpText: helpText,
+                isSelected: isPressed,
                 onHoverChange: { isHovering in
                     hovering = isHovering
                     onHoverStateChange(isHovering)
@@ -267,18 +273,20 @@ private struct FloatingHeaderIconButton: View {
     }
 
     private var foregroundColor: Color {
+        if isPressed { return Color(nsColor: T.claw) }
         if hovering {
             return Color(nsColor: isClose ? T.error : T.textActive)
         }
-        if isPressed { return Color(nsColor: T.claw) }
         if isProminent {
             return Color(nsColor: T.textInactive)
         }
+        if isAlwaysVisible { return Color(nsColor: T.dim) }
         return Color(nsColor: T.dim).opacity(0.55)
     }
 
     private var hoverBackground: Color {
-        guard hovering else { return isPressed ? Color(nsColor: T.surfaceActive) : .clear }
+        if isPressed { return Color(nsColor: T.claw).opacity(hovering ? 0.24 : 0.18) }
+        guard hovering else { return .clear }
         return isClose
             ? Color(nsColor: T.error).opacity(0.16)
             : Color(nsColor: T.surfaceHover)
