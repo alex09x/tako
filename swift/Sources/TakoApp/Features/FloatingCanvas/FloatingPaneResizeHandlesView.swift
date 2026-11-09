@@ -23,7 +23,9 @@ struct FloatingPaneResizeHandlesView: NSViewRepresentable {
     let onResizeMove: (CGRect) -> Void
     let onResizeCommit: () -> Void
 
-    static let topEdgeHitThickness: CGFloat = 4
+    /// Equals the header's top control margin, so the top resize strip never reaches the 22pt controls.
+    static let topEdgeHitThickness: CGFloat =
+        (DesktopCanvasMetrics.paneHeaderHeight - DesktopCanvasMetrics.controlSize) / 2
     static let edgeHitThickness: CGFloat = 6
     static let cornerHitSize: CGFloat = 12
 

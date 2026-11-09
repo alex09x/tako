@@ -73,10 +73,14 @@ struct FloatingPaneState: Codable, Equatable, Sendable {
 struct FloatingCanvasSnapshot: Codable, Equatable, Sendable {
     var version: Int = 1
     var panes: [FloatingPaneState]
+    /// Panes presented in the split grid. `nil` in saved state written before the
+    /// grid existed, where every `.normal` pane was free floating.
+    var tiled: [UUID]?
 
-    init(version: Int = 1, panes: [FloatingPaneState] = []) {
+    init(version: Int = 1, panes: [FloatingPaneState] = [], tiled: [UUID]? = nil) {
         self.version = version
         self.panes = panes
+        self.tiled = tiled
     }
 }
 
@@ -130,7 +134,7 @@ enum FloatingPaneResizeEdge: String, CaseIterable, Sendable {
 
 /// Pure geometry calculations for floating panes and the bottom-right minimize shelf.
 enum FloatingPaneGeometry {
-    static let headerHeight: CGFloat = 32
+    static let headerHeight: CGFloat = DesktopCanvasMetrics.paneHeaderHeight
     static let cornerRadius: CGFloat = 10
     static let shelfBandHeight: CGFloat = 44
     static let shelfCardHeight: CGFloat = 30

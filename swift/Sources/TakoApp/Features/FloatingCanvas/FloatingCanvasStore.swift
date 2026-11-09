@@ -29,6 +29,10 @@ final class FloatingCanvasStore: ObservableObject {
 
     @Published internal(set) var panes: [FloatingPaneState] = []
     @Published private(set) var activeTransition: FloatingPaneTransition?
+    /// `.normal` panes in this set are tiled by the split grid; the rest float.
+    @Published internal(set) var tiledIds: Set<UUID> = []
+    /// Identity mirror of the controller's `SplitTree`, used for tile allocation.
+    internal(set) var tileTree: CanvasTileNode<UUID>?
     var lastValidCanvasSize: CGSize?
     private(set) var pendingFocus: PendingFocus?
     private(set) var transitionGeneration: UInt64 = 0
@@ -74,18 +78,9 @@ final class FloatingCanvasStore: ObservableObject {
         state(for: surfaceId)?.mode == .minimized
     }
 
-    func effectiveCanvasSize(fallback: CGSize? = nil) -> CGSize {
-        if let lastValidCanvasSize, FloatingPaneGeometry.isValidCanvasSize(lastValidCanvasSize) {
-            return lastValidCanvasSize
-        }
-        if let fallback, FloatingPaneGeometry.isValidCanvasSize(fallback) {
-            return fallback
-        }
-        return FloatingPaneGeometry.fallbackCanvasSize
-    }
-
     func snapshot() -> FloatingCanvasSnapshot {
-        FloatingCanvasSnapshot(version: 1, panes: panes)
+        FloatingCanvasSnapshot(version: 1, panes: panes,
+                               tiled: panes.map(\.surfaceId).filter { tiledIds.contains($0) })
     }
 
     func setPendingSplitHint(_ hint: SplitPlacementHint?) {
@@ -147,9 +142,11 @@ final class FloatingCanvasStore: ObservableObject {
         let canvas = effectiveCanvasSize(fallback: fallbackSize)
         let liveIds = Array(tree).map(\.id)
         let liveSet = Set(liveIds)
+        tileTree = tree.root.map { CanvasTileNode<UUID>($0) }
 
         guard !liveIds.isEmpty else {
             panes = []
+            tiledIds = []
             needsInitialRectSeeding = false
             return
         }
@@ -182,6 +179,10 @@ final class FloatingCanvasStore: ObservableObject {
             }
             needsInitialRectSeeding = false
             panes = restored
+            // Old saved state has no grid: its normal panes stay floating.
+            let snapshotIds = Set(snapshot.panes.map(\.surfaceId))
+            let added = snapshot.tiled == nil ? [] : liveIds.filter { !snapshotIds.contains($0) }
+            tiledIds = Set(snapshot.tiled ?? []).intersection(liveSet).union(added)
             return
         }
 
@@ -193,8 +194,10 @@ final class FloatingCanvasStore: ObservableObject {
         let leaves = Array(tree)
         guard !leaves.isEmpty else {
             panes = []
+            tiledIds = []
             return
         }
+        tiledIds = Set(leaves.map(\.id))
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: false)
         if leaves.count == 1 {
             let id = leaves[0].id
@@ -235,6 +238,7 @@ final class FloatingCanvasStore: ObservableObject {
         }
 
         let leaves = Array(tree)
+        tileTree = tree.root.map { CanvasTileNode<UUID>($0) }
         if leaves.isEmpty {
             if let pending = pendingFocus {
                 cancelPendingFocus(for: pending.surfaceId)
@@ -267,6 +271,7 @@ final class FloatingCanvasStore: ObservableObject {
         let existingIds = Set(next.map(\.surfaceId))
         let added = leaves.map(\.id).filter { !existingIds.contains($0) }
         guard !added.isEmpty || next.count != panes.count else { return }
+        tiledIds = tiledIds.intersection(liveSet).union(added)
 
         let canvas = effectiveCanvasSize(fallback: fallbackSize)
         let hasMin = next.contains { $0.mode == .minimized }
@@ -303,6 +308,7 @@ final class FloatingCanvasStore: ObservableObject {
             ))
         }
 
+        if !added.isEmpty { returnMaximizedTilesToGrid(&next) }
         panes = next
         onPersistNeeded?()
     }

@@ -33,6 +33,8 @@ extension FloatingCanvasStore {
         lastValidCanvasSize = canvasSize
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         let clamped = FloatingPaneGeometry.clamp(rect, to: area)
+        // Dragging a pane out of the grid detaches it.
+        if tiledIds.contains(surfaceId) { tiledIds.remove(surfaceId) }
         var updated = panes[idx]
         updated.mode = .normal
         updated.restoreMode = .normal
@@ -72,6 +74,7 @@ extension FloatingCanvasStore {
             CGRect(x: originX.rounded(), y: originY.rounded(), width: normal.width, height: normal.height),
             to: area
         )
+        tiledIds.remove(surfaceId)
         panes[idx].mode = .normal
         panes[idx].restoreMode = .normal
         panes[idx].rect = detached
@@ -86,11 +89,10 @@ extension FloatingCanvasStore {
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }) else { return }
         let canvas = effectiveCanvasSize(fallback: canvasSize)
         let priorPane = panes[idx]
-        let priorHasMin = hasMinimizedPanes
         let priorMinCount = minimizedPanes.count
         let fromRect: CGRect = priorPane.mode == .minimized
             ? FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: priorMinCount)
-            : FloatingPaneGeometry.presentedFrame(for: priorPane, in: canvas, hasMinimizedPanes: priorHasMin)
+            : presentedFrame(of: surfaceId, in: canvas)
 
         switch panes[idx].mode {
         case .maximized:
@@ -102,11 +104,7 @@ extension FloatingCanvasStore {
         }
         panes[idx].zOrder = allocateZOrder()
 
-        let toRect = FloatingPaneGeometry.presentedFrame(
-            for: panes[idx],
-            in: canvas,
-            hasMinimizedPanes: hasMinimizedPanes
-        )
+        let toRect = presentedFrame(of: surfaceId, in: canvas)
         recordTransition(
             surfaceId: surfaceId,
             kind: priorPane.mode == .minimized ? .restoring : .modeMorph,
@@ -126,11 +124,7 @@ extension FloatingCanvasStore {
         guard let idx = panes.firstIndex(where: { $0.surfaceId == surfaceId }),
               panes[idx].mode != .minimized else { return }
         let canvas = effectiveCanvasSize()
-        let departingFrame = FloatingPaneGeometry.presentedFrame(
-            for: panes[idx],
-            in: canvas,
-            hasMinimizedPanes: hasMinimizedPanes
-        )
+        let departingFrame = presentedFrame(of: surfaceId, in: canvas)
         cancelPendingFocus(for: surfaceId)
         panes[idx].restoreMode = (panes[idx].mode == .maximized) ? .maximized : .normal
         panes[idx].mode = .minimized
@@ -169,11 +163,7 @@ extension FloatingCanvasStore {
         if wasMinimized {
             let canvas = effectiveCanvasSize(fallback: canvasSize)
             let fromRect = FloatingCanvasMotion.shelfAnchorRect(in: canvas, minimizedCount: priorMinCount)
-            let toRect = FloatingPaneGeometry.presentedFrame(
-                for: panes[idx],
-                in: canvas,
-                hasMinimizedPanes: hasMinimizedPanes
-            )
+            let toRect = presentedFrame(of: surfaceId, in: canvas)
             recordTransition(
                 surfaceId: surfaceId,
                 kind: .restoring,

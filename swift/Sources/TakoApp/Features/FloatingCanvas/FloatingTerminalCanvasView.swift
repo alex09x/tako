@@ -25,6 +25,7 @@ struct FloatingTerminalCanvasView: View {
             let canvasSize = effectiveSize(from: geometry.size)
             let hasMinimized = store.hasMinimizedPanes
             let workArea = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimized)
+            let frames = store.presentedFrames(in: canvasSize)
 
             ZStack(alignment: .bottomTrailing) {
                 tako.config.backgroundColor
@@ -45,7 +46,7 @@ struct FloatingTerminalCanvasView: View {
 
                         ForEach(store.visiblePanesSortedByZ, id: \.surfaceId) { pane in
                             if let surfaceView = controller.surfaceTree.first(where: { $0.id == pane.surfaceId }) {
-                                let frame = FloatingPaneGeometry.presentedFrame(
+                                let frame = frames[pane.surfaceId] ?? FloatingPaneGeometry.presentedFrame(
                                     for: pane,
                                     in: canvasSize,
                                     hasMinimizedPanes: hasMinimized
@@ -54,6 +55,7 @@ struct FloatingTerminalCanvasView: View {
                                     surfaceView: surfaceView,
                                     crab: surfaceView.crab,
                                     pane: pane,
+                                    isTiled: pane.mode == .normal && store.isTiled(pane.surfaceId),
                                     frame: frame,
                                     workArea: workArea,
                                     canvasSize: canvasSize,
@@ -83,6 +85,9 @@ struct FloatingTerminalCanvasView: View {
                                     },
                                     onToggleMaximize: {
                                         controller.toggleMaximizeFloatingPane(surfaceView, in: canvasSize)
+                                    },
+                                    onToggleFloating: {
+                                        controller.togglePaneFloating(surfaceView, in: canvasSize)
                                     },
                                     onMoveToNewWindow: {
                                         NotificationCenter.default.post(
@@ -159,6 +164,7 @@ private struct FloatingPaneWindowView: View {
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
     let pane: FloatingPaneState
+    let isTiled: Bool
     let frame: CGRect
     let workArea: CGRect
     let canvasSize: CGSize
@@ -172,6 +178,7 @@ private struct FloatingPaneWindowView: View {
     let onGestureCommit: () -> Void
     let onMinimize: () -> Void
     let onToggleMaximize: () -> Void
+    let onToggleFloating: () -> Void
     let onMoveToNewWindow: () -> Void
     let onClose: () -> Void
 
@@ -185,12 +192,13 @@ private struct FloatingPaneWindowView: View {
         FloatingPaneGeometry.accessibilityStatusValue(for: crab.paneStatus)
     }
 
+    /// Free floating: resize handles and the lifted shadow apply only here.
     private var isNormal: Bool {
-        pane.mode == .normal
+        pane.mode == .normal && !isTiled
     }
 
     private var radius: CGFloat {
-        isNormal ? FloatingPaneGeometry.cornerRadius : 0
+        pane.mode == .normal ? FloatingPaneGeometry.cornerRadius : 0
     }
 
     private var normalBorderColor: Color {
@@ -206,6 +214,7 @@ private struct FloatingPaneWindowView: View {
                 surfaceView: surfaceView,
                 crab: surfaceView.crab,
                 pane: pane,
+                isTiled: isTiled,
                 presentedFrame: frame,
                 isFocused: isFocused,
                 canvasSize: canvasSize,
@@ -217,6 +226,7 @@ private struct FloatingPaneWindowView: View {
                 onDragCommit: onGestureCommit,
                 onMinimize: onMinimize,
                 onToggleMaximize: onToggleMaximize,
+                onToggleFloating: onToggleFloating,
                 onMoveToNewWindow: onMoveToNewWindow,
                 onClose: onClose
             )
@@ -230,7 +240,7 @@ private struct FloatingPaneWindowView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
-            if isNormal {
+            if pane.mode == .normal {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(normalBorderColor, lineWidth: 1)
                     .allowsHitTesting(false)

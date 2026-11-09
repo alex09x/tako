@@ -104,6 +104,14 @@ extension BaseTerminalController {
         revealAndFocusFloatingPane(surface, in: canvasSize)
     }
 
+    /// Header mode icon: detach a grid pane to free floating or return it to the grid.
+    /// The same Surface/PTY stays mounted and keeps focus.
+    func togglePaneFloating(_ surface: Tako.SurfaceView, in canvasSize: CGSize? = nil) {
+        guard usesFloatingCanvas, surfaceTree.contains(surface) else { return }
+        floatingCanvas.toggleFloating(surface.id, in: canvasSize ?? estimatedFloatingCanvasSize())
+        revealAndFocusFloatingPane(surface, in: canvasSize)
+    }
+
     func minimizeFloatingPane(_ surface: Tako.SurfaceView) {
         guard usesFloatingCanvas, surfaceTree.contains(surface) else { return }
         if let est = estimatedFloatingCanvasSize(), floatingCanvas.lastValidCanvasSize == nil {

@@ -11,15 +11,17 @@
 import AppKit
 import SwiftUI
 
-/// Seamless 32pt floating pane header with drag-only movement, double-click internal maximize/restore,
-/// live status indicator, and 22pt Minimize / Maximize-Restore / Close controls.
+/// Seamless 28pt pane header with drag-only movement, double-click maximize/restore,
+/// live status indicator, and 22pt Grid-Float / Minimize / Maximize-Restore / Close controls.
+/// The mode icon only switches grid ⇄ free floating; maximize stays a separate action.
 struct FloatingPaneHeaderView: View {
-    static let controlSize: CGFloat = 22
+    static let controlSize: CGFloat = DesktopCanvasMetrics.controlSize
     static let controlsTrailingInset: CGFloat = 14
 
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
     let pane: FloatingPaneState
+    var isTiled: Bool = false
     let presentedFrame: CGRect
     let isFocused: Bool
     let canvasSize: CGSize
@@ -31,6 +33,7 @@ struct FloatingPaneHeaderView: View {
     let onDragCommit: () -> Void
     let onMinimize: () -> Void
     let onToggleMaximize: () -> Void
+    var onToggleFloating: () -> Void = {}
     let onMoveToNewWindow: () -> Void
     let onClose: () -> Void
 
@@ -115,6 +118,17 @@ struct FloatingPaneHeaderView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 2) {
+                FloatingHeaderIconButton(
+                    symbolName: isTiled ? "macwindow.on.rectangle" : "square.grid.2x2",
+                    identifier: "FloatingPaneFloat-\(uuidKey)",
+                    label: isTiled ? "Float Pane" : "Return Pane to Grid",
+                    value: isTiled ? "tiled" : "floating",
+                    helpText: isTiled ? "Float Pane" : "Return Pane to Grid",
+                    isProminent: controlsProminent,
+                    onHoverStateChange: { updateControlHover(id: "float", hovering: $0) },
+                    action: onToggleFloating
+                )
+
                 FloatingHeaderIconButton(
                     symbolName: "minus",
                     identifier: "FloatingPaneMinimize-\(uuidKey)",
