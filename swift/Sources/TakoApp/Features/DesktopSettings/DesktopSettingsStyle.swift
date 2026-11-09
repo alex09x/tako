@@ -76,7 +76,8 @@ struct DesktopPrefRow<Control: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            control
+            // The control keeps its full width; the explanation wraps instead.
+            control.layoutPriority(1)
         }
         .padding(.vertical, 10)
     }
@@ -95,7 +96,9 @@ struct DesktopSegment: View {
             ForEach(options, id: \.value) { option in
                 let on = option.value == selection
                 Button { choose(option.value) } label: {
-                    Text(option.label).lineLimit(1)
+                    // Each segment is its label's own width (reference: «While a command is running
+                    // command» is wider than «Always»), never an equal truncated share.
+                    Text(option.label).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 10)
                         .frame(height: DesktopSettingsStyle.segmentHeight)
                         .foregroundStyle(Color(on ? palette.text : palette.secondary))
@@ -111,6 +114,7 @@ struct DesktopSegment: View {
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(palette.field)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(palette.separator)))
+        .fixedSize()
     }
 }
 
