@@ -61,7 +61,10 @@ struct FloatingPaneMenu {
             guard let name = await TerminalDialogView.askText(
                 in: window, title: "Rename Terminal", label: "Name:", value: current,
                 hint: "Leave blank to use the program’s title", confirm: "Rename", theme: theme) else { return }
-            PaneTitleStore.shared.setTitle(name, for: surface.id)
+            if let failure = PaneTitleStore.shared.setTitle(name, for: surface.id) {
+                await TerminalDialogView.alert(in: window, title: "Could Not Save Name",
+                                               message: failure.localizedDescription, theme: theme)
+            }
         }
     }
 

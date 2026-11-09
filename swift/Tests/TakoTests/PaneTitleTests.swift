@@ -47,6 +47,34 @@ struct PaneTitleTests {
         let store = PaneTitleStore(fileURL: url)
         #expect(store.titles.isEmpty && store.loadError != nil)
         #expect(try String(contentsOf: url, encoding: .utf8) == "{ not json", "loading rewrote the file")
+
+        // A rename does not replace the unreadable file with a new one.
+        let pane = UUID()
+        let failure = store.setTitle("логи", for: pane)
+        guard case .unreadableFile = failure else { Issue.record("rename over an unreadable file: \(String(describing: failure))"); return }
+        #expect(store.title(for: pane) == nil, "the name shows although it was not saved")
+        #expect(try String(contentsOf: url, encoding: .utf8) == "{ not json", "the unreadable file was overwritten")
+    }
+
+    @Test func aFailedWriteKeepsTheOldNameInMemoryAndOnDisk() throws {
+        let url = file()
+        let dir = url.deletingLastPathComponent()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let store = PaneTitleStore(fileURL: url)
+        let pane = UUID()
+        #expect(store.setTitle("старое", for: pane) == nil)
+        let before = try Data(contentsOf: url)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        let failure = store.setTitle("новое", for: pane)
+        guard case .writeFailed = failure else { Issue.record("a write into a read-only folder succeeded: \(String(describing: failure))"); return }
+        #expect(failure?.localizedDescription.hasPrefix("Could Not Save Name") == true)
+        #expect(store.title(for: pane) == "старое", "memory shows a name that was not saved")
+        #expect(try Data(contentsOf: url) == before, "the file changed")
+        #expect(PaneTitleStore(fileURL: url).title(for: pane) == "старое")
     }
 
     @Test func theNameShowsOverTheProgramTitleOfThatPaneOnly() throws {

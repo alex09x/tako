@@ -45,17 +45,39 @@ final class PaneTitleStore: ObservableObject {
 
     func title(for id: UUID) -> String? { titles[Self.key(id)] }
 
-    /// Sets the pane's name; an empty one removes it (the program's title shows again).
-    func setTitle(_ raw: String?, for id: UUID) {
+    enum SaveError: LocalizedError, Equatable {
+        /// The file on disk could not be read: it is kept, not replaced by a new one.
+        case unreadableFile(String)
+        case writeFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .unreadableFile(let why):
+                "The terminal names file could not be read (\(why)). It was kept unchanged; the new name was not saved."
+            case .writeFailed(let why): "Could not save the name: \(why)"
+            }
+        }
+    }
+
+    /// Sets the pane's name; an empty one removes it (the program's title shows
+    /// again). The name is written first: when that fails, nothing changes in
+    /// memory or on disk, and the error says why. An unreadable file is never
+    /// overwritten.
+    @discardableResult
+    func setTitle(_ raw: String?, for id: UUID) -> SaveError? {
         let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .components(separatedBy: .newlines).joined(separator: " ")
         let name = trimmed.isEmpty ? nil : String(trimmed.prefix(Self.maxLength))
-        guard titles[Self.key(id)] != name else { return }
-        titles[Self.key(id)] = name
-        save()
+        guard titles[Self.key(id)] != name else { return nil }
+        if let loadError { return .unreadableFile(loadError) }
+        var next = titles
+        next[Self.key(id)] = name
+        if let failure = write(next) { return failure }
+        titles = next
         NotificationCenter.default.post(name: .takoPaneTitleDidChange, object: id)
         SessionSidebarStore.shared.objectWillChange.send()
         Tako.TabBarController.refreshAll()
+        return nil
     }
 
     private func load() {
@@ -64,20 +86,20 @@ final class PaneTitleStore: ObservableObject {
             let data = try Data(contentsOf: fileURL)
             titles = try JSONDecoder().decode([String: String].self, from: data)
         } catch {
-            // An unreadable file names no pane; it is kept until a name is set.
+            // An unreadable file names no pane and is protected from being overwritten.
             loadError = error.localizedDescription
         }
     }
 
-    private func save() {
+    private func write(_ next: [String: String]) -> SaveError? {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-            try encoder.encode(titles).write(to: fileURL, options: .atomic)
-            loadError = nil
+            try encoder.encode(next).write(to: fileURL, options: .atomic)
+            return nil
         } catch {
-            loadError = error.localizedDescription
+            return .writeFailed(error.localizedDescription)
         }
     }
 }
