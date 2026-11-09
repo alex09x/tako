@@ -35,12 +35,13 @@ struct DesktopAppearanceMenu {
     /// The level, its live context and the catalog; nil for Global or a level
     /// that is gone.
     static func make(for level: DesktopScopeLevel, app: Tako.App?, store: ScopedAppearanceStore = .shared,
-                     window: NSWindow?) -> DesktopAppearanceMenu? {
+                     window: NSWindow?, catalog: DesktopAppearanceMenuCatalog = .shared) -> DesktopAppearanceMenu? {
         guard let context = level.context(app: app, store: store), context.isAvailable() else { return nil }
-        let paths = KeybindConfigFile(configPath: app?.activeConfigPath).appearanceThemePaths
-        let names = TerminalAppearanceCatalog.themeNames(paths: paths)
+        let metadata = catalog.snapshot(configPath: app?.activeConfigPath)
+        let paths = metadata.paths
+        let names = metadata.names
         let own = context.value(for: "theme")
-        let inherited = Self.inheritedName(context: context, app: app)
+        let inherited = Self.inheritedName(context: context, globalTheme: metadata.globalTheme)
         var menu = DesktopAppearanceMenu(level: level, context: context, presets: Self.choices(names, selected: own),
                                          themePaths: paths, selected: own, inherited: inherited)
         // «Customize…» edits what the level shows: its own theme, else the inherited one.
@@ -60,7 +61,7 @@ struct DesktopAppearanceMenu {
         return out
     }
 
-    private static func inheritedName(context: ScopedAppearanceContext, app: Tako.App?) -> String {
+    private static func inheritedName(context: ScopedAppearanceContext, globalTheme: String) -> String {
         let parentTheme: String?
         switch context.scope {
         case .workspace: parentTheme = nil
@@ -70,8 +71,7 @@ struct DesktopAppearanceMenu {
                 ?? context.workspaceID().flatMap { context.store.value(for: "theme", scope: .workspace($0)) }
         }
         if let parentTheme { return parentTheme }
-        let file = KeybindConfigFile(configPath: app?.activeConfigPath)
-        return DesktopPreferenceStore.item("theme").flatMap { file.getSettingValue(for: $0) } ?? "TakoCore"
+        return globalTheme
     }
 
     var inherits: Bool { context.store.document.overrides(for: context.scope)?.isEmpty != false }
