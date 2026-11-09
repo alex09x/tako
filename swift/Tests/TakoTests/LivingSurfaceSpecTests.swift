@@ -254,11 +254,11 @@ struct LivingSurfaceLiveFindingsTests {
     }
 }
 
-/// The session sidebar defaults to 240 wide and can be dragged within 220...720.
+/// The session sidebar defaults to 248 wide and can be dragged within 220...720.
 @Suite
 struct SessionSidebarWidthTests {
     @Test func theWidthStartsAtTheDesignsAndStaysWithinItsBounds() {
-        #expect(SessionSidebarWidth.standard == 240)
+        #expect(SessionSidebarWidth.standard == 248)
         #expect(SessionSidebarWidth.clamped(100) == 220)
         #expect(SessionSidebarWidth.clamped(400) == 400)
         #expect(SessionSidebarWidth.clamped(5000) == 720)
@@ -268,7 +268,7 @@ struct SessionSidebarWidthTests {
         let suite = "tako.sidebar-width.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        #expect(SessionSidebarWidth.current(in: defaults) == 240)
+        #expect(SessionSidebarWidth.current(in: defaults) == 248)
         defaults.set(280.0, forKey: SessionSidebarWidth.defaultsKey)
         #expect(SessionSidebarWidth.current(in: defaults) == 280)
         defaults.set(412.0, forKey: SessionSidebarWidth.defaultsKey)
@@ -307,7 +307,7 @@ struct SessionSidebarGripTests {
         #expect(width == 220)
 
         grip.mouseDown(with: press(.leftMouseDown, x: 0, clicks: 2))
-        #expect(width == 240)
+        #expect(width == 248)
         #expect(!grip.mouseDownCanMoveWindow, "a drag on the edge must not move the window")
     }
 
