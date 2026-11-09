@@ -112,6 +112,16 @@ extension SessionSidebarStore {
         objectWillChange.send()
     }
 
+    /// «New Session Here»: the workspace becomes current, so the new tab is
+    /// filed under it (`TerminalController.newTab` assigns the active workspace).
+    func createNewTab(inWorkspace workspaceId: UUID, around window: NSWindow?,
+                      workspaceStore: WorkspaceStore = .shared) {
+        if workspaceStore.activeWorkspaceId != workspaceId {
+            selectWorkspace(workspaceId, in: window, workspaceStore: workspaceStore)
+        }
+        createNewTab(in: NSApp?.keyWindow ?? window)
+    }
+
     /// Creates a new session tab in the target window's tab group.
     func createNewTab(in window: NSWindow?) {
         let target = window ?? NSApp?.keyWindow

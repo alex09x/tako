@@ -223,6 +223,16 @@ struct SessionSidebarView: View {
 
     // MARK: - Tab List (§5.4 - §5.7)
 
+    func workspaceActions(_ group: SessionSidebarWorkspaceGroup) -> SidebarWorkspaceActions {
+        SidebarWorkspaceActions(
+            workspaceID: group.id, name: group.name, sessionCount: group.sessionCount, isCollapsed: group.isCollapsed,
+            workspaces: workspaceStore, window: targetWindow,
+            newSession: { [store, workspaceStore, targetWindow] in
+                store.createNewTab(inWorkspace: group.id, around: targetWindow, workspaceStore: workspaceStore)
+            },
+            toggleCollapse: { [store] in store.toggleWorkspaceCollapsed(group.id) })
+    }
+
     private func tabListView(groups: [SessionSidebarWorkspaceGroup], flatItems: [SessionSidebarItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
@@ -238,7 +248,8 @@ struct SessionSidebarView: View {
                                 group: wsGroup,
                                 onToggleCollapse: { store.toggleWorkspaceCollapsed(wsGroup.id) },
                                 onSelectWorkspace: { store.selectWorkspace(wsGroup.id, in: targetWindow, workspaceStore: workspaceStore) },
-                                onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) }
+                                onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
+                                actions: workspaceActions(wsGroup)
                             )
                             ForEach(wsGroup.items) { item in
                                 let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0

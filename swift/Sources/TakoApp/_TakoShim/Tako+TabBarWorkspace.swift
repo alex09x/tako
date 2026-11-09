@@ -123,8 +123,14 @@ extension Tako.TabBarView {
     }
 
     private func presentNewWorkspaceDialog() {
+        Self.presentNewWorkspaceDialog(in: window)
+    }
+
+    /// Asks for a name, creates the workspace and switches to it: the tab
+    /// bar's picker and the sidebar's «+ ▸ New Workspace».
+    static func presentNewWorkspaceDialog(in preferred: NSWindow?) {
         NSApp.activate(ignoringOtherApps: true)
-        guard let window = self.window
+        guard let window = preferred
             ?? AppUpdater.noticeWindow(key: NSApp.keyWindow, windows: NSApp.windows)
             ?? TerminalController.preferredParent?.window
             ?? NSApp.windows.first(where: { $0.isVisible }) else { return }

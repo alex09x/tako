@@ -74,6 +74,12 @@ extension SessionSidebarView {
         menu.addItem(SidebarMenuAction("New Window", binding: "new_window") {
             NSApp.sendAction(#selector(AppDelegate.newWindow(_:)), to: nil, from: nil)
         })
+        menu.addItem(.separator())
+        let newWorkspace = SidebarMenuAction("New Workspace", binding: "") {
+            Tako.TabBarView.presentNewWorkspaceDialog(in: window)
+        }
+        newWorkspace.identifier = .init("SessionSidebarNewWorkspace")
+        menu.addItem(newWorkspace)
         // Associate the popup with its actual control and host. A screen-only
         // popup was visible but missing from the app's accessibility tree,
         // and keyboard activation incorrectly followed the mouse position.
@@ -193,7 +199,9 @@ final class SidebarMenuAction: NSMenuItem {
         self.run = run
         super.init(title: title, action: #selector(runAction), keyEquivalent: "")
         target = self
-        let shortcut = (NSApp.delegate as? AppDelegate)?.tako.config.keyboardShortcut(for: binding)
+        // An item with no binding («New Workspace», a workspace's menu) shows no shortcut.
+        guard !binding.isEmpty else { return }
+        let shortcut = (NSApp?.delegate as? AppDelegate)?.tako.config.keyboardShortcut(for: binding)
             ?? KeybindRegistry.defaultShortcut(for: binding)
         if let shortcut {
             keyEquivalent = String(shortcut.key.character).lowercased()

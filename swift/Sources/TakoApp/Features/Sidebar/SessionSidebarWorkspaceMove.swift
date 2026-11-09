@@ -121,18 +121,13 @@ struct SidebarWorkspaceDropTarget: View {
     let onToggleCollapse: () -> Void
     let onSelectWorkspace: () -> Void
     let onMove: (String, UUID) -> Bool
+    let actions: SidebarWorkspaceActions
     @State private var targeted = false
 
     var body: some View {
         SessionSidebarWorkspaceHeaderView(group: group, onToggleCollapse: onToggleCollapse,
-                                          onSelectWorkspace: onSelectWorkspace)
-            .contextMenu {
-                if let menu = DesktopAppearanceMenu.make(
-                    for: .init(kind: .workspace(group.id), kindTitle: "workspace", name: group.name),
-                    app: (NSApp.delegate as? AppDelegate)?.tako, window: NSApp.keyWindow) {
-                    DesktopAppearanceSubmenu(menu: menu)
-                }
-            }
+                                          onSelectWorkspace: onSelectWorkspace, actions: actions)
+            .contextMenu { actions.contextMenu }
             .background(SidebarWorkspaceAXElement(name: group.name, isActive: group.isActive))
             .background {
                 if targeted {
