@@ -42,7 +42,14 @@ extension Tako.SurfaceView {
         guard clamped != theme.fontSize else { return }
 
         applyTheme(Self.scaledTheme(configured, toFontSize: clamped))
+        NotificationCenter.default.post(name: .takoSurfaceZoomDidChange, object: self)
     }
+
+    /// The size the configuration asked for, before this terminal's zoom.
+    var fontBaseSize: CGFloat { (configuredTheme ?? theme).fontSize }
+
+    /// This terminal's temporary zoom: ⌘+ / ⌘− / ⌘0, never saved.
+    var fontZoomDelta: CGFloat { theme.fontSize - fontBaseSize }
 
     /// `theme` with its font size (and any explicit cell size) scaled to
     /// `target`, keeping the grid's proportions. Used both for zooming an

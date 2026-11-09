@@ -217,6 +217,10 @@ final class SidebarMenuAction: NSMenuItem {
     @available(*, unavailable) required init(coder: NSCoder) { fatalError() }
 
     @objc private func runAction() { run() }
+
+    /// In a menu that enables its items itself (a terminal's), keep the
+    /// state the item was given, so a disabled one stays disabled.
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool { menuItem.isEnabled }
 }
 
 /// A 24 pt header icon over a real button (keyboard and AX reachable).

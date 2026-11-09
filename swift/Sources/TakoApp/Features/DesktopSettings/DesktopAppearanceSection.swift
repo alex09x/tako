@@ -141,7 +141,14 @@ struct DesktopAppearanceSection: View {
                     inheritButton("font-size")
                 }
             }
+            DesktopPaneZoomRow(paneID: paneID, palette: palette)
         }
+    }
+
+    /// The terminal this level is, at «terminal»; nil at other levels.
+    private var paneID: UUID? {
+        if case .pane(let id) = scope.context?.scope { return id }
+        return nil
     }
 
     private func fontDetail(_ resolution: DesktopFontResolution) -> String {
