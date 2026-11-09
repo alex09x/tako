@@ -120,6 +120,37 @@ struct NativeSetupDesignTests {
         }
     }
 
+    /// At launch setup appears before the terminal has taken focus: the
+    /// window itself is first responder. Finishing must hand the keys to the
+    /// existing terminal, not back to the window (XCUI: typing right after
+    /// «Начать работу» reached nothing).
+    @Test func finishingAtLaunchFocusesTheTerminalEvenIfTheWindowHadFocus() throws {
+        try fixture { model, _, _ in
+            _ = NSApplication.shared
+            let host = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 900, height: 700),
+                                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            host.isReleasedWhenClosed = false
+            let terminal = NSTextView(frame: host.contentView!.bounds)
+            host.contentView?.addSubview(terminal)
+            // Another view (the sidebar list takes focus when it appears) held the keys.
+            let sidebar = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+            host.contentView?.addSubview(sidebar)
+            host.makeKeyAndOrderFront(nil)
+            defer { host.close() }
+            let coordinator = SetupCoordinator()
+            coordinator.terminalToFocus = { $0 === host ? terminal : nil }
+            for previous in [nil, sidebar] as [NSResponder?] {
+                host.makeFirstResponder(previous)
+                #expect(coordinator.show(model: model, in: host))
+                model.selectStage(.ready)
+                model.finishSetup()
+                #expect(coordinator.panel == nil)
+                #expect(host.firstResponder === terminal,
+                        "keys go to the terminal (before: \(String(describing: previous))), got \(String(describing: host.firstResponder))")
+            }
+        }
+    }
+
     @Test func paletteFollowsDesktopPresentationNotTheTerminalPreview() {
         let dark = SetupPalette(desktop: .dark, isDark: true)
         let light = SetupPalette(desktop: .light, isDark: false)

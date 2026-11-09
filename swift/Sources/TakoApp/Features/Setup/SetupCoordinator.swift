@@ -21,6 +21,13 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
     private lazy var launchObserver = SetupLaunchObserver()
     private var hostCloseObserver: NSObjectProtocol?
     private var stageObservation: AnyCancellable?
+    /// The terminal that gets the keys back when setup closes: the surface
+    /// that had focus before, else the host controller's focused surface.
+    /// Injectable for tests.
+    var terminalToFocus: (NSWindow) -> NSResponder? = { host in
+        guard let controller = host.windowController as? BaseTerminalController else { return nil }
+        return controller.focusedSurface ?? controller.surfaceTree.first(where: { _ in true })
+    }
 
     func offerAtLaunch(app: Tako.App) {
         launchObserver.stop()
@@ -120,9 +127,20 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
         panel.orderOut(nil)
         panel.close()
         // Return focus to the existing terminal; setup never opens another one.
+        // At launch the window itself was often first responder (the surface
+        // had not taken focus yet), so restoring that left keys going nowhere.
         if !force, let host, host.isVisible {
             host.makeKeyAndOrderFront(nil)
-            if let previousResponder, previousResponder !== host { host.makeFirstResponder(previousResponder) }
+            // The sidebar list also takes focus when it appears; the keys still
+            // belong to the terminal. Another view is restored only without one.
+            if let surface = previousResponder as? Tako.SurfaceView, surface.window === host {
+                Tako.moveFocus(to: surface)
+            } else if let terminal = terminalToFocus(host) {
+                if let surface = terminal as? Tako.SurfaceView { Tako.moveFocus(to: surface) }
+                else { host.makeFirstResponder(terminal) }
+            } else if let view = previousResponder as? NSView, view.window === host {
+                host.makeFirstResponder(view)
+            }
         }
         self.panel = nil
         self.model = nil
