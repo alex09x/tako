@@ -72,8 +72,18 @@ struct SidebarWorkspaceActionsTests {
         #expect(store.workspace(for: ws.id)?.color == "purple")
         #expect(actions(ws.id, store, sessions: 1).colorMenu().items.first { $0.state == .on }?.identifier?.rawValue
                 == "SidebarWorkspaceColor-purple")
+        run(colors.items.first { $0.identifier?.rawValue == "SidebarWorkspaceColor-steel" })
+        #expect(store.workspace(for: ws.id)?.color == "steel")
+        let blue = try #require(Tako.LivingTokens.workspaceColor(for: "steel").usingColorSpace(.sRGB))
+        #expect(abs(blue.redComponent - 0x81 / 255.0) < 0.01 && abs(blue.blueComponent - 0xBE / 255.0) < 0.01,
+                "blue is drawn as \(blue)")
         run(colors.items.first { $0.identifier?.rawValue == "SidebarWorkspaceColor-teal" })
         #expect(store.workspace(for: ws.id)?.color == nil, "teal is the default, stored as none")
+
+        // A workspace stored as «blue» (the default) is drawn teal and checked as teal.
+        #expect(SidebarWorkspaceActions.drawnKey("blue") == "teal" && SidebarWorkspaceActions.drawnKey(nil) == "teal")
+        #expect(actions(WorkspaceStore.defaultWorkspaceId, store, sessions: 0).colorMenu().items
+                    .first { $0.state == .on }?.identifier?.rawValue == "SidebarWorkspaceColor-teal")
 
         SidebarWorkspaceActions.rename(ws.id, to: "Web", in: store)
         #expect(store.workspace(for: ws.id)?.name == "Web")

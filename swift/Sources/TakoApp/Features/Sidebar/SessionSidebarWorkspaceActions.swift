@@ -30,10 +30,17 @@ struct SidebarWorkspaceActions {
     /// The workspace colours Tako draws (`LivingTokens.workspaceColor`); nil is teal.
     static let colors: [(key: String, title: String)] = [
         ("teal", "Teal"), ("purple", "Purple"), ("yellow", "Yellow"),
-        ("green", "Green"), ("red", "Red"), ("orange", "Orange"),
+        ("green", "Green"), ("red", "Red"), ("orange", "Orange"), ("steel", "Blue"),
     ]
 
-    var color: String { workspaces.workspace(for: workspaceID)?.color?.lowercased() ?? "teal" }
+    /// The colour as drawn: none, the stored default «blue» and anything
+    /// unknown are teal (`LivingTokens.workspaceColor`).
+    var color: String { Self.drawnKey(workspaces.workspace(for: workspaceID)?.color) }
+
+    static func drawnKey(_ stored: String?) -> String {
+        let key = stored?.lowercased() ?? "teal"
+        return colors.contains { $0.key == key } ? key : "teal"
+    }
 
     var canDelete: Bool {
         sessionCount == 0 && workspaces.workspaces.count > 1 && workspaceID != WorkspaceStore.defaultWorkspaceId

@@ -70,6 +70,8 @@ extension Tako {
         static let wsPurple = NSColor(srgbRed: 0xB2 / 255, green: 0x94 / 255, blue: 0xBB / 255, alpha: 1)
         static let wsYellow = NSColor(srgbRed: 0xF0 / 255, green: 0xC6 / 255, blue: 0x74 / 255, alpha: 1)
         static let wsTeal = NSColor(srgbRed: 0x8A / 255, green: 0xBE / 255, blue: 0xB7 / 255, alpha: 1)
+        /// The reference's seventh workspace colour (sidebar.js WS_COLORS).
+        static let wsBlue = NSColor(srgbRed: 0x81 / 255, green: 0xA2 / 255, blue: 0xBE / 255, alpha: 1)
 
         static func workspaceColor(for name: String?) -> NSColor {
             switch name?.lowercased() {
@@ -78,6 +80,9 @@ extension Tako {
             case "orange": return claw
             case "purple": return wsPurple
             case "yellow": return wsYellow
+            // «blue» is the stored default and has always been drawn teal (Spec 1b: no
+            // systemBlue); the reference's blue is its own key.
+            case "steel": return wsBlue
             default: return wsTeal
             }
         }
