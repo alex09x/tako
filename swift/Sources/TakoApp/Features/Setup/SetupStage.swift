@@ -15,15 +15,19 @@ enum SetupStage: Int, CaseIterable, Identifiable {
     case welcome, appearance, agents, access, ready
     var id: Int { rawValue }
 
+    /// The reference's stage bar (A14–A16).
     var title: String {
         switch self {
         case .welcome: "Welcome"
-        case .appearance: "Appearance"
+        case .appearance: "Theme"
         case .agents: "Agents"
-        case .access: "Access"
-        case .ready: "Ready"
+        case .access: "Permissions"
+        case .ready: "Done"
         }
     }
+
+    /// Welcome and Ready are the short hero cards; the others are lists.
+    var isHero: Bool { self == .welcome || self == .ready }
 
     /// Saved steps that belong to this stage, in display order.
     var steps: [SetupStep] {
@@ -53,21 +57,26 @@ enum SetupStage: Int, CaseIterable, Identifiable {
     var previous: SetupStage? { SetupStage(rawValue: rawValue - 1) }
 }
 
-/// Sheet size derived from the host window so setup stays usable in small windows.
+/// Sheet size derived from the host window so setup stays usable in small
+/// windows. The reference's card is 653 pt wide; Welcome and Ready are 389 pt
+/// tall, the list stages 714 pt (A14–A16).
 enum SetupSheetGeometry {
-    static let preferred = NSSize(width: 680, height: 600)
+    static let preferred = NSSize(width: 653, height: 714)
+    static let hero = NSSize(width: 653, height: 389)
     static let minimum = NSSize(width: 460, height: 380)
     static let margin: CGFloat = 24
 
-    static func size(forHost host: NSSize) -> NSSize {
-        NSSize(width: max(minimum.width, min(preferred.width, host.width - margin * 2)),
-               height: max(minimum.height, min(preferred.height, host.height - margin * 2)))
+    static func size(forHost host: NSSize, stage: SetupStage? = nil) -> NSSize {
+        let wanted = stage?.isHero == true ? hero : preferred
+        return NSSize(width: max(minimum.width, min(wanted.width, host.width - margin * 2)),
+                      height: max(minimum.height, min(wanted.height, host.height - margin * 2)))
     }
 
     /// Horizontally centered over the host, top-aligned below its title bar like a sheet.
-    static func frame(forHost host: NSRect, titlebarHeight: CGFloat = 28) -> NSRect {
-        let size = size(forHost: host.size)
-        return NSRect(x: (host.midX - size.width / 2).rounded(),
+    static func frame(forHost host: NSRect, titlebarHeight: CGFloat = 28, stage: SetupStage? = nil) -> NSRect {
+        let size = size(forHost: host.size, stage: stage)
+        // Not rounded: the 653 pt card centres on a half point, a whole pixel at 2×.
+        return NSRect(x: host.midX - size.width / 2,
                       y: host.maxY - titlebarHeight - size.height,
                       width: size.width, height: size.height)
     }

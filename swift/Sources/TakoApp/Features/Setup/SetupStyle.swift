@@ -30,6 +30,10 @@ struct SetupPalette {
     let card: Color
     let primaryText: Color
     let message: Color
+    /// Status and note text one step quieter than `muted` (reference --mute).
+    let faint: Color
+    /// Input-like fill for small secondary buttons (reference --field).
+    let field: Color
     let isDark: Bool
 
     init(theme: TerminalTheme) {
@@ -45,6 +49,8 @@ struct SetupPalette {
         success = Color(nsColor: theme.palette[2].flatMap { NSColor(cgColor: $0) } ?? Tako.Brand.ok)
         border = text.opacity(0.22)
         card = text.opacity(0.035)
+        faint = text.opacity(0.45)
+        field = text.opacity(0.04)
         isDark = bg.redComponent * 0.2126 + bg.greenComponent * 0.7152 + bg.blueComponent * 0.0722 < 0.5
     }
 
@@ -59,6 +65,8 @@ struct SetupPalette {
         success = Color(nsColor: Tako.Brand.ok)
         border = Color(nsColor: palette.border)
         card = Color(nsColor: palette.field)
+        faint = Color(nsColor: palette.faint)
+        field = Color(nsColor: palette.field)
         isDark = dark
     }
 
@@ -91,17 +99,22 @@ extension EnvironmentValues {
     }
 }
 
+/// Reference `.pb` (29 pt, radius 7, 13/600, padding 15) and `.pb.big`
+/// (35 pt, radius 9, 14/600, padding 22).
 struct SetupButtonStyle: ButtonStyle {
     @Environment(\.setupPalette) private var colors
     var primary = false
+    var big = false
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 14).padding(.vertical, 9)
+        let radius: CGFloat = big ? 9 : 7
+        return configuration.label
+            .font(.system(size: big ? 14 : 13, weight: .semibold))
+            .padding(.horizontal, big ? 22 : 15)
+            .frame(height: big ? 35 : 29)
             .foregroundStyle(primary ? colors.primaryText : colors.text)
             .background(primary ? colors.accent.opacity(configuration.isPressed ? 0.7 : 1)
-                        : colors.text.opacity(configuration.isPressed ? 0.09 : 0.04), in: .rect(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(primary ? Color.clear : colors.border))
+                        : colors.text.opacity(configuration.isPressed ? 0.09 : 0.04), in: .rect(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(primary ? Color.clear : colors.border))
     }
 }
 

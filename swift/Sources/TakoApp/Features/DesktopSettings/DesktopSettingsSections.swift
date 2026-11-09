@@ -32,10 +32,8 @@ struct DesktopSettingsSectionBody: View {
             case .agents:
                 SetupAgentsStep(model: model.setup).task { await model.setup.refresh() }
             case .notifications:
-                VStack(alignment: .leading, spacing: 16) {
-                    SetupNotificationsStep(model: model.setup)
-                    SetupPermissionPanel(model: model.setup)
-                }.task { await model.setup.refresh() }
+                // The same list as the first-run «Permissions» (reference A15), notifications first.
+                SetupPermissionPanel(model: model.setup).task { await model.setup.refresh() }
             case .advanced: advanced
             }
         }

@@ -8,6 +8,7 @@
  */
 
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -19,6 +20,7 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
     private var previousResponder: NSResponder?
     private lazy var launchObserver = SetupLaunchObserver()
     private var hostCloseObserver: NSObjectProtocol?
+    private var stageObservation: AnyCancellable?
 
     func offerAtLaunch(app: Tako.App) {
         launchObserver.stop()
@@ -53,7 +55,7 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
               !Tako.CustomTabGroup.isClosed(window) else { return false }
         // Theme editors and setup must not fight for the host's keyboard focus.
         guard window.contentView?.subviews.contains(where: { $0 is TerminalSettingsDialog }) != true else { return false }
-        let size = SetupSheetGeometry.size(forHost: window.contentLayoutRect.size)
+        let size = SetupSheetGeometry.size(forHost: window.contentLayoutRect.size, stage: model.stage)
         let panel = SetupPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = "Set up Tako"
@@ -93,6 +95,17 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
                 MainActor.assumeIsolated { self?.close(force: true) }
             }
         window.beginSheet(panel)
+        // Hero stages are the short card, list stages the tall one; the top stays put.
+        stageObservation = model.$progress.map { SetupStage($0.step).isHero }.removeDuplicates()
+            .sink { [weak panel, weak window] hero in
+                guard let panel, let window else { return }
+                let size = SetupSheetGeometry.size(forHost: window.contentLayoutRect.size,
+                                                   stage: hero ? .welcome : .access)
+                guard panel.contentRect(forFrameRect: panel.frame).size != size else { return }
+                let top = panel.frame.maxY
+                panel.setContentSize(size)
+                panel.setFrameOrigin(NSPoint(x: panel.frame.minX, y: top - panel.frame.height))
+            }
         model.didPresent()
         launchObserver.stop()
         return true
@@ -102,6 +115,7 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
         guard force || model?.isBusy != true, let panel else { return }
         if let hostCloseObserver { NotificationCenter.default.removeObserver(hostCloseObserver) }
         self.hostCloseObserver = nil
+        stageObservation = nil
         if let host, host.attachedSheet === panel { host.endSheet(panel) }
         panel.orderOut(nil)
         panel.close()

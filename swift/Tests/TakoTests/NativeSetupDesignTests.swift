@@ -17,7 +17,8 @@ struct NativeSetupDesignTests {
     final class Calls: @unchecked Sendable { var install = 0, connect = 0, enable = 0, settings = 0, checks = 0 }
 
     @Test func everySavedStepMapsToOneOfFiveVisibleStages() {
-        #expect(SetupStage.allCases.map(\.title) == ["Welcome", "Appearance", "Agents", "Access", "Ready"])
+        #expect(SetupStage.allCases.map(\.title) == ["Welcome", "Theme", "Agents", "Permissions", "Done"])
+        #expect(SetupStage.allCases.filter(\.isHero) == [.welcome, .ready])
         #expect(SetupStage(.commandLine) == .agents)
         #expect(SetupStage(.notifications) == .access)
         #expect(SetupStage(.permissions) == .access)
@@ -71,7 +72,10 @@ struct NativeSetupDesignTests {
     }
 
     @Test func sheetGeometryFitsSmallHostsAndCentersOverTheHost() {
-        #expect(SetupSheetGeometry.size(forHost: NSSize(width: 1600, height: 1000)) == SetupSheetGeometry.preferred)
+        // Reference A14–A16: 653 wide, 389 tall for the hero cards, 714 for the lists.
+        #expect(SetupSheetGeometry.size(forHost: NSSize(width: 1600, height: 1000)) == NSSize(width: 653, height: 714))
+        #expect(SetupSheetGeometry.size(forHost: NSSize(width: 1600, height: 1000), stage: .welcome) == NSSize(width: 653, height: 389))
+        #expect(SetupSheetGeometry.size(forHost: NSSize(width: 1600, height: 1000), stage: .access) == NSSize(width: 653, height: 714))
         let small = SetupSheetGeometry.size(forHost: NSSize(width: 560, height: 470))
         #expect(small == NSSize(width: 512, height: 422))
         #expect(SetupSheetGeometry.isCompact(small))
@@ -98,7 +102,14 @@ struct NativeSetupDesignTests {
             #expect(coordinator.show(model: model, in: host))
             let panel = try #require(coordinator.panel)
             #expect(panel.frame.width <= 512 && panel.frame.width >= SetupSheetGeometry.minimum.width)
+            // The card is short on hero stages and grows for the lists; the top stays.
+            func contentHeight() -> CGFloat { panel.contentRect(forFrameRect: panel.frame).height }
+            #expect(contentHeight() == 389)
+            model.selectStage(.access)
+            #expect(contentHeight() == 422)
             model.selectStage(.ready)
+            #expect(contentHeight() == 389)
+            // Where the attached sheet sits is AppKit's; checked in the GUI run.
             model.nextStage()
             #expect(coordinator.panel == nil)
             #expect(host.attachedSheet == nil)
