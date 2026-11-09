@@ -20,40 +20,51 @@ import AppKit
     let store: ScopedAppearanceStore
     let globalTheme: () -> TerminalTheme
     let workspaceID: () -> UUID?
+    let sessionID: () -> String?
     let isAvailable: () -> Bool
     private(set) var writeError: String?
 
     init(scope: AppearanceScope, title: String, store: ScopedAppearanceStore = .shared,
          globalTheme: @escaping () -> TerminalTheme, workspaceID: @escaping () -> UUID? = { nil },
+         sessionID: @escaping () -> String? = { nil },
          isAvailable: @escaping () -> Bool = { true }) {
         self.scope = scope
         self.title = title
         self.store = store
         self.globalTheme = globalTheme
         self.workspaceID = workspaceID
+        self.sessionID = sessionID
         self.isAvailable = isAvailable
     }
 
-    var effectiveTheme: TerminalTheme {
+    /// The chain this scope resolves through; parents are read afresh.
+    private var chain: (workspace: UUID?, session: String?, pane: UUID?) {
         switch scope {
-        case .workspace(let id): return store.effectiveTheme(global: globalTheme(), workspaceID: id, paneID: nil)
-        case .pane(let id): return store.effectiveTheme(global: globalTheme(), workspaceID: workspaceID(), paneID: id)
+        case .workspace(let id): return (id, nil, nil)
+        case .session(let id): return (workspaceID(), id, nil)
+        case .pane(let id): return (workspaceID(), sessionID(), id)
         }
+    }
+
+    var effectiveTheme: TerminalTheme {
+        let c = chain
+        return store.effectiveTheme(global: globalTheme(), workspaceID: c.workspace, sessionID: c.session, paneID: c.pane)
     }
 
     func value(for key: String) -> String? { store.value(for: key, scope: scope) }
 
     func previewInheriting(_ key: String) -> TerminalTheme {
-        switch scope {
-        case .workspace(let id): return store.previewRemoving(key, scope: scope, global: globalTheme(), workspaceID: id, paneID: nil)
-        case .pane(let id): return store.previewRemoving(key, scope: scope, global: globalTheme(), workspaceID: workspaceID(), paneID: id)
-        }
+        let c = chain
+        return store.previewRemoving(key, scope: scope, global: globalTheme(), workspaceID: c.workspace,
+                                     sessionID: c.session, paneID: c.pane)
     }
 
+    /// What this scope shows after a full reset: its parent chain only.
     var inheritedTheme: TerminalTheme {
         switch scope {
         case .workspace: return globalTheme()
-        case .pane: return store.effectiveTheme(global: globalTheme(), workspaceID: workspaceID(), paneID: nil)
+        case .session: return store.effectiveTheme(global: globalTheme(), workspaceID: workspaceID(), sessionID: nil, paneID: nil)
+        case .pane: return store.effectiveTheme(global: globalTheme(), workspaceID: workspaceID(), sessionID: sessionID(), paneID: nil)
         }
     }
 
@@ -115,6 +126,7 @@ extension ScopedAppearanceContext {
         let context = ScopedAppearanceContext(scope: .pane(id), title: "Pane appearance",
             globalTheme: { [weak surface] in surface?.app?.config.theme ?? .takoDefault },
             workspaceID: { [weak surface] in surface?.appearanceWorkspaceID },
+            sessionID: { [weak surface] in surface?.appearanceSessionID },
             isAvailable: { [weak surface] in surface != nil && TerminalController.all.contains { $0.surfaceTree.contains { $0.id == id } } })
         TerminalSettingsDialog.show(in: window ?? terminalKeyWindow ?? host, theme: context.effectiveTheme, tab: .themes, appearance: context)
     }

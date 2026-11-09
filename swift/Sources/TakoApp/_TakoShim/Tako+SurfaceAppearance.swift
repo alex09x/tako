@@ -13,7 +13,11 @@ import SwiftUI
 
 extension Tako.SurfaceView {
     func applyScopedTheme(_ global: TerminalTheme, store: ScopedAppearanceStore, workspaceID: UUID?) {
-        let effective = store.effectiveTheme(global: global, workspaceID: workspaceID, paneID: id,
+        applyScopedTheme(global, store: store, workspaceID: workspaceID, sessionID: appearanceSessionID)
+    }
+
+    func applyScopedTheme(_ global: TerminalTheme, store: ScopedAppearanceStore, workspaceID: UUID?, sessionID: String?) {
+        let effective = store.effectiveTheme(global: global, workspaceID: workspaceID, sessionID: sessionID, paneID: id,
             themeSearchPaths: store.themeSearchPaths ?? appearanceThemeSearchPaths)
         configuredTheme = effective
         applyTheme(effective)
@@ -33,6 +37,15 @@ extension Tako.SurfaceView {
         guard let tab = controller?.window?.stableTabIdentifier else { return nil }
         return WorkspaceStore.shared.workspace(forTab: tab)?.id ?? WorkspaceStore.shared.activeWorkspaceId
     }
+
+    /// The owning tab window's persisted stable identifier. Every pane of
+    /// a tab, including one split later, shares it; titles and focus do not
+    /// participate. Unmounted panes are found through their controller.
+    var appearanceSessionID: String? {
+        let controller = window?.windowController as? BaseTerminalController
+            ?? TerminalController.all.first { $0.surfaceTree.contains { $0 === self } }
+        return controller?.window?.stableTabIdentifier
+    }
 }
 
 /// Held in the surface's existing configObserver slot. This keeps all tokens
@@ -44,10 +57,12 @@ extension Tako.SurfaceView {
     private let initialTheme: TerminalTheme
     private let store: ScopedAppearanceStore
     private let workspace: () -> UUID?
+    private let session: () -> String?
 
     var hasScopedFontSize: Bool {
         guard let surface else { return false }
-        let scopes = [AppearanceScope.pane(surface.id)] + (workspace().map { [.workspace($0)] } ?? [])
+        let scopes = [AppearanceScope.pane(surface.id)] + (session().map { [.session($0)] } ?? [])
+            + (workspace().map { [.workspace($0)] } ?? [])
         return scopes.contains { scope in
             if store.value(for: "font-size", scope: scope) != nil { return true }
             guard let preset = store.value(for: "theme", scope: scope) else { return false }
@@ -55,11 +70,13 @@ extension Tako.SurfaceView {
         }
     }
 
-    init(surface: Tako.SurfaceView, store: ScopedAppearanceStore = .shared, workspaceID: (() -> UUID?)? = nil) {
+    init(surface: Tako.SurfaceView, store: ScopedAppearanceStore = .shared, workspaceID: (() -> UUID?)? = nil,
+         sessionID: (() -> String?)? = nil) {
         self.surface = surface
         self.initialTheme = surface.theme
         self.store = store
         self.workspace = workspaceID ?? { [weak surface] in surface?.appearanceWorkspaceID }
+        self.session = sessionID ?? { [weak surface] in surface?.appearanceSessionID }
         super.init()
         for name in [Notification.Name.takoConfigDidChange, .takoScopedAppearanceDidChange,
                      .takoWorkspaceDidChange, .takoTabsDidChange] {
@@ -91,16 +108,18 @@ extension Tako.SurfaceView {
 
     private func refresh() {
         guard let surface else { return }
-        let workspaceID = workspace()
+        let workspaceID = workspace(), sessionID = session()
         let keys = ScopedAppearanceContext.keys.sorted()
         let values = keys.map { key in workspaceID.flatMap { store.value(for: key, scope: .workspace($0)) } }
+            + keys.map { key in sessionID.flatMap { store.value(for: key, scope: .session($0)) } }
             + keys.map { store.value(for: $0, scope: .pane(surface.id)) }
         guard values != lastOverrides else { return }
         let hadOverrides = lastOverrides?.contains { $0 != nil } ?? false
         lastOverrides = values
         // Unstyled terminals retain transient zoom when unrelated tabs move.
         guard hadOverrides || values.contains(where: { $0 != nil }) else { return }
-        surface.applyScopedTheme(surface.app?.config.theme ?? initialTheme, store: store, workspaceID: workspaceID)
+        surface.applyScopedTheme(surface.app?.config.theme ?? initialTheme, store: store,
+                                 workspaceID: workspaceID, sessionID: sessionID)
         (surface.window?.windowController as? TerminalController)?.syncAppearance()
     }
 

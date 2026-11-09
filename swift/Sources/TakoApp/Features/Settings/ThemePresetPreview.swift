@@ -37,6 +37,7 @@ import SwiftUI
             .flatMap { Array($0.surfaceTree) }.filter { surface in
                 switch scope {
                 case .workspace(let id): return surface.appearanceWorkspaceID == id
+                case .session(let id): return surface.appearanceSessionID.map(AppearanceScope.sessionKey) == AppearanceScope.sessionKey(id)
                 case .pane(let id): return surface.id == id
                 case nil: return true
                 }
@@ -108,6 +109,7 @@ import SwiftUI
         let store = ScopedAppearanceStore.shared
         let workspace = surface.appearanceWorkspaceID
         var workspaceFields = workspace.flatMap { store.document.overrides(for: .workspace($0)) }
+        var sessionFields = surface.appearanceSessionID.flatMap { store.document.overrides(for: .session($0)) }
         var paneFields = store.document.overrides(for: .pane(surface.id))
         var global = surface.app?.config.theme ?? surface.configuredTheme ?? surface.theme
         var appearance = draft
@@ -118,6 +120,9 @@ import SwiftUI
         case .workspace:
             workspaceFields = ["theme": previewName]
             replacements[previewName] = appearance
+        case .session:
+            sessionFields = ["theme": previewName]
+            replacements[previewName] = appearance
         case .pane:
             paneFields = ["theme": previewName]
             replacements[previewName] = appearance
@@ -125,7 +130,7 @@ import SwiftUI
             global = appearance
         }
         return ScopedAppearanceResolver.resolve(global: global, workspaceOverrides: workspaceFields,
-            paneOverrides: paneFields, themeOverrides: replacements)
+            sessionOverrides: sessionFields, paneOverrides: paneFields, themeOverrides: replacements)
     }
 
     deinit { if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) } }

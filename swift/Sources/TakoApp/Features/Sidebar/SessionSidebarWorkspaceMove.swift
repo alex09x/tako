@@ -66,7 +66,9 @@ extension SessionSidebarStore {
         if workspaceStore.workspace(forTab: tabID)?.id == workspaceID { return true }
         let source = workspaceStore.workspace(forTab: tabID)?.id ?? workspaceStore.activeWorkspaceId
         let panes = (target.windowController as? BaseTerminalController).map { Array($0.surfaceTree) } ?? Tako.surfaces(in: target)
-        do { try appearanceStore.preserveWorkspaceStyle(from: source, for: panes.map(\.id)) }
+        // The session keeps its stable tab identity; the source workspace
+        // style is carried into that session record, not copied per pane.
+        do { try appearanceStore.preserveWorkspaceStyle(from: source, session: target.stableTabIdentifier) }
         catch {
             if !Tako.CustomTabGroup.suppressWindowOrderingForTesting, let window {
                 Task { @MainActor in
