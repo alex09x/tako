@@ -21,13 +21,25 @@ struct DesktopThemeDraft {
     var name: String
     private(set) var text: String
 
-    init(original: ThemePreset) {
+    /// A user theme is edited in place unless `name` asks for a copy; a
+    /// built-in one is always copied (the reference names it «X Copy»).
+    init(original: ThemePreset, name: String? = nil) {
         self.original = original
-        self.name = original.isUser ? original.name : original.name + " копия"
+        self.name = name ?? (original.isUser ? original.name : original.name + " Copy")
         self.text = original.config
     }
 
     var isDirty: Bool { text != original.config || name != original.name }
+    var isCopy: Bool { !original.isUser || name != original.name }
+
+    /// The same checks ThemePresetStore.save makes, shown before saving.
+    var nameError: String? { Self.message { try ThemePresetStore.validatePresetName(name) } }
+    var configError: String? { Self.message { try ThemePresetConfig.validate(text) } }
+    var canSave: Bool { nameError == nil && configError == nil }
+
+    private static func message(_ check: () throws -> Void) -> String? {
+        do { try check(); return nil } catch { return error.localizedDescription }
+    }
 
     func value(_ key: String) -> String? {
         lines.reversed().compactMap { KeybindConfigFile.parseConfigKeyValue($0) }.first { $0.key == key }?.value

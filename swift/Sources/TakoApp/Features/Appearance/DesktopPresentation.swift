@@ -25,20 +25,26 @@ struct DesktopPalette {
     let popoverHover: NSColor
     let accent: NSColor
     let accentBright: NSColor
+    /// Config-key captions under settings rows (reference `.pf-rl code`).
+    let faint: NSColor
+    /// Shadow under floating panels (settings, menus).
+    let shadow: NSColor
 
     static let dark = DesktopPalette(
         background: color(0x100d0b), panel: color(0x231f1d), raised: color(0x2e2a27),
         hover: color(0x1a1715), field: color(0x120f0d), separator: color(0x24211e),
         border: color(0x312e2b), text: color(0xede6df), secondary: color(0xb1aba6),
         muted: color(0x8a8480), popover: color(0x241c16), popoverHover: color(0x30261e),
-        accent: color(0xf4581c), accentBright: color(0xff7a3d))
+        accent: color(0xf4581c), accentBright: color(0xff7a3d),
+        faint: color(0x686460), shadow: NSColor.black.withAlphaComponent(0.6))
 
     static let light = DesktopPalette(
         background: color(0xefede7), panel: color(0xeae7e2), raised: color(0xe1dfd9),
         hover: color(0xe5e3dd), field: color(0xf6f4ee), separator: color(0xd9d7d1),
         border: color(0xcdcbc5), text: color(0x262320), secondary: color(0x5c5a56),
         muted: color(0x807e7a), popover: color(0xffffff), popoverHover: color(0xeeeded),
-        accent: color(0xf4581c), accentBright: color(0xff7a3d))
+        accent: color(0xf4581c), accentBright: color(0xff7a3d),
+        faint: color(0x9f9c97), shadow: color(0x3c2814).withAlphaComponent(0.18))
 
     private static func color(_ value: UInt32) -> NSColor {
         NSColor(srgbRed: CGFloat((value >> 16) & 255) / 255,

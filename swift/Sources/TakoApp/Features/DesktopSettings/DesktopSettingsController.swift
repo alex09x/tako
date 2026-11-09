@@ -92,6 +92,7 @@ final class DesktopSettingsController {
         self.model = model
         self.host = host
         self.previousResponder = host.firstResponder
+        model.hostWindow = host
         overlay = DesktopSettingsOverlayView(model: model)
         overlay.frame = content.bounds
         overlay.autoresizingMask = [.width, .height]
@@ -106,6 +107,7 @@ final class DesktopSettingsController {
     /// Removes the overlay and gives focus back to whatever terminal had it.
     func close() {
         model.recorder.cancel()
+        model.cancelDraft()
         overlay.removeFromSuperview()
         if let host {
             Self.active.removeValue(forKey: ObjectIdentifier(host))
@@ -118,33 +120,64 @@ final class DesktopSettingsController {
     }
 }
 
-/// Dims the host and keeps the panel centered and clamped on every layout.
+/// Dims the host (reference scrim rgba(10,8,7,.08)) and keeps the panel
+/// centered and clamped on every layout. The panel clips its content to the
+/// 12 pt radius; a sibling layer behind it draws the 1 pt rim and shadow.
 @MainActor
 final class DesktopSettingsOverlayView: NSView {
     let panel: NSHostingView<DesktopSettingsView>
+    private let rim = NSView()
+    private var appearanceObservation: Any?
 
     init(model: DesktopSettingsModel) {
         panel = NSHostingView(rootView: DesktopSettingsView(model: model))
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor
+        layer?.backgroundColor = DesktopSettingsStyle.scrim.cgColor
+        rim.wantsLayer = true
+        rim.layer?.cornerRadius = DesktopMetrics.panelRadius
+        rim.layer?.borderWidth = 1
+        rim.layer?.shadowOpacity = 1
+        addSubview(rim)
         panel.wantsLayer = true
         panel.layer?.cornerRadius = DesktopMetrics.panelRadius
         panel.layer?.masksToBounds = true
         addSubview(panel)
-        setAccessibilityIdentifier("desktop-settings")
+        setAccessibilityIdentifier("DesktopSettingsScrim")
+        paintRim()
+        appearanceObservation = DesktopPresentation.shared.$isDark.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.paintRim() }
+        }
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
+    private func paintRim() {
+        let palette = DesktopPresentation.shared.palette
+        let dark = DesktopPresentation.shared.isDark
+        rim.layer?.backgroundColor = palette.popover.cgColor
+        rim.layer?.borderColor = palette.border.cgColor
+        rim.layer?.shadowColor = palette.shadow.cgColor
+        rim.layer?.shadowRadius = dark ? 22 : 20
+        rim.layer?.shadowOffset = CGSize(width: 0, height: dark ? -18 : -16)
+    }
+
+    private func place() {
+        let frame = DesktopSettingsGeometry.frame(in: bounds)
+        panel.frame = frame
+        rim.frame = frame.insetBy(dx: -1, dy: -1)
+        rim.layer?.shadowPath = CGPath(roundedRect: rim.bounds, cornerWidth: DesktopMetrics.panelRadius + 1,
+                                       cornerHeight: DesktopMetrics.panelRadius + 1, transform: nil)
+    }
+
     override func layout() {
         super.layout()
-        panel.frame = DesktopSettingsGeometry.frame(in: bounds)
+        place()
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
-        panel.frame = DesktopSettingsGeometry.frame(in: bounds)
+        place()
     }
 
     /// Clicks outside the panel never reach the terminal underneath.

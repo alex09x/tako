@@ -1,6 +1,7 @@
 /*
- * tako — Native settings section bodies bound to the real registry
+ * tako — Desktop settings pages: the reference's blocks over real keys
  * Copyright (c) 2026 Alexander Panasenko
+ *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
  * Project: https://github.com/alex09x/tako
@@ -10,17 +11,24 @@
 import AppKit
 import SwiftUI
 
+/// Page bodies follow PF_PAGES (prefs-window.js, prefs-detail.js). Every row
+/// reads and writes the real config through DesktopPreferenceStore.
 struct DesktopSettingsSectionBody: View {
     @ObservedObject var model: DesktopSettingsModel
     let palette: DesktopPalette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             switch model.section {
             case .general: general
-            case .terminalAppearance: DesktopAppearanceSection(model: model, scope: model.scope,
-                                                               themes: model.themes, palette: palette)
-            case .keys: DesktopKeysSection(recorder: model.recorder, palette: palette)
+            case .interface: interface
+            case .terminalAppearance:
+                DesktopAppearanceSection(model: model, scope: model.scope, themes: model.themes, palette: palette)
+            case .input: input
+            case .windows: windows
+            case .quickTerminal: quickTerminal
+            case .status: activity
+            case .keys: DesktopKeysSection(model: model, recorder: model.recorder, palette: palette)
             case .agents:
                 SetupAgentsStep(model: model.setup).task { await model.setup.refresh() }
             case .notifications:
@@ -29,140 +37,146 @@ struct DesktopSettingsSectionBody: View {
                     SetupPermissionPanel(model: model.setup)
                 }.task { await model.setup.refresh() }
             case .advanced: advanced
-            default: registryGroup(model.section)
             }
         }
     }
 
+    private func rows(_ keys: [String]) -> some View {
+        ForEach(keys, id: \.self) { DesktopRegistryRow(key: $0, preferences: model.preferences, palette: palette) }
+    }
+
     private var general: some View {
-        DesktopSettingsGroup(palette: palette) {
-            DesktopSettingsRow(title: "Версия", palette: palette) { Text(model.version).textSelection(.enabled) }
-            DesktopSettingsRow(title: "Файл конфигурации", palette: palette) {
-                Text(model.configFile.configPath ?? "не найден").lineLimit(1).truncationMode(.middle)
+        Group {
+            DesktopBlock(title: "Closing", palette: palette) { rows(["confirm-close-surface"]) }
+            DesktopBlock(title: "New Windows & Terminals", palette: palette) {
+                rows(["window-inherit-working-directory", "window-inherit-font-size"])
             }
-            DesktopSettingsRow(title: "Пример команды", palette: palette) {
-                Text("mitts --help").font(.system(size: DesktopMetrics.bodyFontSize, design: .monospaced))
+            DesktopBlock(title: "First Run", palette: palette) {
+                DesktopPrefRow(title: "Set Up Tako", detail: "Choose a theme, connect agents and review permissions. You can finish later.",
+                               key: "Tako › Set Up Tako…", palette: palette) {
+                    Button("Open Setup…") {
+                        model.onClose()
+                        NSApp.sendAction(#selector(AppDelegate.showSetup(_:)), to: nil, from: nil)
+                    }
+                    .buttonStyle(DesktopButtonStyle(palette: palette))
+                    .accessibilityIdentifier("DesktopOpenSetup")
+                }
+            }
+        }
+    }
+
+    private var interface: some View {
+        Group {
+            DesktopBlock(title: "Color Scheme", note: "Sidebar, canvas, menus and settings", palette: palette) { rows(["app-appearance"]) }
+            DesktopBlock(title: "Interface Text", palette: palette) {
+                DesktopPrefRow(title: "Interface font and size",
+                               detail: "Uses the macOS system font and size. Terminal Appearance controls terminal text independently; ⌘+ / ⌘− zoom only the terminal.",
+                               key: "System setting · no separate configuration key", palette: palette) { EmptyView() }
+            }
+            DesktopBlock(title: "Terminal Theme Scope", palette: palette) {
+                DesktopHint(text: "Terminal themes control the background, text, ANSI colors, cursor, selection and font. App appearance, focus borders and status colors remain independent.",
+                            palette: palette)
+            }
+        }
+    }
+
+    private var input: some View {
+        Group {
+            DesktopBlock(title: "Cursor", note: "For all terminals unless overridden by their theme", palette: palette) {
+                rows(["cursor-style", "cursor-style-blink"])
+            }
+            DesktopBlock(title: "Mouse & Selection", palette: palette) { rows(["mouse-hide-while-typing", "copy-on-select"]) }
+            DesktopBlock(title: "Paste", palette: palette) { rows(["safe-paste"]) }
+            DesktopBlock(title: "Shell", palette: palette) { rows(["shell-integration"]) }
+        }
+    }
+
+    private var windows: some View {
+        Group {
+            DesktopBlock(title: "Workspace", palette: palette) { rows(["workspace-sync-window-frame"]) }
+            DesktopBlock(title: "Window", note: "Tab style is not shown because this layout has no top tab bar",
+                         palette: palette) { rows(["background-blur"]) }
+        }
+    }
+
+    private var quickTerminal: some View {
+        Group {
+            DesktopBlock(title: "Position", note: "A drop-down terminal without a sidebar", palette: palette) {
+                rows(["quick-terminal-position", "quick-terminal-autohide"])
+            }
+            DesktopBlock(title: "Activation", palette: palette) {
+                DesktopPrefRow(title: "Shortcut", detail: "Available while Tako is active.",
+                               key: "toggle_quick_terminal", palette: palette) {
+                    HStack(spacing: 8) {
+                        DesktopShortcutCaps(text: model.recorder.display(for: "toggle_quick_terminal"), palette: palette)
+                        Button("Edit…") { model.showShortcut("toggle_quick_terminal") }
+                            .buttonStyle(DesktopButtonStyle(palette: palette))
+                            .accessibilityIdentifier("DesktopQuickTerminalShortcut")
+                    }
+                }
+            }
+        }
+    }
+
+    private var activity: some View {
+        Group {
+            DesktopBlock(title: "Indicators", note: "Focus and program status are independent", palette: palette) {
+                rows(["status-show", "status-animate"])
+            }
+            DesktopBlock(title: "Colors", note: "tab-status-color-*", palette: palette) {
+                rows(["working", "waiting", "done", "error", "idle"].map { "tab-status-color-\($0)" })
+                DesktopHint(text: "Status colors are shared across themes. Waiting for input and approval use the same status color.",
+                            palette: palette)
+            }
+            DesktopBlock(title: "Sidebar Counts", palette: palette) {
+                rows(["sidebar-count-waiting", "sidebar-count-error", "sidebar-count-done"])
+                DesktopHint(text: "Counts terminal statuses and unread completions. Each terminal is counted once.",
+                            palette: palette)
+            }
+            DesktopBlock(title: "Notifications", note: "Independent of visual indicators", palette: palette) {
+                DesktopPrefRow(title: "Permission and sound", detail: "Manage banners, sounds and badges in macOS settings.", palette: palette) {
+                    Button("Notifications & Permissions…") { model.section = .notifications }
+                        .buttonStyle(DesktopButtonStyle(palette: palette))
+                }
             }
         }
     }
 
     private var advanced: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            DesktopSettingsGroup(palette: palette) {
-                DesktopSettingsRow(title: "Файл конфигурации", palette: palette) {
-                    HStack {
-                        Button("Show in Finder") { model.revealConfig() }
-                        Button("Перечитать") { (NSApp.delegate as? AppDelegate)?.tako.reloadConfig() }
-                    }
+        Group {
+            DesktopBlock(title: "Storage", palette: palette) {
+                VStack(alignment: .leading, spacing: 6) {
+                    storage(model.configFile.configPath ?? "Configuration file not found", "Global settings, global theme and keyboard shortcuts")
+                    storage(model.themes.store.directory.path, "Custom themes, one file per theme")
+                    storage(model.themes.scopes.fileURL.path, "Workspace and terminal appearance")
                 }
+                HStack(spacing: 8) {
+                    Button("Show in Finder") { model.revealConfig() }.buttonStyle(DesktopButtonStyle(palette: palette))
+                    Button("Reload Configuration") { DesktopThemeLibrary.reloadLiveApp() }
+                        .buttonStyle(DesktopButtonStyle(palette: palette))
+                        .accessibilityIdentifier("DesktopReloadConfig")
+                }.padding(.top, 8)
             }
-            registryGroup(.advanced)
-        }
-    }
-
-    @ViewBuilder
-    private func registryGroup(_ section: DesktopSettingsSection) -> some View {
-        let items = Self.items(for: section)
-        if items.isEmpty {
-            Text("Нет параметров").foregroundStyle(Color(palette.muted))
-        } else {
-            DesktopSettingsGroup(palette: palette) {
-                ForEach(items, id: \.id) { item in
-                    DesktopRegistryRow(item: item, preferences: model.preferences, palette: palette)
+            DesktopBlock(title: "Configuration", note: "The configuration currently saved on disk", palette: palette) {
+                ScrollView {
+                    Text(model.configText.isEmpty ? "# Empty — using default settings" : model.configText)
+                        .font(.system(size: 11.5, design: .monospaced)).lineSpacing(3)
+                        .foregroundStyle(Color(palette.secondary)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
+                .frame(maxHeight: 300)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color(palette.field)))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color(palette.separator)))
             }
         }
     }
 
-    static func items(for section: DesktopSettingsSection) -> [TerminalSettingItem] {
-        let handledElsewhere: Set<String> = ["theme", "font-size"]
-        return TerminalSettingRegistry.allSettings.filter {
-            !handledElsewhere.contains($0.id) && DesktopSettingsSection.section(forCategory: $0.category) == section
+    private func storage(_ path: String, _ what: String) -> some View {
+        HStack(spacing: 8) {
+            Text(path).font(.system(size: DesktopSettingsStyle.keySize, design: .monospaced))
+                .foregroundStyle(Color(palette.secondary)).lineLimit(1).truncationMode(.middle)
+            Text(what).font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
         }
-    }
-}
-
-struct DesktopSettingsGroup<Content: View>: View {
-    let palette: DesktopPalette
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) { content }
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: DesktopMetrics.panelRadius).fill(Color(palette.panel)))
-            .overlay(RoundedRectangle(cornerRadius: DesktopMetrics.panelRadius).stroke(Color(palette.border)))
-    }
-}
-
-struct DesktopSettingsRow<Control: View>: View {
-    let title: String
-    var detail: String?
-    let palette: DesktopPalette
-    @ViewBuilder let control: Control
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(Color(palette.muted)) }
-            }
-            Spacer(minLength: 12)
-            control.frame(minHeight: DesktopMetrics.controlHeight)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 6)
-    }
-}
-
-/// One registry setting with its live value, source and reset.
-struct DesktopRegistryRow: View {
-    let item: TerminalSettingItem
-    @ObservedObject var preferences: DesktopPreferenceStore
-    let palette: DesktopPalette
-
-    var body: some View {
-        let local = preferences.isOverridden(item.id)
-        DesktopSettingsRow(title: item.title, detail: local ? "Своё значение · \(item.id)" : "По умолчанию · \(item.id)",
-                           palette: palette) {
-            HStack(spacing: 6) {
-                control
-                if local {
-                    Button { preferences.reset(item.id) } label: { Image(systemName: "arrow.uturn.backward") }
-                        .buttonStyle(.borderless).help("Сбросить к значению по умолчанию")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var control: some View {
-        switch item.type {
-        case .boolean:
-            Toggle("", isOn: Binding(get: { preferences.bool(item.id) },
-                                     set: { preferences.set(item.id, $0 ? "true" : "false") }))
-                .toggleStyle(.switch).labelsHidden()
-        case .options(let options, _):
-            Picker("", selection: Binding(get: { preferences.value(item.id) }, set: { preferences.set(item.id, $0) })) {
-                ForEach(options, id: \.self) { Text($0).tag($0) }
-            }.labelsHidden().frame(width: 160)
-        case .number(_, let min, let max, let step):
-            let value = Int(Double(preferences.value(item.id)) ?? 0)
-            Stepper("\(value)", value: Binding(get: { value }, set: { preferences.set(item.id, String($0)) }),
-                    in: min...max, step: step)
-        case .color:
-            DesktopColorField(value: preferences.value(item.id)) { preferences.set(item.id, $0) }
-        }
-    }
-}
-
-struct DesktopColorField: View {
-    let value: String
-    let commit: (String) -> Void
-    @State private var text = ""
-
-    var body: some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: NSColor(hex: value) ?? .clear)).frame(width: 18, height: 18)
-            TextField("#rrggbb", text: $text).frame(width: 90).onSubmit { commit(text) }
-        }.onAppear { text = value }.onChange(of: value) { text = $0 }
     }
 }
 
@@ -173,10 +187,13 @@ struct DesktopSettingsErrorLine: View {
     @ObservedObject var recorder: DesktopShortcutRecorder
     let palette: DesktopPalette
 
+    var error: String? { scope.lastError ?? preferences.lastError ?? themes.lastError ?? recorder.lastError }
+
     var body: some View {
-        if let error = scope.lastError ?? preferences.lastError ?? themes.lastError ?? recorder.lastError {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(palette.accent))
-            Text(error).lineLimit(2).foregroundStyle(Color(palette.secondary))
+        if let error {
+            Text(error).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
+                .foregroundStyle(Color(palette.accentBright))
+                .accessibilityIdentifier("DesktopSettingsError")
         }
     }
 }

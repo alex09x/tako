@@ -1,6 +1,7 @@
 /*
- * tako — Native settings shell: sidebar, search, section body and footer
+ * tako — Desktop settings window: sidebar, page, footer
  * Copyright (c) 2026 Alexander Panasenko
+ *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
  * Project: https://github.com/alex09x/tako
@@ -9,11 +10,24 @@
 
 import SwiftUI
 
+/// The reference's settings window (pfWinHtml): a 232 pt section column and
+/// the page with its title, level line, scrolling body and footer.
+/// Accessibility: `DesktopSettingsRoot` (the panel), `DesktopSettingsSearch`,
+/// `DesktopSettingsSection-<raw>`, `DesktopSettingsClose`.
 struct DesktopSettingsView: View {
     @ObservedObject var model: DesktopSettingsModel
     @ObservedObject private var presentation = DesktopPresentation.shared
+    @ObservedObject private var recorder: DesktopShortcutRecorder
+    @FocusState private var searchFocused: Bool
+
+    init(model: DesktopSettingsModel) {
+        _model = ObservedObject(wrappedValue: model)
+        _recorder = ObservedObject(wrappedValue: model.recorder)
+    }
 
     private var palette: DesktopPalette { presentation.palette }
+    private var searching: Bool { !model.query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var editing: Bool { model.draft != nil }
 
     var body: some View {
         GeometryReader { proxy in
@@ -21,109 +35,239 @@ struct DesktopSettingsView: View {
             HStack(spacing: 0) {
                 if !compact {
                     sidebar.frame(width: DesktopMetrics.settingsSidebarWidth)
-                    Rectangle().fill(Color(palette.separator)).frame(width: 1)
+                        .background(Color(palette.background))
+                        .overlay(alignment: .trailing) { Rectangle().fill(Color(palette.separator)).frame(width: 1) }
                 }
-                VStack(spacing: 0) {
-                    header(compact: compact)
-                    ScrollView {
-                        DesktopSettingsSectionBody(model: model, palette: palette)
-                            .padding(DesktopMetrics.contentInset)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    footer
-                }
-                .background(Color(palette.background))
+                main(compact: compact)
             }
         }
         .font(.system(size: DesktopMetrics.bodyFontSize))
-        .foregroundStyle(Color(palette.text))
-        .background(Color(palette.panel))
-        .sheet(isPresented: Binding(get: { model.draft != nil }, set: { if !$0 { model.cancelDraft() } })) {
-            DesktopThemeDraftEditor(model: model, palette: palette)
-        }
+        .foregroundStyle(Color(palette.secondary))
+        .background(Color(palette.popover))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("DesktopSettingsRoot")
     }
+
+    // MARK: Sidebar
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Поиск настроек, действий, шрифтов", text: $model.query)
-                .textFieldStyle(.roundedBorder)
-                .frame(height: DesktopMetrics.controlHeight)
-                .padding(.horizontal, 12).padding(.top, 14)
-            ScrollView {
-                VStack(spacing: 2) {
-                    if model.query.isEmpty {
-                        ForEach(DesktopSettingsSection.allCases) { section in row(section) }
-                    } else {
-                        searchResults
-                    }
-                }.padding(.horizontal, 8)
-            }
-        }
-        .background(Color(palette.panel))
-    }
-
-    @ViewBuilder private var searchResults: some View {
-        let results = model.searchResults
-        if results.isEmpty {
-            Text("Ничего не найдено").foregroundStyle(Color(palette.muted)).padding(8)
-        }
-        ForEach(results) { result in
-            Button { model.open(result) } label: {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(result.title).lineLimit(1)
-                    Text("\(result.section.title) · \(result.detail)").font(.system(size: 11))
-                        .foregroundStyle(Color(palette.muted)).lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 4)
-            }.buttonStyle(.plain)
-        }
-    }
-
-    private func row(_ section: DesktopSettingsSection) -> some View {
-        let selected = model.section == section
-        return Button { model.section = section } label: {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Settings").font(.system(size: DesktopSettingsStyle.sidebarTitleSize, weight: .semibold))
+                .foregroundStyle(Color(palette.text))
+                .padding(EdgeInsets(top: 4, leading: 8, bottom: 12, trailing: 8))
             HStack(spacing: 8) {
-                Image(systemName: section.symbol).frame(width: 18)
+                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Color(palette.muted))
+                TextField("Search", text: $model.query).textFieldStyle(.plain)
+                    .foregroundStyle(Color(palette.text))
+                    .focused($searchFocused)
+                    .accessibilityIdentifier("DesktopSettingsSearch")
+            }
+            .padding(.horizontal, 10).frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius).fill(Color(palette.field)))
+            .overlay(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius)
+                .strokeBorder(searchFocused ? Color(palette.accentBright) : Color(palette.separator), lineWidth: searchFocused ? 1.5 : 1))
+            .disabled(editing)
+            VStack(spacing: 1) {
+                ForEach(DesktopSettingsSection.allCases) { navRow($0) }
+            }
+            .padding(.top, 8)
+            Spacer(minLength: 0)
+        }
+        .padding(DesktopSettingsStyle.sidebarInsets)
+    }
+
+    private func navRow(_ section: DesktopSettingsSection) -> some View {
+        let selected = !searching && model.section == section
+        return Button { model.query = ""; model.section = section } label: {
+            HStack(spacing: 10) {
+                Image(systemName: section.symbol).font(.system(size: 13)).frame(width: 16, height: 16)
                 Text(section.title).lineLimit(1)
                 Spacer(minLength: 0)
+                if let note = navNote(section) {
+                    Text(note).font(.system(size: 11)).foregroundStyle(Color(palette.accentBright))
+                }
             }
+            .foregroundStyle(Color(selected ? palette.text : palette.secondary))
             .padding(.horizontal, 10)
             .frame(height: DesktopMetrics.navigationRowHeight)
-            .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius)
-                .fill(selected ? Color(palette.raised) : .clear))
+            .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius).fill(selected ? Color(palette.border) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("settings-section-\(section.rawValue)")
+        .disabled(editing)
+        .accessibilityIdentifier("DesktopSettingsSection-\(section.rawValue)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func header(compact: Bool) -> some View {
-        HStack {
-            if compact {
-                Picker("", selection: $model.section) {
-                    ForEach(DesktopSettingsSection.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().frame(maxWidth: 260)
-            } else {
-                Text(model.section.title).font(.system(size: DesktopMetrics.titleFontSize, weight: .semibold))
-            }
-            Spacer()
-            Text(model.scope.title).foregroundStyle(Color(palette.secondary)).lineLimit(1)
+    private func navNote(_ section: DesktopSettingsSection) -> String? {
+        switch section {
+        case .terminalAppearance: model.scope.hasOwnOverrides ? "customized" : nil
+        case .keys: recorder.configFile.customOverrides.isEmpty ? nil : String(recorder.configFile.customOverrides.count)
+        default: nil
         }
-        .padding(.horizontal, DesktopMetrics.contentInset)
-        .frame(height: 56)
+    }
+
+    // MARK: Page
+
+    private func main(compact: Bool) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                if compact && !editing {
+                    Picker("", selection: $model.section) {
+                        ForEach(DesktopSettingsSection.allCases) { Text($0.title).tag($0) }
+                    }.labelsHidden().frame(maxWidth: 240)
+                } else {
+                    Text(searching ? "Search: “\(model.query)”" : model.section.title)
+                        .font(.system(size: DesktopMetrics.titleFontSize, weight: .semibold))
+                        .foregroundStyle(Color(palette.text)).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button { model.onClose() } label: {
+                    Text("✕").frame(width: DesktopSettingsStyle.closeSize, height: DesktopSettingsStyle.closeSize)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Close · Esc")
+                .accessibilityIdentifier("DesktopSettingsClose")
+                .accessibilityLabel("Close")
+            }
+            .padding(DesktopSettingsStyle.topInsets)
+            levelLine
+            ScrollView {
+                Group {
+                    if searching { DesktopSettingsSearchList(model: model, palette: palette) }
+                    else if editing { DesktopThemeDraftEditor(model: model, palette: palette) }
+                    else { DesktopSettingsSectionBody(model: model, palette: palette) }
+                }
+                .padding(DesktopSettingsStyle.pageInsets)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if model.section == .keys, !searching, let status = recorder.status {
+                Text(status).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24).padding(.vertical, 8)
+                    .background(Color(palette.background))
+                    .accessibilityIdentifier("DesktopShortcutStatus")
+            }
+            footer
+        }
+    }
+
+    /// The scope chain on the appearance page, the app-wide note elsewhere.
+    @ViewBuilder private var levelLine: some View {
+        if !searching && !editing {
+            if model.section == .terminalAppearance {
+                DesktopScopeChips(scope: model.scope, palette: palette)
+                    .padding(EdgeInsets(top: 0, leading: 24, bottom: 12, trailing: 24))
+            } else if let subtitle = model.section.subtitle {
+                Text(subtitle).font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(EdgeInsets(top: 0, leading: 24, bottom: 12, trailing: 24))
+            }
+        }
     }
 
     private var footer: some View {
         HStack(spacing: 8) {
-            DesktopSettingsErrorLine(preferences: model.preferences, scope: model.scope,
-                                     themes: model.themes, recorder: model.recorder, palette: palette)
-            Spacer()
-            Button("Done") { model.onClose() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.regular)
+            if editing {
+                DesktopThemeDraftFooter(model: model, palette: palette)
+            } else {
+                let errors = DesktopSettingsErrorLine(preferences: model.preferences, scope: model.scope,
+                                                      themes: model.themes, recorder: model.recorder, palette: palette)
+                if errors.error != nil { errors } else {
+                    Text("Tako \(model.version) · changes save immediately · Esc to close")
+                        .font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
+                }
+                Spacer(minLength: 0)
+                if model.section == .terminalAppearance, !searching, !model.scope.isGlobal, model.scope.hasOwnOverrides {
+                    Button("Сбросить оформление: \(model.scope.title)") { model.scope.resetAll() }
+                        .buttonStyle(DesktopButtonStyle(palette: palette))
+                        .help("Remove overrides at this level only; other levels keep their own settings")
+                        .accessibilityIdentifier("DesktopScopeResetAll")
+                }
+            }
         }
-        .padding(.horizontal, DesktopMetrics.contentInset)
-        .frame(height: DesktopMetrics.footerHeight)
+        .padding(DesktopSettingsStyle.footerInsets)
+        .frame(minHeight: DesktopMetrics.footerHeight)
         .overlay(alignment: .top) { Rectangle().fill(Color(palette.separator)).frame(height: 1) }
+    }
+}
+
+/// «For Global › workspace › terminal»: where appearance edits land.
+struct DesktopScopeChips: View {
+    @ObservedObject var scope: DesktopScopeEditor
+    let palette: DesktopPalette
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("For").foregroundStyle(Color(palette.muted))
+            ForEach(Array(scope.chain.enumerated()), id: \.offset) { index, title in
+                if index > 0 { Text("›").foregroundStyle(Color(palette.faint)) }
+                let current = index == scope.chain.count - 1
+                Text(title).lineLimit(1)
+                    .padding(.horizontal, 10).frame(height: DesktopMetrics.controlHeight)
+                    .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius).fill(Color(palette.field)))
+                    .overlay(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius)
+                        .strokeBorder(current ? Color(palette.accentBright) : Color(palette.separator), lineWidth: current ? 1.5 : 1))
+                    .accessibilityIdentifier(current ? "DesktopScopeCurrent" : "DesktopScope-\(index)")
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Search hits grouped by section; a keyboard action shows its keys.
+struct DesktopSettingsSearchList: View {
+    @ObservedObject var model: DesktopSettingsModel
+    let palette: DesktopPalette
+
+    var body: some View {
+        let results = model.searchResults
+        VStack(alignment: .leading, spacing: 12) {
+            if results.isEmpty {
+                DesktopHint(text: "No results for “\(model.query)”. You can also search configuration keys.", palette: palette)
+            }
+            ForEach(DesktopSettingsSection.allCases) { section in
+                let hits = results.filter { $0.section == section }.prefix(8)
+                if !hits.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(section.title, systemImage: section.symbol)
+                            .font(.system(size: DesktopSettingsStyle.captionSize, weight: .semibold))
+                            .foregroundStyle(Color(palette.text))
+                        ForEach(Array(hits)) { hit in result(hit) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func result(_ hit: DesktopSettingsSearchResult) -> some View {
+        Button { model.open(hit) } label: {
+            HStack(spacing: 8) {
+                Text(hit.title).foregroundStyle(Color(palette.text)).lineLimit(1)
+                Spacer(minLength: 8)
+                if case .action(let id) = hit.kind {
+                    DesktopShortcutCaps(text: model.recorder.display(for: id), palette: palette)
+                } else {
+                    Text(hit.detail).font(.system(size: DesktopSettingsStyle.keySize, design: .monospaced))
+                        .foregroundStyle(Color(palette.faint)).lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8).frame(minHeight: 32).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(Self.identifier(hit))
+    }
+
+    /// An action hit carries its row id so a search can be followed straight to the shortcut.
+    static func identifier(_ hit: DesktopSettingsSearchResult) -> String {
+        switch hit.kind {
+        case .action(let id): "DesktopShortcut-\(id)"
+        case .setting(let key): "DesktopSearchSetting-\(key)"
+        case .font(let family): "DesktopSearchFont-\(family)"
+        case .section: "DesktopSearchSection-\(hit.section.rawValue)"
+        }
     }
 }

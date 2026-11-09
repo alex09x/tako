@@ -25,9 +25,13 @@ final class DesktopScopeEditor: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var revision = 0
 
-    init(context: ScopedAppearanceContext?, preferences: DesktopPreferenceStore) {
+    /// Where preset names resolve; injectable so tests use a sandbox.
+    let themePaths: [String]
+
+    init(context: ScopedAppearanceContext?, preferences: DesktopPreferenceStore, themePaths: [String]? = nil) {
         self.context = context
         self.preferences = preferences
+        self.themePaths = themePaths ?? preferences.configFile.appearanceThemePaths
     }
 
     var title: String { context?.title ?? "Global Settings" }
@@ -60,13 +64,31 @@ final class DesktopScopeEditor: ObservableObject {
         }
     }
 
-    /// What the terminal actually uses at this level.
+    /// What the terminal actually uses at this level, theme resolved.
     func effectiveValue(_ key: String) -> String? {
         if let context { return context.effectiveValue(for: key) ?? context.value(for: key) }
-        return preferences.localValue(key) ?? DesktopPreferenceStore.item(key)?.type.defaultStringValue
+        return preferences.effectiveValue(key)
     }
 
     var effectiveTheme: TerminalTheme? { context?.effectiveTheme }
+
+    /// What terminals at this level render: the scoped chain, or the config
+    /// file parsed with its theme for the global level.
+    var renderedTheme: TerminalTheme {
+        if let context { return context.effectiveTheme }
+        let file = preferences.configFile
+        return TerminalTheme.parse(config: file.rawConfigLines.joined(separator: "\n"), configPath: file.configPath,
+                                   darkAppearance: TakoSystemAppearance.isDark)
+    }
+
+    /// Whether this level stores anything of its own (theme or fields).
+    var hasOwnOverrides: Bool {
+        if let context { return context.store.document.overrides(for: context.scope)?.isEmpty == false }
+        return ScopedAppearanceContext.keys.contains { preferences.localValue($0) != nil }
+    }
+
+    /// «Global › …» down to this level, for the chips over the page.
+    var chain: [String] { context.map { ["Global", $0.title] } ?? ["Global"] }
 
     @discardableResult
     func set(_ key: String, _ value: String) -> Bool {
@@ -83,13 +105,16 @@ final class DesktopScopeEditor: ObservableObject {
         return finish(preferences.reset(key), preferences.lastError)
     }
 
-    /// A full preset replaces this level's own overrides only.
+    /// Same rule as ThemeControlService.applyPreset: a full preset replaces
+    /// this level's own overrides only; a colours-only one is just selected.
     @discardableResult
     func selectPreset(_ name: String) -> Bool {
-        guard let context else { return finish(preferences.set("theme", name), preferences.lastError) }
+        let full = TerminalTheme.presetContainsTypography(named: name, searchPaths: themePaths)
+        guard let context else { return finish(preferences.selectPreset(name, full: full), preferences.lastError) }
         guard context.isAvailable() else { return finish(false, "This workspace or terminal is no longer available.") }
         do {
-            try context.store.applyPreset(name, scope: context.scope)
+            if full { try context.store.applyPreset(name, scope: context.scope) }
+            else { try context.store.setValue(name, for: "theme", scope: context.scope) }
             return finish(true, nil)
         } catch {
             return finish(false, error.localizedDescription)

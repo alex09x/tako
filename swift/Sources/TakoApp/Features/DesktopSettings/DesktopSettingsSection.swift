@@ -9,53 +9,71 @@
 
 import Foundation
 
+/// The reference's section list (prefs-detail.js PF_SECS). Raw values are the
+/// accessibility suffixes: `DesktopSettingsSection-<rawValue>`.
 enum DesktopSettingsSection: String, CaseIterable, Identifiable {
-    case general, interface, terminalAppearance, input, windows, quickTerminal
-    case status, keys, agents, notifications, advanced
+    case general
+    case interface
+    case terminalAppearance = "appearance"
+    case input
+    case windows
+    case quickTerminal
+    case status = "activity"
+    case keys, agents, notifications, advanced
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .general: "Основные"
-        case .interface: "Интерфейс"
-        case .terminalAppearance: "Оформление терминала"
+        case .general: "General"
+        case .interface: "App Appearance"
+        case .terminalAppearance: "Terminal Appearance"
         case .input: "Input & Cursor"
-        case .windows: "Окна и пространства"
-        case .quickTerminal: "Быстрый терминал"
+        case .windows: "Windows & Workspaces"
+        case .quickTerminal: "Quick Terminal"
         case .status: "Status & Activity"
-        case .keys: "Сочетания клавиш"
+        case .keys: "Keyboard Shortcuts"
         case .agents: "Agents"
-        case .notifications: "Уведомления и доступ"
+        case .notifications: "Notifications & Permissions"
         case .advanced: "Advanced"
         }
     }
 
+    /// The line under the title; appearance shows its level chips instead,
+    /// agents and permissions carry their own lead.
+    var subtitle: String? {
+        switch self {
+        case .terminalAppearance, .agents, .notifications: nil
+        default: "Application settings for all workspaces and terminals"
+        }
+    }
+
+    /// SF Symbols closest to the reference's line icons (PF_IC).
     var symbol: String {
         switch self {
         case .general: "gearshape"
-        case .interface: "macwindow"
+        case .interface: "sidebar.left"
         case .terminalAppearance: "paintpalette"
-        case .input: "character.cursor.ibeam"
-        case .windows: "rectangle.3.group"
-        case .quickTerminal: "rectangle.topthird.inset.filled"
-        case .status: "circle.dotted.circle"
+        case .input: "apple.terminal"
+        case .windows: "macwindow"
+        case .quickTerminal: "menubar.dock.rectangle"
+        case .status: "smallcircle.filled.circle"
         case .keys: "keyboard"
-        case .agents: "sparkles"
-        case .notifications: "bell.badge"
-        case .advanced: "doc.text"
+        case .agents: "star"
+        case .notifications: "checkmark.shield"
+        case .advanced: "slider.horizontal.3"
         }
     }
 
     /// Registry categories whose settings this section edits.
     var registryCategories: Set<String> {
         switch self {
-        case .interface: ["Interface", "Sidebar"]
+        case .interface: ["Interface"]
         case .terminalAppearance: ["Appearance"]
         case .input: ["Terminal"]
         case .windows: ["Window", "Workspaces"]
         case .quickTerminal: ["Quick Terminal"]
-        case .status: ["Activity"]
+        case .status: ["Activity", "Sidebar", "Tab Status Colors"]
         default: []
         }
     }
@@ -105,13 +123,15 @@ enum DesktopSettingsSearch {
             results.append(.init(title: section.title, detail: "Section", section: section, kind: .section))
         }
         var seen: Set<String> = []
-        for item in settings where !seen.contains(item.id) && hit(item.title, item.id, item.description) {
+        for item in settings where !seen.contains(item.id) {
+            let copy = DesktopSettingCopy.of(item.id)
+            guard hit(item.title, item.id, item.description, copy?.title ?? "", copy?.detail ?? "") else { continue }
             seen.insert(item.id)
-            results.append(.init(title: item.title, detail: item.id,
-                                 section: .section(forCategory: item.category), kind: .setting(item.id)))
+            results.append(.init(title: copy?.title ?? item.title, detail: item.id,
+                                 section: copy?.section ?? .section(forCategory: item.category), kind: .setting(item.id)))
         }
-        for action in actions where hit(action.title, action.id) {
-            results.append(.init(title: action.title, detail: action.id, section: .keys, kind: .action(action.id)))
+        for action in actions where DesktopKeysCopy.searchTexts(action.id, current: nil).contains(where: { hit($0) }) {
+            results.append(.init(title: DesktopKeysCopy.title(action.id), detail: action.id, section: .keys, kind: .action(action.id)))
         }
         for font in fonts where hit(font) {
             results.append(.init(title: font, detail: "Font", section: .terminalAppearance, kind: .font(font)))

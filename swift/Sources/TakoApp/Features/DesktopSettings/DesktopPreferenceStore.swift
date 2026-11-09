@@ -44,6 +44,25 @@ final class DesktopPreferenceStore: ObservableObject {
 
     func bool(_ key: String) -> Bool { value(key).lowercased() == "true" }
 
+    /// What the terminal renders for `key`: the config parsed with its theme
+    /// resolved, so a full preset's font or size shows even without a raw line.
+    func effectiveValue(_ key: String) -> String? {
+        if key == "theme" { return localValue(key) ?? "TakoCore" }
+        return Self.item(key).map { configFile.effectiveSettingValue(for: $0) }
+    }
+
+    /// A full preset (one with typography) drops stale global appearance
+    /// lines, as the old settings and `takoctl theme apply` do; a colours-only
+    /// preset is just selected and the custom lines stay.
+    @discardableResult
+    func selectPreset(_ name: String, full: Bool) -> Bool {
+        guard full else { return set("theme", name) }
+        guard configFile.applyFullThemePreset(name) else {
+            return fail("Could not apply theme “\(name)” to \(configFile.configPath ?? "configuration file")")
+        }
+        return succeed()
+    }
+
     var desktopPreferences: DesktopPreferences {
         DesktopPreferences { [self] key in localValue(key) }
     }

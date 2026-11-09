@@ -25,6 +25,8 @@ final class DesktopShortcutRecorder: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var lastError: String?
+    /// The line under the list (reference `.pf-kmsg`): what just happened.
+    @Published private(set) var status: String?
     let configFile: KeybindConfigFile
     private var monitor: Any?
 
@@ -44,6 +46,7 @@ final class DesktopShortcutRecorder: ObservableObject {
     func begin(_ action: String, installMonitor: Bool = true) {
         state = .recording(action: action)
         lastError = nil
+        status = "Press a shortcut. Esc to cancel, ⌫ to restore the default."
         guard installMonitor, monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.recordingAction != nil else { return event }
@@ -55,10 +58,22 @@ final class DesktopShortcutRecorder: ObservableObject {
     /// Returns true when the event was consumed by the recorder.
     @discardableResult
     func handle(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
-        guard case .recording(let action) = state else { return state != .idle }
         let mods = modifiers.intersection([.command, .option, .control, .shift])
+        if case .conflict = state {
+            // Enter reassigns, Esc cancels; any other press is swallowed.
+            if mods.isEmpty, keyCode == 36 || keyCode == 76 { confirmReassign() }
+            else if mods.isEmpty, keyCode == 53 { cancel(message: "Reassignment canceled") }
+            return true
+        }
+        guard case .recording(let action) = state else { return false }
         if keyCode == 53, mods.isEmpty {
-            cancel()
+            cancel(message: "Recording canceled")
+            return true
+        }
+        if keyCode == 51, mods.isEmpty {
+            reset(action)
+            state = .idle
+            stopMonitor()
             return true
         }
         guard let key = KeybindRegistry.keyName(for: keyCode) else {
@@ -72,7 +87,8 @@ final class DesktopShortcutRecorder: ObservableObject {
         }
         let trigger = Self.trigger(key: key, modifiers: mods)
         if let holder = configFile.findConflict(for: trigger, targetAction: action) {
-            state = .conflict(action: action, trigger: trigger, holder: .init(id: holder.id, title: holder.title))
+            state = .conflict(action: action, trigger: trigger, holder: .init(id: holder.id, title: DesktopKeysCopy.title(holder.id)))
+            status = "\(KeybindRegistry.format(trigger: trigger)) is assigned to “\(DesktopKeysCopy.title(holder.id))”. Enter to reassign, Esc to cancel."
             return true
         }
         commit(action: action, trigger: trigger)
@@ -86,15 +102,17 @@ final class DesktopShortcutRecorder: ObservableObject {
         commit(action: action, trigger: trigger)
     }
 
-    func cancel() {
+    func cancel(message: String? = nil) {
         state = .idle
         stopMonitor()
+        if let message { status = message }
     }
 
     @discardableResult
     func reset(_ action: String) -> Bool {
         let ok = configFile.removeKeybind(action: action)
         lastError = ok ? nil : "Could not reset this shortcut"
+        if ok { status = "Restored the default for “\(DesktopKeysCopy.title(action))”" + (display(for: action).map { " \($0)" } ?? "") }
         objectWillChange.send()
         return ok
     }
@@ -130,6 +148,7 @@ final class DesktopShortcutRecorder: ObservableObject {
     private func commit(action: String, trigger: String) {
         if configFile.setKeybind(action: action, trigger: trigger) {
             lastError = nil
+            status = "«\(DesktopKeysCopy.title(action))» — \(KeybindRegistry.format(trigger: trigger))"
         } else {
             lastError = "Could not save the shortcut to the configuration file"
         }
