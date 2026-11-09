@@ -44,11 +44,11 @@ enum FloatingCanvasMotion {
     static func shelfAnchorRect(in canvasSize: CGSize, minimizedCount: Int = 1) -> CGRect {
         let safe = FloatingPaneGeometry.sanitizedCanvasSize(canvasSize)
         let cardH = FloatingPaneGeometry.shelfCardHeight
-        let cardW = min(shelfGhostWidth, max(96, safe.width - 24))
-        let verticalInset = max(4, ((FloatingPaneGeometry.shelfBandHeight - cardH) * 0.5).rounded())
+        let inset = FloatingPaneGeometry.shelfInset
+        let cardW = min(shelfGhostWidth, max(96, safe.width - 2 * inset))
         let indexOffset = CGFloat(min(max(0, minimizedCount - 1), 3)) * 10
-        let x = max(12, safe.width - 12 - cardW - indexOffset)
-        let y = max(0, safe.height - verticalInset - cardH)
+        let x = max(inset, safe.width - inset - cardW - indexOffset)
+        let y = max(0, safe.height - inset - cardH)
         return CGRect(x: x, y: y, width: cardW, height: cardH)
     }
 

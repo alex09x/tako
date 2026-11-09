@@ -13,7 +13,7 @@ import SwiftUI
 
 /// Bottom-right pill shelf showing minimized internal panes for the active session.
 /// Visually renders only right-aligned 30pt pills (no full-width bar or top divider),
-/// while `FloatingPaneGeometry.shelfBandHeight` (`44pt`) keeps terminal rows non-occluded.
+/// without reserving terminal space underneath the overlay.
 struct FloatingMinimizeShelfView: View {
     let minimizedPanes: [FloatingPaneState]
     let surfaceLookup: (UUID) -> Tako.SurfaceView?
@@ -33,8 +33,8 @@ struct FloatingMinimizeShelfView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.horizontal, FloatingPaneGeometry.shelfInset)
+        .padding(.bottom, FloatingPaneGeometry.shelfInset)
         .fixedSize(horizontal: true, vertical: true)
     }
 

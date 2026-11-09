@@ -67,7 +67,7 @@ struct FloatingTerminalCanvasTests {
         #expect(store.state(for: surface.id)?.rect == CGRect(x: 84, y: 62, width: 560, height: 390))
     }
 
-    @Test func shelfBottomBandReservesWorkAreaClampsNormalPanesAndIgnoresZeroCanvasSizes() throws {
+    @Test func shelfOverlayKeepsFullWorkAreaAndIgnoresZeroCanvasSizes() throws {
         let canvas = CGSize(width: 1000, height: 700)
         let app = Tako.App()
         let a = Tako.SurfaceView(app)
@@ -86,7 +86,7 @@ struct FloatingTerminalCanvasTests {
         )
         #expect(fullFrame == CGRect(x: 0, y: 0, width: 1000, height: 700))
 
-        // Minimizing B activates the 44pt shelf band: maximized A shrinks to 656pt and normal panes clamp above shelf
+        // The shelf overlays the canvas without shrinking maximized or normal panes.
         store.minimize(b.id)
         #expect(store.hasMinimizedPanes)
         let shelfAwareMax = FloatingPaneGeometry.presentedFrame(
@@ -94,12 +94,12 @@ struct FloatingTerminalCanvasTests {
             in: canvas,
             hasMinimizedPanes: store.hasMinimizedPanes
         )
-        #expect(shelfAwareMax == CGRect(x: 0, y: 0, width: 1000, height: 700 - FloatingPaneGeometry.shelfBandHeight))
+        #expect(shelfAwareMax == fullFrame)
 
         store.toggleMaximize(a.id, in: canvas)
         store.setInteractiveRect(CGRect(x: 100, y: 500, width: 500, height: 300), for: a.id, in: canvas)
         let clampedRect = try #require(store.state(for: a.id)).rect
-        #expect(clampedRect.maxY <= 700 - FloatingPaneGeometry.shelfBandHeight)
+        #expect(clampedRect.maxY == 700)
 
         // Zero-size GeometryReader passes must never overwrite or corrupt rects
         store.updateCanvasSize(.zero, tree: tree)

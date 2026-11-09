@@ -136,8 +136,10 @@ enum FloatingPaneResizeEdge: String, CaseIterable, Sendable {
 enum FloatingPaneGeometry {
     static let headerHeight: CGFloat = DesktopCanvasMetrics.paneHeaderHeight
     static let cornerRadius: CGFloat = 10
+    /// Overlay hit region only; never subtracted from terminal work area.
     static let shelfBandHeight: CGFloat = 44
     static let shelfCardHeight: CGFloat = 30
+    static let shelfInset: CGFloat = 14
     static let defaultWidthRatio: CGFloat = 0.55
     static let defaultHeightRatio: CGFloat = 0.60
     static let cascadeStep: CGFloat = 24
@@ -155,17 +157,9 @@ enum FloatingPaneGeometry {
         isValidCanvasSize(size) ? size : fallbackCanvasSize
     }
 
-    /// Available pane work area inside the right-hand canvas.
-    /// Reserves a fixed bottom band only while the minimize shelf has cards,
-    /// preventing the shelf from occluding the bottom rows of maximized or normal panes.
-    static func workArea(in canvasSize: CGSize, hasMinimizedPanes: Bool) -> CGRect {
-        let safe = sanitizedCanvasSize(canvasSize)
-        guard hasMinimizedPanes else {
-            return CGRect(origin: .zero, size: safe)
-        }
-        let minWorkHeight = min(minSize.height, safe.height)
-        let reservedHeight = max(minWorkHeight, safe.height - shelfBandHeight)
-        return CGRect(x: 0, y: 0, width: safe.width, height: reservedHeight)
+    /// The shelf floats over the canvas; its presence never resizes terminals.
+    static func workArea(in canvasSize: CGSize, hasMinimizedPanes _: Bool) -> CGRect {
+        CGRect(origin: .zero, size: sanitizedCanvasSize(canvasSize))
     }
 
     static func defaultNormalRect(in workArea: CGRect, cascadeIndex: Int = 0) -> CGRect {

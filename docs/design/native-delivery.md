@@ -65,8 +65,8 @@ runtime copies. Public publishing is not part of this delivery.
 
 ## Final scoped acceptance evidence
 
-Forty-one desktop XCUI scenarios now have passing evidence across the focused runs.
-This is cumulative coverage, not a claim that a single forty-one-test run passed.
+Forty-two desktop XCUI scenarios now have passing evidence across the focused runs.
+This is cumulative coverage, not a claim that a single forty-two-test run passed.
 The external acceptance checkout retains the original failed bundles as well as
 the successful reruns:
 
@@ -79,6 +79,7 @@ the successful reruns:
 | `controls-retry.xcresult` | Three successful scenarios: complete header mode actions, workspace rename/collapse and temporary zoom/base-size reset |
 | `final-workflows.xcresult` | Five successful scenarios: persistent pane names, custom-theme rename/delete protection, toast restore/focus and expiry |
 | `sidebar-list-final.xcresult` | Three successful scenarios: search, session switch-back with process/focus continuity, and active-row visibility with sixteen sessions |
+| `shelf-overlay-final.xcresult` | Overlay pill placement, full terminal height, normal grid reflow, bottom click/focus, maximize and process identity |
 
 The final five executed with zero failures and an explicit successful Xcode test
 result. Retained videos and attachment manifests support the AX assertions.
@@ -109,5 +110,25 @@ and query. Initial mounting does not constitute a request to focus search.
 The existing tab-selection policy still focuses the terminal. The active row is
 scrolled into view after list remount. Three focused native visibility tests and
 the three live scenarios above passed; successful GUI recordings are retained.
-Live CPU acceptance remains tracked in the performance incident until the signed
-candidate has been installed and measured with the operator's running sessions.
+Signed build 571 (`c79bd3e8`) was installed with all twelve persistent pane UUID,
+PID and process-birth identities preserved. Three five-second live CPU intervals
+after settling measured 9.38%, 8.97%, 8.97% of one core; the initial build-568
+interval measured 67.17%. These are live observations, not a controlled benchmark.
+The final thirty-second sample no longer shows repeated theme-directory discovery
+or recursive native-titlebar lookup in its hot paths. The independent macOS
+`fseventsd` load is recorded separately and was not changed.
+
+## Shelf overlay clarification, 2026-11-09
+
+The owner's follow-up confirms that shelf pills overlay the field at 14 points
+from its bottom/right edges, with no reserved strip. Existing canvas insets stay.
+The work area is identical with and without minimized panes. Minimizing a tiled
+pane still collapses that grid leaf, so neighbors fill its space; restoring the
+pane restores the split. There is no empty reserved tile. Floating/maximized
+neighbors lose no height simply because shelf cards appear.
+
+Focused native tests verify full work area, rendered terminal height/rows, normal
+tile reflow/restore, maximized geometry and pill coordinates. The live overlay
+scenario passed in 33.173 seconds and checks input at the bottom of the terminal
+with search previously focused, plus unchanged process identities. Successful
+video and earlier failed development evidence remain on the external build disk.

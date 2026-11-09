@@ -53,6 +53,7 @@ struct FloatingChromeReferenceTests {
         for frame in frames { #expect(abs(frame.height - 30) < 0.5, "pill \(frame)") }
         #expect(abs(frames[1].minX - frames[0].maxX - 6) < 0.5, "pills \(frames)")
         #expect(abs(content.bounds.maxX - frames[1].maxX - 14) < 0.5, "edge \(frames[1]) in \(content.bounds)")
+        #expect(abs(frames[1].minY - content.bounds.minY - 14) < 0.5, "bottom \(frames[1]) in \(content.bounds)")
 
         // Each pill's ring is the small 16 pt ring, inside the pill.
         let shelfRings = rings(in: content).filter { ring in

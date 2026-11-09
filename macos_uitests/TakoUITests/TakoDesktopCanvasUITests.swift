@@ -10,6 +10,53 @@
 import XCTest
 
 final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
+    func testShelfOverlaysTheCanvasWithoutReservingHeightOrBlockingTerminalInput() throws {
+        let app = try launchDesktop()
+        let first = try XCTUnwrap(paneIDs(in: app).first)
+        let firstPID = try shellPID(first, phase: "OVERLAY_FIRST_BEFORE", in: app)
+        app.typeKey("d", modifierFlags: .command)
+        waitForPaneCount(2, in: app)
+        let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
+        let secondPID = try shellPID(second, phase: "OVERLAY_SECOND_BEFORE", in: app)
+        let firstTile = pane(first, in: app).frame
+        let secondTile = pane(second, in: app).frame
+        control("Minimize", pane: second, in: app).click()
+        waitForPaneCount(1, in: app)
+        let expanded = pane(first, in: app).frame
+        XCTAssertEqual(expanded.height, firstTile.height, accuracy: 1)
+        XCTAssertEqual(expanded.minY, firstTile.minY, accuracy: 1)
+        XCTAssertGreaterThan(expanded.width, firstTile.width)
+        let card = minimizedCard(second, in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertEqual(canvas(in: app).frame.maxY - card.frame.maxY, 14, accuracy: 2)
+        XCTAssertEqual(canvas(in: app).frame.maxX - card.frame.maxX, 14, accuracy: 2)
+        app.typeKey("k", modifierFlags: .command)
+        pane(first, in: app).textViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.97)).click()
+        XCTAssertEqual(try shellPID(first, phase: "OVERLAY_BOTTOM_INPUT", in: app, focus: false), firstPID)
+        card.click()
+        waitForPaneCount(2, in: app)
+        assertRect(pane(first, in: app).frame, equals: firstTile)
+        assertRect(pane(second, in: app).frame, equals: secondTile)
+        control("Maximize", pane: first, in: app).click()
+        let maximized = pane(first, in: app).frame
+        assertRect(maximized, equals: canvas(in: app).frame)
+        activeWindow(in: app).descendants(matching: .any)["session-pane-\(second)"].firstMatch.click()
+        control("Minimize", pane: second, in: app).click()
+        waitForPaneCount(1, in: app)
+        assertRect(pane(first, in: app).frame, equals: maximized)
+        minimizedCard(second, in: app).click()
+        waitForPaneCount(2, in: app)
+        XCTAssertEqual(try shellPID(second, phase: "OVERLAY_SECOND_AFTER", in: app), secondPID)
+        captureSettingsIfPresent(app)
+    }
+
+    private func captureSettingsIfPresent(_ app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: activeWindow(in: app).screenshot())
+        attachment.name = "Minimize shelf overlays full canvas without a reserved strip"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testDraggingAPaneToAnotherTileDocksItWithoutRestartingEitherTerminal() throws {
         let app = try launchDesktop()
         let first = try XCTUnwrap(paneIDs(in: app).first)

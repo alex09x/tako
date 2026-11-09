@@ -45,7 +45,7 @@ struct FloatingTerminalCanvasFollowUpTests {
         #expect(store.state(for: pA.id)?.rect == preferredA)
 
         // Maximize A -> minimize A & B -> snapshot roundtrip while shelf is active ->
-        // restore A while B is still minimized (workArea height = 656) -> restore B -> toggle A to .normal
+        // restore A while B is still minimized (full work area) -> restore B -> toggle A to .normal
         store.toggleMaximize(pA.id, in: canvas)
         store.minimize(pA.id)
         store.minimize(pB.id)
@@ -59,15 +59,14 @@ struct FloatingTerminalCanvasFollowUpTests {
         #expect(reloaded.restore(pA.id, in: canvas) == .maximized)
         #expect(reloaded.state(for: pA.id)?.rect == preferredA)
 
-        // While B is still minimized, toggling A to .normal clamps only its presentedFrame (height 656),
-        // keeping its preferred rect (y: 8, height: 684) intact for when B is restored.
+        // B's shelf card does not alter A's preferred or presented geometry.
         reloaded.toggleMaximize(pA.id, in: canvas)
         let clampedPresented = FloatingPaneGeometry.presentedFrame(
             for: try #require(reloaded.state(for: pA.id)),
             in: canvas,
             hasMinimizedPanes: reloaded.hasMinimizedPanes
         )
-        #expect(clampedPresented.maxY <= 656)
+        #expect(clampedPresented == preferredA)
         #expect(reloaded.state(for: pA.id)?.rect == preferredA)
 
         #expect(reloaded.restore(pB.id, in: canvas) == .normal)
