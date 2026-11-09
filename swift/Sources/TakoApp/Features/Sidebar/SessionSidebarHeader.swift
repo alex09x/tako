@@ -63,6 +63,8 @@ extension SessionSidebarView {
     /// The + menu: the registry's own actions and their real shortcuts.
     func showNewMenu() {
         let window = targetWindow
+        guard let content = window?.contentView,
+              let anchor = Self.newMenuAnchor(in: content) else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(SidebarMenuAction("New Session", binding: "new_tab") { [store] in store.createNewTab(in: window) })
@@ -72,7 +74,20 @@ extension SessionSidebarView {
         menu.addItem(SidebarMenuAction("New Window", binding: "new_window") {
             NSApp.sendAction(#selector(AppDelegate.newWindow(_:)), to: nil, from: nil)
         })
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        // Associate the popup with its actual control and host. A screen-only
+        // popup was visible but missing from the app's accessibility tree,
+        // and keyboard activation incorrectly followed the mouse position.
+        let belowButton = NSPoint(x: anchor.bounds.minX,
+                                  y: anchor.isFlipped ? anchor.bounds.maxY : anchor.bounds.minY)
+        menu.popUp(positioning: nil, at: belowButton, in: anchor)
+    }
+
+    private static func newMenuAnchor(in view: NSView) -> NSView? {
+        if view.accessibilityIdentifier() == "SessionSidebarHeaderNewSession" { return view }
+        for child in view.subviews {
+            if let anchor = newMenuAnchor(in: child) { return anchor }
+        }
+        return nil
     }
 
     // MARK: Search
