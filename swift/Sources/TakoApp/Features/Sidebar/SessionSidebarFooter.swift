@@ -168,7 +168,7 @@ extension SessionSidebarView {
 
     // MARK: - Collapsible Search & Segments Drawer (§5.2, §5.3)
 
-    func searchAndSegmentsBar(attentionCount: Int) -> some View {
+    func searchAndSegmentsBar(attentionCount: Int, counts: SidebarAttentionCounts) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Text("⌕")
@@ -229,10 +229,7 @@ extension SessionSidebarView {
                             ringOnly: StatusRingSize.extraSmall.rawValue
                         )
                         .frame(width: StatusRingSize.extraSmall.rawValue, height: StatusRingSize.extraSmall.rawValue)
-                        Text("Needs you · \(attentionCount)")
-                            .font(Font(T.monoFont(size: 10, weight: .regular)))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
+                        SessionSidebarCountsLabel(counts: counts, preferences: DesktopPresentation.shared.preferences)
                     }
                 }
 

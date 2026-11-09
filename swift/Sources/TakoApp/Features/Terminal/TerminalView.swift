@@ -132,7 +132,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 SessionSidebarView(
                                     isPresented: $viewModel.sessionSidebarIsShowing,
                                     containingWindow: viewModel.containingWindow,
-                                    backgroundColor: tako.config.backgroundColor.opacity(tako.config.backgroundOpacity),
+                                    backgroundColor: Color(nsColor: Tako.LivingTokens.body).opacity(tako.config.backgroundOpacity),
                                     newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab")
                                 )
                             }

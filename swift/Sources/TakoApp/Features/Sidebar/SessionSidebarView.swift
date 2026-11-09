@@ -24,6 +24,9 @@ struct SessionSidebarView: View {
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     @ObservedObject var animState = LivingAnimationState.shared
+    /// The shell scheme: switching it rebuilds the list so every shell
+    /// colour resolves again (they are dynamic LivingTokens).
+    @ObservedObject private var presentation = DesktopPresentation.shared
 
     typealias T = Tako.LivingTokens
 
@@ -125,12 +128,14 @@ struct SessionSidebarView: View {
         let flatItems = groups.flatMap(\.items)
         let totalSessions = Self.sessionCount(groups, flatItems)
         let waitingCount = Self.attentionCount(groups, flatItems)
+        let counts = store.attentionCounts(for: targetWindow, preferences: presentation.preferences,
+                                           workspaceStore: workspaceStore)
 
         VStack(spacing: 0) {
             headerView(sessionCount: totalSessions, attentionCount: waitingCount)
 
             if showsFilterControls {
-                searchAndSegmentsBar(attentionCount: waitingCount)
+                searchAndSegmentsBar(attentionCount: waitingCount, counts: counts)
             }
 
             VStack(spacing: 0) {
@@ -216,6 +221,7 @@ struct SessionSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
             store.objectWillChange.send()
         }
+        .id(presentation.isDark)
     }
 
     // MARK: - Tab List (§5.4 - §5.7)

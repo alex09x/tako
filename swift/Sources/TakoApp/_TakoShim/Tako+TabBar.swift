@@ -245,13 +245,13 @@ extension Tako {
                 let animState = LivingAnimationState.shared
                 let palette = Tako.tabStatusPalette(window: tab.window)
                 statusLayer.apply(
-                    state: state,
+                    state: animState.displayedStatus(state),
                     in: statusLayer.drawsSurface ? baseRect : tab.frame,
                     hideRing: statusLayer.ringContainer.isHidden,
-                    reduceMotion: animState.reduceMotion,
+                    reduceMotion: animState.statusRests(reduceMotion: animState.reduceMotion),
                     paused: animState.isTimelinePaused,
                     allowFrameAnimation: isTabDragging,
-                    pulses: liveActivity(for: tab.window)?.pulses ?? 0,
+                    pulses: animState.statusShown ? liveActivity(for: tab.window)?.pulses ?? 0 : 0,
                     palette: palette
                 )
             }

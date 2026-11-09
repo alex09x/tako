@@ -221,13 +221,13 @@ extension Tako.TabBarView {
         let animState = LivingAnimationState.shared
         let palette = Tako.tabStatusPalette(window: window)
         statusLayer.apply(
-            state: state,
+            state: animState.displayedStatus(state),
             in: rect,
             hideRing: hideRing,
-            reduceMotion: animState.reduceMotion,
+            reduceMotion: animState.statusRests(reduceMotion: animState.reduceMotion),
             paused: animState.isTimelinePaused,
             allowFrameAnimation: isTabDragging,
-            pulses: liveActivity(for: window)?.pulses ?? 0,
+            pulses: animState.statusShown ? liveActivity(for: window)?.pulses ?? 0 : 0,
             palette: palette
         )
         if let t = animState.fixedTimeOverride {

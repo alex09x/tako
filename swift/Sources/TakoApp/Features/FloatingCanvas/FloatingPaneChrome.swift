@@ -118,13 +118,15 @@ struct FloatingPaneHeaderView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 2) {
+                // One compact system icon (reference m15226): pressed while floating.
                 FloatingHeaderIconButton(
-                    symbolName: isTiled ? "macwindow.on.rectangle" : "square.grid.2x2",
+                    symbolName: "rectangle.on.rectangle",
                     identifier: "FloatingPaneFloat-\(uuidKey)",
-                    label: isTiled ? "Float Pane" : "Return Pane to Grid",
+                    label: isTiled ? "Плавающее окно" : "Expand",
                     value: isTiled ? "tiled" : "floating",
-                    helpText: isTiled ? "Float Pane" : "Return Pane to Grid",
+                    helpText: isTiled ? "Плавающее окно" : "Развернуть — вернуть в сетку сессии",
                     isProminent: controlsProminent,
+                    isPressed: !isTiled,
                     onHoverStateChange: { updateControlHover(id: "float", hovering: $0) },
                     action: onToggleFloating
                 )
@@ -186,6 +188,8 @@ private struct FloatingHeaderIconButton: View {
     let value: String?
     let helpText: String
     let isProminent: Bool
+    /// A toggle that is on (the float icon while floating): drawn raised.
+    var isPressed: Bool = false
     var isClose: Bool = false
     let onHoverStateChange: (Bool) -> Void
     let action: () -> Void
@@ -226,6 +230,7 @@ private struct FloatingHeaderIconButton: View {
         if hovering {
             return Color(nsColor: isClose ? T.error : T.textActive)
         }
+        if isPressed { return Color(nsColor: T.claw) }
         if isProminent {
             return Color(nsColor: T.textInactive)
         }
@@ -233,7 +238,7 @@ private struct FloatingHeaderIconButton: View {
     }
 
     private var hoverBackground: Color {
-        guard hovering else { return .clear }
+        guard hovering else { return isPressed ? Color(nsColor: T.surfaceActive) : .clear }
         return isClose
             ? Color(nsColor: T.error).opacity(0.16)
             : Color(nsColor: T.surfaceHover)

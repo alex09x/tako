@@ -32,14 +32,18 @@ struct SidebarStatusLayerView: NSViewRepresentable {
     var drawsRing = true
     /// The ring alone, drawn this many points across (a pill's ring is 14).
     var ringOnly: CGFloat? = nil
+    /// `status-show` / `status-animate`, read when the row is built so a
+    /// change re-renders it (the sidebar observes LivingAnimationState).
+    var statusShown = LivingAnimationState.shared.statusShown
+    var statusAnimates = LivingAnimationState.shared.statusAnimates
 
     func makeNSView(context: Context) -> StatusLayerHostView {
         StatusLayerHostView()
     }
 
     func updateNSView(_ view: StatusLayerHostView, context: Context) {
-        view.configure(.init(state: state, ringCenter: ringCenter, cornerRadius: cornerRadius,
-                             reduceMotion: reduceMotion, paused: paused, pulses: pulses,
+        view.configure(.init(state: statusShown ? state : .idle, ringCenter: ringCenter, cornerRadius: cornerRadius,
+                             reduceMotion: reduceMotion || !statusAnimates, paused: paused, pulses: statusShown ? pulses : 0,
                              progressInset: progressInset, cometForProgress: cometForProgress,
                              drawsRing: drawsRing, ringOnly: ringOnly))
     }

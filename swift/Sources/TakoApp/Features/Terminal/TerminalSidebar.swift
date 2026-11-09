@@ -17,8 +17,10 @@ struct TerminalSidebar: View {
     let shortcut: KeyboardShortcut?
 
     var body: some View {
+        // The shell's own background (app-appearance), not the terminal
+        // theme's: a dark terminal in a light shell reads as two layers.
         SessionSidebarView(isPresented: $isPresented, containingWindow: window,
-            backgroundColor: (surface.backgroundColor ?? surface.derivedConfig.backgroundColor)
+            backgroundColor: Color(nsColor: Tako.LivingTokens.body)
                 .opacity(surface.derivedConfig.backgroundOpacity), newSessionShortcut: shortcut)
     }
 }

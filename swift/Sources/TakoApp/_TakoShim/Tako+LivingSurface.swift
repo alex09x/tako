@@ -13,23 +13,47 @@ import Combine
 import CoreText
 import SwiftUI
 
+extension Notification.Name {
+    /// The shell switched between its light and dark scheme (`app-appearance`).
+    static let takoShellSchemeDidChange = Notification.Name("TakoShellSchemeDidChange")
+}
+
 extension Tako {
     /// Canonical shared design tokens for Style 1b ("Living Surface") across Pill Tabs, Session Sidebar, and Pane Overview (§0).
     enum LivingTokens {
-        static let body = NSColor(srgbRed: 0x14 / 255, green: 0x10 / 255, blue: 0x0E / 255, alpha: 1)
-        static let chrome = NSColor(srgbRed: 0x1A / 255, green: 0x15 / 255, blue: 0x12 / 255, alpha: 1)
-        static let surfaceActive = NSColor(srgbRed: 0x24 / 255, green: 0x1C / 255, blue: 0x16 / 255, alpha: 1)
-        static let surfaceHover = NSColor(srgbRed: 0x1F / 255, green: 0x19 / 255, blue: 0x15 / 255, alpha: 1)
-        static let hairline = NSColor(srgbRed: 0x2A / 255, green: 0x21 / 255, blue: 0x1B / 255, alpha: 1)
-        static let badge = NSColor(srgbRed: 0x35 / 255, green: 0x2B / 255, blue: 0x23 / 255, alpha: 1)
-        static let ghostBorder = NSColor(srgbRed: 0x3A / 255, green: 0x2F / 255, blue: 0x27 / 255, alpha: 1)
+        /// The shell scheme (`app-appearance`), set by DesktopPresentation.
+        /// Shell roles below resolve against it whenever they are drawn; the
+        /// terminal theme and NSApplication.appearance are never involved.
+        nonisolated(unsafe) static var isLight = false
+
+        /// A shell role: the dark value is the 1b token, the light one the
+        /// frozen reference's light shell (docs/design/desktop-reference).
+        private static func shell(_ dark: UInt32, _ light: UInt32) -> NSColor {
+            let d = rgb(dark), l = rgb(light)
+            return NSColor(name: nil) { _ in isLight ? l : d }
+        }
+
+        private static func rgb(_ v: UInt32) -> NSColor {
+            NSColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
+                    blue: CGFloat(v & 255) / 255, alpha: 1)
+        }
+
+        static let body = shell(0x14100E, 0xEFEDE7)
+        static let chrome = shell(0x1A1512, 0xF6F4EE)
+        static let surfaceActive = shell(0x241C16, 0xEAE7E2)
+        static let surfaceHover = shell(0x1F1915, 0xE5E3DD)
+        static let hairline = shell(0x2A211B, 0xD9D7D1)
+        static let badge = shell(0x352B23, 0xCDCBC5)
+        static let ghostBorder = shell(0x3A2F27, 0xB7B4AF)
+        /// Status colours are the same in every scheme.
         static let ringIdle = NSColor(srgbRed: 0x5A / 255, green: 0x4D / 255, blue: 0x43 / 255, alpha: 1)
-        static let progressTrack = NSColor(srgbRed: 0x3A / 255, green: 0x2E / 255, blue: 0x26 / 255, alpha: 1)
-        static let textActive = NSColor(srgbRed: 0xFA / 255, green: 0xF7 / 255, blue: 0xF2 / 255, alpha: 1)
-        static let text = NSColor(srgbRed: 0xED / 255, green: 0xE6 / 255, blue: 0xDF / 255, alpha: 1)
-        static let textInactive = NSColor(srgbRed: 0xB7 / 255, green: 0xAC / 255, blue: 0xA1 / 255, alpha: 1)
+        static let progressTrack = shell(0x3A2E26, 0xD9D7D1)
+        static let textActive = shell(0xFAF7F2, 0x262320)
+        static let text = shell(0xEDE6DF, 0x262320)
+        static let textInactive = shell(0xB7ACA1, 0x5C5A56)
+        /// Also the idle status colour (tab-status-color-idle default): constant.
         static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
-        static let faint = NSColor(srgbRed: 0x6B / 255, green: 0x62 / 255, blue: 0x59 / 255, alpha: 1)
+        static let faint = shell(0x6B6259, 0x9F9C97)
         static let ember = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1)
         static let claw = NSColor(srgbRed: 0xFF / 255, green: 0x7A / 255, blue: 0x3D / 255, alpha: 1)
         static let rust = NSColor(srgbRed: 0xC2 / 255, green: 0x3E / 255, blue: 0x0E / 255, alpha: 1)
@@ -103,6 +127,11 @@ final class LivingAnimationState: ObservableObject {
 
     @Published private(set) var reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @Published private(set) var isOccludedOrIdle: Bool = false
+    /// `status-show`: false draws every status indicator calm (idle). Tracking,
+    /// unread and counters are not touched; only what is drawn changes.
+    @Published private(set) var statusShown = true
+    /// `status-animate`: false draws the same colours without motion.
+    @Published private(set) var statusAnimates = true
 
     private var entries: [String: (state: Tako.SurfaceState, enteredAt: Date)] = [:]
 
@@ -140,6 +169,25 @@ final class LivingAnimationState: ObservableObject {
 
     var isTimelinePaused: Bool {
         reduceMotion || isOccludedOrIdle
+    }
+
+    /// The state an indicator draws for a tracked `state`.
+    func displayedStatus(_ state: Tako.SurfaceState) -> Tako.SurfaceState {
+        statusShown ? state : .idle
+    }
+
+    /// Whether status layers use their static variant: Reduce Motion, or
+    /// `status-animate = false`.
+    func statusRests(reduceMotion: Bool) -> Bool {
+        reduceMotion || !statusAnimates
+    }
+
+    /// Applies the desktop status settings; the tab rings learn of it on a redraw.
+    func applyStatusPreferences(_ preferences: DesktopPreferences) {
+        guard statusShown != preferences.showsStatus || statusAnimates != preferences.animatesStatus else { return }
+        statusShown = preferences.showsStatus
+        statusAnimates = preferences.animatesStatus
+        Tako.TabBarController.refreshAll()
     }
 
     /// Where the windows and the Reduce Motion setting are read from: the

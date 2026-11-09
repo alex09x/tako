@@ -106,8 +106,13 @@ final class DesktopPresentation: ObservableObject {
 
     func apply(_ next: DesktopPreferences) {
         if preferences != next { preferences = next }
+        if isPresenting { LivingAnimationState.shared.applyStatusPreferences(next) }
         resolveAppearance()
     }
+
+    /// Only the shared instance drives process-wide state (tokens, status
+    /// layers); a test's own instance stays local.
+    private var isPresenting: Bool { self === Self.shared }
 
     func updateSystemAppearance(isDark: Bool) {
         systemIsDark = isDark
@@ -117,5 +122,10 @@ final class DesktopPresentation: ObservableObject {
     private func resolveAppearance() {
         let next = preferences.appearance.usesDarkColors(systemIsDark: systemIsDark)
         if isDark != next { isDark = next }
+        // Also on the first resolve: an app that starts light must repaint.
+        guard isPresenting, Tako.LivingTokens.isLight == next else { return }
+        Tako.LivingTokens.isLight = !next
+        Tako.TabBarController.refreshAll()
+        NotificationCenter.default.post(name: .takoShellSchemeDidChange, object: nil)
     }
 }

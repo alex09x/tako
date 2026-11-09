@@ -253,7 +253,9 @@ enum FloatingPaneGeometry {
 
     @MainActor
     static func statusNSColor(for status: Tako.PaneStatus, surface: Tako.SurfaceView? = nil) -> NSColor {
-        Tako.tabStatusColor(for: status.dotKey, surface: surface)
+        // `status-show = false`: the dot stays calm; the status is still tracked.
+        let shown = LivingAnimationState.shared.statusShown ? status : .idle
+        return Tako.tabStatusColor(for: shown.dotKey, surface: surface)
     }
 
     /// Sanitizes decoded preferred `.normal` rects without clamping them to transient work areas
