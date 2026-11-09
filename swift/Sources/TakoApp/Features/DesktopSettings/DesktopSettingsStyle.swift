@@ -66,6 +66,27 @@ private struct RevealWhenFocused: ViewModifier {
     }
 }
 
+/// An invisible AppKit view carrying `NSView.identifier` while its SwiftUI
+/// owner is mounted: in-process tests find what is on screen without an
+/// accessibility client. Not an accessibility element; never hit.
+struct DesktopViewMarker: NSViewRepresentable {
+    let name: String
+    init(_ name: String) { self.name = name }
+
+    final class Marker: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func isAccessibilityElement() -> Bool { false }
+    }
+
+    func makeNSView(context: Context) -> Marker {
+        let view = Marker(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(name)
+        return view
+    }
+
+    func updateNSView(_ view: Marker, context: Context) { view.identifier = NSUserInterfaceItemIdentifier(name) }
+}
+
 /// `.pf-blk`: a titled group of rows, 16 pt above and below.
 struct DesktopBlock<Content: View>: View {
     let title: String

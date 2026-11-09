@@ -179,20 +179,49 @@ struct DesktopSettingsSectionBody: View {
     }
 }
 
-struct DesktopSettingsErrorLine: View {
+/// The footer outside the theme editor: always mounted, it observes every
+/// store that can fail or change the level, so a refused value («73 pt»)
+/// shows its error at once, and «Reset Appearance» appears with the
+/// level's first override (also one written from a context menu).
+struct DesktopSettingsFooterStatus: View {
+    @ObservedObject var model: DesktopSettingsModel
     @ObservedObject var preferences: DesktopPreferenceStore
     @ObservedObject var scope: DesktopScopeEditor
     @ObservedObject var themes: DesktopThemeLibrary
     @ObservedObject var recorder: DesktopShortcutRecorder
+    let showsReset: Bool
     let palette: DesktopPalette
+    /// Bumped when scoped appearance changes outside this editor.
+    @State private var scopedRevision = 0
 
     var error: String? { scope.lastError ?? preferences.lastError ?? themes.lastError ?? recorder.lastError }
 
     var body: some View {
-        if let error {
-            Text(error).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
-                .foregroundStyle(Color(palette.accentBright))
-                .accessibilityIdentifier("DesktopSettingsError")
+        let _ = scopedRevision
+        Group {
+            if let error {
+                Text(error).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
+                    .foregroundStyle(Color(palette.accentBright))
+                    .accessibilityIdentifier("DesktopSettingsError")
+                    .background(DesktopViewMarker("DesktopSettingsError"))
+            } else {
+                Text("Tako \(model.version) · changes save immediately · Esc to close")
+                    .font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
+                    .accessibilityIdentifier("DesktopSettingsVersion")
+                    .background(DesktopViewMarker("DesktopSettingsVersion"))
+            }
         }
+        Spacer(minLength: 0)
+        if showsReset, !scope.isGlobal, scope.hasOwnOverrides {
+            Button("Reset Appearance: \(scope.title)") { scope.resetAll() }
+                .buttonStyle(DesktopButtonStyle(palette: palette))
+                .help("Remove overrides at this level only; other levels keep their own settings")
+                .accessibilityIdentifier("DesktopScopeResetAll")
+                .background(DesktopViewMarker("DesktopScopeResetAll"))
+        }
+        Color.clear.frame(width: 0, height: 0)
+            .onReceive(NotificationCenter.default.publisher(for: .takoScopedAppearanceDidChange)) { _ in
+                scopedRevision &+= 1
+            }
     }
 }

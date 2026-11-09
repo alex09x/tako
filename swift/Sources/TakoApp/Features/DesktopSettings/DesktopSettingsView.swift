@@ -178,19 +178,10 @@ struct DesktopSettingsView: View {
             if editing {
                 DesktopThemeDraftFooter(model: model, palette: palette)
             } else {
-                let errors = DesktopSettingsErrorLine(preferences: model.preferences, scope: model.scope,
-                                                      themes: model.themes, recorder: model.recorder, palette: palette)
-                if errors.error != nil { errors } else {
-                    Text("Tako \(model.version) · changes save immediately · Esc to close")
-                        .font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
-                }
-                Spacer(minLength: 0)
-                if model.section == .terminalAppearance, !searching, !model.scope.isGlobal, model.scope.hasOwnOverrides {
-                    Button("Сбросить оформление: \(model.scope.title)") { model.scope.resetAll() }
-                        .buttonStyle(DesktopButtonStyle(palette: palette))
-                        .help("Remove overrides at this level only; other levels keep their own settings")
-                        .accessibilityIdentifier("DesktopScopeResetAll")
-                }
+                DesktopSettingsFooterStatus(model: model, preferences: model.preferences, scope: model.scope,
+                                            themes: model.themes, recorder: model.recorder,
+                                            showsReset: model.section == .terminalAppearance && !searching,
+                                            palette: palette)
             }
         }
         .padding(DesktopSettingsStyle.footerInsets)

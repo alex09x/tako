@@ -22,6 +22,81 @@ struct DesktopSettingsHostedTests {
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 
+    /// What is mounted: DesktopViewMarker identifiers under `root` (the SwiftUI
+    /// accessibility tree is not built without an accessibility client).
+    private func markers(_ root: NSView) -> Set<String> {
+        var out = Set<String>()
+        func walk(_ v: NSView) {
+            if v is DesktopViewMarker.Marker, let id = v.identifier?.rawValue { out.insert(id) }
+            v.subviews.forEach(walk)
+        }
+        walk(root)
+        return out
+    }
+
+    private func axFind(_ identifier: String, in root: NSView) -> String? {
+        markers(root).contains(identifier) ? identifier : nil
+    }
+
+    private func hostedWindow(_ size: NSSize = NSSize(width: 1200, height: 900)) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(origin: .zero, size: size))
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    /// The footer observes the stores itself: a refused size shows its error
+    /// at once and the saved config stays; a level's first override (written
+    /// outside the editor, as a context menu does) brings «Сбросить оформление».
+    @Test func footerShowsARefusedValueAndTheResetButtonAsSoonAsTheyApply() throws {
+        let sandbox = try DesktopSettingsTests.Sandbox()
+        try "font-size = 13\n".write(to: sandbox.config, atomically: true, encoding: .utf8)
+        let window = hostedWindow()
+        defer { window.close() }
+        let controller = try #require(DesktopSettingsController.show(in: window, section: .terminalAppearance,
+                                                                     configPath: sandbox.config.path))
+        settle()
+        let panel = controller.overlay.panel
+        #expect(axFind("DesktopSettingsError", in: panel) == nil)
+        #expect(axFind("DesktopSettingsVersion", in: panel) != nil, "mounted: \(markers(panel).sorted())")
+
+        var editable: [NSTextField] = []
+        func collect(_ v: NSView) { if let f = v as? NSTextField, f.isEditable { editable.append(f) }; v.subviews.forEach(collect) }
+        collect(panel)
+        let field = try #require(editable.first { $0.stringValue == "13" })
+        #expect(window.makeFirstResponder(field))
+        let editor = try #require(window.firstResponder as? NSTextView)
+        editor.selectAll(nil)
+        editor.insertText("73", replacementRange: editor.selectedRange())
+        let returnKey = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                      windowNumber: window.windowNumber, context: nil, characters: "\r",
+                                                      charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        window.sendEvent(returnKey)
+        settle()
+        #expect(try String(contentsOf: sandbox.config, encoding: .utf8).contains("font-size = 13\n"), "73 is refused")
+        #expect(axFind("DesktopSettingsError", in: panel) != nil, "the refusal is shown at once")
+        controller.close()
+
+        // A workspace level: the first override arrives from outside the editor.
+        let store = sandbox.scopes()
+        let ws = UUID()
+        let context = ScopedAppearanceContext(scope: .workspace(ws), title: "workspace «W»", store: store,
+                                              globalTheme: { .takoDefault })
+        let scoped = try #require(DesktopSettingsController.show(in: window, section: .terminalAppearance,
+                                                                 context: context, configPath: sandbox.config.path))
+        defer { scoped.close() }
+        settle()
+        #expect(axFind("DesktopScopeResetAll", in: scoped.overlay.panel) == nil)
+        try store.setValue("#123456", for: "background", scope: .workspace(ws))
+        settle()
+        #expect(axFind("DesktopScopeResetAll", in: scoped.overlay.panel) != nil, "the reset appears with the first override")
+        try store.reset(.workspace(ws))
+        settle()
+        #expect(axFind("DesktopScopeResetAll", in: scoped.overlay.panel) == nil)
+    }
+
     /// A field below the fold that takes keyboard focus (click or Tab)
     /// scrolls itself into the page's visible area.
     @Test func focusingAFieldBelowTheFoldScrollsItIntoView() throws {
