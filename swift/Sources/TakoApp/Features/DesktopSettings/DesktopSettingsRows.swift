@@ -99,6 +99,7 @@ struct DesktopStepper: View {
                 .disabled(value >= range.upperBound)
             if !unit.isEmpty { Text(unit).foregroundStyle(Color(palette.muted)) }
         }
+        .revealsWhenFocused(focused, id: identifier)
         .onAppear { text = Self.render(value) }
         .onChange(of: value) { _, new in text = Self.render(new) }
     }
@@ -138,6 +139,7 @@ struct DesktopColorField: View {
                 .accessibilityIdentifier(identifier)
                 .onSubmit { commit(text.trimmingCharacters(in: .whitespaces)) }
         }
+        .revealsWhenFocused(focused, id: identifier)
         .onAppear { text = value }
         .onChange(of: value) { _, new in text = new }
     }

@@ -134,14 +134,19 @@ struct DesktopSettingsView: View {
             }
             .padding(DesktopSettingsStyle.topInsets)
             levelLine
-            ScrollView {
-                Group {
-                    if searching { DesktopSettingsSearchList(model: model, palette: palette) }
-                    else if editing { DesktopThemeDraftEditor(model: model, palette: palette) }
-                    else { DesktopSettingsSectionBody(model: model, palette: palette) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Group {
+                        if searching { DesktopSettingsSearchList(model: model, palette: palette) }
+                        else if editing { DesktopThemeDraftEditor(model: model, palette: palette) }
+                        else { DesktopSettingsSectionBody(model: model, palette: palette) }
+                    }
+                    .padding(DesktopSettingsStyle.pageInsets)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(DesktopSettingsStyle.pageInsets)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // A field that takes keyboard focus (click or Tab) scrolls itself into view.
+                .environment(\.desktopRevealField, DesktopRevealField { id in proxy.scrollTo(id) })
+                .accessibilityIdentifier("DesktopSettingsPage")
             }
             if model.section == .keys, !searching, let status = recorder.status {
                 Text(status).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
@@ -191,6 +196,8 @@ struct DesktopSettingsView: View {
         .padding(DesktopSettingsStyle.footerInsets)
         .frame(minHeight: DesktopMetrics.footerHeight)
         .overlay(alignment: .top) { Rectangle().fill(Color(palette.separator)).frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("DesktopSettingsFooter")
     }
 }
 

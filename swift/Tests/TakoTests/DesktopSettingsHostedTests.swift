@@ -22,6 +22,44 @@ struct DesktopSettingsHostedTests {
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 
+    /// A field below the fold that takes keyboard focus (click or Tab)
+    /// scrolls itself into the page's visible area.
+    @Test func focusingAFieldBelowTheFoldScrollsItIntoView() throws {
+        let sandbox = try DesktopSettingsTests.Sandbox()
+        try "font-size = 13\n".write(to: sandbox.config, atomically: true, encoding: .utf8)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 560),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 560))
+        defer { window.close() }
+        window.makeKeyAndOrderFront(nil)
+        let controller = try #require(DesktopSettingsController.show(in: window, section: .terminalAppearance,
+                                                                     configPath: sandbox.config.path))
+        defer { controller.close() }
+        settle()
+        let content = try #require(window.contentView)
+        content.layoutSubtreeIfNeeded()
+        var editable: [NSTextField] = []
+        func collect(_ v: NSView) { if let f = v as? NSTextField, f.isEditable { editable.append(f) }; v.subviews.forEach(collect) }
+        collect(content)
+        let field = try #require(editable.first { $0.stringValue == "13" })
+        // The page's own scroll view, not the font list's.
+        var scroll = field.enclosingScrollView
+        while let s = scroll, s.frame.height < 200, let outer = s.superview?.enclosingScrollView { scroll = outer }
+        let page = try #require(scroll)
+        func visible() -> Bool {
+            let rect = field.convert(field.bounds, to: page.contentView)
+            return page.contentView.bounds.contains(rect)
+        }
+        #expect(!visible(), "precondition: the size field starts below the fold")
+        let before = page.contentView.bounds.origin.y
+
+        #expect(window.makeFirstResponder(field))
+        settle(0.3)
+        #expect(visible(), "the focused field is fully inside the page's visible area")
+        #expect(page.contentView.bounds.origin.y != before, "the page scrolled")
+    }
+
     @Test func fontSizeFieldTakesTypedFractionAndReturnCommitsIt() throws {
         let sandbox = try DesktopSettingsTests.Sandbox()
         try "font-family = Menlo\nfont-size = 13\n".write(to: sandbox.config, atomically: true, encoding: .utf8)

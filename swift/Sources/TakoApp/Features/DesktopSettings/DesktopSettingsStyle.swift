@@ -29,6 +29,43 @@ enum DesktopSettingsStyle {
     static let scrim = NSColor(srgbRed: 10 / 255, green: 8 / 255, blue: 7 / 255, alpha: 0.08)
 }
 
+/// Scrolls a page's view with the given id into sight. The settings page
+/// provides it; a control calls it when it takes keyboard focus (a click or
+/// Tab), so a field below the fold is never typed into unseen.
+struct DesktopRevealField {
+    let reveal: (String) -> Void
+    init(_ reveal: @escaping (String) -> Void) { self.reveal = reveal }
+    func callAsFunction(_ id: String) { reveal(id) }
+}
+
+private struct DesktopRevealFieldKey: EnvironmentKey {
+    static let defaultValue = DesktopRevealField { _ in }
+}
+
+extension EnvironmentValues {
+    var desktopRevealField: DesktopRevealField {
+        get { self[DesktopRevealFieldKey.self] }
+        set { self[DesktopRevealFieldKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Gives the control a scroll id and reveals it whenever `focused` turns on.
+    func revealsWhenFocused(_ focused: Bool, id: String) -> some View {
+        modifier(RevealWhenFocused(focused: focused, id: id))
+    }
+}
+
+private struct RevealWhenFocused: ViewModifier {
+    let focused: Bool
+    let id: String
+    @Environment(\.desktopRevealField) private var reveal
+
+    func body(content: Content) -> some View {
+        content.id(id).onChange(of: focused) { _, now in if now { reveal(id) } }
+    }
+}
+
 /// `.pf-blk`: a titled group of rows, 16 pt above and below.
 struct DesktopBlock<Content: View>: View {
     let title: String
