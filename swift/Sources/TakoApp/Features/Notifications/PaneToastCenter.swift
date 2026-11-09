@@ -54,7 +54,7 @@ final class PaneToastCenter: ObservableObject {
         let session = controller?.window?.title ?? ""
         let elsewhere = controller?.window.map { !$0.isKeyWindow || !NSApp.isActive } ?? true
         let place = minimized ? "minimized" : (elsewhere && !session.isEmpty ? session : "in the background")
-        let title = surface.title.isEmpty ? "terminal" : surface.title
+        let title = surface.paneTitleOverride ?? (surface.title.isEmpty ? "terminal" : surface.title)
         let exit = Self.exitCode(surface.crab.state)
         let toast: PaneToast
         switch kind {

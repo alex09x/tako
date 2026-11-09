@@ -40,6 +40,8 @@ struct FloatingPaneHeaderView: View {
 
     @State private var isStripHovered = false
     @State private var hoveredControlId: String?
+    /// A pane's own name redraws its header.
+    @ObservedObject private var paneTitles = PaneTitleStore.shared
 
     private typealias T = Tako.LivingTokens
 
@@ -48,6 +50,8 @@ struct FloatingPaneHeaderView: View {
     }
 
     private var displayTitle: String {
+        let _ = paneTitles.titles
+        if let own = surfaceView.paneTitleOverride { return own }
         let trimmed = surfaceView.titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         let rawTitle = surfaceView.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -66,7 +70,8 @@ struct FloatingPaneHeaderView: View {
                 guard let surface, let controller = surface.window?.windowController as? BaseTerminalController else { return }
                 _ = controller.newSplit(at: surface, direction: direction)
             },
-            toggleMaximize: onToggleMaximize, toggleFloating: onToggleFloating, minimize: onMinimize, close: onClose)
+            toggleMaximize: onToggleMaximize, toggleFloating: onToggleFloating, minimize: onMinimize, close: onClose,
+            rename: { [weak surface = surfaceView] in surface.map(FloatingPaneMenu.askRename) })
     }
 
     /// The pane's own status, as its sidebar row's ring shows it.

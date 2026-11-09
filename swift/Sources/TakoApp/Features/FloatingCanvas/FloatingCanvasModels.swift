@@ -277,6 +277,7 @@ enum FloatingPaneGeometry {
 
     @MainActor
     static func shortTitle(for surfaceView: Tako.SurfaceView) -> String {
+        if let own = surfaceView.paneTitleOverride { return own }
         let trimmed = surfaceView.titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         let raw = surfaceView.title.trimmingCharacters(in: .whitespacesAndNewlines)

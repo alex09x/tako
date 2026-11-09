@@ -63,8 +63,11 @@ struct PaneToastTests {
         AttentionManager.shared.setMuted(false, for: surface.id)
         #expect(center.toasts.first?.state == .waiting, "a muted pane made a toast")
 
+        PaneTitleStore.shared.setTitle("миграции", for: surface.id)
+        defer { PaneTitleStore.shared.setTitle(nil, for: surface.id) }
         center.statusChanged(surface, to: .error)
         #expect(center.toasts.map(\.state) == [.failed])
+        #expect(center.toasts.first?.headline.hasPrefix("миграции — error") == true, "the toast ignores the pane's name")
         #expect(center.toasts.first?.message == "процесс завершился с ошибкой")
         center.seen(surface.id)
         #expect(center.toasts.isEmpty)

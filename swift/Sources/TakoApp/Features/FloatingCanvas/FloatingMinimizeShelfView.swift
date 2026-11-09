@@ -66,6 +66,7 @@ private struct FloatingMinimizedCardView: View {
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var attentionManager = AttentionManager.shared
     @ObservedObject private var animationState = LivingAnimationState.shared
+    @ObservedObject private var paneTitles = PaneTitleStore.shared
 
     let paneState: FloatingPaneState
     let onRestore: () -> Void
@@ -78,7 +79,8 @@ private struct FloatingMinimizedCardView: View {
     }
 
     private var shortTitle: String {
-        FloatingPaneGeometry.shortTitle(for: surfaceView)
+        let _ = paneTitles.titles
+        return FloatingPaneGeometry.shortTitle(for: surfaceView)
     }
 
     private var statusValue: String {
