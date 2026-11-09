@@ -20,7 +20,9 @@ final class DesktopSettingsController {
     let overlay: DesktopSettingsOverlayView
     private(set) weak var host: NSWindow?
     private weak var previousResponder: NSResponder?
-    private var resizeObserver: NSObjectProtocol?
+    /// The host's willClose: settings close with it, so a recording's key
+    /// monitor never outlives its window and `active` never keeps it.
+    private var hostCloseObserver: NSObjectProtocol?
 
     static func current(in window: NSWindow) -> DesktopSettingsController? {
         active[ObjectIdentifier(window)]
@@ -128,17 +130,25 @@ final class DesktopSettingsController {
         overlay.panel.frame = DesktopSettingsGeometry.frame(in: overlay.bounds)
         model.onClose = { [weak self] in self?.close() }
         host.makeFirstResponder(overlay.panel)
+        hostCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                                                   object: host, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.close(hostClosing: true) }
+        }
     }
 
     var panelFrame: CGRect { overlay.panel.frame }
 
     /// Removes the overlay and gives focus back to whatever terminal had it.
-    func close() {
+    /// When the host itself is closing, focus is left alone.
+    func close(hostClosing: Bool = false) {
+        if let hostCloseObserver { NotificationCenter.default.removeObserver(hostCloseObserver) }
+        hostCloseObserver = nil
         model.recorder.cancel()
         model.cancelDraft()
         overlay.removeFromSuperview()
         if let host {
-            Self.active.removeValue(forKey: ObjectIdentifier(host))
+            if Self.active[ObjectIdentifier(host)] === self { Self.active.removeValue(forKey: ObjectIdentifier(host)) }
+            guard !hostClosing else { return }
             if let previous = previousResponder, (previous as? NSView)?.window === host || previous === host {
                 host.makeFirstResponder(previous)
             } else {

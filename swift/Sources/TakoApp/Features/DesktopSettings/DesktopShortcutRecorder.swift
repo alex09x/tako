@@ -34,6 +34,9 @@ final class DesktopShortcutRecorder: ObservableObject {
         self.configFile = configFile
     }
 
+    /// Whether the key-down monitor that swallows presses is installed.
+    var isMonitoring: Bool { monitor != nil }
+
     var recordingAction: String? {
         switch state {
         case .recording(let action), .conflict(let action, _, _): action
