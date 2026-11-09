@@ -65,6 +65,7 @@ private struct FloatingMinimizedCardView: View {
     @ObservedObject var crab: Tako.CrabTracker
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var attentionManager = AttentionManager.shared
+    @ObservedObject private var animationState = LivingAnimationState.shared
 
     let paneState: FloatingPaneState
     let onRestore: () -> Void
@@ -119,8 +120,9 @@ private struct FloatingMinimizedCardView: View {
         ZStack {
             HStack(spacing: 8) {
                 SidebarStatusLayerView(state: cardState, ringCenter: nil, cornerRadius: 0,
-                                       reduceMotion: LivingAnimationState.shared.reduceMotion,
-                                       paused: false, pulses: crab.live?.pulses ?? 0, ringOnly: 16)
+                                       reduceMotion: animationState.reduceMotion,
+                                       paused: animationState.isTimelinePaused, pulses: crab.live?.pulses ?? 0,
+                                       ringOnly: 16, palette: Tako.tabStatusPalette(surface: surfaceView))
                     .frame(width: 16, height: 16)
 
                 Text(shortTitle)

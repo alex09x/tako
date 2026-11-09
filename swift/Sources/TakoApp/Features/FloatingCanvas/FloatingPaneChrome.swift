@@ -20,6 +20,7 @@ struct FloatingPaneHeaderView: View {
 
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
+    @ObservedObject private var animationState = LivingAnimationState.shared
     let pane: FloatingPaneState
     var isTiled: Bool = false
     let presentedFrame: CGRect
@@ -103,8 +104,9 @@ struct FloatingPaneHeaderView: View {
                 // pill's 14 pt status ring, title 12/500, directory 11.
                 HStack(spacing: 7) {
                     SidebarStatusLayerView(state: headerState, ringCenter: nil, cornerRadius: 0,
-                                           reduceMotion: LivingAnimationState.shared.reduceMotion,
-                                           paused: false, pulses: crab.live?.pulses ?? 0, ringOnly: 14)
+                                           reduceMotion: animationState.reduceMotion,
+                                           paused: animationState.isTimelinePaused, pulses: crab.live?.pulses ?? 0,
+                                           ringOnly: 14, palette: Tako.tabStatusPalette(surface: surfaceView))
                         .frame(width: 14, height: 14)
 
                     Text(displayTitle)

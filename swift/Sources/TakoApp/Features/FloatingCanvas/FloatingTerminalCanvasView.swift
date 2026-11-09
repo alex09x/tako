@@ -73,6 +73,10 @@ struct FloatingTerminalCanvasView: View {
                                     onDragMove: { rect in
                                         store.setInteractiveRect(rect, for: surfaceView.id, in: canvasSize)
                                     },
+                                    onHeaderDrag: { rect in
+                                        store.setInteractiveRect(rect, for: surfaceView.id, in: canvasSize)
+                                        controller.updateCanvasDrop(for: surfaceView, in: canvasSize)
+                                    },
                                     onDetachMaximized: { px, py in
                                         store.detachMaximizedForDrag(
                                             surfaceView.id,
@@ -82,6 +86,10 @@ struct FloatingTerminalCanvasView: View {
                                         )
                                     },
                                     onGestureCommit: {
+                                        if let target = store.dropTarget {
+                                            _ = controller.dockCanvasPane(surfaceView, at: target)
+                                        }
+                                        store.dropTarget = nil
                                         store.commitInteractiveRect(for: surfaceView.id, in: canvasSize)
                                     },
                                     onMinimize: {
@@ -109,6 +117,19 @@ struct FloatingTerminalCanvasView: View {
                             }
                         }
 
+                        if let target = store.dropTarget {
+                            RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.16))
+                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 2))
+                                .overlay(VStack(spacing: 4) {
+                                    Text(target.label).font(.system(size: 12, weight: .medium))
+                                    Text("⌥ to move freely").font(.system(size: 11))
+                                })
+                                .frame(width: target.frame.width, height: target.frame.height)
+                                .position(x: target.frame.midX, y: target.frame.midY)
+                                .allowsHitTesting(false)
+                                .accessibilityIdentifier("CanvasDockPreview")
+                                .zIndex(999_998)
+                        }
                         if let ghost = store.activeTransition,
                            ghost.kind == .minimizing,
                            !store.reduceMotionProvider() {
@@ -179,6 +200,7 @@ private struct FloatingPaneWindowView: View {
     let reduceMotion: Bool
     let onActivate: () -> Void
     let onDragMove: (CGRect) -> Void
+    let onHeaderDrag: (CGRect) -> Void
     let onDetachMaximized: (CGFloat, CGFloat) -> CGRect?
     let onGestureCommit: () -> Void
     let onMinimize: () -> Void
@@ -226,7 +248,7 @@ private struct FloatingPaneWindowView: View {
                 canMoveToNewWindow: canMoveToNewWindow,
                 onDragStateChange: { isDraggingPane = $0 },
                 onActivate: onActivate,
-                onDragMove: onDragMove,
+                onDragMove: onHeaderDrag,
                 onDetachMaximized: onDetachMaximized,
                 onDragCommit: onGestureCommit,
                 onMinimize: onMinimize,

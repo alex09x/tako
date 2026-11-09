@@ -31,6 +31,7 @@ final class FloatingCanvasStore: ObservableObject {
     @Published private(set) var activeTransition: FloatingPaneTransition?
     /// `.normal` panes in this set are tiled by the split grid; the rest float.
     @Published internal(set) var tiledIds: Set<UUID> = []
+    @Published var dropTarget: CanvasDropTarget?
     /// Identity mirror of the controller's `SplitTree`, used for tile allocation.
     internal(set) var tileTree: CanvasTileNode<UUID>?
     var lastValidCanvasSize: CGSize?

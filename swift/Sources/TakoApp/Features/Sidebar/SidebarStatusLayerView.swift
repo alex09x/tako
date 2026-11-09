@@ -36,6 +36,7 @@ struct SidebarStatusLayerView: NSViewRepresentable {
     /// change re-renders it (the sidebar observes LivingAnimationState).
     var statusShown = LivingAnimationState.shared.statusShown
     var statusAnimates = LivingAnimationState.shared.statusAnimates
+    var palette: Tako.TabStatusPalette? = nil
 
     func makeNSView(context: Context) -> StatusLayerHostView {
         StatusLayerHostView()
@@ -45,7 +46,7 @@ struct SidebarStatusLayerView: NSViewRepresentable {
         view.configure(.init(state: statusShown ? state : .idle, ringCenter: ringCenter, cornerRadius: cornerRadius,
                              reduceMotion: reduceMotion || !statusAnimates, paused: paused, pulses: statusShown ? pulses : 0,
                              progressInset: progressInset, cometForProgress: cometForProgress,
-                             drawsRing: drawsRing, ringOnly: ringOnly))
+                              drawsRing: drawsRing, ringOnly: ringOnly, palette: palette))
     }
 }
 
@@ -62,6 +63,7 @@ final class StatusLayerHostView: NSView {
         var cometForProgress: Bool
         var drawsRing: Bool
         var ringOnly: CGFloat?
+        var palette: Tako.TabStatusPalette? = nil
     }
 
     let statusLayer = Tako.TabStatusLayer()
@@ -98,7 +100,7 @@ final class StatusLayerHostView: NSView {
             statusLayer.geometry = .init(cornerRadius: 0, ringOrigin: .zero)
             let ring = CGRect(x: (bounds.width - 14) / 2, y: (bounds.height - 14) / 2, width: 14, height: 14)
             statusLayer.apply(state: config.state, in: ring, hideRing: false, reduceMotion: config.reduceMotion,
-                              paused: config.paused, pulses: config.pulses)
+                              paused: config.paused, pulses: config.pulses, palette: config.palette)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             statusLayer.transform = CATransform3DMakeScale(side / 14, side / 14, 1)
@@ -112,7 +114,7 @@ final class StatusLayerHostView: NSView {
             progressInset: config.progressInset,
             cometForProgress: config.cometForProgress)
         statusLayer.apply(state: config.state, in: bounds, hideRing: !config.drawsRing, reduceMotion: config.reduceMotion,
-                          paused: config.paused, pulses: config.pulses)
+                          paused: config.paused, pulses: config.pulses, palette: config.palette)
     }
 }
 

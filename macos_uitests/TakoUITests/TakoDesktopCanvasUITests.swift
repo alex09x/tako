@@ -10,6 +10,26 @@
 import XCTest
 
 final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
+    func testDraggingAPaneToAnotherTileDocksItWithoutRestartingEitherTerminal() throws {
+        let app = try launchDesktop()
+        let first = try XCTUnwrap(paneIDs(in: app).first)
+        let firstPID = try shellPID(first, phase: "DOCK_FIRST_BEFORE", in: app)
+        app.typeKey("d", modifierFlags: .command)
+        waitForPaneCount(2, in: app)
+        let second = try XCTUnwrap(paneIDs(in: app).first { $0 != first })
+        let secondPID = try shellPID(second, phase: "DOCK_SECOND_BEFORE", in: app)
+        let from = header(second, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+        let to = canvas(in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.015, dy: 0.5))
+        from.press(forDuration: 0.2, thenDragTo: to)
+        let toggle = control("Float", pane: second, in: app)
+        let docked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'tiled'"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [docked], timeout: 5), .completed)
+        XCTAssertLessThan(pane(second, in: app).frame.minX, pane(first, in: app).frame.minX)
+        XCTAssertFalse(pane(first, in: app).frame.intersects(pane(second, in: app).frame))
+        XCTAssertEqual(try shellPID(second, phase: "DOCK_SECOND_AFTER", in: app, focus: false), secondPID)
+        XCTAssertEqual(try shellPID(first, phase: "DOCK_FIRST_AFTER", in: app), firstPID)
+    }
+
     func testFloatDragReturnToGridPreservesPaneAndProcess() throws {
         let app = try launchDesktop()
         let first = try XCTUnwrap(paneIDs(in: app).first)
@@ -23,7 +43,9 @@ final class TakoDesktopCanvasUITests: TakoDesktopDesignCase {
         XCTAssertEqual(toggle.value as? String, "floating")
         let before = pane(second, in: app).frame
         let drag = header(second, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
-        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: -35, dy: 20)))
+        XCUIElement.perform(withKeyModifiers: .option) {
+            drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: -35, dy: 20)))
+        }
         let after = pane(second, in: app).frame
         XCTAssertEqual(after.minX, before.minX - 35, accuracy: 5)
         XCTAssertEqual(after.minY, before.minY + 20, accuracy: 5)
