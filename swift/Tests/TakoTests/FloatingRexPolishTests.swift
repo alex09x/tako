@@ -74,34 +74,48 @@ struct FloatingRexPolishTests {
         #expect(minGuarded.width >= FloatingPaneGeometry.minSize.width)
         #expect(minGuarded.height >= FloatingPaneGeometry.minSize.height)
 
-        // 2. Creating a new pane over a .maximized pane preserves background .maximized mode/rect & PTY/UUID
+        // 2. Reference (core.js / app.js / windows.js): panes tile by default. A directed split
+        //    from the sole maximized tile returns it to the grid so both tiles are visible;
+        //    floating is only the explicit icon, which keeps its own free rect. Surface/PTY stay.
         let (controller, window) = makeLoadedDesktopWindow(canvasWidth: 1000, height: 700)
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
-        controller.floatingCanvas.lastValidCanvasSize = canvas
+        let store = controller.floatingCanvas
+        store.lastValidCanvasSize = canvas
 
         let p1 = try #require(controller.focusedSurface)
         let p1InitialId = p1.id
         let p1InitialPTY = p1.pty
-        let p1Before = try #require(controller.floatingCanvas.state(for: p1.id))
-        #expect(p1Before.mode == .maximized)
+        #expect(store.state(for: p1.id)?.mode == .maximized, "a sole pane starts maximized")
 
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
-        let p1After = try #require(controller.floatingCanvas.state(for: p1.id))
-        let p2State = try #require(controller.floatingCanvas.state(for: p2.id))
-
+        let p2InitialPTY = p2.pty
         #expect(p1.id == p1InitialId && p1.pty === p1InitialPTY)
-        #expect(p1After.mode == .maximized, "Background maximized pane must NOT be turned into 2 tall split tiles")
-        #expect(p1After.rect == p1Before.rect)
-        #expect(p2State.mode == .normal)
-        #expect(p2State.zOrder > p1After.zOrder)
-        #expect(p2State.rect == CGRect(x: 225, y: 140, width: 550, height: 420))
+        #expect(store.state(for: p1.id)?.mode == .normal && store.isTiled(p1.id), "the maximized tile returns to the grid")
+        #expect(store.state(for: p2.id)?.mode == .normal && store.isTiled(p2.id))
+        let tiles = store.presentedFrames(in: canvas)
+        let f1 = try #require(tiles[p1.id]), f2 = try #require(tiles[p2.id])
+        #expect(!f1.intersects(f2) && f1.maxX < f2.minX, "a right split sits beside its anchor")
+        #expect(abs(f2.minX - f1.maxX - DesktopCanvasMetrics.paneGap) < 0.5, "tiles are 8 pt apart")
+        #expect(f1.minX - area.minX >= DesktopCanvasMetrics.paneGap - 0.5, "tiled normal panes keep the 8 pt inset")
 
-        // Splitting from .normal p2 cascades +24pt while p1 still remains .maximized underneath
-        let p3 = try #require(controller.newSplit(at: p2, direction: .down))
-        let p3State = try #require(controller.floatingCanvas.state(for: p3.id))
-        #expect(p3State.mode == .normal)
-        #expect(p3State.rect == CGRect(x: 249, y: 164, width: 550, height: 420))
-        #expect(controller.floatingCanvas.state(for: p1.id)?.mode == .maximized)
+        // The explicit float icon detaches p2 to a free rect and keeps it across round trips.
+        controller.togglePaneFloating(p2, in: canvas)
+        #expect(!store.isTiled(p2.id) && store.state(for: p2.id)?.mode == .normal)
+        #expect((store.state(for: p2.id)?.zOrder ?? 0) > (store.state(for: p1.id)?.zOrder ?? 0))
+        let free = store.presentedFrame(of: p2.id, in: canvas)
+        #expect(free.width >= FloatingPaneGeometry.minSize.width && free.height >= FloatingPaneGeometry.minSize.height)
+        controller.togglePaneFloating(p2, in: canvas)
+        #expect(store.isTiled(p2.id))
+        controller.togglePaneFloating(p2, in: canvas)
+        #expect(store.presentedFrame(of: p2.id, in: canvas) == free, "the free rect is kept")
+        #expect(p2.pty === p2InitialPTY)
+
+        // Maximize on its own: the sole maximized pane fills the work area with no outer inset.
+        controller.togglePaneFloating(p2, in: canvas)
+        controller.toggleMaximizeFloatingPane(p1, in: canvas)
+        #expect(store.state(for: p1.id)?.mode == .maximized)
+        #expect(store.presentedFrame(of: p1.id, in: canvas) == area)
+        #expect(p1.pty === p1InitialPTY && p2.pty === p2InitialPTY)
 
         // 3. Existing saved preferred rects/modes (including valid 260..279 x 150..179 floors) are preserved untouched
         let customSavedRect = CGRect(x: 36, y: 42, width: 780, height: 540)
@@ -146,7 +160,10 @@ struct FloatingRexPolishTests {
         let contentView = try #require(window.contentView)
         let canvas = CGSize(width: 1000, height: contentView.bounds.height)
 
-        // Check maximized p1 is strictly edge-to-edge (0 outer gutters)
+        // The split tiled both (reference grid); maximizing p1 on its own makes it the sole
+        // maximized pane, strictly edge-to-edge (no outer gutters, unlike tiled panes).
+        controller.toggleMaximizeFloatingPane(p1, in: canvas)
+        #expect(controller.floatingCanvas.state(for: p1.id)?.mode == .maximized)
         contentView.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         contentView.layoutSubtreeIfNeeded()
