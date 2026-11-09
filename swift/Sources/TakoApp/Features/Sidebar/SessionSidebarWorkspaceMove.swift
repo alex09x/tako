@@ -154,6 +154,13 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
     var onNewSession: (() -> Void)? = nil
     var onRename: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
+    /// Reference session menu: «New Terminal in Session», «Mark as Read»
+    /// (off while nothing is unread), «Reconnect» (only for a lost session).
+    var onNewTerminal: (() -> Void)? = nil
+    var hasUnread: () -> Bool = { false }
+    var onMarkRead: (() -> Void)? = nil
+    var canReconnect: () -> Bool = { false }
+    var onReconnect: (() -> Void)? = nil
 
     private var appearanceLevel: DesktopScopeLevel {
         if item.isChild, let id = item.surfaceId {
@@ -199,6 +206,19 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
             }
             if !item.isChild, let onRename {
                 Button("Rename Session…", action: onRename)
+            }
+            if !item.isChild, let onNewTerminal {
+                Button("New Terminal in Session", action: onNewTerminal)
+                    .accessibilityIdentifier("SidebarRowNewTerminal")
+            }
+            if let onMarkRead {
+                Button("Mark as Read", action: onMarkRead)
+                    .disabled(!hasUnread())
+                    .accessibilityIdentifier("SidebarRowMarkRead")
+            }
+            if let onReconnect, canReconnect() {
+                Button("Reconnect", action: onReconnect)
+                    .accessibilityIdentifier("SidebarRowReconnect")
             }
             if let onClose {
                 Button(item.isChild ? "Close Pane" : "Close Session", action: onClose)

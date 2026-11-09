@@ -273,7 +273,12 @@ struct SessionSidebarView: View {
                                     onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
                                     onNewSession: { store.createNewTab(in: targetWindow) },
                                     onRename: { store.promptRenameTab(item: item, in: targetWindow) },
-                                    onClose: { store.closeTab(item: item, in: targetWindow) }))
+                                    onClose: { store.closeTab(item: item, in: targetWindow) },
+                                    onNewTerminal: { store.newTerminal(inSession: item, around: targetWindow, workspaceStore: workspaceStore) },
+                                    hasUnread: { store.rowHasUnread(item, around: targetWindow, workspaceStore: workspaceStore) },
+                                    onMarkRead: { store.markRowRead(item, around: targetWindow, workspaceStore: workspaceStore) },
+                                    canReconnect: { store.rowCanReconnect(item, around: targetWindow, workspaceStore: workspaceStore) },
+                                    onReconnect: { store.reconnectRow(item, around: targetWindow, workspaceStore: workspaceStore) }))
                             }
                         }
                     }
