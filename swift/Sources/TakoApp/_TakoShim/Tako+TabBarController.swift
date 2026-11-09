@@ -30,6 +30,7 @@ extension Tako {
         private static var installed: [ObjectIdentifier: TabBarView] = [:]
         private static var monitor: Any?
         private static let refreshRequests = TabBarRefreshCoalescer { refreshAll() }
+        private static let titlebarBackgroundCache = TitlebarBackgroundCache()
 
         /// Title bursts need at most one chrome layout per display frame.
         /// Explicit navigation/layout changes still use synchronous refreshAll.
@@ -192,14 +193,11 @@ extension Tako {
         /// resize nudged it) so it keeps winning that fight instead of
         /// losing it once.
         static func clearTitlebarBackground(in window: NSWindow) {
-            guard let themeFrame = window.contentView?.superview,
-                  let titlebarContainer = themeFrame.firstDescendant(withClassName: "NSTitlebarContainerView")
-            else { return }
-            let titlebar = titlebarContainer.firstDescendant(withClassName: "NSTitlebarView")
-            for view in [titlebarContainer, titlebar].compactMap({ $0 }) {
-                view.wantsLayer = true
-                view.layer?.backgroundColor = NSColor.clear.cgColor
-                view.layer?.isOpaque = false
+            guard let themeFrame = window.contentView?.superview else { return }
+            for view in titlebarBackgroundCache.views(in: window, root: themeFrame) {
+                if !view.wantsLayer { view.wantsLayer = true }
+                if view.layer?.backgroundColor?.alpha != 0 { view.layer?.backgroundColor = NSColor.clear.cgColor }
+                if view.layer?.isOpaque == true { view.layer?.isOpaque = false }
             }
         }
 

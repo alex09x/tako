@@ -324,6 +324,7 @@ extension TerminalController {
 
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let window else { return }
+        Tako.CustomTabGroup.group(for: window).syncFrame(from: window)
         window.contentView?.layoutSubtreeIfNeeded()
         reflowSurfaces(forcePtyResize: true)
         LastWindowPosition.shared.save(window)

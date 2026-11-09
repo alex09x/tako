@@ -231,6 +231,9 @@ extension Tako.CustomTabGroup {
         func syncFrame(from window: NSWindow) {
             guard selectedWindow === window else { return }
             Self.lastActiveWindowFrame = window.frame
+            // Hidden sessions need the final geometry, not every intermediate
+            // mouse position and a PTY/layout pass per sibling per resize tick.
+            guard !window.inLiveResize else { return }
             let winWs = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId
             for sibling in windows where sibling !== window {
                 let siblingWs = WorkspaceStore.shared.workspace(forTab: sibling.stableTabIdentifier)?.id ?? WorkspaceStore.defaultWorkspaceId
@@ -238,6 +241,7 @@ extension Tako.CustomTabGroup {
                 if siblingWs != winWs && !syncWindowFrame {
                     continue
                 }
+                guard sibling.frame != window.frame else { continue }
                 sibling.setFrame(window.frame, display: false)
                 if let controller = sibling.windowController as? TerminalController {
                     controller.reflowSurfaces(forcePtyResize: true)
