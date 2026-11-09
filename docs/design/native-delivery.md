@@ -65,8 +65,8 @@ runtime copies. Public publishing is not part of this delivery.
 
 ## Final scoped acceptance evidence
 
-Forty desktop XCUI scenarios now have passing evidence across the focused runs.
-This is cumulative coverage, not a claim that a single forty-test run passed.
+Forty-one desktop XCUI scenarios now have passing evidence across the focused runs.
+This is cumulative coverage, not a claim that a single forty-one-test run passed.
 The external acceptance checkout retains the original failed bundles as well as
 the successful reruns:
 
@@ -78,6 +78,7 @@ the successful reruns:
 | `controls-complete.xcresult` | Eight successful scenarios: search reveal, font inventory, header actions, scoped colors and inheritance, expanded themes, workspace protection and context zoom |
 | `controls-retry.xcresult` | Three successful scenarios: complete header mode actions, workspace rename/collapse and temporary zoom/base-size reset |
 | `final-workflows.xcresult` | Five successful scenarios: persistent pane names, custom-theme rename/delete protection, toast restore/focus and expiry |
+| `sidebar-list-final.xcresult` | Three successful scenarios: search, session switch-back with process/focus continuity, and active-row visibility with sixteen sessions |
 
 The final five executed with zero failures and an explicit successful Xcode test
 result. Retained videos and attachment manifests support the AX assertions.
@@ -92,3 +93,21 @@ Native settings were also measured through Accessibility at 820×700. Visual
 review uses the frozen reference, the native theme-management recording and
 the size/zoom recording. This is not a zero-pixel-difference claim: terminal
 content, installed fonts, system rasterization and animation phase differ.
+
+## Live performance follow-up
+
+Build 568 exposed repeated filesystem catalog discovery in closed sidebar menus.
+The menu metadata snapshot now refreshes on configuration/catalog changes rather
+than terminal status ticks. Live resize defers hidden sibling window/PTY geometry
+until the final size; native titlebar lookup caches weak hierarchy references.
+Focused regressions verify both invalidation and bounded resize/lookup work.
+
+The next change suspends expensive sidebar row composition and redundant event
+relay in hidden tab windows. A per-window KVO presentation model survives SwiftUI
+suspension. Header/search controls remain mounted, preserving the native field
+and query. Initial mounting does not constitute a request to focus search.
+The existing tab-selection policy still focuses the terminal. The active row is
+scrolled into view after list remount. Three focused native visibility tests and
+the three live scenarios above passed; successful GUI recordings are retained.
+Live CPU acceptance remains tracked in the performance incident until the signed
+candidate has been installed and measured with the operator's running sessions.

@@ -60,7 +60,10 @@ struct SidebarSearchField: NSViewRepresentable {
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onEscape: onEscape)
+        let coordinator = Coordinator(text: $text, onEscape: onEscape)
+        // Mounting a row is not a new request to take keyboard focus.
+        coordinator.lastFocusToken = focusRequestToken
+        return coordinator
     }
 
     func makeNSView(context: Context) -> SidebarSearchNSTextField {

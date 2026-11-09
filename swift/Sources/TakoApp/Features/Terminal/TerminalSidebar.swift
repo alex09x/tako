@@ -15,12 +15,14 @@ struct TerminalSidebar: View {
     @Binding var isPresented: Bool
     let window: NSWindow?
     let shortcut: KeyboardShortcut?
+    var windowIsPresented = true
 
     var body: some View {
         // The shell's own background (app-appearance), not the terminal
         // theme's: a dark terminal in a light shell reads as two layers.
         SessionSidebarView(isPresented: $isPresented, containingWindow: window,
             backgroundColor: Color(nsColor: Tako.LivingTokens.body)
-                .opacity(surface.derivedConfig.backgroundOpacity), newSessionShortcut: shortcut)
+                .opacity(surface.derivedConfig.backgroundOpacity), newSessionShortcut: shortcut,
+            windowIsPresented: windowIsPresented)
     }
 }

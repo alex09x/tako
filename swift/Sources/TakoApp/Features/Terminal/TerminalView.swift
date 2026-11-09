@@ -84,6 +84,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @State private var lastFocusedSurface: Weak<Tako.SurfaceView>?
 
     @State private var fullscreenRevision: Int = 0
+    @StateObject private var windowPresentation = TerminalWindowPresentation()
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -126,14 +127,16 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                     surface: sidebarSurface,
                                     isPresented: $viewModel.sessionSidebarIsShowing,
                                     window: viewModel.containingWindow,
-                                    shortcut: tako.config.keyboardShortcut(for: "new_tab")
+                                    shortcut: tako.config.keyboardShortcut(for: "new_tab"),
+                                    windowIsPresented: windowPresentation.isVisible
                                 )
                             } else {
                                 SessionSidebarView(
                                     isPresented: $viewModel.sessionSidebarIsShowing,
                                     containingWindow: viewModel.containingWindow,
                                     backgroundColor: Color(nsColor: Tako.LivingTokens.body).opacity(tako.config.backgroundOpacity),
-                                    newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab")
+                                    newSessionShortcut: tako.config.keyboardShortcut(for: "new_tab"),
+                                    windowIsPresented: windowPresentation.isVisible
                                 )
                             }
                         }
@@ -212,6 +215,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)
             .ignoresSafeArea(.container, edges: ignoresTopSafeArea ? .top : [])
+            .onAppear { windowPresentation.bind(to: viewModel.containingWindow) }
+            .onChange(of: viewModel.containingWindow) { _, window in windowPresentation.bind(to: window) }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
                 fullscreenRevision &+= 1
             }

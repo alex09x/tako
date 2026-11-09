@@ -18,6 +18,7 @@ struct SessionSidebarView: View {
     let containingWindow: NSWindow?
     let backgroundColor: Color
     let newSessionShortcut: KeyboardShortcut?
+    let windowIsPresented: Bool
 
     @ObservedObject var store: SessionSidebarStore
     @ObservedObject var workspaceStore: WorkspaceStore
@@ -37,6 +38,9 @@ struct SessionSidebarView: View {
     @State var isSearchExpanded = false
     @State var searchFocusToken: Int = 0
     @State private var chromeRevision: Int = 0
+#if DEBUG
+    static var onContentBuildForTesting: ((NSWindow?) -> Void)?
+#endif
     @State private var editingItemId: String? = nil
     @State private var editingDescriptionText: String = ""
     @FocusState var isSearchFocused: Bool
@@ -50,7 +54,8 @@ struct SessionSidebarView: View {
         backgroundColor: Color = Color(nsColor: .windowBackgroundColor),
         newSessionShortcut: KeyboardShortcut? = Tako.Config.defaultKeyboardShortcuts["new_tab"],
         store: SessionSidebarStore = .shared,
-        workspaceStore: WorkspaceStore = .shared
+        workspaceStore: WorkspaceStore = .shared,
+        windowIsPresented: Bool = true
     ) {
         self._isPresented = isPresented
         self.containingWindow = containingWindow
@@ -58,6 +63,7 @@ struct SessionSidebarView: View {
         self.newSessionShortcut = newSessionShortcut
         self.store = store
         self.workspaceStore = workspaceStore
+        self.windowIsPresented = windowIsPresented
     }
 
     var targetWindow: NSWindow? {
@@ -122,13 +128,18 @@ struct SessionSidebarView: View {
     // The list is built once per change, not per animation frame: only the
     // rings and rows that move redraw on their own (`SessionSidebarRowView`).
     public var body: some View {
+#if DEBUG
+        let _ = windowIsPresented ? Self.onContentBuildForTesting?(containingWindow) : nil
+#endif
         let _ = chromeRevision
-        let groups = workspaceGroups
+        // Keep the native search editor mounted; only the expensive list is
+        // suspended. Tab selection retains its existing terminal-focus policy.
+        let groups = windowIsPresented ? workspaceGroups : []
         let flatItems = groups.flatMap(\.items)
         let totalSessions = Self.sessionCount(groups, flatItems)
         let waitingCount = Self.attentionCount(groups, flatItems)
-        let counts = store.attentionCounts(for: targetWindow, preferences: presentation.preferences,
-                                           workspaceStore: workspaceStore)
+        let counts = windowIsPresented ? store.attentionCounts(for: targetWindow, preferences: presentation.preferences,
+                                                               workspaceStore: workspaceStore) : SidebarAttentionCounts()
 
         VStack(spacing: 0) {
             headerView(sessionCount: totalSessions, attentionCount: waitingCount)
@@ -136,7 +147,7 @@ struct SessionSidebarView: View {
             segmentsRow(attentionCount: waitingCount, counts: counts)
 
             VStack(spacing: 0) {
-                tabListView(groups: groups, flatItems: flatItems)
+                if windowIsPresented { tabListView(groups: groups, flatItems: flatItems) }
             }
             // Rows carry the reference's own 8 pt margins (A01 `.row`, `.ws`).
             .padding(.horizontal, 0)
@@ -165,18 +176,22 @@ struct SessionSidebarView: View {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
             }
             followActiveTab()
-            isListFocused = true
+            if windowIsPresented && !(containingWindow?.firstResponder is Tako.SurfaceView) { isListFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            guard windowIsPresented else { return }
             chromeRevision &+= 1
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            guard windowIsPresented else { return }
             chromeRevision &+= 1
         }
         .onReceive(NotificationCenter.default.publisher(for: .fullscreenDidExit)) { _ in
+            guard windowIsPresented else { return }
             chromeRevision &+= 1
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notif in
+            guard windowIsPresented else { return }
             if let win = notif.object as? NSWindow, win === targetWindow {
                 chromeRevision &+= 1
             }
@@ -186,12 +201,15 @@ struct SessionSidebarView: View {
         // or a second row looks chosen. The cursor goes where the active
         // tab goes.
         .onChange(of: flatItems.firstIndex(where: { $0.isSelected })) { _, _ in
+            guard windowIsPresented else { return }
             followActiveTab()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoNotificationStoreDidChange)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
+            guard windowIsPresented else { return }
             guard let win = notif.object as? NSWindow else { return }
             if let bound = containingWindow {
                 let group = Tako.CustomTabGroup.group(for: bound)
@@ -204,18 +222,23 @@ struct SessionSidebarView: View {
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoNewTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoCloseTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoMoveTab)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: Tako.Notification.takoPresentTerminal)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
+            guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
         .shellScheme()
@@ -289,6 +312,12 @@ struct SessionSidebarView: View {
             // around the whole sidebar on a click.
             .focusEffectDisabled()
             .focused($isListFocused)
+            .task {
+                guard let selected = flatItems.first(where: { $0.isSelected }) else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(selected.id, anchor: .center)
+            }
             .onKeyPress(.upArrow) {
                 if selectedIndex > 0 { selectedIndex -= 1 }
                 showsArrowCursor = true
