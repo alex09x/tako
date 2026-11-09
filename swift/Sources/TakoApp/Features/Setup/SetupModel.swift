@@ -80,6 +80,11 @@ final class SetupModel: ObservableObject {
         }
     }
 
+    func markSkipped(_ steps: [SetupStep]) {
+        progress.skipped.formUnion(steps)
+        store.save(progress)
+    }
+
     func back() { select(SetupStep.allCases[max(0, stepIndex - 1)]) }
 
     func dismiss() {

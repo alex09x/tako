@@ -48,6 +48,20 @@ struct SetupPalette {
         isDark = bg.redComponent * 0.2126 + bg.greenComponent * 0.7152 + bg.blueComponent * 0.0722 < 0.5
     }
 
+    /// Desktop chrome colors, independent of the terminal theme preview.
+    init(desktop palette: DesktopPalette, isDark dark: Bool) {
+        background = Color(nsColor: palette.panel)
+        text = Color(nsColor: palette.text)
+        muted = Color(nsColor: palette.secondary)
+        accent = Color(nsColor: palette.accent)
+        primaryText = Color(nsColor: Self.readable(.white, against: palette.accent))
+        message = Color(nsColor: Self.readable(Tako.Brand.claw, against: palette.panel))
+        success = Color(nsColor: Tako.Brand.ok)
+        border = Color(nsColor: palette.border)
+        card = Color(nsColor: palette.field)
+        isDark = dark
+    }
+
     private static func readable(_ preferred: NSColor, against background: NSColor) -> NSColor {
         if contrast(preferred, background) >= 4.5 { return preferred }
         return contrast(.black, background) >= contrast(.white, background) ? .black : .white

@@ -53,7 +53,8 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
               !Tako.CustomTabGroup.isClosed(window) else { return false }
         // Theme editors and setup must not fight for the host's keyboard focus.
         guard window.contentView?.subviews.contains(where: { $0 is TerminalSettingsDialog }) != true else { return false }
-        let panel = SetupPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+        let size = SetupSheetGeometry.size(forHost: window.contentLayoutRect.size)
+        let panel = SetupPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = "Set up Tako"
         panel.identifier = NSUserInterfaceItemIdentifier("TakoSetupWindow")
@@ -67,7 +68,8 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
         }
         // SwiftUI propagates a container identifier to its descendants on macOS.
         // Keep the container ID on AppKit so every button retains its own ID.
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 640))
+        panel.contentMinSize = SetupSheetGeometry.minimum
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
         container.setAccessibilityElement(true)
         container.setAccessibilityRole(.group)
         container.setAccessibilityIdentifier("SetupWizard")
@@ -103,7 +105,11 @@ final class SetupCoordinator: NSObject, NSWindowDelegate {
         if let host, host.attachedSheet === panel { host.endSheet(panel) }
         panel.orderOut(nil)
         panel.close()
-        if !force, let previousResponder, previousResponder !== host { host?.makeFirstResponder(previousResponder) }
+        // Return focus to the existing terminal; setup never opens another one.
+        if !force, let host, host.isVisible {
+            host.makeKeyAndOrderFront(nil)
+            if let previousResponder, previousResponder !== host { host.makeFirstResponder(previousResponder) }
+        }
         self.panel = nil
         self.model = nil
         self.host = nil
