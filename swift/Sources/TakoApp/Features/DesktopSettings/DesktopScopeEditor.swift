@@ -87,9 +87,6 @@ final class DesktopScopeEditor: ObservableObject {
         return ScopedAppearanceContext.keys.contains { preferences.localValue($0) != nil }
     }
 
-    /// «Global › …» down to this level, for the chips over the page.
-    var chain: [String] { context.map { ["Global", $0.title] } ?? ["Global"] }
-
     @discardableResult
     func set(_ key: String, _ value: String) -> Bool {
         if let context {

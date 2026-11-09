@@ -158,7 +158,7 @@ struct DesktopSettingsView: View {
     @ViewBuilder private var levelLine: some View {
         if !searching && !editing {
             if model.section == .terminalAppearance {
-                DesktopScopeChips(scope: model.scope, palette: palette)
+                DesktopScopeChips(model: model, scope: model.scope, palette: palette)
                     .padding(EdgeInsets(top: 0, leading: 24, bottom: 12, trailing: 24))
             } else if let subtitle = model.section.subtitle {
                 Text(subtitle).font(.system(size: DesktopSettingsStyle.captionSize)).foregroundStyle(Color(palette.muted))
@@ -194,27 +194,65 @@ struct DesktopSettingsView: View {
     }
 }
 
-/// «For Global › workspace › terminal»: where appearance edits land.
+/// «For Global › workspace Default › session tako › terminal fish» (reference
+/// pfCrumbs): each chip is a button that switches the edited level; «custom»
+/// marks a level that stores its own appearance.
+/// Accessibility: `DesktopScope-global|workspace|session|pane`; the edited
+/// one is `DesktopScopeCurrent`.
 struct DesktopScopeChips: View {
+    @ObservedObject var model: DesktopSettingsModel
     @ObservedObject var scope: DesktopScopeEditor
     let palette: DesktopPalette
 
     var body: some View {
+        let current = model.currentLevel?.id ?? DesktopScopeLevel.global.id
         HStack(spacing: 6) {
             Text("For").foregroundStyle(Color(palette.muted))
-            ForEach(Array(scope.chain.enumerated()), id: \.offset) { index, title in
+            ForEach(Array(model.levels.enumerated()), id: \.element.id) { index, level in
                 if index > 0 { Text("›").foregroundStyle(Color(palette.faint)) }
-                let current = index == scope.chain.count - 1
-                Text(title).lineLimit(1)
-                    .padding(.horizontal, 10).frame(height: DesktopMetrics.controlHeight)
-                    .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius).fill(Color(palette.field)))
-                    .overlay(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius)
-                        .strokeBorder(current ? Color(palette.accentBright) : Color(palette.separator), lineWidth: current ? 1.5 : 1))
-                    .accessibilityIdentifier(current ? "DesktopScopeCurrent" : "DesktopScope-\(index)")
+                chip(level, on: level.id == current)
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func chip(_ level: DesktopScopeLevel, on: Bool) -> some View {
+        let own = level.hasOwnOverrides(store: model.themes.scopes, configFile: model.configFile)
+        return Button { model.onSelectLevel(level) } label: {
+            HStack(spacing: 5) {
+                if let kind = level.kindTitle {
+                    Text(kind).font(.system(size: 11)).foregroundStyle(Color(palette.muted))
+                }
+                Text(level.name).fontWeight(level.kindTitle == nil ? .regular : .semibold)
+                    .foregroundStyle(Color(on ? palette.text : palette.secondary))
+                if let note = level.note {
+                    Text(note).font(.system(size: 11)).foregroundStyle(Color(palette.muted))
+                }
+                if own {
+                    Text("custom").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color(palette.accentBright))
+                }
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 10).frame(height: DesktopMetrics.controlHeight)
+            .background(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius).fill(Color(palette.field)))
+            .overlay(RoundedRectangle(cornerRadius: DesktopMetrics.controlRadius)
+                .strokeBorder(on ? Color(palette.accentBright) : Color(palette.separator), lineWidth: on ? 1.5 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(on ? "DesktopScopeCurrent" : "DesktopScope-\(Self.kindKey(level.kind))")
+        .accessibilityValue(own ? "custom" : "")
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    static func kindKey(_ kind: DesktopScopeLevel.Kind) -> String {
+        switch kind {
+        case .global: "global"
+        case .workspace: "workspace"
+        case .session: "session"
+        case .pane: "pane"
+        }
     }
 }
 

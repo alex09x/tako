@@ -121,6 +121,7 @@ struct DesktopSettingsSectionBody: View {
     private var activity: some View {
         Group {
             DesktopBlock(title: "Indicators", note: "Focus and program status are independent", palette: palette) {
+                DesktopStatusSamples(palette: palette)
                 rows(["status-show", "status-animate"])
             }
             DesktopBlock(title: "Colors", note: "tab-status-color-*", palette: palette) {

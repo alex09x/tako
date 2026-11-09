@@ -29,6 +29,15 @@ final class DesktopSettingsModel: ObservableObject {
     let scope: DesktopScopeEditor
     let fonts: [String]
     var onClose: () -> Void = {}
+    /// Global › workspace › session › terminal of the terminal the settings
+    /// were opened over; the chips switch the edited level among them.
+    var levels: [DesktopScopeLevel] = [.global]
+    var onSelectLevel: (DesktopScopeLevel) -> Void = { _ in }
+
+    /// The level being edited, matched by scope.
+    var currentLevel: DesktopScopeLevel? {
+        levels.first { $0.scope == scope.context?.scope }
+    }
     /// The window the settings sit in; the live preview targets its panes.
     weak var hostWindow: NSWindow?
     /// Live panes showing the draft; nil when no draft is open.

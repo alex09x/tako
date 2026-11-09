@@ -283,6 +283,53 @@ struct DesktopSettingsTests {
         model.cancelDraft()
     }
 
+    /// The chips switch the edited level in the same window, keeping the page
+    /// and the chain; «своё» follows what each level stores.
+    @Test func levelChipsSwitchTheEditedLevelAndMarkOwnOverrides() throws {
+        let sandbox = try Sandbox()
+        let store = sandbox.scopes()
+        let ws = UUID(), pane = UUID()
+        let levels: [DesktopScopeLevel] = [
+            .global,
+            .init(kind: .workspace(ws), kindTitle: "workspace", name: "Default"),
+            .init(kind: .session("tab-1"), kindTitle: "session", name: "tako"),
+            .init(kind: .pane(pane), kindTitle: "terminal", name: "fish", note: "in session tako"),
+        ]
+        #expect(levels.map(\.scope) == [nil, .workspace(ws), .session("tab-1"), .pane(pane)])
+        #expect(levels[1].context(app: nil, store: store)?.scope == .workspace(ws))
+        #expect(levels[0].context(app: nil, store: store) == nil)
+
+        let file = KeybindConfigFile(configPath: sandbox.config.path)
+        #expect(!levels[1].hasOwnOverrides(store: store, configFile: file))
+        try store.setValue("#123456", for: "background", scope: .workspace(ws))
+        #expect(levels[1].hasOwnOverrides(store: store, configFile: file))
+        #expect(!levels[0].hasOwnOverrides(store: store, configFile: file))
+        #expect(DesktopPreferenceStore(configFile: file).set("font-size", "14"))
+        file.reload()
+        #expect(levels[0].hasOwnOverrides(store: store, configFile: file))
+
+        // A window without terminals: the requested workspace is still offered.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 1200, height: 900))
+        let offered = DesktopSettingsController.levels(around: window, including: .workspace(ws))
+        #expect(offered.map(\.scope) == [nil, .workspace(ws)])
+
+        let controller = try #require(DesktopSettingsController.show(
+            in: window, section: .terminalAppearance, configPath: sandbox.config.path, levels: levels))
+        #expect(controller.model.currentLevel == .global)
+        controller.model.onSelectLevel(levels[1])
+        let switched = try #require(DesktopSettingsController.current(in: window))
+        #expect(switched !== controller)
+        #expect(switched.model.scope.context?.scope == .workspace(ws))
+        #expect(switched.model.section == .terminalAppearance && switched.model.levels == levels)
+        #expect(switched.model.currentLevel == levels[1])
+        switched.model.onSelectLevel(levels[1])
+        #expect(DesktopSettingsController.current(in: window) === switched, "choosing the edited level changes nothing")
+        switched.close()
+    }
+
     @Test func missingFontReportsActualFallback() {
         let missing = DesktopFontResolution.resolve("Nope Mono", inventory: ["Menlo"], fallback: "Menlo")
         #expect(missing.isFallback && missing.rendered == "Menlo")

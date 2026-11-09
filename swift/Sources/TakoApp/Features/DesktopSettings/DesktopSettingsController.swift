@@ -26,9 +26,11 @@ final class DesktopSettingsController {
         active[ObjectIdentifier(window)]
     }
 
+    /// `levels` is the chain to offer; by default the host's focused terminal's.
     @discardableResult
     static func show(in window: NSWindow, section: DesktopSettingsSection = .general,
-                     context: ScopedAppearanceContext? = nil, configPath: String? = nil) -> DesktopSettingsController? {
+                     context: ScopedAppearanceContext? = nil, configPath: String? = nil,
+                     levels: [DesktopScopeLevel]? = nil) -> DesktopSettingsController? {
         if let existing = current(in: window) {
             if existing.model.scope.context?.scope == context?.scope {
                 existing.model.section = section
@@ -39,9 +41,42 @@ final class DesktopSettingsController {
         guard let content = window.contentView else { return nil }
         let path = configPath ?? (NSApp.delegate as? AppDelegate)?.tako.activeConfigPath
         let model = DesktopSettingsModel(configPath: path, context: context, section: section)
+        model.levels = levels ?? Self.levels(around: window, including: context?.scope)
         let controller = DesktopSettingsController(model: model, host: window, content: content)
+        model.onSelectLevel = { [weak controller] level in controller?.switchLevel(to: level) }
         active[ObjectIdentifier(window)] = controller
         return controller
+    }
+
+    /// The chain of the window's focused terminal, or of the terminal the
+    /// requested scope names when that is another one.
+    static func levels(around window: NSWindow, including scope: AppearanceScope?) -> [DesktopScopeLevel] {
+        let terminal = window.windowController as? TerminalController
+        var surface = terminal?.focusedSurface ?? terminal?.surfaceTree.first(where: { _ in true })
+        if case .pane(let id) = scope, surface?.id != id {
+            surface = TerminalController.all.lazy.flatMap { Array($0.surfaceTree) }.first { $0.id == id }
+        }
+        let chain = DesktopScopeLevel.chain(for: surface, window: surface?.window ?? window)
+        // A workspace or session opened from elsewhere is offered even if
+        // the focused terminal's chain does not pass through it.
+        guard let scope, !chain.contains(where: { $0.scope == scope }) else { return chain }
+        let extra: DesktopScopeLevel
+        switch scope {
+        case .workspace(let id):
+            extra = .init(kind: .workspace(id), kindTitle: "workspace",
+                          name: WorkspaceStore.shared.workspace(for: id)?.name ?? "workspace")
+        case .session(let id): extra = .init(kind: .session(id), kindTitle: "session", name: "session")
+        case .pane(let id): extra = .init(kind: .pane(id), kindTitle: "terminal", name: "terminal")
+        }
+        return [.global, extra]
+    }
+
+    /// The chips: the same window, page and chain, another level.
+    func switchLevel(to level: DesktopScopeLevel) {
+        guard let host, level.scope != model.scope.context?.scope else { return }
+        let app = (host.windowController as? TerminalController)?.tako
+        let section = model.section, levels = model.levels
+        Self.show(in: host, section: section, context: level.context(app: app), levels: levels)
     }
 
     static func showGlobal(section: DesktopSettingsSection = .general, in window: NSWindow? = nil) {
@@ -50,13 +85,9 @@ final class DesktopSettingsController {
     }
 
     static func showWorkspace(_ id: UUID, section: DesktopSettingsSection = .terminalAppearance, in window: NSWindow? = nil) {
-        let workspaces = WorkspaceStore.shared
-        guard let workspace = workspaces.workspace(for: id), let host = window ?? hostWindow,
-              let app = (host.windowController as? TerminalController)?.tako else { return }
-        let context = ScopedAppearanceContext(scope: .workspace(id), title: "Пространство «\(workspace.name)»",
-            globalTheme: { [weak app] in app?.config.theme ?? .takoDefault },
-            isAvailable: { workspaces.workspace(for: id) != nil })
-        show(in: host, section: section, context: context)
+        guard let workspace = WorkspaceStore.shared.workspace(for: id), let host = window ?? hostWindow else { return }
+        let level = DesktopScopeLevel(kind: .workspace(id), kindTitle: "workspace", name: workspace.name)
+        show(in: host, section: section, context: level.context(app: (host.windowController as? TerminalController)?.tako))
     }
 
     /// Sessions resolve through their workspace; the caller supplies both lookups.
@@ -75,12 +106,9 @@ final class DesktopSettingsController {
         guard let controller = TerminalController.all.first(where: { $0.surfaceTree.contains { $0.id == id } }),
               let surface = controller.surfaceTree.first(where: { $0.id == id }),
               let host = window ?? hostWindow ?? controller.window else { return }
-        let context = ScopedAppearanceContext(scope: .pane(id), title: "Панель",
-            globalTheme: { [weak surface] in surface?.app?.config.theme ?? .takoDefault },
-            workspaceID: { [weak surface] in surface?.appearanceWorkspaceID },
-            sessionID: { [weak surface] in surface?.appearanceSessionID },
-            isAvailable: { [weak surface] in surface != nil && TerminalController.all.contains { $0.surfaceTree.contains { $0.id == id } } })
-        show(in: host, section: section, context: context)
+        let level = DesktopScopeLevel(kind: .pane(id), kindTitle: "terminal",
+                                      name: surface.title.isEmpty ? "terminal" : surface.title)
+        show(in: host, section: section, context: level.context(app: controller.tako))
     }
 
     private static var hostWindow: NSWindow? {
