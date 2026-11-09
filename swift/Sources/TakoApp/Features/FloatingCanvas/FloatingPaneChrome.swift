@@ -57,8 +57,16 @@ struct FloatingPaneHeaderView: View {
         return "Terminal"
     }
 
-    private var statusColor: Color {
-        Color(nsColor: FloatingPaneGeometry.statusNSColor(for: crab.paneStatus, surface: surfaceView))
+    /// The pane's own status, as its sidebar row's ring shows it.
+    private var headerState: Tako.SurfaceState {
+        crab.paneStatus.surfaceState(crabState: crab.state, live: crab.live)
+    }
+
+    /// The working directory, unless the title already is it.
+    private var directory: String? {
+        guard let pwd = surfaceView.pwd, !pwd.isEmpty else { return nil }
+        let compact = Tako.formatCompactDirectory(pwd)
+        return compact == displayTitle ? nil : compact
     }
 
     private var statusValue: String {
@@ -91,16 +99,28 @@ struct FloatingPaneHeaderView: View {
                     appearanceMenuItem: { [weak surface = surfaceView] in surface?.appearanceMenuItem() }
                 )
 
+                // Reference `.fw-hd` (header.css): 0 10 padding, 7 gap, the
+                // pill's 14 pt status ring, title 12/500, directory 11.
                 HStack(spacing: 7) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 7, height: 7)
+                    SidebarStatusLayerView(state: headerState, ringCenter: nil, cornerRadius: 0,
+                                           reduceMotion: LivingAnimationState.shared.reduceMotion,
+                                           paused: false, pulses: crab.live?.pulses ?? 0, ringOnly: 14)
+                        .frame(width: 14, height: 14)
 
                     Text(displayTitle)
-                        .font(Font(T.monoFont(size: 11.5, weight: isFocused ? .medium : .regular)))
-                        .foregroundColor(Color(nsColor: isFocused ? T.textActive : T.textInactive))
+                        .font(Font(T.monoFont(size: 12, weight: .medium)))
+                        .foregroundColor(Color(nsColor: isFocused ? T.textActive : T.dim))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .layoutPriority(1)
+
+                    if let directory {
+                        Text(directory)
+                            .font(Font(T.monoFont(size: 11, weight: .regular)))
+                            .foregroundColor(Color(nsColor: isFocused ? T.dim : T.faint))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
 
                     if let note = crab.statusText, !note.isEmpty {
                         Text(note)
@@ -111,14 +131,14 @@ struct FloatingPaneHeaderView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 14)
+                .padding(.leading, 10)
                 .padding(.trailing, 4)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            HStack(spacing: 2) {
+            HStack(spacing: 1) {
                 // One compact system icon (reference m15226): pressed while floating.
                 FloatingHeaderIconButton(
                     symbolName: "rectangle.on.rectangle",

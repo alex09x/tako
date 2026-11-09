@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 
 /// Bottom-right pill shelf showing minimized internal panes for the active session.
-/// Visually renders only right-aligned 30pt stadium pills (no full-width bar or top divider),
+/// Visually renders only right-aligned 30pt pills (no full-width bar or top divider),
 /// while `FloatingPaneGeometry.shelfBandHeight` (`44pt`) keeps terminal rows non-occluded.
 struct FloatingMinimizeShelfView: View {
     let minimizedPanes: [FloatingPaneState]
@@ -20,7 +20,8 @@ struct FloatingMinimizeShelfView: View {
     let onRestore: (Tako.SurfaceView) -> Void
 
     private var cardsRow: some View {
-        HStack(spacing: 8) {
+        // `.dock`: 6 pt between pills, 14 pt from the canvas's right edge.
+        HStack(spacing: 6) {
             ForEach(minimizedPanes, id: \.surfaceId) { entry in
                 if let surface = surfaceLookup(entry.surfaceId) {
                     FloatingMinimizedCardView(
@@ -32,7 +33,7 @@ struct FloatingMinimizeShelfView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .fixedSize(horizontal: true, vertical: true)
     }
@@ -99,54 +100,62 @@ private struct FloatingMinimizedCardView: View {
         return unreadCount > 0 || crab.unread || statusAttention
     }
 
-    private var statusColor: Color {
-        Color(nsColor: FloatingPaneGeometry.statusNSColor(for: crab.paneStatus, surface: surfaceView))
+    /// The pane's own status, as its sidebar row's ring shows it.
+    private var cardState: Tako.SurfaceState {
+        crab.paneStatus.surfaceState(crabState: crab.state, live: crab.live)
     }
 
+    /// `.pill` takes the window's line; `.pill.errc` a red one; attention keeps Claw.
     private var pillBorderColor: Color {
-        if needsAttention {
-            return Color(nsColor: T.claw).opacity(0.65)
-        }
-        return colorScheme == .light
-            ? Color.black.opacity(hovering ? 0.18 : 0.12)
-            : Color.white.opacity(hovering ? 0.16 : 0.11)
+        if crab.paneStatus == .error, !isMuted { return Color(nsColor: T.error).opacity(0.6) }
+        if needsAttention { return Color(nsColor: T.claw).opacity(0.65) }
+        return Color(nsColor: T.badge)
     }
 
+    // Reference `.pill` (style.css, header.css): 30 pt, radius 8, padding
+    // 0 6 0 10, gap 8, the 16 pt small ring, title 12/500, the restore arrow
+    // (20 pt, radius 5) shown on hover, line + 0 8 24 shadow.
     var body: some View {
         ZStack {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 7, height: 7)
-
-                Image(systemName: "terminal")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Color(nsColor: T.dim))
+            HStack(spacing: 8) {
+                SidebarStatusLayerView(state: cardState, ringCenter: nil, cornerRadius: 0,
+                                       reduceMotion: LivingAnimationState.shared.reduceMotion,
+                                       paused: false, pulses: crab.live?.pulses ?? 0, ringOnly: 16)
+                    .frame(width: 16, height: 16)
 
                 Text(shortTitle)
-                    .font(Font(T.monoFont(size: 11, weight: .medium)))
-                    .foregroundColor(Color(nsColor: hovering ? T.textActive : T.textInactive))
+                    .font(Font(T.monoFont(size: 12, weight: .medium)))
+                    .foregroundColor(Color(nsColor: T.textActive))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 150, alignment: .leading)
+                    .frame(maxWidth: 200, alignment: .leading)
 
-                if needsAttention {
+                if unreadCount > 0 || crab.unread {
                     Circle()
-                        .fill(Color(nsColor: crab.paneStatus == .error ? T.error : T.claw))
-                        .frame(width: 6, height: 6)
+                        .fill(Color(nsColor: T.claw))
+                        .frame(width: 5, height: 5)
                 }
+
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundColor(Color(nsColor: hovering ? T.textActive : T.dim))
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.white.opacity(hovering ? 0.04 : 0)))
+                    .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 12)
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
             .frame(height: FloatingPaneGeometry.shelfCardHeight)
             .background(
-                Capsule(style: .continuous)
-                    .fill(Color(nsColor: hovering ? T.surfaceHover : T.surfaceActive).opacity(0.96))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: T.surfaceActive).opacity(0.94))
             )
             .overlay(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(pillBorderColor, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(hovering ? 0.34 : 0.26), radius: 8, x: 0, y: 3)
+            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.16 : 0.5), radius: 12, x: 0, y: 8)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
