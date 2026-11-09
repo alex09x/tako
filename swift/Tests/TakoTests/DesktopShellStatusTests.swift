@@ -30,8 +30,15 @@ struct DesktopShellStatusTests {
         let before = Tako.LivingTokens.isLight
         defer { Tako.LivingTokens.isLight = before }
         Tako.LivingTokens.isLight = false
-        #expect(hex(Tako.LivingTokens.body) == "#14100e", "dark shell keeps the 1b values")
-        #expect(hex(Tako.LivingTokens.textActive) == "#faf7f2")
+        // The frozen reference's dark shell (tokens-dark.json).
+        #expect(hex(Tako.LivingTokens.body) == "#100d0b")
+        #expect(hex(Tako.LivingTokens.chrome) == "#120f0d")
+        #expect(hex(Tako.LivingTokens.surfaceActive) == "#231f1d")
+        #expect(hex(Tako.LivingTokens.hairline) == "#24211e")
+        #expect(hex(Tako.LivingTokens.badge) == "#312e2b")
+        #expect(hex(Tako.LivingTokens.textActive) == "#ede6df")
+        #expect(hex(Tako.LivingTokens.textInactive) == "#b1aba6")
+        #expect(hex(Tako.LivingTokens.faint) == "#686460")
         Tako.LivingTokens.isLight = true
         // The frozen reference's light shell (tokens-light.json).
         #expect(hex(Tako.LivingTokens.body) == "#efede7")
@@ -44,6 +51,24 @@ struct DesktopShellStatusTests {
         #expect(hex(Tako.LivingTokens.claw) == "#ff7a3d")
         #expect(hex(Tako.LivingTokens.error) == "#d54e53")
         #expect(hex(Tako.LivingTokens.ok) == "#7bd88f")
+    }
+
+    /// A built status layer repaints its shell parts at once on a scheme
+    /// switch, keeping the state it shows.
+    @Test func builtStatusLayersRepaintOnASchemeSwitchWithoutAStateChange() throws {
+        let before = Tako.LivingTokens.isLight
+        defer { Tako.LivingTokens.isLight = before }
+        Tako.LivingTokens.isLight = false
+        let layer = Tako.TabStatusLayer()
+        layer.apply(state: .offline, in: CGRect(x: 0, y: 0, width: 120, height: 26), hideRing: false,
+                    reduceMotion: true, paused: true)
+        let dark = try #require(layer.offlineBorderLayer.strokeColor).components ?? []
+        Tako.LivingTokens.isLight = true
+        Tako.TabStatusLayer.refreshAllShellColors()
+        let light = try #require(layer.offlineBorderLayer.strokeColor)
+        #expect(light.components ?? [] != dark)
+        #expect(hex(NSColor(cgColor: light)!) == "#b7b4af")
+        #expect(layer.currentState == .offline)
     }
 
     @Test func aTestsOwnPresentationNeverFlipsTheProcessShell() {

@@ -125,6 +125,7 @@ final class DesktopPresentation: ObservableObject {
         // Also on the first resolve: an app that starts light must repaint.
         guard isPresenting, Tako.LivingTokens.isLight == next else { return }
         Tako.LivingTokens.isLight = !next
+        Tako.TabStatusLayer.refreshAllShellColors()
         Tako.TabBarController.refreshAll()
         NotificationCenter.default.post(name: .takoShellSchemeDidChange, object: nil)
     }

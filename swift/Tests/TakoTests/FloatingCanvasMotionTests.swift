@@ -209,7 +209,9 @@ struct FloatingCanvasMotionTests {
         #expect(ghostA.bounds.size == rect2.size)
         #expect(ghostA.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
         #expect(ghostA.headerHeightUsed == FloatingPaneGeometry.headerHeight)
-        #expect(ghostA.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        // The dot is centred in the 28 pt reference header (was 32 before the canvas port).
+        let dotY = (FloatingPaneGeometry.headerHeight - 7) / 2
+        #expect(ghostA.dotFrame == CGRect(x: 14, y: dotY, width: 7, height: 7))
         #expect(ghostA.titleFontSize == 11)
 
         let ghostAAnim = try #require(transformEndpoints(from: ghostA.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))
@@ -244,7 +246,7 @@ struct FloatingCanvasMotionTests {
         #expect(ghostB.generation == genB && ghostB.surfaceId == p3.id)
         #expect(ghostB.bounds.size == rect3.size)
         #expect(ghostB.cardCornerRadius == FloatingPaneGeometry.cornerRadius)
-        #expect(ghostB.dotFrame == CGRect(x: 14, y: 12.5, width: 7, height: 7))
+        #expect(ghostB.dotFrame == CGRect(x: 14, y: dotY, width: 7, height: 7))
         #expect(ghostB.titleFontSize == 11)
 
         let ghostBAnim = try #require(transformEndpoints(from: ghostB.layer?.animation(forKey: FloatingCanvasMotion.ghostAnimationKey)))

@@ -28,9 +28,12 @@ struct FloatingTerminalCanvasView: View {
             let frames = store.presentedFrames(in: canvasSize)
 
             ZStack(alignment: .bottomTrailing) {
-                tako.config.backgroundColor
+                // The field under the terminals is the shell's (app-appearance),
+                // not the terminal theme's.
+                Color(nsColor: Tako.LivingTokens.body)
                     .opacity(tako.config.backgroundOpacity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .shellScheme()
 
                 if controller.surfaceTree.isEmpty {
                     EmptyFloatingCanvasView(
@@ -39,6 +42,7 @@ struct FloatingTerminalCanvasView: View {
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .shellScheme()
                 } else {
                     ZStack(alignment: .topLeading) {
                         Color.clear
@@ -127,6 +131,7 @@ struct FloatingTerminalCanvasView: View {
                                 controller.revealAndFocusFloatingPane(surface, in: canvasSize)
                             }
                         )
+                        .shellScheme()
                         .zIndex(1_000_000)
                     }
                 }
@@ -230,6 +235,7 @@ private struct FloatingPaneWindowView: View {
                 onMoveToNewWindow: onMoveToNewWindow,
                 onClose: onClose
             )
+            .shellScheme()
 
             Tako.InspectableSurface(surfaceView: surfaceView, isSplit: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

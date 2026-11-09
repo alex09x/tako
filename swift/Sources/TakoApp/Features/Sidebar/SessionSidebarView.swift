@@ -24,8 +24,7 @@ struct SessionSidebarView: View {
     @ObservedObject private var notificationStore = NotificationStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     @ObservedObject var animState = LivingAnimationState.shared
-    /// The shell scheme: switching it rebuilds the list so every shell
-    /// colour resolves again (they are dynamic LivingTokens).
+    /// Sidebar counter settings (`sidebar-count-*`); the scheme comes from `.shellScheme()`.
     @ObservedObject private var presentation = DesktopPresentation.shared
 
     typealias T = Tako.LivingTokens
@@ -221,7 +220,7 @@ struct SessionSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .takoSubagentHierarchyDidChange)) { _ in
             store.objectWillChange.send()
         }
-        .id(presentation.isDark)
+        .shellScheme()
     }
 
     // MARK: - Tab List (§5.4 - §5.7)

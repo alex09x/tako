@@ -196,13 +196,16 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if viewModel.notificationCenterIsShowing {
                     NotificationCenterView(
                         isPresented: $viewModel.notificationCenterIsShowing,
-                        backgroundColor: tako.config.backgroundColor)
+                        backgroundColor: Color(nsColor: Tako.LivingTokens.body))
+                    .shellScheme()
                 }
 
+                // Chrome over the terminals takes the shell's scheme and colours.
                 if viewModel.paneOverviewIsShowing && !viewModel.paneOverviewRenderSuppressed {
                     PaneOverviewView(
                         isPresented: $viewModel.paneOverviewIsShowing,
-                        backgroundColor: tako.config.backgroundColor)
+                        backgroundColor: Color(nsColor: Tako.LivingTokens.body))
+                    .shellScheme()
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)

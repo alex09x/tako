@@ -323,8 +323,9 @@ struct PillTabBarUITests {
         let pill = bar.pillRect(for: bar.tabs[0])
         let midX = Int(pill.midX)
 
-        // Active pill in Spec 1b (§4) uses surfaceActive #241C16 (R=0.141) with hairline #2A211B (R=0.165)
-        // on bar #14100E (R=0.078). No Ember bar under it: the pill alone says which tab is open.
+        // Active pill uses surfaceActive #231F1D (R=0.137) with hairline #24211E (R=0.141) on bar
+        // #100D0B (R=0.063): the frozen reference's dark shell. No Ember bar under it: the pill alone
+        // says which tab is open.
         var pillYRows: [Int] = []
         var hasEmberBottomBar = false
         for y in 0..<rep.pixelsHigh {

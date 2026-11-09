@@ -26,8 +26,11 @@ extension Tako {
         /// terminal theme and NSApplication.appearance are never involved.
         nonisolated(unsafe) static var isLight = false
 
-        /// A shell role: the dark value is the 1b token, the light one the
-        /// frozen reference's light shell (docs/design/desktop-reference).
+        /// A shell role, both values from the frozen reference's shell
+        /// (docs/design/desktop-reference tokens-dark / tokens-light):
+        /// body --bg, chrome --field, surfaceActive --card, surfaceHover
+        /// --hover, hairline/progressTrack --line, badge --line2, ghostBorder
+        /// --deep, text/textActive --text, textInactive --sub, faint --mute.
         private static func shell(_ dark: UInt32, _ light: UInt32) -> NSColor {
             let d = rgb(dark), l = rgb(light)
             return NSColor(name: nil) { _ in isLight ? l : d }
@@ -38,22 +41,22 @@ extension Tako {
                     blue: CGFloat(v & 255) / 255, alpha: 1)
         }
 
-        static let body = shell(0x14100E, 0xEFEDE7)
-        static let chrome = shell(0x1A1512, 0xF6F4EE)
-        static let surfaceActive = shell(0x241C16, 0xEAE7E2)
-        static let surfaceHover = shell(0x1F1915, 0xE5E3DD)
-        static let hairline = shell(0x2A211B, 0xD9D7D1)
-        static let badge = shell(0x352B23, 0xCDCBC5)
-        static let ghostBorder = shell(0x3A2F27, 0xB7B4AF)
+        static let body = shell(0x100D0B, 0xEFEDE7)
+        static let chrome = shell(0x120F0D, 0xF6F4EE)
+        static let surfaceActive = shell(0x231F1D, 0xEAE7E2)
+        static let surfaceHover = shell(0x1A1715, 0xE5E3DD)
+        static let hairline = shell(0x24211E, 0xD9D7D1)
+        static let badge = shell(0x312E2B, 0xCDCBC5)
+        static let ghostBorder = shell(0x4E4A46, 0xB7B4AF)
         /// Status colours are the same in every scheme.
         static let ringIdle = NSColor(srgbRed: 0x5A / 255, green: 0x4D / 255, blue: 0x43 / 255, alpha: 1)
-        static let progressTrack = shell(0x3A2E26, 0xD9D7D1)
-        static let textActive = shell(0xFAF7F2, 0x262320)
+        static let progressTrack = shell(0x24211E, 0xD9D7D1)
+        static let textActive = shell(0xEDE6DF, 0x262320)
         static let text = shell(0xEDE6DF, 0x262320)
-        static let textInactive = shell(0xB7ACA1, 0x5C5A56)
+        static let textInactive = shell(0xB1ABA6, 0x5C5A56)
         /// Also the idle status colour (tab-status-color-idle default): constant.
         static let dim = NSColor(srgbRed: 0x8A / 255, green: 0x7F / 255, blue: 0x76 / 255, alpha: 1)
-        static let faint = shell(0x6B6259, 0x9F9C97)
+        static let faint = shell(0x686460, 0x9F9C97)
         static let ember = NSColor(srgbRed: 0xF4 / 255, green: 0x58 / 255, blue: 0x1C / 255, alpha: 1)
         static let claw = NSColor(srgbRed: 0xFF / 255, green: 0x7A / 255, blue: 0x3D / 255, alpha: 1)
         static let rust = NSColor(srgbRed: 0xC2 / 255, green: 0x3E / 255, blue: 0x0E / 255, alpha: 1)
