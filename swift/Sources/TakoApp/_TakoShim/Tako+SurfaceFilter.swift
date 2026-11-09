@@ -290,6 +290,11 @@ extension Tako.SurfaceView {
                 if status == .error || status == .needsApproval || status == .waitingForInput {
                     AttentionManager.shared.recordAttentionEvent(for: self.id)
                 }
+                // The crab's state (exit code) settles with the status; read it on the next turn.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.crab.paneStatus == status else { return }
+                    PaneToastCenter.shared.statusChanged(self, to: status)
+                }
             }.store(in: &attentionCancellables)
 
             crab.$unread.dropFirst().sink { [weak self] isUnread in

@@ -79,6 +79,8 @@ final class AttentionManager: ObservableObject {
         eventGenerations[surfaceId] = currentGen
         lastSeenGenerations[surfaceId] = currentGen
         objectWillChange.send()
+        // Seen panes keep no toast (reference: a toast is for what is out of sight).
+        PaneToastCenter.shared.seen(surfaceId)
     }
 
     /// Marks a surface as seen.

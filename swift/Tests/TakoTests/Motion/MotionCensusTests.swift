@@ -365,6 +365,9 @@ struct MotionCensusTests {
              coveredBy: ["navigationAndRefreshHaveNoInstallOrPermissionSideEffects"]),
         Site(file: "DesktopKeysSection.swift", code: "if let id { withAnimation(nil) { proxy.scrollTo(id, anchor: .center) } }",
              what: "the shortcut list jumps to a found key at once, without easing", coveredBy: [notMotion]),
+        Site(file: "PaneToastCenter.swift", code: "DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated(work) }",
+             what: "a toast goes 4 s after it came; one call per toast, nothing runs between",
+             coveredBy: ["aToastGoesAfterItsLifetimeAndANewStateReplacesItsPanesToast"]),
     ]
 
     /// What the census counts as an animation.
