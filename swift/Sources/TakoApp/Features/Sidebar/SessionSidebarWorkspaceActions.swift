@@ -13,7 +13,7 @@ import SwiftUI
 
 /// What a workspace header offers, from its right-click menu, its hover «⋯»
 /// and «+», and its colour dot: «New Session Here», «Rename»,
-/// «Color ▸», «Minimize»/«Expand», «Appearance ▸» and «Delete Workspace»,
+/// «Color ▸», «Collapse»/«Expand», «Appearance ▸» and «Delete Workspace»,
 /// which waits until the workspace is empty and is never the last one.
 /// Everything goes through `WorkspaceStore`, as the tab bar's picker does.
 @MainActor
@@ -47,10 +47,10 @@ struct SidebarWorkspaceActions {
     }
 
     var deleteTitle: String {
-        sessionCount > 0 ? "Delete (move \(sessionCount) sessions first)" : "Delete Workspace"
+        sessionCount > 0 ? "Delete (move \(sessionCount) \(sessionCount == 1 ? "session" : "sessions") first)" : "Delete Workspace"
     }
 
-    var collapseTitle: String { isCollapsed ? "Expand" : "Minimize" }
+    var collapseTitle: String { isCollapsed ? "Expand" : "Collapse" }
 
     func setColor(_ key: String) {
         guard var workspace = workspaces.workspace(for: workspaceID) else { return }

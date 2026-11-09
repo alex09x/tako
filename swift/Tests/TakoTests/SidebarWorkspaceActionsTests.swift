@@ -92,7 +92,7 @@ struct SidebarWorkspaceActionsTests {
 
         let menu = a.menu()
         #expect(menu.items.filter { !$0.isSeparatorItem }.map(\.title).prefix(4)
-                == ["New Session Here", "Rename", "Color", "Minimize"])
+                == ["New Session Here", "Rename", "Color", "Collapse"])
         run(menu.items.first { $0.identifier?.rawValue == "SidebarWorkspaceNewSession" })
         run(menu.items.first { $0.identifier?.rawValue == "SidebarWorkspaceCollapse" })
         #expect(created == 1 && toggled == 1)

@@ -139,7 +139,7 @@ struct DesktopSettingsTests {
         #expect(draft.paletteColor(1) == "#ff0000")
         #expect(draft.isDirty)
         // Cancel = drop the value: nothing on disk.
-        #expect(!FileManager.default.fileExists(atPath: sandbox.userThemes.appendingPathComponent("Base копия").path))
+        #expect(!FileManager.default.fileExists(atPath: sandbox.userThemes.appendingPathComponent(draft.name).path))
 
         let saved = try #require(library.save(draft), "\(library.lastError ?? "")")
         #expect(saved.isUser)

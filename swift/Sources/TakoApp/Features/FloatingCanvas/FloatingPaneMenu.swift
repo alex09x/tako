@@ -33,7 +33,7 @@ struct FloatingPaneMenu {
     /// Free floating: not in a grid cell, so nothing to split beside.
     private var isFree: Bool { !isTiled }
 
-    var maximizeTitle: String { mode == .maximized ? "Restore" : "Expand" }
+    var maximizeTitle: String { mode == .maximized ? "Restore" : "Maximize" }
     var floatTitle: String { isFree ? "Return to Grid" : "Float Terminal" }
 
     func items() -> [NSMenuItem] {

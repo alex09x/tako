@@ -106,6 +106,25 @@ struct FreeFloatingModeTests {
         #expect(!store.isTiled(id) && store.dropTarget == nil && store.headerDragSession == nil)
     }
 
+    @Test func replacingEnteredTrackingAreaClearsHoverWithoutAnExitEvent() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 100, height: 100),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let button = FloatingActionButtonNSView(frame: CGRect(x: 10, y: 10, width: 22, height: 22))
+        window.contentView?.addSubview(button)
+        var changes: [Bool] = []
+        button.onHoverChange = { changes.append($0) }
+        let entered = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        button.mouseEntered(with: entered)
+        #expect(changes == [true])
+        button.updateTrackingAreas()
+        try await Task.sleep(for: .milliseconds(40))
+        #expect(changes == [true, false], "A hidden/repositioned button cannot retain an entered tracking area's hover")
+    }
+
     @Test func renderedFreeWindowsWinOverlapHitTestingAfterGridFocusAndExposeSelectedToggle() async throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }

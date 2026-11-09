@@ -28,20 +28,20 @@ final class TakoFreeFloatingModeUITests: TakoDesktopDesignCase {
         row.click()
     }
 
-    private func orangeBorderPixels(_ image: XCUIScreenshot) throws -> Int {
+    private func orangePixels(_ image: XCUIScreenshot, borderOnly: Bool = false) throws -> Int {
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: image.pngRepresentation))
         let w = bitmap.pixelsWide, h = bitmap.pixelsHigh, edge = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 12)
         var found = 0
         for y in 0..<h { for x in 0..<w {
             let side = ((x < edge || x >= w - edge) && y >= h / 3 && y < 2 * h / 3)
                 || ((y < edge || y >= h - edge) && x >= w / 3 && x < 2 * w / 3)
-            guard side, let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+            guard !borderOnly || side, let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
             if color.redComponent - color.greenComponent > 0.06 && color.redComponent - color.blueComponent > 0.10 { found += 1 }
         } }
         return found
     }
 
-    func testSelectedFreeModeRemainsVisibleWithoutHoverAndRejectsEdgeAndPeerDocking() throws {
+    func testQuietFreeModeFollowsHeaderHoverAndRejectsEdgeAndPeerDocking() throws {
         let app = try launchDesktop()
         let (a, b) = try makeTwo(app)
         let process = try shellPID(b, phase: "FREE_DRAG_BEFORE", in: app)
@@ -53,8 +53,13 @@ final class TakoFreeFloatingModeUITests: TakoDesktopDesignCase {
         let original = pane(b, in: app).frame
         focusGrid(a, in: app)
         XCTAssertTrue(toggle.isSelected)
-        XCTAssertGreaterThan(try orangeBorderPixels(toggle.screenshot()), 6,
-                             "Free mode must retain its accent border when another terminal is focused")
+        XCTAssertEqual(try orangePixels(toggle.screenshot()), 0,
+                       "The free toggle hides with the other controls when the header is not hovered")
+        toggle.hover()
+        XCTAssertGreaterThan(try orangePixels(toggle.screenshot()), 6, "Only the selected glyph gets a quiet orange tint")
+        XCTAssertEqual(try orangePixels(toggle.screenshot(), borderOnly: true), 0, "No selected border or filled badge")
+        focusGrid(a, in: app)
+        XCTAssertEqual(try orangePixels(toggle.screenshot()), 0)
         for target in [CGVector(dx: 0.01, dy: 0.45), CGVector(dx: 0.6, dy: 0.1), CGVector(dx: 0.55, dy: 0.01)] {
             let from = header(b, in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
             from.press(forDuration: 0.15, thenDragTo: canvas(in: app).coordinate(withNormalizedOffset: target))
@@ -66,7 +71,7 @@ final class TakoFreeFloatingModeUITests: TakoDesktopDesignCase {
         }
         XCTAssertEqual(try shellPID(b, phase: "FREE_DRAG_AFTER", in: app), process)
         let shot = XCTAttachment(screenshot: activeWindow(in: app).screenshot())
-        shot.name = "Selected free mode without docking or a hover-dependent indicator"
+        shot.name = "Quiet free mode with shared header hover and no docking"
         shot.lifetime = .keepAlways
         add(shot)
     }

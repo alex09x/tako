@@ -25,12 +25,8 @@ import CoreText
 extension Tako {
     @MainActor
     final class TabBarView: NSView {
-        /// Every number here is read from the spec doc's own CSS (Terminal
-        /// UI.dc.html, "Tab Bar — Pixel Specification"), not eyeballed off the
-        /// rendered mockup -- e.g. the first-tab position is an explicit
-        /// `margin-left:90px`, distinct from the traffic-light zone's own
-        /// 78px width (a first pass conflated the two); tab padding is
-        /// `0 8px 0 10px` (10 left, 8 right), not a symmetric 8.
+        /// CSS metrics: the first tab starts at 90 px, beyond the 78 px traffic-light zone.
+        /// Tab padding is 10 px on the left and 8 px on the right.
         enum Metrics {
             static let barHeight: CGFloat = 38
             static let tabHeight: CGFloat = 28
@@ -53,8 +49,7 @@ extension Tako {
             static let closeHitSize: CGFloat = 24
             /// Narrowest a pill tab can be and still show and hit-test its close button.
             static let pillCloseMinWidth: CGFloat = 54
-            /// "Right controls: 28×28, gap 4, inset 8" -- three buttons (ⓘ
-            /// about, ◫ split, + new tab).
+            /// Right controls: 28×28, gap 4, inset 8; info, split and new tab.
             static let buttonCount: CGFloat = 3
             static let buttonSize: CGFloat = 28
             static let buttonRadius: CGFloat = 7
@@ -265,9 +260,8 @@ extension Tako {
             return Metrics.buttonSize * count + Metrics.buttonGap * (count - 1) + Metrics.buttonMarginRight
         }
 
-        /// "Width follows content, clamped to 110–220 px. Never justify across
-        /// the entire bar" -- each tab is sized to its own content, not an
-        /// equal share of whatever space is left.
+        /// Content-sized tabs clamped to 110–220 px, without distributing spare width.
+        /// Each tab keeps its own natural width.
         private func naturalWidth(for window: NSWindow) -> CGFloat {
             if effectiveTabStyle == .pill {
                 let isSelected = (group?.selectedWindow ?? self.window) === window

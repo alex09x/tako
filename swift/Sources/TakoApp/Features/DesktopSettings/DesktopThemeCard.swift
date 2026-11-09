@@ -32,9 +32,7 @@ struct DesktopThemeFacts: Equatable {
     }
 
     static func places(_ n: Int) -> String {
-        let tens = n % 100, ones = n % 10
-        if (11...14).contains(tens) { return "places" }
-        return ones == 1 ? "place" : (2...4).contains(ones) ? "places" : "places"
+        n == 1 ? "place" : "places"
     }
 }
 

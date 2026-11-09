@@ -24,7 +24,8 @@ extension TerminalTheme {
             guard let text = try? String(contentsOfFile: (directory as NSString).appendingPathComponent(name), encoding: .utf8) else { continue }
             return fullPresetVersionIsSupported(text)
         }
-        return false
+        let canonical = canonicalThemeName(name)
+        return canonical != name && presetContainsTypography(named: canonical, searchPaths: searchPaths)
     }
 
     /// Every theme name available on this machine, sorted.
@@ -100,7 +101,8 @@ extension TerminalTheme {
             merged.tabStatusColors = tabStatusColors
             return merged
         }
-        return self
+        let canonical = Self.canonicalThemeName(name)
+        return canonical == name ? self : applyingTheme(named: canonical, searchPaths: searchPaths)
     }
 
     /// Parse a config file's appearance keys: `key = value` lines, `#`

@@ -34,7 +34,7 @@ struct DesktopSettingCopy {
         var c: [String: DesktopSettingCopy] = [
             "confirm-close-surface": .init(title: "Confirm before closing",
                 detail: "Ask before closing a terminal or tab with a running process.",
-                options: [("true", "When Running"), ("always", "Always"), ("false", "Never")], section: .general),
+            options: [("true", "When Running"), ("always", "Always"), ("false", "Never")], section: .general),
             "window-inherit-working-directory": .init(title: "Open terminals in the current directory",
                 detail: "New tabs and split panes start in the current terminal’s directory.",
                 when: "For new terminals", section: .general),

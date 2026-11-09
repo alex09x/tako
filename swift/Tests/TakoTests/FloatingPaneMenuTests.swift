@@ -33,7 +33,7 @@ struct FloatingPaneMenuTests {
         }
         let tiled = menu(.normal, tiled: true).items()
         #expect(tiled.filter { !$0.isSeparatorItem }.map(\.title)
-                == ["Rename…", "Split Right", "Split Down", "Expand", "Float Terminal", "Minimize", "Close Terminal"])
+                == ["Rename…", "Split Right", "Split Down", "Maximize", "Float Terminal", "Minimize", "Close Terminal"])
         #expect(tiled.first { $0.identifier?.rawValue == "FloatingPaneMenuSplitRight" }?.isEnabled == true)
         for id in ["FloatingPaneMenuSplitRight", "FloatingPaneMenuSplitDown", "FloatingPaneMenuMaximize",
                    "FloatingPaneMenuFloat", "FloatingPaneMenuMinimize", "FloatingPaneMenuClose"] { run(tiled, id) }

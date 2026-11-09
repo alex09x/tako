@@ -43,7 +43,7 @@ final class TakoDesktopThemeManagementUITests: TakoDesktopDesignCase {
         let app = try launchDesktop()
         newTheme("Disposable User Theme", app: app)
         showMenu("Disposable User Theme", app: app)
-        let protected = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Удалить'")).firstMatch
+        let protected = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH 'Delete'")).firstMatch
         XCTAssertTrue(protected.exists)
         XCTAssertFalse(protected.isEnabled)
         app.typeKey(.escape, modifierFlags: [])

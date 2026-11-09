@@ -22,7 +22,7 @@ enum SetupStage: Int, CaseIterable, Identifiable {
         case .appearance: "Theme"
         case .agents: "Agents"
         case .access: "Permissions"
-        case .ready: "Done"
+        case .ready: "Ready"
         }
     }
 

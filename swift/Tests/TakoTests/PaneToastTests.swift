@@ -101,9 +101,11 @@ struct PaneToastTests {
     /// Async: the status sink posts to the main queue, which runs only once
     /// this test (itself a main-queue job) suspends; a nested run loop would not.
     @Test func aRestoredStatusMakesNoToastAndALiveOneDoes() async throws {
-        let (controller, window) = TerminalTestSupport.loaded()
-        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
-        let surface = try #require(controller.focusedSurface)
+        // No window is needed for this observation contract. A loading window
+        // can asynchronously attach/focus the pane and acknowledge the outcome.
+        let app = Tako.App()
+        let surface = Tako.SurfaceView(app)
+        defer { surface.close() }
         surface.crab.isFocused = false
         PaneToastCenter.shared.resetForTesting()
         defer { PaneToastCenter.shared.resetForTesting() }
@@ -114,7 +116,10 @@ struct PaneToastTests {
         }
 
         surface.applyProgramStatusEvent(.restored(error(1, "restored failure")))
-        try await Task.sleep(nanoseconds: 100_000_000)
+        let deadline = Date().addingTimeInterval(1)
+        while surface.crab.paneStatus != .error && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(surface.crab.paneStatus == .error, "the restored status was not applied")
         #expect(PaneToastCenter.shared.toasts.isEmpty, "a restored status was announced: \(PaneToastCenter.shared.toasts)")
 
@@ -124,7 +129,10 @@ struct PaneToastTests {
         let live = error(3, "migration failed")
         surface.applyProgramStatusEvent(.updated(TerminalProgramStatusUpdate(revision: 3, mutations: [], effective: live.effective),
                                                  snapshot: live))
-        try await Task.sleep(nanoseconds: 100_000_000)
+        let toastDeadline = Date().addingTimeInterval(1)
+        while PaneToastCenter.shared.toasts.isEmpty && Date() < toastDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         let toast = try #require(PaneToastCenter.shared.toasts.first,
                                  "a live error made no toast: cleared \(cleared), now \(surface.crab.paneStatus)")
         #expect(toast.message == "migration failed")

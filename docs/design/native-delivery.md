@@ -18,11 +18,39 @@ it requires a real persistent identity and migration, not copying parent values.
 Terminal SDK padding stays zero. Any spacing taken from the desktop reference
 belongs to the application layout and must be accounted for in terminal sizing.
 
+## Interface language
+
+Product-owned desktop copy is English throughout: settings, setup, permissions,
+menus, tooltips, accessibility descriptions and errors. Terminal output and
+user-provided workspace, session, pane and custom-theme names retain their Unicode
+content. Frozen design archives remain historical evidence, not the product's
+language specification.
+
+The two contrast presets are named `High Contrast` and `High Contrast Light`.
+Their previous names still resolve when reading saved configurations; no user
+configuration rewrite is required. Their palette and typography remain unchanged.
+The desktop-copy tests cover English wording, English plural forms and legacy
+theme selection. The English UI journey visits every settings section and verifies
+that Unicode terminal output and process identity survive the interaction.
+
+The owner authorized rewriting only the unpublished desktop-design chain after
+`9785be25`. Its previous tip is retained in the local recovery reference
+`backup/native-desktop-before-english-20261109`. Earlier history and the unrelated
+dirty canonical checkout are preserved.
+
+English acceptance is cumulative: eight existing menu/setup/theme/workspace
+journeys passed in `english-desktop.xcresult`; the new all-sections/Unicode journey
+passed in `english-interface-final.xcresult` after correcting its use of AppKit's
+`title` attribute for native menu captions. Earlier failed bundles are retained.
+Focused native checks passed across the affected suites and their failed-scope
+reruns. The toast observation test uses an unattached surface to avoid unrelated
+window attachment/focus events acknowledging its manually injected status.
+
 ## Free-window behavior
 
-The overlapping-windows control is always visible. It is subdued in the grid and
-stays selected with a Claw fill and border in free mode, including without focus
-or hover. Returning to the grid clears its selected state.
+The overlapping-windows control appears and hides with the other header controls.
+In free mode its outline glyph has a quiet orange tint, without a selected fill
+or border. Returning to the grid clears its selected state.
 
 An explicitly free pane never proposes edge or peer docking. Grid-origin header
 drags retain docking previews; releasing outside a target enters free mode.
@@ -94,9 +122,16 @@ the successful reruns:
 | `sidebar-list-final.xcresult` | Three successful scenarios: search, session switch-back with process/focus continuity, and active-row visibility with sixteen sessions |
 | `shelf-overlay-final.xcresult` | Overlay pill placement, full terminal height, normal grid reflow, bottom click/focus, maximize and process identity |
 | `free-mode.xcresult` | Five passing scenarios: persistent selected-mode pixels, ordinary free drag without docking, grid docking, free/grid layering and free-sibling focus, minimize/restore with the same process |
+| `free-mode-quiet-final.xcresult` | Owner's visual refinement: shared hover visibility, quiet outline-glyph tint without a selected border/fill, ordinary undocked drag and the same process |
 
-The final five executed with zero failures and an explicit successful Xcode test
+The original final five executed with zero failures and an explicit successful Xcode test
 result. Retained videos and attachment manifests support the AX assertions.
+The later quiet-control check passed after two failed reproductions exposed stale
+hover state following tracking-area replacement. Native button hover is now
+reconciled with the physical pointer after layout, coalesced outside SwiftUI layout
+and emitted only on a state change. A focused native test also verifies clearing
+an entered tracking area without a matching exit event. The quiet-control result
+supersedes the always-visible selected fill/border from the earlier free-mode run.
 Theme assets contain twenty-four approved additional full presets, preserving
 the ten existing presets. Focused native tests verify real loading, fractional
 typography, complete ANSI palettes and visible dim ANSI text. The status-frame

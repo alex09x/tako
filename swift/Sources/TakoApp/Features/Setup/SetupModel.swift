@@ -46,7 +46,7 @@ final class SetupModel: ObservableObject {
         self.configFile = config
         self.progress = store.load()
         self.selectedTheme = TerminalSettingRegistry.setting(for: "theme")
-            .flatMap { config.getSettingValue(for: $0) } ?? "TakoCore"
+            .flatMap { config.getSettingValue(for: $0) }.map(TerminalTheme.canonicalThemeName) ?? "TakoCore"
         self.previewTheme = Self.readTheme(config)
     }
 

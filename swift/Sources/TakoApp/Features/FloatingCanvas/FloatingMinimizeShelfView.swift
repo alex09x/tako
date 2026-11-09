@@ -184,6 +184,8 @@ final class FloatingActionButtonNSView: NSView {
     var onHoverChange: ((Bool) -> Void)?
 
     private var trackingAreaRef: NSTrackingArea?
+    private var isHovering = false
+    private var hoverRefreshQueued = false
     private var mouseDownPoint: NSPoint?
     private var isTrackingPress = false
 
@@ -214,14 +216,42 @@ final class FloatingActionButtonNSView: NSView {
         )
         addTrackingArea(area)
         trackingAreaRef = area
+        refreshHoverAfterLayout()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshHoverAfterLayout()
+    }
+
+    /// Replacing an entered tracking area does not guarantee a matching exit event.
+    /// Reconcile after SwiftUI finishes moving the button, without publishing during layout.
+    private func refreshHoverAfterLayout() {
+        guard !hoverRefreshQueued else { return }
+        hoverRefreshQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.hoverRefreshQueued = false
+            let inside: Bool
+            if let window = self.window, window.isVisible, !self.isHiddenOrHasHiddenAncestor {
+                inside = self.bounds.contains(self.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+            } else { inside = false }
+            self.setHovering(inside)
+        }
+    }
+
+    private func setHovering(_ inside: Bool) {
+        guard inside != isHovering else { return }
+        isHovering = inside
+        onHoverChange?(inside)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onHoverChange?(true)
+        setHovering(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        onHoverChange?(false)
+        setHovering(false)
     }
 
     override func mouseDown(with event: NSEvent) {

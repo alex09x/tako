@@ -66,8 +66,10 @@ final class DesktopScopeEditor: ObservableObject {
 
     /// What the terminal actually uses at this level, theme resolved.
     func effectiveValue(_ key: String) -> String? {
-        if let context { return context.effectiveValue(for: key) ?? context.value(for: key) }
-        return preferences.effectiveValue(key)
+        let value: String?
+        if let context { value = context.effectiveValue(for: key) ?? context.value(for: key) }
+        else { value = preferences.effectiveValue(key) }
+        return key == "theme" ? value.map(TerminalTheme.canonicalThemeName) : value
     }
 
     var effectiveTheme: TerminalTheme? { context?.effectiveTheme }

@@ -17,7 +17,7 @@ struct NativeSetupDesignTests {
     final class Calls: @unchecked Sendable { var install = 0, connect = 0, enable = 0, settings = 0, checks = 0 }
 
     @Test func everySavedStepMapsToOneOfFiveVisibleStages() {
-        #expect(SetupStage.allCases.map(\.title) == ["Welcome", "Theme", "Agents", "Permissions", "Done"])
+        #expect(SetupStage.allCases.map(\.title) == ["Welcome", "Theme", "Agents", "Permissions", "Ready"])
         #expect(SetupStage.allCases.filter(\.isHero) == [.welcome, .ready])
         #expect(SetupStage(.commandLine) == .agents)
         #expect(SetupStage(.notifications) == .access)

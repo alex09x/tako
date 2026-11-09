@@ -40,8 +40,8 @@ struct DesktopAppearanceMenu {
         let metadata = catalog.snapshot(configPath: app?.activeConfigPath)
         let paths = metadata.paths
         let names = metadata.names
-        let own = context.value(for: "theme")
-        let inherited = Self.inheritedName(context: context, globalTheme: metadata.globalTheme)
+        let own = context.value(for: "theme").map(TerminalTheme.canonicalThemeName)
+        let inherited = TerminalTheme.canonicalThemeName(Self.inheritedName(context: context, globalTheme: metadata.globalTheme))
         var menu = DesktopAppearanceMenu(level: level, context: context, presets: Self.choices(names, selected: own),
                                          themePaths: paths, selected: own, inherited: inherited)
         // «Customize…» edits what the level shows: its own theme, else the inherited one.

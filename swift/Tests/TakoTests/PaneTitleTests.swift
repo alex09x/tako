@@ -71,7 +71,7 @@ struct PaneTitleTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
         let failure = store.setTitle("новое", for: pane)
         guard case .writeFailed = failure else { Issue.record("a write into a read-only folder succeeded: \(String(describing: failure))"); return }
-        #expect(failure?.localizedDescription.hasPrefix("Could Not Save Name") == true)
+        #expect(failure?.localizedDescription.hasPrefix("Could not save the name:") == true)
         #expect(store.title(for: pane) == "старое", "memory shows a name that was not saved")
         #expect(try Data(contentsOf: url) == before, "the file changed")
         #expect(PaneTitleStore(fileURL: url).title(for: pane) == "старое")
