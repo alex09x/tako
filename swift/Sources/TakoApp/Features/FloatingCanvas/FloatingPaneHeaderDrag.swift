@@ -28,6 +28,8 @@ final class FloatingPaneHeaderDragNSView: NSView {
     var onMoveToNewWindow: (() -> Void)?
     /// The pane's «Appearance ▸», built when the menu opens.
     var appearanceMenuItem: (() -> NSMenuItem?)?
+    /// The pane's own actions, first in the menu, built when it opens.
+    var paneMenuItems: (() -> [NSMenuItem])?
 
     private var trackingAreaRef: NSTrackingArea?
     private var dragStartWindowPoint: NSPoint?
@@ -137,6 +139,11 @@ final class FloatingPaneHeaderDragNSView: NSView {
         onActivate?()
         let menu = NSMenu()
         menu.autoenablesItems = false
+        // Reference header.js winMenu: split, maximize, float, minimize, close.
+        if let items = paneMenuItems?(), !items.isEmpty {
+            items.forEach(menu.addItem)
+            menu.addItem(.separator())
+        }
         let moveItem = NSMenuItem(
             title: "Move Pane to New Window",
             action: #selector(movePaneToNewWindowAction(_:)),
@@ -175,6 +182,7 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
     let onDoubleClick: () -> Void
     let onMoveToNewWindow: () -> Void
     var appearanceMenuItem: (() -> NSMenuItem?)? = nil
+    var paneMenuItems: (() -> [NSMenuItem])? = nil
 
     func makeNSView(context: Context) -> FloatingPaneHeaderDragNSView {
         let view = FloatingPaneHeaderDragNSView(frame: .zero)
@@ -203,5 +211,6 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
         view.onDoubleClick = onDoubleClick
         view.onMoveToNewWindow = onMoveToNewWindow
         view.appearanceMenuItem = appearanceMenuItem
+        view.paneMenuItems = paneMenuItems
     }
 }

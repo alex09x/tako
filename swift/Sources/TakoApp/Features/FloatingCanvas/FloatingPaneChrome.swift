@@ -58,6 +58,17 @@ struct FloatingPaneHeaderView: View {
         return "Terminal"
     }
 
+    /// The header's right-click actions; a split goes to this pane's own controller.
+    var paneMenu: FloatingPaneMenu {
+        FloatingPaneMenu(
+            mode: pane.mode, isTiled: isTiled,
+            split: { [weak surface = surfaceView] direction in
+                guard let surface, let controller = surface.window?.windowController as? BaseTerminalController else { return }
+                _ = controller.newSplit(at: surface, direction: direction)
+            },
+            toggleMaximize: onToggleMaximize, toggleFloating: onToggleFloating, minimize: onMinimize, close: onClose)
+    }
+
     /// The pane's own status, as its sidebar row's ring shows it.
     private var headerState: Tako.SurfaceState {
         crab.paneStatus.surfaceState(crabState: crab.state, live: crab.live)
@@ -97,7 +108,8 @@ struct FloatingPaneHeaderView: View {
                     onDragCommit: onDragCommit,
                     onDoubleClick: onToggleMaximize,
                     onMoveToNewWindow: onMoveToNewWindow,
-                    appearanceMenuItem: { [weak surface = surfaceView] in surface?.appearanceMenuItem() }
+                    appearanceMenuItem: { [weak surface = surfaceView] in surface?.appearanceMenuItem() },
+                    paneMenuItems: { paneMenu.items() }
                 )
 
                 // Reference `.fw-hd` (header.css): 0 10 padding, 7 gap, the
