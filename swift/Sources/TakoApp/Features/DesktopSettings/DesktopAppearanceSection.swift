@@ -23,6 +23,8 @@ struct DesktopAppearanceSection: View {
     let palette: DesktopPalette
     @State private var themeQuery = ""
     @State private var fontQuery = ""
+    @State private var showsFonts = false
+    @State private var showsColors = false
     @State private var facts: [DesktopThemeFacts] = []
     @State private var renaming: String?
     @State private var newName = ""
@@ -57,14 +59,45 @@ struct DesktopAppearanceSection: View {
                 }
             }
             fontBlock(rendered)
+            VStack(alignment: .leading, spacing: 8) {
+                Button(showsColors ? "▾ Color Overrides" : "▸ Color Overrides") { showsColors.toggle() }
+                    .font(.system(size: DesktopMetrics.bodyFontSize, weight: .semibold))
+                    .foregroundStyle(Color(palette.secondary))
+                    .buttonStyle(.plain).accessibilityIdentifier("DesktopScopeColorsDisclosure")
+                    .id("DesktopScopeColorsDisclosure")
+                if showsColors {
+                    ForEach(["background", "foreground", "cursor-color", "selection-background"], id: \.self) { key in
+                        DesktopPrefRow(title: Self.colorTitle(key), detail: scope.sourceLabel(key), palette: palette) {
+                            HStack(spacing: 8) {
+                                DesktopColorField(value: scope.effectiveValue(key) ?? "", identifier: "DesktopScopeColor-\(key)",
+                                                  palette: palette) { scope.set(key, $0) }
+                                inheritButton(key)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 16)
         }
-        .onAppear(perform: refreshFacts)
+        .onAppear { refreshFacts(); revealSearchSelection() }
+        .onChange(of: model.revealGeneration) { revealSearchSelection() }
         .onChange(of: themes.entries) { refreshFacts() }
         .onChange(of: scope.revision) { refreshFacts() }
     }
 
     static func fontLine(_ theme: TerminalTheme) -> String {
         "\(theme.fontFamily ?? TerminalAppearanceCatalog.defaultFont) \(DesktopStepper.render(Double(theme.fontSize)))"
+    }
+
+    private static func colorTitle(_ key: String) -> String {
+        switch key { case "background": "Background"; case "foreground": "Text"
+        case "cursor-color": "Cursor"; default: "Selection" }
+    }
+
+    private func revealSearchSelection() {
+        guard let key = model.highlight else { return }
+        if model.fonts.contains(key) { showsFonts = true; fontQuery = key }
+        if ["background", "foreground", "cursor-color", "selection-background"].contains(key) { showsColors = true }
     }
 
     private var visibleFacts: [DesktopThemeFacts] {
@@ -119,18 +152,28 @@ struct DesktopAppearanceSection: View {
         let resolution = model.fontResolution()
         return DesktopBlock(title: "Font & Size", note: scope.sourceLabel("font-family"), palette: palette) {
             DesktopPrefRow(title: "Font", detail: fontDetail(resolution), key: "font-family", palette: palette) {
-                inheritButton("font-family")
-            }
-            TextField("Search fonts", text: $fontQuery).desktopField(palette)
-                .accessibilityIdentifier("DesktopFontFilter")
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredFonts, id: \.self) { fontRow($0, selected: $0 == resolution.rendered) }
+                HStack(spacing: 8) {
+                    Button { showsFonts.toggle() } label: {
+                        HStack { Text(resolution.rendered); Image(systemName: "chevron.down") }
+                    }
+                    .buttonStyle(DesktopButtonStyle(palette: palette))
+                    .accessibilityIdentifier("DesktopFontPicker")
+                    .id("DesktopFontPicker")
+                    inheritButton("font-family")
                 }
             }
-            .frame(height: 200)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color(palette.field)))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color(palette.separator)))
+            if showsFonts {
+                TextField("Search fonts", text: $fontQuery).desktopField(palette)
+                    .accessibilityIdentifier("DesktopFontFilter")
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filteredFonts, id: \.self) { fontRow($0, selected: $0 == resolution.rendered) }
+                    }
+                }
+                .frame(height: 200)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color(palette.field)))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color(palette.separator)))
+            }
             DesktopPrefRow(title: "Size", detail: "Base terminal size, including fractional values from 6–72 pt. ⌘+ / ⌘− temporarily zoom the current terminal without changing this setting.",
                            key: "font-size · immediately", palette: palette) {
                 HStack(spacing: 8) {

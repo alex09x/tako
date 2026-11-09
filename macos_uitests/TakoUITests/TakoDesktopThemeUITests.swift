@@ -12,12 +12,30 @@ import XCTest
 final class TakoDesktopThemeUITests: TakoDesktopDesignCase {
     private typealias Visuals = TakoScopedAppearanceHelpers
 
+    func testExpandedCatalogSearchAndPresetSelectionUseRealBundledThemes() throws {
+        let app = try launchDesktop()
+        let id = try XCTUnwrap(paneIDs(in: app).first)
+        _ = openSettings(in: app)
+        selectSection("appearance", in: app)
+        let filter = settings(in: app).textFields["DesktopThemeFilter"].firstMatch
+        for name in ["Tokyo Night", "Nord"] {
+            setText(name, field: filter, in: app)
+            clickSetting("DesktopTheme-\(name)", in: app)
+            XCTAssertTrue(try configText().contains("theme = \(name)"))
+            assertSize("12.5", in: app)
+            XCTAssertTrue(try configText().contains("app-appearance = dark"))
+        }
+        closeSettings(in: app)
+        XCTAssertEqual(paneIDs(in: app), [id])
+    }
+
     func testCustomThemePreviewCancelAndSaveReachTheRealTerminal() throws {
         let app = try launchDesktop()
         let paneID = try XCTUnwrap(paneIDs(in: app).first)
         let process = try shellPID(paneID, phase: "DESIGN_THEME_BEFORE", in: app)
         _ = openSettings(in: app)
         selectSection("appearance", in: app)
+        setText("Tako Night", field: settings(in: app).textFields["DesktopThemeFilter"].firstMatch, in: app)
         let selected = settings(in: app).buttons["DesktopTheme-Tako Night"].firstMatch
         XCTAssertTrue(selected.waitForExistence(timeout: 5))
         selected.click()

@@ -42,7 +42,6 @@ extension Tako.SurfaceView {
         guard clamped != theme.fontSize else { return }
 
         applyTheme(Self.scaledTheme(configured, toFontSize: clamped))
-        NotificationCenter.default.post(name: .takoSurfaceZoomDidChange, object: self)
     }
 
     /// The size the configuration asked for, before this terminal's zoom.
@@ -71,6 +70,9 @@ extension Tako.SurfaceView {
     func applyTheme(_ newTheme: TerminalTheme) {
         theme = newTheme
         setFrameSize(frame.size)
+        // A base-size edit or preview can reset zoom too. Keep its UI in sync
+        // with every actual theme application, not only the +/- shortcuts.
+        NotificationCenter.default.post(name: .takoSurfaceZoomDidChange, object: self)
         if let window {
             let host = Tako.CustomTabGroup.existingGroup(for: window)?.selectedWindow ?? window
             Tako.TabBarController.bar(for: host)?.refresh()

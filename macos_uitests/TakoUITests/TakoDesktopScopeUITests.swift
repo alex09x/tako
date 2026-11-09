@@ -10,6 +10,29 @@
 import XCTest
 
 final class TakoDesktopScopeUITests: TakoDesktopDesignCase {
+    func testColorsOverAThemeInheritAndResetAtTheChosenLevel() throws {
+        let app = try launchDesktop()
+        let id = try XCTUnwrap(paneIDs(in: app).first)
+        _ = openSettings(in: app)
+        selectSection("appearance", in: app)
+        level("workspace", in: app)
+        clickSetting("DesktopScopeColorsDisclosure", in: app)
+        let color = settings(in: app).textFields["DesktopScopeColor-background"].firstMatch
+        setText("#123456", field: color, in: app)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertEqual(color.value as? String, "#123456")
+        level("pane", in: app)
+        clickSetting("DesktopScopeColorsDisclosure", in: app)
+        let inherited = settings(in: app).textFields["DesktopScopeColor-background"].firstMatch
+        XCTAssertEqual((inherited.value as? String)?.lowercased(), "#123456")
+        setText("#263749", field: inherited, in: app)
+        app.typeKey(.return, modifierFlags: [])
+        clickSetting("DesktopInherit-background", in: app)
+        XCTAssertEqual((inherited.value as? String)?.lowercased(), "#123456")
+        closeSettings(in: app)
+        XCTAssertEqual(paneIDs(in: app), [id])
+    }
+
     private func level(_ key: String, in app: XCUIApplication) {
         let chip = settings(in: app).buttons["DesktopScope-\(key)"].firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 5))

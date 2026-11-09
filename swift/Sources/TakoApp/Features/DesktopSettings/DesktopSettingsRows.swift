@@ -39,6 +39,7 @@ struct DesktopRegistryRow: View {
                     }
                 }
             }
+            .id(Self.identifier(key))
         }
     }
 

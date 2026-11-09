@@ -50,6 +50,7 @@ final class TakoDesktopFontUITests: TakoDesktopDesignCase {
         let app = try launchDesktop()
         _ = openSettings(in: app)
         selectSection("appearance", in: app)
+        clickSetting("DesktopFontPicker", in: app)
         let filter = settings(in: app).textFields["DesktopFontFilter"].firstMatch
         setText("Menlo", field: filter, in: app)
         clickSetting("DesktopFont-Menlo", in: app)
@@ -61,6 +62,7 @@ final class TakoDesktopFontUITests: TakoDesktopDesignCase {
         closeSettings(in: app)
         _ = openSettings(in: app)
         selectSection("appearance", in: app)
+        clickSetting("DesktopFontPicker", in: app)
         setText("Menlo", field: settings(in: app).textFields["DesktopFontFilter"].firstMatch, in: app)
         XCTAssertTrue(settings(in: app).buttons["DesktopFont-Menlo"].firstMatch.isSelected)
     }

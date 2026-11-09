@@ -189,6 +189,7 @@ private struct FloatingPaneWindowView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var surfaceView: Tako.SurfaceView
     @ObservedObject var crab: Tako.CrabTracker
+    @ObservedObject private var animationState = LivingAnimationState.shared
     let pane: FloatingPaneState
     let isTiled: Bool
     let frame: CGRect
@@ -273,6 +274,17 @@ private struct FloatingPaneWindowView: View {
                     .strokeBorder(normalBorderColor, lineWidth: 1)
                     .allowsHitTesting(false)
             }
+        }
+        .overlay {
+            SidebarStatusLayerView(
+                state: crab.paneStatus.surfaceState(crabState: crab.state, live: crab.live),
+                ringCenter: nil, cornerRadius: radius,
+                reduceMotion: animationState.reduceMotion, paused: animationState.isTimelinePaused,
+                pulses: crab.live?.pulses ?? 0, drawsRing: false,
+                palette: Tako.tabStatusPalette(surface: surfaceView)
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .overlay {
             if isNormal {

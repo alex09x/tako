@@ -39,6 +39,12 @@ struct TerminalPromptEditingTests {
             charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
         #expect(prompt.performKeyEquivalent(with: select))
         #expect(editor.selectedRange().length == "Old name".utf16.count)
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        let cyrillic = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "ф",
+            charactersIgnoringModifiers: "ф", isARepeat: false, keyCode: 0))
+        #expect(prompt.performKeyEquivalent(with: cyrillic))
+        #expect(editor.selectedRange().length == "Old name".utf16.count)
         editor.insertText("New name", replacementRange: editor.selectedRange())
         let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
             timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\r",

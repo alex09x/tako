@@ -147,6 +147,16 @@ struct DesktopSettingsView: View {
                 // A field that takes keyboard focus (click or Tab) scrolls itself into view.
                 .environment(\.desktopRevealField, DesktopRevealField { id in proxy.scrollTo(id) })
                 .accessibilityIdentifier("DesktopSettingsPage")
+                .task(id: model.revealGeneration) {
+                    guard let key = model.highlight else { return }
+                    let target: String
+                    if key == "font-size" { target = "DesktopFontSize" }
+                    else if key == "font-family" || model.fonts.contains(key) { target = "DesktopFontPicker" }
+                    else if ["background", "foreground", "cursor-color", "selection-background"].contains(key) {
+                        target = "DesktopScopeColorsDisclosure"
+                    } else { target = DesktopRegistryRow.identifier(key) }
+                    proxy.scrollTo(target, anchor: .center)
+                }
             }
             if model.section == .keys, !searching, let status = recorder.status {
                 Text(status).font(.system(size: DesktopSettingsStyle.captionSize)).lineLimit(2)
@@ -240,6 +250,7 @@ struct DesktopScopeChips: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(on ? "DesktopScopeCurrent" : "DesktopScope-\(Self.kindKey(level.kind))")
+        .layoutPriority(on ? 1 : 0)
         .accessibilityValue(own ? "custom" : "")
         .accessibilityAddTraits(on ? .isSelected : [])
     }

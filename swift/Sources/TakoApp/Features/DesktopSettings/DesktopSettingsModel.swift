@@ -19,6 +19,7 @@ final class DesktopSettingsModel: ObservableObject {
     @Published var selectedShortcut: String?
     /// A search hit to scroll to and mark on its page.
     @Published var highlight: String?
+    @Published private(set) var revealGeneration = 0
     @Published var draft: DesktopThemeDraft?
     @Published private(set) var draftError: String?
 
@@ -95,6 +96,7 @@ final class DesktopSettingsModel: ObservableObject {
     }
 
     func open(_ result: DesktopSettingsSearchResult) {
+        revealGeneration &+= 1
         switch result.kind {
         case .action(let id): showShortcut(id); return
         case .setting(let key): highlight = key

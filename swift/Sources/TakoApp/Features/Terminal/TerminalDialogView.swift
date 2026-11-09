@@ -304,12 +304,16 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard !flags.isEmpty else { return false }
-        if flags == .command && event.charactersIgnoringModifiers?.lowercased() == "w" { withdraw(); return true }
+        let rawKey = event.charactersIgnoringModifiers?.lowercased()
+        // Command editing keeps working when the input source is Cyrillic.
+        let commandKey = rawKey?.unicodeScalars.allSatisfy({ $0.isASCII }) == false
+            ? [UInt16(0): "a", 8: "c", 7: "x", 9: "v", 6: "z", 13: "w"][event.keyCode] : rawKey
+        if flags == .command && commandKey == "w" { withdraw(); return true }
         // A prompt field owns editing shortcuts. Swallowing them here left
         // Cmd-A ineffective and made renames append to the existing name.
         if let editor = field?.currentEditor() as? NSTextView, window?.firstResponder === editor {
             if flags == .command {
-                switch event.charactersIgnoringModifiers?.lowercased() {
+                switch commandKey {
                 case "a": editor.selectAll(nil); return true
                 case "c": editor.copy(nil); return true
                 case "x": editor.cut(nil); return true
@@ -319,7 +323,7 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
                     return true
                 default: break
                 }
-            } else if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "z" {
+            } else if flags == [.command, .shift], commandKey == "z" {
                 if editor.undoManager?.canRedo == true { editor.undoManager?.redo() }
                 return true
             }

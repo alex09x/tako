@@ -10,6 +10,27 @@
 import XCTest
 
 final class TakoDesktopControlsUITests: TakoDesktopDesignCase {
+    func testSearchingForFontSizeRevealsTheActualFieldAboveTheFooter() throws {
+        let app = try launchDesktop()
+        _ = openSettings(in: app)
+        setText("font-size", field: settings(in: app).textFields["DesktopSettingsSearch"].firstMatch, in: app)
+        let hit = settings(in: app).buttons["DesktopSearchSetting-font-size"].firstMatch
+        XCTAssertTrue(hit.waitForExistence(timeout: 5))
+        hit.click()
+        let size = fontSize(in: app)
+        XCTAssertTrue(size.waitForExistence(timeout: 5))
+        let footer = settings(in: app).descendants(matching: .any)["DesktopSettingsFooter"].firstMatch
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            size.isHittable && size.frame.maxY < footer.frame.minY
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
+        size.click()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText("13.5")
+        app.typeKey(.return, modifierFlags: [])
+        assertSize("13.5", in: app)
+    }
+
     func testEverySectionIsReachableAndKeepsTheSameCenteredPanel() throws {
         let app = try launchDesktop()
         _ = openSettings(in: app)
