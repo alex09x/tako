@@ -305,6 +305,25 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard !flags.isEmpty else { return false }
         if flags == .command && event.charactersIgnoringModifiers?.lowercased() == "w" { withdraw(); return true }
+        // A prompt field owns editing shortcuts. Swallowing them here left
+        // Cmd-A ineffective and made renames append to the existing name.
+        if let editor = field?.currentEditor() as? NSTextView, window?.firstResponder === editor {
+            if flags == .command {
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "a": editor.selectAll(nil); return true
+                case "c": editor.copy(nil); return true
+                case "x": editor.cut(nil); return true
+                case "v": editor.paste(nil); return true
+                case "z":
+                    if editor.undoManager?.canUndo == true { editor.undoManager?.undo() }
+                    return true
+                default: break
+                }
+            } else if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "z" {
+                if editor.undoManager?.canRedo == true { editor.undoManager?.redo() }
+                return true
+            }
+        }
         return true
     }
 
