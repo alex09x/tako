@@ -59,7 +59,7 @@ struct FloatingTerminalCanvasView: View {
                                     surfaceView: surfaceView,
                                     crab: surfaceView.crab,
                                     pane: pane,
-                                    isTiled: pane.mode == .normal && store.isTiled(pane.surfaceId),
+                                    isTiled: store.isTiled(pane.surfaceId),
                                     frame: frame,
                                     workArea: workArea,
                                     canvasSize: canvasSize,
