@@ -28,6 +28,10 @@ final class TakoDesktopSetupUITests: TakoDesktopDesignCase {
             XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
             XCTAssertFalse(wizard.buttons["SetupStep-commandLine"].exists)
             XCTAssertFalse(wizard.buttons["SetupStep-permissions"].exists)
+            for label in wizard.staticTexts.allElementsBoundByIndex.map(\.label) + wizard.buttons.allElementsBoundByIndex.map(\.label) {
+                XCTAssertFalse(label.unicodeScalars.contains { (0x0400...0x052f).contains($0.value) },
+                               "Unexpected Cyrillic setup label: \(label)")
+            }
             XCTAssertEqual(paneIDs(in: app), initialPanes)
             if stage == "notifications" {
                 attachCanvas(app, named: "Native permission observations before any explicit request")
