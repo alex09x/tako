@@ -131,6 +131,30 @@ struct PaneToastTests {
         #expect(!toast.headline.contains("exit"), "a program's error showed an exit code: \(toast.headline)")
     }
 
+    /// «status-show = false» calms the rings; notifications are separate and
+    /// still come. Mute still silences a pane.
+    @Test func hiddenStatusesStillNotifyAndMuteStillSilences() throws {
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        let surface = try #require(controller.focusedSurface)
+        let anim = LivingAnimationState.shared
+        anim.applyStatusPreferences(DesktopPreferences { $0 == "status-show" ? "false" : nil })
+        defer { anim.applyStatusPreferences(DesktopPreferences { _ in nil }) }
+        #expect(!anim.statusShown, "the preference did not hide statuses")
+        let (center, _) = center()
+
+        center.statusChanged(surface, to: .done)
+        #expect(center.toasts.map(\.state) == [.done], "hidden statuses silenced a done toast")
+        center.statusChanged(surface, to: .needsApproval)
+        #expect(center.toasts.map(\.state) == [.waiting], "hidden statuses silenced a waiting toast")
+
+        center.resetForTesting()
+        AttentionManager.shared.setMuted(true, for: surface.id)
+        defer { AttentionManager.shared.setMuted(false, for: surface.id) }
+        center.statusChanged(surface, to: .done)
+        #expect(center.toasts.isEmpty, "a muted pane made a toast")
+    }
+
     @Test func aToastEasesIn220msAndReduceMotionShowsItAtOnce() {
         #expect(PaneToastStack.duration == 0.22)
         #expect(PaneToastStack.animation(reduceMotion: false) != nil)

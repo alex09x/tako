@@ -46,9 +46,10 @@ final class PaneToastCenter: ObservableObject {
 
     /// A pane's status changed; out of sight, a finish, a failure or a wait shows a toast.
     func statusChanged(_ surface: Tako.SurfaceView, to status: Tako.PaneStatus) {
+        // «status-show» calms the indicators only; notifications are separate
+        // (Settings › Status: «Notifications are independent of appearance»). Mute still silences.
         guard let kind = Self.kind(status), !surface.isBeingLookedAt,
-              !AttentionManager.shared.isMuted(surfaceId: surface.id),
-              LivingAnimationState.shared.statusShown else { return }
+              !AttentionManager.shared.isMuted(surfaceId: surface.id) else { return }
         let controller = BaseTerminalController.owningController(for: surface)
         let minimized = controller?.isMinimizedInFloatingCanvas(surface.id) == true
         let session = controller?.window?.title ?? ""
