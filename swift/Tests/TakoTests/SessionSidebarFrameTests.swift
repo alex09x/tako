@@ -42,7 +42,7 @@ struct SessionSidebarFrameTests {
     }
 
     /// The + menu (the reference has no footer) shows each action's real
-    /// shortcut: Новая сессия ⌘T, Новый терминал справа ⌘D, Новое окно ⌘N.
+    /// shortcut: New Session ⌘T, New Terminal to the Right ⌘D, New Window ⌘N.
     @Test func plusMenuItemsShowTheRegistryShortcuts() {
         let session = SidebarMenuAction("New Session", binding: "new_tab") {}
         let split = SidebarMenuAction("New Terminal to the Right", binding: "new_split:right") {}

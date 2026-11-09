@@ -12,9 +12,9 @@ import AppKit
 import Testing
 @testable import Tako
 
-/// A terminal's temporary zoom (reference A07 and its terminal menu): «Крупнее»,
-/// «Мельче», «Сбросить масштаб» change only this terminal, 4–255 pt, never
-/// the saved base size, and say so to Settings' «Масштаб сейчас».
+/// A terminal's temporary zoom (reference A07 and its terminal menu): “Zoom In”,
+/// “Zoom Out”, “Reset Zoom” change only this terminal, 4–255 pt, never
+/// the saved base size, and say so to Settings' “Current Zoom”.
 @Suite(.serialized) @MainActor
 struct TerminalZoomMenuTests {
     private func run(_ items: [NSMenuItem], _ id: String) {

@@ -180,7 +180,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
             label: item.title,
             value: item.isSelected ? "selected" : "unselected",
             help: Self.statusDotHint(for: item),
-            closeActionName: onClose != nil ? (item.isChild ? "Close Pane" : "Close Session") : nil,
+            closeActionName: onClose != nil ? (item.isChild ? FloatingPaneCopy.close : "Close Session") : nil,
             onClose: onClose
         ) {
             rowBody(content)
@@ -221,7 +221,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                     .accessibilityIdentifier("SidebarRowReconnect")
             }
             if let onClose {
-                Button(item.isChild ? "Close Pane" : "Close Session", action: onClose)
+                Button(item.isChild ? FloatingPaneCopy.close : "Close Session", action: onClose)
             }
             if onNewSession != nil || (!item.isChild && onRename != nil) || onClose != nil {
                 Divider()

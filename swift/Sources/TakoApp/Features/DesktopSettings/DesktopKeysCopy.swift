@@ -11,7 +11,7 @@
 import AppKit
 import SwiftUI
 
-/// Russian titles from the reference (prefs-keys.js PF_KA / PF_KCATS) for the
+/// Titles from the reference (prefs-keys.js PF_KA / PF_KCATS) for the
 /// actions KeybindRegistry already has; ids, defaults and grouping stay native.
 enum DesktopKeysCopy {
     static func title(_ action: String) -> String {
@@ -38,7 +38,7 @@ enum DesktopKeysCopy {
         "goto_split:next": "Next Terminal", "goto_split:previous": "Previous Terminal",
         "goto_split:left": "Terminal to the Left", "goto_split:right": "Terminal to the Right",
         "goto_split:up": "Terminal Above", "goto_split:down": "Terminal Below",
-        "toggle_split_zoom": "Maximize Terminal", "equalize_splits": "Equalize Panes",
+        "toggle_split_zoom": FloatingPaneCopy.maximize(.normal), "equalize_splits": "Equalize Panes",
         "resize_split:left,10": "Move Divider Left", "resize_split:right,10": "Move Divider Right",
         "resize_split:up,10": "Move Divider Up", "resize_split:down,10": "Move Divider Down",
         "next_workspace": "Next Workspace", "previous_workspace": "Previous Workspace", "new_workspace": "New Workspace",

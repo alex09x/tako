@@ -46,6 +46,25 @@ struct FloatingPaneMenuTests {
         #expect(menu(.maximized, tiled: false).maximizeTitle == "Restore")
     }
 
+    /// One action has one name: the header buttons, the terminal's menu, the
+    /// shortcut list and Settings never call the same thing differently.
+    @Test func everyPlaceNamesTheSameActionTheSameWay() {
+        #expect(FloatingPaneCopy.maximize(.normal) == "Maximize Terminal")
+        #expect(FloatingPaneCopy.maximize(.maximized) == "Restore Terminal")
+        #expect(FloatingPaneCopy.minimize == "Minimize Terminal")
+        #expect(FloatingPaneCopy.close == "Close Terminal")
+        #expect(FloatingPaneCopy.float(isTiled: true) == "Float Terminal")
+        #expect(FloatingPaneCopy.float(isTiled: false) == "Return to Grid")
+        #expect(FloatingPaneCopy.short(FloatingPaneCopy.minimize) == "Minimize")
+        #expect(FloatingPaneCopy.short("Return to Grid") == "Return to Grid", "only the noun is dropped")
+        #expect(DesktopKeysCopy.title("toggle_split_zoom") == FloatingPaneCopy.maximize(.normal))
+
+        let section = DesktopSettingsSection.interface.title
+        #expect(section == "App Appearance")
+        #expect(DesktopSettingCopy.of("app-appearance")?.title == section)
+        #expect(TerminalSettingRegistry.desktopSettings.first { $0.id == "app-appearance" }?.title == section)
+    }
+
     @Test func theHeaderMenuSplitsAndMinimizesTheRealPane() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }

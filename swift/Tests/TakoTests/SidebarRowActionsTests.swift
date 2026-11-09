@@ -12,8 +12,8 @@ import AppKit
 import Testing
 @testable import Tako
 
-/// A session row's «Новый терминал в сессии», «Отметить прочитанным» and
-/// «Переподключить» reach the real session: a split in its tab, the crab's
+/// A session row's “New Terminal in Session”, “Mark as Read” and
+/// “Reconnect” reach the real session: a split in its tab, the crab's
 /// unread mark, a lost session's own retry.
 @Suite(.serialized) @MainActor
 struct SidebarRowActionsTests {

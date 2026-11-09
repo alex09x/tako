@@ -250,7 +250,7 @@ struct PermanentSidebarLayoutTests {
         #expect(group.windows == [w1])
         #expect(group.selectedWindow === w1)
 
-        // The + menu's «Новая сессия» resolves containingWindow and creates a new session.
+        // The + menu's “New Session” resolves containingWindow and creates a new session.
         let sidebarView = SessionSidebarView(
             isPresented: .constant(true),
             containingWindow: w1,

@@ -284,7 +284,7 @@ struct DesktopSettingsTests {
     }
 
     /// The chips switch the edited level in the same window, keeping the page
-    /// and the chain; «своё» follows what each level stores.
+    /// and the chain; “Custom” follows what each level stores.
     @Test func levelChipsSwitchTheEditedLevelAndMarkOwnOverrides() throws {
         let sandbox = try Sandbox()
         let store = sandbox.scopes()

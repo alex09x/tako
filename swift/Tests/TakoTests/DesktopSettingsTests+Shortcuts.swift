@@ -72,7 +72,7 @@ extension DesktopSettingsTests {
         #expect(recorder.state == .idle && file.customOverrides["new_window"] == nil)
         #expect(recorder.status?.contains("Restored the default") == true)
 
-        // ⇧⌘D belongs to «Разделить вниз» by default.
+        // ⇧⌘D belongs to “Split Down” by default.
         recorder.begin("new_split:right", installMonitor: false)
         recorder.handle(keyCode: 2, modifiers: [.command, .shift])
         guard case .conflict(_, _, let holder) = recorder.state else { Issue.record("no conflict: \(recorder.state)"); return }

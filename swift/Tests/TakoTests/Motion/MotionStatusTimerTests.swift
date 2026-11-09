@@ -23,8 +23,8 @@ struct MotionStatusTimerTests {
 
     @Test func theClocksAreTheSpecs() {
         let tracker = Tako.CrabTracker()
-        #expect(Tako.CrabTracker.minimumVisibleDuration == MotionSpec.minimumVisible, "только если команда идёт > 3s")
-        #expect(tracker.linger == MotionSpec.focusedLinger, "гаснут через 2s")
+        #expect(Tako.CrabTracker.minimumVisibleDuration == MotionSpec.minimumVisible, "only if the command runs longer than 3 s")
+        #expect(tracker.linger == MotionSpec.focusedLinger, "fade after 2 s")
         #expect(tracker.liveSampleInterval == 1, "sampled once a second: a ripple at most once a second")
         #expect(tracker.tickInterval <= 0.5, "a command shows within half a second of its 3 s")
     }

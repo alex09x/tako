@@ -86,47 +86,6 @@ extension Tako {
             default: return wsTeal
             }
         }
-
-        private static let didRegisterFonts: Bool = {
-            var fontDirs: [URL] = []
-            if let resURL = Bundle.main.resourceURL {
-                fontDirs.append(resURL.appendingPathComponent("fonts"))
-                fontDirs.append(resURL)
-            }
-            let srcFontsURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/fonts")
-            fontDirs.append(srcFontsURL)
-            for dir in fontDirs {
-                guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-                for item in items where ["ttf", "otf"].contains(item.pathExtension.lowercased()) {
-                    CTFontManagerRegisterFontsForURL(item as CFURL, .process, nil)
-                }
-            }
-            return true
-        }()
-
-        nonisolated(unsafe) private static var monoCache: [Int: NSFont] = [:]
-
-        static func monoFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-            _ = didRegisterFonts
-            let key = Int(size * 10) * 100 + Int((weight.rawValue + 1.0) * 10)
-            if let cached = monoCache[key] { return cached }
-            let candidates: [String]
-            switch weight {
-            case .bold, .heavy, .black: candidates = ["JetBrainsMonoNF-Bold", "JetBrainsMono-SemiBold"]
-            case .semibold: candidates = ["JetBrainsMono-SemiBold", "JetBrainsMono-Medium"]
-            case .medium: candidates = ["JetBrainsMono-Medium", "JetBrainsMonoNF-Regular"]
-            default: candidates = ["JetBrainsMonoNF-Regular"]
-            }
-            let font = candidates.lazy.compactMap { NSFont(name: $0, size: size) }.first ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-            monoCache[key] = font
-            return font
-        }
-
-        static func headerFont(size: CGFloat, weight: Font.Weight = .bold) -> Font {
-            _ = didRegisterFonts
-            let name = (weight == .medium || weight == .regular) ? "SpaceGrotesk-Medium" : "SpaceGrotesk-Bold"
-            return NSFont(name: name, size: size) != nil ? .custom(name, fixedSize: size) : .system(size: size, weight: weight)
-        }
     }
 }
 
@@ -431,27 +390,4 @@ struct StatusRingView: View {
         .scaleEffect(popScale)
         .offset(x: shakeX)
     }
-
-    private func checkmarkShape(in d: CGFloat) -> Path {
-        let s = d / 14.0
-        var path = Path()
-        path.move(to: CGPoint(x: 4.0 * s, y: 7.2 * s))
-        path.addLine(to: CGPoint(x: 6.1 * s, y: 9.3 * s))
-        path.addLine(to: CGPoint(x: 10.0 * s, y: 5.0 * s))
-        return path
-    }
-
-    private func exclamationShape(in d: CGFloat) -> Path {
-        var path = Path()
-        if d >= 18 {
-            path.addRoundedRect(in: CGRect(x: 8, y: 4, width: 2, height: 6), cornerSize: CGSize(width: 1, height: 1))
-            path.addRoundedRect(in: CGRect(x: 8, y: 12.5, width: 2, height: 2), cornerSize: CGSize(width: 1, height: 1))
-        } else {
-            let s = d / 14.0
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 3 * s, width: 2 * s, height: 5 * s), cornerSize: CGSize(width: 1, height: 1))
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 9.5 * s, width: 2 * s, height: 2 * s), cornerSize: CGSize(width: 1, height: 1))
-        }
-        return path
-    }
 }
-

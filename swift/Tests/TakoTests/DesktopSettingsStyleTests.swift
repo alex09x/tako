@@ -22,8 +22,8 @@ struct DesktopSettingsStyleTests {
         (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: DesktopMetrics.bodyFontSize)]).width
     }
 
-    /// Reference A02: segments are as wide as their labels («если идёт
-    /// команда» wider than «всегда»), with 10 pt padding, never equal shares.
+    /// Reference A02: segments are as wide as their labels (“When
+    /// Running” wider than “Always”), with 10 pt padding, never equal shares.
     @Test func segmentsTakeTheirLabelsWidth() {
         let segment = DesktopSegment(options: options, selection: "true", identifier: "S",
                                      palette: .dark) { _ in }

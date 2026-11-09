@@ -49,7 +49,7 @@ struct DesktopSettingsHostedTests {
 
     /// The footer observes the stores itself: a refused size shows its error
     /// at once and the saved config stays; a level's first override (written
-    /// outside the editor, as a context menu does) brings «Сбросить оформление».
+    /// outside the editor, as a context menu does) brings “Reset Appearance”.
     @Test func footerShowsARefusedValueAndTheResetButtonAsSoonAsTheyApply() throws {
         let sandbox = try DesktopSettingsTests.Sandbox()
         try "font-size = 13\n".write(to: sandbox.config, atomically: true, encoding: .utf8)

@@ -12,7 +12,7 @@ import AppKit
 import Testing
 @testable import Tako
 
-/// A pane's own name («Переименовать…» in its header menu): kept by its
+/// A pane's own name (“Rename…” in its header menu): kept by its
 /// stable UUID across launches, shown in the header, the shelf, the sidebar
 /// and accessibility, never written over the program's title, its
 /// neighbours or its session; removing it shows the program's title again.

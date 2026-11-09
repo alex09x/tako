@@ -368,7 +368,7 @@ struct SessionSidebarRowView: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onPress(perform: onSelect)
-        .accessibilityAction(named: Text("Close Pane")) { onClose?() }
+        .accessibilityAction(named: Text(FloatingPaneCopy.close)) { onClose?() }
         .padding(.leading, 40)
         .padding(.trailing, 8)
         .padding(.vertical, 1)

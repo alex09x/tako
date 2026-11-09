@@ -98,7 +98,7 @@ extension BaseTerminalController: NSMenuItemValidation {
                 item.title = "Close Session"
                 return true
             }
-            item.title = "Close Pane"
+            item.title = FloatingPaneCopy.close
             let activeVisible = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
                 ?? topmostVisibleFloatingSurface()
             return activeVisible != nil
@@ -108,10 +108,10 @@ extension BaseTerminalController: NSMenuItemValidation {
             let target = focusedSurface.flatMap { isMinimizedInFloatingCanvas($0.id) ? nil : $0 }
                 ?? topmostVisibleFloatingSurface()
             guard let target, let st = floatingCanvas.state(for: target.id) else {
-                item.title = "Maximize Pane"
+                item.title = FloatingPaneCopy.maximize(.normal)
                 return false
             }
-            item.title = (st.mode == .maximized) ? "Restore Pane" : "Maximize Pane"
+            item.title = FloatingPaneCopy.maximize(st.mode)
             return true
 
         default:

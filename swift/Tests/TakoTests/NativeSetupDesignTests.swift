@@ -123,7 +123,7 @@ struct NativeSetupDesignTests {
     /// At launch setup appears before the terminal has taken focus: the
     /// window itself is first responder. Finishing must hand the keys to the
     /// existing terminal, not back to the window (XCUI: typing right after
-    /// «Начать работу» reached nothing).
+    /// “Start Working” reached nothing).
     @Test func finishingAtLaunchFocusesTheTerminalEvenIfTheWindowHadFocus() throws {
         try fixture { model, _, _ in
             _ = NSApplication.shared

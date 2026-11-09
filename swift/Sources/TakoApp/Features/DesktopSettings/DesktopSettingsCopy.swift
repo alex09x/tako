@@ -40,7 +40,7 @@ struct DesktopSettingCopy {
                 when: "For new terminals", section: .general),
             "window-inherit-font-size": .init(title: "Inherit font size in new windows",
                 detail: "New windows inherit the current terminal’s font size, including zoom.", when: "For new windows", section: .general),
-            "app-appearance": .init(title: "App appearance",
+            "app-appearance": .init(title: "App Appearance",
                 detail: "Colors the sidebar, canvas, menus and settings independently of terminal themes.",
                 options: [("system", "System"), ("light", "Light"), ("dark", "Dark")], section: .interface),
             "cursor-style": .init(title: "Cursor shape", detail: "A cursor shape set by the terminal theme takes precedence.",

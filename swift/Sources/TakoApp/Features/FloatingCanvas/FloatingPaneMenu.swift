@@ -13,8 +13,8 @@ import AppKit
 /// The pane's own actions at the top of its header's right-click menu:
 /// «Rename…» (the pane's own name, PaneTitleStore),
 /// «Split Right», «Split Down» (in the grid only, as in the
-/// reference), «Expand»/«Restore», «Float Terminal»/«Return to
-/// grid», «Minimize» and «Close Terminal». Each runs the same action as
+/// reference), «Maximize»/«Restore», «Float Terminal»/«Return to
+/// Grid», «Minimize» and «Close Terminal». Each runs the same action as
 /// the header's buttons or the split shortcuts.
 /// Accessibility identifiers: `FloatingPaneMenuRename`, `FloatingPaneMenuSplitRight`, `…SplitDown`,
 /// `…Maximize`, `…Float`, `…Minimize`, `…Close`.
@@ -33,8 +33,8 @@ struct FloatingPaneMenu {
     /// Free floating: not in a grid cell, so nothing to split beside.
     private var isFree: Bool { !isTiled }
 
-    var maximizeTitle: String { mode == .maximized ? "Restore" : "Maximize" }
-    var floatTitle: String { isFree ? "Return to Grid" : "Float Terminal" }
+    var maximizeTitle: String { FloatingPaneCopy.short(FloatingPaneCopy.maximize(mode)) }
+    var floatTitle: String { FloatingPaneCopy.float(isTiled: isTiled) }
 
     func items() -> [NSMenuItem] {
         let right = Self.item("Split Right", binding: "new_split:right", id: "FloatingPaneMenuSplitRight") { split(.right) }
@@ -46,9 +46,9 @@ struct FloatingPaneMenu {
             right, down, .separator(),
             Self.item(maximizeTitle, binding: "", id: "FloatingPaneMenuMaximize", run: toggleMaximize),
             Self.item(floatTitle, binding: "", id: "FloatingPaneMenuFloat", run: toggleFloating),
-            Self.item("Minimize", binding: "", id: "FloatingPaneMenuMinimize", run: minimize),
+            Self.item(FloatingPaneCopy.short(FloatingPaneCopy.minimize), binding: "", id: "FloatingPaneMenuMinimize", run: minimize),
             .separator(),
-            Self.item("Close Terminal", binding: "close_surface", id: "FloatingPaneMenuClose", run: close),
+            Self.item(FloatingPaneCopy.close, binding: "close_surface", id: "FloatingPaneMenuClose", run: close),
         ]
     }
 

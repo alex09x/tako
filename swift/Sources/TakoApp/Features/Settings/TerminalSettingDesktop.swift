@@ -11,7 +11,7 @@ import Foundation
 
 extension TerminalSettingRegistry {
     static let desktopSettings: [TerminalSettingItem] = [
-        .init(id: "app-appearance", title: "Application Appearance", category: "Interface",
+        .init(id: "app-appearance", title: "App Appearance", category: "Interface",
               type: .options(options: ["system", "light", "dark"], defaultValue: "system"),
               description: "Colors of the sidebar, workspace and settings, independent of terminal themes"),
         .init(id: "status-show", title: "Show Status Indicators", category: "Activity",

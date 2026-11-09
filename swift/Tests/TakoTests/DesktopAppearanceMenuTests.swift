@@ -1,5 +1,5 @@
 /*
- * tako — «Оформление ▸» context menu tests
+ * tako — “Appearance ▸” context menu tests
  * Copyright (c) 2026 Alexander Panasenko
  *
  * Contact: alex@prod.codes
@@ -37,7 +37,7 @@ struct DesktopAppearanceMenuTests {
     }
 
     /// The same rule as Settings: a full preset replaces the level's own
-    /// fields, a colours-only one keeps them; «Наследовать» drops only this level.
+    /// fields, a colours-only one keeps them; “Inherit” drops only this level.
     @Test func choosingFollowsTheSettingsRuleAndInheritResetsOnlyThisLevel() throws {
         let sandbox = try DesktopSettingsTests.Sandbox()
         let store = sandbox.scopes()
