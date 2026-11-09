@@ -26,6 +26,8 @@ final class FloatingPaneHeaderDragNSView: NSView {
     var onDragCommit: (() -> Void)?
     var onDoubleClick: (() -> Void)?
     var onMoveToNewWindow: (() -> Void)?
+    /// The pane's «Appearance ▸», built when the menu opens.
+    var appearanceMenuItem: (() -> NSMenuItem?)?
 
     private var trackingAreaRef: NSTrackingArea?
     private var dragStartWindowPoint: NSPoint?
@@ -143,6 +145,10 @@ final class FloatingPaneHeaderDragNSView: NSView {
         moveItem.target = self
         moveItem.isEnabled = canMoveToNewWindow
         menu.addItem(moveItem)
+        if let appearance = appearanceMenuItem?() {
+            menu.addItem(.separator())
+            menu.addItem(appearance)
+        }
         return menu
     }
 
@@ -168,6 +174,7 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
     let onDragCommit: () -> Void
     let onDoubleClick: () -> Void
     let onMoveToNewWindow: () -> Void
+    var appearanceMenuItem: (() -> NSMenuItem?)? = nil
 
     func makeNSView(context: Context) -> FloatingPaneHeaderDragNSView {
         let view = FloatingPaneHeaderDragNSView(frame: .zero)
@@ -195,5 +202,6 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
         view.onDragCommit = onDragCommit
         view.onDoubleClick = onDoubleClick
         view.onMoveToNewWindow = onMoveToNewWindow
+        view.appearanceMenuItem = appearanceMenuItem
     }
 }

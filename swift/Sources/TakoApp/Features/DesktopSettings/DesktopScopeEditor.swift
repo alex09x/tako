@@ -110,12 +110,18 @@ final class DesktopScopeEditor: ObservableObject {
         guard let context else { return finish(preferences.selectPreset(name, full: full), preferences.lastError) }
         guard context.isAvailable() else { return finish(false, "This workspace or terminal is no longer available.") }
         do {
-            if full { try context.store.applyPreset(name, scope: context.scope) }
-            else { try context.store.setValue(name, for: "theme", scope: context.scope) }
+            try Self.applyPreset(name, full: full, to: context)
             return finish(true, nil)
         } catch {
             return finish(false, error.localizedDescription)
         }
+    }
+
+    /// The one rule Settings and the «Appearance ▸» menus share: a full Tako
+    /// preset replaces the level's own fields, a colours-only one is selected.
+    static func applyPreset(_ name: String, full: Bool, to context: ScopedAppearanceContext) throws {
+        if full { try context.store.applyPreset(name, scope: context.scope) }
+        else { try context.store.setValue(name, for: "theme", scope: context.scope) }
     }
 
     /// Drops every override this level owns; parents and siblings are untouched.

@@ -87,7 +87,8 @@ struct FloatingPaneHeaderView: View {
                     onDetachMaximized: onDetachMaximized,
                     onDragCommit: onDragCommit,
                     onDoubleClick: onToggleMaximize,
-                    onMoveToNewWindow: onMoveToNewWindow
+                    onMoveToNewWindow: onMoveToNewWindow,
+                    appearanceMenuItem: { [weak surface = surfaceView] in surface?.appearanceMenuItem() }
                 )
 
                 HStack(spacing: 7) {

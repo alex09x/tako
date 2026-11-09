@@ -81,6 +81,15 @@ final class DesktopSettingsController {
         Self.show(in: host, section: section, context: level.context(app: app), levels: levels)
     }
 
+    /// «All Themes…» / «Customize…» from a context menu: «Terminal Appearance» at
+    /// `level`; with `editing`, that theme also opens in the editor.
+    static func showAppearance(for level: DesktopScopeLevel, editing theme: String? = nil, in window: NSWindow? = nil) {
+        guard let host = window ?? hostWindow else { return }
+        let app = (host.windowController as? TerminalController)?.tako ?? (NSApp.delegate as? AppDelegate)?.tako
+        guard let controller = show(in: host, section: .terminalAppearance, context: level.context(app: app)) else { return }
+        if let theme { controller.model.editTheme(theme) }
+    }
+
     static func showGlobal(section: DesktopSettingsSection = .general, in window: NSWindow? = nil) {
         guard let host = window ?? hostWindow else { return }
         show(in: host, section: section)

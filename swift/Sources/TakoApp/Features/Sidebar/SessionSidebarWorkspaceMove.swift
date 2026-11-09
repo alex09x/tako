@@ -127,7 +127,11 @@ struct SidebarWorkspaceDropTarget: View {
         SessionSidebarWorkspaceHeaderView(group: group, onToggleCollapse: onToggleCollapse,
                                           onSelectWorkspace: onSelectWorkspace)
             .contextMenu {
-                Button("Workspace Appearance…") { ScopedAppearanceContext.showWorkspace(group.id) }
+                if let menu = DesktopAppearanceMenu.make(
+                    for: .init(kind: .workspace(group.id), kindTitle: "workspace", name: group.name),
+                    app: (NSApp.delegate as? AppDelegate)?.tako, window: NSApp.keyWindow) {
+                    DesktopAppearanceSubmenu(menu: menu)
+                }
             }
             .background(SidebarWorkspaceAXElement(name: group.name, isActive: group.isActive))
             .background {
@@ -155,6 +159,13 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
     var onNewSession: (() -> Void)? = nil
     var onRename: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
+
+    private var appearanceLevel: DesktopScopeLevel {
+        if item.isChild, let id = item.surfaceId {
+            return .init(kind: .pane(id), kindTitle: "terminal", name: item.title)
+        }
+        return .init(kind: .session(item.tabId), kindTitle: "session", name: item.title)
+    }
 
     private var rowIdentifier: String {
         (item.isChild ? "session-pane-" : "session-tab-")
@@ -200,11 +211,12 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
             if onNewSession != nil || (!item.isChild && onRename != nil) || onClose != nil {
                 Divider()
             }
-            Button(item.isChild ? "Pane Appearance…" : "Terminal Appearance…") {
-                if let id = item.surfaceId { ScopedAppearanceContext.showPane(id) }
+            // A session row edits the session (its stable tab identity), a pane row the pane.
+            if let menu = DesktopAppearanceMenu.make(for: appearanceLevel, app: (NSApp.delegate as? AppDelegate)?.tako,
+                                                     window: NSApp.keyWindow) {
+                DesktopAppearanceSubmenu(menu: menu)
+                Divider()
             }
-            .disabled(item.surfaceId == nil)
-            Divider()
             if canMoveToWindow() {
                 Button(item.isChild ? "Move Tab to This Window" : "Move to This Window", action: onMoveToWindow)
             }
