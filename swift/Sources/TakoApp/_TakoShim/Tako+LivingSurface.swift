@@ -29,7 +29,7 @@ extension Tako {
         /// A shell role, both values from the frozen reference's shell
         /// (docs/design/desktop-reference tokens-dark / tokens-light):
         /// body --bg, chrome --field, surfaceActive --card, surfaceHover
-        /// --hover, hairline/progressTrack --line, badge --line2, ghostBorder
+        /// --hover, hairline --line, badge --line2, ghostBorder
         /// --deep, text/textActive --text, textInactive --sub, faint --mute.
         private static func shell(_ dark: UInt32, _ light: UInt32) -> NSColor {
             let d = rgb(dark), l = rgb(light)
@@ -50,7 +50,9 @@ extension Tako {
         static let ghostBorder = shell(0x4E4A46, 0xB7B4AF)
         /// Status colours are the same in every scheme.
         static let ringIdle = NSColor(srgbRed: 0x5A / 255, green: 0x4D / 255, blue: 0x43 / 255, alpha: 1)
-        static let progressTrack = shell(0x24211E, 0xD9D7D1)
+        /// Part of the status ring, not the shell: the reference's `.r-prog`
+        /// track is a literal #3A2E26 in every scheme (status.css).
+        static let progressTrack = NSColor(srgbRed: 0x3A / 255, green: 0x2E / 255, blue: 0x26 / 255, alpha: 1)
         static let textActive = shell(0xEDE6DF, 0x262320)
         static let text = shell(0xEDE6DF, 0x262320)
         static let textInactive = shell(0xB1ABA6, 0x5C5A56)

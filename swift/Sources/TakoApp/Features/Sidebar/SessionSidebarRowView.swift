@@ -141,16 +141,13 @@ struct SessionSidebarRowView: View {
     // MARK: - Level 1: Session Row (§5.5)
 
     private func sessionParentRow(moving: Bool) -> some View {
-        let radius: CGFloat = 7
-        let hasBorderBox1px: Bool = {
-            if state == .working || state == .offline { return true }
-            if case .progress = state { return true }
-            return false
-        }()
-        let vPad: CGFloat = hasBorderBox1px ? 7 : 6
+        // Reference A01 `.row`: 46 pt, radius 8, padding 5/5/5/3 inside a 1 pt
+        // border, title 12.5/500, meta 11 under the title (33 pt in).
+        let radius: CGFloat = 8
+        let vPad: CGFloat = 6
         let glowBacking: NSColor = isTabActive ? T.surfaceActive : (isNavSelected ? T.surfaceHover : T.body)
 
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .leading, spacing: 2) {
             // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
             HStack(spacing: 7) {
                 if item.hasChildren {
@@ -158,21 +155,21 @@ struct SessionSidebarRowView: View {
                         Text(item.isCollapsed ? "▸" : "▾")
                             .font(Font(T.monoFont(size: 9, weight: .regular)))
                             .foregroundColor(Color(nsColor: T.faint))
-                            .frame(width: 10, height: 14, alignment: .center)
+                            .frame(width: 12, height: 16, alignment: .center)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                     .help(item.isCollapsed ? "Expand session panes" : "Collapse session panes")
                 } else {
-                    Color.clear.frame(width: 10, height: 14)
+                    Color.clear.frame(width: 12, height: 16)
                 }
 
                 ring(moving: moving, painter: layered ? .rowLayer : .swiftUI)
                     .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 12, weight: isTabActive ? .medium : .regular)))
+                    .font(Font(T.monoFont(size: 12.5, weight: .medium)))
                     .foregroundColor(sessionTitleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -192,28 +189,29 @@ struct SessionSidebarRowView: View {
                     closeRowButton(action: onClose, isChild: false)
                 }
             }
-            .frame(height: 16)
+            .frame(height: 18)
 
-            // Line 2: 31pt left indent (= 10 + 7 + 14, directly under title)
+            // Line 2: 33pt left indent (= 12 + 7 + 14, directly under title)
             if let secondLine = sessionSecondLineContent {
                 HStack(spacing: 6) {
                     Text(secondLine.text)
-                        .font(Font(T.monoFont(size: 10.5, weight: .regular)))
+                        .font(Font(T.monoFont(size: 11, weight: .regular)))
                         .foregroundColor(secondLine.color)
                         .lineLimit(1)
                         .truncationMode(secondLine.truncation)
                     Spacer(minLength: 0)
                 }
                 .frame(height: 14)
-                .padding(.leading, 31)
+                .padding(.leading, 33)
             }
 
             if editingItemId == item.id || !(item.userDescription?.isEmpty ?? true) {
                 descriptionSection
-                    .padding(.leading, 31)
+                    .padding(.leading, 33)
             }
         }
-        .padding(.horizontal, hasBorderBox1px ? 9 : 8)
+        .padding(.leading, 4)
+        .padding(.trailing, 6)
         .padding(.vertical, vPad)
         // Behind the text, over the row's fill, as the glint is in the design;
         // the ring, the border, the line and the glow do not reach the text.
@@ -227,7 +225,7 @@ struct SessionSidebarRowView: View {
                         reduceMotion: reduceMotion,
                         paused: motionPaused,
                         pulses: item.live?.pulses ?? 0,
-                        progressInset: hasBorderBox1px ? 9 : 8,
+                        progressInset: 8,  // 4a `.pfill` left: 8px
                         cometForProgress: true
                     )
                 }
@@ -266,7 +264,7 @@ struct SessionSidebarRowView: View {
                         cometLineWidth: 1.0,
                         showsCometForProgress: true,
                         showsBottomProgressLine: true,
-                        progressInsetLeft: hasBorderBox1px ? 9 : 8,
+                        progressInsetLeft: 8,
                         drawsDoneGlint: false,
                         now: now,
                         elapsedInState: elapsedInState,
@@ -281,7 +279,7 @@ struct SessionSidebarRowView: View {
         .onPress(perform: onSelect)
         .accessibilityAction(named: Text("Close Session")) { onClose?() }
         .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
@@ -297,7 +295,7 @@ struct SessionSidebarRowView: View {
                 ring(moving: moving, painter: layered ? .ownLayer : .swiftUI)
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 11, weight: .regular)))
+                    .font(Font(T.monoFont(size: 11.5, weight: .regular)))
                     .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -315,7 +313,7 @@ struct SessionSidebarRowView: View {
 
                 if let tag = item.compactPaneTag {
                     Text(tag)
-                        .font(Font(T.monoFont(size: 9.5, weight: .medium)))
+                        .font(Font(T.monoFont(size: 9.5, weight: .semibold)))
                         .foregroundColor(Color(nsColor: T.textInactive))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -371,7 +369,7 @@ struct SessionSidebarRowView: View {
         .onHover { isHovering = $0 }
         .onPress(perform: onSelect)
         .accessibilityAction(named: Text("Close Pane")) { onClose?() }
-        .padding(.leading, 36)
+        .padding(.leading, 40)
         .padding(.trailing, 8)
         .padding(.vertical, 1)
     }

@@ -111,7 +111,8 @@ struct MotionWiringTests {
 
         // The header's ring is the one drawn small: 11 pt of a 14 pt ring.
         let header = { () -> Tako.TabStatusLayer? in
-            hosts(in: sidebar).map(\.statusLayer).first { abs($0.transform.m11 - StatusRingSize.extraSmall.rawValue / 14) < 0.01 }
+            // Reference A01 `.sb-seg .ring`: the needs-you ring is 10 pt of a 14 pt ring.
+            hosts(in: sidebar).map(\.statusLayer).first { abs($0.transform.m11 - 10.0 / 14) < 0.01 }
         }
         TerminalTestSupport.waitUntil(timeout: 1) { header() != nil }
         let resting = try #require(header())

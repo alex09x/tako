@@ -22,7 +22,9 @@ enum MotionSpec {
     // MARK: Palette (1b, 5a)
 
     static let ember = 0xF4581C, claw = 0xFF7A3D, rust = 0xC23E0E, ok = 0x7BD88F, error = 0xD54E53
-    static let ringIdle = 0x5A4D43, progressTrack = 0x3A2E26, ghostBorder = 0x3A2F27, faint = 0x6B6259, ink = 0x14100E
+    // Shell roles follow the frozen desktop reference's dark shell (--deep, --mute); the
+    // progress track is part of the ring (status.css `.r-prog` #3A2E26) and stays.
+    static let ringIdle = 0x5A4D43, progressTrack = 0x3A2E26, ghostBorder = 0x4E4A46, faint = 0x686460, ink = 0x14100E
 
     // MARK: Motion (1b legend and «спека для программиста», CSS keyframes)
 

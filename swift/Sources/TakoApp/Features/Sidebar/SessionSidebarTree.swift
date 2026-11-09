@@ -397,7 +397,9 @@ struct SessionSidebarWorkspaceHeaderView: View {
         }
         .frame(height: rowContentHeight)
         .padding(.top, 10)
-        .padding(.horizontal, 14)
+        // A01 `.ws`: 8 pt margin + 6/4 pt padding.
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
         .padding(.bottom, 5)
     }
 }

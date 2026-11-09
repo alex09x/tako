@@ -138,7 +138,8 @@ struct SessionSidebarView: View {
             VStack(spacing: 0) {
                 tabListView(groups: groups, flatItems: flatItems)
             }
-            .padding(.horizontal, 6)
+            // Rows carry the reference's own 8 pt margins (A01 `.row`, `.ws`).
+            .padding(.horizontal, 0)
             .padding(.top, 4)
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -96,9 +96,12 @@ struct SidebarLiveRowTests {
         let working = host.bounds.size
 
         model.status = .done
-        TerminalTestSupport.waitUntil(timeout: 1) { host.statusLayer.currentState == .done && host.bounds.size != working }
+        TerminalTestSupport.waitUntil(timeout: 1) { host.statusLayer.currentState == .done }
+        // Reference A01: a row is 46 pt in every state (its 1 pt border is always there),
+        // so finishing changes no size; a layout pass after it must still keep the pop.
+        hosting.needsLayout = true
         hosting.layoutSubtreeIfNeeded()
-        #expect(host.bounds.size != working, "the padding did not change: \(working)")
+        #expect(host.bounds.size == working, "a row keeps its size: \(working) → \(host.bounds.size)")
         #expect(host.statusLayer.ringContainer.animation(forKey: "donePop") != nil)
     }
 
