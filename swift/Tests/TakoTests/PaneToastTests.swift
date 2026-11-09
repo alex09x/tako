@@ -9,6 +9,7 @@
  */
 
 import AppKit
+import SwiftUI
 import Testing
 @testable import Tako
 
@@ -92,6 +93,15 @@ struct PaneToastTests {
         TerminalTestSupport.waitUntil(timeout: 1) { !controller.isMinimizedInFloatingCanvas(p2.id) }
         #expect(!controller.isMinimizedInFloatingCanvas(p2.id), "the toast did not bring its pane back")
         #expect(controller.focusedSurface === p2)
+    }
+
+    @Test func aToastEasesIn220msAndReduceMotionShowsItAtOnce() {
+        #expect(PaneToastStack.duration == 0.22)
+        #expect(PaneToastStack.animation(reduceMotion: false) != nil)
+        #expect(PaneToastStack.animation(reduceMotion: true) == nil, "Reduce Motion still animates toasts")
+        // A transition is opaque; the reduced one must be the identity (no move, no fade).
+        #expect(String(describing: PaneToastStack.transition(reduceMotion: true)) == String(describing: AnyTransition.identity))
+        #expect(String(describing: PaneToastStack.transition(reduceMotion: false)) != String(describing: AnyTransition.identity))
     }
 
     @Test func theExitCodeComesFromTheCrab() {

@@ -17,17 +17,34 @@ import SwiftUI
 /// never repeat one. Accessibility: `PaneToast-<pane uuid>`.
 struct PaneToastStack: View {
     @ObservedObject var center: PaneToastCenter = .shared
+    @ObservedObject private var motion = LivingAnimationState.shared
     @Environment(\.controlActiveState) private var activeState
     private typealias T = Tako.LivingTokens
 
+    /// `.toast` `tin .22s` in and `.out` .18 s: one easing per change, none under Reduce Motion.
+    static let duration: Double = 0.22
+
+    static func animation(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeOut(duration: duration)
+    }
+
+    static func transition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .identity : .move(edge: .trailing).combined(with: .opacity)
+    }
+
     var body: some View {
-        if activeState == .key, !center.toasts.isEmpty {
-            VStack(alignment: .trailing, spacing: 8) {
-                ForEach(center.toasts) { toast in row(toast) }
+        VStack(alignment: .trailing, spacing: 8) {
+            if activeState == .key {
+                ForEach(center.toasts) { toast in
+                    row(toast).transition(Self.transition(reduceMotion: motion.reduceMotion))
+                }
             }
-            .frame(width: 300)
-            .padding(12)
         }
+        .frame(width: 300)
+        .padding(center.toasts.isEmpty ? 0 : 12)
+        // An overlay over the terminals: it never resizes them.
+        .animation(Self.animation(reduceMotion: motion.reduceMotion), value: center.toasts.map(\.id))
+        .allowsHitTesting(!center.toasts.isEmpty)
     }
 
     private func row(_ toast: PaneToast) -> some View {
