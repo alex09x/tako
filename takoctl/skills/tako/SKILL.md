@@ -37,6 +37,9 @@ Tako exposes its capabilities through both a stdio **MCP server** (`takoctl mcp`
 | **Open artifact overlay** | `tako_overlay_open` | `takoctl overlay open <file> [--split dir] [--type type]` |
 | **Close overlay** | `tako_overlay_close` | `takoctl overlay close [--target ID]` |
 | **Overlay status** | `tako_overlay_status` | `takoctl overlay status [--target ID]` |
+| **Pane state** | `tako_pane` | `takoctl pane [state\|float\|dock\|maximize\|unmaximize\|minimize\|restore\|set STATE\|move]` |
+| **Windows** | `tako_window` | `takoctl window [list\|new\|minimize\|restore\|fullscreen\|focus\|frame\|close]` |
+| **Settings** | `tako_config` (scope `config`) | `takoctl config [list\|get\|set\|add\|unset\|path\|reload]` |
 
 ---
 
@@ -236,7 +239,36 @@ Wait for the other agent with `takoctl status --target <id>` (`working` → `don
 
 ---
 
-### 9. Every Command
+### 9. Pane States, Windows and Settings
+
+A pane sits on its tab's grid (`tiled`), floats over it (`floating`), fills the tab (`maximized`) or waits on
+the shelf (`minimized`). Open one straight into a state, or change it later; the process keeps running:
+
+```bash
+takoctl split right --state floating                      # a floating helper beside you
+takoctl run --state minimized -- tail -f build.log        # a log on the shelf until needed
+takoctl pane minimize --target <id> --no-select           # leave the keyboard where it is
+takoctl pane restore --target <id>                        # back exactly as it was
+takoctl pane move --target <id> --window new              # out into a window of its own
+takoctl window new --state maximized --frame 0,0,1280,800 # a window of its own
+takoctl window fullscreen on                              # and on/off/toggle, minimize, restore, focus
+```
+
+Settings live in the user's config file; `config` reads and writes it the way Settings does and reloads:
+
+```bash
+takoctl config get font-size theme
+takoctl config set font-size=14 cursor-style=bar          # refused if Settings would refuse it
+takoctl config add keybind=cmd+k=clear_screen             # repeatable keys: keybind, palette, ...
+takoctl config unset font-size                            # back to the default
+```
+
+Change the user's settings only when they asked for it. Over MCP, `tako_config` needs the `config` scope,
+which is never on by default.
+
+---
+
+### 10. Every Command
 
 All commands work from any pane; nothing needs approval. Run `takoctl --help` for the full flags.
 
@@ -244,7 +276,9 @@ All commands work from any pane; nothing needs approval. Run `takoctl --help` fo
 | :--- | :--- |
 | Look | `tree`, `text`, `last`, `find`, `history`, `screenshot`, `events`, `diagnose` |
 | Type | `send`, `type`, `key`, `broadcast`, `input lock/unlock/takeover/handback/status/log`, `activity` |
-| Panes | `tab-new`, `split`, `focus`, `close`, `title`, `collapse`, `expand`, `run`, `wait` |
+| Panes | `tab-new`, `split`, `focus`, `close`, `title`, `collapse`, `expand`, `run`, `wait`, `pane` |
+| Windows | `window list/new/state/minimize/restore/fullscreen/focus/frame/close` |
+| Settings | `config list/get/set/add/unset/path/reload`, `theme ...` |
 | Workspaces | `workspace list/current/switch/create/delete/assign`, `layout apply/save/status` |
 | Signal | `notify`, `status`, `progress`, `ask`, `dialog` |
 | Display | `overlay open/close/status/reload`, `review open/close/diff/comment/send` |

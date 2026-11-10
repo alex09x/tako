@@ -350,7 +350,10 @@ pub fn build_socket_request(
             }
             "review"
         }
-        other => return Err(format!("unrecognized tool '{other}'")),
+        other => match crate::mcp::tools::window::build(other, args, &mut req_args)? {
+            Some(cmd) => cmd,
+            None => return Err(format!("unrecognized tool '{other}'")),
+        },
     };
 
     let mut req = Map::new();

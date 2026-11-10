@@ -282,6 +282,13 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
             "--window" => {
                 args.insert("window".into(), Value::String(value("--window")?));
             }
+            "--state" => {
+                let state = super::window::pane_state(&value("--state")?)?;
+                args.insert("state".into(), Value::String(state));
+            }
+            "--frame" => {
+                args.insert("frame".into(), super::window::frame(&value("--frame")?)?);
+            }
             "--styled" => {
                 args.insert("styled".into(), Value::Bool(true));
             }

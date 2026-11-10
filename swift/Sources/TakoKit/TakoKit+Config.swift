@@ -148,7 +148,7 @@ public func tako_config_get(
 /// loaded config is reported as a diagnostic error, approximating (not
 /// replicating) Zig's real schema validation -- see the doc comment above
 /// `TakoConfigStorage`.
-let knownTakoConfigKeys: Set<String> = [
+public let knownTakoConfigKeys: Set<String> = [
     "initial-window", "quit-after-last-window-closed", "window-step-resize",
     "focus-follows-mouse", "window-decoration", "macos-window-shadow",
     "maximize", "title", "window-title-font-family", "macos-titlebar-style",

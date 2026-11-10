@@ -146,6 +146,10 @@ pub fn pane_line(pane: &Value, depth: usize) -> String {
     if pane["collapsed"].as_bool() == Some(true) {
         line += "  [collapsed]";
     }
+    // On the grid is the usual place; anything else is said.
+    if let Some(state) = pane["state"].as_str().filter(|s| *s != "tiled") {
+        line += &format!("  <{state}>");
+    }
     line.push('\n');
     line
 }

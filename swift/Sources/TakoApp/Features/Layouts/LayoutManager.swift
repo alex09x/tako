@@ -1,3 +1,13 @@
+/*
+ * tako — Terminal emulator
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/tako
+ * SPDX-License-Identifier: MIT
+ */
+
 import AppKit
 import Foundation
 
@@ -40,22 +50,27 @@ enum LayoutManager {
             guard let controller = tabWindow.windowController as? BaseTerminalController else { continue }
             let title = controller.titleOverride ?? tabWindow.title
             let color = (tabWindow as? TerminalWindow).flatMap { $0.tabColor == .none ? nil : $0.tabColor.name }
-            let rootNode = convertToLayoutNode(controller.surfaceTree.root)
+            let rootNode = convertToLayoutNode(controller.surfaceTree.root, in: controller)
             tabs.append(LayoutTab(title: title.isEmpty ? nil : title, color: color, root: rootNode))
         }
 
         let frame = LayoutFrame(targetWindow.frame)
+        let shown = (group.selectedWindow ?? targetWindow).windowController as? BaseTerminalController
+        let windowState: String? = shown?.fullscreenStyle?.isFullscreen == true ? "fullscreen"
+            : (group.selectedWindow ?? targetWindow).isMiniaturized ? "minimized" : nil
         let windowDoc = LayoutWindow(
             title: targetWindow.title.isEmpty ? nil : targetWindow.title,
             frame: frame,
             selectedTab: selectedIndex,
-            tabs: tabs
+            tabs: tabs,
+            state: windowState
         )
 
         return LayoutDocument(version: 1, name: targetWindow.title, windows: [windowDoc])
     }
 
-    private static func convertToLayoutNode(_ node: SplitTree<Tako.SurfaceView>.Node?) -> LayoutNode {
+    private static func convertToLayoutNode(_ node: SplitTree<Tako.SurfaceView>.Node?,
+                                            in controller: BaseTerminalController) -> LayoutNode {
         guard let node else {
             return .leaf(LayoutPane())
         }
@@ -64,18 +79,21 @@ enum LayoutManager {
             let cwd = surface.pwd
             let title = surface.title
             let command = surface.runProgram
+            // On the grid is what a pane is unless the file says otherwise.
+            let state = controller.canvasMode(of: surface).flatMap { $0 == .tiled ? nil : ControlPaneState.name($0) }
             return .leaf(LayoutPane(
                 title: title.isEmpty ? nil : title,
                 cwd: cwd,
                 env: nil,
                 command: command,
                 argv: nil,
-                shell: false
+                shell: false,
+                state: state
             ))
         case .split(let split):
             let dir = LayoutSplitDirection(from: split.direction)
-            let left = convertToLayoutNode(split.left)
-            let right = convertToLayoutNode(split.right)
+            let left = convertToLayoutNode(split.left, in: controller)
+            let right = convertToLayoutNode(split.right, in: controller)
             return .split(LayoutSplit(direction: dir, ratio: split.ratio, left: left, right: right))
         }
     }
@@ -102,6 +120,7 @@ enum LayoutManager {
         guard !windowsToApply.isEmpty else {
             throw ControlError(.invalid, "layout document contains no windows or tabs")
         }
+        try validateStates(document)
 
         var totalTabs = 0
         var totalPanes = 0
@@ -157,6 +176,7 @@ enum LayoutManager {
                 if tabIndex == (windowDoc.selectedTab ?? 0) {
                     selectedWindow = window
                 }
+                applyPaneStates(tabDoc, to: controller)
 
                 totalTabs += 1
             }
@@ -164,6 +184,17 @@ enum LayoutManager {
             if let anchor = anchorWindow, let selected = selectedWindow {
                 Tako.CustomTabGroup.group(for: anchor).select(selected)
                 selected.makeKeyAndOrderFront(nil)
+                switch windowDoc.state {
+                case "minimized"?:
+                    selected.miniaturize(nil)
+                case "fullscreen"?:
+                    if let shown = selected.windowController as? BaseTerminalController,
+                       shown.fullscreenStyle?.isFullscreen != true {
+                        shown.toggleFullscreen(mode: tako.config.windowFullscreen ?? .native)
+                    }
+                default:
+                    break
+                }
             }
         }
 
@@ -175,6 +206,37 @@ enum LayoutManager {
             programsSuppressed: programsSuppressed,
             isTrusted: isTrusted
         )
+    }
+
+    /// The states a document names, all checked before anything opens.
+    static func validateStates(_ document: LayoutDocument) throws {
+        for window in document.effectiveWindows {
+            if let state = window.state, !LayoutWindow.states.contains(state) {
+                throw ControlError(.invalid, "unknown window state \"\(state)\"; use \(LayoutWindow.states.joined(separator: ", "))")
+            }
+        }
+        for pane in document.allPanes {
+            if let state = pane.state { _ = try ControlPaneState.mode(state) }
+        }
+    }
+
+    /// Each pane of a tab just opened put in the state its file names:
+    /// panes leave the grid first, the shelf takes its own last, so a
+    /// minimized pane comes back where the file put it. The tab is not
+    /// brought forward and the keyboard stays where it is.
+    private static func applyPaneStates(_ tab: LayoutTab, to controller: BaseTerminalController) {
+        let surfaces = Array(controller.surfaceTree)
+        let panes = tab.allPanes
+        guard surfaces.count == panes.count else { return }
+        let wanted = zip(surfaces, panes).compactMap { surface, pane in
+            pane.state.flatMap { try? ControlPaneState.mode($0) }.map { (surface, $0) }
+        }
+        for (surface, mode) in wanted where mode != .minimized {
+            controller.setCanvasMode(surface, to: mode, reveal: false)
+        }
+        for (surface, mode) in wanted where mode == .minimized {
+            controller.setCanvasMode(surface, to: mode, reveal: false)
+        }
     }
 
     private static func buildSplitTreeNode(

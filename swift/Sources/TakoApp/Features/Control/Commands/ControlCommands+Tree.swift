@@ -60,6 +60,9 @@ extension ControlCommands {
                 node["statusTTL"] = .number(ttl)
             }
             addLive(surface.crab.live, exitCode: exitCode(of: surface.crab), to: &node)
+            if let mode = pane.controller?.canvasMode(of: surface) {
+                node["state"] = .string(ControlPaneState.name(mode))
+            }
             if let parent = SubagentHierarchyStore.shared.parent(of: surface.id) {
                 node["parent"] = .string(parent.uuidString.lowercased())
             }

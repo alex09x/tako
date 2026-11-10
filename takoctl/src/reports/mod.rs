@@ -16,6 +16,7 @@ pub mod redact;
 pub mod review;
 pub mod session;
 pub(crate) mod theme;
+pub mod window;
 pub mod workspace;
 
 pub use control::*;
@@ -137,6 +138,9 @@ pub fn render(cmd: &str, result: &Value) -> String {
         "history" => history_report(result),
         "triggers" => triggers_report(result),
         "activity" => activity_report(result),
+        "pane" => window::pane_report(result),
+        "window" => window::window_report(result),
+        "config" => window::config_report(result),
         _ => format!("{result}\n"),
     }
 }

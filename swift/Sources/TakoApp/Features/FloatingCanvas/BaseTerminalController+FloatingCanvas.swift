@@ -112,7 +112,9 @@ extension BaseTerminalController {
         revealAndFocusFloatingPane(surface, in: canvasSize)
     }
 
-    func minimizeFloatingPane(_ surface: Tako.SurfaceView) {
+    /// `revealNext` false (a script, in a tab not shown) passes the keyboard
+    /// to the next pane without bringing the tab forward.
+    func minimizeFloatingPane(_ surface: Tako.SurfaceView, revealNext: Bool = true) {
         guard usesFloatingCanvas, surfaceTree.contains(surface) else { return }
         if let est = estimatedFloatingCanvasSize(), floatingCanvas.lastValidCanvasSize == nil {
             floatingCanvas.lastValidCanvasSize = est
@@ -133,7 +135,11 @@ extension BaseTerminalController {
         surface.isWindowVisible = false
 
         if let next = topmostVisibleFloatingSurface() {
-            revealAndFocusFloatingPane(next)
+            if revealNext {
+                revealAndFocusFloatingPane(next)
+            } else if focusedSurface === surface {
+                focusedSurface = next
+            }
         } else {
             focusedSurface = nil
             if let window, window.firstResponder === surface {

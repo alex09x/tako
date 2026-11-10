@@ -353,11 +353,20 @@ extension BaseTerminalController {
 
     @objc func takoSurfaceDragEndedNoTarget(_ notification: Notification) {
         guard let target = notification.object as? Tako.SurfaceView else { return }
-        guard let targetNode = surfaceTree.root?.node(view: target) else { return }
+        moveSurfaceToNewWindow(target,
+                               position: notification.userInfo?[Notification.Name.takoSurfaceDragEndedNoTargetPointKey] as? NSPoint)
+    }
+
+    /// Moves `target` out of this tab into a window of its own, the same
+    /// live view and process, undoable as one step. Nil when it is not one
+    /// of several panes here: a lone pane already is a tab of its own.
+    @discardableResult
+    func moveSurfaceToNewWindow(_ target: Tako.SurfaceView, position: NSPoint? = nil) -> TerminalController? {
+        guard let targetNode = surfaceTree.root?.node(view: target) else { return nil }
 
         // If our tree isn't split, then we never create a new window, because
         // it is already a single split.
-        guard surfaceTree.isSplit else { return }
+        guard surfaceTree.isSplit else { return nil }
 
         // Collapsing the old SwiftUI tree can resize a moved NSView before
         // the new controller mounts it. Preserve its current viewport first.
@@ -387,10 +396,10 @@ extension BaseTerminalController {
         if draggedContentSize.width > 0, draggedContentSize.height > 0 {
             target.initialSize = draggedContentSize
         }
-        _ = TerminalController.newWindow(
+        return TerminalController.newWindow(
             tako,
             tree: newTree,
-            position: notification.userInfo?[Notification.Name.takoSurfaceDragEndedNoTargetPointKey] as? NSPoint,
+            position: position,
             confirmUndo: false,
             inheritBackgroundOpacity: isBackgroundOpaque)
     }
