@@ -242,11 +242,56 @@ struct TerminalDialogTests {
         dialog.layoutSubtreeIfNeeded()
         let field = dialog.field!, layout = dialog.bodyLayout, card = dialog.cardRect
         #expect(layout.starts[1] > 1, "the label did not wrap")
-        #expect(field.frame.minY >= dialog.bodyOrigin(row: layout.starts[1]).y - 2, "the field sits on the label")
+        #expect(field.frame.minY >= dialog.bodyOrigin(row: dialog.visibleRows).y, "the field sits on the label")
         #expect(card.contains(field.frame))
         field.stringValue = "new"
         #expect(dialog.press("Save"))
         #expect(await asked.value == "new")
+    }
+
+    /// In a short window a long label scrolls; the field keeps its slot
+    /// between the body and the buttons, never over them, at any size --
+    /// so a click on Cancel or Save reaches the button, and the whole label
+    /// stays reachable.
+    @Test func aLongLabelInAShortWindowNeverPutsTheFieldOverTheButtons() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 240),
+                              styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 240))
+        window.contentView = content
+        let label = String(repeating: "W", count: 115)
+        let asked = Task { await TerminalDialogView.askText(in: window, title: "Rename", label: label,
+                                                            value: "old", hint: "Empty gives the title back.",
+                                                            confirm: "Save", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+
+        func check(_ size: NSSize, _ label: Comment) {
+            content.setFrameSize(size)
+            dialog.frame = content.bounds
+            dialog.layoutSubtreeIfNeeded()
+            let field = dialog.field!, card = dialog.cardRect
+            #expect(card.contains(field.frame), label)
+            #expect(field.frame.minY >= dialog.bodyOrigin(row: dialog.visibleRows).y, label)
+            for button in dialog.buttons {
+                #expect(!field.frame.intersects(button.frame), "the field covers \(button.title): \(label)")
+                let center = dialog.convert(NSPoint(x: button.frame.midX, y: button.frame.midY), to: content)
+                #expect(dialog.hitTest(center) === button, "a click on \(button.title) misses it: \(label)")
+            }
+            // The whole label is reachable: End shows its last row, Home its first.
+            dialog.keyDown(with: key(119))
+            #expect(dialog.scrollOffset + dialog.visibleRows == dialog.bodyLayout.rows.count, label)
+            dialog.keyDown(with: key(115))
+            #expect(dialog.scrollOffset == 0, label)
+        }
+        check(NSSize(width: 420, height: 240), "420x240")
+        #expect(dialog.bodyLayout.rows.count > dialog.visibleRows, "the label does not scroll at 420x240")
+        check(NSSize(width: 420, height: 160), "420x160")
+        check(NSSize(width: 300, height: 600), "300x600")
+        check(NSSize(width: 900, height: 240), "900x240")
+        #expect(dialog.field?.stringValue == "old")
+        #expect(dialog.press("Save"))
+        #expect(await asked.value == "old")
     }
 
     @Test func aWordLongerThanALineIsSplitNotDropped() {

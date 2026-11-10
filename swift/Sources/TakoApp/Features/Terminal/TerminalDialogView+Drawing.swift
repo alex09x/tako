@@ -77,6 +77,7 @@ extension TerminalDialogView {
     /// nothing in a proportional font or a narrow window.
     struct BodyLayout {
         var cardWidth: CGFloat
+        var hasField: Bool
         var rows: [TUIText.Line]
         /// The first drawn row of each of the caller's lines.
         var starts: [Int]
@@ -106,14 +107,18 @@ extension TerminalDialogView {
 
     var bodyLayout: BodyLayout {
         let cardWidth = cardWidth
-        if let cached = layoutCache, cached.cardWidth == cardWidth { return cached }
+        let hasField = field != nil
+        if let cached = layoutCache, cached.cardWidth == cardWidth, cached.hasField == hasField { return cached }
         let available = bodyWidth(inCard: cardWidth)
         var rows: [TUIText.Line] = [], starts: [Int] = []
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             starts.append(rows.count)
+            // The field's own line is not body text: the field has its own
+            // slot under the body (see `fieldSlot`).
+            if hasField, index == fieldRow { continue }
             rows.append(contentsOf: reflow(line, to: available))
         }
-        let layout = BodyLayout(cardWidth: cardWidth, rows: rows, starts: starts)
+        let layout = BodyLayout(cardWidth: cardWidth, hasField: hasField, rows: rows, starts: starts)
         layoutCache = layout
         return layout
     }
@@ -183,11 +188,17 @@ extension TerminalDialogView {
         buttons.reduce(0) { $0 + buttonWidth($1) } + CGFloat(max(buttons.count - 1, 0)) * 8
     }
 
-    /// Body lines that fit: no more than `maxBodyRows`, nor than the window holds.
+    /// The input of a text question sits in its own slot between the body
+    /// and the buttons, so a long label scrolls above it and it can never
+    /// reach the buttons or leave the card.
+    var fieldSlot: CGFloat { field == nil ? 0 : cellHeight + 14 }
+
+    /// Body lines that fit: no more than `maxBodyRows`, nor than the window
+    /// holds -- at least one, the rest is reached by scrolling.
     var visibleRows: Int {
-        let chrome = Self.topInset + Self.iconSize + 6 + 14 + Self.buttonHeight + 16
+        let chrome = Self.topInset + Self.iconSize + 6 + fieldSlot + 14 + Self.buttonHeight + 16
         let fit = Int((bounds.height - chrome - 32) / cellHeight)
-        return max(1, min(bodyLayout.rows.count, Self.maxBodyRows, max(fit, 3)))
+        return max(1, min(bodyLayout.rows.count, Self.maxBodyRows, fit))
     }
 
     var maxOffset: Int { max(bodyLayout.rows.count - visibleRows, 0) }
@@ -198,7 +209,7 @@ extension TerminalDialogView {
     var cardRect: NSRect {
         let cardWidth = cardWidth
         let cardHeight = Self.topInset + Self.iconSize + 6 + CGFloat(visibleRows) * cellHeight
-            + 14 + Self.buttonHeight + 16
+            + fieldSlot + 14 + Self.buttonHeight + 16
         return NSRect(x: floor((bounds.width - cardWidth) / 2), y: max(floor((bounds.height - cardHeight) / 2), 0),
                       width: cardWidth, height: cardHeight)
     }
@@ -222,9 +233,9 @@ extension TerminalDialogView {
             right -= buttonWidth + 8
         }
         if let field {
-            let starts = bodyLayout.starts
-            let origin = bodyOrigin(row: (starts.indices.contains(fieldRow) ? starts[fieldRow] : fieldRow) - offset)
-            field.frame = NSRect(x: origin.x, y: origin.y - 1,
+            // Under the body's last visible row, whatever the body scrolls to.
+            let origin = bodyOrigin(row: visibleRows)
+            field.frame = NSRect(x: origin.x, y: origin.y + 7,
                                  width: cardRect.maxX - Self.padding - origin.x, height: cellHeight + 2)
         }
     }
