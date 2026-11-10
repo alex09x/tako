@@ -104,7 +104,7 @@ struct SessionSidebarRowView: View {
                 case .ownLayer:
                     SidebarStatusLayerView(state: state, ringCenter: nil, cornerRadius: 0, reduceMotion: reduceMotion,
                                            paused: motionPaused, pulses: item.live?.pulses ?? 0,
-                                           ringOnly: StatusRingSize.small.rawValue)
+                                           ringOnly: StatusRingSize.small.rawValue, pulseSources: item.surfaceIds)
                 case .rowLayer:
                     EmptyView()
                 }
@@ -226,7 +226,8 @@ struct SessionSidebarRowView: View {
                         paused: motionPaused,
                         pulses: item.live?.pulses ?? 0,
                         progressInset: 8,  // 4a `.pfill` left: 8px
-                        cometForProgress: true
+                        cometForProgress: true,
+                        pulseSources: item.surfaceIds
                     )
                 }
             }

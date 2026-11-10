@@ -150,4 +150,113 @@ struct SidebarLiveRowTests {
         TerminalTestSupport.waitUntil(timeout: 1) { changes > 1 }
         #expect(changes == 2)
     }
+
+    /// A stream's rate and burst count change every second it prints; each
+    /// change rebuilt the whole sidebar (~50 ms a second for one ssh). The
+    /// row changes when the stream starts or stops, or its quiet minutes do.
+    @Test func aStreamsSecondsOfOutputAreNoChangeToItsRow() {
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        surface.selfTestCapturing = true
+        defer { surface.close() }
+        var changes = 0
+        let watch = SessionSidebarStore.rowChanges(of: surface).sink { changes += 1 }
+        defer { watch.cancel() }
+
+        var live = Tako.LiveActivity(program: "ssh", detail: "ramx")
+        live.isFlowing = true
+        live.linesPerSecond = 20
+        live.pulses = 1
+        surface.crab.live = live
+        TerminalTestSupport.waitUntil(timeout: 1) { changes > 0 }
+        #expect(changes == 1)
+
+        for second in 2...4 {
+            live.linesPerSecond = 18 + second
+            live.pulses = second
+            surface.crab.live = live
+        }
+        TerminalTestSupport.waitUntil(timeout: 0.2) { false }
+        #expect(changes == 1)
+
+        live.isFlowing = false
+        live.quietSeconds = 60
+        surface.crab.live = live
+        TerminalTestSupport.waitUntil(timeout: 1) { changes > 1 }
+        #expect(changes == 2)
+    }
+
+    private func rippled(_ host: StatusLayerHostView) -> Bool {
+        host.statusLayer.ringContainer.sublayers?.first { $0.name == "liveRipple" }?.animation(forKey: "liveRipple") != nil
+    }
+
+    /// A row's layer in a window: one in none loses its animations on the
+    /// next turn of the run loop, before a test could see them.
+    private func hostedRow() -> (NSWindow, StatusLayerHostView) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 220, height: 46),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = StatusLayerHostView(frame: NSRect(x: 0, y: 0, width: 220, height: 46))
+        window.contentView?.addSubview(host)
+        return (window, host)
+    }
+
+    private func flowing(_ host: StatusLayerHostView, _ flowing: Bool, pulses: Int = 0) {
+        host.configure(.init(state: .live(flowing: flowing), ringCenter: nil, cornerRadius: 6, reduceMotion: false,
+                             paused: false, pulses: pulses, progressInset: 0, cometForProgress: false,
+                             drawsRing: true, ringOnly: nil))
+    }
+
+    /// With the bursts out of the row, the ring's layer takes them from the
+    /// pane: each one ripples it, and none is lost to the row being built
+    /// with a count seconds old.
+    @Test func aRowsRingRipplesForItsPanesBurstsWithoutTheRow() {
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        surface.selfTestCapturing = true
+        defer { surface.close() }
+        let (window, host) = hostedRow()
+        defer { window.close() }
+        host.watchPulses(of: [surface.crab])
+        var live = Tako.LiveActivity(program: "ssh")
+        live.isFlowing = true
+        live.pulses = 5
+        surface.crab.live = live
+        flowing(host, true, pulses: 5)
+        // Laid out and settled: from here only a burst can ripple the ring,
+        // as in a sidebar at rest.
+        window.contentView?.layoutSubtreeIfNeeded()
+        TerminalTestSupport.waitUntil(timeout: 0.1) { false }
+        host.statusLayer.ringContainer.sublayers?.forEach { $0.removeAllAnimations() }
+
+        live.pulses = 6
+        surface.crab.live = live
+        TerminalTestSupport.waitUntil(timeout: 1) { rippled(host) }
+        #expect(rippled(host))
+
+        // Rebuilt with its stale count, the row does not ripple again.
+        host.statusLayer.ringContainer.sublayers?.forEach { $0.removeAllAnimations() }
+        flowing(host, true, pulses: 2)
+        #expect(!rippled(host))
+    }
+
+    /// The burst that starts a stream comes before the row knows it flows:
+    /// it is kept for the change that makes the row flow, not spent unseen.
+    @Test func theBurstThatStartsAStreamRipplesOnceTheRowFlows() {
+        let surface = Tako.SurfaceView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        surface.selfTestCapturing = true
+        defer { surface.close() }
+        let (window, host) = hostedRow()
+        defer { window.close() }
+        host.watchPulses(of: [surface.crab])
+        flowing(host, false)
+
+        var live = Tako.LiveActivity(program: "ssh")
+        live.isFlowing = true
+        live.pulses = 1
+        surface.crab.live = live
+        TerminalTestSupport.waitUntil(timeout: 0.2) { false }
+        #expect(!rippled(host))
+
+        flowing(host, true)
+        #expect(rippled(host))
+    }
 }
