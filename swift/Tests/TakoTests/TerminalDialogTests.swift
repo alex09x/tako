@@ -181,6 +181,74 @@ struct TerminalDialogTests {
         _ = await asked.value
     }
 
+    /// Callers wrap by character count; in a proportional font and a narrow
+    /// window that bounds nothing. The card wraps again to its real width:
+    /// nothing is drawn outside it, no character is lost, and what does not
+    /// fit is reached by scrolling.
+    @Test func aNarrowWindowWrapsWideTextInsideTheCardAndKeepsAllOfIt() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+                              styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let wide = String(repeating: "W", count: 56)
+        var lines = TUIText.plain(wide, width: 56)
+        lines.append(TUIText.Line(indent: 2, runs: [.init(text: "see ", kind: .plain), .init(text: "/a/very/long/path/" + wide, kind: .code),
+                                                     .init(text: " and then some more words to wrap around", kind: .bold)]))
+        lines += (1...40).map { TUIText.Line(runs: [.init(text: "line \($0)", kind: .plain)]) }
+        let asked = Task { await TerminalDialogView.choose(in: window, title: "Notes", lines: lines,
+                                                           choices: [.init(title: "OK", kind: .primary)],
+                                                           cancelIndex: 0, theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        dialog.layoutSubtreeIfNeeded()
+
+        let card = dialog.cardRect, layout = dialog.bodyLayout
+        #expect(card.minX >= 0 && card.maxX <= 640 && card.maxY <= 400, "the card left its window")
+        let left = dialog.bodyOrigin(row: 0).x
+        for row in layout.rows {
+            #expect(left + dialog.width(of: row) <= card.maxX - TerminalDialogView.padding, "a row runs past the card")
+        }
+        #expect(layout.rows.count > lines.count, "the wide lines were not wrapped")
+        func text(_ lines: [TUIText.Line]) -> String { lines.flatMap(\.runs).map(\.text).joined() }
+        #expect(text(layout.rows) == text(lines), "wrapping lost or changed text")
+        #expect(layout.rows[layout.starts[1]].runs.first?.kind == .plain && layout.rows[layout.starts[1]].indent == 2)
+        #expect(layout.rows.flatMap(\.runs).contains { $0.kind == .code } && layout.rows.flatMap(\.runs).contains { $0.kind == .bold })
+
+        // The whole body is reachable: End shows the last row, Home the first.
+        #expect(dialog.maxOffset > 0)
+        dialog.keyDown(with: key(119))
+        #expect(dialog.scrollOffset == dialog.maxOffset)
+        #expect(dialog.scrollOffset + dialog.visibleRows == layout.rows.count)
+        dialog.keyDown(with: key(115))
+        #expect(dialog.scrollOffset == 0)
+        // What takoctl and VoiceOver read is the caller's text, unwrapped.
+        #expect(dialog.accessibilityValue() as? String == lines.map { String(repeating: " ", count: $0.indent) + $0.runs.map(\.text).joined() }.joined(separator: "\n"))
+        dialog.withdraw()
+        _ = await asked.value
+    }
+
+    /// The field of a text question stays on its own row, inside the card,
+    /// when the label above it wraps.
+    @Test func theTextFieldFollowsAWrappedLabelAndStaysInsideTheCard() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
+                              styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 400))
+        let label = "A label that is far too long for a narrow window and therefore has to wrap onto more rows"
+        let asked = Task { await TerminalDialogView.askText(in: window, title: "Rename", label: label,
+                                                            value: "old", hint: nil, confirm: "Save", theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        dialog.layoutSubtreeIfNeeded()
+        let field = dialog.field!, layout = dialog.bodyLayout, card = dialog.cardRect
+        #expect(layout.starts[1] > 1, "the label did not wrap")
+        #expect(field.frame.minY >= dialog.bodyOrigin(row: layout.starts[1]).y - 2, "the field sits on the label")
+        #expect(card.contains(field.frame))
+        field.stringValue = "new"
+        #expect(dialog.press("Save"))
+        #expect(await asked.value == "new")
+    }
+
     @Test func aWordLongerThanALineIsSplitNotDropped() {
         let hash = String(repeating: "0123456789abcdef", count: 5)   // 80 characters
         let lines = TUIText.wrap([TUIText.Run(text: "commit \(hash) done", kind: .code)], width: 30)

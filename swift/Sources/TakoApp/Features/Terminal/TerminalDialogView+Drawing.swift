@@ -66,8 +66,113 @@ extension TerminalDialogView {
 
     private var spaceWidth: CGFloat { (" " as NSString).size(withAttributes: [.font: Self.bodyFont]).width }
 
-    private func width(of line: TUIText.Line) -> CGFloat {
+    func width(of line: TUIText.Line) -> CGFloat {
         CGFloat(line.indent) * spaceWidth + line.runs.reduce(0) { $0 + width($1.text, attributes($1.kind)) }
+    }
+
+    // MARK: - Body rows
+
+    /// The body as it is drawn: the caller's lines, wrapped again to the
+    /// card's real width. Callers wrap by character count, which bounds
+    /// nothing in a proportional font or a narrow window.
+    struct BodyLayout {
+        var cardWidth: CGFloat
+        var rows: [TUIText.Line]
+        /// The first drawn row of each of the caller's lines.
+        var starts: [Int]
+    }
+
+    static let scrollGutter: CGFloat = 10
+
+    /// The widest the body may be drawn in a card `cardWidth` wide.
+    func bodyWidth(inCard cardWidth: CGFloat) -> CGFloat {
+        max(cardWidth - Self.textInset - Self.padding - Self.scrollGutter, 40)
+    }
+
+    var cardWidth: CGFloat {
+        let body: CGFloat
+        if let known = naturalBodyWidth { body = known } else {
+            body = lines.map(width(of:)).max() ?? 0
+            naturalBodyWidth = body
+        }
+        let needed = [
+            Self.textInset + body + Self.padding + Self.scrollGutter,
+            Self.textInset + width(title, [.font: Self.titleFont]) + Self.padding,
+            Self.padding * 2 + buttonsWidth,
+            Self.minimumWidth,
+        ].max() ?? Self.minimumWidth
+        return min(needed, max(bounds.width - 32, 240))
+    }
+
+    var bodyLayout: BodyLayout {
+        let cardWidth = cardWidth
+        if let cached = layoutCache, cached.cardWidth == cardWidth { return cached }
+        let available = bodyWidth(inCard: cardWidth)
+        var rows: [TUIText.Line] = [], starts: [Int] = []
+        for line in lines {
+            starts.append(rows.count)
+            rows.append(contentsOf: reflow(line, to: available))
+        }
+        let layout = BodyLayout(cardWidth: cardWidth, rows: rows, starts: starts)
+        layoutCache = layout
+        return layout
+    }
+
+    /// Words with the spaces that follow them, so a row breaks after a space.
+    private func pieces(_ text: String) -> [String] {
+        var result: [String] = [], current = "", afterSpace = false
+        for character in text {
+            if character != " ", afterSpace {
+                result.append(current)
+                current = ""
+            }
+            afterSpace = character == " "
+            current.append(character)
+        }
+        if !current.isEmpty { result.append(current) }
+        return result
+    }
+
+    /// `line` on as many rows as `available` points need: broken between
+    /// words, and inside a word longer than a row. Every character is kept
+    /// and each run keeps its style.
+    private func reflow(_ line: TUIText.Line, to available: CGFloat) -> [TUIText.Line] {
+        guard width(of: line) > available else { return [line] }
+        let indent = CGFloat(line.indent) * spaceWidth
+        var rows: [TUIText.Line] = [], current: [TUIText.Run] = [], used = indent
+        func flush() {
+            rows.append(TUIText.Line(indent: line.indent, runs: current))
+            current = []
+            used = indent
+        }
+        func add(_ text: String, _ kind: TUIText.Run.Kind, _ advance: CGFloat) {
+            if let last = current.last, last.kind == kind {
+                current[current.count - 1].text += text
+            } else {
+                current.append(TUIText.Run(text: text, kind: kind))
+            }
+            used += advance
+        }
+        for run in line.runs {
+            let attributes = attributes(run.kind)
+            for var piece in pieces(run.text) {
+                if used + width(piece, attributes) > available, !current.isEmpty { flush() }
+                while used + width(piece, attributes) > available, piece.count > 1 {
+                    var head = ""
+                    for character in piece {
+                        if !head.isEmpty, used + width(head + String(character), attributes) > available { break }
+                        head.append(character)
+                    }
+                    guard head.count < piece.count else { break }
+                    add(head, run.kind, 0)
+                    flush()
+                    piece = String(piece.dropFirst(head.count))
+                }
+                add(piece, run.kind, width(piece, attributes))
+            }
+        }
+        if !current.isEmpty || rows.isEmpty { flush() }
+        return rows
     }
 
     func buttonWidth(_ button: DialogButton) -> CGFloat {
@@ -82,23 +187,16 @@ extension TerminalDialogView {
     var visibleRows: Int {
         let chrome = Self.topInset + Self.iconSize + 6 + 14 + Self.buttonHeight + 16
         let fit = Int((bounds.height - chrome - 32) / cellHeight)
-        return max(1, min(lines.count, Self.maxBodyRows, max(fit, 3)))
+        return max(1, min(bodyLayout.rows.count, Self.maxBodyRows, max(fit, 3)))
     }
 
-    var maxOffset: Int { max(lines.count - visibleRows, 0) }
+    var maxOffset: Int { max(bodyLayout.rows.count - visibleRows, 0) }
 
     /// The card, in the middle of the window: as wide as its longest line,
-    /// its title or its buttons with the hint ask for, never narrower than
-    /// the other sheets' cards.
+    /// its title or its buttons ask for, never narrower than the other
+    /// sheets' cards nor wider than the window allows.
     var cardRect: NSRect {
-        let body = lines.map(width(of:)).max() ?? 0
-        let needed = [
-            Self.textInset + body + Self.padding + (maxOffset > 0 ? 8 : 0),
-            Self.textInset + width(title, [.font: Self.titleFont]) + Self.padding,
-            Self.padding * 2 + buttonsWidth,
-            Self.minimumWidth,
-        ].max() ?? Self.minimumWidth
-        let cardWidth = min(needed, max(bounds.width - 32, 240))
+        let cardWidth = cardWidth
         let cardHeight = Self.topInset + Self.iconSize + 6 + CGFloat(visibleRows) * cellHeight
             + 14 + Self.buttonHeight + 16
         return NSRect(x: floor((bounds.width - cardWidth) / 2), y: max(floor((bounds.height - cardHeight) / 2), 0),
@@ -124,7 +222,8 @@ extension TerminalDialogView {
             right -= buttonWidth + 8
         }
         if let field {
-            let origin = bodyOrigin(row: fieldRow - offset)
+            let starts = bodyLayout.starts
+            let origin = bodyOrigin(row: (starts.indices.contains(fieldRow) ? starts[fieldRow] : fieldRow) - offset)
             field.frame = NSRect(x: origin.x, y: origin.y - 1,
                                  width: cardRect.maxX - Self.padding - origin.x, height: cellHeight + 2)
         }
@@ -172,8 +271,9 @@ extension TerminalDialogView {
         (title as NSString).draw(at: NSPoint(x: card.minX + Self.textInset, y: tile.midY - titleSize.height / 2),
                                  withAttributes: titleAttributes)
 
+        let rows = bodyLayout.rows
         offset = min(offset, maxOffset)
-        for (index, line) in lines[offset..<min(offset + visibleRows, lines.count)].enumerated() {
+        for (index, line) in rows[offset..<min(offset + visibleRows, rows.count)].enumerated() {
             let origin = bodyOrigin(row: index)
             var x = origin.x + CGFloat(line.indent) * spaceWidth
             for run in line.runs {
@@ -184,7 +284,7 @@ extension TerminalDialogView {
         if maxOffset > 0 {
             let track = NSRect(x: card.maxX - 10, y: bodyOrigin(row: 0).y,
                                width: 3, height: CGFloat(visibleRows) * cellHeight)
-            let thumbHeight = max(track.height * CGFloat(visibleRows) / CGFloat(lines.count), cellHeight)
+            let thumbHeight = max(track.height * CGFloat(visibleRows) / CGFloat(rows.count), cellHeight)
             let thumbY = track.minY + (track.height - thumbHeight) * CGFloat(offset) / CGFloat(maxOffset)
             Palette.hairline.setFill()
             NSBezierPath(roundedRect: NSRect(x: track.minX, y: thumbY, width: track.width, height: thumbHeight),
@@ -193,6 +293,7 @@ extension TerminalDialogView {
 
         // The keys, quietly, left of the buttons; cut where the buttons begin.
         let hintAttributes: [NSAttributedString.Key: Any] = [.font: Self.hintFont, .foregroundColor: Palette.muted]
+        let hint = maxOffset > 0 && !hint.hasPrefix("↑↓") ? "↑↓ scroll · " + hint : hint
         let hintSize = (hint as NSString).size(withAttributes: hintAttributes)
         let room = card.width - Self.padding * 2 - buttonsWidth - 12
         if room > 40 {

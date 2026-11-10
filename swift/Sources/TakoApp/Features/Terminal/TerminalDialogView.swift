@@ -68,6 +68,9 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
     /// for text; return presses the chosen button.
     var field: NSTextField?
     var fieldRow = 0
+    /// What the body measures and how it wraps, kept while the card’s width holds.
+    var naturalBodyWidth: CGFloat?
+    var layoutCache: BodyLayout?
     /// Associated prompt ID, when presented on behalf of PromptManager (B10).
     var promptId: String?
 
@@ -253,8 +256,8 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         case 125: scroll(by: 1)                // down
         case 116: scroll(by: -visibleRows)     // page up
         case 121: scroll(by: visibleRows)      // page down
-        case 115: scroll(by: -lines.count)     // home
-        case 119: scroll(by: lines.count)      // end
+        case 115: scroll(by: -bodyLayout.rows.count) // home
+        case 119: scroll(by: bodyLayout.rows.count)  // end
         case 123: move(-1)                     // left
         case 124, 48: move(1)                  // right, tab
         case 36, 76: answer(selected)          // return, keypad enter
