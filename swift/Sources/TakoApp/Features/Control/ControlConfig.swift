@@ -82,14 +82,19 @@ struct ControlConfig {
     /// whether it is set at all, and what Settings knows of it.
     func entry(_ key: String) -> [String: JSON] {
         let item = TerminalSettingRegistry.setting(for: key)
-        let names = Set([key] + (item.map { [$0.id] + $0.aliases } ?? []))
-        let values = file.rawConfigLines.compactMap(KeybindConfigFile.parseConfigKeyValue)
-            .filter { names.contains($0.key) }.map(\.value)
-        var result: [String: JSON] = ["key": .string(item?.id ?? key), "set": .bool(!values.isEmpty)]
+        var result: [String: JSON] = ["key": .string(item?.id ?? key)]
         if Self.repeatable.contains(key) {
+            // Every line, in file order: each one adds.
+            let names = Set([key] + (item.map { [$0.id] + $0.aliases } ?? []))
+            let values = file.rawConfigLines.compactMap(KeybindConfigFile.parseConfigKeyValue)
+                .filter { names.contains($0.key) }.map(\.value)
+            result["set"] = .bool(!values.isEmpty)
             result["values"] = .array(values.map(JSON.string))
         } else {
-            result["value"] = values.last.map(JSON.string) ?? item.map { .string($0.type.defaultStringValue) } ?? .null
+            // Read as Settings reads it: the canonical name wins over an alias.
+            let value = file.getSettingValue(for: Self.item(key))
+            result["set"] = .bool(value != nil)
+            result["value"] = value.map(JSON.string) ?? item.map { .string($0.type.defaultStringValue) } ?? .null
         }
         if let item {
             result["title"] = .string(item.title)

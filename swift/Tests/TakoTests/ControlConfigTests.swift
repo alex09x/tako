@@ -70,6 +70,21 @@ struct ControlConfigTests {
         #expect(file(path) == "workspace-sync-window-frame = false\n")
     }
 
+    @Test func theCanonicalNameWinsOverAnAliasAsInSettings() throws {
+        for text in ["workspace-sync-window-frame = false\nworkspace-inherit-window-frame = true\n",
+                     "workspace-inherit-window-frame = true\nworkspace-sync-window-frame = false\n"] {
+            let (config, _, cleanup) = try sandbox(text)
+            defer { cleanup() }
+            let settings = KeybindConfigFile(configPath: try #require(config.file.configPath))
+            let shown = settings.getSettingValue(for: try #require(TerminalSettingRegistry.setting(for: "workspace-sync-window-frame")))
+            #expect(shown == "false", "what Settings shows")
+            for name in ["workspace-sync-window-frame", "workspace-inherit-window-frame"] {
+                let read = try config.run(keys("get", [name]))
+                #expect(entry(read, "workspace-sync-window-frame")?["value"]?.string == shown, "\(name) in \(text)")
+            }
+        }
+    }
+
     @Test func repeatableSettingsAddLinesAndUnsetRemovesThemAll() throws {
         let (config, path, cleanup) = try sandbox("keybind = cmd+k=clear_screen\n")
         defer { cleanup() }

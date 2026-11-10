@@ -79,17 +79,15 @@ enum LayoutManager {
             let cwd = surface.pwd
             let title = surface.title
             let command = surface.runProgram
-            // On the grid is what a pane is unless the file says otherwise.
-            let state = controller.canvasMode(of: surface).flatMap { $0 == .tiled ? nil : ControlPaneState.name($0) }
-            return .leaf(LayoutPane(
+            let pane = LayoutPane(
                 title: title.isEmpty ? nil : title,
                 cwd: cwd,
                 env: nil,
                 command: command,
                 argv: nil,
-                shell: false,
-                state: state
-            ))
+                shell: false
+            )
+            return .leaf(LayoutPanePresentation.capture(surface, in: controller, into: pane))
         case .split(let split):
             let dir = LayoutSplitDirection(from: split.direction)
             let left = convertToLayoutNode(split.left, in: controller)
@@ -176,7 +174,7 @@ enum LayoutManager {
                 if tabIndex == (windowDoc.selectedTab ?? 0) {
                     selectedWindow = window
                 }
-                applyPaneStates(tabDoc, to: controller)
+                LayoutPanePresentation.apply(tabDoc, to: controller)
 
                 totalTabs += 1
             }
@@ -216,26 +214,7 @@ enum LayoutManager {
             }
         }
         for pane in document.allPanes {
-            if let state = pane.state { _ = try ControlPaneState.mode(state) }
-        }
-    }
-
-    /// Each pane of a tab just opened put in the state its file names:
-    /// panes leave the grid first, the shelf takes its own last, so a
-    /// minimized pane comes back where the file put it. The tab is not
-    /// brought forward and the keyboard stays where it is.
-    private static func applyPaneStates(_ tab: LayoutTab, to controller: BaseTerminalController) {
-        let surfaces = Array(controller.surfaceTree)
-        let panes = tab.allPanes
-        guard surfaces.count == panes.count else { return }
-        let wanted = zip(surfaces, panes).compactMap { surface, pane in
-            pane.state.flatMap { try? ControlPaneState.mode($0) }.map { (surface, $0) }
-        }
-        for (surface, mode) in wanted where mode != .minimized {
-            controller.setCanvasMode(surface, to: mode, reveal: false)
-        }
-        for (surface, mode) in wanted where mode == .minimized {
-            controller.setCanvasMode(surface, to: mode, reveal: false)
+            try LayoutPanePresentation.validate(pane)
         }
     }
 

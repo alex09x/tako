@@ -169,6 +169,68 @@ struct ControlWindowTests {
         #expect(pane.pty === pty && pty.alive, "the process is untouched")
     }
 
+    /// Sends `window close` and collects every answer for a while.
+    private func close(_ all: [ControlCommands.Pane], force: Bool = false) async -> [ControlResponse] {
+        final class Replies: @unchecked Sendable { var all: [ControlResponse] = [] }
+        let replies = Replies()
+        let previous = ControlCommands.mode
+        ControlCommands.mode = .on
+        defer { ControlCommands.mode = previous }
+        var args: [String: JSON] = ["action": .string("close")]
+        if force { args["force"] = .bool(true) }
+        ControlCommands.handle(ControlRequest(cmd: "window", args: args), all: all) { response in
+            DispatchQueue.main.async { replies.all.append(response) }
+        }
+        try? await Task.sleep(for: .milliseconds(800))
+        return replies.all
+    }
+
+    @Test func aHiddenBusyWindowIsRefusedNotReportedClosed() async throws {
+        let previous = TerminalController.system
+        TerminalController.system = TerminalTestSupport.injectedWindowSystem()
+        defer { TerminalController.system = previous }
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        controller.showWindow(nil)
+        let pane = try #require(controller.surfaceTree.first)
+        let id = pane.id
+        pane.confirmCloseSurface = .always
+        pane.pty = PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(), program: ["/bin/sleep", "60"])
+        defer { pane.pty?.terminate() }
+        let pty = try #require(pane.pty)
+        window.orderOut(nil)
+        let replies = await close(panes(controller), force: true)
+        #expect(replies.count == 1, "exactly one answer")
+        if case .failure(let error)? = replies.first {
+            #expect(error.message.contains("not on screen"), "\(error.message)")
+        } else {
+            Issue.record("a hidden busy window was answered \(String(describing: replies.first))")
+        }
+        #expect(TerminalDialogView.pending(in: window) == nil, "no question left where nobody sees it")
+        #expect(controller.surfaceTree.contains { $0.id == id } && pane.pty === pty && pty.alive)
+        #expect(!Tako.CustomTabGroup.isClosed(window))
+    }
+
+    @Test func aHiddenIdleWindowClosesAndSaysSoOnlyOnceItHas() async throws {
+        let previous = TerminalController.system
+        TerminalController.system = TerminalTestSupport.injectedWindowSystem()
+        defer { TerminalController.system = previous }
+        let (keep, keepWindow) = TerminalTestSupport.loaded()
+        defer { keepWindow.close(); TerminalTestSupport.tearDown(keep, keepWindow) }
+        let (controller, window) = TerminalTestSupport.loaded()
+        controller.showWindow(nil)
+        window.orderOut(nil)
+        final class Flag: @unchecked Sendable { var closed = false }
+        let flag = Flag()
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: nil) { _ in flag.closed = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let replies = await close(panes(controller))
+        #expect(replies.count == 1)
+        #expect(replies.first.flatMap(result)?["state"]?.string == "closed")
+        #expect(flag.closed, "closed means the window really closed")
+    }
+
     @Test func newVerbsAreRefusedWhenRemoteControlIsOff() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }

@@ -141,41 +141,6 @@ extension ControlCommands {
         return NSRect(x: x, y: y, width: w, height: h)
     }
 
-    /// `window close`: closes every tab of the window the way ⇧⌘W does,
-    /// asking first when a process still runs. Answers `closed` or
-    /// `cancelled`. The last window is refused unless `force`: closing it
-    /// quits Tako.
-    static func windowClose(_ request: ControlRequest, all: [Pane],
-                            reply: @escaping @Sendable (ControlResponse) -> Void) throws {
-        let groups = windowGroups()
-        let target = try windowGroup(request, all: all, groups: groups)
-        guard let shown = target.shown else {
-            throw ControlError(.notFound, "the window \(target.id) has no tab on screen")
-        }
-        if groups.count == 1, request.args["force"] != .bool(true), shown.quitsAfterLastWindow {
-            throw ControlError(.invalid, "this is the last window: closing it quits Tako (--force to do it anyway)")
-        }
-        recordActivity(for: request, on: shown.surfaceTree.first?.id ?? UUID(), action: "window close")
-        let windows = target.controllers.compactMap(\.window)
-        shown.closeWindow(nil)
-        let deadline = Date().addingTimeInterval(ControlLayout.closeWait)
-        func open() -> Bool { windows.contains { !Tako.CustomTabGroup.isClosed($0) && $0.isVisible } }
-        func answer(_ state: String) { reply(.ok(["window": .string(target.id), "state": .string(state)])) }
-        func check() {
-            guard open() else { return answer("closed") }
-            let dialog = windows.lazy.compactMap { TerminalDialogView.pending(in: $0) }.first
-            let sheet = windows.lazy.compactMap(\.attachedSheet).first
-            guard dialog != nil || sheet != nil else { return answer("cancelled") }
-            guard Date() < deadline else {
-                if let dialog { dialog.withdraw() } else if let sheet { sheet.sheetParent?.endSheet(sheet, returnCode: .abort) }
-                DispatchQueue.main.async { answer(open() ? "cancelled" : "closed") }
-                return
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { check() }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { check() }
-    }
-
     /// `window new`: a window of its own with one pane, in the state asked.
     private static func newWindow(_ request: ControlRequest, all: [Pane]) throws -> [String: JSON] {
         guard let tako = all.first?.controller?.tako ?? (NSApp.delegate as? AppDelegate)?.tako else {

@@ -176,3 +176,33 @@ fn pane_frames_and_shortcuts_reach_the_socket() {
         )
     );
 }
+
+#[test]
+fn malformed_config_arguments_are_refused_before_anything_is_sent() {
+    let s = server("all");
+    let bad = [
+        json!({"action": "set", "settings": {"font-size": "14", "title": 123}}),
+        json!({"action": "set", "settings": {"title": null}}),
+        json!({"action": "set", "settings": ["title=x"]}),
+        json!({"action": "unset", "keys": ["theme", 7]}),
+        json!({"action": "unset", "keys": "theme"}),
+        json!({"action": "shortcut", "shortcut": {"op": "set", "name": "new_tab", "trigger": 5}}),
+        json!({"action": "shortcut", "shortcut": {"op": "set", "name": "new_tab", "trigger": "cmd+t", "force": "yes"}}),
+    ];
+    for args in bad {
+        assert!(
+            s.build_socket_request("tako_config", &args).is_err(),
+            "{args}"
+        );
+        let call = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                          "params": {"name": "tako_config", "arguments": args}})
+        .to_string();
+        let resp = s.handle_message(&call).expect("response");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert_eq!(resp["result"]["isError"], true, "{text}");
+        assert!(
+            !text.contains("socket"),
+            "refused before any exchange: {text}"
+        );
+    }
+}

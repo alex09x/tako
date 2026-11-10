@@ -158,24 +158,49 @@ pub fn build(
         }
         "tako_config" => {
             let action = text("action").unwrap_or_else(|| "list".into());
-            if let Some(keys) = args.get("keys").and_then(Value::as_array) {
+            // Arguments of the wrong type are refused before anything is
+            // sent: a malformed value must never become a write.
+            if let Some(keys) = args.get("keys") {
+                let keys = keys
+                    .as_array()
+                    .ok_or("keys must be a list of setting names")?;
+                if keys.iter().any(|k| !k.is_string()) {
+                    return Err("every key must be a string".into());
+                }
                 req.insert("keys".into(), Value::Array(keys.clone()));
             }
-            if let Some(settings) = args.get("settings").and_then(Value::as_object) {
-                let pairs: Vec<Value> = settings
-                    .iter()
-                    .map(|(k, v)| json!({"key": k, "value": v.as_str().unwrap_or_default()}))
-                    .collect();
+            if let Some(settings) = args.get("settings") {
+                let settings = settings
+                    .as_object()
+                    .ok_or("settings must be an object of name to string value")?;
+                let mut pairs = Vec::with_capacity(settings.len());
+                for (key, value) in settings {
+                    let value = value
+                        .as_str()
+                        .ok_or_else(|| format!("the value of {key} must be a string"))?;
+                    pairs.push(json!({"key": key, "value": value}));
+                }
                 req.insert("settings".into(), Value::Array(pairs));
             }
-            if let Some(filter) = text("filter") {
+            if let Some(filter) = args.get("filter") {
+                let filter = filter.as_str().ok_or("filter must be a string")?;
                 req.insert("filter".into(), json!(filter));
             }
-            if let Some(shortcut) = args.get("shortcut").and_then(Value::as_object) {
-                for key in ["op", "name", "trigger", "force"] {
+            if let Some(shortcut) = args.get("shortcut") {
+                let shortcut = shortcut.as_object().ok_or("shortcut must be an object")?;
+                for key in ["op", "name", "trigger"] {
                     if let Some(value) = shortcut.get(key) {
-                        req.insert(key.into(), value.clone());
+                        let value = value
+                            .as_str()
+                            .ok_or_else(|| format!("shortcut {key} must be a string"))?;
+                        req.insert(key.into(), json!(value));
                     }
+                }
+                if let Some(force) = shortcut.get("force") {
+                    let force = force
+                        .as_bool()
+                        .ok_or("shortcut force must be true or false")?;
+                    req.insert("force".into(), json!(force));
                 }
             }
             req.insert("action".into(), json!(action));
