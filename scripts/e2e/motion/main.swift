@@ -61,6 +61,10 @@ Task {
     }
     let pid = app.processIdentifier
     app.activate()
+    if ProcessInfo.processInfo.environment["MOTION_SCENE"] == "switch" {
+        await switchCheck(pid: pid, titles: ["alpha", title], framesDir: args.count > 4 ? args[4] : nil)
+        finish()
+    }
 
     // Where everything is, once the tab strip has stopped moving: a shell
     // starting renames the first tab and pushes the others along.

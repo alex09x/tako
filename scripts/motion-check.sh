@@ -9,6 +9,7 @@
 #   ./scripts/motion-check.sh             # build the motion app if missing, then check
 #   ./scripts/motion-check.sh --build     # rebuild it from this checkout first
 #   MOTION_FRAMES=dir ./scripts/motion-check.sh   # also save the last recording's crops
+#   MOTION_SCENE=switch ./scripts/motion-check.sh # sidebar clicks between two tabs: any flicker
 #
 # Needs Screen Recording and Accessibility for the terminal running it, so it
 # runs on a Mac with a logged-in screen -- not over ssh on the test Mac. The
@@ -56,6 +57,12 @@ for _ in $(seq 1 40); do tree | grep -q '"panes"' && break; sleep 0.5; done
 first="$(tree | python3 -c 'import json, sys; print(json.load(sys.stdin)["result"]["windows"][0]["tabs"][0]["panes"][0]["id"])')"
 pane="$("$CTL" --bundle-id "$BUNDLE" tab-new --target "$first" --no-select | tail -1)"
 "$CTL" --bundle-id "$BUNDLE" title --target "$pane" "$TITLE"
+if [ "${MOTION_SCENE:-}" = switch ]; then
+    # Two tabs that look different, so a frame of neither shows.
+    "$CTL" --bundle-id "$BUNDLE" title --target "$first" alpha
+    "$CTL" --bundle-id "$BUNDLE" send --target "$first" 'clear; ls -la /usr/bin | head -60'
+    "$CTL" --bundle-id "$BUNDLE" send --target "$pane" 'clear; seq 1000 1060'
+fi
 sleep 1
 
 MOTION_PANE="$pane" MOTION_OTHER_PANE="$first" python3 scripts/gui_lock.py -- target/motion-check "$BUNDLE" "$CTL" "$TITLE" ${MOTION_FRAMES:+"$MOTION_FRAMES"}
