@@ -33,15 +33,52 @@ func difference(_ a: Crop, _ b: Crop) -> Double {
     return n == 0 ? 0 : Double(sum) / Double(n) / 255
 }
 
-/// How far a crop's pixels stray from their mean, 0...1: a blank crop is ~0.
-func texture(_ a: Crop) -> Double {
-    let p = [UInt8](a.bytes)
-    var values: [Double] = []
-    var i = 0
-    while i + 3 < p.count { values.append(Double(Int(p[i]) + Int(p[i + 1]) + Int(p[i + 2])) / 765); i += 12 }
-    guard !values.isEmpty else { return 0 }
-    let mean = values.reduce(0, +) / Double(values.count)
-    return values.reduce(0) { $0 + abs($1 - mean) } / Double(values.count)
+/// Each pixel's brightness, 0...1.
+func luma(_ c: Crop) -> [Double] {
+    let p = [UInt8](c.bytes)
+    var out = [Double](repeating: 0, count: c.width * c.height)
+    for k in out.indices { out[k] = Double(Int(p[k * 4]) + Int(p[k * 4 + 1]) + Int(p[k * 4 + 2])) / 765 }
+    return out
+}
+
+/// A settled still and its ink: the pixels that stand out from its
+/// background (its median brightness), where the text and the chrome are.
+/// A mean over the whole crop misses a sparse page going blank -- `seq`'s
+/// column is a percent of a terminal -- the ink does not.
+struct Reference {
+    let crop: Crop
+    let background: Double
+    let ink: [Bool]
+    let inkCount: Int
+
+    init(_ crop: Crop) {
+        self.crop = crop
+        let l = luma(crop)
+        let bg = l.isEmpty ? 0 : l.sorted()[l.count / 2]
+        let mask = l.map { abs($0 - bg) > 0.2 }
+        background = bg
+        ink = mask
+        inkCount = mask.lazy.filter { $0 }.count
+    }
+
+    /// Ink as a share of the crop: a blank still has none.
+    var inkShare: Double { ink.isEmpty ? 0 : Double(inkCount) / Double(ink.count) }
+
+    /// The share of this still's ink a frame gets wrong, against this
+    /// still's background: ink missing plus ink added, over the ink there is.
+    func inkDistance(_ frame: Crop) -> Double {
+        guard frame.width == crop.width, frame.height == crop.height, inkCount > 0 else { return .infinity }
+        let l = luma(frame)
+        var wrong = 0
+        for k in l.indices where (abs(l[k] - background) > 0.2) != ink[k] { wrong += 1 }
+        return Double(wrong) / Double(inkCount)
+    }
+
+    /// Whether a frame shows this still: close overall and the same ink, up
+    /// to a blinking cursor and anti-aliasing.
+    func matches(_ frame: Crop, limit: Double) -> Bool {
+        difference(frame, crop) <= limit && inkDistance(frame) <= 0.25
+    }
 }
 
 /// Judges one region's recording of a switch from `before` to `after`, the
@@ -51,9 +88,11 @@ func judgeSwitch(_ shots: [(ms: Double, crop: Crop)], before: Crop, after: Crop)
     guard !shots.isEmpty else { return (false, "no frames recorded") }
     let change = difference(before, after)
     let limit = max(0.01, change / 4)
-    let odd = shots.filter { min(difference($0.crop, before), difference($0.crop, after)) > limit }
-    let ended = difference(shots.last!.crop, after) <= limit
-    let settled = shots.last { difference($0.crop, after) > limit }?.ms ?? 0
+    let from = Reference(before), to = Reference(after)
+    guard from.inkCount > 0, to.inkCount > 0 else { return (false, "a still has no ink to judge by") }
+    let odd = shots.filter { !from.matches($0.crop, limit: limit) && !to.matches($0.crop, limit: limit) }
+    let ended = to.matches(shots.last!.crop, limit: limit)
+    let settled = shots.last { !to.matches($0.crop, limit: limit) }?.ms ?? 0
     let at = odd.prefix(6).map { String(format: "%.0f", $0.ms) }.joined(separator: ",")
     return (odd.isEmpty && ended,
             String(format: "change %.3f, %d frames like neither side%@, %@ at %.0f ms, %d frames",
@@ -150,14 +189,17 @@ func switchCheck(pid: pid_t, titles: [String], framesDir: String?) async {
             }
             // Two tabs that print different things must not look alike, nor blank.
             if name == "terminal" {
-                check("switch", "stills", difference(b, a) > 0.02 && texture(b) > 0.01 && texture(a) > 0.01,
-                      String(format: "round %d: %@ vs %@ differ by %.3f, texture %.3f / %.3f",
-                             round, current, target, difference(b, a), texture(b), texture(a)))
+                let rb = Reference(b), ra = Reference(a)
+                check("switch", "stills", rb.inkShare > 0.002 && ra.inkShare > 0.002 && rb.inkDistance(a) > 0.5,
+                      String(format: "round %d: ink %.4f / %.4f of the crop, %@'s ink %.2f wrong in %@",
+                             round, rb.inkShare, ra.inkShare, current, rb.inkDistance(a), target))
             }
             // A tab seen before must come back as it was.
             if let earlier = stills[target]?[name] {
-                check("switch", "same", difference(earlier, a) <= 0.01,
-                      String(format: "round %d: %@ %@ differs from its earlier still by %.3f", round, target, name, difference(earlier, a)))
+                let r = Reference(earlier)
+                check("switch", "same", r.matches(a, limit: 0.01),
+                      String(format: "round %d: %@ %@ against its earlier still: mean %.3f, ink %.2f wrong",
+                             round, target, name, difference(earlier, a), r.inkDistance(a)))
             }
             let shots = frames.compactMap { f in f.crops[name].map { (ms: f.ms, crop: $0) } }
             let verdict = judgeSwitch(shots, before: b, after: a)
@@ -170,22 +212,35 @@ func switchCheck(pid: pid_t, titles: [String], framesDir: String?) async {
 
 /// `motion-check --selftest-switch`: the judge on made-up crops, no screen needed.
 func switchSelfTest() -> Never {
+    let w = 200, h = 100
     func crop(_ f: (Int, Int) -> UInt8) -> Crop {
-        var d = Data(count: 32 * 16 * 4)
-        for y in 0..<16 { for x in 0..<32 { let v = f(x, y); let i = (y * 32 + x) * 4; d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255 } }
-        return Crop(width: 32, height: 16, scale: 1, bytes: d)
+        var d = Data(count: w * h * 4)
+        for y in 0..<h { for x in 0..<w { let v = f(x, y); let i = (y * w + x) * 4; d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255 } }
+        return Crop(width: w, height: h, scale: 1, bytes: d)
     }
-    let a = crop { x, _ in x % 4 < 2 ? 230 : 20 }, b = crop { _, y in y % 4 < 2 ? 230 : 20 }, blank = crop { _, _ in 0 }
+    /// White on the terminal's dark background at `permille` of the pixels, scattered.
+    func page(_ permille: Int, seed: Int) -> Crop {
+        crop { x, y in (((x &* 73_856_093) ^ (y &* 19_349_663) ^ seed) & 0x7fff_ffff) % 1000 < permille ? 235 : 20 }
+    }
+    let dense = page(200, seed: 1), sparse = page(5, seed: 2), background = crop { _, _ in 20 }, grey = crop { _, _ in 120 }
+    // The sparse page with a 2x2 cursor more: a blink, not a different page.
+    let blinked = crop { x, y in (x == 10 || x == 11) && (y == 10 || y == 11) ? 235 : [UInt8](sparse.bytes)[(y * w + x) * 4] }
     func shots(_ c: [Crop]) -> [(ms: Double, crop: Crop)] { c.enumerated().map { (Double($0.offset) * 8, $0.element) } }
+    let blankBetween = judgeSwitch(shots([dense, background, sparse]), before: dense, after: sparse)
     let cases: [(String, Bool, Bool)] = [
-        ("a clean switch passes", judgeSwitch(shots([a, a, b, b]), before: a, after: b).ok, true),
-        ("an empty recording fails", judgeSwitch([], before: a, after: b).ok, false),
-        ("a blank frame between fails", judgeSwitch(shots([a, blank, b]), before: a, after: b).ok, false),
-        ("a click that changed nothing fails", judgeSwitch(shots([a, a, a]), before: a, after: b).ok, false),
-        ("a blank still has no texture", texture(blank) > 0.01, false),
-        ("a printed still has texture", texture(a) > 0.01, true),
-        ("two tabs' stills differ", difference(a, b) > 0.02, true),
+        ("a clean switch passes", judgeSwitch(shots([dense, dense, sparse, sparse]), before: dense, after: sparse).ok, true),
+        ("a cursor blink on the page switched to passes", judgeSwitch(shots([dense, sparse, blinked]), before: dense, after: sparse).ok, true),
+        ("an empty recording fails", judgeSwitch([], before: dense, after: sparse).ok, false),
+        ("a background-only frame before a sparse page fails", blankBetween.ok, false),
+        ("a background-only frame after a sparse page fails",
+         judgeSwitch(shots([sparse, background, dense]), before: sparse, after: dense).ok, false),
+        ("a solid grey frame between fails", judgeSwitch(shots([dense, grey, sparse]), before: dense, after: sparse).ok, false),
+        ("a click that changed nothing fails", judgeSwitch(shots([dense, dense, dense]), before: dense, after: sparse).ok, false),
+        ("a blank still has no ink", Reference(background).inkShare > 0.002, false),
+        ("a sparse page has ink", Reference(sparse).inkShare > 0.002, true),
+        ("two tabs' stills differ in ink", Reference(dense).inkDistance(sparse) > 0.5, true),
     ]
+    print(String(format: "sparse page: mean difference from background %.4f (the old judge's blind spot)", difference(background, sparse)))
     var bad = 0
     for (name, got, want) in cases {
         print("\(got == want ? "ok  " : "FAIL") \(name)")
