@@ -100,8 +100,12 @@ enum SessionRecoveryPresentation {
                 !($0.identity == .unavailable && existing.contains($0.id)) &&
                 (showEmpty || $0.identity != .unavailable || $0.record != nil)
         }
-        guard (!discovered.isEmpty || showEmpty), let window = await noticeWindow() else { return }
-        guard !discovered.isEmpty || showEmpty else { return }
+        // At launch the same sessions are offered once: after that they
+        // stay reachable from the menu (`showEmpty`), not from a dialog on
+        // every start.
+        let deferral = SessionRecoveryDeferral()
+        guard showEmpty || !deferral.unasked(discovered).isEmpty, let window = await noticeWindow() else { return }
+        if !showEmpty { deferral.remember(offered: discovered) }
         guard app.config.sessionPersistence else {
             _ = await TerminalDialogView.choose(in: window, title: "Session Recovery",
                 lines: TUIText.plain("Session persistence is disabled. Enable it before reconnecting saved sessions.", width: 56),
