@@ -19,6 +19,7 @@ import AppKit
 
 setvbuf(stdout, nil, _IONBF, 0)
 let args = CommandLine.arguments
+if args.dropFirst().first == "--selftest-switch" { switchSelfTest() }
 guard args.count >= 4 else { print("usage: motion-check BUNDLE_ID TAKOCTL TAB_TITLE [FRAMES_DIR]"); exit(2) }
 let bundleID = args[1], takoctl = args[2], title = args[3]
 
@@ -215,6 +216,8 @@ Task {
 
 func finish() -> Never {
     let failed = checks.filter { !$0.ok }
+    // A run that judged nothing proved nothing.
+    guard !checks.isEmpty else { print("motion-check: no checks ran"); exit(1) }
     print(failed.isEmpty ? "motion-check: all \(checks.count) checks passed" : "motion-check: \(failed.count) of \(checks.count) checks failed")
     exit(failed.isEmpty ? 0 : 1)
 }
