@@ -171,4 +171,17 @@ import Testing
         store.setCreatorClient(paneId: paneId, client: "")
         #expect(store.creatorClient(for: paneId) == "agent-1")
     }
+
+    /// A takoctl call leaves no bar over the pane; only a lock or a takeover does.
+    @Test func automationAloneLeavesNoBarOverThePane() {
+        let store = InputOwnershipStore()
+        let paneId = UUID()
+        store.recordAutomation(paneId: paneId, client: "anonymous", action: "input")
+        #expect(store.lastActivityMark(for: paneId) != nil)
+        #expect(!InputOwnershipHeaderView.showsBar(for: store.state(for: paneId)))
+        store.lock(paneId: paneId, by: "claude-code")
+        #expect(InputOwnershipHeaderView.showsBar(for: store.state(for: paneId)))
+        store.takeOver(paneId: paneId)
+        #expect(InputOwnershipHeaderView.showsBar(for: store.state(for: paneId)))
+    }
 }
