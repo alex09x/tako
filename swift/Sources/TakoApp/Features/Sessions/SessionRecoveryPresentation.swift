@@ -88,8 +88,12 @@ enum SessionRecoveryPresentation {
         return window
     }
 
-    private static func present(_ candidates: [SessionRecoveryInventory.Candidate], app: Tako.App,
-                                records: SessionRecordStore, showEmpty: Bool) async {
+    /// `deferral` and `host` default to the app's own defaults and notice
+    /// window; tests pass private ones.
+    static func present(_ candidates: [SessionRecoveryInventory.Candidate], app: Tako.App,
+                        records: SessionRecordStore, showEmpty: Bool,
+                        deferral: SessionRecoveryDeferral = SessionRecoveryDeferral(),
+                        host: @MainActor () async -> NSWindow? = { await noticeWindow() }) async {
         // Windows may have appeared while the runtime scan was in flight.
         let surfaces = TerminalController.all.flatMap { Array($0.surfaceTree) }
         let current = protectedSurfaceIDs(surfaces)
@@ -103,9 +107,8 @@ enum SessionRecoveryPresentation {
         // At launch the same sessions are offered once: after that they
         // stay reachable from the menu (`showEmpty`), not from a dialog on
         // every start.
-        let deferral = SessionRecoveryDeferral()
         guard SessionRecoveryOffer.isDue(discovered, showEmpty: showEmpty, deferral: deferral),
-              let window = await noticeWindow() else { return }
+              let window = await host() else { return }
         let offer = await SessionRecoveryOffer.ask(
             discovered, showEmpty: showEmpty, persistenceEnabled: app.config.sessionPersistence,
             deferral: deferral, window: window, theme: app.config.theme)

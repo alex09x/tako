@@ -133,6 +133,85 @@ struct SessionRecoveryDeferralTests {
         #expect(deferral.deferred.isEmpty)
     }
 
+    // MARK: - present(): the launch and menu paths themselves
+
+    /// Runs the real `present()` with private defaults, records and host
+    /// window, pressing `button` if a question comes up. Returns whether one did.
+    @MainActor
+    private func present(_ found: [SessionRecoveryInventory.Candidate], _ deferral: SessionRecoveryDeferral,
+                         in window: NSWindow?, showEmpty: Bool = false, persistence: Bool = true,
+                         press button: String?) async throws -> Bool {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tako-rec-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = directory.appendingPathComponent("config.tako")
+        try "session-persistence = \(persistence)\n".write(to: config, atomically: true, encoding: .utf8)
+        let app = Tako.App(configPath: config.path)
+        #expect(app.config.sessionPersistence == persistence)
+        let running = Task { @MainActor in
+            await SessionRecoveryPresentation.present(found, app: app, records: SessionRecordStore(directory: directory),
+                                                      showEmpty: showEmpty, deferral: deferral, host: { window })
+        }
+        var asked = false
+        if let button, let window {
+            while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+            asked = TerminalDialogView.pending(in: window)?.press(button) == true
+        }
+        await running.value
+        return asked
+    }
+
+    @Test @MainActor func presentAsksOnceAtLaunchAndAgainForANewGenerationOrRuntime() async throws {
+        let (deferral, cleanup) = try sandbox()
+        defer { cleanup() }
+        let window = window(), first = verified()
+        #expect(try await present([first], deferral, in: window, press: "Later"))
+        #expect(deferral.deferred == [SessionRecoveryDeferral.key(for: first)])
+
+        // The same session on the next launch: present() returns without a question.
+        #expect(try await present([first], deferral, in: window, press: nil) == false)
+        #expect(TerminalDialogView.pending(in: window) == nil)
+
+        // The same pane id in a new generation, then in another runtime.
+        let reborn = verified(first.id, generation: "b")
+        #expect(try await present([reborn], deferral, in: window, press: "Later"))
+        let moved = SessionRecoveryInventory.Candidate(
+            id: first.id, runtimeID: "0.8.1-1111111111111111", identity: .verified, record: reborn.record,
+            observedInRuntime: true, observedGeneration: "b", processID: nil, executableName: nil)
+        #expect(SessionRecoveryDeferral.key(for: moved) != SessionRecoveryDeferral.key(for: reborn))
+        #expect(try await present([moved], deferral, in: window, press: "Later"))
+        #expect(deferral.deferred == [SessionRecoveryDeferral.key(for: moved)])
+    }
+
+    @Test @MainActor func presentFromTheMenuReopensWhatLaunchAlreadyOffered() async throws {
+        let (deferral, cleanup) = try sandbox()
+        defer { cleanup() }
+        let window = window(), found = verified()
+        #expect(try await present([found], deferral, in: window, press: "Later"))
+        #expect(try await present([found], deferral, in: window, showEmpty: true, press: "Later"))
+        #expect(deferral.deferred == [SessionRecoveryDeferral.key(for: found)])
+    }
+
+    @Test @MainActor func presentWithoutADrawableHostRecordsNothing() async throws {
+        let (deferral, cleanup) = try sandbox()
+        defer { cleanup() }
+        let found = verified()
+        // No host window at all, then a window that cannot draw.
+        #expect(try await present([found], deferral, in: nil, press: nil) == false)
+        #expect(try await present([found], deferral, in: window(drawable: false), press: nil) == false)
+        #expect(deferral.deferred.isEmpty)
+        #expect(try await present([found], deferral, in: window(), press: "Later"), "it is still offered")
+    }
+
+    @Test @MainActor func presentWithPersistenceDisabledShowsItsNoticeAndRecordsNothing() async throws {
+        let (deferral, cleanup) = try sandbox()
+        defer { cleanup() }
+        let window = window(), found = verified()
+        #expect(try await present([found], deferral, in: window, persistence: false, press: "OK"))
+        #expect(deferral.deferred.isEmpty)
+        #expect(try await present([found], deferral, in: window, press: "Later"), "enabling it later still offers the session")
+    }
+
     @Test @MainActor func anUnverifiableSessionIsAcknowledgedWithOK() async throws {
         let (deferral, cleanup) = try sandbox()
         defer { cleanup() }
