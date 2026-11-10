@@ -45,6 +45,41 @@ struct TerminalDialogTests {
         return result
     }
 
+    /// The card is a desktop sheet, not a box of terminal cells: its corners
+    /// are rounded (the corner pixel is the dimmed backdrop, not the panel),
+    /// its middle is the shell’s opaque panel, and the buttons are desktop
+    /// buttons inside it.
+    @Test func theCardIsARoundedPanelInTheShellsColours() async throws {
+        let window = window()
+        let asked = Task { await TerminalDialogView.ask(in: window, title: "Close Terminal?",
+                                                        message: "A process is running.", confirm: "Close",
+                                                        theme: nil) }
+        while TerminalDialogView.pending(in: window) == nil { await Task.yield() }
+        let dialog = TerminalDialogView.pending(in: window)!
+        dialog.layoutSubtreeIfNeeded()
+        let bitmap = try #require(dialog.bitmapImageRepForCachingDisplay(in: dialog.bounds))
+        dialog.cacheDisplay(in: dialog.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / dialog.bounds.width
+        func pixel(_ point: NSPoint) -> NSColor? {
+            bitmap.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?.usingColorSpace(.sRGB)
+        }
+        func close(_ a: NSColor?, _ b: NSColor) -> Bool {
+            guard let a, let b = b.usingColorSpace(.sRGB) else { return false }
+            return abs(a.redComponent - b.redComponent) < 0.08 && abs(a.greenComponent - b.greenComponent) < 0.08
+                && abs(a.blueComponent - b.blueComponent) < 0.08
+        }
+        let card = dialog.cardRect, panel = TerminalDialogView.Palette.card
+        #expect(close(pixel(NSPoint(x: card.midX, y: card.maxY - 8)), panel), "the panel’s own colour")
+        #expect((pixel(NSPoint(x: card.minX + 1, y: card.minY + 1))?.alphaComponent ?? 1) < 0.9, "a square corner")
+        #expect((pixel(NSPoint(x: card.midX, y: card.midY))?.alphaComponent ?? 0) > 0.99, "the panel is opaque")
+                let button = try #require(dialog.buttons.last)
+        #expect(button.frame.height == TerminalDialogView.buttonHeight)
+        #expect(card.width >= TerminalDialogView.minimumWidth)
+        #expect(card.contains(button.frame))
+        dialog.withdraw()
+        _ = await asked.value
+    }
+
     @Test func returnConfirmsTheChosenButtonWhichStartsAsTheFirst() async {
         #expect(await answer(after: [key(36, "\r")]) == true)
     }

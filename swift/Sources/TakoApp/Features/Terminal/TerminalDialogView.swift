@@ -11,20 +11,12 @@
 import AppKit
 
 /// A question drawn inside the terminal window instead of a macOS sheet or
-/// alert, the way a terminal UI draws one: the terminal dims, and a card on
-/// the cell grid, in the terminal's font, asks it --
+/// alert: the terminal dims, and a card in the look of the desktop sheets
+/// (Settings, Set Up Tako) asks it -- a rounded panel in the shell's
+/// colours, the title in the interface font, the body on the cell grid in
+/// the terminal's font, desktop buttons on the right, a hint below.
 ///
-///     ╭─ Close Terminal? ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╮
-///     │                                                 │
-///     │  The terminal still has a running process.      │
-///     │                                                 │
-///     │                             Cancel   ▌ Close ▐  │
-///     │                                                 │
-///     │  tab choose · return confirm · esc cancel       │
-///     ╰─────────────────────────────────────────────────╯
-///
-/// In the TakoCore palette (`TakoTUI`): the frame and the hatching after the
-/// title run from Rust to Ember, the title is Claw. The body is lines of
+/// The colours follow `app-appearance` (`Palette`). The body is lines of
 /// styled runs -- plain text, or release notes with headings, bullets, bold,
 /// code and links. The keyboard answers it -- left, right or tab to choose,
 /// return to press the chosen button, escape or `n` to cancel, `y` to press
@@ -124,7 +116,7 @@ final class TerminalDialogView: NSView, NSTextFieldDelegate {
         super.init(frame: .zero)
         wantsLayer = true
         // The terminal behind dims, as a TUI's backdrop does.
-        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.62).cgColor
+        layer?.backgroundColor = TakoTUI.deep.withAlphaComponent(0.4).cgColor
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("terminal-dialog-view")
         setAccessibilityLabel(title)

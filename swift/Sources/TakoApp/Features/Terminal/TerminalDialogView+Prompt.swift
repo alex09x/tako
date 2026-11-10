@@ -91,8 +91,8 @@ extension TerminalDialogView {
         let field = NSTextField(string: value)
         field.isBordered = false
         field.drawsBackground = true
-        field.backgroundColor = TakoTUI.field
-        field.textColor = TakoTUI.bright
+        field.backgroundColor = TerminalDialogView.Palette.field
+        field.textColor = TerminalDialogView.Palette.title
         field.font = view.style.font
         field.focusRingType = .none
         field.usesSingleLineMode = true
