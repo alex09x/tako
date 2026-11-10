@@ -165,6 +165,23 @@ final class TakoControlCLIUITests: TakoDesktopDesignCase {
         XCTAssertEqual(try shellPID(original, phase: "CLI_WINDOW_AFTER", in: app), process)
     }
 
+    func testCLIRejectsExplicitUnknownWindowTargetsWithoutTouchingTheCurrentWindow() throws {
+        let app = try launchControlledDesktop()
+        let id = try XCTUnwrap(paneIDs(in: app).first)
+        let process = try shellPID(id, phase: "CLI_BAD_WINDOW_BEFORE", in: app)
+        let before = try cli(["window", "state"])
+        _ = try cli(["window", "frame", "20", "30", "600", "400", "--window", "new"], succeeds: false)
+        _ = try cli(["window", "minimize", "--window", "new"], succeeds: false)
+        _ = try cli(["window", "close", "--window", "new"], succeeds: false)
+        let after = try cli(["window", "state"])
+        XCTAssertEqual(after["id"] as? String, before["id"] as? String)
+        XCTAssertEqual(try XCTUnwrap(after["frame"] as? NSDictionary), try XCTUnwrap(before["frame"] as? NSDictionary))
+        XCTAssertEqual(after["minimized"] as? Bool, false)
+        XCTAssertEqual(after["visible"] as? Bool, true)
+        // Interact with the text view below; the maximized AXGroup itself is not a hit target.
+        XCTAssertEqual(try shellPID(id, phase: "CLI_BAD_WINDOW_AFTER", in: app), process)
+    }
+
     func testCLISettingsChangeThePrivateConfigAndTheNativeSettingsView() throws {
         let app = try launchControlledDesktop()
         XCTAssertEqual(try cli(["config", "path"])["path"] as? String, designConfig.path)
