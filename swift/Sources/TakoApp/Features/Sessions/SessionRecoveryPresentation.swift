@@ -104,38 +104,12 @@ enum SessionRecoveryPresentation {
         // stay reachable from the menu (`showEmpty`), not from a dialog on
         // every start.
         let deferral = SessionRecoveryDeferral()
-        guard showEmpty || !deferral.unasked(discovered).isEmpty, let window = await noticeWindow() else { return }
-        if !showEmpty { deferral.remember(offered: discovered) }
-        guard app.config.sessionPersistence else {
-            _ = await TerminalDialogView.choose(in: window, title: "Session Recovery",
-                lines: TUIText.plain("Session persistence is disabled. Enable it before reconnecting saved sessions.", width: 56),
-                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: app.config.theme)
-            return
-        }
-        let verified = discovered.filter { $0.identity == .verified && $0.record != nil }
-        let adoptable = discovered.filter {
-            $0.identity == .unverified &&
-                ($0.observedGeneration.map(SessionRecoveryInventory.isGeneration) ?? false)
-        }
-        let uncertain = discovered.count - verified.count - adoptable.count
-        var message = "Tako found \(verified.count) sessions matching saved records outside the restored windows."
-        if !adoptable.isEmpty {
-            message += " \(adoptable.count) sessions have no matching record and require individual confirmation."
-        }
-        if uncertain > 0 {
-            message += " \(uncertain) more could not be verified; they will be kept untouched."
-        }
-        guard !verified.isEmpty || !adoptable.isEmpty else {
-            _ = await TerminalDialogView.choose(in: window, title: "Session Recovery",
-                lines: TUIText.plain(message, width: 56), choices: [.init(title: "OK", kind: .normal)],
-                cancelIndex: 0, theme: app.config.theme)
-            return
-        }
-        let answer = await TerminalDialogView.choose(in: window, title: "Session Recovery",
-            lines: TUIText.plain(message + " Review and restore these sessions?", width: 56),
-            choices: [.init(title: "Later", kind: .normal), .init(title: "Restore", kind: .primary)],
-            selected: 0, cancelIndex: 0, theme: app.config.theme)
-        guard answer == 1 else { return }
+        guard SessionRecoveryOffer.isDue(discovered, showEmpty: showEmpty, deferral: deferral),
+              let window = await noticeWindow() else { return }
+        let offer = await SessionRecoveryOffer.ask(
+            discovered, showEmpty: showEmpty, persistenceEnabled: app.config.sessionPersistence,
+            deferral: deferral, window: window, theme: app.config.theme)
+        guard case .restore(let verified, let adoptable) = offer else { return }
         for candidate in verified {
             if let saved = candidate.record {
                 await restore(saved, app: app, records: records)
