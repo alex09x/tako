@@ -111,7 +111,8 @@ final class Driver {
                 pid = app.processIdentifier
                 break
             }
-            usleep(100_000)
+            // NSWorkspace updates its application list through the run loop.
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
         guard pid != 0 else { throw Failure("Tako did not start") }
 

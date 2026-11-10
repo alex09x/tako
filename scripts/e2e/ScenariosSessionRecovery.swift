@@ -89,12 +89,13 @@ func runMissingLayoutSafetyScenario(_ d: Driver) throws {
     guard d.wait(for: { d.hasText(containing: "Session Recovery") }, timeout: 15) else {
         throw Failure("no session recovery dialog for the unplaced session")
     }
+    try revisitDeferredRecoveryThroughMenu(d, config: config, shell: shell)
     try d.clickButton(titled: "Restore")
     if d.wait(for: { d.hasText(containing: "Choose Window") }, timeout: 3) {
         try d.clickButton(titled: "Use This")
     }
     guard d.wait(for: { (try? d.focusedPaneId())?.lowercased() == originalPane.lowercased() }, timeout: 15) else {
-        throw Failure("recovery did not return the original pane")
+        throw Failure("recovery did not return the original pane; focused=\(String(describing: try? d.focusedPaneId())); UI=\(d.staticTexts())")
     }
     guard d.wait(for: { d.screenText().contains("orphan-ready-\(originalPane)") }, timeout: 15) else {
         throw Failure("the original session did not finish reconnecting")

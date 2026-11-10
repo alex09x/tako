@@ -22,6 +22,7 @@ extension Driver {
     /// A button with this title anywhere in Tako's visible windows or sheets.
     func button(titled title: String, depth: Int = 24) -> AXUIElement? {
         let onScreen = onScreenWindows()
+        var partialMatch: AXUIElement?
         for window in (onScreen.isEmpty ? windows() : onScreen) {
             let hidden: Bool? = attribute(window, "AXHidden")
             let minimized: Bool? = attribute(window, "AXMinimized")
@@ -31,14 +32,18 @@ extension Driver {
                 let axDesc: String? = attribute(btn, kAXDescriptionAttribute)
                 let axLabel: String? = attribute(btn, "AXLabel")
                 let axId: String? = attribute(btn, "AXIdentifier")
-                if axTitle == title || axDesc == title || axLabel == title || axId == title ||
-                   axTitle?.contains(title) == true || axDesc?.contains(title) == true || axLabel?.contains(title) == true || axId?.contains(title) == true ||
-                   elementContainsText(btn, target: title, depth: 3) {
+                if axTitle == title || axDesc == title || axLabel == title || axId == title {
                     return btn
+                }
+                // A pane's "Restore Terminal" must not steal a dialog's "Restore".
+                if partialMatch == nil && (axTitle?.contains(title) == true || axDesc?.contains(title) == true ||
+                    axLabel?.contains(title) == true || axId?.contains(title) == true ||
+                    elementContainsText(btn, target: title, depth: 3)) {
+                    partialMatch = btn
                 }
             }
         }
-        return nil
+        return partialMatch
     }
 
     func clickButton(titled title: String) throws {
