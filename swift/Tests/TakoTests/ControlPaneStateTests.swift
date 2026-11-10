@@ -214,6 +214,36 @@ struct ControlPaneStateTests {
         #expect(tab.controller.floatingCanvas.activeTransition?.surfaceId != id, "no animation from a tile it never was")
     }
 
+    /// `split --no-select`, with a state and without: the new pane opens and
+    /// the keyboard stays with the pane that had it -- also once the new
+    /// view has mounted, which is where a deferred focus would land.
+    @Test func aSplitWithoutSelectLeavesTheKeyboardWhereItWas() async throws {
+        let tab = try tab()
+        defer { close(tab) }
+        tab.controller.showWindow(nil)
+        tab.controller.focusedSurface = tab.a
+        let previous = ControlCommands.mode
+        ControlCommands.mode = .on
+        defer { ControlCommands.mode = previous }
+        for extra in [["state": JSON.string("floating")], [:]] {
+            var args: [String: JSON] = ["target": .string(tab.a.id.uuidString), "select": .bool(false)]
+            args.merge(extra) { _, new in new }
+            let made = ControlCommands.handle(ControlRequest(cmd: "split", args: args), all: tab.all)
+            guard case .ok(let result) = made, let id = result["id"]?.string.flatMap(UUID.init(uuidString:)) else {
+                Issue.record("split \(extra) failed: \(made)")
+                continue
+            }
+            #expect(tab.controller.focusedSurface === tab.a, "right after creating \(extra)")
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(tab.controller.focusedSurface === tab.a, "after it mounted \(extra)")
+            #expect((tab.window.firstResponder as? Tako.SurfaceView)?.id != id)
+            let tree = ControlCommands.tree(tab.all, active: ControlCommands.activePane(tab.all))
+            let focused = tree["windows"]?.array?.first?.object?["tabs"]?.array?.first?.object?["panes"]?.array?
+                .first { $0.object?["focused"]?.bool == true }?.object?["id"]?.string
+            #expect(focused != id.uuidString.lowercased(), "tree does not call the new pane focused")
+        }
+    }
+
     @Test func aPaneMovesToAWindowOfItsOwnButALonePaneDoesNot() throws {
         let previous = TerminalController.system
         TerminalController.system = TerminalTestSupport.injectedWindowSystem()

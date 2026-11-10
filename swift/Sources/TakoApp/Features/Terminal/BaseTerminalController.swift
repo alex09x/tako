@@ -232,12 +232,14 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Create a new split.
+    /// Create a new split. `focus` false (a script's `--no-select`) leaves
+    /// the keyboard with the pane that has it.
     @discardableResult
     func newSplit(
         at oldView: Tako.SurfaceView,
         direction: SplitTree<Tako.SurfaceView>.NewDirection,
-        baseConfig config: Tako.SurfaceConfiguration? = nil
+        baseConfig config: Tako.SurfaceConfiguration? = nil,
+        focus: Bool = true
     ) -> Tako.SurfaceView? {
         guard surfaceTree.root?.node(view: oldView) != nil else { return nil }
         let newView = Tako.SurfaceView(tako, baseConfig: config)
@@ -252,7 +254,7 @@ class BaseTerminalController: NSWindowController,
         if usesFloatingCanvas {
             floatingCanvas.setPendingSplitHint(.init(anchorId: oldView.id, newId: newView.id, direction: direction))
         }
-        replaceSurfaceTree(newTree, moveFocusTo: newView, moveFocusFrom: oldView, undoAction: "New Split")
+        replaceSurfaceTree(newTree, moveFocusTo: focus ? newView : nil, moveFocusFrom: oldView, undoAction: "New Split")
         return newView
     }
 

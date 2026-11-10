@@ -91,7 +91,10 @@ enum ControlLayout {
         default: throw ControlError(.invalid, "\"direction\" must be right, left, down or up")
         }
         let config = try config(args)
-        guard let pane = try controller(of: surface).newSplit(at: surface, direction: direction, baseConfig: config) else {
+        // `--no-select`: the new pane opens beside, the keyboard stays put.
+        let focus = args["select"] != .bool(false)
+        guard let pane = try controller(of: surface).newSplit(at: surface, direction: direction, baseConfig: config,
+                                                              focus: focus) else {
             throw ControlError(.internalError, "the split was not created")
         }
         if let creator = client ?? args["client"]?.string {
