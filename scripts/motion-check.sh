@@ -32,6 +32,8 @@ mkdir -p target
 swiftc -O -o target/motion-check scripts/e2e/motion/*.swift
 # The switch judge on made-up frames first: a judge that passes anything proves nothing.
 [ "${MOTION_SCENE:-}" = switch ] && target/motion-check --selftest-switch
+# Before any app quits or opens: this terminal may click and record, or nothing runs.
+target/motion-check --preflight || { echo "motion-check: no Accessibility or Screen Recording here; nothing launched" >&2; exit 3; }
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/tako-motion.XXXXXX")"
 printf 'remote-control = on\nwindow-save-state = never\nsession-persistence = false\n' > "$work/config"
