@@ -159,7 +159,7 @@ fn positional_frame(
     if positional.len() != 4 {
         return Err("frame takes four numbers: X Y WIDTH HEIGHT".into());
     }
-    let frame = frame(&positional.drain(..).collect::<Vec<_>>().join(","))?;
+    let frame = frame(&std::mem::take(positional).join(","))?;
     args.insert("frame".into(), frame);
     Ok(())
 }

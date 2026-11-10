@@ -123,6 +123,80 @@ struct ControlWindowTests {
         #expect(!window.isVisible)
     }
 
+    @Test func aCancelledCloseKeepsThePaneAndItsProcessAndAnswersOnce() async throws {
+        let previous = TerminalController.system
+        TerminalController.system = TerminalTestSupport.injectedWindowSystem()
+        defer { TerminalController.system = previous }
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        window.setContentSize(NSSize(width: 900, height: 600))
+        controller.showWindow(nil)
+        let pane = try #require(controller.surfaceTree.first)
+        let id = pane.id
+        // Busy: closing by hand would ask.
+        pane.confirmCloseSurface = .always
+        pane.pty = PTY(cols: 80, rows: 24, workingDirectory: NSTemporaryDirectory(), program: ["/bin/sleep", "60"])
+        defer { pane.pty?.terminate() }
+        let pty = try #require(pane.pty)
+        let previousMode = ControlCommands.mode
+        ControlCommands.mode = .on
+        defer { ControlCommands.mode = previousMode }
+
+        final class Replies: @unchecked Sendable { var all: [ControlResponse] = [] }
+        let replies = Replies()
+        // --force only lifts the last-window refusal; the busy question stays.
+        ControlCommands.handle(ControlRequest(cmd: "window", args: ["action": .string("close"), "force": .bool(true)]),
+                               all: panes(controller)) { response in
+            DispatchQueue.main.async { replies.all.append(response) }
+        }
+        // Waits by suspending: a nested run loop inside this main-actor task
+        // would not let the close's own main-queue work run.
+        func eventually(_ seconds: Double, _ condition: () -> Bool) async -> Bool {
+            let deadline = Date().addingTimeInterval(seconds)
+            while !condition() {
+                if Date() >= deadline { return false }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return true
+        }
+        #expect(await eventually(3) { TerminalDialogView.pending(in: window) != nil }, "the busy question was asked")
+        #expect(TerminalDialogView.pending(in: window)?.press("Cancel") == true)
+        #expect(await eventually(3) { !replies.all.isEmpty })
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(replies.all.count == 1, "exactly one answer")
+        #expect(replies.all.first.flatMap(result)?["state"]?.string == "cancelled")
+        #expect(window.isVisible && controller.surfaceTree.contains { $0.id == id })
+        #expect(pane.pty === pty && pty.alive, "the process is untouched")
+    }
+
+    @Test func newVerbsAreRefusedWhenRemoteControlIsOff() throws {
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        let all = panes(controller)
+        let pane = try #require(controller.surfaceTree.first)
+        let before = controller.canvasMode(of: pane)
+        let previous = ControlCommands.mode
+        defer { ControlCommands.mode = previous }
+        for mode in [RemoteControlMode.off, .local] {
+            ControlCommands.mode = mode
+            for (cmd, args) in [
+                ("pane", ["action": JSON.string("minimize"), "target": .string(pane.id.uuidString)]),
+                ("window", ["action": .string("new")]),
+                ("window", ["action": .string("list")]),
+                ("config", ["action": .string("set"),
+                            "settings": .array([.object(["key": .string("no-such-setting"), "value": .string("1")])])]),
+            ] {
+                let response = ControlCommands.handle(ControlRequest(cmd: cmd, args: args), all: all)
+                guard case .failure(let error) = response else {
+                    Issue.record("\(cmd) \(args) ran with remote control \(mode)")
+                    continue
+                }
+                #expect(error.code == .disabled)
+            }
+        }
+        #expect(controller.canvasMode(of: pane) == before, "nothing changed")
+    }
+
     @Test func requestedFramesAreFourSaneNumbers() throws {
         #expect(try ControlCommands.requestedFrame([:]) == nil)
         let frame = try ControlCommands.requestedFrame(["frame": .array([.number(-50), .number(0), .number(800), .number(600)])])

@@ -211,7 +211,7 @@ options:
   --yes, -y               skip confirmation prompt for hooks install/uninstall
   --diff-only             print proposed diff without writing files
   --capabilities SCOPES   mcp: comma-separated capability scopes (read,layout,signal,input,overlay,config;
-                          default: read,layout,signal,input)
+                          default: all but config; all: every scope)
   --skill-path PATH       skills install/uninstall: override target skill markdown path
   --config PATH           override agent configuration file path
   --json                  print the app's raw JSON answer

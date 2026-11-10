@@ -67,6 +67,14 @@ impl Capabilities {
         Self { scopes }
     }
 
+    /// What `takoctl mcp` grants unless told otherwise: everything but
+    /// writing the user's settings, which is asked for by name.
+    pub fn default_set() -> Self {
+        let mut all = Self::all();
+        all.scopes.remove(&CapabilityScope::Config);
+        all
+    }
+
     pub fn parse(s: &str) -> Result<Self, String> {
         let mut scopes = HashSet::new();
         for part in s.split(',') {

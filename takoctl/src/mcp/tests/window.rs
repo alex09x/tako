@@ -120,6 +120,26 @@ fn writing_settings_needs_the_config_scope_by_name() {
             .contains(CapabilityScope::Config)
     );
     assert!(Capabilities::all().contains(CapabilityScope::Config));
+    // What `takoctl mcp` grants without --capabilities: everything else, not config.
+    let fallback = Capabilities::default_set();
+    assert!(!fallback.contains(CapabilityScope::Config));
+    for scope in [
+        CapabilityScope::Read,
+        CapabilityScope::Input,
+        CapabilityScope::Layout,
+        CapabilityScope::Signal,
+        CapabilityScope::Overlay,
+    ] {
+        assert!(fallback.contains(scope), "{scope:?}");
+    }
+    let resp = McpServer::new("/tmp/test.sock".into(), fallback, None)
+        .handle_message(&call)
+        .expect("response");
+    let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("requires 'config' capability scope"),
+        "{text}"
+    );
 }
 
 #[test]

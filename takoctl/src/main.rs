@@ -145,7 +145,7 @@ fn run_skills(opts: &Options) -> Result<(), String> {
 fn run_mcp(opts: &Options) -> Result<(), String> {
     let capabilities = match opts.args.get("capabilities").and_then(Value::as_str) {
         Some(s) => mcp::Capabilities::parse(s)?,
-        None => mcp::Capabilities::all(),
+        None => mcp::Capabilities::default_set(),
     };
 
     let inherited = std::env::var("TAKO_SOCKET").ok();
