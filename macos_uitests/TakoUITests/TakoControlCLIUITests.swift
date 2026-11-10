@@ -182,6 +182,34 @@ final class TakoControlCLIUITests: TakoDesktopDesignCase {
         XCTAssertEqual(try shellPID(id, phase: "CLI_BAD_WINDOW_AFTER", in: app), process)
     }
 
+    func testAutomationHasNoPillWhileInputLocksAndTakeoverStillWork() throws {
+        let app = try launchControlledDesktop()
+        let id = try XCTUnwrap(paneIDs(in: app).first)
+        let process = try shellPID(id, phase: "ACTIVITY_BAR_BEFORE", in: app)
+        let state = try cli(["input", "status", "--target", id])
+        XCTAssertNotNil(state["last_client"] as? String, "The activity mark still exists in the store")
+        let marks = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Automated input from "))
+        XCTAssertEqual(marks.count, 0)
+        let activity = try cli(["activity", "--target", id])
+        XCTAssertGreaterThan(try XCTUnwrap(activity["count"] as? Int), 0, "CLI activity logging is retained")
+
+        _ = try cli(["input", "lock", "--owner", "ui-test-agent", "--target", id])
+        let takeOver = app.buttons["Take Over"].firstMatch
+        XCTAssertTrue(takeOver.waitForExistence(timeout: 5))
+        takeOver.click()
+        let handBack = app.buttons["Hand Back"].firstMatch
+        XCTAssertTrue(handBack.waitForExistence(timeout: 5))
+        XCTAssertEqual(try cli(["input", "status", "--target", id])["locked"] as? Bool, false)
+        handBack.click()
+        XCTAssertTrue(takeOver.waitForExistence(timeout: 5))
+        XCTAssertEqual(try cli(["input", "status", "--target", id])["locked"] as? Bool, true)
+        _ = try cli(["input", "unlock", "--target", id])
+        XCTAssertTrue(takeOver.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(handBack.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(marks.count, 0)
+        XCTAssertEqual(try shellPID(id, phase: "ACTIVITY_BAR_AFTER", in: app), process)
+    }
+
     func testCLISettingsChangeThePrivateConfigAndTheNativeSettingsView() throws {
         let app = try launchControlledDesktop()
         XCTAssertEqual(try cli(["config", "path"])["path"] as? String, designConfig.path)
