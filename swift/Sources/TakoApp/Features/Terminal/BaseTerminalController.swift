@@ -232,8 +232,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Create a new split. `focus` false (a script's `--no-select`) leaves
-    /// the keyboard with the pane that has it.
+    /// Create a split; `focus` false (`--no-select`) leaves the keyboard where it is.
     @discardableResult
     func newSplit(
         at oldView: Tako.SurfaceView,

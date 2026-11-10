@@ -21,7 +21,7 @@ import Darwin
 @MainActor
 class TakoCustomConfigCase: XCTestCase {
     static let defaultsSuiteName: String = "TAKO_UI_TESTS"
-    private static let testBundleID = "com.tako-core.terminal.uitest"
+    static let testBundleID = "com.tako-core.terminal.uitest"
 
     private let configFile: URL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("tako")

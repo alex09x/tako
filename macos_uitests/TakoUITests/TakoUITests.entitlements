@@ -10,6 +10,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Only the isolated UI host's socket (SHA-256 prefix of its bundle ID).
+         The runner's network.client entitlement covers IP, not Unix sockets. -->
+    <key>com.apple.security.temporary-exception.sbpl</key>
+    <array>
+        <string>(allow network-outbound (regex #"^(/private)?/var/folders/[^/]+/[^/]+/T/tako-ctl-75802249693a[.]sock$"))</string>
+    </array>
     <key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
     <array>
         <string>/private/tmp/tkui/</string>

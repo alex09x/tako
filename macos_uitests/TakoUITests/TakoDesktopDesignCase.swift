@@ -22,7 +22,8 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         try? FileManager.default.removeItem(at: designDirectory)
     }
 
-    func launchDesktop(appearance: String = "dark", setup: Bool = false) throws -> XCUIApplication {
+    func launchDesktop(appearance: String = "dark", setup: Bool = false,
+                       configuration: String = "") throws -> XCUIApplication {
         try FileManager.default.createDirectory(at: designDirectory, withIntermediateDirectories: true)
         try """
         window-save-state = never
@@ -37,6 +38,7 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         font-size = 13
         app-appearance = \(appearance)
         status-animate = false
+        \(configuration)
         """.write(to: designConfig, atomically: true, encoding: .utf8)
         let app = try takoApplication()
         app.launchEnvironment["TAKO_CONFIG_PATH"] = designConfig.path
