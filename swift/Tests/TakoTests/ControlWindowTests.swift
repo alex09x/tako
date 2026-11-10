@@ -231,6 +231,42 @@ struct ControlWindowTests {
         #expect(flag.closed, "closed means the window really closed")
     }
 
+    /// An id that names no window -- `new` included -- is refused before
+    /// anything happens; it never falls back to the request's own window.
+    @Test func anIdThatNamesNoWindowIsNotTheCurrentOne() async throws {
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { window.close(); TerminalTestSupport.tearDown(controller, window) }
+        controller.showWindow(nil)
+        let all = panes(controller)
+        window.setFrame(NSRect(x: 100, y: 100, width: 800, height: 500), display: false)
+        let frame = window.frame
+        let big: [JSON] = [.number(0), .number(0), .number(1000), .number(700)]
+        for id in ["new", "window-0000"] {
+            for args: [String: JSON] in [["action": .string("frame"), "frame": .array(big)],
+                                         ["action": .string("minimize")],
+                                         ["action": .string("focus")]] {
+                var request = args
+                request["window"] = .string(id)
+                #expect(failure(send(request, all))?.contains("no window \(id)") == true, "\(id) \(args)")
+            }
+            let previous = ControlCommands.mode
+            ControlCommands.mode = .on
+            final class Replies: @unchecked Sendable { var all: [ControlResponse] = [] }
+            let replies = Replies()
+            ControlCommands.handle(ControlRequest(cmd: "window", args: ["action": .string("close"), "window": .string(id)]),
+                                   all: all) { response in DispatchQueue.main.async { replies.all.append(response) } }
+            ControlCommands.mode = previous
+            try await Task.sleep(for: .milliseconds(400))
+            #expect(replies.all.count == 1)
+            if case .failure(let error)? = replies.all.first {
+                #expect(error.code == .notFound, "\(id): \(error.message)")
+            } else {
+                Issue.record("window close --window \(id) answered \(String(describing: replies.all.first))")
+            }
+        }
+        #expect(window.frame == frame && !window.isMiniaturized && window.isVisible, "the current window is untouched")
+    }
+
     @Test func newVerbsAreRefusedWhenRemoteControlIsOff() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }

@@ -341,3 +341,30 @@ fn pane_frames_and_shortcuts_render() {
     assert!(lines[1].starts_with("*goto_tab:3") && lines[1].contains("ctrl+3"));
     assert!(lines[2].contains(" - "), "{out}");
 }
+
+#[test]
+fn window_new_is_never_a_name_for_the_current_window() {
+    for action in [
+        "close",
+        "frame",
+        "minimize",
+        "restore",
+        "unminimize",
+        "focus",
+        "state",
+        "fullscreen",
+    ] {
+        let e = err(&["window", action, "--window", "new"]);
+        assert!(e.contains("--window new is for pane move"), "{action}: {e}");
+    }
+    assert!(err(&["window", "new", "--window", "window-1"]).contains("does not take --window"));
+    assert!(err(&["window", "list", "--window", "window-1"]).contains("does not take --window"));
+    assert_eq!(
+        ok(&["window", "close", "--window", "window-1"]).args["window"],
+        "window-1"
+    );
+    assert_eq!(
+        ok(&["pane", "move", "--window", "new"]).args["window"],
+        "new"
+    );
+}

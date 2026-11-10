@@ -111,6 +111,20 @@ fn pane(args: &mut Map<String, Value>, positional: &mut Vec<String>) -> Result<(
 
 fn window(args: &mut Map<String, Value>, positional: &mut Vec<String>) -> Result<(), String> {
     let action = action(positional, "list");
+    // `--window` names an existing window; `new` is pane move's word for a
+    // window yet to open, never a stand-in for the current one.
+    match args.get("window").and_then(Value::as_str) {
+        Some(_) if matches!(action.as_str(), "list" | "new") => {
+            return Err(format!("window {action} does not take --window"));
+        }
+        Some("new") => {
+            return Err(
+                "--window new is for pane move; name an existing window (takoctl window list)"
+                    .into(),
+            );
+        }
+        _ => {}
+    }
     match action.as_str() {
         "list" | "new" | "state" | "minimize" | "restore" | "focus" | "close" => {}
         "unminimize" => {

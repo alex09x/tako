@@ -46,7 +46,9 @@ extension ControlCommands {
     static func windowGroup(_ request: ControlRequest, all: [Pane],
                             groups: [WindowGroup]? = nil) throws -> WindowGroup {
         let groups = groups ?? windowGroups()
-        if let id = request.args["window"]?.string, id != "new" {
+        // Any id given is looked up as given: none, `new` included, ever
+        // stands for the current window.
+        if let id = request.args["window"]?.string {
             guard let match = groups.first(where: { $0.id == id }) else {
                 throw ControlError(.notFound, "no window \(id); takoctl window list names them")
             }
