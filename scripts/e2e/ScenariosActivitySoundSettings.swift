@@ -84,7 +84,9 @@ func runActivitySoundSettingsScenario(_ d: Driver) throws {
     func expect(_ key: String, file saved: String?, applied value: String, _ what: String) throws {
         let ok = d.wait(for: {
             let inFile = saved.map { file().contains("\(key) = \($0)") } ?? !file().contains(key)
-            return inFile && applied(key).hasSuffix(value)
+            // A default reads «# key = value (default)».
+            let effective = saved == nil ? applied(key) == "# \(key) = \(value) (default)" : applied(key).hasSuffix(value)
+            return inFile && effective
         }, timeout: 5)
         print("\(what): \(ok ? "ok" : "FAILED") (file has key: \(file().contains(key)), applied: \(applied(key)))")
         if !ok { throw Failure("\(what): \(key) expected file \(saved ?? "absent"), applied \(value); got \(applied(key))") }
