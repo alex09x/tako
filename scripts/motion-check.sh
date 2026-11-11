@@ -72,7 +72,9 @@ if [ "${MOTION_SCENE:-}" = switch ]; then
     "$CTL" --bundle-id "$BUNDLE" title --target "$first" alpha
     # A shell may not be up yet in a session namespace of its own.
     send() { for _ in $(seq 1 40); do "$CTL" --bundle-id "$BUNDLE" send --target "$1" "$2" 2>/dev/null && return; sleep 0.25; done; return 1; }
-    send "$first" 'clear; ls -la /usr/bin | head -60'
+    # MOTION_SWITCH_ALPHA: what alpha runs, e.g. a full-screen program
+    # (`less /etc/services`) that repaints when told its size again.
+    send "$first" "${MOTION_SWITCH_ALPHA:-clear; ls -la /usr/bin | head -60}"
     send "$pane" 'clear; seq 1000 1060'
 fi
 sleep 1
