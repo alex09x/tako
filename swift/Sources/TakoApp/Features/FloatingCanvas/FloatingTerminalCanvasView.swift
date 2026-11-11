@@ -266,6 +266,10 @@ private struct FloatingPaneWindowView: View {
 
             Tako.InspectableSurface(surfaceView: surfaceView, isSplit: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(EdgeInsets(top: FloatingPaneGeometry.bodyInsets.top,
+                                    leading: FloatingPaneGeometry.bodyInsets.left,
+                                    bottom: FloatingPaneGeometry.bodyInsets.bottom,
+                                    trailing: FloatingPaneGeometry.bodyInsets.right))
         }
         .background(
             (surfaceView.backgroundColor ?? surfaceView.derivedConfig.backgroundColor)

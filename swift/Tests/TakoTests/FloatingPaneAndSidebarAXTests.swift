@@ -138,11 +138,14 @@ struct FloatingPaneAndSidebarAXTests {
         #expect(paneDescendants.contains { $0.identifier == "FloatingPaneClose-\(p1Key)" && $0.role == "AXButton" })
         let maxTextArea = try #require(paneDescendants.first { $0.role == "AXTextArea" })
         let maxTextInWindow = window.convertFromScreen(maxTextArea.frameInScreen)
-        #expect(abs(maxTextInWindow.maxY - headerInWindow.minY) <= 2)
-        #expect(abs((maxPaneInWindow.maxY - maxTextInWindow.maxY) - h) <= 2)
-        #expect(abs(maxTextInWindow.minY - maxPaneInWindow.minY) <= 2)
-        #expect(abs(maxTextInWindow.height - (winHeight - 2 * gap - h)) <= 2,
-                "Maximized terminal height (\(maxTextInWindow.height)) must equal winHeight - 2*gap - \(h) (\(winHeight - 2 * gap - h)) without losing 28pt to safe area")
+        // The terminal sits in the card's margin: 2 pt under the header, 6 pt off the sides and bottom.
+        let inset = FloatingPaneGeometry.bodyInsets
+        #expect(abs(headerInWindow.minY - maxTextInWindow.maxY - inset.top) <= 2)
+        #expect(abs((maxPaneInWindow.maxY - maxTextInWindow.maxY) - h - inset.top) <= 2)
+        #expect(abs(maxTextInWindow.minY - maxPaneInWindow.minY - inset.bottom) <= 2)
+        #expect(abs(maxTextInWindow.minX - maxPaneInWindow.minX - inset.left) <= 2)
+        #expect(abs(maxTextInWindow.height - (winHeight - 2 * gap - h - inset.top - inset.bottom)) <= 2,
+                "Maximized terminal height (\(maxTextInWindow.height)) must be the card less its header and margin, without losing 28pt to safe area")
 
         // Verify .normal mode near the top of the .fullSizeContentView window (y = 8 inside titlebar zone!) ALSO has zero safe-area gap:
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))
@@ -172,9 +175,9 @@ struct FloatingPaneAndSidebarAXTests {
                 "Normal pane near window top must not incur titlebar safe-area gap")
         let normalText = try #require(updatedDescendants.first { $0.role == "AXTextArea" })
         let normalTextInWindow = window.convertFromScreen(normalText.frameInScreen)
-        #expect(abs((normalPaneInWindow.maxY - normalTextInWindow.maxY) - h) <= 2)
-        #expect(abs(normalTextInWindow.minY - normalPaneInWindow.minY) <= 2)
-        #expect(abs(normalText.frameInScreen.height - (320 - h)) <= 2)
+        #expect(abs((normalPaneInWindow.maxY - normalTextInWindow.maxY) - h - inset.top) <= 2)
+        #expect(abs(normalTextInWindow.minY - normalPaneInWindow.minY - inset.bottom) <= 2)
+        #expect(abs(normalText.frameInScreen.height - (320 - h - inset.top - inset.bottom)) <= 2)
         #expect(updatedDescendants.contains { $0.identifier == "FloatingPaneResize-bottomTrailing-\(p1Key)" })
 
         // Verify multi-pane sidebar exposes non-duplicated session-pane-<uuid> AXGroups with selected/unselected values:

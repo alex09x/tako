@@ -159,7 +159,9 @@ struct FreeFloatingModeTests {
         controller.activateFloatingPane(a)
         await settle()
         let overlap = b.convert(b.bounds, to: nil).intersection(c.convert(c.bounds, to: nil))
-        #expect(!overlap.isNull && overlap.width > 40 && overlap.height > 40)
+        // The two terminals share a region to hit-test in. Each sits in its card's 6 pt
+        // side margin, so in this fixture they share 40 pt across: room enough for a point.
+        #expect(!overlap.isNull && overlap.width > 20 && overlap.height > 20)
         let point = CGPoint(x: overlap.midX, y: overlap.midY)
         #expect(owns(c, point: point), "The grid cannot cover a free terminal after gaining focus")
         controller.activateFloatingPane(b)

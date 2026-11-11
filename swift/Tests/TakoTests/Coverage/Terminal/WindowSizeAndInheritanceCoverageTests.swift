@@ -47,12 +47,14 @@ struct WindowSizeAndInheritanceCoverageTests {
         let expected = NSSize(
             width: surface.cellSize.width * 80 + padding.left + padding.right,
             height: surface.cellSize.height * 20 + padding.top + padding.bottom)
-        // The window adds the sidebar, the pane header and the card's gap on every side.
+        // The window adds the sidebar, the pane header, the card's margin round its
+        // terminal and the card's gap on every side.
         let sidebarWidth = SessionSidebarWidth.current()
         let gutter = 2 * DesktopCanvasMetrics.paneGap
+        let inset = FloatingPaneGeometry.bodyInsets
         let contentSize = window.contentRect(forFrameRect: window.frame).size
-        #expect(contentSize.width == expected.width + sidebarWidth + gutter)
-        #expect(contentSize.height == expected.height + FloatingPaneGeometry.headerHeight + gutter)
+        #expect(contentSize.width == expected.width + sidebarWidth + gutter + inset.left + inset.right)
+        #expect(contentSize.height == expected.height + FloatingPaneGeometry.headerHeight + gutter + inset.top + inset.bottom)
 
         // Verify the real mounted SurfaceView body dimensions and terminal cell grid,
         // accounting for the 26pt internal floating pane header above the terminal body.

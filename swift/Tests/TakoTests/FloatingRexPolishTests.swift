@@ -155,7 +155,8 @@ struct FloatingRexPolishTests {
         #expect(FloatingPaneGeometry.shelfCardHeight == 30)
         #expect(FloatingPaneGeometry.shelfBandHeight == 44)
         #expect(FloatingPaneResizeHandlesView.topEdgeHitThickness == 3)
-        #expect(FloatingPaneGeometry.bodySize(for: CGRect(x: 0, y: 0, width: 600, height: 400)) == CGSize(width: 600, height: 372))
+        // The body: the card less its 28 pt header and its 6 pt side/bottom, 2 pt top margin.
+        #expect(FloatingPaneGeometry.bodySize(for: CGRect(x: 0, y: 0, width: 600, height: 400)) == CGSize(width: 588, height: 364))
 
         // Real diagonal cursors on all 4 corners (never .crosshair)
         for corner in [FloatingPaneResizeEdge.topLeading, .topTrailing, .bottomLeading, .bottomTrailing] {

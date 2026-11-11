@@ -240,10 +240,16 @@ enum FloatingPaneGeometry {
         return workArea.insetBy(dx: gap, dy: gap)
     }
 
+    /// The card's own margin around its terminal, below the header: drawn in the
+    /// terminal's background, so a full-screen program or the scroller keeps clear of
+    /// the 10 pt rounded corners instead of being cut by them. The canvas's, like the
+    /// gap: the terminal SDK's own padding stays as the theme sets it.
+    static let bodyInsets = NSEdgeInsets(top: 2, left: 6, bottom: 6, right: 6)
+
     static func bodySize(for presentedFrame: CGRect) -> CGSize {
         CGSize(
-            width: max(1, presentedFrame.width),
-            height: max(1, presentedFrame.height - headerHeight)
+            width: max(1, presentedFrame.width - bodyInsets.left - bodyInsets.right),
+            height: max(1, presentedFrame.height - headerHeight - bodyInsets.top - bodyInsets.bottom)
         )
     }
 

@@ -91,6 +91,7 @@ extension FloatingRexPolishTests {
         #expect(controller.focusedSurface === p2)
         #expect(p2.window === window)
         let settledBodyHeight = contentView.bounds.height - 2 * DesktopCanvasMetrics.paneGap - FloatingPaneGeometry.headerHeight
+            - FloatingPaneGeometry.bodyInsets.top - FloatingPaneGeometry.bodyInsets.bottom
         #expect(abs(p2.bounds.height - settledBodyHeight) <= 2,
                 "Restored/maximized SurfaceView must mount immediately at settled final height (\(settledBodyHeight)), got \(p2.bounds.height)")
 
