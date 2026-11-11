@@ -162,13 +162,9 @@ struct SessionSidebarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // No rule on the trailing edge: the sidebar and the canvas are one
+        // surface, the cards alone mark where the terminals begin.
         .background(backgroundColor)
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(Color(nsColor: T.hairline))
-                .frame(width: 1)
-                .allowsHitTesting(false)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("SessionSidebar")
         .onAppear {
