@@ -35,42 +35,45 @@ struct CardFillTests {
 
     /// A colour the engine holds apart from the theme -- a program's OSC 11,
     /// or one a restored session carried -- is what the terminal is drawn in,
-    /// and so what the card is filled with; a later theme does not move it.
-    @Test func theCardFollowsTheBackgroundTheEngineDraws() throws {
+    /// and so what the card and its header take. Driven through the view's
+    /// own feed, Reset Terminal and checkpoint import, with no other output.
+    @Test func theCardFollowsTheColoursTheEngineDraws() throws {
         let (app, file) = try TerminalTestSupport.app(configText: "background = #14100e")
         defer { try? FileManager.default.removeItem(at: file) }
-        let surface = Tako.SurfaceView(app)
-        surface.feed(data: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
-        var theme = surface.theme
-        theme.background = rgb(0x282A36)
-        theme.foreground = rgb(0xF8F8F2)
-        surface.applyTheme(theme)
-
-        #expect(surface.drawnColors.background == FfiRgb(r: 0x0E, g: 0x18, b: 0x20))
-        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x0E1820), "the drawn colour, not the theme's")
-        let palette = CardHeaderPalette.of(surface)
-        #expect(palette == CardHeaderPalette(background: rgb(0x0E1820), foreground: rgb(0xEDE6DF)))
-
-        surface.feed(data: Data("\u{1b}]111\u{07}".utf8))
-        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36), "a reset program colour hands back to the theme")
-    }
-
-    /// Reset Terminal drops a program's colours with no output after it: the
-    /// card and its header follow the engine back to the theme at once.
-    @Test func resetTerminalHandsTheCardBackToTheTheme() throws {
-        let (app, file) = try TerminalTestSupport.app(configText: "background = #14100e")
-        defer { try? FileManager.default.removeItem(at: file) }
-        let surface = Tako.SurfaceView(app)
-        var theme = surface.theme
-        theme.background = rgb(0x282A36)
-        theme.foreground = rgb(0xF8F8F2)
-        surface.applyTheme(theme)
-        surface.feed(data: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
-        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x0E1820))
-
-        surface.resetTerminal()
+        func themed() -> Tako.SurfaceView {
+            let surface = Tako.SurfaceView(app)
+            var theme = surface.theme
+            theme.background = rgb(0x282A36)
+            theme.foreground = rgb(0xF8F8F2)
+            surface.applyTheme(theme)
+            return surface
+        }
+        let program = Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8)
+        let drawn = CardHeaderPalette(background: rgb(0x0E1820), foreground: rgb(0xEDE6DF))
+        let themeOnly = CardHeaderPalette(background: rgb(0x282A36), foreground: rgb(0xF8F8F2))
+        let surface = themed()
         #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36))
-        #expect(CardHeaderPalette.of(surface) == CardHeaderPalette(background: rgb(0x282A36), foreground: rgb(0xF8F8F2)))
+
+        // Output that is only OSC 10/11 still reaches the card.
+        surface.feed(data: program)
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x0E1820), "the drawn colour, not the theme's")
+        #expect(CardHeaderPalette.of(surface) == drawn)
+        surface.feed(data: Data("\u{1b}]111\u{07}".utf8))
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36), "OSC 111 hands back to the theme")
+
+        // Reset Terminal, with no output after it.
+        surface.feed(data: program)
+        surface.resetTerminal()
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36), "Reset Terminal hands back to the theme")
+        #expect(CardHeaderPalette.of(surface) == themeOnly)
+
+        // A restored session's colour, with no PTY bytes.
+        let source = themed()
+        source.feed(data: program)
+        let restored = themed()
+        _ = try restored.importCheckpoint(try source.exportCheckpoint())
+        #expect(FloatingPaneGeometry.cardFill(for: restored) == rgb(0x0E1820), "the restored session's colour")
+        #expect(CardHeaderPalette.of(restored) == drawn)
     }
 
     private func rgb(_ v: UInt32) -> CGColor {

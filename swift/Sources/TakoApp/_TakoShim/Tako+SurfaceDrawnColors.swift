@@ -22,8 +22,8 @@ extension Tako.SurfaceView {
         var foreground: FfiRgb?
     }
 
-    /// Reads the engine's colours again; publishes only a change, so calling
-    /// it on every content change costs a lock and a compare.
+    /// Reads the engine's colours again (two FFI reads, each taking the
+    /// engine's lock) and publishes only a change.
     func refreshDrawnColors() {
         let now = DrawnColors(background: core.defaultBackground(), foreground: core.defaultForeground())
         if now != drawnColors { drawnColors = now }
