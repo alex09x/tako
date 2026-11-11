@@ -57,8 +57,8 @@ codesign --verify --strict --deep "$APP"
 ssh -o ConnectTimeout=10 "$MAC" "mkdir -p /tmp/$REMOTE_RUN && chmod 700 /tmp/$REMOTE_RUN"
 scp -q -r "$APP" "$MAC:/tmp/$REMOTE_RUN/"
 set +e
-ssh "$MAC" "/tmp/$REMOTE_RUN/SoundCacheProbe.app/Contents/MacOS/probe place $GROUP Glass; echo \"exit=\$?\"" > "$OUT/place.json" 2>&1
-ssh "$MAC" "/tmp/$REMOTE_RUN/SoundCacheProbe.app/Contents/MacOS/probe remove $GROUP Glass; echo \"exit=\$?\"" > "$OUT/remove.json" 2>&1
+ssh "$MAC" "bash -c '/tmp/$REMOTE_RUN/SoundCacheProbe.app/Contents/MacOS/probe place $GROUP Glass; echo exit=\$?'" > "$OUT/place.json" 2>&1
+ssh "$MAC" "bash -c '/tmp/$REMOTE_RUN/SoundCacheProbe.app/Contents/MacOS/probe remove $GROUP Glass; echo exit=\$?'" > "$OUT/remove.json" 2>&1
 ssh "$MAC" "pgrep -f /tmp/$REMOTE_RUN/ || echo 'no probe process'" > "$OUT/exit.txt" 2>&1
 ssh "$MAC" "rm -rf /tmp/$REMOTE_RUN" ; echo "remote probe dir removed rc=$?" >> "$OUT/exit.txt"
 set -e
