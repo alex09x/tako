@@ -49,6 +49,14 @@ final class SidebarRenameEditor: ObservableObject {
         edit == Edit(rowId: rowId, window: window.map(ObjectIdentifier.init))
     }
 
+    /// Whether this window's sidebar shows a rename field, whose keys --
+    /// Return, the arrows, F2 -- its list then leaves alone. An edit kept
+    /// open in another window (say, after a failed save) does not count.
+    func isEditing(in window: NSWindow?) -> Bool {
+        guard let edit else { return false }
+        return edit.window == window.map(ObjectIdentifier.init)
+    }
+
     func begin(_ item: SessionSidebarItem, in window: NSWindow?, store: SessionSidebarStore) {
         guard store.canRename(item, around: window) else { return }
         draft.text = store.ownName(of: item, around: window, paneTitles: paneTitles) ?? item.title

@@ -226,6 +226,40 @@ struct SidebarRenameTests {
         }
     }
 
+    /// A failed save keeps its edit open in window A. A's list leaves Return,
+    /// the arrows and F2 to that field; window B's list keeps them, and
+    /// renaming there starts B's own edit as the menu and double-click do.
+    @Test func anEditKeptOpenInOneWindowLeavesAnotherWindowsKeysAlone() throws {
+        let (viewA, windowA, controllerA) = session()
+        let (viewB, windowB, controllerB) = session()
+        defer { withExtendedLifetime((controllerA, controllerB)) {} }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-rename-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("PaneTitles.json")
+        try "{ not json".write(to: file, atomically: true, encoding: .utf8)
+        defer {
+            windowA.close(); windowB.close(); editor.cancel(); editor.paneTitles = .shared
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let paneA = rows(viewA, windowA).pane, rowB = rows(viewB, windowB).session
+
+        editor.paneTitles = PaneTitleStore(fileURL: file)
+        editor.begin(paneA, in: windowA, store: store)
+        editor.draft.text = "logs"
+        #expect(!editor.commit(paneA, in: windowA, store: store))
+        editor.blurred(mount: editor.mounted())   // A's field loses focus: the failed edit stays
+        settle(editor.blurPause * 3)
+        #expect(editor.isEditing(paneA.id, in: windowA))
+
+        #expect(editor.isEditing(in: windowA), "A's list yields its keys to A's field")
+        #expect(!editor.isEditing(in: windowB), "B's list keeps Return, the arrows and F2")
+
+        editor.paneTitles = .shared
+        editor.begin(rowB, in: windowB, store: store)   // F2, the menu or a double-click in B
+        #expect(editor.isEditing(rowB.id, in: windowB) && editor.isEditing(in: windowB))
+        #expect(!editor.isEditing(in: windowA), "one edit at a time: A's list has its keys back")
+    }
+
     @Test func anAgentRowWithNoTerminalOfItsOwnIsNotOffered() {
         let (view, window, _) = session()
         defer { window.close(); editor.cancel() }
