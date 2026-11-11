@@ -276,10 +276,10 @@ struct SessionSidebarView: View {
                             .foregroundColor(Color(nsColor: T.dim))
                             .padding(.vertical, 24)
                     } else if let buckets {
-                        ForEach(buckets) { bucket in
-                            SidebarStatusBucketHeader(bucket: bucket)
-                            ForEach(bucket.rows) { row in
-                                sessionRow(row.item, flatItems: flatItems, workspace: row.workspace)
+                        ForEach(SidebarStatusBucket.entries(buckets)) { entry in
+                            switch entry.content {
+                            case .header(let bucket): SidebarStatusBucketHeader(bucket: bucket)
+                            case .row(let row): sessionRow(row.item, flatItems: flatItems, workspace: row.workspace)
                             }
                         }
                     } else {

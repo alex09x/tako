@@ -53,6 +53,23 @@ struct SidebarStatusBucket: Identifiable, Equatable {
         }
     }
 
+    /// One line of the list grouped by status: a bucket's heading or a row.
+    struct Entry: Identifiable {
+        enum Content { case header(SidebarStatusBucket), row(Row) }
+        let id: String
+        let content: Content
+    }
+
+    /// The buckets as one flat run of headings and rows. In a lazy stack, a
+    /// row that moved into another bucket's nested list was drawn once there
+    /// and then stood still: a new name or status text did not reach it.
+    static func entries(_ buckets: [SidebarStatusBucket]) -> [Entry] {
+        buckets.flatMap { bucket in
+            [Entry(id: "bucket-\(bucket.kind)", content: .header(bucket))]
+                + bucket.rows.map { Entry(id: $0.id, content: .row($0)) }
+        }
+    }
+
     /// The workspace groups' rows, regrouped; empty buckets are left out.
     static func buckets(from groups: [SessionSidebarWorkspaceGroup]) -> [SidebarStatusBucket] {
         var rows: [Kind: [Row]] = [:]

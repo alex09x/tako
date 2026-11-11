@@ -255,13 +255,14 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         usleep(600_000)
         print("  after Return: \(focusReport()); sidebars \(everySidebar())")
         print("  tree: \(((try? d.exec("\(ctl) --json tree")) ?? "").prefix(1500))")
-        if !shows("Moving Row") {   // is the list stale, or is the name it builds wrong?
-            usleep(1_500_000)
-            print("  +1.5s: \(everySidebar())")
+        // The new name must show where the row now is, with no regroup to redraw it.
+        if !d.wait(for: { shows("Moving Row") }, timeout: 5) {   // stale list, or a wrong name?
+            print("  +5s: \(everySidebar())")
             _ = try? d.exec("\(ctl) config set sidebar-group=workspace"); usleep(1_000_000)
             print("  regrouped by workspace: \(everySidebar())")
             _ = try? d.exec("\(ctl) config set sidebar-group=status"); usleep(1_000_000)
             print("  and by status again: \(everySidebar())")
+            throw Failure("the renamed row in its new status group still shows its old name until the list is rebuilt")
         }
         try expectName("Moving Row", gone: ["RnAlpha"], "the draft and the keyboard survive the row moving")
         try contextClick("Moving Row"); try menu("Use Automatic Name")
