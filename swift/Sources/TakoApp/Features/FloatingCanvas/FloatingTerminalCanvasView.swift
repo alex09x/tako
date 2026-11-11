@@ -263,6 +263,12 @@ private struct FloatingPaneWindowView: View {
                 onClose: onClose
             )
             .shellScheme()
+            // The header keeps the shell's fill: its title and controls are
+            // drawn in shell colours, readable on it whatever the terminal's theme.
+            .background(
+                (surfaceView.backgroundColor ?? surfaceView.derivedConfig.backgroundColor)
+                    .opacity(surfaceView.derivedConfig.backgroundOpacity)
+            )
 
             Tako.InspectableSurface(surfaceView: surfaceView, isSplit: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -270,11 +276,12 @@ private struct FloatingPaneWindowView: View {
                                     leading: FloatingPaneGeometry.bodyInsets.left,
                                     bottom: FloatingPaneGeometry.bodyInsets.bottom,
                                     trailing: FloatingPaneGeometry.bodyInsets.right))
+                // The margin round the terminal is the terminal's own background.
+                .background(
+                    Color(cgColor: FloatingPaneGeometry.cardFill(for: surfaceView))
+                        .opacity(surfaceView.derivedConfig.backgroundOpacity)
+                )
         }
-        .background(
-            Color(cgColor: FloatingPaneGeometry.cardFill(for: surfaceView))
-                .opacity(surfaceView.derivedConfig.backgroundOpacity)
-        )
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
             if radius > 0 {
@@ -342,11 +349,12 @@ private struct FloatingPaneWindowView: View {
 }
 
 extension FloatingPaneGeometry {
-    /// The card's fill, under the header and in its margin round the terminal:
-    /// the background the terminal itself is drawn in -- its theme's -- so the
-    /// margin reads as terminal, not as a frame. The config's `background`
-    /// can differ from the theme a pane shows (#14100e against a #0e1820
-    /// theme), and filled with it the margin stood out as a second border.
+    /// The fill of the card's margin round its terminal: the background the
+    /// terminal itself is drawn in -- its theme's -- so the margin reads as
+    /// terminal, not as a frame. The config's `background` can differ from the
+    /// theme a pane shows (#14100e against a #0e1820 theme), and filled with it
+    /// the margin stood out as a second border. The header above keeps the
+    /// shell's fill, which its shell-coloured title and controls are drawn for.
     @MainActor static func cardFill(for surface: Tako.SurfaceView) -> CGColor {
         surface.theme.background
     }
