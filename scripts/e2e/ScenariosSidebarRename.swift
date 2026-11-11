@@ -140,7 +140,16 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         let focused: AXUIElement? = d.attribute(app, kAXFocusedUIElementAttribute)
         let role = focused.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
         let id = focused.flatMap { d.attribute($0, kAXIdentifierAttribute) as String? } ?? "nil"
-        return "field \(field() != nil) focused \(String(describing: fieldFocused)) value \(String(describing: fieldValue())); app focus \(role)/\(id)"
+        func describe(_ w: AXUIElement?) -> String {
+            guard let w else { return "nil" }
+            let title = (d.attribute(w, kAXTitleAttribute) as String?) ?? "?"
+            let main = (d.attribute(w, kAXMainAttribute) as Bool?) ?? false
+            return "\(title)\(main ? " (main)" : "")"
+        }
+        let fieldWindow: AXUIElement? = field().flatMap { d.attribute($0, kAXWindowAttribute) }
+        let mainWindow: AXUIElement? = d.attribute(app, kAXMainWindowAttribute)
+        return "field \(field() != nil) focused \(String(describing: fieldFocused)) value \(String(describing: fieldValue())) in window \(describe(fieldWindow)); "
+            + "app focus \(role)/\(id), main window \(describe(mainWindow))"
     }
     func editing() throws {
         guard d.wait(for: { field() != nil }, timeout: 5) else { throw Failure("the rename field did not open") }
