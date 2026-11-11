@@ -272,7 +272,7 @@ private struct FloatingPaneWindowView: View {
                                     trailing: FloatingPaneGeometry.bodyInsets.right))
         }
         .background(
-            (surfaceView.backgroundColor ?? surfaceView.derivedConfig.backgroundColor)
+            Color(cgColor: FloatingPaneGeometry.cardFill(for: surfaceView))
                 .opacity(surfaceView.derivedConfig.backgroundOpacity)
         )
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -338,5 +338,16 @@ private struct FloatingPaneWindowView: View {
             x: 0,
             y: isNormal ? (isDraggingPane ? 14 : (isFocused ? 10 : 5)) : 0
         )
+    }
+}
+
+extension FloatingPaneGeometry {
+    /// The card's fill, under the header and in its margin round the terminal:
+    /// the background the terminal itself is drawn in -- its theme's -- so the
+    /// margin reads as terminal, not as a frame. The config's `background`
+    /// can differ from the theme a pane shows (#14100e against a #0e1820
+    /// theme), and filled with it the margin stood out as a second border.
+    @MainActor static func cardFill(for surface: Tako.SurfaceView) -> CGColor {
+        surface.theme.background
     }
 }
