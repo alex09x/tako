@@ -196,6 +196,23 @@ impl TakoCore {
         term.terminal.mark_all_damaged();
     }
 
+    /// The background the screen's default cells are drawn in now: the
+    /// host's base colour, or a program's OSC 11 colour (also one a restored
+    /// checkpoint carried), which a later base change does not replace.
+    /// None when neither was set, and the FFI fallback is drawn.
+    pub fn default_background(&self) -> Option<FfiRgb> {
+        let term = lock_recover(&self.inner);
+        let (_, bg, _) = term.terminal.default_colors();
+        bg.map(|(r, g, b)| FfiRgb { r, g, b })
+    }
+
+    /// The foreground default cells are drawn in now, as `default_background`.
+    pub fn default_foreground(&self) -> Option<FfiRgb> {
+        let term = lock_recover(&self.inner);
+        let (fg, _, _) = term.terminal.default_colors();
+        fg.map(|(r, g, b)| FfiRgb { r, g, b })
+    }
+
     /// Tells the engine whether the host shows a dark or a light colour scheme.
     pub fn set_color_scheme(&self, dark: bool) {
         lock_recover(&self.inner).terminal.set_dark_scheme(dark);

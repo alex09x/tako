@@ -69,6 +69,7 @@ extension Tako.SurfaceView {
     /// change, so it is given one at the size it already has.
     func applyTheme(_ newTheme: TerminalTheme) {
         theme = newTheme
+        refreshDrawnColors()
         setFrameSize(frame.size)
         // A base-size edit or preview can reset zoom too. Keep its UI in sync
         // with every actual theme application, not only the +/- shortcuts.

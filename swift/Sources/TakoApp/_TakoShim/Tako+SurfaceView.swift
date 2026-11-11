@@ -65,6 +65,10 @@ extension Tako {
         /// and raw protocol events retain their immediate values.
         @Published public internal(set) var titleText: String = ""
 
+        /// The default colours the engine draws the screen in now; a card's
+        /// fill and header follow them (Tako+SurfaceDrawnColors.swift).
+        @Published public internal(set) var drawnColors = DrawnColors()
+
         override public func titleDidChange() {
             if !title.isEmpty { isUserSetTitle = false }
             requestTitlePublication()

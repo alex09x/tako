@@ -346,13 +346,13 @@ private struct FloatingPaneWindowView: View {
 
 extension FloatingPaneGeometry {
     /// The card's fill, header and margin alike: the background the terminal
-    /// itself is drawn in -- its theme's -- so the margin reads as terminal,
-    /// not as a frame. The config's `background` can differ from the theme a
-    /// pane shows (#14100e against a #0e1820 theme), and filled with it the
-    /// margin stood out as a second border. The header's title and controls
-    /// take the terminal's colours too (CardHeaderPalette), so they stay
-    /// readable whatever the shell's scheme.
+    /// itself is drawn in, so the margin reads as terminal, not as a frame.
+    /// Neither the config's `background` (#14100e against a #0e1820 theme)
+    /// nor the theme's is that colour for certain: a program's OSC 11, or one
+    /// a restored session carried, outlives a theme change. The engine's is.
+    /// The header's title and controls take the terminal's colours too
+    /// (CardHeaderPalette), so they stay readable whatever the shell's scheme.
     @MainActor static func cardFill(for surface: Tako.SurfaceView) -> CGColor {
-        surface.theme.background
+        surface.drawnBackground
     }
 }

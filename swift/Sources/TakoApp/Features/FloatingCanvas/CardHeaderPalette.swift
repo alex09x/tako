@@ -57,7 +57,7 @@ struct CardHeaderPalette: Equatable {
     }
 
     @MainActor static func of(_ surface: Tako.SurfaceView) -> CardHeaderPalette {
-        CardHeaderPalette(background: surface.theme.background, foreground: surface.theme.foreground)
+        CardHeaderPalette(background: surface.drawnBackground, foreground: surface.drawnForeground)
     }
 
     /// WCAG contrast of `color` (composited over `fill` when translucent) against `fill`.

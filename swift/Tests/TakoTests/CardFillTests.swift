@@ -33,6 +33,30 @@ struct CardFillTests {
         #expect(config != drawn, "the fixture really has two different backgrounds")
     }
 
+    /// A colour the engine holds apart from the theme -- a program's OSC 11,
+    /// or one a restored session carried -- is what the terminal is drawn in,
+    /// and so what the card is filled with; a later theme does not move it.
+    @Test func theCardFollowsTheBackgroundTheEngineDraws() throws {
+        let (app, file) = try TerminalTestSupport.app(configText: "background = #14100e")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let surface = Tako.SurfaceView(app)
+        surface.core.feed(bytes: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
+        surface.terminalViewDidChangeContent(surface)
+        var theme = surface.theme
+        theme.background = rgb(0x282A36)
+        theme.foreground = rgb(0xF8F8F2)
+        surface.applyTheme(theme)
+
+        #expect(surface.drawnColors.background == FfiRgb(r: 0x0E, g: 0x18, b: 0x20))
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x0E1820), "the drawn colour, not the theme's")
+        let palette = CardHeaderPalette.of(surface)
+        #expect(palette == CardHeaderPalette(background: rgb(0x0E1820), foreground: rgb(0xEDE6DF)))
+
+        surface.core.feed(bytes: Data("\u{1b}]111\u{07}".utf8))
+        surface.terminalViewDidChangeContent(surface)
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36), "a reset program colour hands back to the theme")
+    }
+
     private func rgb(_ v: UInt32) -> CGColor {
         CGColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
                 blue: CGFloat(v & 255) / 255, alpha: 1)

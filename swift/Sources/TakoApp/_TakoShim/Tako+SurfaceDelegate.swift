@@ -132,11 +132,15 @@ extension Tako.SurfaceView {
         public func terminalView(_ view: TakoTerminalNSView, didRestoreCheckpoint restore: TerminalCheckpointRestore) {
             reflowToCurrentBounds(forcePtyResize: true)
             scheduleSearchHitRefresh()
+            refreshDrawnColors()
         }
 
-        /// Screen content changed or checkpoint restored: refresh search hit marks if active (debounced).
+        /// Screen content changed or checkpoint restored: refresh search hit
+        /// marks if active (debounced), and the colours the screen is drawn in
+        /// (a program's OSC 10/11 arrives as content).
         public func terminalViewDidChangeContent(_ view: TakoTerminalNSView) {
             scheduleSearchHitRefresh()
+            refreshDrawnColors()
         }
 
         /// A command action requested sending text to another pane.
