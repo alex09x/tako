@@ -45,6 +45,9 @@ struct FloatingPaneHeaderView: View {
 
     private typealias T = Tako.LivingTokens
 
+    /// Title and controls in the terminal's own colours: the header is drawn in its background.
+    private var palette: CardHeaderPalette { .of(surfaceView) }
+
     private var uuidKey: String {
         surfaceView.id.uuidString.lowercased()
     }
@@ -128,7 +131,7 @@ struct FloatingPaneHeaderView: View {
 
                     Text(displayTitle)
                         .font(Font(T.monoFont(size: 12, weight: .medium)))
-                        .foregroundColor(Color(nsColor: isFocused ? T.textActive : T.dim))
+                        .foregroundColor(Color(nsColor: isFocused ? palette.title : palette.secondary))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .layoutPriority(1)
@@ -136,7 +139,7 @@ struct FloatingPaneHeaderView: View {
                     if let directory {
                         Text(directory)
                             .font(Font(T.monoFont(size: 11, weight: .regular)))
-                            .foregroundColor(Color(nsColor: isFocused ? T.dim : T.faint))
+                            .foregroundColor(Color(nsColor: isFocused ? palette.secondary : palette.faint))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -144,7 +147,7 @@ struct FloatingPaneHeaderView: View {
                     if let note = crab.statusText, !note.isEmpty {
                         Text(note)
                             .font(Font(T.monoFont(size: 10, weight: .regular)))
-                            .foregroundColor(Color(nsColor: T.dim))
+                            .foregroundColor(Color(nsColor: palette.secondary))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
@@ -166,6 +169,7 @@ struct FloatingPaneHeaderView: View {
                     value: isTiled ? "tiled" : "floating",
                     helpText: isTiled ? "Float Terminal — move freely above the grid" : "Return to the Session Grid",
                     isProminent: controlsProminent,
+                    palette: palette,
                     isHovered: hoveredControlId == "float",
                     isPressed: !isTiled,
                     onHoverStateChange: { updateControlHover(id: "float", hovering: $0) },
@@ -179,6 +183,7 @@ struct FloatingPaneHeaderView: View {
                     value: pane.mode.rawValue,
                     helpText: FloatingPaneCopy.minimize,
                     isProminent: controlsProminent,
+                    palette: palette,
                     isHovered: hoveredControlId == "min",
                     onHoverStateChange: { updateControlHover(id: "min", hovering: $0) },
                     action: onMinimize
@@ -193,6 +198,7 @@ struct FloatingPaneHeaderView: View {
                     value: pane.mode.rawValue,
                     helpText: FloatingPaneCopy.maximize(pane.mode),
                     isProminent: controlsProminent,
+                    palette: palette,
                     isHovered: hoveredControlId == "max",
                     onHoverStateChange: { updateControlHover(id: "max", hovering: $0) },
                     action: onToggleMaximize
@@ -205,6 +211,7 @@ struct FloatingPaneHeaderView: View {
                     value: nil,
                     helpText: FloatingPaneCopy.close + " (⌘W)",
                     isProminent: controlsProminent,
+                    palette: palette,
                     isHovered: hoveredControlId == "close",
                     isClose: true,
                     onHoverStateChange: { updateControlHover(id: "close", hovering: $0) },
@@ -232,6 +239,7 @@ private struct FloatingHeaderIconButton: View {
     let value: String?
     let helpText: String
     let isProminent: Bool
+    let palette: CardHeaderPalette
     var isHovered: Bool = false
     /// The free-mode toggle uses a quiet tint, with the same hover lifetime as its peers.
     var isPressed: Bool = false
@@ -272,18 +280,18 @@ private struct FloatingHeaderIconButton: View {
     private var foregroundColor: Color {
         if isPressed { return Color(nsColor: T.claw).opacity(0.75) }
         if isHovered {
-            return Color(nsColor: isClose ? T.error : T.textActive)
+            return Color(nsColor: isClose ? T.error : palette.title)
         }
         if isProminent {
-            return Color(nsColor: T.textInactive)
+            return Color(nsColor: palette.secondary)
         }
-        return Color(nsColor: T.dim).opacity(0.55)
+        return Color(nsColor: palette.faint)
     }
 
     private var hoverBackground: Color {
         guard isHovered else { return .clear }
         return isClose
             ? Color(nsColor: T.error).opacity(0.16)
-            : Color(nsColor: T.surfaceHover)
+            : Color(nsColor: palette.hover)
     }
 }

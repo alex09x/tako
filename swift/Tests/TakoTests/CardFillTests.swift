@@ -32,4 +32,30 @@ struct CardFillTests {
         let drawn = NSColor(cgColor: fill)?.usingColorSpace(.sRGB)
         #expect(config != drawn, "the fixture really has two different backgrounds")
     }
+
+    private func rgb(_ v: UInt32) -> CGColor {
+        CGColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
+                blue: CGFloat(v & 255) / 255, alpha: 1)
+    }
+
+    /// The header sits on the terminal's background in the terminal's colours:
+    /// readable for a light terminal in a dark shell, the reverse, and a
+    /// foreground too close to its background -- whichever scheme the shell is in.
+    @Test(arguments: [(UInt32(0xF4F1EA), UInt32(0x222222), true),   // light terminal
+                      (UInt32(0x0E1820), UInt32(0xEDE6DF), false),  // dark terminal
+                      (UInt32(0x222222), UInt32(0x333333), false)]) // foreground lost in background
+    func theHeaderIsReadableOnTheTerminalsBackground(bg: UInt32, fg: UInt32, light: Bool) {
+        let saved = Tako.LivingTokens.isLight
+        defer { Tako.LivingTokens.isLight = saved }
+        var palettes: [CardHeaderPalette] = []
+        for shellIsLight in [false, true] {
+            Tako.LivingTokens.isLight = shellIsLight
+            palettes.append(CardHeaderPalette(background: rgb(bg), foreground: rgb(fg)))
+        }
+        #expect(palettes[0] == palettes[1], "the shell's scheme does not change a card's header")
+        let p = palettes[0]
+        #expect(p.isLight == light)
+        #expect(p.contrast(of: p.title) >= 4.5, "title \(p.contrast(of: p.title)):1")
+        #expect(p.contrast(of: p.secondary) >= 3, "secondary \(p.contrast(of: p.secondary)):1")
+    }
 }
