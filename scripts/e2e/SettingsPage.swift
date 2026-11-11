@@ -74,7 +74,10 @@ struct SettingsPage {
             usleep(250_000)
         }
         let at = try placement(id)
-        if at.below || at.above { throw Failure("\(id) is still outside the clickable page after scrolling") }
+        if at.below || at.above {
+            let rect = d.element(withIdentifier: id).flatMap(frame).map { "\($0)" } ?? "?"
+            throw Failure("\(id) is still outside the clickable page after scrolling: control \(rect), page \(at.page), floor \(at.floor)")
+        }
     }
 
     private func element(_ id: String) throws -> AXUIElement {
@@ -82,7 +85,12 @@ struct SettingsPage {
             throw Failure("no control \(id)")
         }
         // Only controls on the scrolling page are scrolled to; the section list and Close are window chrome.
-        if id.hasPrefix("DesktopSetting-") || id.hasPrefix("DesktopSettingReset-") { try bringIntoView(id) }
+        // As the sidebar settings journey: AX scrolls it near, the wheel brings it clear of the footer.
+        if id.hasPrefix("DesktopSetting-") || id.hasPrefix("DesktopSettingReset-") {
+            AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
+            usleep(300_000)
+            try bringIntoView(id)
+        }
         return d.element(withIdentifier: id) ?? e
     }
 
