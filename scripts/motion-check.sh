@@ -54,7 +54,12 @@ state="$HOME/Library/Application Support/$BUNDLE"
 for d in layout Sessions SessionRecords; do [ -e "$state/$d" ] && trash "$state/$d"; done
 defaults write "$BUNDLE" tako.session_sidebar_is_showing -bool true
 # In front: with nothing to restore, a Tako opened in the background opens no window.
-open -n "$APP" --args --config-file="$work/config" --no-launch-notices
+# Its own session namespace too: in the owner's, it finds every live session
+# of the Tako in use and puts up Session Recovery over the tabs it checks.
+# Short: its sockets live in it, and a socket path is cut at 104 bytes.
+sessions="$(mktemp -d /tmp/tkm.XXXXXX)"
+trap 'quit; rm -rf "$work" "$sessions"; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
+open -n "$APP" --env TAKO_SESSIONS_HOME="$sessions" --args --config-file="$work/config" --no-launch-notices
 tree() { "$CTL" --bundle-id "$BUNDLE" --json tree 2>/dev/null; }
 for _ in $(seq 1 40); do tree | grep -q '"panes"' && break; sleep 0.5; done
 
@@ -64,8 +69,10 @@ pane="$("$CTL" --bundle-id "$BUNDLE" tab-new --target "$first" --no-select | tai
 if [ "${MOTION_SCENE:-}" = switch ]; then
     # Two tabs that look different, so a frame of neither shows.
     "$CTL" --bundle-id "$BUNDLE" title --target "$first" alpha
-    "$CTL" --bundle-id "$BUNDLE" send --target "$first" 'clear; ls -la /usr/bin | head -60'
-    "$CTL" --bundle-id "$BUNDLE" send --target "$pane" 'clear; seq 1000 1060'
+    # A shell may not be up yet in a session namespace of its own.
+    send() { for _ in $(seq 1 40); do "$CTL" --bundle-id "$BUNDLE" send --target "$1" "$2" 2>/dev/null && return; sleep 0.25; done; return 1; }
+    send "$first" 'clear; ls -la /usr/bin | head -60'
+    send "$pane" 'clear; seq 1000 1060'
 fi
 sleep 1
 
