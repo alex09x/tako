@@ -93,17 +93,17 @@ final class PaneToastCenter: ObservableObject {
         }
         show(toast)
         if decision.systemNotification {
-            postNotification(for: toast, surface: surface, title: title, sounds: decision.notificationSounds)
+            postNotification(for: toast, surface: surface, title: title, sound: decision.notificationSound)
         }
     }
 
     /// Out of sight, the toast's news goes to macOS too, with the sound.
-    private func postNotification(for toast: PaneToast, surface: Tako.SurfaceView, title: String, sounds: Bool) {
+    private func postNotification(for toast: PaneToast, surface: Tako.SurfaceView, title: String, sound: String?) {
         let id = ActivityAlert.requestID(surface.id)
         let content = Tako.buildNotificationContent(
             title: toast.headline, body: toast.message, surfaceId: surface.id, paneTitle: title,
             pwd: surface.pwd, command: nil, id: id, urgency: 1, onlyWhenUnfocused: true)
-        content.sound = sounds ? ActivitySounds.notificationSound : nil
+        content.sound = sound.map(ActivitySounds.notificationSound)
         ActivityAlert.post(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 

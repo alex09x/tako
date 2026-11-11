@@ -44,7 +44,7 @@ struct ActivityAlertTests {
 
     @Test func oneDecisionPlaysOneSoundOneWay() {
         #expect(ActivityAlert.decide(context()) == .init(toast: true, appSound: "Glass"), "in front: Tako plays it")
-        #expect(ActivityAlert.decide(context(front: false)) == .init(toast: true, systemNotification: true, notificationSounds: true))
+        #expect(ActivityAlert.decide(context(front: false)) == .init(toast: true, systemNotification: true, notificationSound: "Glass"))
         #expect(ActivityAlert.decide(context(lookedAt: true)) == .nothing)
         #expect(ActivityAlert.decide(context(.always, lookedAt: true)) == .init(appSound: "Glass"))
         // «Never» is about sound: the toast and a silent background notification stay.
@@ -73,8 +73,30 @@ struct ActivityAlertTests {
         #expect(prefs.activityAlert == .always && prefs.activitySound(.done) == "Pop")
         #expect(prefs.activitySound(.failed) == nil && prefs.activitySound(.needsYou) == "Glass")
         #expect(DesktopPreferences { _ in nil }.activityAlert == .unfocused)
-        // Notifications carry macOS's notification sound: a system sound's name has no documented lookup.
-        #expect(ActivitySounds.notificationSound == .default)
+    }
+
+    /// A notification carries the chosen sound from Tako's sound cache; a
+    /// build that cannot reach the cache plays macOS's notification sound.
+    @Test func aNotificationCarriesTheCachedSoundOrMacOSsOwn() {
+        let saved = ActivitySounds.place
+        defer { ActivitySounds.place = saved; ActivitySounds.forgetPlacedForTesting() }
+        ActivitySounds.forgetPlacedForTesting()
+        // This test process is not signed into Tako's group: the real cache refuses it.
+        if case .failure(let why) = ActivitySoundCache.place("Glass", known: ActivitySounds.names) {
+            #expect(why == .notEntitled)
+        } else { Issue.record("an unentitled process placed a sound") }
+        #expect(ActivitySounds.notificationSound("Glass") == .default)
+
+        ActivitySounds.forgetPlacedForTesting()
+        var asked: [String] = []
+        ActivitySounds.place = { name, _ in
+            asked.append(name)
+            return .success(.init(fileName: "tako-\(name).aiff", url: URL(fileURLWithPath: "/x"), sha256: ""))
+        }
+        let sound = ActivitySounds.notificationSound("Glass")
+        #expect(sound == UNNotificationSound(named: UNNotificationSoundName(rawValue: "tako-Glass.aiff")))
+        _ = ActivitySounds.notificationSound("Glass")
+        #expect(asked == ["Glass"], "placed once, then remembered")
     }
 
     /// A program reports its own status (OSC 7501): the request it makes follows «Play sounds» and None.
@@ -102,7 +124,7 @@ struct ActivityAlertTests {
 
         try with([:]) {
             let request = try #require(report("done", id: "a"))
-            #expect(request.content.sound == .default)
+            #expect(request.content.sound != nil, "a program's done report lost its sound")
         }
         try with(["activity-alert": "never"]) {
             let request = try #require(report("done", id: "b"))
@@ -140,7 +162,7 @@ struct ActivityAlertTests {
         #expect(played == ["Glass"], "in the background Tako played a sound of its own too")
         let id = ActivityAlert.requestID(surface.id)
         let request = try #require(transport.added.first)
-        #expect(transport.added.count == 1 && request.identifier == id && request.content.sound == .default)
+        #expect(transport.added.count == 1 && request.identifier == id && request.content.sound != nil)
 
         // Looked at before macOS delivered it: the pending request goes too, and nothing else.
         center.seen(surface.id)

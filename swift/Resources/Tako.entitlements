@@ -14,5 +14,10 @@
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+    <!-- Tako's own sound cache: the chosen system sound, copied where notifications can play it (ActivitySoundCache). -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>284V2M3LN9.com.tako-core.terminal.sounds</string>
+    </array>
 </dict>
 </plist>

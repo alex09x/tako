@@ -56,13 +56,32 @@ enum ActivitySounds {
         return names.first { $0.lowercased() == raw.lowercased() } ?? event.defaultSound
     }
 
-    /// The sound a system notification carries for a chosen event sound.
-    /// UNNotificationSound(named:) looks only in the app's container and group
-    /// containers' Library/Sounds and in the app bundle -- not in
-    /// /System/Library/Sounds -- so a system sound's name would quietly fall
-    /// back. Until the chosen sound is put in one of those places, macOS's own
-    /// notification sound plays; the chosen one plays while Tako is in front.
-    static var notificationSound: UNNotificationSound { .default }
+    /// The chosen sound inside a system notification: copied into Tako's
+    /// sound cache (ActivitySoundCache), where UNNotificationSound(named:)
+    /// looks. A build that cannot use the cache (not signed by Tako's team,
+    /// no group entitlement) falls back to macOS's notification sound, and
+    /// says so in the log once per reason.
+    @MainActor static func notificationSound(_ name: String) -> UNNotificationSound {
+        if let file = placed[name] { return UNNotificationSound(named: UNNotificationSoundName(rawValue: file)) }
+        switch place(name, names) {
+        case .success(let result):
+            placed[name] = result.fileName
+            return UNNotificationSound(named: UNNotificationSoundName(rawValue: result.fileName))
+        case .failure(let why):
+            if reported.insert("\(why)").inserted {
+                NSLog("tako: activity sound %@ not available to notifications (%@); macOS's notification sound plays", name, "\(why)")
+            }
+            return .default
+        }
+    }
+
+    /// Tests replace this; the app places sounds through its signed group.
+    @MainActor static var place: (String, [String]) -> Result<ActivitySoundCache.Placed, ActivitySoundCache.Failure> = {
+        ActivitySoundCache.place($0, known: $1)
+    }
+    @MainActor private static var placed: [String: String] = [:]
+    @MainActor private static var reported: Set<String> = []
+    @MainActor static func forgetPlacedForTesting() { placed = [:]; reported = [] }
 }
 
 /// The sound of a notification a program posts itself (OSC 7501). Explicit
@@ -70,23 +89,23 @@ enum ActivitySounds {
 /// own status alerts follow the activity sound settings.
 public enum ActivitySoundChoice: Equatable {
     case byUrgency
-    case sound
+    case sound(String)
     case silent
 
-    public func apply(to content: UNMutableNotificationContent) {
+    @MainActor public func apply(to content: UNMutableNotificationContent) {
         switch self {
         case .byUrgency: break
-        case .sound: content.sound = ActivitySounds.notificationSound
+        case .sound(let name): content.sound = ActivitySounds.notificationSound(name)
         case .silent: content.sound = nil
         }
     }
 
     /// For a program's own blocked / done / error report: silent under
-    /// «Never» or a sound set to None, else the notification sound.
+    /// «Never» or a sound set to None, else the event's chosen sound.
     static func forProgram(_ event: ActivityEvent?, preferences: DesktopPreferences) -> ActivitySoundChoice {
         guard let event else { return .byUrgency }
-        guard preferences.activityAlert != .never, preferences.activitySound(event) != nil else { return .silent }
-        return .sound
+        guard preferences.activityAlert != .never, let name = preferences.activitySound(event) else { return .silent }
+        return .sound(name)
     }
 }
 
@@ -120,7 +139,7 @@ struct ActivityAlertDecision: Equatable {
     var toast = false
     var appSound: String?
     var systemNotification = false
-    var notificationSounds = false
+    var notificationSound: String?
 
     static let nothing = ActivityAlertDecision()
 }
@@ -154,7 +173,7 @@ enum ActivityAlert {
             decision.appSound = sound
         } else {
             decision.systemNotification = true
-            decision.notificationSounds = sound != nil
+            decision.notificationSound = sound
         }
         return decision
     }
