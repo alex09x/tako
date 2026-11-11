@@ -236,6 +236,11 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         try d.type(" Row")
         print("  typed more: \(focusReport())")
         d.key(Key.returnKey)
+        usleep(600_000)
+        let bar = d.element(withIdentifier: "SessionSidebar")
+        let texts = bar.map { b in d.descendants(of: b, role: kAXStaticTextRole as String).compactMap { d.attribute($0, kAXValueAttribute) as String? } } ?? []
+        print("  after Return: \(focusReport()); sidebar texts \(texts.prefix(40))")
+        print("  tree: \(((try? d.exec("\(ctl) --json tree")) ?? "").prefix(1500))")
         try expectName("Moving Row", gone: ["RnAlpha"], "the draft and the keyboard survive the row moving")
         try contextClick("Moving Row"); try menu("Use Automatic Name")
         try expectName("RnAlpha", gone: ["Moving Row"], "and it goes back")
