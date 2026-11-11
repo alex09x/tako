@@ -133,13 +133,25 @@ func runSidebarRenameScenario(_ d: Driver) throws {
     }
     func field() -> AXUIElement? { d.element(withIdentifier: "SidebarRenameField") }
     func fieldValue() -> String? { field().flatMap { d.attribute($0, kAXValueAttribute) as String? } }
+    /// Who has the keys: the field's own AXFocused and the app's focused element.
+    func focusReport() -> String {
+        let fieldFocused = field().flatMap { d.attribute($0, kAXFocusedAttribute) as Bool? }
+        let app = AXUIElementCreateApplication(d.pid)
+        let focused: AXUIElement? = d.attribute(app, kAXFocusedUIElementAttribute)
+        let role = focused.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
+        let id = focused.flatMap { d.attribute($0, kAXIdentifierAttribute) as String? } ?? "nil"
+        return "field \(field() != nil) focused \(String(describing: fieldFocused)) value \(String(describing: fieldValue())); app focus \(role)/\(id)"
+    }
     func editing() throws {
         guard d.wait(for: { field() != nil }, timeout: 5) else { throw Failure("the rename field did not open") }
+        print("  opened: \(focusReport())")
         usleep(200_000)
+        print("  +200ms: \(focusReport())")
     }
     func replace(with text: String) throws {
         d.key(Key.a, .maskCommand)
         try d.type(text)
+        print("  typed \(text): \(focusReport())")
     }
     func step(_ name: String, _ body: () throws -> Void) throws {
         do { try body(); print("step \(name): ok") } catch { print("step \(name): FAILED \(error)"); throw error }
