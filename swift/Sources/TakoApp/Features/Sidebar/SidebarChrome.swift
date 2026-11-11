@@ -64,6 +64,12 @@ struct SidebarChromeMetrics: Equatable {
     }
 }
 
+extension DesktopPreferences {
+    /// Everything that changes how the sidebar's rows are drawn, as one
+    /// value: the list is built anew when it changes.
+    var sidebarLook: String { "\(sidebarStyle)-\(sidebarGrouping)-\(sidebarTextSize)-\(sidebarSecondaryText)" }
+}
+
 private struct SidebarStyleKey: EnvironmentKey {
     static let defaultValue = SidebarStyle.classic
 }

@@ -324,7 +324,13 @@ struct SessionSidebarView: View {
                             }
                         }
                     }
-                }.background(SessionSidebarScrollerInstaller().frame(width: 0, height: 0))
+                }
+                // The lazy stack keeps a row it has built while the row's data
+                // is unchanged, even when it is now given another style or a
+                // workspace badge: a new look builds the list anew. Row ids,
+                // which scrolling uses, stay the same.
+                .id(presentation.preferences.sidebarLook)
+                .background(SessionSidebarScrollerInstaller().frame(width: 0, height: 0))
             }
             .focusable()
             // The keys go to the list, but it is no text field: no blue ring

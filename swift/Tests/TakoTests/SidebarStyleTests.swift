@@ -114,6 +114,17 @@ struct SidebarStyleTests {
         #expect(buckets.allSatisfy { $0.rows.allSatisfy { $0.workspace?.name == "W" && $0.workspace?.color == nil } })
     }
 
+    /// The sidebar's list is rebuilt whenever its look changes (the lazy stack
+    /// kept rows it had built with the old style and no workspace badge).
+    @Test func everySettingOfTheLookChangesTheListsIdentity() {
+        let base = prefs([:]).sidebarLook
+        for (key, value) in [("sidebar-style", "minimal"), ("sidebar-group", "status"),
+                             ("sidebar-text-size", "large"), ("sidebar-secondary-text", "soft")] {
+            #expect(prefs([key: value]).sidebarLook != base, "\(key)")
+        }
+        #expect(prefs(["sidebar-count-done": "false"]).sidebarLook == base, "a counter is not part of the rows' look")
+    }
+
     @Test func theStyleShapesTheWholeSidebarAndClassicStaysTheReference() {
         let c = SidebarChromeMetrics.of(.classic)
         #expect(c.searchHeight == 28 && c.searchFilled && c.headingUppercased && c.headingTop == 10)
