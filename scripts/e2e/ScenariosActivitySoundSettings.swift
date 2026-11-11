@@ -103,8 +103,8 @@ func runActivitySoundSettingsScenario(_ d: Driver) throws {
     try page.click("DesktopSetting-activity-alert-always")
     try expect("activity-alert", file: "always", applied: "always", "Play sounds: Always")
 
-    try page.choose(menu: "DesktopSetting-activity-sound-needs-you", item: "Submarine")
-    try expect("activity-sound-needs-you", file: "Submarine", applied: "Submarine", "Needs you: Submarine")
+    try page.choose(menu: "DesktopSetting-activity-sound-needs-you", item: "Bottle")
+    try expect("activity-sound-needs-you", file: "Bottle", applied: "Bottle", "Needs you: Bottle")
     guard playEnabled("needs-you") == true else { throw Failure("▶ is not enabled for Needs you") }
     try page.click("DesktopSetting-activity-sound-needs-you-play")
     try page.click("DesktopSettingReset-activity-sound-needs-you")
