@@ -252,6 +252,9 @@ struct SessionSidebarVisualTreeTests {
         #expect(afterWsCollapse[1].items.isEmpty)
         #expect(afterWsCollapse[1].sessionCount == 1)
         #expect(afterWsCollapse[1].attentionCount == 1)
+        // Grouped by status there is no heading to open it again: its rows are listed all the same.
+        let byStatus = store.workspaceGroups(for: win1, workspaceStore: wsStore, ignoringWorkspaceCollapse: true)
+        #expect(byStatus[1].items.count == 3, "the session and its two panes")
 
         // 3. Search filter automatically surfaces matching split pane even inside collapsed workspace
         store.setFilterText("Playwright", for: win1)

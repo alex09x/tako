@@ -90,7 +90,8 @@ struct SessionSidebarView: View {
     }
 
     private var workspaceGroups: [SessionSidebarWorkspaceGroup] {
-        store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore)
+        store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore,
+                              ignoringWorkspaceCollapse: presentation.preferences.sidebarGrouping == .status)
     }
 
     /// The rows in the order shown, which the arrow keys walk.

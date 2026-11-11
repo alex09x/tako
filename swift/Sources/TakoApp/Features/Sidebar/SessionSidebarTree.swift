@@ -36,7 +36,8 @@ extension SessionSidebarStore {
         workspaceStore: WorkspaceStore = .shared,
         includeSplitPanes: Bool = true,
         filterText explicitFilterText: String? = nil,
-        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil
+        filterNeedsAttention explicitFilterNeedsAttention: Bool? = nil,
+        ignoringWorkspaceCollapse: Bool = false
     ) -> [SessionSidebarWorkspaceGroup] {
         bindSurfaces(for: window)
 
@@ -122,7 +123,9 @@ extension SessionSidebarStore {
             var visibleItems: [SessionSidebarItem] = []
 
             let wsMatchesQuery = !query.isEmpty && ws.name.lowercased().contains(query)
-            let wsCollapsed = isWorkspaceCollapsed(ws.id) && !hasActiveFilter
+            // Grouped by status there is no workspace heading to open again:
+            // a collapsed workspace's sessions are listed all the same.
+            let wsCollapsed = isWorkspaceCollapsed(ws.id) && !hasActiveFilter && !ignoringWorkspaceCollapse
 
             for entry in orderedEntries {
                 let win = entry.window
