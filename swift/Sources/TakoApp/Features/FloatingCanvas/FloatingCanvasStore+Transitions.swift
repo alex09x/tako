@@ -78,7 +78,9 @@ extension FloatingCanvasStore {
         let normal = FloatingPaneGeometry.clamp(panes[idx].rect, to: area)
         let ratio = min(max(pointerXInCanvas / max(1, area.width), 0.1), 0.9)
         let originX = pointerXInCanvas - normal.width * ratio
-        let originY = max(area.minY, pointerYInHeader - min(max(pointerYInHeader, 4), FloatingPaneGeometry.headerHeight - 4))
+        // The header being dragged is the maximized card's, a pane gap below the area's top.
+        let cardTop = FloatingPaneGeometry.gridArea(in: area).minY
+        let originY = max(area.minY, cardTop + pointerYInHeader - min(max(pointerYInHeader, 4), FloatingPaneGeometry.headerHeight - 4))
         let detached = FloatingPaneGeometry.clamp(
             CGRect(x: originX.rounded(), y: originY.rounded(), width: normal.width, height: normal.height),
             to: area

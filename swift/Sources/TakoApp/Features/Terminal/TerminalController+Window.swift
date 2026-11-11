@@ -75,10 +75,13 @@ extension TerminalController {
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
         // SwiftUI focus chain.
+        // On the canvas the terminal sits in a card: its header, and the pane gap
+        // all round (`FloatingPaneGeometry.gridArea`), which a maximized pane has too.
         let sidebarWidth = sessionSidebarIsShowing ? SessionSidebarWidth.current() : 0
+        let gutter = usesFloatingCanvas ? 2 * DesktopCanvasMetrics.paneGap : 0
         let paneChromeHeight = usesFloatingCanvas ? FloatingPaneGeometry.headerHeight : 0
         container.initialContentSize = focusedSurface?.initialSize.map {
-            NSSize(width: $0.width + sidebarWidth, height: $0.height + paneChromeHeight)
+            NSSize(width: $0.width + sidebarWidth + gutter, height: $0.height + paneChromeHeight + gutter)
         }
 
         window.contentView = container
