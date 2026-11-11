@@ -182,7 +182,9 @@ struct SessionSidebarRowView: View {
                         .foregroundColor(second.color)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .layoutPriority(-1)
+                        // Up to 45% of the row; the title, flexible, takes the rest.
+                        .frame(maxWidth: 110, alignment: .trailing)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let meta = item.metaDisplayText {
