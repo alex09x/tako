@@ -20,9 +20,14 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
         didSet {
             guard let titlebarContainer else { return }
             titlebarContainer.wantsLayer = true
-            titlebarContainer.layer?.backgroundColor = titlebarColor.cgColor
+            titlebarContainer.layer?.backgroundColor = keepsTitlebarClear ? NSColor.clear.cgColor : titlebarColor.cgColor
         }
     }
+
+    /// Under Tako's own tab strip the titlebar stays clear: painted in a
+    /// pane's background -- as a theme applied at runtime did -- it covered
+    /// the whole top strip, the sidebar's buttons and the panes' headers.
+    var keepsTitlebarClear: Bool { Tako.TabBarController.isInstalled(in: self) }
 
     // false if all three traffic lights are missing/hidden, otherwise true
     var hasWindowButtons: Bool {

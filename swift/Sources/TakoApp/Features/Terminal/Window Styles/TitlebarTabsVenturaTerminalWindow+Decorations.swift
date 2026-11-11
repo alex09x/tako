@@ -41,6 +41,8 @@ extension TitlebarTabsVenturaTerminalWindow {
 	func updateTabsForVeryDarkBackgrounds() {
 		guard hasVeryDarkBackground else { return }
         guard let titlebarContainer else { return }
+        // Tako's own strip draws the tabs; the titlebar beneath stays clear.
+        guard !keepsTitlebarClear else { return }
 
 		if let tabGroup = tabGroup, tabGroup.isTabBarVisible {
 			guard let activeTabBackgroundView = titlebarContainer.firstDescendant(withClassName: "NSTabButton")?.superview?.subviews.last?.firstDescendant(withID: "_backgroundView")
