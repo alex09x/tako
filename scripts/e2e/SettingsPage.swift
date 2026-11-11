@@ -72,6 +72,7 @@ struct SettingsPage {
             wheel?.location = point
             wheel?.post(tap: .cghidEventTap)
             usleep(250_000)
+            print("  scroll \(id) at \(point): control y \(d.element(withIdentifier: id).flatMap(frame).map { $0.minY } ?? -1)")
         }
         let at = try placement(id)
         if at.below || at.above {
