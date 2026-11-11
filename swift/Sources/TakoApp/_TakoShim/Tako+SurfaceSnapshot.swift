@@ -44,6 +44,9 @@ extension Tako.SurfaceView {
             }
             core.feed(bytes: Data(SessionSnapshot.separator(
                 savedAt: snapshot.savedAt, cursorRow: core.cursorRow(), cursorCol: core.cursorCol())))
+            // Imported straight into the engine, past the view's content
+            // callback: a colour the saved session carried reaches the card here.
+            refreshDrawnColors()
             reflowToCurrentBounds(forcePtyResize: true)
         }
 

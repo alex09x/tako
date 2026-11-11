@@ -74,6 +74,13 @@ struct CardFillTests {
         _ = try restored.importCheckpoint(try source.exportCheckpoint())
         #expect(FloatingPaneGeometry.cardFill(for: restored) == rgb(0x0E1820), "the restored session's colour")
         #expect(CardHeaderPalette.of(restored) == drawn)
+
+        // A pane relaunched from its saved screen (the session itself gone),
+        // as the owner's restored load-20 pane was: no output follows.
+        let relaunched = themed()
+        relaunched.showSnapshot(SessionSnapshot(savedAt: Date(), checkpoint: try source.exportCheckpoint()))
+        #expect(FloatingPaneGeometry.cardFill(for: relaunched) == rgb(0x0E1820), "the saved screen's colour")
+        #expect(CardHeaderPalette.of(relaunched) == drawn)
     }
 
     private func rgb(_ v: UInt32) -> CGColor {
