@@ -4770,6 +4770,9 @@ let scenarios: [Scenario] = [
     ("sidebar-interaction", "Session Sidebar collapses/expands subagents, filters tabs, switches active session on click, and recovers unassisted focus", { d in
         try runSidebarInteractionScenario(d)
     }),
+    ("sidebar-style-settings", "Settings › App Appearance › Sidebar: style, grouping, text size and second line are chosen by clicks, saved, and a row still selects its session", { d in
+        try runSidebarStyleSettingsScenario(d)
+    }),
     ("overview-selection", "Pane Overview filters cards, clears empty state, jumps to selected pane on Return, and recovers unassisted focus", { d in
         try runOverviewSelectionScenario(d)
     }),
