@@ -64,6 +64,18 @@ struct SidebarChromeMetrics: Equatable {
     }
 }
 
+extension SessionSidebarStore {
+    /// Where the All / Needs you segments are hidden (Minimal, grouped by
+    /// status), a Needs-you filter set before would go on hiding sessions with
+    /// nothing on screen to say so or to clear it: it is cleared. The text
+    /// search stays as it is.
+    func dropHiddenAttentionFilter(_ preferences: DesktopPreferences, for window: NSWindow?) {
+        guard !SidebarChromeMetrics.showsSegments(style: preferences.sidebarStyle, grouping: preferences.sidebarGrouping),
+              filterNeedsAttention(for: window) else { return }
+        setFilterNeedsAttention(false, for: window)
+    }
+}
+
 extension DesktopPreferences {
     /// Everything that changes how the sidebar's rows are drawn, as one
     /// value: the list is built anew when it changes.

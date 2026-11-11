@@ -96,11 +96,12 @@ struct SessionSidebarRowView: View {
                             reduceMotion: reduceMotion,
                             pulses: item.live?.pulses ?? 0
                         )
+                        .scaleEffect(m.ringScale)
                     }
                 case .ownLayer:
                     SidebarStatusLayerView(state: state, ringCenter: nil, cornerRadius: 0, reduceMotion: reduceMotion,
                                            paused: motionPaused, pulses: item.live?.pulses ?? 0,
-                                           ringOnly: StatusRingSize.small.rawValue, pulseSources: item.surfaceIds)
+                                           ringOnly: StatusRingSize.small.rawValue * m.ringScale, pulseSources: item.surfaceIds)
                 case .rowLayer:
                     EmptyView()
                 }
@@ -235,7 +236,8 @@ struct SessionSidebarRowView: View {
                         pulses: item.live?.pulses ?? 0,
                         progressInset: 8,  // 4a `.pfill` left: 8px
                         cometForProgress: true,
-                        pulseSources: item.surfaceIds
+                        pulseSources: item.surfaceIds,
+                        ringScale: m.ringScale
                     )
                 }
             }
@@ -294,7 +296,7 @@ struct SessionSidebarRowView: View {
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
 
     private func paneChildRow(moving: Bool) -> some View {
-        let radius: CGFloat = 6
+        let radius = m.childRadius
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
         let vPad: CGFloat = m.childVerticalPadding + (paneEffectState == .working ? 1 : 0)
         let hPad: CGFloat = (paneEffectState == .working) ? 9 : 8
@@ -317,7 +319,7 @@ struct SessionSidebarRowView: View {
                         .frame(width: 5, height: 5)
                 }
 
-                if let tag = item.compactPaneTag {
+                if m.showsChildTag, let tag = item.compactPaneTag {
                     Text(tag)
                         .font(Font(T.monoFont(size: 9.5, weight: .semibold)))
                         .foregroundColor(Color(nsColor: T.textInactive))

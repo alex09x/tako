@@ -175,6 +175,9 @@ struct SessionSidebarView: View {
         // surface, the cards alone mark where the terminals begin.
         .background(backgroundColor)
         .environment(\.sidebarStyle, presentation.preferences.sidebarStyle)
+        .onChange(of: presentation.preferences.sidebarLook) { _, _ in
+            store.dropHiddenAttentionFilter(presentation.preferences, for: targetWindow)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("SessionSidebar")
         .onAppear {
@@ -182,6 +185,7 @@ struct SessionSidebarView: View {
                 hostingWindow = containingWindow ?? NSApp?.keyWindow
             }
             followActiveTab()
+            store.dropHiddenAttentionFilter(presentation.preferences, for: targetWindow)
             if windowIsPresented && !(containingWindow?.firstResponder is Tako.SurfaceView) { isListFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in

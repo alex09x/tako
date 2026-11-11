@@ -125,6 +125,42 @@ struct SidebarStyleTests {
         #expect(prefs(["sidebar-count-done": "false"]).sidebarLook == base, "a counter is not part of the rows' look")
     }
 
+    /// Needs you chosen in Classic, then Minimal or Status grouping hides the
+    /// segments: the filter goes with them (nothing on screen would say the
+    /// list is filtered), the text search stays. Classic keeps both.
+    @Test func hidingTheSegmentsClearsTheirNeedsYouFilterButNotTheSearch() {
+        let store = SessionSidebarStore.shared
+        defer { store.setFilterNeedsAttention(false, for: nil); store.setFilterText("", for: nil) }
+        for change in [["sidebar-style": "minimal"], ["sidebar-group": "status"]] {
+            store.setFilterNeedsAttention(true, for: nil)
+            store.setFilterText("deploy", for: nil)
+            store.dropHiddenAttentionFilter(prefs([:]), for: nil)
+            #expect(store.filterNeedsAttention(for: nil), "Classic shows the segments: the filter stays")
+            store.dropHiddenAttentionFilter(prefs(change), for: nil)
+            #expect(!store.filterNeedsAttention(for: nil), "\(change): the hidden filter is cleared")
+            #expect(store.filterText(for: nil) == "deploy", "the text search stays")
+        }
+    }
+
+    @Test func minimalAndCompactDrawTheirRingsAndPaneRowsAsDesigned() {
+        let c = SidebarRowMetrics.of(.classic), mi = SidebarRowMetrics.of(.minimal), co = SidebarRowMetrics.of(.compact)
+        #expect(c.ringScale == 1 && c.showsChildTag && c.childRadius == 6, "Classic is the reference")
+        #expect(mi.ringScale == 0.78 && !mi.showsChildTag)
+        #expect(co.ringScale == 0.8 && co.childRadius == 4)
+        #expect(SidebarRowMetrics.of(.minimal, textScale: 1.15).ringScale == 0.78, "a text size keeps the style's ring")
+        // The direct status layer draws the ring at that scale about its centre, its place unchanged.
+        let layer = Tako.TabStatusLayer()
+        layer.geometry = .init(cornerRadius: 8, ringOrigin: CGPoint(x: 20, y: 10), ringScale: 0.8)
+        layer.apply(state: .working, in: CGRect(x: 0, y: 0, width: 220, height: 46), hideRing: false, reduceMotion: true,
+                    paused: true, pulses: 0, palette: nil)
+        #expect(layer.ringContainer.frame == CGRect(x: 20, y: 10, width: 14, height: 14))
+        #expect(CATransform3DEqualToTransform(layer.ringContainer.sublayerTransform, CATransform3DMakeScale(0.8, 0.8, 1)))
+        layer.geometry.ringScale = 1
+        layer.apply(state: .working, in: CGRect(x: 0, y: 0, width: 220, height: 46), hideRing: false, reduceMotion: true,
+                    paused: true, pulses: 0, palette: nil)
+        #expect(CATransform3DIsIdentity(layer.ringContainer.sublayerTransform))
+    }
+
     @Test func theStyleShapesTheWholeSidebarAndClassicStaysTheReference() {
         let c = SidebarChromeMetrics.of(.classic)
         #expect(c.searchHeight == 28 && c.searchFilled && c.headingUppercased && c.headingTop == 10)

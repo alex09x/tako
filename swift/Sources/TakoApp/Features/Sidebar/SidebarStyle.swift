@@ -59,6 +59,12 @@ struct SidebarRowMetrics {
     /// The second line sits to the right of the title instead of under it.
     let inlineSecondLine: Bool
     let showsTreeLines: Bool
+    /// The status ring drawn smaller about its centre (.ring in the design: .78 / .8).
+    var ringScale: CGFloat = 1
+    /// A pane row's number tag (`.kid .tag`), hidden in Minimal.
+    var showsChildTag = true
+    /// A pane row's corner radius (`.kid`): 6, Compact's 4.
+    var childRadius: CGFloat = 6
     private let secondLine: (Tako.SurfaceState) -> Bool
 
     /// Where the second line starts: chevron 12 + gap + ring 14 (33 in the reference).
@@ -76,6 +82,7 @@ struct SidebarRowMetrics {
                      titleHeight: (m.titleHeight * s).rounded(), secondLineHeight: (m.secondLineHeight * s).rounded(),
                      rowVerticalPadding: m.rowVerticalPadding, childVerticalPadding: m.childVerticalPadding,
                      childIndent: m.childIndent, inlineSecondLine: m.inlineSecondLine, showsTreeLines: m.showsTreeLines,
+                     ringScale: m.ringScale, showsChildTag: m.showsChildTag, childRadius: m.childRadius,
                      secondLine: m.secondLine)
     }
 
@@ -93,14 +100,15 @@ struct SidebarRowMetrics {
             return .init(titleFont: .systemFont(ofSize: 13.5, weight: .medium), metaFont: .systemFont(ofSize: 12),
                          childFont: .systemFont(ofSize: 12.5), gap: 9, titleHeight: 20, secondLineHeight: 16,
                          rowVerticalPadding: 7, childVerticalPadding: 4, childIndent: 40,
-                         inlineSecondLine: false, showsTreeLines: false,
+                         inlineSecondLine: false, showsTreeLines: false, ringScale: 0.78, showsChildTag: false,
                          secondLine: { $0 == .waiting || $0 == .failed || $0 == .offline })
         case .compact:
             // One small line; what is happening sits on the right, only while something happens.
             return .init(titleFont: T.monoFont(size: 11.5, weight: .medium), metaFont: T.monoFont(size: 10, weight: .regular),
                          childFont: T.monoFont(size: 11, weight: .regular), gap: 5, titleHeight: 16, secondLineHeight: 13,
                          rowVerticalPadding: 2, childVerticalPadding: 1, childIndent: 30,
-                         inlineSecondLine: true, showsTreeLines: false, secondLine: { $0 != .idle })
+                         inlineSecondLine: true, showsTreeLines: false, ringScale: 0.8, childRadius: 4,
+                         secondLine: { $0 != .idle })
         }
     }
 }

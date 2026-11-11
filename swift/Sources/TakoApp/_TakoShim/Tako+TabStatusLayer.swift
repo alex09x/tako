@@ -36,6 +36,9 @@ extension Tako {
             var progressInset: CGFloat = 0
             /// A sidebar row in progress runs the comet too, its line 1 pt up.
             var cometForProgress = false
+            /// The ring drawn smaller about its own centre (a sidebar style's
+            /// .78 / .8), its place unchanged; 1 everywhere else.
+            var ringScale: CGFloat = 1
         }
 
         var geometry = Geometry() {
@@ -183,6 +186,9 @@ extension Tako {
             ringContainer.isHidden = hideRing
             let ringX: CGFloat = (state == .working || state == .offline) ? 9 : 8
             ringContainer.frame = ringFrame(in: pillRect.size, ringX: ringX)
+            // Not `transform`, which the ring's pop and shake own.
+            let scale = geometry.ringScale
+            ringContainer.sublayerTransform = scale == 1 ? CATransform3DIdentity : CATransform3DMakeScale(scale, scale, 1)
             if sizeChanged || reduceMotionChanged {
                 lastSize = pillRect.size; lastReduceMotion = reduceMotion; layoutGeometries(for: pillRect.size, ringX: ringX)
             }

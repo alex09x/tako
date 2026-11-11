@@ -40,6 +40,8 @@ struct SidebarStatusLayerView: NSViewRepresentable {
     var palette: Tako.TabStatusPalette? = nil
     /// The panes whose bursts ripple the ring, watched by the layer itself.
     var pulseSources: Set<UUID> = []
+    /// The row's ring drawn smaller about its centre (a sidebar style).
+    var ringScale: CGFloat = 1
 
     func makeNSView(context: Context) -> StatusLayerHostView {
         StatusLayerHostView()
@@ -50,7 +52,7 @@ struct SidebarStatusLayerView: NSViewRepresentable {
         view.configure(.init(state: statusShown ? state : .idle, ringCenter: ringCenter, cornerRadius: cornerRadius,
                              reduceMotion: reduceMotion || !statusAnimates, paused: paused, pulses: statusShown ? pulses : 0,
                              progressInset: progressInset, cometForProgress: cometForProgress,
-                              drawsRing: drawsRing, ringOnly: ringOnly, palette: palette))
+                              drawsRing: drawsRing, ringOnly: ringOnly, palette: palette, ringScale: ringScale))
     }
 }
 
@@ -68,6 +70,7 @@ final class StatusLayerHostView: NSView {
         var drawsRing: Bool
         var ringOnly: CGFloat?
         var palette: Tako.TabStatusPalette? = nil
+        var ringScale: CGFloat = 1
     }
 
     let statusLayer = Tako.TabStatusLayer()
@@ -157,7 +160,8 @@ final class StatusLayerHostView: NSView {
             cornerRadius: config.cornerRadius,
             ringOrigin: config.ringCenter.map { CGPoint(x: ($0.x - 7).rounded(), y: (bounds.height - $0.y - 7).rounded()) },
             progressInset: config.progressInset,
-            cometForProgress: config.cometForProgress)
+            cometForProgress: config.cometForProgress,
+            ringScale: config.ringScale)
         statusLayer.apply(state: config.state, in: bounds, hideRing: !config.drawsRing, reduceMotion: config.reduceMotion,
                           paused: config.paused, pulses: pulses, palette: config.palette)
     }
