@@ -56,43 +56,71 @@ enum ActivitySounds {
         return names.first { $0.lowercased() == raw.lowercased() } ?? event.defaultSound
     }
 
-    /// The same sound inside a system notification.
-    static func notificationSound(_ name: String) -> UNNotificationSound {
-        UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(name).aiff"))
-    }
+    /// The sound a system notification carries for a chosen event sound.
+    /// UNNotificationSound(named:) looks only in the app's container and group
+    /// containers' Library/Sounds and in the app bundle -- not in
+    /// /System/Library/Sounds -- so a system sound's name would quietly fall
+    /// back. Until the chosen sound is put in one of those places, macOS's own
+    /// notification sound plays; the chosen one plays while Tako is in front.
+    static var notificationSound: UNNotificationSound { .default }
 }
 
-/// The sound of a notification a program posts itself (OSC 7501): its
-/// urgency's, as before, or the activity sound chosen for its event.
+/// The sound of a notification a program posts itself (OSC 7501). Explicit
+/// notification requests (OSC 9/777/99) keep their urgency's sound; Tako's
+/// own status alerts follow the activity sound settings.
 public enum ActivitySoundChoice: Equatable {
     case byUrgency
-    case named(String)
+    case sound
     case silent
 
     public func apply(to content: UNMutableNotificationContent) {
         switch self {
         case .byUrgency: break
-        case .named(let name): content.sound = ActivitySounds.notificationSound(name)
+        case .sound: content.sound = ActivitySounds.notificationSound
         case .silent: content.sound = nil
         }
     }
 
-    /// For a program's own blocked / done / error report, under the settings.
+    /// For a program's own blocked / done / error report: silent under
+    /// «Never» or a sound set to None, else the notification sound.
     static func forProgram(_ event: ActivityEvent?, preferences: DesktopPreferences) -> ActivitySoundChoice {
-        guard let event, preferences.activityAlert != .never else { return .byUrgency }
-        return preferences.activitySound(event).map(ActivitySoundChoice.named) ?? .silent
+        guard let event else { return .byUrgency }
+        guard preferences.activityAlert != .never, preferences.activitySound(event) != nil else { return .silent }
+        return .sound
     }
 }
 
+/// Where activity notifications go: the system's notification center in the
+/// app, a recorder in tests.
+@MainActor protocol ActivityNotificationTransport {
+    func add(_ request: UNNotificationRequest)
+    func removePending(_ ids: [String])
+    func removeDelivered(_ ids: [String])
+}
+
+@MainActor private struct SystemNotificationTransport: ActivityNotificationTransport {
+    let center: UNUserNotificationCenter
+    func add(_ request: UNNotificationRequest) {
+        center.add(request) { error in
+            // Scheduling failed; a nil error says nothing about presentation.
+            if let error { NSLog("tako: activity notification not scheduled: %@", error.localizedDescription) }
+        }
+    }
+    func removePending(_ ids: [String]) { center.removePendingNotificationRequests(withIdentifiers: ids) }
+    func removeDelivered(_ ids: [String]) { center.removeDeliveredNotifications(withIdentifiers: ids) }
+}
+
 /// One decision per status change: a toast, a sound Tako plays itself, or a
-/// system notification carrying the sound. Never both sounds: while a
-/// terminal window of Tako is in front, Tako plays it; otherwise macOS does,
-/// with the notification, so Focus and the notification settings apply.
+/// system notification (with or without its sound). Never both sounds: while
+/// a terminal window of Tako is in front, Tako plays it; otherwise macOS
+/// does, with the notification, so Focus and the notification settings apply.
+/// «Play sounds» governs sound only: with Never, a pane out of sight still
+/// gets its toast and, in the background, a silent notification.
 struct ActivityAlertDecision: Equatable {
     var toast = false
     var appSound: String?
     var systemNotification = false
-    var notificationSound: String?
+    var notificationSounds = false
 
     static let nothing = ActivityAlertDecision()
 }
@@ -106,24 +134,27 @@ enum ActivityAlert {
         /// Tako is active with a terminal window in front, where toasts show.
         var takoInFront: Bool
         /// The program reports this status itself (OSC 7501) and posts its own
-        /// notification, which already carries the sound.
+        /// notification, which already follows these settings.
         var reportsItself: Bool
+        /// `notify-on-command-finish` already rang or posted for this end.
+        var alreadySignalled = false
     }
 
     static func decide(_ c: Context) -> ActivityAlertDecision {
         guard !c.muted else { return .nothing }
-        let sounds = c.policy != .never
+        let sound = c.policy == .never ? nil : c.sound
         if c.lookedAt {
             // A pane in view gets no toast; «always» still plays its sound.
-            return c.policy == .always ? ActivityAlertDecision(appSound: c.sound) : .nothing
+            guard c.policy == .always, !c.alreadySignalled else { return .nothing }
+            return ActivityAlertDecision(appSound: sound)
         }
         var decision = ActivityAlertDecision(toast: true)
-        guard sounds, !c.reportsItself else { return decision }
+        guard !c.reportsItself, !c.alreadySignalled else { return decision }
         if c.takoInFront {
-            decision.appSound = c.sound
+            decision.appSound = sound
         } else {
             decision.systemNotification = true
-            decision.notificationSound = c.sound
+            decision.notificationSounds = sound != nil
         }
         return decision
     }
@@ -143,19 +174,23 @@ enum ActivityAlert {
     @MainActor static var play: (String) -> Void = { name in
         guard !inTests else { return }
         NSSound(named: NSSound.Name(name))?.play() }
-    @MainActor static var post: (UNNotificationRequest) -> Void = { request in
-        guard !inTests else { return }
-        AppDelegate.notificationCenterProvider()?.add(request) { error in
-            // Scheduling failed; a nil error says nothing about presentation.
-            if let error { NSLog("tako: activity notification not scheduled: %@", error.localizedDescription) }
-        }
+    /// The notification center; none in a test process unless a test sets one.
+    @MainActor static var transport: () -> ActivityNotificationTransport? = {
+        guard !inTests, let center = AppDelegate.notificationCenterProvider() else { return nil }
+        return SystemNotificationTransport(center: center)
+    }
+
+    @MainActor static func post(_ request: UNNotificationRequest) {
+        transport()?.add(request)
         Tako.onNotificationPosted?(request)
     }
 
-    /// A pane you look at takes its notification back from Notification Center.
-    @MainActor static var withdraw: (String) -> Void = { id in
-        guard !inTests else { return }
-        AppDelegate.notificationCenterProvider()?.removeDeliveredNotifications(withIdentifiers: [id])
+    /// A pane you look at takes its notification back: delivered, and also
+    /// still pending (adding is asynchronous), and only that pane's.
+    @MainActor static func withdraw(_ id: String) {
+        guard let transport = transport() else { return }
+        transport.removePending([id])
+        transport.removeDelivered([id])
     }
 
     /// One identifier per pane: a newer state replaces the older one.

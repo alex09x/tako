@@ -56,7 +56,7 @@ struct DesktopSettingCopy {
                 detail: "How strongly folders, branches and ports read. A waiting question and an error keep their colors.",
                 options: [("soft", "Soft"), ("default", "Default"), ("strong", "Strong")], section: .interface),
             "activity-alert": .init(title: "Play sounds",
-                detail: "When a terminal needs you, finishes or fails. Out of sight, Tako plays it; with Tako in the background, macOS shows a notification with the sound.",
+                detail: "When a terminal needs you, finishes or fails. With Tako in front, it plays the sound chosen below; in the background, macOS shows a notification with its notification sound. Never keeps the notifications, silent.",
                 options: [("unfocused", "When Not Looking"), ("always", "Always"), ("never", "Never")], section: .status),
             "activity-sound-needs-you": .init(title: "Needs you", detail: "A question, an approval or input it waits for.", section: .status),
             "activity-sound-done": .init(title: "Done", detail: "A command or an agent finished.", section: .status),

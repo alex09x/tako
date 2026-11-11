@@ -40,6 +40,8 @@ final class PaneToastCenter: ObservableObject {
     static let lifetime: TimeInterval = 4
 
     @Published private(set) var toasts: [PaneToast] = []
+    /// How many notify-on-command-finish signals each pane had when last seen here.
+    private var seenSignals: [UUID: Int] = [:]
     /// Tests replace it; the app schedules on the main queue.
     var schedule: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated(work) }
@@ -50,12 +52,18 @@ final class PaneToastCenter: ObservableObject {
     func statusChanged(_ surface: Tako.SurfaceView, to status: Tako.PaneStatus) {
         // «status-show» calms the indicators only; notifications are separate
         // (Settings › Status: «Notifications are independent of appearance»). Mute still silences.
+        // notify-on-command-finish signals a long command's end on its own;
+        // a signal not yet seen here belongs to this end.
+        let signals = surface.commandFinishSignals
+        let alreadySignalled = signals > (seenSignals[surface.id] ?? 0)
+        seenSignals[surface.id] = signals
         guard let kind = Self.kind(status), let event = ActivityEvent(status) else { return }
         let preferences = DesktopPresentation.shared.preferences
         let decision = ActivityAlert.decide(.init(
             policy: preferences.activityAlert, sound: preferences.activitySound(event),
             lookedAt: surface.isBeingLookedAt, muted: AttentionManager.shared.isMuted(surfaceId: surface.id),
-            takoInFront: ActivityAlert.takoInFront(), reportsItself: surface.crab.osc7501StatusActive))
+            takoInFront: ActivityAlert.takoInFront(), reportsItself: surface.crab.osc7501StatusActive,
+            alreadySignalled: alreadySignalled))
         if let sound = decision.appSound { ActivityAlert.play(sound) }
         guard decision.toast else { return }
         let controller = BaseTerminalController.owningController(for: surface)
@@ -85,17 +93,17 @@ final class PaneToastCenter: ObservableObject {
         }
         show(toast)
         if decision.systemNotification {
-            postNotification(for: toast, surface: surface, title: title, sound: decision.notificationSound)
+            postNotification(for: toast, surface: surface, title: title, sounds: decision.notificationSounds)
         }
     }
 
     /// Out of sight, the toast's news goes to macOS too, with the sound.
-    private func postNotification(for toast: PaneToast, surface: Tako.SurfaceView, title: String, sound: String?) {
+    private func postNotification(for toast: PaneToast, surface: Tako.SurfaceView, title: String, sounds: Bool) {
         let id = ActivityAlert.requestID(surface.id)
         let content = Tako.buildNotificationContent(
             title: toast.headline, body: toast.message, surfaceId: surface.id, paneTitle: title,
             pwd: surface.pwd, command: nil, id: id, urgency: 1, onlyWhenUnfocused: true)
-        content.sound = sound.map(ActivitySounds.notificationSound)
+        content.sound = sounds ? ActivitySounds.notificationSound : nil
         ActivityAlert.post(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
