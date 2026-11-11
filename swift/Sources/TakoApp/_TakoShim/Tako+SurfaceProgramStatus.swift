@@ -139,6 +139,12 @@ extension Tako.SurfaceView {
         let notifTitle = Self.programStatusNotificationTitle(for: effective, appLabel: appLabel)
         let notifBody = effective.msg ?? effective.displayMessage ?? self.title
         let urgency: UInt8 = (effective.state == .done) ? 1 : 2
+        let event: ActivityEvent? = switch effective.state {
+        case .blocked: .needsYou
+        case .done: .done
+        case .error: .failed
+        default: nil
+        }
 
         postStructuredNotification(
             id: "osc7501-\(id.uuidString)-\(effective.id)",
@@ -151,7 +157,8 @@ extension Tako.SurfaceView {
             focus: true,
             reportClose: false,
             timeoutMs: nil,
-            onlyWhenUnfocused: true
+            onlyWhenUnfocused: true,
+            activitySound: .forProgram(event, preferences: DesktopPresentation.shared.preferences)
         )
     }
 

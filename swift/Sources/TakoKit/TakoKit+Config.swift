@@ -187,6 +187,7 @@ public let knownTakoConfigKeys: Set<String> = [
     "app-appearance", "status-show", "status-animate",
     "sidebar-count-waiting", "sidebar-count-error", "sidebar-count-done",
     "sidebar-style", "sidebar-group", "sidebar-text-size", "sidebar-secondary-text",
+    "activity-alert", "activity-sound-needs-you", "activity-sound-done", "activity-sound-failed",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.

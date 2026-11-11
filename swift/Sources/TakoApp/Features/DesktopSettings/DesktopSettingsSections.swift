@@ -136,6 +136,12 @@ struct DesktopSettingsSectionBody: View {
                 DesktopHint(text: "Counts terminal statuses and unread completions. Each terminal is counted once.",
                             palette: palette)
             }
+            DesktopBlock(title: "Sounds", note: "macOS system sounds, one for each event", palette: palette) {
+                rows(["activity-alert"])
+                ForEach(ActivityEvent.allCases, id: \.self) {
+                    DesktopActivitySoundRow(event: $0, preferences: model.preferences, palette: palette)
+                }
+            }
             DesktopBlock(title: "Notifications", note: "Independent of visual indicators", palette: palette) {
                 DesktopPrefRow(title: "Permission and sound", detail: "Manage banners, sounds and badges in macOS settings.", palette: palette) {
                     Button("Notifications & Permissions…") { model.section = .notifications }

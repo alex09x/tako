@@ -49,7 +49,8 @@ extension Tako.SurfaceView {
             focus: Bool,
             reportClose: Bool,
             timeoutMs: UInt64?,
-            onlyWhenUnfocused: Bool
+            onlyWhenUnfocused: Bool,
+            activitySound: ActivitySoundChoice = .byUrgency
         ) {
             let action = NotificationCoalescer.shared.process(
                 surfaceId: self.id,
@@ -91,6 +92,7 @@ extension Tako.SurfaceView {
                     onlyWhenUnfocused: onlyWhenUnfocused,
                     coalescedCount: count
                 )
+                activitySound.apply(to: content)
                 let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
                 AppDelegate.notificationCenterProvider()?.add(request)
                 Tako.onNotificationPosted?(request)
@@ -130,6 +132,7 @@ extension Tako.SurfaceView {
                     reportClose: reportClose,
                     onlyWhenUnfocused: onlyWhenUnfocused
                 )
+                activitySound.apply(to: content)
 
                 let request = UNNotificationRequest(identifier: reqId, content: content, trigger: nil)
                 AppDelegate.notificationCenterProvider()?.add(request)
