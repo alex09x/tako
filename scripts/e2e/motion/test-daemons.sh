@@ -53,4 +53,15 @@ kill "${started[1]}"; wait "${started[1]}" 2>/dev/null || true
 s=0; motion_finish 0 "$tmp/before2" "$tag" "$tmp/ev3" 2>/dev/null || s=$?
 check "a leak hidden by another daemon exiting still fails" "$s" 5
 
+# The census itself fails (pgrep status 2): status 6, both lists and the
+# error kept -- whether the run leaked is unknown, so nothing is thrown away.
+mkdir -p "$tmp/broken"; printf '#!/bin/sh\necho "pgrep: broken" >&2\nexit 2\n' > "$tmp/broken/pgrep"; chmod +x "$tmp/broken/pgrep"
+s=0; PATH="$tmp/broken:$PATH" motion_finish 0 "$tmp/before" "$tag" "$tmp/ev4" 2>/dev/null || s=$?
+check "a failed census fails a passing run with 6" "$s" 6
+check "a failed census keeps the before list" "$(cmp -s "$tmp/before" "$tmp/ev4/daemons-before.txt" && echo kept || echo lost)" kept
+check "a failed census keeps its error" "$(grep -c 'census status 2' "$tmp/ev4/census-error.txt" 2>/dev/null || echo 0)" 1
+s=0; PATH="$tmp/broken:$PATH" motion_finish 3 "$tmp/before" "$tag" "$tmp/ev5" 2>/dev/null || s=$?
+check "a failed census keeps an earlier failure's status" "$s" 3
+check "and keeps its evidence too" "$([ -s "$tmp/ev5/census-error.txt" ] && echo kept || echo none)" kept
+
 exit "$failed"

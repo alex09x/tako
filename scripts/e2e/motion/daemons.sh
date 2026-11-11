@@ -40,8 +40,15 @@ new_daemons() {
 motion_finish() {
     local status="$1" before="$2" pattern="$3" evidence="$4" after leaked
     after="$(mktemp)"
-    if ! daemon_ids "$pattern" > "$after"; then
-        echo "motion-check: could not list session daemons after the run" >&2
+    local census=0
+    daemon_ids "$pattern" > "$after" 2> "$after.err" || census=$?
+    if [ "$census" -ne 0 ]; then
+        # Unknown whether the run leaked: keep everything that could tell.
+        mkdir -p "$evidence"
+        cp "$before" "$evidence/daemons-before.txt"
+        cp "$after" "$evidence/daemons-after-partial.txt"
+        { echo "census status $census, run status $status"; cat "$after.err"; } > "$evidence/census-error.txt"
+        echo "motion-check: could not list session daemons after the run (status $census); see $evidence" >&2
         [ "$status" -ne 0 ] || status=6
     else
         leaked="$(new_daemons "$before" "$after")"
@@ -54,6 +61,6 @@ motion_finish() {
             [ "$status" -ne 0 ] || status=5
         fi
     fi
-    rm -f "$after"
+    rm -f "$after" "$after.err"
     return "$status"
 }
