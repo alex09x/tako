@@ -43,7 +43,9 @@ struct CardFillTests {
     /// foreground too close to its background -- whichever scheme the shell is in.
     @Test(arguments: [(UInt32(0xF4F1EA), UInt32(0x222222), true),   // light terminal
                       (UInt32(0x0E1820), UInt32(0xEDE6DF), false),  // dark terminal
-                      (UInt32(0x222222), UInt32(0x333333), false)]) // foreground lost in background
+                      (UInt32(0x222222), UInt32(0x333333), false),  // foreground lost in background
+                      (UInt32(0xFFFFFF), UInt32(0x767676), true),   // a foreground just at the title bound
+                      (UInt32(0x888888), UInt32(0x999999), false)]) // mid-grey: black reads better than white
     func theHeaderIsReadableOnTheTerminalsBackground(bg: UInt32, fg: UInt32, light: Bool) {
         let saved = Tako.LivingTokens.isLight
         defer { Tako.LivingTokens.isLight = saved }

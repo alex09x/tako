@@ -31,14 +31,27 @@ struct CardHeaderPalette: Equatable {
     /// Whether the fill is light (for the header's own system drawing).
     let isLight: Bool
 
+    /// The title is at least this readable on the fill (WCAG AA for text)...
+    static let titleContrast: CGFloat = 4.5
+    /// ...and the quieter secondary text at least this.
+    static let secondaryContrast: CGFloat = 3
+
     init(background: CGColor, foreground: CGColor) {
         let bg = NSColor(cgColor: background)?.usingColorSpace(.sRGB) ?? .black
         let fg = NSColor(cgColor: foreground)?.usingColorSpace(.sRGB) ?? .white
-        let title = CanvasPaneTitleColor.color(foreground: fg, background: bg)
         fill = bg
+        // The terminal's foreground where it is readable enough; otherwise
+        // whichever of black and white stands out more on this background
+        // (a mid-grey's better one is not always the one its luminance suggests).
+        let title = Self.contrast(of: fg, on: bg) >= Self.titleContrast ? fg
+            : [NSColor.black, .white].max { Self.contrast(of: $0, on: bg) < Self.contrast(of: $1, on: bg) }!
         self.title = title
-        secondary = title.withAlphaComponent(0.66)
-        faint = title.withAlphaComponent(0.45)
+        // Quiet where the background allows it, never below the secondary bound.
+        let alpha = stride(from: 0.66, through: 1.0, by: 0.02).first {
+            Self.contrast(of: title.withAlphaComponent($0), on: bg) >= Self.secondaryContrast
+        } ?? 1
+        secondary = title.withAlphaComponent(alpha)
+        faint = title.withAlphaComponent(alpha * 0.45 / 0.66)
         hover = title.withAlphaComponent(0.10)
         isLight = CanvasPaneTitleColor.luminance(bg) > 0.5
     }
@@ -48,7 +61,9 @@ struct CardHeaderPalette: Equatable {
     }
 
     /// WCAG contrast of `color` (composited over `fill` when translucent) against `fill`.
-    func contrast(of color: NSColor) -> CGFloat {
+    func contrast(of color: NSColor) -> CGFloat { Self.contrast(of: color, on: fill) }
+
+    static func contrast(of color: NSColor, on fill: NSColor) -> CGFloat {
         let c = color.usingColorSpace(.sRGB) ?? color, a = c.alphaComponent
         let mixed = NSColor(srgbRed: c.redComponent * a + fill.redComponent * (1 - a),
                             green: c.greenComponent * a + fill.greenComponent * (1 - a),
