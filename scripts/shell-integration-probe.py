@@ -69,7 +69,17 @@ CASES = [
 COMMANDS = [f"cd {repo}", "echo hello", "false", "true"]
 EXPECTED_STATUS = ["0", "0", "1", "0"]
 
-def run(argv, env, pre):
+def commands_for(name):
+    """The same steps in the shell's own words: in Nushell `false` and `true`
+    are booleans, so the failing and succeeding programs are the external
+    ones (^false, ^true) and exit 1 and 0 as everywhere else."""
+    if name == "nu":
+        return [f"cd {repo}", "echo hello", "^false", "^true"]
+    return COMMANDS
+
+assert commands_for("nu")[2:] == ["^false", "^true"] and commands_for("zsh") == COMMANDS
+
+def run(argv, env, pre, commands):
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(home)
@@ -84,7 +94,7 @@ def run(argv, env, pre):
                 try: buf += os.read(fd, 65536)
                 except OSError: return
     pump(2.5)
-    for line in ([pre] if pre else []) + COMMANDS + ["exit"]:
+    for line in ([pre] if pre else []) + commands + ["exit"]:
         os.write(fd, (line + "\r").encode()); pump(1.2)
     pump(1.0)
     try: os.waitpid(pid, 0)
@@ -116,7 +126,7 @@ report, bad = {}, 0
 for name, exe, args, extra, should, pre in CASES:
     if not os.path.exists(exe):
         report[name] = {"result": "not installed", "executable": exe}; continue
-    raw = run([exe] + args, {**common, **extra}, pre)
+    raw = run([exe] + args, {**common, **extra}, pre, commands_for(name))
     open(f"{OUT}/{name}.raw", "wb").write(raw)
     r = judge(raw.decode("utf-8", "replace"))
     r["integrated"] = not r["problems"]
