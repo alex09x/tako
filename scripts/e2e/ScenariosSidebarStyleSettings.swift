@@ -19,6 +19,19 @@ import Foundation
 /// session's row still selects that session.
 func runSidebarStyleSettingsScenario(_ d: Driver) throws {
     d.quit()
+    // The shells this app starts get a private HOME, XDG dirs and history:
+    // nothing of the owner's is read, and no command lands in their history.
+    let saved = d.environment
+    let home = d.path("private-home")
+    for dir in ["", "/.config", "/.local/share", "/.cache"] {
+        try FileManager.default.createDirectory(atPath: home + dir, withIntermediateDirectories: true)
+    }
+    d.environment["HOME"] = home
+    d.environment["XDG_CONFIG_HOME"] = home + "/.config"
+    d.environment["XDG_DATA_HOME"] = home + "/.local/share"
+    d.environment["XDG_CACHE_HOME"] = home + "/.cache"
+    d.environment["HISTFILE"] = home + "/.shell_history"
+    defer { d.environment = saved }
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n")
     // Below the top of the screen, where a system alert can stand.
     d.setPosition(CGPoint(x: 100, y: 410))
@@ -30,6 +43,12 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
     try FileManager.default.createDirectory(atPath: alpha, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(atPath: beta, withIntermediateDirectories: true)
     guard let pane0 = try d.focusedPaneId() else { throw Failure("no first pane") }
+    // The boundary itself, checked before anything else is typed.
+    try d.run("echo \"$HOME|$XDG_DATA_HOME|$HISTFILE\" > \(d.path("sbstyle_env"))")
+    let seen = try d.file("sbstyle_env").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard seen == "\(home)|\(home)/.local/share|\(home)/.shell_history" else {
+        throw Failure("the shell is not private: \(seen)")
+    }
     try d.run("cd \(alpha)")
     d.key(Key.t, .maskCommand)
     guard d.wait(for: { d.tabElement(index: 1) != nil }, timeout: 5) else { throw Failure("second tab did not open") }
@@ -54,13 +73,20 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
     func applied(_ key: String, _ value: String) -> Bool {
         ((try? d.exec("\(ctl) config get \(key)")) ?? "").contains(value)
     }
-    // Settings is a window of its own, centred: move it below where a
-    // system alert can stand at the top of the screen.
-    if let root = d.element(withIdentifier: "DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute) {
-        var origin = CGPoint(x: 120, y: 420)
+    // Settings is a window of its own, centred: move it, inside the display's
+    // visible frame, to its lower part (a system alert can stand at the top),
+    // and raise it. Only the owned Settings window is moved; the driver still
+    // refuses any click whose point another process owns.
+    if let root = d.element(withIdentifier: "DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute),
+       let screen = NSScreen.main, let sizeVal: AXValue = d.attribute(window, kAXSizeAttribute) {
+        var size = CGSize.zero
+        AXValueGetValue(sizeVal, .cgSize, &size)
+        let visible = screen.visibleFrame, top = screen.frame.maxY   // AX origin is the top-left of the main display
+        var origin = CGPoint(x: visible.minX + 20, y: max(top - visible.maxY, top - visible.minY - size.height - 20))
         if let value = AXValueCreate(.cgPoint, &origin) {
             AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
         }
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         usleep(400_000)
     }
     try click("DesktopSettingsSection-interface")
