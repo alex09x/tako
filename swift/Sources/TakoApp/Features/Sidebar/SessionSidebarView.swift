@@ -150,7 +150,10 @@ struct SessionSidebarView: View {
         VStack(spacing: 0) {
             headerView(sessionCount: totalSessions, attentionCount: waitingCount)
             searchBar
-            segmentsRow(attentionCount: waitingCount, counts: counts)
+            if SidebarChromeMetrics.showsSegments(style: presentation.preferences.sidebarStyle,
+                                                  grouping: presentation.preferences.sidebarGrouping) {
+                segmentsRow(attentionCount: waitingCount, counts: counts)
+            }
 
             VStack(spacing: 0) {
                 if windowIsPresented { tabListView(groups: groups, buckets: buckets, flatItems: flatItems) }
@@ -171,6 +174,7 @@ struct SessionSidebarView: View {
         // No rule on the trailing edge: the sidebar and the canvas are one
         // surface, the cards alone mark where the terminals begin.
         .background(backgroundColor)
+        .environment(\.sidebarStyle, presentation.preferences.sidebarStyle)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("SessionSidebar")
         .onAppear {
@@ -201,11 +205,10 @@ struct SessionSidebarView: View {
         // Each tab is a window with a sidebar of its own; the one on screen
         // must not keep an arrow-key cursor left from when it was last shown,
         // or a second row looks chosen. The cursor goes where the active
-        // tab goes.
-        .onChange(of: flatItems.firstIndex(where: { $0.isSelected })) { _, _ in
-            guard windowIsPresented else { return }
-            followActiveTab()
-        }
+        // tab goes, and otherwise stays on its row when rows reorder.
+        .modifier(SidebarCursorKeeper(ids: flatItems.map(\.id), activeId: flatItems.first(where: { $0.isSelected })?.id,
+                                      enabled: windowIsPresented, selectedIndex: $selectedIndex,
+                                      followActive: followActiveTab))
         .onReceive(NotificationCenter.default.publisher(for: .takoNotificationStoreDidChange)) { _ in
             guard windowIsPresented else { return }
             store.objectWillChange.send()
@@ -259,7 +262,8 @@ struct SessionSidebarView: View {
     }
 
     /// One session or pane row, in the style the settings ask for.
-    private func sessionRow(_ item: SessionSidebarItem, flatItems: [SessionSidebarItem], dot: NSColor?) -> some View {
+    private func sessionRow(_ item: SessionSidebarItem, flatItems: [SessionSidebarItem],
+                            workspace: SidebarStatusBucket.WorkspaceBadge?) -> some View {
         let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
         return SessionSidebarRowView(
             item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
@@ -272,7 +276,7 @@ struct SessionSidebarView: View {
                 store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
             },
             onClose: { store.closeTab(item: item, in: targetWindow) },
-            style: presentation.preferences.sidebarStyle, workspaceDot: dot,
+            style: presentation.preferences.sidebarStyle, workspace: workspace,
             textSize: presentation.preferences.sidebarTextSize, secondaryText: presentation.preferences.sidebarSecondaryText
         )
         .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
@@ -303,7 +307,7 @@ struct SessionSidebarView: View {
                         ForEach(buckets) { bucket in
                             SidebarStatusBucketHeader(bucket: bucket)
                             ForEach(bucket.rows) { row in
-                                sessionRow(row.item, flatItems: flatItems, dot: row.workspaceColor.map { T.workspaceColor(for: $0) })
+                                sessionRow(row.item, flatItems: flatItems, workspace: row.workspace)
                             }
                         }
                     } else {
@@ -316,7 +320,7 @@ struct SessionSidebarView: View {
                                 actions: workspaceActions(wsGroup)
                             )
                             ForEach(wsGroup.items) { item in
-                                sessionRow(item, flatItems: flatItems, dot: nil)
+                                sessionRow(item, flatItems: flatItems, workspace: nil)
                             }
                         }
                     }

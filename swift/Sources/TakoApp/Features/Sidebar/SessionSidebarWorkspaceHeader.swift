@@ -19,6 +19,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
     /// «+», «⋯» on hover (in place of the counts) and the colour dot's menu.
     var actions: SidebarWorkspaceActions? = nil
     @State private var hovering = false
+    @Environment(\.sidebarStyle) private var style
 
     private typealias T = Tako.LivingTokens
 
@@ -37,6 +38,8 @@ struct SessionSidebarWorkspaceHeaderView: View {
     private var workspaceDotColor: NSColor {
         T.workspaceColor(for: group.color)
     }
+
+    private var chrome: SidebarChromeMetrics { .of(style) }
 
     var body: some View {
         let rowContentHeight: CGFloat = group.attentionCount > 0 ? 15 : 13
@@ -67,10 +70,10 @@ struct SessionSidebarWorkspaceHeaderView: View {
                         }
                     }
 
-                Text(group.name.uppercased())
-                    .font(Font(T.monoFont(size: 10.5, weight: .semibold)))
-                    .tracking(0.8)
-                    .foregroundColor(Color(nsColor: T.dim))
+                Text(chrome.headingUppercased ? group.name.uppercased() : group.name)
+                    .font(Font(chrome.headingFont))
+                    .tracking(chrome.headingTracking)
+                    .foregroundColor(Color(nsColor: chrome.headingColor))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -121,7 +124,7 @@ struct SessionSidebarWorkspaceHeaderView: View {
         }
         .onHover { hovering = $0 }
         .frame(height: rowContentHeight)
-        .padding(.top, 10)
+        .padding(.top, chrome.headingTop)
         // A01 `.ws`: 8 pt margin + 6/4 pt padding.
         .padding(.leading, 14)
         .padding(.trailing, 12)

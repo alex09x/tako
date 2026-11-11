@@ -71,7 +71,7 @@ struct SidebarStyleTests {
         #expect(SidebarRowMetrics.of(.compact, textScale: 0.9).metaFont.pointSize < 10)
     }
 
-    private func group(_ name: String, color: String, _ items: [SessionSidebarItem]) -> SessionSidebarWorkspaceGroup {
+    private func group(_ name: String, color: String?, _ items: [SessionSidebarItem]) -> SessionSidebarWorkspaceGroup {
         SessionSidebarWorkspaceGroup(id: UUID(), name: name, color: color, icon: nil, isActive: false, isCollapsed: false,
                                      sessionCount: items.filter { !$0.isChild }.count, paneCount: 0, attentionCount: 0,
                                      unreadCount: 0, dominantStatus: .idle, items: items)
@@ -90,7 +90,39 @@ struct SidebarStyleTests {
         #expect(buckets[0].rows.map(\.item.surfaceState) == [.failed, .waiting])
         #expect(buckets[3].rows.map(\.item.isChild) == [false, true], "a working pane stays under its quiet session")
         #expect(buckets[3].sessionCount == 1)
-        #expect(buckets[3].rows.map(\.workspaceColor) == ["#8ABEB7", nil], "the dot is the session's, not the pane's")
+        #expect(buckets[3].rows.map(\.workspace?.color) == ["#8ABEB7", nil], "the dot is the session's, not the pane's")
+        #expect(buckets[3].rows.map { $0.workspace?.name } == ["Default", nil])
         #expect(SidebarStatusBucket.buckets(from: []).isEmpty)
+    }
+
+    private func row(_ id: String, _ status: Tako.PaneStatus, attention: Bool) -> SessionSidebarItem {
+        SessionSidebarItem(id: id, index: 0, isSelected: false, title: id, status: status, workingDirectory: "/tmp",
+                           needsAttention: attention, indentationLevel: 1, workspaceId: UUID(), tabId: id)
+    }
+
+    /// An unread done or running session stays Done or Running: the bucket
+    /// is the state its ring shows. Only an idle one somebody has to look at
+    /// is waiting, and so Needs you.
+    @Test func unreadDoesNotPullDoneOrRunningIntoNeedsYou() {
+        let buckets = SidebarStatusBucket.buckets(from: [group("W", color: nil, [
+            row("done", .done, attention: true), row("running", .working, attention: true),
+            row("looked-for", .idle, attention: true), row("quiet", .idle, attention: false),
+        ])])
+        #expect(buckets.map(\.kind) == [.needsYou, .running, .done, .quiet])
+        #expect(buckets.map { $0.rows.map(\.item.id) } == [["looked-for"], ["running"], ["done"], ["quiet"]])
+        // A workspace with the automatic colour still names and badges its sessions.
+        #expect(buckets.allSatisfy { $0.rows.allSatisfy { $0.workspace?.name == "W" && $0.workspace?.color == nil } })
+    }
+
+    @Test func theStyleShapesTheWholeSidebarAndClassicStaysTheReference() {
+        let c = SidebarChromeMetrics.of(.classic)
+        #expect(c.searchHeight == 28 && c.searchFilled && c.headingUppercased && c.headingTop == 10)
+        #expect(c.rowRadius == 8 && c.rowLeading == 4 && c.rowTrailing == 6)
+        #expect(!SidebarChromeMetrics.of(.minimal).searchFilled && !SidebarChromeMetrics.of(.minimal).headingUppercased)
+        #expect(SidebarChromeMetrics.of(.compact).searchHeight == 24 && SidebarChromeMetrics.of(.compact).rowRadius == 4)
+        #expect(SidebarChromeMetrics.showsSegments(style: .classic, grouping: .workspace))
+        #expect(SidebarChromeMetrics.showsSegments(style: .compact, grouping: .workspace))
+        #expect(!SidebarChromeMetrics.showsSegments(style: .minimal, grouping: .workspace))
+        #expect(!SidebarChromeMetrics.showsSegments(style: .classic, grouping: .status))
     }
 }

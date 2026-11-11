@@ -38,6 +38,18 @@ extension SessionSidebarRowView {
         return Color.clear
     }
 
+    /// The session's workspace, grouped by status: its colour (the automatic
+    /// one when none was chosen) and its name on hover and for VoiceOver.
+    func workspaceBadge(_ ws: SidebarStatusBucket.WorkspaceBadge) -> some View {
+        Circle()
+            .fill(Color(nsColor: T.workspaceColor(for: ws.color)))
+            .frame(width: 6, height: 6)
+            .help(ws.name)
+            .accessibilityElement()
+            .accessibilityLabel("Workspace \(ws.name)")
+            .accessibilityIdentifier("SidebarRowWorkspace-\(ws.id.uuidString.lowercased())")
+    }
+
     func closeRowButton(action: @escaping () -> Void, isChild: Bool) -> some View {
         Button(action: action) {
             Image(systemName: "xmark")

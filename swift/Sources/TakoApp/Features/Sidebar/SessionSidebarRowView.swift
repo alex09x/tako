@@ -31,8 +31,8 @@ struct SessionSidebarRowView: View {
     var onClose: (() -> Void)? = nil
     /// `sidebar-style`; the row's sizes come from it (`SidebarRowMetrics`).
     var style: SidebarStyle = .classic
-    /// Grouped by status, the row shows its workspace as a dot.
-    var workspaceDot: NSColor? = nil
+    /// Grouped by status, the row shows its workspace as a dot beside the title.
+    var workspace: SidebarStatusBucket.WorkspaceBadge? = nil
     /// `sidebar-text-size` and `sidebar-secondary-text`.
     var textSize: SidebarTextSize = .standard
     var secondaryText: SidebarSecondaryText = .standard
@@ -139,7 +139,8 @@ struct SessionSidebarRowView: View {
     private func sessionParentRow(moving: Bool) -> some View {
         // Reference A01 `.row`: 46 pt, radius 8, padding 5/5/5/3 inside a 1 pt
         // border, title 12.5/500, meta 11 under the title (33 pt in).
-        let radius: CGFloat = 8
+        let shape = SidebarChromeMetrics.of(style)
+        let radius = shape.rowRadius
         let vPad = m.rowVerticalPadding
         let glowBacking: NSColor = isTabActive ? T.surfaceActive : (isNavSelected ? T.surfaceHover : T.body)
         let second = m.showsSecondLine(for: state) ? sessionSecondLineContent : nil
@@ -165,12 +166,15 @@ struct SessionSidebarRowView: View {
                 ring(moving: moving, painter: layered ? .rowLayer : .swiftUI)
                     .help("Status: \(item.status.rawValue)")
 
-                Text(item.title)
-                    .font(Font(m.titleFont))
-                    .foregroundColor(sessionTitleColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(Font(m.titleFont))
+                        .foregroundColor(sessionTitleColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let workspace { workspaceBadge(workspace) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if m.inlineSecondLine, let second {
                     Text(second.text)
@@ -179,10 +183,6 @@ struct SessionSidebarRowView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .layoutPriority(-1)
-                }
-
-                if let workspaceDot {
-                    Circle().fill(Color(nsColor: workspaceDot)).frame(width: 6, height: 6)
                 }
 
                 if let meta = item.metaDisplayText {
@@ -220,8 +220,8 @@ struct SessionSidebarRowView: View {
                     .padding(.leading, m.secondLineIndent)
             }
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 6)
+        .padding(.leading, shape.rowLeading)
+        .padding(.trailing, shape.rowTrailing)
         .padding(.vertical, vPad)
         // Behind the text, over the row's fill, as the glint is in the design;
         // the ring, the border, the line and the glow do not reach the text.

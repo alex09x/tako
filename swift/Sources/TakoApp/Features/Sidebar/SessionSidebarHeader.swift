@@ -98,8 +98,12 @@ extension SessionSidebarView {
 
     // MARK: Search
 
+    /// The style's search field, segments and headings (`sidebar-style`).
+    var chrome: SidebarChromeMetrics { .of(DesktopPresentation.shared.preferences.sidebarStyle) }
+
     var searchBar: some View {
-        HStack(spacing: 6) {
+        let chrome = chrome
+        return HStack(spacing: 6) {
             Text("⌕").font(Font(T.monoFont(size: 12))).foregroundColor(Color(nsColor: T.faint))
             ZStack(alignment: .leading) {
                 if filterText.isEmpty {
@@ -131,16 +135,17 @@ extension SessionSidebarView {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Color(nsColor: T.chrome)))
+        .frame(height: chrome.searchHeight)
+        .background(RoundedRectangle(cornerRadius: 7).fill(chrome.searchFilled ? Color(nsColor: T.chrome) : .clear))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color(nsColor: T.hairline), lineWidth: 1))
         .background {
             // ⌘K focuses the field from anywhere in the window.
             Button("", action: toggleSearchBar).keyboardShortcut("k", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 2)
+        .padding(.horizontal, chrome.searchHorizontalMargin)
+        .padding(.top, chrome.searchTop)
+        .padding(.bottom, chrome.searchBottom)
     }
 
     // MARK: Segments
@@ -177,10 +182,10 @@ extension SessionSidebarView {
                                               @ViewBuilder content: () -> Content) -> some View {
         Button(action: action) {
             content()
-                .font(Font(T.monoFont(size: 11, weight: .medium)))
+                .font(Font(T.monoFont(size: chrome.segmentFontSize, weight: .medium)))
                 .foregroundColor(Color(nsColor: isActive ? T.textActive : T.dim))
                 .padding(.horizontal, 9)
-                .frame(height: 24)
+                .frame(height: chrome.segmentHeight)
                 .background(RoundedRectangle(cornerRadius: 6).fill(isActive ? Color(nsColor: T.surfaceActive) : .clear))
                 .contentShape(Rectangle())
         }

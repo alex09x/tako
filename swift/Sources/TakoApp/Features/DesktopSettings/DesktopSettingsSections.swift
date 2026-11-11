@@ -67,7 +67,8 @@ struct DesktopSettingsSectionBody: View {
         Group {
             DesktopBlock(title: "Color Scheme", note: "Sidebar, canvas, menus and settings", palette: palette) { rows(["app-appearance"]) }
             DesktopBlock(title: "Sidebar", note: "How sessions are listed; only the look changes", palette: palette) {
-                rows(["sidebar-style", "sidebar-group", "sidebar-text-size", "sidebar-secondary-text"])
+                DesktopSidebarStylePicker(preferences: model.preferences, palette: palette)
+                rows(["sidebar-group", "sidebar-text-size", "sidebar-secondary-text"])
             }
             DesktopBlock(title: "Interface Text", palette: palette) {
                 DesktopPrefRow(title: "Interface font and size",

@@ -19,9 +19,19 @@ struct SidebarStatusBucket: Identifiable, Equatable {
         case needsYou = "Needs you", running = "Running", done = "Done", quiet = "Quiet"
     }
 
+    /// Which workspace a session belongs to, shown on its row in place of
+    /// the heading: its name for the tooltip and VoiceOver, and its colour,
+    /// nil when the workspace takes the automatic one.
+    struct WorkspaceBadge: Equatable {
+        let id: UUID
+        let name: String
+        let color: String?
+    }
+
     struct Row: Identifiable, Equatable {
         let item: SessionSidebarItem
-        let workspaceColor: String?
+        /// The session's workspace; nil on a pane row.
+        let workspace: WorkspaceBadge?
         var id: String { item.id }
     }
 
@@ -31,8 +41,10 @@ struct SidebarStatusBucket: Identifiable, Equatable {
     /// Sessions in the bucket, not their pane rows.
     var sessionCount: Int { rows.filter { !$0.item.isChild }.count }
 
+    /// The row's own state, as its ring shows it: an idle row someone has
+    /// to look at is already waiting there (`surfaceState`). An unread done
+    /// or running row stays Done or Running.
     static func kind(of item: SessionSidebarItem) -> Kind {
-        if item.needsAttention { return .needsYou }
         return switch item.surfaceState {
         case .waiting, .failed: .needsYou
         case .working, .progress, .live: .running
@@ -48,7 +60,8 @@ struct SidebarStatusBucket: Identifiable, Equatable {
             var parentKind: Kind = .quiet
             for item in group.items {
                 if !item.isChild { parentKind = kind(of: item) }
-                rows[parentKind, default: []].append(Row(item: item, workspaceColor: item.isChild ? nil : group.color))
+                let badge = item.isChild ? nil : WorkspaceBadge(id: group.id, name: group.name, color: group.color)
+                rows[parentKind, default: []].append(Row(item: item, workspace: badge))
             }
         }
         return Kind.allCases.compactMap { kind in rows[kind].map { SidebarStatusBucket(kind: kind, rows: $0) } }
