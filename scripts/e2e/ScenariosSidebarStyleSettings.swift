@@ -48,10 +48,15 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         }
     }
     let historyBefore = stamp()
+    defer {   // reported on every exit, a failed run included
+        let after = stamp()
+        print("owner history: \(after == historyBefore ? "unchanged" : "CHANGED before=\(historyBefore) after=\(after)")")
+    }
 
     // No settle step: the first command typed is the boundary check.
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n"
                  + "session-persistence = false\n", settleTerminal: false)
+    print("fixture app: pid \(d.pid), bundle \(d.bundleID), \(d.appURL.path)")
     d.setPosition(CGPoint(x: 100, y: 410))
     d.setSize(CGSize(width: 1000, height: 560))
     d.focus()
@@ -71,8 +76,17 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
     usleep(600_000)
     try d.run("cd \(beta)")
     let tree = try d.exec("\(ctl) --json tree")
-    guard !tree.contains("\"persistentSession\":true"), !tree.contains("\"persistentSession\" : true") else {
-        throw Failure("a fixture pane keeps a persistent session: \(tree.prefix(400))")
+    var persistent: [Bool] = []
+    func collect(_ node: Any) {
+        if let dict = node as? [String: Any] {
+            if let flag = dict["persistentSession"] as? Bool { persistent.append(flag) }
+            dict.values.forEach(collect)
+        } else if let list = node as? [Any] { list.forEach(collect) }
+    }
+    collect(try JSONSerialization.jsonObject(with: Data(tree.utf8)))
+    print("fixture panes: \(persistent.count), persistentSession: \(persistent)")
+    guard persistent.count >= 2, !persistent.contains(true) else {
+        throw Failure("fixture panes must be ≥2 and all non-persistent, got \(persistent): \(tree.prefix(400))")
     }
 
     // Settings, the owned window, inside the display's visible frame and raised.
@@ -94,24 +108,41 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         AXValueGetValue(p, .cgPoint, &pos); AXValueGetValue(s, .cgSize, &size)
         return CGRect(origin: pos, size: size)
     }
+    /// Where a control sits against the clickable part of the page: above
+    /// it, below it (under the footer included), or inside it.
+    func placement(_ id: String) throws -> (below: Bool, above: Bool, page: CGRect, floor: CGFloat) {
+        guard let e = d.element(withIdentifier: id), let rect = frame(e),
+              let pageEl = d.element(withIdentifier: "DesktopSettingsPage"), let page = frame(pageEl) else {
+            throw Failure("no frame for \(id) or the settings page")
+        }
+        let floor = min(page.maxY, d.element(withIdentifier: "DesktopSettingsFooter").flatMap(frame)?.minY ?? page.maxY)
+        return (rect.maxY > floor - 4, rect.minY < page.minY + 4, page, floor)
+    }
     /// Scrolls the settings page with the wheel, as a person would, until the
-    /// control sits clear of the footer and inside the page.
-    func bringIntoView(_ id: String) {
+    /// control sits clear of the footer and inside the page. Every wheel event
+    /// goes to a point inside the page above the footer that Tako owns, both
+    /// by the window list and by the actual AX recipient; otherwise it fails
+    /// without posting. A control still outside the page afterwards fails too.
+    func bringIntoView(_ id: String) throws {
         for _ in 0..<12 {
-            guard let e = d.element(withIdentifier: id), let rect = frame(e),
-                  let pageEl = d.element(withIdentifier: "DesktopSettingsPage"), let page = frame(pageEl) else { return }
-            let floor = d.element(withIdentifier: "DesktopSettingsFooter").flatMap(frame)?.minY ?? page.maxY
-            let below = rect.maxY > floor - 4, above = rect.minY < page.minY + 4
-            guard below || above else { return }
-            let point = CGPoint(x: page.minX + page.width * 0.3, y: page.maxY - 30)
+            let at = try placement(id)
+            guard at.below || at.above else { return }
+            let point = CGPoint(x: at.page.minX + at.page.width * 0.3, y: max(at.page.minY + 10, at.floor - 30))
+            guard let owner = d.topmostOwner(at: point), owner == d.pid else {
+                throw Failure("scroll point \(point) not owned by Tako (owner \(String(describing: d.topmostOwner(at: point))), pid \(d.pid))")
+            }
+            try d.requireAXOwnedTarget(at: point)
             CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
                 .post(tap: .cghidEventTap)
+            try d.requireAXOwnedTarget(at: point)
             let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1,
-                                wheel1: below ? -4 : 4, wheel2: 0, wheel3: 0)
+                                wheel1: at.below ? -4 : 4, wheel2: 0, wheel3: 0)
             wheel?.location = point
             wheel?.post(tap: .cghidEventTap)
             usleep(250_000)
         }
+        let at = try placement(id)
+        if at.below || at.above { throw Failure("\(id) is still outside the clickable page after scrolling (below \(at.below), above \(at.above))") }
     }
     func element(_ id: String) throws -> AXUIElement {
         guard d.wait(for: { d.element(withIdentifier: id) != nil }, timeout: 5), let e = d.element(withIdentifier: id) else {
@@ -119,10 +150,13 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         }
         AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
         usleep(300_000)
-        bringIntoView(id)
+        try bringIntoView(id)
         return d.element(withIdentifier: id) ?? e
     }
-    func click(_ id: String) throws { try d.clickElement(try element(id)) }   // the driver refuses foreign-owned points
+    func click(_ id: String) throws {   // the driver refuses foreign-owned points
+        do { try d.clickElement(try element(id)); print("control \(id): clicked") }
+        catch { print("control \(id): FAILED \(error)"); throw error }
+    }
     let config = d.path("config")
     func file() -> String { (try? String(contentsOfFile: config, encoding: .utf8)) ?? "" }
     func applied(_ key: String) -> String { ((try? d.exec("\(ctl) config get \(key)")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
