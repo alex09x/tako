@@ -26,6 +26,7 @@ guard args.count == 4, ["place", "remove"].contains(args[1]) else {
 let (mode, group, name) = (args[1], args[2], args[3])
 let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
 var out: [String: Any] = [
+    "mode": mode, "group": group, "name": name,
     "bundle": Bundle.main.bundleIdentifier ?? "none",
     "team": ActivitySoundCache.ownTeam() ?? "none",
     "groups": ActivitySoundCache.ownGroups(),
@@ -33,13 +34,23 @@ var out: [String: Any] = [
 ]
 
 if mode == "remove" {
-    guard let container else { out["removed"] = false; emit(out); exit(1) }
+    // Only the file this probe places: its own group, a plain sound name, a plain file whose
+    // bytes are the installed system sound. Anything else is left alone and reported as a failure.
+    func refuse(_ why: String) -> Never { out["removed"] = false; out["refused"] = why; emit(out); exit(4) }
+    guard ActivitySoundCache.ownGroups().contains(group) else { refuse("group not in this probe's entitlement") }
+    guard name.range(of: "^[A-Za-z]+$", options: .regularExpression) != nil else { refuse("not a sound name") }
+    guard let container else { refuse("no container") }
     let file = container.appendingPathComponent("Library/Sounds/\(ActivitySoundCache.filePrefix)\(name).aiff")
-    let existed = FileManager.default.fileExists(atPath: file.path)
-    if existed { try? FileManager.default.removeItem(at: file) }
-    out["removed"] = existed && !FileManager.default.fileExists(atPath: file.path)
     out["file"] = file.path
-    emit(out); exit(0)
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+          attrs[.type] as? FileAttributeType == .typeRegular else { refuse("no plain placed file") }
+    guard let placed = try? Data(contentsOf: file),
+          let system = try? Data(contentsOf: ActivitySoundCache.systemSounds.appendingPathComponent("\(name).aiff")),
+          placed == system else { refuse("file is not the placed system sound") }
+    out["sha256"] = ActivitySoundCache.sha256(placed)
+    do { try FileManager.default.removeItem(at: file) } catch { refuse("remove failed") }
+    out["removed"] = !FileManager.default.fileExists(atPath: file.path)
+    emit(out); exit(out["removed"] as? Bool == true ? 0 : 5)
 }
 
 let sounds = container?.appendingPathComponent("Library/Sounds")

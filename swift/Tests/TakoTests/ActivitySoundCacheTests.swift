@@ -101,6 +101,19 @@ struct ActivitySoundCacheTests {
         #expect(try Data(contentsOf: unrelated) == Data("someone else's".utf8))
     }
 
+    @Test func aLinkedLibraryFolderIsRefusedAndNothingIsMadeBeyondIt() throws {
+        defer { cleanup() }
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: container.appendingPathComponent("Library"), withDestinationURL: elsewhere)
+        #expect(place("Glass", env()) == .failure(.unsafeTarget))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path).isEmpty, "a Sounds folder was made outside the container")
+        // A Library that is a plain file is refused too.
+        try FileManager.default.removeItem(at: container.appendingPathComponent("Library"))
+        try Data("x".utf8).write(to: container.appendingPathComponent("Library"))
+        #expect(place("Glass", env()) == .failure(.unsafeTarget))
+    }
+
     @Test func aLinkedSoundsFolderIsRefused() throws {
         defer { cleanup() }
         let elsewhere = root.appendingPathComponent("elsewhere")

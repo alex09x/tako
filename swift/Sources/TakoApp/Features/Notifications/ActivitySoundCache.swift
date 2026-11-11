@@ -71,15 +71,15 @@ enum ActivitySoundCache {
         else { return .failure(.badSource) }
         let digest = sha256(data)
 
-        let sounds = container.appendingPathComponent("Library/Sounds", isDirectory: true)
+        // Library, then Sounds, one at a time: each must be a real folder (not a
+        // link, not anything else) before anything is made inside it, so nothing
+        // is ever created or written outside the container.
+        guard let library = ownedFolder(container.appendingPathComponent("Library", isDirectory: true)),
+              let sounds = ownedFolder(library.appendingPathComponent("Sounds", isDirectory: true))
+        else { return .failure(.unsafeTarget) }
         let fileName = "\(filePrefix)\(name).aiff"
         let to = sounds.appendingPathComponent(fileName)
         do {
-            try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: sounds.path, isDirectory: &isDir), isDir.boolValue,
-                  (try? sounds.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
-            else { return .failure(.unsafeTarget) }
             if let existing = try? FileManager.default.attributesOfItem(atPath: to.path) {
                 // Ours to replace only as a plain file; a link or anything else stays as it is.
                 guard existing[.type] as? FileAttributeType == .typeRegular else { return .failure(.unsafeTarget) }
@@ -94,6 +94,25 @@ enum ActivitySoundCache {
         }
         guard let written = try? Data(contentsOf: to), sha256(written) == digest else { return .failure(.io) }
         return .success(Placed(fileName: fileName, url: to, sha256: digest))
+    }
+
+    /// `url` as a plain folder: made (0700) if absent, accepted if it is a
+    /// directory itself; nil for a link, any other type, or a type that cannot
+    /// be read. Never follows a link.
+    static func ownedFolder(_ url: URL) -> URL? {
+        func type() -> FileAttributeType?? {
+            do { return try FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType }
+            catch let error as CocoaError where error.code == .fileReadNoSuchFile { return .some(nil) }
+            catch { return nil }   // unknown
+        }
+        switch type() {
+        case .some(.some(.typeDirectory)): return url
+        case .some(.none):
+            do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]) }
+            catch { return nil }
+            return type() == .some(.some(.typeDirectory)) ? url : nil
+        default: return nil
+        }
     }
 
     // MARK: - This process's signature
