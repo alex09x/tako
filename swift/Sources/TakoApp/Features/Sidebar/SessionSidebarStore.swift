@@ -36,9 +36,6 @@ final class SessionSidebarStore: ObservableObject {
         }
     }
 
-    /// The row being renamed in place (SessionSidebarStore+Rename.swift).
-    @Published var renamingRowId: String?
-
     /// Opt-in: read local git branch and dirty status from working directory.
     /// OFF by default to respect resource and latency budgets.
     @Published var optInGit: Bool {

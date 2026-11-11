@@ -365,8 +365,10 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(Self.renameKey) {
-                guard store.renamingRowId == nil, items.indices.contains(selectedIndex) else { return .ignored }
-                store.beginRename(items[selectedIndex])
+                let editor = SidebarRenameEditor.shared
+                guard editor.edit == nil, items.indices.contains(selectedIndex),
+                      store.canRename(items[selectedIndex], around: targetWindow) else { return .ignored }
+                editor.begin(items[selectedIndex], in: targetWindow, store: store)
                 return .handled
             }
         }

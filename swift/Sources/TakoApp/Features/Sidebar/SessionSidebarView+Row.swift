@@ -37,9 +37,11 @@ extension SessionSidebarView {
             canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
             onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
             onNewSession: { store.createNewTab(in: targetWindow) },
-            onRename: { store.beginRename(item) },
+            // Only a row with a name of its own to change offers renaming.
+            onRename: store.canRename(item, around: targetWindow)
+                ? { SidebarRenameEditor.shared.begin(item, in: targetWindow, store: store) } : nil,
             hasOwnName: { store.ownName(of: item, around: targetWindow) != nil },
-            onAutomaticName: { store.useAutomaticName(item, around: targetWindow) },
+            onAutomaticName: { SidebarRenameEditor.shared.useAutomaticName(item, in: targetWindow, store: store) },
             onClose: { store.closeTab(item: item, in: targetWindow) },
             onNewTerminal: { store.newTerminal(inSession: item, around: targetWindow, workspaceStore: workspaceStore) },
             hasUnread: { store.rowHasUnread(item, around: targetWindow, workspaceStore: workspaceStore) },
