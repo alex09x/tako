@@ -52,16 +52,14 @@ extension FloatingCanvasStore {
         CanvasPresentationSnapshot(panes: panes.map(presentation(of:)))
     }
 
-    /// Area the split grid is allocated in: the work area inset by the application gap.
-    /// The terminal SDK keeps zero padding; this spacing belongs to the canvas.
+    /// Area the split grid is allocated in (`FloatingPaneGeometry.gridArea`).
     static func gridArea(in workArea: CGRect) -> CGRect {
-        let gap = DesktopCanvasMetrics.paneGap
-        guard workArea.width > 4 * gap, workArea.height > 4 * gap else { return workArea }
-        return workArea.insetBy(dx: gap, dy: gap)
+        FloatingPaneGeometry.gridArea(in: workArea)
     }
 
-    /// Final presented frames for every visible pane. Maximized panes cover the work area;
-    /// panes beneath keep their tile/floating frames so they stay mounted.
+    /// Final presented frames for every visible pane. Maximized panes cover the grid area --
+    /// the same 8 pt inset card a sole tiled pane gets, so one terminal in a tab looks like
+    /// a terminal among several; panes beneath keep their tile/floating frames so they stay mounted.
     func presentedFrames(in canvasSize: CGSize) -> [UUID: CGRect] {
         let area = FloatingPaneGeometry.workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         var underlying: [UUID: CanvasPanePresentation] = [:]
@@ -80,7 +78,7 @@ extension FloatingCanvasStore {
         for (id, p) in underlying where p.mode == .floating {
             out[id] = FloatingPaneGeometry.clamp(p.preferredRect ?? .zero, to: area)
         }
-        for id in maximized { out[id] = area }
+        for id in maximized { out[id] = Self.gridArea(in: area) }
         return out
     }
 

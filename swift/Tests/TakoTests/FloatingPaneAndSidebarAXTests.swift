@@ -114,11 +114,14 @@ struct FloatingPaneAndSidebarAXTests {
         #expect(paneGroup.value == "Idle")
         #expect(nodes.filter { $0.role == "AXTextArea" }.count == 1)
 
+        // The maximized card sits 8 pt in from every edge, as tiles do -- not 28 pt down,
+        // which a titlebar safe area would add.
+        let gap = DesktopCanvasMetrics.paneGap
         let maxPaneInWindow = window.convertFromScreen(paneGroup.frameInScreen)
-        #expect(abs(maxPaneInWindow.minX - sidebarWidth) <= 2)
-        #expect(abs(maxPaneInWindow.minY - 0) <= 2)
-        #expect(abs(maxPaneInWindow.width - 1000) <= 2)
-        #expect(abs(maxPaneInWindow.height - winHeight) <= 2)
+        #expect(abs(maxPaneInWindow.minX - (sidebarWidth + gap)) <= 2)
+        #expect(abs(maxPaneInWindow.minY - gap) <= 2)
+        #expect(abs(maxPaneInWindow.width - (1000 - 2 * gap)) <= 2)
+        #expect(abs(maxPaneInWindow.height - (winHeight - 2 * gap)) <= 2)
 
         var paneDescendants: [AXSnapshotNode] = []
         flattenAX(paneGroup, into: &paneDescendants)
@@ -138,8 +141,8 @@ struct FloatingPaneAndSidebarAXTests {
         #expect(abs(maxTextInWindow.maxY - headerInWindow.minY) <= 2)
         #expect(abs((maxPaneInWindow.maxY - maxTextInWindow.maxY) - h) <= 2)
         #expect(abs(maxTextInWindow.minY - maxPaneInWindow.minY) <= 2)
-        #expect(abs(maxTextInWindow.height - (winHeight - h)) <= 2,
-                "Maximized terminal height (\(maxTextInWindow.height)) must equal winHeight - \(h) (\(winHeight - h)) without losing 28pt to safe area")
+        #expect(abs(maxTextInWindow.height - (winHeight - 2 * gap - h)) <= 2,
+                "Maximized terminal height (\(maxTextInWindow.height)) must equal winHeight - 2*gap - \(h) (\(winHeight - 2 * gap - h)) without losing 28pt to safe area")
 
         // Verify .normal mode near the top of the .fullSizeContentView window (y = 8 inside titlebar zone!) ALSO has zero safe-area gap:
         let p2 = try #require(controller.newSplit(at: p1, direction: .right))

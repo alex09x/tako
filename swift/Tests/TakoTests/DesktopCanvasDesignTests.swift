@@ -71,7 +71,8 @@ struct DesktopCanvasDesignTests {
         #expect(all[c]!.minY - all[b]!.maxY == 8)
     }
 
-    @Test func soleMaximizedPaneIsEdgeToEdge() {
+    /// `area` is the grid, already inset: a maximized pane takes all of it, as a sole tiled pane does.
+    @Test func soleMaximizedPaneTakesTheWholeGrid() {
         let panes: [UUID: CanvasPanePresentation] = [
             a: .init(surfaceId: a), b: .init(surfaceId: b, mode: .maximized),
         ]

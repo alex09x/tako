@@ -47,7 +47,7 @@ extension CanvasTileNode where ID == UUID {
 enum DesktopCanvasLayout {
     /// Presented frames for every visible pane. Tiled panes share `area` using the
     /// split ratios; floating/minimized/maximized panes are excluded from tiling.
-    /// A sole maximized pane covers the area edge-to-edge (no gap or radius inset).
+    /// A maximized pane takes the whole `area` -- the grid, already inset -- as a sole tiled pane does.
     static func frames(tree: CanvasTileNode<UUID>?, panes: [UUID: CanvasPanePresentation],
                        in area: CGRect, gap: CGFloat = DesktopCanvasMetrics.paneGap) -> [UUID: CGRect] {
         var out: [UUID: CGRect] = [:]

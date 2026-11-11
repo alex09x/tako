@@ -133,7 +133,9 @@ extension DesktopCanvasDesignTests {
             c.toggleMaximizeFloatingPane(p1)
             settle(w)
             let maxFrame = try #require(mounted("FloatingPane-\(key(p1))", w))
-            #expect(abs(maxFrame.width - canvasWidth) <= 2 && abs(maxFrame.minX) <= 2)
+            // The grid's card: 8 pt in from each side, as the tiles it replaces.
+            let gap = DesktopCanvasMetrics.paneGap
+            #expect(abs(maxFrame.width - (canvasWidth - 2 * gap)) <= 2 && abs(maxFrame.minX - gap) <= 2)
             c.toggleMaximizeFloatingPane(p1)
             #expect(store.isTiled(p1.id) && store.state(for: p1.id)?.mode == .normal)
             c.revealAndFocusFloatingPane(p3)
@@ -210,7 +212,7 @@ extension DesktopCanvasDesignTests {
             settle(w)
             let size = CGSize(width: canvasWidth, height: w.contentView!.bounds.height)
             let area = FloatingPaneGeometry.workArea(in: size, hasMinimizedPanes: true)
-            #expect(close(mounted("FloatingPane-\(key(p2))", w), area)) // sole maximized fills work area
+            #expect(close(mounted("FloatingPane-\(key(p2))", w), FloatingPaneGeometry.gridArea(in: area))) // sole maximized fills the grid
             #expect(store.restore(p3.id) == .maximized)
             #expect(store.presentationSnapshot().pane(p1.id)?.preferredRect == rect)
 

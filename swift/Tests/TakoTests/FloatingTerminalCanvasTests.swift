@@ -77,14 +77,14 @@ struct FloatingTerminalCanvasTests {
         let store = FloatingCanvasStore()
         store.sync(with: tree, fallbackSize: canvas)
 
-        // Without minimized panes, maximized occupies full 700pt height
+        // Without minimized panes, maximized takes the whole 700pt canvas but its 8 pt gutters
         store.toggleMaximize(a.id, in: canvas)
         let fullFrame = FloatingPaneGeometry.presentedFrame(
             for: try #require(store.state(for: a.id)),
             in: canvas,
             hasMinimizedPanes: store.hasMinimizedPanes
         )
-        #expect(fullFrame == CGRect(x: 0, y: 0, width: 1000, height: 700))
+        #expect(fullFrame == CGRect(x: 8, y: 8, width: 984, height: 684))
 
         // The shelf overlays the canvas without shrinking maximized or normal panes.
         store.minimize(b.id)

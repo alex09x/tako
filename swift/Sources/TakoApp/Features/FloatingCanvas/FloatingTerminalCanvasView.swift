@@ -230,7 +230,7 @@ private struct FloatingPaneWindowView: View {
     }
 
     private var radius: CGFloat {
-        pane.mode == .normal ? FloatingPaneGeometry.cornerRadius : 0
+        FloatingPaneGeometry.cardRadius(for: pane.mode)
     }
 
     private var normalBorderColor: Color {
@@ -273,7 +273,7 @@ private struct FloatingPaneWindowView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
-            if pane.mode == .normal {
+            if radius > 0 {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(normalBorderColor, lineWidth: 1)
                     .allowsHitTesting(false)

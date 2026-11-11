@@ -217,12 +217,27 @@ enum FloatingPaneGeometry {
         let area = workArea(in: canvasSize, hasMinimizedPanes: hasMinimizedPanes)
         switch pane.mode {
         case .maximized:
-            return area
+            return gridArea(in: area)
         case .normal:
             return clamp(pane.rect, to: area)
         case .minimized:
             return .zero
         }
+    }
+
+    /// The card's corner radius, and whether it is outlined: every shown pane, maximized
+    /// too. A tab's only terminal opens maximized, and drawn flat it lost the frame the
+    /// same pane had beside another one.
+    static func cardRadius(for mode: FloatingPaneMode) -> CGFloat {
+        mode == .minimized ? 0 : cornerRadius
+    }
+
+    /// Area the split grid -- and a maximized pane -- take: the work area inset by the
+    /// application gap. The terminal SDK keeps zero padding; this spacing belongs to the canvas.
+    static func gridArea(in workArea: CGRect) -> CGRect {
+        let gap = DesktopCanvasMetrics.paneGap
+        guard workArea.width > 4 * gap, workArea.height > 4 * gap else { return workArea }
+        return workArea.insetBy(dx: gap, dy: gap)
     }
 
     static func bodySize(for presentedFrame: CGRect) -> CGSize {

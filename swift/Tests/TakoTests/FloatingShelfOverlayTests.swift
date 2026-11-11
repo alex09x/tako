@@ -47,7 +47,8 @@ struct FloatingShelfOverlayTests {
         controller.minimizeFloatingPane(b)
         await settle()
         #expect(a.bounds.size == maxBounds && a.rows == maxRows && a.cols == maxCols)
-        #expect(controller.floatingCanvas.presentedFrame(of: a.id, in: canvas).height == canvas.height)
+        // The shelf takes no height: the maximized card keeps its 8 pt gutters, nothing more.
+        #expect(controller.floatingCanvas.presentedFrame(of: a.id, in: canvas).height == canvas.height - 2 * DesktopCanvasMetrics.paneGap)
         controller.revealAndFocusFloatingPane(b)
         await settle()
         #expect(a.bounds.size == maxBounds && a.rows == maxRows && a.cols == maxCols)
