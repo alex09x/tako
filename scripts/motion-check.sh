@@ -60,9 +60,19 @@ defaults write "$BUNDLE" tako.session_sidebar_is_showing -bool true
 sessions="$(mktemp -d /tmp/tkm.XXXXXX)"
 trap 'quit; rm -rf "$work" "$sessions"; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
 mkdir -p "$work/agent-hooks"
-open -n "$APP" --env TAKO_SESSIONS_HOME="$sessions" --env TAKO_AGENT_HOOKS_HOME="$work/agent-hooks" --args --config-file="$work/config" --no-launch-notices
+# The config goes in TAKO_CONFIG_PATH: the app ignores --config-file, and
+# with the owner's config (session-persistence on) every run left its two
+# shells behind as session daemons.
+daemons() { pgrep -f "$state/runtime/" | wc -l | tr -d ' '; }
+daemons_before="$(daemons)"
+open -n "$APP" --env TAKO_CONFIG_PATH="$work/config" --env TAKO_SESSIONS_HOME="$sessions" \
+    --env TAKO_AGENT_HOOKS_HOME="$work/agent-hooks" --args --no-launch-notices
 tree() { "$CTL" --bundle-id "$BUNDLE" --json tree 2>/dev/null; }
 for _ in $(seq 1 40); do tree | grep -q '"panes"' && break; sleep 0.5; done
+reported="$("$CTL" --bundle-id "$BUNDLE" config path 2>&1 || true)"
+[ "$(realpath "$reported" 2>/dev/null)" = "$(realpath "$work/config")" ] \
+    || { echo "motion-check: the motion app is not on its private config: $reported" >&2; exit 4; }
+trap 'quit; rm -rf "$work" "$sessions"; after="$(daemons)"; [ "$after" -le "$daemons_before" ] || echo "motion-check: LEFT $((after - daemons_before)) session daemon(s) behind" >&2; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
 
 first="$(tree | python3 -c 'import json, sys; print(json.load(sys.stdin)["result"]["windows"][0]["tabs"][0]["panes"][0]["id"])')"
 pane="$("$CTL" --bundle-id "$BUNDLE" tab-new --target "$first" --no-select | tail -1)"
@@ -77,6 +87,11 @@ if [ "${MOTION_SCENE:-}" = switch ]; then
     send "$first" "${MOTION_SWITCH_ALPHA:-clear; ls -la /usr/bin | head -60}"
     send "$pane" 'clear; seq 1000 1060'
 fi
+# No pane of the run may live past it.
+tree | python3 -c 'import json, sys
+panes = [p for w in json.load(sys.stdin)["result"]["windows"] for t in w["tabs"] for p in t["panes"]]
+held = [p["id"] for p in panes if p.get("persistentSession")]
+sys.exit(f"motion-check: persistent sessions in the run: {held}" if held or not panes else 0)' || exit 4
 sleep 1
 
 MOTION_PANE="$pane" MOTION_OTHER_PANE="$first" python3 scripts/gui_lock.py -- target/motion-check "$BUNDLE" "$CTL" "$TITLE" ${MOTION_FRAMES:+"$MOTION_FRAMES"}
