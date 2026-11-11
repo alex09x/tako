@@ -95,7 +95,12 @@ struct FreeFloatingModeTests {
         store.toggleFloating(id, in: canvas)
         store.toggleMaximize(id, in: canvas)
         store.beginHeaderDrag(for: id)
-        #expect(store.detachMaximizedForDrag(id, pointerXInCanvas: 400, pointerYInHeader: 14, in: canvas) != nil)
+        let detached = try #require(store.detachMaximizedForDrag(id, pointerXInCanvas: 400, pointerYInHeader: 14, in: canvas))
+        // Grabbed 14 pt into the maximized card's header, the pane comes off where that
+        // header was: at the card's inset top (8 pt here), not the work area's edge above it.
+        let cardTop = FloatingPaneGeometry.gridArea(in: FloatingPaneGeometry.workArea(in: canvas, hasMinimizedPanes: false)).minY
+        #expect(cardTop == 8)
+        #expect(detached.minY == cardTop)
         #expect(!store.canDockHeaderDrag(id) && !store.isTiled(id))
         store.finishHeaderDrag(for: id, docked: false)
         store.toggleFloating(id, in: canvas)
