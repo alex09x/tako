@@ -158,7 +158,8 @@ func runSidebarRenameScenario(_ d: Driver) throws {
     }
     func expectName(_ shown: String, gone: [String], _ what: String) throws {
         guard d.wait(for: { field() == nil && shows(shown) && gone.allSatisfy { !shows($0) } }, timeout: 5) else {
-            throw Failure("\(what): field \(field() != nil), shows \(shown) \(shows(shown)), still shown \(gone.filter(shows))")
+            throw Failure("\(what): field \(field() != nil), shows \(shown) \(shows(shown)) (anywhere in the app \(d.hasText(containing: shown))), "
+                          + "still shown \(gone.filter(shows)); \(focusReport())")
         }
     }
 

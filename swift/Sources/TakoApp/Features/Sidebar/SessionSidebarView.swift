@@ -316,18 +316,21 @@ struct SessionSidebarView: View {
                 proxy.scrollTo(selected.id, anchor: .center)
             }
             .onKeyPress(.upArrow) {
+                if SidebarRenameEditor.shared.edit != nil { return .ignored }   // the rename field has these keys
                 if selectedIndex > 0 { selectedIndex -= 1 }
                 showsArrowCursor = true
                 if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.downArrow) {
+                if SidebarRenameEditor.shared.edit != nil { return .ignored }   // the rename field has these keys
                 if selectedIndex < items.count - 1 { selectedIndex += 1 }
                 showsArrowCursor = true
                 if items.indices.contains(selectedIndex) { proxy.scrollTo(items[selectedIndex].id) }
                 return .handled
             }
             .onKeyPress(.leftArrow) {
+                if SidebarRenameEditor.shared.edit != nil { return .ignored }   // the rename field has these keys
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     let current = items[selectedIndex]
                     if current.hasChildren && !current.isCollapsed {
@@ -339,6 +342,7 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(.rightArrow) {
+                if SidebarRenameEditor.shared.edit != nil { return .ignored }   // the rename field has these keys
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     let current = items[selectedIndex]
                     if current.hasChildren && current.isCollapsed {
@@ -358,6 +362,7 @@ struct SessionSidebarView: View {
                 return .handled
             }
             .onKeyPress(.return) {
+                if SidebarRenameEditor.shared.edit != nil { return .ignored }   // the rename field has these keys
                 if NSEvent.modifierFlags.contains(.option) { jumpToNextWaiting(); return .handled }
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     store.selectTab(item: items[selectedIndex], in: targetWindow, workspaceStore: workspaceStore)
