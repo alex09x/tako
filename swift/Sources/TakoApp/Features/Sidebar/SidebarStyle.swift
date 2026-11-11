@@ -25,6 +25,25 @@ enum SidebarGrouping: String, CaseIterable, Sendable {
     case workspace, status
 }
 
+/// How large the sidebar's text is (`sidebar-text-size`), relative to the style.
+enum SidebarTextSize: String, CaseIterable, Sendable {
+    case small, standard = "default", large
+    var scale: CGFloat {
+        switch self { case .small: 0.9; case .standard: 1; case .large: 1.15 }
+    }
+}
+
+/// How strongly the second line reads (`sidebar-secondary-text`): folders,
+/// branches, ports, a quiet program. A waiting question and an error keep
+/// their status colours at every setting.
+enum SidebarSecondaryText: String, CaseIterable, Sendable {
+    case soft, standard = "default", strong
+    var color: NSColor {
+        typealias T = Tako.LivingTokens
+        switch self { case .soft: return T.faint; case .standard: return T.dim; case .strong: return T.textInactive }
+    }
+}
+
 /// The sizes and choices a style makes for a row.
 struct SidebarRowMetrics {
     let titleFont: NSFont
@@ -46,6 +65,19 @@ struct SidebarRowMetrics {
     var secondLineIndent: CGFloat { 12 + gap + 14 }
 
     func showsSecondLine(for state: Tako.SurfaceState) -> Bool { secondLine(state) }
+
+    /// The style's metrics at a text size: type and line heights grow with
+    /// it, gaps and indents stay. At 1 the style is exactly itself.
+    static func of(_ style: SidebarStyle, textScale s: CGFloat) -> SidebarRowMetrics {
+        let m = of(style)
+        guard s != 1 else { return m }
+        func font(_ f: NSFont) -> NSFont { f.withSize((f.pointSize * s * 2).rounded() / 2) }
+        return .init(titleFont: font(m.titleFont), metaFont: font(m.metaFont), childFont: font(m.childFont), gap: m.gap,
+                     titleHeight: (m.titleHeight * s).rounded(), secondLineHeight: (m.secondLineHeight * s).rounded(),
+                     rowVerticalPadding: m.rowVerticalPadding, childVerticalPadding: m.childVerticalPadding,
+                     childIndent: m.childIndent, inlineSecondLine: m.inlineSecondLine, showsTreeLines: m.showsTreeLines,
+                     secondLine: m.secondLine)
+    }
 
     static func of(_ style: SidebarStyle) -> SidebarRowMetrics {
         typealias T = Tako.LivingTokens

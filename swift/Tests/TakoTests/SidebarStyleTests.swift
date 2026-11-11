@@ -59,6 +59,18 @@ struct SidebarStyleTests {
         #expect(abs(height(.waiting, .compact) - compact) < 0.01, "compact keeps one line, the question on the right")
     }
 
+    @Test func textSizeAndSecondLineAreSettingsThatLeaveTodayAlone() {
+        #expect(prefs([:]).sidebarTextSize == .standard && prefs([:]).sidebarSecondaryText == .standard)
+        #expect(prefs(["sidebar-text-size": "large", "sidebar-secondary-text": "strong"]).sidebarTextSize == .large)
+        #expect(prefs(["sidebar-secondary-text": "soft"]).sidebarSecondaryText == .soft)
+        #expect(prefs(["sidebar-text-size": "huge"]).sidebarTextSize == .standard)
+        #expect(SidebarSecondaryText.standard.color == Tako.LivingTokens.dim, "default is today's dim second line")
+        let one = SidebarRowMetrics.of(.classic, textScale: 1), large = SidebarRowMetrics.of(.classic, textScale: 1.15)
+        #expect(one.titleFont.pointSize == 12.5 && one.titleHeight == 18)
+        #expect(large.titleFont.pointSize > 12.5 && large.titleHeight > 18 && large.gap == 7)
+        #expect(SidebarRowMetrics.of(.compact, textScale: 0.9).metaFont.pointSize < 10)
+    }
+
     private func group(_ name: String, color: String, _ items: [SessionSidebarItem]) -> SessionSidebarWorkspaceGroup {
         SessionSidebarWorkspaceGroup(id: UUID(), name: name, color: color, icon: nil, isActive: false, isCollapsed: false,
                                      sessionCount: items.filter { !$0.isChild }.count, paneCount: 0, attentionCount: 0,

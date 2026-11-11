@@ -32,12 +32,16 @@ struct DesktopPreferences: Equatable {
     let countsDone: Bool
     let sidebarStyle: SidebarStyle
     let sidebarGrouping: SidebarGrouping
+    let sidebarTextSize: SidebarTextSize
+    let sidebarSecondaryText: SidebarSecondaryText
 
     init(value: (String) -> String?) {
         appearance = value("app-appearance").flatMap(Appearance.init(rawValue:)) ?? .system
         func trimmed(_ key: String) -> String? { value(key)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         sidebarStyle = trimmed("sidebar-style").flatMap(SidebarStyle.init(rawValue:)) ?? .classic
         sidebarGrouping = trimmed("sidebar-group").flatMap(SidebarGrouping.init(rawValue:)) ?? .workspace
+        sidebarTextSize = trimmed("sidebar-text-size").flatMap(SidebarTextSize.init(rawValue:)) ?? .standard
+        sidebarSecondaryText = trimmed("sidebar-secondary-text").flatMap(SidebarSecondaryText.init(rawValue:)) ?? .standard
         func enabled(_ key: String) -> Bool {
             switch value(key)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
             case "false": false

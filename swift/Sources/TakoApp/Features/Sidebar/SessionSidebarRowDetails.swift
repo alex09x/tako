@@ -15,6 +15,12 @@ import TakoKit
 extension SessionSidebarRowView {
     // MARK: - Helpers
 
+    var isNavSelected: Bool { selectedIndex == index }
+    var isTabActive: Bool { item.isSelected }
+    var state: Tako.SurfaceState { item.surfaceState }
+    /// The second line's ordinary colour (`sidebar-secondary-text`).
+    private var quiet: Color { Color(nsColor: secondaryText.color) }
+
     var sessionTitleColor: Color {
         if state == .offline {
             return Color(nsColor: T.faint)
@@ -66,7 +72,7 @@ extension SessionSidebarRowView {
         // Sessions UI 5a: a live program says where it runs while its
         // output arrives, and how long it has been quiet otherwise.
         if let text = item.liveSecondLine {
-            return (text, Color(nsColor: T.dim), state == .live(flowing: true) ? .middle : .tail)
+            return (text, quiet, state == .live(flowing: true) ? .middle : .tail)
         }
 
         // §5.5: For failed session, show error message / exit info in #D54E53 if available
@@ -86,10 +92,10 @@ extension SessionSidebarRowView {
             parts.append(ports.map { ":\($0)" }.joined(separator: ", "))
         }
         if parts.isEmpty, let notif = item.latestNotification, !notif.isEmpty {
-            return (notif, Color(nsColor: T.dim), .tail)
+            return (notif, quiet, .tail)
         }
         guard !parts.isEmpty else { return nil }
-        return (parts.joined(separator: " · "), Color(nsColor: T.dim), .middle)
+        return (parts.joined(separator: " · "), quiet, .middle)
     }
 
     @ViewBuilder

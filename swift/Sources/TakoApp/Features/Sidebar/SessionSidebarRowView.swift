@@ -33,7 +33,10 @@ struct SessionSidebarRowView: View {
     var style: SidebarStyle = .classic
     /// Grouped by status, the row shows its workspace as a dot.
     var workspaceDot: NSColor? = nil
-    private var m: SidebarRowMetrics { .of(style) }
+    /// `sidebar-text-size` and `sidebar-secondary-text`.
+    var textSize: SidebarTextSize = .standard
+    var secondaryText: SidebarSecondaryText = .standard
+    private var m: SidebarRowMetrics { .of(style, textScale: textSize.scale) }
 
     @ObservedObject var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
@@ -43,18 +46,6 @@ struct SessionSidebarRowView: View {
     @State private var isHovering = false
 
     typealias T = Tako.LivingTokens
-
-    var isNavSelected: Bool {
-        selectedIndex == index
-    }
-
-    var isTabActive: Bool {
-        item.isSelected
-    }
-
-    var state: Tako.SurfaceState {
-        item.surfaceState
-    }
 
     private var animationKey: String { "sidebar-\(item.id)" }
 
@@ -350,8 +341,8 @@ struct SessionSidebarRowView: View {
 
             if let pwd = item.paneDirectoryToShow {
                 Text(Tako.formatCompactDirectory(pwd))
-                    .font(Font(T.monoFont(size: 10.5, weight: .regular)))
-                    .foregroundColor(Color(nsColor: T.dim))
+                    .font(Font(T.monoFont(size: 10.5 * textSize.scale, weight: .regular)))
+                    .foregroundColor(Color(nsColor: secondaryText.color))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.leading, 21)

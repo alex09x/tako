@@ -272,7 +272,8 @@ struct SessionSidebarView: View {
                 store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
             },
             onClose: { store.closeTab(item: item, in: targetWindow) },
-            style: presentation.preferences.sidebarStyle, workspaceDot: dot
+            style: presentation.preferences.sidebarStyle, workspaceDot: dot,
+            textSize: presentation.preferences.sidebarTextSize, secondaryText: presentation.preferences.sidebarSecondaryText
         )
         .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
             onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
