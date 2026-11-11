@@ -55,6 +55,22 @@ struct SidebarVisibilityPerformanceTests {
         #expect(TerminalTestSupport.waitUntil { presentation.isVisible })
     }
 
+    /// Told on the turn the window comes in, so its sidebar is built in the
+    /// same commit: told a turn later, a tab chosen in the sidebar showed
+    /// its sidebar blank for a frame (seen at ~110 ms on every switch).
+    @Test func presentationKnowsAWindowIsShownOnTheTurnItIsOrderedIn() {
+        let w = TerminalWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200),
+                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        defer { w.close() }
+        let presentation = TerminalWindowPresentation()
+        presentation.bind(to: w)
+        w.orderFrontRegardless()
+        #expect(presentation.isVisible, "visible before the run loop turns")
+        w.orderOut(nil)
+        #expect(!presentation.isVisible)
+    }
+
     @Test func hiddenWindowStopsBuildingSidebarContentAndRestoresRowsWithoutStealingFocus() throws {
         let (controller, window) = TerminalTestSupport.loaded()
         defer { window.close(); TerminalTestSupport.tearDown(controller, window) }

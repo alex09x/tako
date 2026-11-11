@@ -25,14 +25,20 @@ final class TerminalWindowPresentation: ObservableObject {
         self.window = window
         guard let window else { update(true); return }
         update(window.isVisible)
+        // Seen on the turn the window is ordered in, not the next one: told
+        // a turn late, a tab's sidebar -- which builds nothing while its
+        // window is hidden -- came on screen blank for a frame on every
+        // sidebar click.
         observation = window.publisher(for: \.isVisible, options: [.initial, .new])
             .removeDuplicates()
-            .receive(on: RunLoop.main)
             .sink { [weak self] visible in
-                MainActor.assumeIsolated {
-                    guard let self, self.generation == current else { return }
-                    self.update(visible)
+                let apply = { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, self.generation == current else { return }
+                        self.update(visible)
+                    }
                 }
+                if Thread.isMainThread { apply() } else { RunLoop.main.perform(apply) }
             }
     }
 
