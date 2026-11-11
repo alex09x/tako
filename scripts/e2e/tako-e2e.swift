@@ -4773,6 +4773,9 @@ let scenarios: [Scenario] = [
     ("sidebar-style-settings", "Settings › App Appearance › Sidebar: style, grouping, text size and second line are chosen by clicks, saved, and a row still selects its session", { d in
         try runSidebarStyleSettingsScenario(d)
     }),
+    ("sidebar-rename", "Sidebar rename by real input: menu, double-click and F2 open the field; Return keeps, Esc and clicking away leave, automatic name resets; a session and a terminal; a status regroup keeps the draft", { d in
+        try runSidebarRenameScenario(d)
+    }),
     ("overview-selection", "Pane Overview filters cards, clears empty state, jumps to selected pane on Return, and recovers unassisted focus", { d in
         try runOverviewSelectionScenario(d)
     }),
