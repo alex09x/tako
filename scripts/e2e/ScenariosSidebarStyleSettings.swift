@@ -150,7 +150,9 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         }
         AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
         usleep(300_000)
-        try bringIntoView(id)
+        // Only the controls on the scrolling page are scrolled to; the
+        // section list, header and close button are window chrome.
+        if id.hasPrefix("DesktopSetting-") || id.hasPrefix("DesktopSettingReset-") { try bringIntoView(id) }
         return d.element(withIdentifier: id) ?? e
     }
     func click(_ id: String) throws {   // the driver refuses foreign-owned points
