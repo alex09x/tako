@@ -85,8 +85,24 @@ func runSidebarRenameScenario(_ d: Driver) throws {
     guard persistent.count >= 3, !persistent.contains(true) else { throw Failure("panes must be ≥3 and not kept: \(persistent)") }
 
     if !d.hasText(containing: "Sessions") { d.key(Key.s, [.maskCommand, .maskAlternate]) }
+    /// The sidebar on screen: the main window's. Each tab is a window with a
+    /// sidebar of its own, and the hidden ones are in the AX tree too.
+    func sidebar() -> AXUIElement? {
+        let app = AXUIElementCreateApplication(d.pid)
+        guard let main: AXUIElement = d.attribute(app, kAXMainWindowAttribute) else { return nil }
+        return d.element(withIdentifier: "SessionSidebar", root: main)
+    }
+    func everySidebar() -> String {
+        d.windows().map { w in
+            let title = (d.attribute(w, kAXTitleAttribute) as String?) ?? "?"
+            let texts = d.element(withIdentifier: "SessionSidebar", root: w).map { b in
+                d.descendants(of: b, role: kAXStaticTextRole as String).compactMap { d.attribute($0, kAXValueAttribute) as String? }
+            } ?? []
+            return "[\(title): \(texts.prefix(16))]"
+        }.joined(separator: " ")
+    }
     func sidebarText(_ text: String) -> AXUIElement? {
-        guard let bar = d.element(withIdentifier: "SessionSidebar") else { return nil }
+        guard let bar = sidebar() else { return nil }
         return d.descendants(of: bar, role: kAXStaticTextRole as String).first {
             (d.attribute($0, kAXValueAttribute) as String?) == text
         }
@@ -131,7 +147,7 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         try d.click(at: try center(item))
         usleep(300_000)
     }
-    func field() -> AXUIElement? { d.element(withIdentifier: "SidebarRenameField") }
+    func field() -> AXUIElement? { sidebar().flatMap { d.element(withIdentifier: "SidebarRenameField", root: $0) } }
     func fieldValue() -> String? { field().flatMap { d.attribute($0, kAXValueAttribute) as String? } }
     /// Who has the keys: the field's own AXFocused and the app's focused element.
     func focusReport() -> String {
@@ -237,9 +253,7 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         print("  typed more: \(focusReport())")
         d.key(Key.returnKey)
         usleep(600_000)
-        let bar = d.element(withIdentifier: "SessionSidebar")
-        let texts = bar.map { b in d.descendants(of: b, role: kAXStaticTextRole as String).compactMap { d.attribute($0, kAXValueAttribute) as String? } } ?? []
-        print("  after Return: \(focusReport()); sidebar texts \(texts.prefix(40))")
+        print("  after Return: \(focusReport()); sidebars \(everySidebar())")
         print("  tree: \(((try? d.exec("\(ctl) --json tree")) ?? "").prefix(1500))")
         try expectName("Moving Row", gone: ["RnAlpha"], "the draft and the keyboard survive the row moving")
         try contextClick("Moving Row"); try menu("Use Automatic Name")
