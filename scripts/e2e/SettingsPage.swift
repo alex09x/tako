@@ -59,7 +59,7 @@ struct SettingsPage {
 
     /// Wheel-scrolls a page control clear of the footer; fails if it cannot.
     func bringIntoView(_ id: String) throws {
-        for _ in 0..<16 {
+        for _ in 0..<30 {
             let at = try placement(id)
             guard at.below || at.above else { return }
             let point = CGPoint(x: at.page.minX + at.page.width * 0.3, y: max(at.page.minY + 10, at.floor - 30))
@@ -68,7 +68,7 @@ struct SettingsPage {
                 .post(tap: .cghidEventTap)
             try d.requireAXOwnedTarget(at: point)
             let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1,
-                                wheel1: at.below ? -4 : 4, wheel2: 0, wheel3: 0)
+                                wheel1: at.below ? -8 : 8, wheel2: 0, wheel3: 0)
             wheel?.location = point
             wheel?.post(tap: .cghidEventTap)
             usleep(250_000)
