@@ -58,13 +58,27 @@ defaults write "$BUNDLE" tako.session_sidebar_is_showing -bool true
 # of the Tako in use and puts up Session Recovery over the tabs it checks.
 # Short: its sockets live in it, and a socket path is cut at 104 bytes.
 sessions="$(mktemp -d /tmp/tkm.XXXXXX)"
-trap 'quit; rm -rf "$work" "$sessions"; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
 mkdir -p "$work/agent-hooks"
 # The config goes in TAKO_CONFIG_PATH: the app ignores --config-file, and
 # with the owner's config (session-persistence on) every run left its two
-# shells behind as session daemons.
-daemons() { pgrep -f "$state/runtime/" | wc -l | tr -d ' '; }
-daemons_before="$(daemons)"
+# shells behind as session daemons. Any daemon of this bundle's runtime the
+# run adds, by PID and start, fails it, and its evidence is kept.
+. scripts/e2e/motion/daemons.sh
+pattern="$state/runtime/"
+daemons_before="$work/daemons-before.txt"
+daemon_ids "$pattern" > "$daemons_before"
+cleanup() {
+    local status=$? evidence
+    trap - EXIT
+    quit
+    evidence="$PWD/target/motion-leaks/$(date +%Y%m%d-%H%M%S)-$$"
+    motion_finish "$status" "$daemons_before" "$pattern" "$evidence" || status=$?
+    if [ -d "$evidence" ]; then echo "motion-check: kept its session namespace $sessions" >&2; else rm -rf "$sessions"; fi
+    rm -rf "$work"
+    [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1
+    exit "$status"
+}
+trap cleanup EXIT
 open -n "$APP" --env TAKO_CONFIG_PATH="$work/config" --env TAKO_SESSIONS_HOME="$sessions" \
     --env TAKO_AGENT_HOOKS_HOME="$work/agent-hooks" --args --no-launch-notices
 tree() { "$CTL" --bundle-id "$BUNDLE" --json tree 2>/dev/null; }
@@ -72,7 +86,6 @@ for _ in $(seq 1 40); do tree | grep -q '"panes"' && break; sleep 0.5; done
 reported="$("$CTL" --bundle-id "$BUNDLE" config path 2>&1 || true)"
 [ "$(realpath "$reported" 2>/dev/null)" = "$(realpath "$work/config")" ] \
     || { echo "motion-check: the motion app is not on its private config: $reported" >&2; exit 4; }
-trap 'quit; rm -rf "$work" "$sessions"; after="$(daemons)"; [ "$after" -le "$daemons_before" ] || echo "motion-check: LEFT $((after - daemons_before)) session daemon(s) behind" >&2; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
 
 first="$(tree | python3 -c 'import json, sys; print(json.load(sys.stdin)["result"]["windows"][0]["tabs"][0]["panes"][0]["id"])')"
 pane="$("$CTL" --bundle-id "$BUNDLE" tab-new --target "$first" --no-select | tail -1)"
