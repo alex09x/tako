@@ -229,9 +229,13 @@ func runSidebarRenameScenario(_ d: Driver) throws {
         guard d.wait(for: { d.element(withIdentifier: "SidebarStatusBucket-needsYou") != nil }, timeout: 5) else {
             throw Failure("the row did not move to Needs you: \(d.staticTexts().prefix(30))")
         }
+        print("  regrouped: \(focusReport())")
         usleep(500_000)
+        print("  regrouped +500ms: \(focusReport())")
         guard fieldValue() == "Moving" else { throw Failure("after the regroup the field shows \(String(describing: fieldValue()))") }
-        try d.type(" Row"); d.key(Key.returnKey)
+        try d.type(" Row")
+        print("  typed more: \(focusReport())")
+        d.key(Key.returnKey)
         try expectName("Moving Row", gone: ["RnAlpha"], "the draft and the keyboard survive the row moving")
         try contextClick("Moving Row"); try menu("Use Automatic Name")
         try expectName("RnAlpha", gone: ["Moving Row"], "and it goes back")
