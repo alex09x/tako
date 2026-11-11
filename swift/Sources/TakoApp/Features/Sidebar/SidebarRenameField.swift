@@ -89,6 +89,10 @@ private struct SidebarRenameField: View {
         .onAppear {
             mount = editor.mounted()
             focused = true
+            // A double-click opens the field inside its own click: once the
+            // click is done, the window takes the focus back to itself. Ask
+            // again after it, so the keys come here.
+            DispatchQueue.main.async { if editor.isEditing(item.id, in: targetWindow) { focused = true } }
         }
         .onChange(of: focused) { _, now in
             if now { editor.focused(mount: mount) } else { editor.blurred(mount: mount) }
