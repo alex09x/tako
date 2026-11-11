@@ -118,7 +118,14 @@ func record(bundleID: String, area: CGRect, regions: [(String, CGRect)], seconds
     let stream = SCStream(filter: SCContentFilter(display: display, including: [app], exceptingWindows: []), configuration: config, delegate: nil)
     try stream.addStreamOutput(recorder, type: .screen, sampleHandlerQueue: DispatchQueue(label: "motion.frames", qos: .userInteractive))
     try await stream.startCapture()
-    try await Task.sleep(nanoseconds: 300_000_000)
+    // A baseline frame before the action, not a guess at when the stream is up.
+    let deadline = Date().addingTimeInterval(2)
+    while recorder.take(since: 0).isEmpty && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+    guard !recorder.take(since: 0).isEmpty else {
+        try? await stream.stopCapture()
+        throw MotionError("no frame from ScreenCaptureKit in 2 s (buffers by status \(recorder.statuses)): no baseline before the action")
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
     let mark = mach_absolute_time()
     action()
     try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
@@ -164,18 +171,35 @@ func recordByPolling(area: CGRect, regions: [(String, CGRect)], seconds: Double,
         }
         return out
     }
-    var shots: [(t: UInt64, image: CGImage)] = []
+    // Grabbing starts first; the action waits for a frame grabbed before it
+    // (a baseline), and for 100 ms of them, so a flash right after it is seen.
+    final class Shared { let lock = NSLock(); var shots: [(t: UInt64, image: CGImage)] = []; var end = UInt64.max }
+    let shared = Shared()
     let done = DispatchSemaphore(value: 0)
-    let mark = mach_absolute_time()
-    let end = mark + UInt64(seconds * 1e9 * Double(timebase.denom) / Double(timebase.numer))
     Thread {
-        while mach_absolute_time() < end {
-            if let image = grab(area, 1 /* on screen only */, 0, 0)?.takeRetainedValue() { shots.append((mach_absolute_time(), image)) }
+        while true {
+            shared.lock.lock(); let end = shared.end; shared.lock.unlock()
+            if mach_absolute_time() >= end { break }
+            if let image = grab(area, 1 /* on screen only */, 0, 0)?.takeRetainedValue() {
+                shared.lock.lock(); shared.shots.append((mach_absolute_time(), image)); shared.lock.unlock()
+            }
         }
         done.signal()
     }.start()
+    func grabbed() -> Int { shared.lock.lock(); defer { shared.lock.unlock() }; return shared.shots.count }
+    let deadline = Date().addingTimeInterval(2)
+    while grabbed() == 0 && Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+    guard grabbed() > 0 else {
+        shared.lock.lock(); shared.end = 0; shared.lock.unlock(); done.wait()
+        throw MotionError("no frame grabbed in 2 s: no baseline before the action")
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let mark = mach_absolute_time()
+    shared.lock.lock(); shared.end = mark + UInt64(seconds * 1e9 * Double(timebase.denom) / Double(timebase.numer)); shared.lock.unlock()
     action()
+    try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
     done.wait()
+    let shots = shared.shots
     // Converted after, so grabbing is all the loop does.
     return shots.map { Frame(ms: machMs($0.t) - machMs(mark), crops: crops($0.image)) }
 }

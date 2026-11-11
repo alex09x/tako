@@ -83,21 +83,29 @@ struct Reference {
 
 /// Judges one region's recording of a switch from `before` to `after`, the
 /// two settled stills: every frame must look like one of them, and the
-/// recording must end on `after`.
+/// recording must end on `after`. It must also cover the click: a frame
+/// from before it (ms <= 0) showing `before`, and frames after it -- a
+/// recording that starts late could miss the very flash it looks for.
 func judgeSwitch(_ shots: [(ms: Double, crop: Crop)], before: Crop, after: Crop) -> (ok: Bool, detail: String) {
     guard !shots.isEmpty else { return (false, "no frames recorded") }
     let change = difference(before, after)
     let limit = max(0.01, change / 4)
     let from = Reference(before), to = Reference(after)
     guard from.inkCount > 0, to.inkCount > 0 else { return (false, "a still has no ink to judge by") }
+    guard shots.contains(where: { $0.ms <= 0 && from.matches($0.crop, limit: limit) }) else {
+        return (false, "no frame from before the click showing the tab before: the recording does not cover the click")
+    }
+    guard shots.contains(where: { $0.ms > 0 }) else { return (false, "no frame after the click") }
     let odd = shots.filter { !from.matches($0.crop, limit: limit) && !to.matches($0.crop, limit: limit) }
     let ended = to.matches(shots.last!.crop, limit: limit)
     let settled = shots.last { !to.matches($0.crop, limit: limit) }?.ms ?? 0
     let at = odd.prefix(6).map { String(format: "%.0f", $0.ms) }.joined(separator: ",")
     return (odd.isEmpty && ended,
-            String(format: "change %.3f, %d frames like neither side%@, %@ at %.0f ms, %d frames",
+            String(format: "change %.3f, %d frames like neither side%@, %@ at %.0f ms, %d frames from %.0f to %.0f ms, %d before the click, largest gap %.0f ms",
                    change, odd.count, odd.isEmpty ? "" : " at " + at,
-                   ended ? "settled" : "NEVER reached the tab's still, last change", settled, shots.count))
+                   ended ? "settled" : "NEVER reached the tab's still, last change", settled, shots.count,
+                   shots.first!.ms, shots.last!.ms, shots.filter { $0.ms <= 0 }.count,
+                   zip(shots, shots.dropFirst()).map { $1.ms - $0.ms }.max() ?? 0))
 }
 
 /// A real click at `point` (global top-left points) through the HID tap,
@@ -225,12 +233,18 @@ func switchSelfTest() -> Never {
     let dense = page(200, seed: 1), sparse = page(5, seed: 2), background = crop { _, _ in 20 }, grey = crop { _, _ in 120 }
     // The sparse page with a 2x2 cursor more: a blink, not a different page.
     let blinked = crop { x, y in (x == 10 || x == 11) && (y == 10 || y == 11) ? 235 : [UInt8](sparse.bytes)[(y * w + x) * 4] }
-    func shots(_ c: [Crop]) -> [(ms: Double, crop: Crop)] { c.enumerated().map { (Double($0.offset) * 8, $0.element) } }
+    // The first frame is grabbed before the click, as a real recording's is.
+    func shots(_ c: [Crop]) -> [(ms: Double, crop: Crop)] { c.enumerated().map { (Double($0.offset - 1) * 8, $0.element) } }
+    func late(_ c: [Crop]) -> [(ms: Double, crop: Crop)] { c.enumerated().map { (Double($0.offset + 1) * 8, $0.element) } }
     let blankBetween = judgeSwitch(shots([dense, background, sparse]), before: dense, after: sparse)
     let cases: [(String, Bool, Bool)] = [
         ("a clean switch passes", judgeSwitch(shots([dense, dense, sparse, sparse]), before: dense, after: sparse).ok, true),
         ("a cursor blink on the page switched to passes", judgeSwitch(shots([dense, sparse, blinked]), before: dense, after: sparse).ok, true),
         ("an empty recording fails", judgeSwitch([], before: dense, after: sparse).ok, false),
+        ("a recording that starts after the click fails",
+         judgeSwitch(late([sparse, sparse, sparse]), before: dense, after: sparse).ok, false),
+        ("a recording that ends at the click fails",
+         judgeSwitch([(-16, dense), (0, dense)], before: dense, after: sparse).ok, false),
         ("a background-only frame before a sparse page fails", blankBetween.ok, false),
         ("a background-only frame after a sparse page fails",
          judgeSwitch(shots([sparse, background, dense]), before: sparse, after: dense).ok, false),
