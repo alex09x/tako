@@ -186,6 +186,7 @@ public let knownTakoConfigKeys: Set<String> = [
     "tab-status-color-error", "tab-status-color-idle",
     "app-appearance", "status-show", "status-animate",
     "sidebar-count-waiting", "sidebar-count-error", "sidebar-count-done",
+    "sidebar-style", "sidebar-group",
 ]
 
 /// Strips one layer of matching quotes from a configuration value.

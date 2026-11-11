@@ -93,8 +93,11 @@ struct SessionSidebarView: View {
         store.workspaceGroups(for: targetWindow, workspaceStore: workspaceStore)
     }
 
+    /// The rows in the order shown, which the arrow keys walk.
     var items: [SessionSidebarItem] {
-        workspaceGroups.flatMap(\.items)
+        let groups = workspaceGroups
+        guard presentation.preferences.sidebarGrouping == .status else { return groups.flatMap(\.items) }
+        return SidebarStatusBucket.buckets(from: groups).flatMap { $0.rows.map(\.item) }
     }
 
     private static func sessionCount(_ groups: [SessionSidebarWorkspaceGroup], _ items: [SessionSidebarItem]) -> Int {
@@ -135,7 +138,9 @@ struct SessionSidebarView: View {
         // Keep the native search editor mounted; only the expensive list is
         // suspended. Tab selection retains its existing terminal-focus policy.
         let groups = windowIsPresented ? workspaceGroups : []
-        let flatItems = groups.flatMap(\.items)
+        // Grouped by status, the arrow keys walk the rows in the order shown.
+        let buckets = presentation.preferences.sidebarGrouping == .status ? SidebarStatusBucket.buckets(from: groups) : nil
+        let flatItems = buckets.map { $0.flatMap { $0.rows.map(\.item) } } ?? groups.flatMap(\.items)
         let totalSessions = Self.sessionCount(groups, flatItems)
         let waitingCount = Self.attentionCount(groups, flatItems)
         let counts = windowIsPresented ? store.attentionCounts(for: targetWindow, preferences: presentation.preferences,
@@ -147,7 +152,7 @@ struct SessionSidebarView: View {
             segmentsRow(attentionCount: waitingCount, counts: counts)
 
             VStack(spacing: 0) {
-                if windowIsPresented { tabListView(groups: groups, flatItems: flatItems) }
+                if windowIsPresented { tabListView(groups: groups, buckets: buckets, flatItems: flatItems) }
             }
             // Rows carry the reference's own 8 pt margins (A01 `.row`, `.ws`).
             .padding(.horizontal, 0)
@@ -252,7 +257,38 @@ struct SessionSidebarView: View {
             toggleCollapse: { [store] in store.toggleWorkspaceCollapsed(group.id) })
     }
 
-    private func tabListView(groups: [SessionSidebarWorkspaceGroup], flatItems: [SessionSidebarItem]) -> some View {
+    /// One session or pane row, in the style the settings ask for.
+    private func sessionRow(_ item: SessionSidebarItem, flatItems: [SessionSidebarItem], dot: NSColor?) -> some View {
+        let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
+        return SessionSidebarRowView(
+            item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
+            targetWindow: targetWindow, editingItemId: $editingItemId,
+            editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
+            reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
+            onSelect: {
+                selectedIndex = flatIdx
+                showsArrowCursor = false
+                store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
+            },
+            onClose: { store.closeTab(item: item, in: targetWindow) },
+            style: presentation.preferences.sidebarStyle, workspaceDot: dot
+        )
+        .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
+            onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
+            canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
+            onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
+            onNewSession: { store.createNewTab(in: targetWindow) },
+            onRename: { store.promptRenameTab(item: item, in: targetWindow) },
+            onClose: { store.closeTab(item: item, in: targetWindow) },
+            onNewTerminal: { store.newTerminal(inSession: item, around: targetWindow, workspaceStore: workspaceStore) },
+            hasUnread: { store.rowHasUnread(item, around: targetWindow, workspaceStore: workspaceStore) },
+            onMarkRead: { store.markRowRead(item, around: targetWindow, workspaceStore: workspaceStore) },
+            canReconnect: { store.rowCanReconnect(item, around: targetWindow, workspaceStore: workspaceStore) },
+            onReconnect: { store.reconnectRow(item, around: targetWindow, workspaceStore: workspaceStore) }))
+    }
+
+    private func tabListView(groups: [SessionSidebarWorkspaceGroup], buckets: [SidebarStatusBucket]?,
+                             flatItems: [SessionSidebarItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 0) {
@@ -261,6 +297,13 @@ struct SessionSidebarView: View {
                             .font(Font(T.monoFont(size: 11)))
                             .foregroundColor(Color(nsColor: T.dim))
                             .padding(.vertical, 24)
+                    } else if let buckets {
+                        ForEach(buckets) { bucket in
+                            SidebarStatusBucketHeader(bucket: bucket)
+                            ForEach(bucket.rows) { row in
+                                sessionRow(row.item, flatItems: flatItems, dot: row.workspaceColor.map { T.workspaceColor(for: $0) })
+                            }
+                        }
                     } else {
                         ForEach(groups) { wsGroup in
                             SidebarWorkspaceDropTarget(
@@ -271,33 +314,7 @@ struct SessionSidebarView: View {
                                 actions: workspaceActions(wsGroup)
                             )
                             ForEach(wsGroup.items) { item in
-                                let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
-                                SessionSidebarRowView(
-                                    item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
-                                    targetWindow: targetWindow, editingItemId: $editingItemId,
-                                    editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
-                                    reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
-                                    onSelect: {
-                                        selectedIndex = flatIdx
-                                        showsArrowCursor = false
-                                        store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
-                                    },
-                                    onClose: {
-                                        store.closeTab(item: item, in: targetWindow)
-                                    }
-                                )
-                                .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
-                                    onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
-                                    canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onNewSession: { store.createNewTab(in: targetWindow) },
-                                    onRename: { store.promptRenameTab(item: item, in: targetWindow) },
-                                    onClose: { store.closeTab(item: item, in: targetWindow) },
-                                    onNewTerminal: { store.newTerminal(inSession: item, around: targetWindow, workspaceStore: workspaceStore) },
-                                    hasUnread: { store.rowHasUnread(item, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onMarkRead: { store.markRowRead(item, around: targetWindow, workspaceStore: workspaceStore) },
-                                    canReconnect: { store.rowCanReconnect(item, around: targetWindow, workspaceStore: workspaceStore) },
-                                    onReconnect: { store.reconnectRow(item, around: targetWindow, workspaceStore: workspaceStore) }))
+                                sessionRow(item, flatItems: flatItems, dot: nil)
                             }
                         }
                     }

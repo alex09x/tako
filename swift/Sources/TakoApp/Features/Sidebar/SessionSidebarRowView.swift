@@ -29,6 +29,11 @@ struct SessionSidebarRowView: View {
     var motionPaused: Bool = false
     var onSelect: () -> Void = {}
     var onClose: (() -> Void)? = nil
+    /// `sidebar-style`; the row's sizes come from it (`SidebarRowMetrics`).
+    var style: SidebarStyle = .classic
+    /// Grouped by status, the row shows its workspace as a dot.
+    var workspaceDot: NSColor? = nil
+    private var m: SidebarRowMetrics { .of(style) }
 
     @ObservedObject var store = SessionSidebarStore.shared
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
@@ -144,12 +149,13 @@ struct SessionSidebarRowView: View {
         // Reference A01 `.row`: 46 pt, radius 8, padding 5/5/5/3 inside a 1 pt
         // border, title 12.5/500, meta 11 under the title (33 pt in).
         let radius: CGFloat = 8
-        let vPad: CGFloat = 6
+        let vPad = m.rowVerticalPadding
         let glowBacking: NSColor = isTabActive ? T.surfaceActive : (isNavSelected ? T.surfaceHover : T.body)
+        let second = m.showsSecondLine(for: state) ? sessionSecondLineContent : nil
 
         return VStack(alignment: .leading, spacing: 2) {
-            // Line 1: chevron (10pt) -> gap 7 -> ring S=14 -> gap 7 -> title -> timer/"NN%" -> Ø5 unread dot
-            HStack(spacing: 7) {
+            // Line 1: chevron (10pt) -> gap -> ring S=14 -> gap -> title -> timer/"NN%" -> Ø5 unread dot
+            HStack(spacing: m.gap) {
                 if item.hasChildren {
                     Button(action: { store.toggleRowCollapsed(item) }) {
                         Text(item.isCollapsed ? "▸" : "▾")
@@ -169,11 +175,24 @@ struct SessionSidebarRowView: View {
                     .help("Status: \(item.status.rawValue)")
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 12.5, weight: .medium)))
+                    .font(Font(m.titleFont))
                     .foregroundColor(sessionTitleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                if m.inlineSecondLine, let second {
+                    Text(second.text)
+                        .font(Font(m.metaFont))
+                        .foregroundColor(second.color)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
+                }
+
+                if let workspaceDot {
+                    Circle().fill(Color(nsColor: workspaceDot)).frame(width: 6, height: 6)
+                }
 
                 if let meta = item.metaDisplayText {
                     SessionSidebarMetaLabel(text: meta, style: item.metaStyle)
@@ -189,25 +208,25 @@ struct SessionSidebarRowView: View {
                     closeRowButton(action: onClose, isChild: false)
                 }
             }
-            .frame(height: 18)
+            .frame(height: m.titleHeight)
 
-            // Line 2: 33pt left indent (= 12 + 7 + 14, directly under title)
-            if let secondLine = sessionSecondLineContent {
+            // Line 2: under the title (33 pt in the reference = 12 + 7 + 14)
+            if !m.inlineSecondLine, let secondLine = second {
                 HStack(spacing: 6) {
                     Text(secondLine.text)
-                        .font(Font(T.monoFont(size: 11, weight: .regular)))
+                        .font(Font(m.metaFont))
                         .foregroundColor(secondLine.color)
                         .lineLimit(1)
                         .truncationMode(secondLine.truncation)
                     Spacer(minLength: 0)
                 }
-                .frame(height: 14)
-                .padding(.leading, 33)
+                .frame(height: m.secondLineHeight)
+                .padding(.leading, m.secondLineIndent)
             }
 
             if editingItemId == item.id || !(item.userDescription?.isEmpty ?? true) {
                 descriptionSection
-                    .padding(.leading, 33)
+                    .padding(.leading, m.secondLineIndent)
             }
         }
         .padding(.leading, 4)
@@ -288,7 +307,7 @@ struct SessionSidebarRowView: View {
     private func paneChildRow(moving: Bool) -> some View {
         let radius: CGFloat = 6
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
-        let vPad: CGFloat = (paneEffectState == .working) ? 5 : 4
+        let vPad: CGFloat = m.childVerticalPadding + (paneEffectState == .working ? 1 : 0)
         let hPad: CGFloat = (paneEffectState == .working) ? 9 : 8
 
         return VStack(alignment: .leading, spacing: 2) {
@@ -296,7 +315,7 @@ struct SessionSidebarRowView: View {
                 ring(moving: moving, painter: layered ? .ownLayer : .swiftUI)
 
                 Text(item.title)
-                    .font(Font(T.monoFont(size: 11.5, weight: .regular)))
+                    .font(Font(m.childFont))
                     .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -344,10 +363,11 @@ struct SessionSidebarRowView: View {
             RoundedRectangle(cornerRadius: radius)
                 .fill(isNavSelected ? Color(nsColor: T.surfaceHover) : Color.clear)
         )
-        .overlay(
-            SidebarPaneTreeConnectorShape()
-                .stroke(Color(nsColor: T.badge), lineWidth: 1.0)
-        )
+        .overlay {
+            if m.showsTreeLines {
+                SidebarPaneTreeConnectorShape().stroke(Color(nsColor: T.badge), lineWidth: 1.0)
+            }
+        }
         .overlay {
             if !layered {
                 clock(moving: moving) { now, elapsedInState in
@@ -370,23 +390,8 @@ struct SessionSidebarRowView: View {
         .onHover { isHovering = $0 }
         .onPress(perform: onSelect)
         .accessibilityAction(named: Text(FloatingPaneCopy.close)) { onClose?() }
-        .padding(.leading, 40)
+        .padding(.leading, m.childIndent)
         .padding(.trailing, 8)
         .padding(.vertical, 1)
     }
-
-    private func closeRowButton(action: @escaping () -> Void, isChild: Bool) -> some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 8.5, weight: .semibold))
-                .foregroundColor(Color(nsColor: T.dim))
-                .frame(width: 14, height: 14)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("SessionSidebarCloseButton")
-        .accessibilityLabel(isChild ? "Close pane" : "Close session")
-        .help(isChild ? "Close pane" : "Close session")
-    }
-
 }

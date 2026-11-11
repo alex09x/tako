@@ -32,6 +32,20 @@ extension SessionSidebarRowView {
         return Color.clear
     }
 
+    func closeRowButton(action: @escaping () -> Void, isChild: Bool) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundColor(Color(nsColor: T.dim))
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SessionSidebarCloseButton")
+        .accessibilityLabel(isChild ? "Close pane" : "Close session")
+        .help(isChild ? "Close pane" : "Close session")
+    }
+
     @ViewBuilder
     func keyboardSelectionBorder(cornerRadius: CGFloat) -> some View {
         if isNavSelected && !isTabActive {

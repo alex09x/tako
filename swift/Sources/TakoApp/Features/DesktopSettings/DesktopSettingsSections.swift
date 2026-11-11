@@ -66,6 +66,9 @@ struct DesktopSettingsSectionBody: View {
     private var interface: some View {
         Group {
             DesktopBlock(title: "Color Scheme", note: "Sidebar, canvas, menus and settings", palette: palette) { rows(["app-appearance"]) }
+            DesktopBlock(title: "Sidebar", note: "How sessions are listed; only the look changes", palette: palette) {
+                rows(["sidebar-style", "sidebar-group"])
+            }
             DesktopBlock(title: "Interface Text", palette: palette) {
                 DesktopPrefRow(title: "Interface font and size",
                                detail: "Uses the macOS system font and size. Terminal Appearance controls terminal text independently; ⌘+ / ⌘− zoom only the terminal.",
