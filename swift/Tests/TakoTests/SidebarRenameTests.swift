@@ -10,6 +10,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Tako
 
@@ -137,6 +138,92 @@ struct SidebarRenameTests {
         editor.blurred(mount: current)
         settle()
         #expect(editor.edit == nil)
+    }
+
+    @Test func aFieldThatGetsTheFocusBackKeepsItsEdit() {
+        let (view, window, _) = session()
+        defer { window.close(); editor.cancel(); PaneTitleStore.shared.setTitle(nil, for: view.id) }
+        let (_, pane) = rows(view, window)
+
+        // Tab away and straight back (Shift-Tab) inside the pause: the edit stays.
+        editor.begin(pane, in: window, store: store)
+        let mount = editor.mounted()
+        editor.draft.text = "tests"
+        editor.blurred(mount: mount)
+        editor.focused(mount: mount)
+        settle(editor.blurPause * 3)
+        #expect(editor.isEditing(pane.id, in: window) && editor.draft.text == "tests")
+        #expect(editor.commit(pane, in: window, store: store))
+        #expect(PaneTitleStore.shared.title(for: view.id) == "tests")
+
+        // A pause left from an earlier edit does not end a later one.
+        editor.begin(pane, in: window, store: store)
+        editor.blurred(mount: editor.mounted())
+        editor.cancel()
+        editor.begin(pane, in: window, store: store)
+        settle(editor.blurPause * 3)
+        #expect(editor.isEditing(pane.id, in: window))
+
+        // Leaving for good still ends it.
+        editor.blurred(mount: editor.activeMount)
+        settle(editor.blurPause * 3)
+        #expect(editor.edit == nil)
+    }
+
+    /// A row hosted as the sidebar draws it: the reason a name was not kept
+    /// gets a line of its own under the title band, and the row grows by it;
+    /// without a reason the row keeps its reference height.
+    @Test func aSaveErrorHasItsOwnLineUnderTheName() throws {
+        let (view, window, controller) = session()   // the window holds its controller weakly
+        defer { withExtendedLifetime(controller) {} }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-rename-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("PaneTitles.json")
+        try "{ not json".write(to: file, atomically: true, encoding: .utf8)
+        defer { window.close(); editor.cancel(); editor.paneTitles = .shared; try? FileManager.default.removeItem(at: dir) }
+        let (row, pane) = rows(view, window)
+
+        func host(_ item: SessionSidebarItem) -> NSHostingView<some View> {
+            let rowView = SessionSidebarRowView(item: item, index: 0, selectedIndex: -1, targetWindow: window,
+                                                editingItemId: .constant(nil), editingDescriptionText: .constant(""),
+                                                isPresented: .constant(true), now: Date(timeIntervalSinceReferenceDate: 1),
+                                                reduceMotion: true, onSelect: {})
+            let hosting = NSHostingView(rootView: rowView.frame(width: 248))
+            hosting.frame.size = hosting.fittingSize
+            hosting.layoutSubtreeIfNeeded()
+            return hosting
+        }
+        func field(in root: NSView) -> NSTextField? {
+            root.subviews.lazy.compactMap { ($0 as? NSTextField) ?? field(in: $0) }.first
+        }
+
+        for item in [row, pane] {
+            let reference = host(item).fittingSize.height   // the row's own height, not editing
+            editor.begin(item, in: window, store: store)
+            #expect(editor.isEditing(item.id, in: window), "\(item.id): editing")
+            let typing = host(item)
+            #expect(field(in: typing) != nil, "\(item.id): the field is hosted while typing")
+            #expect(abs(typing.fittingSize.height - reference) < 0.01, "\(item.id): the field sits in the title band")
+
+            if item.isChild {
+                editor.paneTitles = PaneTitleStore(fileURL: file)
+                editor.draft.text = "build logs"
+                #expect(!editor.commit(item, in: window, store: store), "the private store cannot be read")
+            } else {
+                editor.draft.error = "The name could not be kept."   // a session's override cannot fail to save
+            }
+            let failed = host(item)
+            #expect(failed.fittingSize.height >= reference + 11, "\(item.id): the reason has a line of its own")
+            if let f = field(in: failed) {
+                let r = f.convert(f.bounds, to: failed)
+                let bottom = failed.isFlipped ? r.maxY : failed.bounds.height - r.minY
+                #expect(bottom <= reference - 1, "\(item.id): the field stays in the title band, above the reason")
+            } else {
+                Issue.record("\(item.id): no text field in the hosted row")
+            }
+            editor.cancel()
+            editor.paneTitles = .shared
+        }
     }
 
     @Test func anAgentRowWithNoTerminalOfItsOwnIsNotOffered() {

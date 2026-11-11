@@ -36,9 +36,38 @@ struct SidebarRowTitle: View {
     }
 }
 
+/// Why the name being typed for this row could not be kept: a line of its
+/// own under the row's title band, which grows the row only while it shows.
+struct SidebarRenameErrorLine: View {
+    let item: SessionSidebarItem
+    let targetWindow: NSWindow?
+    @ObservedObject private var editor = SidebarRenameEditor.shared
+
+    var body: some View {
+        if editor.isEditing(item.id, in: targetWindow) {
+            Reason(draft: editor.draft)
+        }
+    }
+
+    private struct Reason: View {
+        @ObservedObject var draft: SidebarRenameEditor.Draft
+        var body: some View {
+            if let error = draft.error {
+                Text(error)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(Color(nsColor: Tako.LivingTokens.error))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("SidebarRenameError")
+            }
+        }
+    }
+}
+
 /// Return keeps the name, Esc or clicking away leaves the old one; an empty
 /// name hands back to the automatic one. A name that cannot be saved stays
-/// in the field, the reason under it.
+/// in the field; SidebarRenameErrorLine says why, under the title band.
 private struct SidebarRenameField: View {
     let item: SessionSidebarItem
     let targetWindow: NSWindow?
@@ -49,27 +78,20 @@ private struct SidebarRenameField: View {
     private var editor: SidebarRenameEditor { .shared }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TextField(item.isChild ? "Terminal name" : "Session name", text: $draft.text)
-                .textFieldStyle(.plain)
-                .font(Font(font))
-                .foregroundColor(Color(nsColor: Tako.LivingTokens.textActive))
-                .focused($focused)
-                .onSubmit { editor.commit(item, in: targetWindow, store: .shared) }
-                .onExitCommand { editor.cancel() }
-                .accessibilityIdentifier("SidebarRenameField")
-            if let error = draft.error {
-                Text(error)
-                    .font(.system(size: 10.5))
-                    .foregroundColor(Color(nsColor: Tako.LivingTokens.error))
-                    .lineLimit(2)
-                    .accessibilityIdentifier("SidebarRenameError")
-            }
-        }
+        TextField(item.isChild ? "Terminal name" : "Session name", text: $draft.text)
+            .textFieldStyle(.plain)
+            .font(Font(font))
+            .foregroundColor(Color(nsColor: Tako.LivingTokens.textActive))
+            .focused($focused)
+            .onSubmit { editor.commit(item, in: targetWindow, store: .shared) }
+            .onExitCommand { editor.cancel() }
+            .accessibilityIdentifier("SidebarRenameField")
         .onAppear {
             mount = editor.mounted()
             focused = true
         }
-        .onChange(of: focused) { _, now in if !now { editor.blurred(mount: mount) } }
+        .onChange(of: focused) { _, now in
+            if now { editor.focused(mount: mount) } else { editor.blurred(mount: mount) }
+        }
     }
 }

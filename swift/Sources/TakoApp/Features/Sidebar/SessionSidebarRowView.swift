@@ -200,6 +200,9 @@ struct SessionSidebarRowView: View {
             }
             .frame(height: m.titleHeight)
 
+            SidebarRenameErrorLine(item: item, targetWindow: targetWindow)
+                .padding(.leading, m.secondLineIndent)
+
             // Line 2: under the title (33 pt in the reference = 12 + 7 + 14)
             if !m.inlineSecondLine, let secondLine = second {
                 HStack(spacing: 6) {
@@ -335,6 +338,9 @@ struct SessionSidebarRowView: View {
                 }
             }
             .frame(height: 15)
+
+            SidebarRenameErrorLine(item: item, targetWindow: targetWindow)
+                .padding(.leading, 21)
 
             if let pwd = item.paneDirectoryToShow {
                 Text(Tako.formatCompactDirectory(pwd))

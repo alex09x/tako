@@ -53,10 +53,14 @@ final class SidebarRenameEditor: ObservableObject {
         guard store.canRename(item, around: window) else { return }
         draft.text = store.ownName(of: item, around: window, paneTitles: paneTitles) ?? item.title
         draft.error = nil
+        dropPendingBlur()
+        generation += 1
         edit = Edit(rowId: item.id, window: window.map(ObjectIdentifier.init))
     }
 
     func cancel() {
+        dropPendingBlur()
+        generation += 1
         edit = nil
         draft.error = nil
     }
@@ -89,16 +93,39 @@ final class SidebarRenameEditor: ObservableObject {
     }
 
     /// A field lost focus. Clicking away ends the edit; a field merely
-    /// replaced by a new one (its row changed group) does not.
+    /// replaced by a new one (its row changed group), or one that gets the
+    /// focus back before the pause is over, does not.
     func blurred(mount: Int) {
+        pendingBlur?.invalidate()
+        let generation = self.generation
         // A run-loop timer, not the main queue: it also fires inside a nested
         // run loop (a menu, a modal), where main-queue work waits.
-        let timer = Timer(timeInterval: 0.15, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: blurPause, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.edit != nil, self.activeMount == mount, self.draft.error == nil else { return }
+                guard let self, self.generation == generation, self.edit != nil,
+                      self.activeMount == mount, self.draft.error == nil else { return }
                 self.cancel()
             }
         }
+        pendingBlur = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// The field has the focus (again): a click-away still pending is void.
+    func focused(mount: Int) {
+        guard mount == activeMount else { return }
+        dropPendingBlur()
+    }
+
+    /// How long a field may be without focus before the edit ends.
+    let blurPause: TimeInterval = 0.15
+    private var pendingBlur: Timer?
+    /// Bumped whenever an edit begins or ends: a pause from an earlier edit
+    /// never ends a later one.
+    private(set) var generation = 0
+
+    private func dropPendingBlur() {
+        pendingBlur?.invalidate()
+        pendingBlur = nil
     }
 }
