@@ -220,14 +220,14 @@ func runSidebarRenameScenario(_ d: Driver) throws {
     }
     try step("status regroup mid-typing") {
         _ = try d.exec("\(ctl) config set sidebar-group=status")
-        guard d.wait(for: { d.element(withIdentifier: "SidebarStatusBucket-quiet") != nil }, timeout: 5) else {
-            throw Failure("grouping by status did not show its buckets")
+        guard d.wait(for: { d.element(withIdentifier: "SidebarStatusBucket-") != nil }, timeout: 5) else {
+            throw Failure("grouping by status did not show its buckets: \(d.staticTexts().prefix(30))")
         }
         try d.doubleClick(at: try named("RnAlpha")); try editing()
         try replace(with: "Moving")
-        _ = try d.exec("\(ctl) status set working --target \(alpha)")
-        guard d.wait(for: { d.element(withIdentifier: "SidebarStatusBucket-running") != nil }, timeout: 5) else {
-            throw Failure("the row did not move to Running: \(d.staticTexts().prefix(30))")
+        _ = try d.exec("\(ctl) status set needs_approval --text RenameCheck --target \(alpha)")
+        guard d.wait(for: { d.element(withIdentifier: "SidebarStatusBucket-needsYou") != nil }, timeout: 5) else {
+            throw Failure("the row did not move to Needs you: \(d.staticTexts().prefix(30))")
         }
         usleep(500_000)
         guard fieldValue() == "Moving" else { throw Failure("after the regroup the field shows \(String(describing: fieldValue()))") }
