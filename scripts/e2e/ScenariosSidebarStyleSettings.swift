@@ -88,12 +88,38 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         usleep(400_000)
     }
+    func frame(_ e: AXUIElement) -> CGRect? {
+        guard let p: AXValue = d.attribute(e, kAXPositionAttribute), let s: AXValue = d.attribute(e, kAXSizeAttribute) else { return nil }
+        var pos = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(p, .cgPoint, &pos); AXValueGetValue(s, .cgSize, &size)
+        return CGRect(origin: pos, size: size)
+    }
+    /// Scrolls the settings page with the wheel, as a person would, until the
+    /// control sits clear of the footer and inside the page.
+    func bringIntoView(_ id: String) {
+        for _ in 0..<12 {
+            guard let e = d.element(withIdentifier: id), let rect = frame(e),
+                  let pageEl = d.element(withIdentifier: "DesktopSettingsPage"), let page = frame(pageEl) else { return }
+            let floor = d.element(withIdentifier: "DesktopSettingsFooter").flatMap(frame)?.minY ?? page.maxY
+            let below = rect.maxY > floor - 4, above = rect.minY < page.minY + 4
+            guard below || above else { return }
+            let point = CGPoint(x: page.minX + page.width * 0.3, y: page.maxY - 30)
+            CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+            let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1,
+                                wheel1: below ? -4 : 4, wheel2: 0, wheel3: 0)
+            wheel?.location = point
+            wheel?.post(tap: .cghidEventTap)
+            usleep(250_000)
+        }
+    }
     func element(_ id: String) throws -> AXUIElement {
         guard d.wait(for: { d.element(withIdentifier: id) != nil }, timeout: 5), let e = d.element(withIdentifier: id) else {
             throw Failure("no control \(id)")
         }
         AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
         usleep(300_000)
+        bringIntoView(id)
         return d.element(withIdentifier: id) ?? e
     }
     func click(_ id: String) throws { try d.clickElement(try element(id)) }   // the driver refuses foreign-owned points
