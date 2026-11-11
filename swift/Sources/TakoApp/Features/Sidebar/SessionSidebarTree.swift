@@ -201,13 +201,7 @@ extension SessionSidebarStore {
                     let isTabSelected = (win === selectedWindow)
 
                     for (paneIdx, paneSurface) in winSurfaces.enumerated() {
-                        let paneTitle: String = {
-                            if let own = paneSurface.paneTitleOverride { return own }
-                            if !paneSurface.titleText.isEmpty { return paneSurface.titleText }
-                            if !paneSurface.title.isEmpty { return paneSurface.title }
-                            if let d = paneSurface.pwd, !d.isEmpty { return Tako.titleForDirectory(d) }
-                            return "Pane \(paneIdx + 1)"
-                        }()
+                        let paneTitle = paneSurface.sidebarTitle(index: paneIdx)
                         let pStatus = paneSurface.crab.paneStatus
                         let pUnread = AttentionManager.shared.isMuted(surfaceId: paneSurface.id)
                             ? 0
