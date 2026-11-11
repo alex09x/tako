@@ -20,11 +20,12 @@ import Foundation
 func runSidebarStyleSettingsScenario(_ d: Driver) throws {
     d.quit()
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n")
-    d.setPosition(CGPoint(x: 100, y: 100))
-    d.setSize(CGSize(width: 900, height: 600))
+    // Below the top of the screen, where a system alert can stand.
+    d.setPosition(CGPoint(x: 100, y: 410))
+    d.setSize(CGSize(width: 1000, height: 560))
     d.focus()
     usleep(800_000)
-    let ctl = "\(d.appURL.path)/Contents/MacOS/takoctl --bundle-id \(d.bundleID)"
+    let ctl = "'\(d.appURL.path)/Contents/MacOS/takoctl' --bundle-id \(d.bundleID)"
     let alpha = d.path("sbstyle_alpha"), beta = d.path("sbstyle_beta")
     try FileManager.default.createDirectory(atPath: alpha, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(atPath: beta, withIntermediateDirectories: true)
@@ -43,21 +44,53 @@ func runSidebarStyleSettingsScenario(_ d: Driver) throws {
         guard d.wait(for: { d.element(withIdentifier: id) != nil }, timeout: 5), let e = d.element(withIdentifier: id) else {
             throw Failure("no control \(id)")
         }
-        try d.clickElement(e)
+        // The Sidebar block is at the foot of the page: bring it into view first.
+        AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
+        usleep(400_000)
+        try d.clickElement(d.element(withIdentifier: id) ?? e)
     }
     let config = d.path("config")
     func saved(_ line: String) -> Bool { (try? String(contentsOfFile: config, encoding: .utf8).contains(line)) == true }
     func applied(_ key: String, _ value: String) -> Bool {
         ((try? d.exec("\(ctl) config get \(key)")) ?? "").contains(value)
     }
+    // Settings is a window of its own, centred: move it below where a
+    // system alert can stand at the top of the screen.
+    if let root = d.element(withIdentifier: "DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute) {
+        var origin = CGPoint(x: 120, y: 420)
+        if let value = AXValueCreate(.cgPoint, &origin) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+        }
+        usleep(400_000)
+    }
     try click("DesktopSettingsSection-interface")
+    // The Sidebar block is the page's last: wheel the page to its foot, as a
+    // person would, so no control sits under the footer.
+    if let page = d.element(withIdentifier: "DesktopSettingsPage"),
+       let posVal: AXValue = d.attribute(page, kAXPositionAttribute), let sizeVal: AXValue = d.attribute(page, kAXSizeAttribute) {
+        var pos = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(posVal, .cgPoint, &pos); AXValueGetValue(sizeVal, .cgSize, &size)
+        // Low on the page: a system alert can sit over its middle.
+        let point = CGPoint(x: pos.x + size.width * 0.3, y: pos.y + size.height * 0.85)
+        CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        for _ in 0..<8 {
+            let wheel = CGEvent(scrollWheelEvent2Source: d.source, units: .line, wheelCount: 1, wheel1: -10, wheel2: 0, wheel3: 0)
+            wheel?.location = point
+            wheel?.post(tap: .cghidEventTap)
+            usleep(100_000)
+        }
+        usleep(300_000)
+    }
     for (id, key, value) in [("DesktopSetting-sidebar-style-minimal", "sidebar-style", "minimal"),
                              ("DesktopSetting-sidebar-group-status", "sidebar-group", "status"),
                              ("DesktopSetting-sidebar-text-size-large", "sidebar-text-size", "large"),
                              ("DesktopSetting-sidebar-secondary-text-strong", "sidebar-secondary-text", "strong")] {
         try click(id)
         guard d.wait(for: { saved("\(key) = \(value)") && applied(key, value) }, timeout: 5) else {
-            throw Failure("clicking \(id) did not save \(key) = \(value)")
+            let file = (try? String(contentsOfFile: config, encoding: .utf8)) ?? "(unreadable)"
+            let got = (try? d.exec("\(ctl) config get \(key)")) ?? "(no answer)"
+            throw Failure("clicking \(id) did not save \(key) = \(value); config get: \(got); file: \(file)")
         }
     }
     try click("DesktopSettingsClose")

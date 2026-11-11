@@ -125,7 +125,8 @@ extension Driver {
 
     /// List all pane IDs discovered in the app tree via takoctl.
     func paneIds() throws -> [String] {
-        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        // Quoted: the build folder can have a space in it ("/Volumes/Volume 1/...").
+        let ctl = "'\(appURL.path)/Contents/MacOS/takoctl' --bundle-id \(bundleID)"
         let treeJson = try exec("\(ctl) tree --json")
         if let data = treeJson.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -152,7 +153,8 @@ extension Driver {
 
     /// Discover currently focused pane ID from tree via takoctl.
     func focusedPaneId() throws -> String? {
-        let ctl = "\(appURL.path)/Contents/MacOS/takoctl --bundle-id \(bundleID)"
+        // Quoted: the build folder can have a space in it ("/Volumes/Volume 1/...").
+        let ctl = "'\(appURL.path)/Contents/MacOS/takoctl' --bundle-id \(bundleID)"
         let treeJson = try exec("\(ctl) tree --json")
         if let data = treeJson.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
