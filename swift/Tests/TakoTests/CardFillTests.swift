@@ -40,8 +40,7 @@ struct CardFillTests {
         let (app, file) = try TerminalTestSupport.app(configText: "background = #14100e")
         defer { try? FileManager.default.removeItem(at: file) }
         let surface = Tako.SurfaceView(app)
-        surface.core.feed(bytes: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
-        surface.terminalViewDidChangeContent(surface)
+        surface.feed(data: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
         var theme = surface.theme
         theme.background = rgb(0x282A36)
         theme.foreground = rgb(0xF8F8F2)
@@ -52,9 +51,26 @@ struct CardFillTests {
         let palette = CardHeaderPalette.of(surface)
         #expect(palette == CardHeaderPalette(background: rgb(0x0E1820), foreground: rgb(0xEDE6DF)))
 
-        surface.core.feed(bytes: Data("\u{1b}]111\u{07}".utf8))
-        surface.terminalViewDidChangeContent(surface)
+        surface.feed(data: Data("\u{1b}]111\u{07}".utf8))
         #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36), "a reset program colour hands back to the theme")
+    }
+
+    /// Reset Terminal drops a program's colours with no output after it: the
+    /// card and its header follow the engine back to the theme at once.
+    @Test func resetTerminalHandsTheCardBackToTheTheme() throws {
+        let (app, file) = try TerminalTestSupport.app(configText: "background = #14100e")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let surface = Tako.SurfaceView(app)
+        var theme = surface.theme
+        theme.background = rgb(0x282A36)
+        theme.foreground = rgb(0xF8F8F2)
+        surface.applyTheme(theme)
+        surface.feed(data: Data("\u{1b}]11;#0e1820\u{07}\u{1b}]10;#ede6df\u{07}".utf8))
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x0E1820))
+
+        surface.resetTerminal()
+        #expect(FloatingPaneGeometry.cardFill(for: surface) == rgb(0x282A36))
+        #expect(CardHeaderPalette.of(surface) == CardHeaderPalette(background: rgb(0x282A36), foreground: rgb(0xF8F8F2)))
     }
 
     private func rgb(_ v: UInt32) -> CGColor {

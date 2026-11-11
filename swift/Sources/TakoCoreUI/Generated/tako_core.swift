@@ -1304,19 +1304,6 @@ public protocol TakoCoreProtocol: AnyObject, Sendable {
     func cursorVisible()  -> Bool
 
     /**
-     * The background the screen's default cells are drawn in now: the
-     * host's base colour, or a program's OSC 11 colour (also one a restored
-     * checkpoint carried), which a later base change does not replace.
-     * None when neither was set, and the FFI fallback is drawn.
-     */
-    func defaultBackground()  -> FfiRgb?
-
-    /**
-     * The foreground default cells are drawn in now, as `default_background`.
-     */
-    func defaultForeground()  -> FfiRgb?
-
-    /**
      * Returns the styled cell at (row, col) in the currently active grid.
      */
     func getCell(row: UInt32, col: UInt32)  -> FfiCell?
@@ -2488,33 +2475,6 @@ open func cursorVisible() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_tako_core_fn_method_takocore_cursor_visible(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The background the screen's default cells are drawn in now: the
-     * host's base colour, or a program's OSC 11 colour (also one a restored
-     * checkpoint carried), which a later base change does not replace.
-     * None when neither was set, and the FFI fallback is drawn.
-     */
-open func defaultBackground() -> FfiRgb?  {
-    return try!  FfiConverterOptionTypeFfiRgb.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_default_background(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * The foreground default cells are drawn in now, as `default_background`.
-     */
-open func defaultForeground() -> FfiRgb?  {
-    return try!  FfiConverterOptionTypeFfiRgb.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_tako_core_fn_method_takocore_default_foreground(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -8721,12 +8681,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_cursor_visible() != 4923) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_tako_core_checksum_method_takocore_default_background() != 19861) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_tako_core_checksum_method_takocore_default_foreground() != 12471) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tako_core_checksum_method_takocore_get_cell() != 26705) {

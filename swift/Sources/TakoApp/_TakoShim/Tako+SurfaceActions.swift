@@ -94,6 +94,8 @@ extension Tako.SurfaceView {
     /// holds them as base colors, which a reset returns to.
     public func resetTerminal() {
         core.reset()
+        // A reset drops a program's OSC 10/11 colours: the card follows.
+        refreshDrawnColors()
         _ = core.drainProgramStatusUpdates(maxUpdates: UInt32.max)
         applyProgramStatusEvent(.restored(programStatusSnapshot()))
         core.markAllDamaged()

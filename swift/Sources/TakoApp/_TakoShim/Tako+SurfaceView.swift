@@ -232,26 +232,12 @@ extension Tako {
 
         public private(set) lazy var cachedScreenContents = CachedValue<String> { [weak self] in
             guard let self else { return "" }
-            let total = Int(self.core.scrollbackLen()) + self.rows
-            return (0..<total)
-                .map { row in
-                    String(String.UnicodeScalarView(
-                        self.core.viewportRow(row: UInt32(row))
-                            .compactMap { UnicodeScalar($0.ch) }))
-                }
-                .joined(separator: "\n")
+            return self.plainText(ofRows: 0..<(Int(self.core.scrollbackLen()) + self.rows))
         }
 
         /// Just what the viewport is showing.
         public private(set) lazy var cachedVisibleContents = CachedValue<String> { [weak self] in
-            guard let self else { return "" }
-            return (0..<self.rows)
-                .map { row in
-                    String(String.UnicodeScalarView(
-                        self.core.viewportRow(row: UInt32(row))
-                            .compactMap { UnicodeScalar($0.ch) }))
-                }
-                .joined(separator: "\n")
+            self?.plainText(ofRows: 0..<(self?.rows ?? 0)) ?? ""
         }
 
         /// Command lifecycle for this surface, which is what the tab's crab
