@@ -59,7 +59,8 @@ defaults write "$BUNDLE" tako.session_sidebar_is_showing -bool true
 # Short: its sockets live in it, and a socket path is cut at 104 bytes.
 sessions="$(mktemp -d /tmp/tkm.XXXXXX)"
 trap 'quit; rm -rf "$work" "$sessions"; [ -n "$front" ] && osascript -e "tell application id \"$front\" to activate" >/dev/null 2>&1' EXIT
-open -n "$APP" --env TAKO_SESSIONS_HOME="$sessions" --args --config-file="$work/config" --no-launch-notices
+mkdir -p "$work/agent-hooks"
+open -n "$APP" --env TAKO_SESSIONS_HOME="$sessions" --env TAKO_AGENT_HOOKS_HOME="$work/agent-hooks" --args --config-file="$work/config" --no-launch-notices
 tree() { "$CTL" --bundle-id "$BUNDLE" --json tree 2>/dev/null; }
 for _ in $(seq 1 40); do tree | grep -q '"panes"' && break; sleep 0.5; done
 
