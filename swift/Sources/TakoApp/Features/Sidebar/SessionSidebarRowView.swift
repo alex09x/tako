@@ -167,11 +167,7 @@ struct SessionSidebarRowView: View {
                     .help("Status: \(item.status.rawValue)")
 
                 HStack(spacing: 6) {
-                    Text(item.title)
-                        .font(Font(m.titleFont))
-                        .foregroundColor(sessionTitleColor)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    SidebarRowTitle(item: item, targetWindow: targetWindow, font: m.titleFont, color: sessionTitleColor)
                     if let workspace { workspaceBadge(workspace) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -307,11 +303,8 @@ struct SessionSidebarRowView: View {
             HStack(spacing: 7) {
                 ring(moving: moving, painter: layered ? .ownLayer : .swiftUI)
 
-                Text(item.title)
-                    .font(Font(m.childFont))
-                    .foregroundColor(Color(nsColor: state == .offline ? T.faint : T.textInactive))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                SidebarRowTitle(item: item, targetWindow: targetWindow, font: m.childFont,
+                                color: Color(nsColor: state == .offline ? T.faint : T.textInactive))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let meta = item.metaDisplayText {

@@ -26,7 +26,7 @@ struct SessionSidebarView: View {
     @ObservedObject private var subagentStore = SubagentHierarchyStore.shared
     @ObservedObject var animState = LivingAnimationState.shared
     /// Sidebar counter settings (`sidebar-count-*`); the scheme comes from `.shellScheme()`.
-    @ObservedObject private var presentation = DesktopPresentation.shared
+    @ObservedObject var presentation = DesktopPresentation.shared
 
     typealias T = Tako.LivingTokens
 
@@ -41,8 +41,8 @@ struct SessionSidebarView: View {
 #if DEBUG
     static var onContentBuildForTesting: ((NSWindow?) -> Void)?
 #endif
-    @State private var editingItemId: String? = nil
-    @State private var editingDescriptionText: String = ""
+    @State var editingItemId: String? = nil
+    @State var editingDescriptionText: String = ""
     @FocusState var isSearchFocused: Bool
     @FocusState var isListFocused: Bool
 
@@ -261,38 +261,6 @@ struct SessionSidebarView: View {
             toggleCollapse: { [store] in store.toggleWorkspaceCollapsed(group.id) })
     }
 
-    /// One session or pane row, in the style the settings ask for.
-    private func sessionRow(_ item: SessionSidebarItem, flatItems: [SessionSidebarItem],
-                            workspace: SidebarStatusBucket.WorkspaceBadge?) -> some View {
-        let flatIdx = flatItems.firstIndex(where: { $0.id == item.id }) ?? 0
-        return SessionSidebarRowView(
-            item: item, index: flatIdx, selectedIndex: showsArrowCursor ? selectedIndex : -1,
-            targetWindow: targetWindow, editingItemId: $editingItemId,
-            editingDescriptionText: $editingDescriptionText, isPresented: $isPresented,
-            reduceMotion: animState.reduceMotion, motionPaused: motionPaused,
-            onSelect: {
-                selectedIndex = flatIdx
-                showsArrowCursor = false
-                store.selectTab(item: item, in: targetWindow, workspaceStore: workspaceStore)
-            },
-            onClose: { store.closeTab(item: item, in: targetWindow) },
-            style: presentation.preferences.sidebarStyle, workspace: workspace,
-            textSize: presentation.preferences.sidebarTextSize, secondaryText: presentation.preferences.sidebarSecondaryText
-        )
-        .modifier(SidebarWorkspaceMoveModifier(item: item, workspaces: workspaceStore.workspaces,
-            onMove: { store.moveTab($0, to: $1, around: targetWindow, workspaceStore: workspaceStore) },
-            canMoveToWindow: { store.canMoveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-            onMoveToWindow: { _ = store.moveTabToWindow(item.tabId, around: targetWindow, workspaceStore: workspaceStore) },
-            onNewSession: { store.createNewTab(in: targetWindow) },
-            onRename: { store.promptRenameTab(item: item, in: targetWindow) },
-            onClose: { store.closeTab(item: item, in: targetWindow) },
-            onNewTerminal: { store.newTerminal(inSession: item, around: targetWindow, workspaceStore: workspaceStore) },
-            hasUnread: { store.rowHasUnread(item, around: targetWindow, workspaceStore: workspaceStore) },
-            onMarkRead: { store.markRowRead(item, around: targetWindow, workspaceStore: workspaceStore) },
-            canReconnect: { store.rowCanReconnect(item, around: targetWindow, workspaceStore: workspaceStore) },
-            onReconnect: { store.reconnectRow(item, around: targetWindow, workspaceStore: workspaceStore) }))
-    }
-
     private func tabListView(groups: [SessionSidebarWorkspaceGroup], buckets: [SidebarStatusBucket]?,
                              flatItems: [SessionSidebarItem]) -> some View {
         ScrollViewReader { proxy in
@@ -390,6 +358,11 @@ struct SessionSidebarView: View {
                 if selectedIndex >= 0 && selectedIndex < items.count {
                     store.selectTab(item: items[selectedIndex], in: targetWindow, workspaceStore: workspaceStore)
                 }
+                return .handled
+            }
+            .onKeyPress(Self.renameKey) {
+                guard store.renamingRowId == nil, items.indices.contains(selectedIndex) else { return .ignored }
+                store.beginRename(items[selectedIndex])
                 return .handled
             }
         }

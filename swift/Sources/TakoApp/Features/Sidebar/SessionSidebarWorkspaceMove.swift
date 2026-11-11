@@ -153,6 +153,9 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
     let onMoveToWindow: () -> Void
     var onNewSession: (() -> Void)? = nil
     var onRename: (() -> Void)? = nil
+    /// «Use Automatic Name», offered while the row has a name someone gave.
+    var hasOwnName: () -> Bool = { false }
+    var onAutomaticName: (() -> Void)? = nil
     var onClose: (() -> Void)? = nil
     /// Reference session menu: «New Terminal in Session», «Mark as Read»
     /// (off while nothing is unread), «Reconnect» (only for a lost session).
@@ -204,8 +207,14 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
             if let onNewSession {
                 Button("New Session", action: onNewSession)
             }
-            if !item.isChild, let onRename {
-                Button("Rename Session…", action: onRename)
+            if let onRename {
+                // Renamed in place, in the row itself.
+                Button(item.isChild ? "Rename Terminal" : "Rename Session", action: onRename)
+                    .accessibilityIdentifier("SidebarRowRename")
+            }
+            if let onAutomaticName, hasOwnName() {
+                Button("Use Automatic Name", action: onAutomaticName)
+                    .accessibilityIdentifier("SidebarRowAutomaticName")
             }
             if !item.isChild, let onNewTerminal {
                 Button("New Terminal in Session", action: onNewTerminal)
@@ -223,7 +232,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
             if let onClose {
                 Button(item.isChild ? FloatingPaneCopy.close : "Close Session", action: onClose)
             }
-            if onNewSession != nil || (!item.isChild && onRename != nil) || onClose != nil {
+            if onNewSession != nil || onRename != nil || onClose != nil {
                 Divider()
             }
             // A session row edits the session (its stable tab identity), a pane row the pane.
