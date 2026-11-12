@@ -36,7 +36,8 @@ struct PaneToastStack: View {
         VStack(alignment: .trailing, spacing: 8) {
             if activeState == .key {
                 ForEach(center.toasts) { toast in
-                    row(toast).transition(Self.transition(reduceMotion: motion.reduceMotion))
+                    PaneToastRow(toast: toast) { center.open(toast) }
+                        .transition(Self.transition(reduceMotion: motion.reduceMotion))
                 }
             }
         }
@@ -46,9 +47,16 @@ struct PaneToastStack: View {
         .animation(Self.animation(reduceMotion: motion.reduceMotion), value: center.toasts.map(\.id))
         .allowsHitTesting(!center.toasts.isEmpty)
     }
+}
 
-    private func row(_ toast: PaneToast) -> some View {
-        Button { center.open(toast) } label: {
+/// One toast: ring, «title — state», what it says, and where it is.
+struct PaneToastRow: View {
+    let toast: PaneToast
+    let open: () -> Void
+    private typealias T = Tako.LivingTokens
+
+    var body: some View {
+        Button(action: open) {
             HStack(alignment: .top, spacing: 10) {
                 SidebarStatusLayerView(state: toast.state, ringCenter: nil, cornerRadius: 0,
                                        reduceMotion: true, paused: true, pulses: 0, ringOnly: 11)
@@ -74,6 +82,9 @@ struct PaneToastStack: View {
                     .lineLimit(1)
                     .frame(maxHeight: .infinity, alignment: .center)
             }
+            // The row's own height: the overlay offers the whole window, and the
+            // label's maxHeight would otherwise stretch the toast down to its bottom.
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: T.surfaceActive)))

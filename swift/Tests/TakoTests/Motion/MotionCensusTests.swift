@@ -377,7 +377,7 @@ struct MotionCensusTests {
         Site(file: "PaneToastCenter.swift", code: "DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated(work) }",
              what: "a toast goes 4 s after it came; one call per toast, nothing runs between",
              coveredBy: ["aToastGoesAfterItsLifetimeAndANewStateReplacesItsPanesToast"]),
-        Site(file: "PaneToastStack.swift", code: "row(toast).transition(Self.transition(reduceMotion: motion.reduceMotion))",
+        Site(file: "PaneToastStack.swift", code: ".transition(Self.transition(reduceMotion: motion.reduceMotion))",
              what: "a toast slides in from the right and fades, 220 ms; Reduce Motion shows it at once",
              coveredBy: ["aToastEasesIn220msAndReduceMotionShowsItAtOnce"]),
         Site(file: "PaneToastStack.swift", code: ".animation(Self.animation(reduceMotion: motion.reduceMotion), value: center.toasts.map(\\.id))",
