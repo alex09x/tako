@@ -91,12 +91,20 @@ public enum ActivitySoundChoice: Equatable {
     case byUrgency
     case sound(String)
     case silent
+    /// Tako in front: the notification goes out silent and Tako plays this
+    /// sound (if any) itself -- when the notification is actually admitted,
+    /// so a report the coalescer suppresses as a duplicate makes no sound.
+    case inApp(String?)
 
+    /// Called only for a notification that passed the coalescer.
     @MainActor public func apply(to content: UNMutableNotificationContent) {
         switch self {
         case .byUrgency: break
         case .sound(let name): content.sound = ActivitySounds.notificationSound(name)
         case .silent: content.sound = nil
+        case .inApp(let name):
+            content.sound = nil
+            if let name { ActivityAlert.play(name) }
         }
     }
 
@@ -120,8 +128,7 @@ public enum ActivitySoundChoice: Equatable {
         guard ActivityAlert.takoInFront() else { return forProgram(event, preferences: preferences) }
         let decision = ActivityAlert.decide(.init(policy: preferences.activityAlert, sound: preferences.activitySound(event),
                                                   lookedAt: lookedAt, muted: muted, takoInFront: true, reportsItself: false))
-        if let sound = decision.appSound { ActivityAlert.play(sound) }
-        return .silent
+        return .inApp(decision.appSound)
     }
 }
 

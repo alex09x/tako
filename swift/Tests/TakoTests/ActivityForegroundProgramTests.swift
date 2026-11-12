@@ -37,7 +37,7 @@ struct ActivityForegroundProgramTests {
 
     /// Feeds a real OSC 7501 report to an unfocused surface, then lets the
     /// toast center see the status change as the app does.
-    private func report(_ state: String, front: Bool, prefs: [String: String] = [:]) throws -> Run {
+    private func report(_ state: String, front: Bool, prefs: [String: String] = [:], ids: [String] = ["t"]) throws -> Run {
         TakoTerminalNSView.isMetalDisabledForTesting = true
         var config = Tako.SurfaceConfiguration()
         config.allowsSessionPersistence = false
@@ -64,7 +64,9 @@ struct ActivityForegroundProgramTests {
         NotificationCoalescer.shared.reset()
 
         let msg = Data("finished".utf8).base64EncodedString()
-        surface.feed(data: Data("\u{1b}]7501;state=\(state):id=t:kind=task:app=muse:msg=\(msg)\u{1b}\\".utf8))
+        for id in ids {   // distinct reports, same title and body
+            surface.feed(data: Data("\u{1b}]7501;state=\(state):id=\(id):kind=task:app=muse:msg=\(msg)\u{1b}\\".utf8))
+        }
         let center = PaneToastCenter()
         center.schedule = { _, _ in }
         center.statusChanged(surface, to: surface.crab.paneStatus)
@@ -81,6 +83,15 @@ struct ActivityForegroundProgramTests {
 
         let blocked = try report("blocked", front: true, prefs: ["activity-sound-needs-you": "Pop"])
         #expect(blocked.played == ["Pop"], "the chosen sound for needs-you")
+    }
+
+    /// A second report with the same title and body inside the coalescer's
+    /// window is suppressed as a duplicate -- and so is its sound.
+    @Test func aSuppressedDuplicateMakesNoSecondSound() throws {
+        let run = try report("done", front: true, ids: ["a", "b"])
+        #expect(run.native.count == 1, "the duplicate was scheduled: \(run.native.count)")
+        #expect(run.played == ["Hero"], "the admitted report plays once, the suppressed one not at all: \(run.played)")
+        #expect(run.inferred.isEmpty)
     }
 
     @Test func inTheBackgroundTheNotificationCarriesTheSound() throws {
