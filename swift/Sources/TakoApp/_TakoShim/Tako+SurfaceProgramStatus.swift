@@ -158,7 +158,8 @@ extension Tako.SurfaceView {
             reportClose: false,
             timeoutMs: nil,
             onlyWhenUnfocused: true,
-            activitySound: .forProgram(event, preferences: DesktopPresentation.shared.preferences)
+            activitySound: .forProgramNow(event, lookedAt: isBeingLookedAt, muted: AttentionManager.shared.isMuted(surfaceId: id),
+                                          preferences: DesktopPresentation.shared.preferences)
         )
     }
 

@@ -107,6 +107,22 @@ public enum ActivitySoundChoice: Equatable {
         guard preferences.activityAlert != .never, let name = preferences.activitySound(event) else { return .silent }
         return .sound(name)
     }
+
+    /// The route for a program's own report, decided when it happens and
+    /// written into its notification. With a terminal window of Tako in front,
+    /// Tako plays the sound itself (as for any other news) and the notification
+    /// goes out silent, so it does not depend on macOS notifications being
+    /// allowed and never adds a second sound when presented later. In the
+    /// background the notification carries the sound, as before.
+    @MainActor static func forProgramNow(_ event: ActivityEvent?, lookedAt: Bool, muted: Bool,
+                                         preferences: DesktopPreferences) -> ActivitySoundChoice {
+        guard let event else { return .byUrgency }
+        guard ActivityAlert.takoInFront() else { return forProgram(event, preferences: preferences) }
+        let decision = ActivityAlert.decide(.init(policy: preferences.activityAlert, sound: preferences.activitySound(event),
+                                                  lookedAt: lookedAt, muted: muted, takoInFront: true, reportsItself: false))
+        if let sound = decision.appSound { ActivityAlert.play(sound) }
+        return .silent
+    }
 }
 
 /// Where activity notifications go: the system's notification center in the
