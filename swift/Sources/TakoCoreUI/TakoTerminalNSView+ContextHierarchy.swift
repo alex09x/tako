@@ -55,7 +55,7 @@ extension TakoTerminalNSView {
             let pillHeight = ceil(textSize.height) + paddingY * 2
 
             let topMargin: CGFloat = 8
-            let rightMargin: CGFloat = (paneProgressBarEnabled && activeProgressState != .none ? 14 : 10)
+            let rightMargin: CGFloat = 10
             let x = max(8, bounds.width - pillWidth - rightMargin)
             let y = bounds.height - pillHeight - topMargin
 

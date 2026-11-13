@@ -50,17 +50,6 @@ open class TakoTerminalNSView: NSView, NSUserInterfaceValidations {
     var isHoveringStickyHeader = false
     public internal(set) var activeStickyCommandHeader: StickyCommandHeader?
 
-    public let paneProgressBarLayer = CALayer()
-    public var paneProgressBarEnabled: Bool = true {
-        didSet {
-            guard paneProgressBarEnabled != oldValue else { return }
-            if !paneProgressBarEnabled {
-                paneProgressBarLayer.isHidden = true
-            } else if activeProgressState != .none {
-                updateProgressBar(state: activeProgressState, progress: activeProgressValue)
-            }
-        }
-    }
     public internal(set) var activeProgressState: ProgressState = .none
     public internal(set) var activeProgressValue: Int? = nil
     var deliveredOsc7501Active = false

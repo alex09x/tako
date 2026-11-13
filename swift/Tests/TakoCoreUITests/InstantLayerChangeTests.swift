@@ -78,17 +78,6 @@ final class InstantLayerChangeTests: XCTestCase {
         XCTAssertFalse(animations(under: view.layer!).subtracting(before).isEmpty, "the check is blind: a plain layer's fade was not seen")
     }
 
-    func testTheProgressBarComesMovesAndGoesAtOnce() throws {
-        let view = try makeView()
-        view.paneProgressBarEnabled = true
-        assertInstant(view, "the progress bar coming") { view.updateProgressBar(state: .normal, progress: 20) }
-        XCTAssertFalse(view.paneProgressBarLayer.isHidden)
-        assertInstant(view, "the progress bar moving") { view.updateProgressBar(state: .normal, progress: 80) }
-        assertInstant(view, "the progress bar failing") { view.updateProgressBar(state: .error, progress: 80) }
-        assertInstant(view, "the progress bar going") { view.updateProgressBar(state: .none, progress: nil) }
-        XCTAssertTrue(view.paneProgressBarLayer.isHidden)
-    }
-
     func testTheStickyHeaderAndItsHoverChangeAtOnce() throws {
         let view = try makeView()
         assertInstant(view, "the sticky header's hover") { view.updateStickyHeaderHover(true) }

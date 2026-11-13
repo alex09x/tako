@@ -270,9 +270,10 @@ extension Tako.Config {
             actionKey: "clear_screen")]).filter(\.isSupported)
     }
 
-    /// Terminal command progress indicator style (dock icon / tab progress bar / header / window).
+    /// Terminal command progress indicator style (dock icon / tab progress bar / window).
+    /// Nothing is ever drawn over the terminal itself.
     ///
-    /// The `progress-style` setting can turn each surface off (e.g. `dock,tab,header,window`, `none`, `all`).
+    /// The `progress-style` setting can turn each surface off (e.g. `dock,tab,window`, `none`, `all`).
     var progressStyle: ProgressStyle {
         guard let val = rawValue("progress-style") else { return .all }
         let s = val.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -288,7 +289,8 @@ extension Tako.Config {
             switch part {
             case "dock": style.insert(.dock)
             case "tab", "tabs": style.insert(.tab)
-            case "header", "pane": style.insert(.header)
+            // The line over the terminal is gone; an old config naming it still reads.
+            case "header", "pane": break
             case "window": style.insert(.window)
             default: break
             }

@@ -332,8 +332,6 @@ struct MotionCensusTests {
              what: "the link HUD and underline come and go at once", coveredBy: ["testTheLinkHUDComesChangesAndGoesAtOnce", "testTheLinkUnderlineComesAndGoesAtOnce"]),
         Site(file: "TakoTerminalNSView+Metal.swift", code: "CATransaction.setDisableActions(true)",
              what: "the Metal layer takes a resize at once", coveredBy: ["testAResizedPaneTakesItsNewSizeAtOnce"]),
-        Site(file: "TakoTerminalNSView+ProgressBar.swift", code: "CATransaction.setDisableActions(true)",
-             what: "the pane progress bar comes, moves and goes at once", coveredBy: ["testTheProgressBarComesMovesAndGoesAtOnce"]),
         Site(file: "TakoTerminalNSView+Scrollbars.swift", code: "CATransaction.setDisableActions(true)",
              what: "the scroller and gutter marks move at once", coveredBy: ["testTheScrollerAndTheGutterMarksMoveAtOnce", "testAResizedPaneTakesItsNewSizeAtOnce"]),
         Site(file: "TakoTerminalNSView+StickyHeader.swift", code: "CATransaction.setDisableActions(true)",

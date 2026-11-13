@@ -112,7 +112,7 @@ Keep the developer informed of your internal lifecycle without polluting the cha
 - **Clear status**:
   `takoctl status clear`
 
-Progress bars appear directly in the tab and pane header:
+Progress shows in the tab, the dock icon and the window (never as a line over the terminal):
 - `takoctl progress 25` (25% complete)
 - `takoctl progress indeterminate` (running with unknown duration)
 - `takoctl progress pause` (paused)

@@ -56,11 +56,6 @@ extension TakoTerminalNSView {
 
         self.layer?.addSublayer(stickyHeaderLayer)
 
-        paneProgressBarLayer.zPosition = 9500
-        paneProgressBarLayer.masksToBounds = true
-        paneProgressBarLayer.isHidden = true
-        self.layer?.addSublayer(paneProgressBarLayer)
-
         contextTintLayer.zPosition = 8000
         contextTintLayer.masksToBounds = true
         contextTintLayer.isHidden = true

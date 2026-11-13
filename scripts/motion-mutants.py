@@ -342,8 +342,6 @@ MUTANTS = [
      "            CATransaction.setDisableActions(true)\n            linkHUDLayer.isHidden = true", "            CATransaction.setDisableActions(false)\n            linkHUDLayer.isHidden = true"),
     ("underline-fades-out", "the link underline goes at once", "swift/Sources/TakoCoreUI/TakoTerminalNSView+Links.swift",
      "        CATransaction.setDisableActions(true)\n        linkUnderlineLayer.isHidden = true", "        CATransaction.setDisableActions(false)\n        linkUnderlineLayer.isHidden = true"),
-    ("progress-bar-eases", "the pane progress bar moves at once", "swift/Sources/TakoCoreUI/TakoTerminalNSView+ProgressBar.swift",
-     "        CATransaction.setDisableActions(true)\n        defer { CATransaction.commit() }\n\n        guard paneProgressBarEnabled", "        CATransaction.setDisableActions(false)\n        defer { CATransaction.commit() }\n\n        guard paneProgressBarEnabled"),
     ("progress-line-eases", "the pill's progress line moves at once", EFFECTS_LAYER,
      "        CATransaction.setDisableActions(true)\n        progressLineLayer.frame", "        CATransaction.setDisableActions(false)\n        progressLineLayer.frame"),
     ("pose-eases", "a lean is set at once", "swift/Sources/TakoApp/_TakoShim/Tako+TabStatusLayer.swift",

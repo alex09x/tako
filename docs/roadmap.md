@@ -388,8 +388,8 @@ Status: shipped in [PR #18](https://github.com/alex09x/tako/pull/18).
 
 OSC 9;4 progress already shows in the dock and the tab title. Add:
 
-- a thin progress bar in the pane header and tab, with distinct normal, error, paused and
-  indeterminate styles;
+- a thin progress bar in the tab, with distinct normal, error, paused and indeterminate styles
+  (nothing is drawn over the terminal itself);
 - window-level aggregate progress when several panes report;
 - `takoctl progress <0-100|indeterminate|error|pause|clear>` for scripts.
 
