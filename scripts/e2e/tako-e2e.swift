@@ -4779,6 +4779,9 @@ let scenarios: [Scenario] = [
     ("move-pane-to-tab", "Move to Tab by real input: the pane header's menu moves a live pane beside another tab's pane, the same process keeps running and takes the keyboard, the emptied tab closes; the header's button, New Tab, takes it out again; the sidebar row's Move to Tab merges the session back", { d in
         try runMovePaneToTabScenario(d)
     }),
+    ("sidebar-switch-speed", "Sidebar clicks switch tabs fast: real clicks on a row's name and beside it, each switch on screen within 250 ms", { d in
+        try runSidebarSwitchSpeedScenario(d)
+    }),
     ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended", { _ in
         try runOwnedProcessesSelfTest()
     }),

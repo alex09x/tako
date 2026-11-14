@@ -290,7 +290,10 @@ struct SessionSidebarRowView: View {
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .onPress(perform: onSelect)
+        .onPress {
+            onSelect()
+            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)
+        }
         .accessibilityAction(named: Text("Close Session")) { onClose?() }
         .padding(.horizontal, 8)
         .padding(.vertical, 1)
@@ -382,7 +385,10 @@ struct SessionSidebarRowView: View {
         .overlay(keyboardSelectionBorder(cornerRadius: radius))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .onPress(perform: onSelect)
+        .onPress {
+            onSelect()
+            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)
+        }
         .accessibilityAction(named: Text(FloatingPaneCopy.close)) { onClose?() }
         .padding(.leading, m.childIndent)
         .padding(.trailing, 8)
