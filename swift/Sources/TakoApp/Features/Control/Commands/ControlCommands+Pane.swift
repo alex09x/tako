@@ -43,6 +43,9 @@ extension ControlCommands {
         case "move" where request.args["into"] != nil:
             return try moveIntoTab(surface, request, all: all, select: select)
         case "move":
+            guard request.args["split"] == nil else {
+                throw ControlError(.invalid, "pane move --split goes with --into PANE")
+            }
             return try moveToNewWindow(surface, args: request.args)
         default:
             throw ControlError(.invalid, "unknown pane action \"\(action)\"; use state, set, float, dock, maximize, unmaximize, minimize, restore, frame or move")
@@ -109,7 +112,7 @@ extension ControlCommands {
             throw ControlError(.notFound, "no pane \(into)")
         }
         guard anchor !== surface else { throw ControlError(.invalid, "a pane cannot move beside itself") }
-        let direction = try moveDirection(request.args["split"]?.string)
+        let direction = try moveDirection(request.args["split"])
         guard let controller = BaseTerminalController.owningController(for: anchor) else {
             throw ControlError(.notFound, "pane \(into) is in no tab")
         }
@@ -131,12 +134,17 @@ extension ControlCommands {
         return result
     }
 
-    static func moveDirection(_ name: String?) throws -> SplitTree<Tako.SurfaceView>.NewDirection {
-        switch name ?? "right" {
-        case "right": .right
-        case "left": .left
-        case "down": .down
-        case "up": .up
+    /// Omitted means right; anything but one of the four names is refused.
+    static func moveDirection(_ value: JSON?) throws -> SplitTree<Tako.SurfaceView>.NewDirection {
+        guard let value else { return .right }
+        guard let name = value.string else {
+            throw ControlError(.invalid, "--split takes right, left, down or up")
+        }
+        switch name {
+        case "right": return .right
+        case "left": return .left
+        case "down": return .down
+        case "up": return .up
         case let other: throw ControlError(.invalid, "--split takes right, left, down or up, not \"\(other)\"")
         }
     }

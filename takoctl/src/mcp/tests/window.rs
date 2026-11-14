@@ -57,6 +57,19 @@ fn pane_window_and_config_tools_build_the_cli_requests() {
         )
         .is_err()
     );
+    // Malformed or misplaced into/split is refused, never read as a new-window move.
+    for bad in [
+        json!({"action": "move", "into": 42}),
+        json!({"action": "move", "into": ""}),
+        json!({"action": "move", "into": "pane-2", "split": 7}),
+        json!({"action": "move", "split": "left"}),
+        json!({"action": "float", "into": "pane-2"}),
+    ] {
+        assert!(
+            s.build_socket_request("tako_pane", &bad).is_err(),
+            "{bad} must be refused"
+        );
+    }
     assert!(
         s.build_socket_request("tako_pane", &json!({"action": "set"}))
             .is_err()

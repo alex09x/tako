@@ -41,8 +41,7 @@ enum MovePaneToTab {
         guard let anchor = anchor ?? Self.anchor(in: controller) else {
             throw MovePaneError(description: "the tab has no pane to move beside")
         }
-        try controller.movePaneHere(surface, beside: anchor, direction: direction)
-        if select { controller.bringTabToFront() }
+        try controller.movePaneHere(surface, beside: anchor, direction: direction, select: select)
     }
 
     static func title(of controller: BaseTerminalController) -> String {
@@ -66,7 +65,7 @@ enum MovePaneToTab {
                     try move(surface, into: controller)
                 } catch {
                     Tako.logger.warning("move to tab failed: \(String(describing: error), privacy: .public)")
-                    NSSound.beep()
+                    report(error, for: surface)
                 }
             }
             entry.identifier = .init("PaneMenuMoveToTab-\(index)")
@@ -74,5 +73,19 @@ enum MovePaneToTab {
         }
         item.submenu = submenu
         return item
+    }
+
+    /// A refused move says why in the pane's window, as a refused session move does.
+    private static func report(_ error: Error, for surface: Tako.SurfaceView) {
+        guard !Tako.CustomTabGroup.suppressWindowOrderingForTesting,
+              let window = surface.window ?? BaseTerminalController.owningController(for: surface)?.window else {
+            NSSound.beep()
+            return
+        }
+        Task { @MainActor in
+            _ = await TerminalDialogView.choose(in: window, title: "Pane Not Moved",
+                lines: TUIText.plain(String(describing: error), width: 56),
+                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: surface.theme)
+        }
     }
 }

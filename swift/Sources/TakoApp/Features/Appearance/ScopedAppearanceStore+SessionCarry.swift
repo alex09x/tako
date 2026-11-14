@@ -94,4 +94,26 @@ extension ScopedAppearanceStore {
         try commitDocument(draft)
         return true
     }
+
+    /// Moving a pane into another tab gives it that tab's session identity,
+    /// and with `workspaceID` (the source workspace, when the destination is
+    /// another one) a new workspace parent too. Carry what the pane inherited
+    /// there into its own record, under its explicit fields, so it keeps its
+    /// look. A pane with its own preset is left as its owner wrote it.
+    /// One atomic write; throws, writing nothing, when it cannot be stored.
+    @discardableResult
+    func carryMovedPaneStyle(session sessionID: String?, workspace workspaceID: UUID?, toPane paneID: UUID) throws -> Bool {
+        let local = document.overrides(for: .pane(paneID)) ?? [:]
+        guard local["theme"] == nil else { return false }
+        let workspace = workspaceID.flatMap { document.overrides(for: .workspace($0)) } ?? [:]
+        let session = sessionID.flatMap { document.overrides(for: .session($0)) } ?? [:]
+        guard !workspace.isEmpty || !session.isEmpty else { return false }
+        let portable = portableSessionFields(inherited: workspace, local: session).merging(local) { _, own in own }
+        guard portable != local else { return false }
+        try verifyDiskIsCurrent()
+        var draft = document
+        for (key, value) in portable { draft.setOverride(value, for: key, scope: .pane(paneID)) }
+        try commitDocument(draft)
+        return true
+    }
 }

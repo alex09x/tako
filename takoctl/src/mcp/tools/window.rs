@@ -132,13 +132,27 @@ pub fn build(
                 req.insert("state".into(), json!(pane_state(&state)?));
             }
             if action == "move" {
-                if let Some(into) = text("into") {
+                // A present but malformed field is refused, never read as
+                // absent: that would open a new window instead.
+                let present = |key: &str| args.get(key).is_some_and(|v| !v.is_null());
+                if present("into") {
+                    let into = text("into")
+                        .filter(|s| !s.is_empty())
+                        .ok_or("into must be a pane ID")?;
                     req.insert("into".into(), json!(into));
-                    let split = text("split").unwrap_or_else(|| "right".into());
+                    let split = if present("split") {
+                        text("split").ok_or("split must be right, left, down or up")?
+                    } else {
+                        "right".into()
+                    };
                     req.insert("split".into(), json!(split_direction(&split)?));
+                } else if present("split") {
+                    return Err("split goes with into (a pane ID in another tab)".into());
                 } else {
                     req.insert("window".into(), json!("new"));
                 }
+            } else if args.get("into").is_some() || args.get("split").is_some() {
+                return Err(format!("into and split are for action move, not {action}"));
             }
             if let Some(items) = args.get("frame").and_then(Value::as_array) {
                 let joined: Vec<String> = items.iter().map(|v| v.to_string()).collect();
