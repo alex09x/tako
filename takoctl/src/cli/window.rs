@@ -57,6 +57,16 @@ pub fn pane_state(name: &str) -> Result<String, String> {
     Ok(canonical.to_string())
 }
 
+/// The side `pane move --into` puts the pane on: right, left, down or up.
+pub fn split_direction(name: &str) -> Result<String, String> {
+    match name.to_lowercase().as_str() {
+        d @ ("right" | "left" | "down" | "up") => Ok(d.to_string()),
+        _ => Err(format!(
+            "--split takes right, left, down or up, not \"{name}\""
+        )),
+    }
+}
+
 fn pane(args: &mut Map<String, Value>, positional: &mut Vec<String>) -> Result<(), String> {
     let action = match action(positional, "state").as_str() {
         "get" => "state".to_string(),
@@ -88,14 +98,30 @@ fn pane(args: &mut Map<String, Value>, positional: &mut Vec<String>) -> Result<(
                 args.insert("state".into(), json!(state));
             }
         },
+        "move" if args.contains_key("into") => {
+            if args.contains_key("window") {
+                return Err("pane move takes --into PANE or --window new, not both".into());
+            }
+            let split = args
+                .get("split")
+                .and_then(Value::as_str)
+                .unwrap_or("right")
+                .to_string();
+            args.insert("split".into(), json!(split_direction(&split)?));
+        }
         "move" => {
+            if args.contains_key("split") {
+                return Err("pane move --split goes with --into PANE".into());
+            }
             let window = args
                 .get("window")
                 .and_then(Value::as_str)
                 .unwrap_or("new")
                 .to_string();
             if window != "new" {
-                return Err("pane move takes --window new".into());
+                return Err(
+                    "pane move takes --window new, or --into PANE to join another tab".into(),
+                );
             }
             args.insert("window".into(), json!("new"));
         }

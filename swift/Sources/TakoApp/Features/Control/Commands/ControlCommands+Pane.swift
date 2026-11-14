@@ -40,6 +40,8 @@ extension ControlCommands {
         case "frame":
             guard let frame = try requestedFrame(request.args) else { return try ControlPaneState.describe(surface) }
             return try ControlPaneState.setFrame(surface, to: frame)
+        case "move" where request.args["into"] != nil:
+            return try moveIntoTab(surface, request, all: all, select: select)
         case "move":
             return try moveToNewWindow(surface, args: request.args)
         default:
@@ -87,6 +89,56 @@ extension ControlCommands {
         ]
         if let workspace { result["workspace"] = .string(workspace.name) }
         return result
+    }
+
+    /// `pane move --into PANE [--split DIR]`: the pane joins PANE's tab
+    /// beside it (right unless DIR says left, up or down), in any window;
+    /// a tab it leaves empty closes. The process keeps running.
+    private static func moveIntoTab(
+        _ surface: Tako.SurfaceView, _ request: ControlRequest, all: [Pane], select: Bool
+    ) throws -> [String: JSON] {
+        guard request.args["window"] == nil else {
+            throw ControlError(.invalid, "pane move takes --into PANE or --window new, not both")
+        }
+        guard let into = request.args["into"]?.string, !into.isEmpty else {
+            throw ControlError(.invalid, "pane move --into needs a pane id (takoctl tree)")
+        }
+        let anchorID = try ControlTarget.from(["target": .string(into)], requestFrom: request.from)
+            .resolve(panes: all.map(\.surface.id), requestFrom: request.from, active: activePane(all))
+        guard let anchor = all.first(where: { $0.surface.id == anchorID })?.surface else {
+            throw ControlError(.notFound, "no pane \(into)")
+        }
+        guard anchor !== surface else { throw ControlError(.invalid, "a pane cannot move beside itself") }
+        let direction = try moveDirection(request.args["split"]?.string)
+        guard let controller = BaseTerminalController.owningController(for: anchor) else {
+            throw ControlError(.notFound, "pane \(into) is in no tab")
+        }
+        do {
+            try MovePaneToTab.move(surface, into: controller, beside: anchor, direction: direction, select: select)
+        } catch let error as MovePaneError {
+            throw ControlError(.invalid, error.description)
+        }
+        var result: [String: JSON] = [
+            "id": .string(surface.id.uuidString.lowercased()),
+            "into": .string(anchor.id.uuidString.lowercased()),
+        ]
+        if let window = controller.window {
+            result["window"] = .string(windowID(window))
+            if let workspace = WorkspaceStore.shared.workspace(forTab: window.stableTabIdentifier) {
+                result["workspace"] = .string(workspace.name)
+            }
+        }
+        return result
+    }
+
+    static func moveDirection(_ name: String?) throws -> SplitTree<Tako.SurfaceView>.NewDirection {
+        switch name ?? "right" {
+        case "right": .right
+        case "left": .left
+        case "down": .down
+        case "up": .up
+        case let other: throw ControlError(.invalid, "--split takes right, left, down or up, not \"\(other)\"")
+        }
     }
 
     /// The id `tree` and `window list` give the window holding `window`'s tab.

@@ -117,7 +117,8 @@ struct FloatingPaneHeaderView: View {
                     onDoubleClick: onToggleMaximize,
                     onMoveToNewWindow: onMoveToNewWindow,
                     appearanceMenuItem: { [weak surface = surfaceView] in surface?.appearanceMenuItem() },
-                    paneMenuItems: { paneMenu.items() }
+                    paneMenuItems: { paneMenu.items() },
+                    moveToTabMenuItem: { [weak surface = surfaceView] in surface.map(MovePaneToTab.menuItem) }
                 )
 
                 // Reference `.fw-hd` (header.css): 0 10 padding, 7 gap, the

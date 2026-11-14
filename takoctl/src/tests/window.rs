@@ -72,6 +72,30 @@ fn pane_actions_and_states() {
 }
 
 #[test]
+fn a_pane_moves_into_another_tab_beside_a_pane_there() {
+    let into = ok(&["pane", "move", "--into", "abc", "--split", "Down"]);
+    assert_eq!(
+        (
+            &into.args["action"],
+            &into.args["into"],
+            &into.args["split"]
+        ),
+        (&json!("move"), &json!("abc"), &json!("down"))
+    );
+    assert!(!into.args.contains_key("window"));
+    assert_eq!(
+        ok(&["pane", "move", "--into", "abc"]).args["split"],
+        "right"
+    );
+
+    assert!(
+        err(&["pane", "move", "--into", "abc", "--split", "diagonal"]).contains("--split takes")
+    );
+    assert!(err(&["pane", "move", "--into", "abc", "--window", "new"]).contains("not both"));
+    assert!(err(&["pane", "move", "--split", "left"]).contains("goes with --into"));
+}
+
+#[test]
 fn panes_open_in_a_state_only_where_one_is_created() {
     assert_eq!(
         ok(&["tab-new", "--state", "maximized"]).args["state"],

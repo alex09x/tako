@@ -30,6 +30,8 @@ final class FloatingPaneHeaderDragNSView: NSView {
     var appearanceMenuItem: (() -> NSMenuItem?)?
     /// The pane's own actions, first in the menu, built when it opens.
     var paneMenuItems: (() -> [NSMenuItem])?
+    /// «Move to Tab ▸», built when the menu opens.
+    var moveToTabMenuItem: (() -> NSMenuItem?)?
 
     private var trackingAreaRef: NSTrackingArea?
     private var dragStartWindowPoint: NSPoint?
@@ -152,6 +154,9 @@ final class FloatingPaneHeaderDragNSView: NSView {
         moveItem.target = self
         moveItem.isEnabled = canMoveToNewWindow
         menu.addItem(moveItem)
+        if let moveToTab = moveToTabMenuItem?() {
+            menu.addItem(moveToTab)
+        }
         if let appearance = appearanceMenuItem?() {
             menu.addItem(.separator())
             menu.addItem(appearance)
@@ -183,6 +188,7 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
     let onMoveToNewWindow: () -> Void
     var appearanceMenuItem: (() -> NSMenuItem?)? = nil
     var paneMenuItems: (() -> [NSMenuItem])? = nil
+    var moveToTabMenuItem: (() -> NSMenuItem?)? = nil
 
     func makeNSView(context: Context) -> FloatingPaneHeaderDragNSView {
         let view = FloatingPaneHeaderDragNSView(frame: .zero)
@@ -212,5 +218,6 @@ struct FloatingPaneHeaderDragStrip: NSViewRepresentable {
         view.onMoveToNewWindow = onMoveToNewWindow
         view.appearanceMenuItem = appearanceMenuItem
         view.paneMenuItems = paneMenuItems
+        view.moveToTabMenuItem = moveToTabMenuItem
     }
 }

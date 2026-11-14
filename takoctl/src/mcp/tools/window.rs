@@ -14,14 +14,14 @@
 use serde_json::{Map, Value, json};
 
 use super::McpTool;
-use crate::cli::window::{PANE_STATES, frame, pane_state};
+use crate::cli::window::{PANE_STATES, frame, pane_state, split_direction};
 use crate::mcp::capabilities::CapabilityScope;
 
 pub fn tools() -> Vec<McpTool> {
     vec![
         McpTool {
             name: "tako_pane",
-            description: "Read or change where a pane sits on its tab: tiled on the grid, floating over it, maximized over the whole tab, or minimized to the shelf; or move it into a new window.",
+            description: "Read or change where a pane sits on its tab: tiled on the grid, floating over it, maximized over the whole tab, or minimized to the shelf; or move it into a new window, or into another tab beside a pane there.",
             required_scopes: &[CapabilityScope::Layout],
             input_schema: json!({
                 "type": "object",
@@ -40,6 +40,15 @@ pub fn tools() -> Vec<McpTool> {
                     "frame": {
                         "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4,
                         "description": "For frame: x, y, width, height in points from the tab's top left; floats the pane there"
+                    },
+                    "into": {
+                        "type": "string",
+                        "description": "For move: a pane ID in another tab (any window); the pane joins that tab beside it, and a tab it leaves empty closes. Without it, move opens a new window"
+                    },
+                    "split": {
+                        "type": "string",
+                        "enum": ["right", "left", "down", "up"],
+                        "description": "For move with into: which side of that pane (default right)"
                     },
                     "select": {
                         "type": "boolean",
@@ -123,7 +132,13 @@ pub fn build(
                 req.insert("state".into(), json!(pane_state(&state)?));
             }
             if action == "move" {
-                req.insert("window".into(), json!("new"));
+                if let Some(into) = text("into") {
+                    req.insert("into".into(), json!(into));
+                    let split = text("split").unwrap_or_else(|| "right".into());
+                    req.insert("split".into(), json!(split_direction(&split)?));
+                } else {
+                    req.insert("window".into(), json!("new"));
+                }
             }
             if let Some(items) = args.get("frame").and_then(Value::as_array) {
                 let joined: Vec<String> = items.iter().map(|v| v.to_string()).collect();

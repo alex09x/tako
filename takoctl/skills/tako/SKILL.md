@@ -250,6 +250,7 @@ takoctl run --state minimized -- tail -f build.log        # a log on the shelf u
 takoctl pane minimize --target <id> --no-select           # leave the keyboard where it is
 takoctl pane restore --target <id>                        # back exactly as it was
 takoctl pane move --target <id> --window new              # out into a window of its own
+takoctl pane move --target <id> --into <other> --split right  # into <other>'s tab, beside it
 takoctl window new --state maximized --frame 0,0,1280,800 # a window of its own
 takoctl window fullscreen on                              # and on/off/toggle, minimize, restore, focus
 ```

@@ -39,6 +39,24 @@ fn pane_window_and_config_tools_build_the_cli_requests() {
         (&req["args"]["window"], &req["args"]["select"]),
         (&json!("new"), &json!(false))
     );
+    let req = s
+        .build_socket_request("tako_pane", &json!({"action": "move", "into": "pane-2"}))
+        .unwrap();
+    assert_eq!(
+        (
+            &req["args"]["into"],
+            &req["args"]["split"],
+            req["args"].get("window")
+        ),
+        (&json!("pane-2"), &json!("right"), None)
+    );
+    assert!(
+        s.build_socket_request(
+            "tako_pane",
+            &json!({"action": "move", "into": "pane-2", "split": "sideways"})
+        )
+        .is_err()
+    );
     assert!(
         s.build_socket_request("tako_pane", &json!({"action": "set"}))
             .is_err()

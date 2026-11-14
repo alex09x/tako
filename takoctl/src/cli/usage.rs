@@ -45,6 +45,8 @@ commands:
   pane frame [X Y W H]    print or set the pane's frame in points from the tab's top
                           left; setting one floats the pane there, as dragging does
   pane move --window new  move the pane out of its tab into a new window
+  pane move --into PANE   move the pane into PANE's tab beside it (--split right|left|
+                          down|up, default right); a tab it leaves empty closes
   window [list]           every window: id, tabs, frame, minimized, fullscreen
   window new              a new window (--cwd DIR, --state STATE, --frame X,Y,W,H);
                           prints its pane id
