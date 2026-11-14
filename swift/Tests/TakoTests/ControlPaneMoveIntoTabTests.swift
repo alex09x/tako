@@ -257,6 +257,56 @@ struct ControlPaneMoveIntoTabTests {
         #expect(styles.document.overrides(for: .session(sourceTab))?["background"] == "#010101", "the source record is untouched")
     }
 
+    @Test func aSharedWorkspacesStyleSurvivesADestinationSessionThatOverridesIt() throws {
+        let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
+        let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
+        let file = dir.appendingPathComponent("Appearance.json")
+        let styles = ScopedAppearanceStore(fileURL: file)
+        let shared = workspaces.createWorkspace(name: "Shared")
+        let source = try tab(split: true), destination = try tab(split: false)
+        defer { close(source, destination) }
+        let destinationTab = destination.window.stableTabIdentifier
+        for tab in [source.window.stableTabIdentifier, destinationTab] { workspaces.assignTab(tabIdentifier: tab, to: shared.id) }
+        try styles.setValue("#111111", for: "background", scope: .workspace(shared.id))
+        try styles.setValue("17", for: "font-size", scope: .workspace(shared.id))
+        try styles.setValue("#eeeeee", for: "background", scope: .session(destinationTab))
+        try styles.setValue("25", for: "font-size", scope: .session(destinationTab))
+        let moving = source.panes[1], anchor = try #require(destination.panes.first)
+        let before = styles.effectiveTheme(global: .takoDefault, workspaceID: shared.id,
+                                           sessionID: source.window.stableTabIdentifier, paneID: moving.id)
+
+        try destination.controller.movePaneHere(moving, beside: anchor, direction: .right, select: false,
+                                                appearance: styles, workspaces: workspaces)
+        let reloaded = ScopedAppearanceStore(fileURL: file)
+        let after = reloaded.effectiveTheme(global: .takoDefault, workspaceID: shared.id, sessionID: destinationTab, paneID: moving.id)
+        #expect(after.background == before.background && after.fontSize == before.fontSize && after.fontSize == 17,
+                "the moved pane keeps the shared workspace's look, not the destination session's")
+        let neighbour = reloaded.effectiveTheme(global: .takoDefault, workspaceID: shared.id, sessionID: destinationTab, paneID: anchor.id)
+        #expect(neighbour.fontSize == 25, "the destination's own pane keeps its session's look")
+    }
+
+    @Test func withNoSelectASelectedButBackgroundSourceIsNotMarkedSeen() throws {
+        let source = try tab(split: true), destination = try tab(split: false)
+        defer { close(source, destination) }
+        let moving = source.panes[1], staying = source.panes[0]
+        source.controller.focusedSurface = moving
+        // The source is its group's selected tab, but its window is not the key window of an active app.
+        #expect(Tako.CustomTabGroup.group(for: source.window).selectedWindow === source.window)
+        #expect(!(NSApp.isActive && source.window.isKeyWindow))
+        NotificationStore.shared.addNotification(id: "move-unread-\(staying.id)", surfaceId: staying.id,
+                                                 paneTitle: "staying", title: "done", body: "")
+        defer { NotificationStore.shared.markRead(surfaceId: staying.id) }
+        let anchor = try #require(destination.panes.first)
+        destination.controller.focusedSurface = anchor
+        let workspace = WorkspaceStore.shared.activeWorkspaceId
+
+        try destination.controller.movePaneHere(moving, beside: anchor, direction: .right, select: false)
+        #expect(NotificationStore.shared.unreadCount(for: staying.id) == 1, "nobody looked at the pane left behind")
+        #expect(source.controller.focusedSurface === staying, "its logical focus moved")
+        #expect(destination.controller.focusedSurface === anchor)
+        #expect(WorkspaceStore.shared.activeWorkspaceId == workspace)
+    }
+
     @Test func aStyleThatCannotBeKeptRefusesTheMoveWithBothTabsUnchanged() throws {
         let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
         let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)

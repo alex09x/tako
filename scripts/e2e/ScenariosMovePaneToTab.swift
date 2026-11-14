@@ -46,14 +46,16 @@ func runMovePaneToTabScenario(_ d: Driver) throws {
         }
     }
     let historyBefore = stamp()
-    var owned: [String] = []
-    defer {
-        for pid in owned { _ = try? d.exec("kill \(pid)") }
-        usleep(300_000)
-        let left = owned.filter { (try? d.exec("kill -0 \($0)")) != nil }
-        print("owned processes: \(owned) \(left.isEmpty ? "all gone" : "STILL RUNNING \(left)")")
-        print("owner history: \(stamp() == historyBefore ? "unchanged" : "CHANGED")")
-    }
+    var processes = OwnedProcesses()
+    var failure: Error?
+    do { try movePaneToTabJourney(d, home: home, processes: &processes, history: { stamp() == historyBefore }) } catch { failure = error }
+    let problems = processes.cleanUp()
+    print("owned processes: \(processes.owned.map { "\($0.pid) born \($0.birth)" }) \(problems.isEmpty ? "all gone" : "PROBLEMS \(problems)")")
+    print("owner history: \(stamp() == historyBefore ? "unchanged" : "CHANGED")")
+    if let error = OwnedProcesses.outcome(failure: failure, problems: problems) { throw error }
+}
+
+private func movePaneToTabJourney(_ d: Driver, home: String, processes: inout OwnedProcesses, history: () -> Bool) throws {
 
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n"
                  + "session-persistence = false\n", settleTerminal: false)
@@ -77,12 +79,10 @@ func runMovePaneToTabScenario(_ d: Driver) throws {
     _ = try d.exec("\(ctl) send --target \(anchor) \"printf '\\\\033]0;MvDest\\\\007'; sh -c 'echo \\$\\$ > \(destPid); exec sleep 600'\"")
     // The moving pane: its own process, reading the keyboard into a file.
     _ = try d.exec("\(ctl) send --target \(moving) \"printf '\\\\033]0;MvSource\\\\007'; sh -c 'echo \\$\\$ > \(movePid); exec cat > \(witness)'\"")
-    let pid = try d.file("mv-move.pid").trimmingCharacters(in: .whitespacesAndNewlines)
-    let other = try d.file("mv-dest.pid").trimmingCharacters(in: .whitespacesAndNewlines)
-    owned = [pid, other]
-    func birth(_ pid: String) -> String { ((try? d.exec("ps -o lstart= -p \(pid)")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-    let born = birth(pid)
-    guard !born.isEmpty else { throw Failure("the moving pane's process never started (pid \(pid))") }
+    // Both children recorded by PID and start time before anything else can fail.
+    let pid = try processes.adopt(try d.file("mv-move.pid"), what: "the moving pane's process")
+    try processes.adopt(try d.file("mv-dest.pid"), what: "the destination pane's process")
+    let born = processes.birth(of: pid) ?? ""
 
     func tree() throws -> [String: Any] {
         try JSONSerialization.jsonObject(with: Data(try d.exec("\(ctl) --json tree").utf8)) as? [String: Any] ?? [:]
@@ -155,8 +155,9 @@ func runMovePaneToTabScenario(_ d: Driver) throws {
     guard let joined = after.tabs.first(where: { $0.contains(moving) }), joined == [anchor, moving] else {
         throw Failure("expected [destination, moved] side by side, got \(after.tabs)")
     }
-    guard (try? d.exec("kill -0 \(pid)")) != nil, birth(pid) == born else {
-        throw Failure("the moved pane's process is not the same one (pid \(pid), born \(born), now \(birth(pid)))")
+    let now = processes.identity(pid)
+    guard now == .running(birth: born) else {
+        throw Failure("the moved pane's process is not the same one (pid \(pid), born \(born), now \(now))")
     }
     print("process: pid \(pid) born \(born), same after the move")
 
@@ -167,5 +168,5 @@ func runMovePaneToTabScenario(_ d: Driver) throws {
         throw Failure("the moved pane's process did not get the keystrokes: \(String(describing: try? String(contentsOfFile: witness, encoding: .utf8)))")
     }
     print("keyboard witness: moved-keys-ok reached pid \(pid)")
-    guard stamp() == historyBefore else { throw Failure("the owner's shell history changed: \(stamp())") }
+    guard history() else { throw Failure("the owner's shell history changed") }
 }

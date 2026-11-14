@@ -4779,6 +4779,9 @@ let scenarios: [Scenario] = [
     ("move-pane-to-tab", "Move to Tab by real input: the pane header's menu moves a live pane beside another tab's pane, the same process keeps running and takes the keyboard, the emptied tab closes", { d in
         try runMovePaneToTabScenario(d)
     }),
+    ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended", { _ in
+        try runOwnedProcessesSelfTest()
+    }),
     ("activity-sound-settings", "Settings › Status & Activity › Sounds by real clicks: Play sounds, a sound per event from its menu, None, ▶ and ↺, saved and applied", { d in
         try runActivitySoundSettingsScenario(d)
     }),

@@ -95,20 +95,33 @@ extension ScopedAppearanceStore {
         return true
     }
 
-    /// Moving a pane into another tab gives it that tab's session identity,
-    /// and with `workspaceID` (the source workspace, when the destination is
-    /// another one) a new workspace parent too. Carry what the pane inherited
-    /// there into its own record, under its explicit fields, so it keeps its
-    /// look. A pane with its own preset is left as its owner wrote it.
-    /// One atomic write; throws, writing nothing, when it cannot be stored.
-    @discardableResult
-    func carryMovedPaneStyle(session sessionID: String?, workspace workspaceID: UUID?, toPane paneID: UUID) throws -> Bool {
-        let local = document.overrides(for: .pane(paneID)) ?? [:]
-        guard local["theme"] == nil else { return false }
+    /// The fields a pane inherits from a workspace and session pair, as a
+    /// session record would state them.
+    func parentFields(workspace workspaceID: UUID?, session sessionID: String?) -> [String: String] {
         let workspace = workspaceID.flatMap { document.overrides(for: .workspace($0)) } ?? [:]
         let session = sessionID.flatMap { document.overrides(for: .session($0)) } ?? [:]
-        guard !workspace.isEmpty || !session.isEmpty else { return false }
-        let portable = portableSessionFields(inherited: workspace, local: session).merging(local) { _, own in own }
+        return portableSessionFields(inherited: workspace, local: session)
+    }
+
+    /// Moving a pane into another tab changes its parents: the destination
+    /// session, and maybe another workspace. Every field the pane inherited
+    /// from its old parents that its new parents would state differently --
+    /// a shared workspace's value the destination session overrides
+    /// included -- goes into the pane's own record, under its explicit
+    /// fields, so it keeps its look. A pane with its own preset is left as
+    /// its owner wrote it. Boundary: a field only the new parents state,
+    /// which the pane took from the global config before, is not frozen.
+    /// One atomic write; throws, writing nothing, when it cannot be stored.
+    @discardableResult
+    func carryMovedPaneStyle(from source: (workspace: UUID?, session: String?),
+                             to destination: (workspace: UUID?, session: String?),
+                             toPane paneID: UUID) throws -> Bool {
+        let local = document.overrides(for: .pane(paneID)) ?? [:]
+        guard local["theme"] == nil else { return false }
+        let old = parentFields(workspace: source.workspace, session: source.session)
+        let new = parentFields(workspace: destination.workspace, session: destination.session)
+        let differing = old.filter { new[$0.key] != $0.value }
+        let portable = differing.merging(local) { _, own in own }
         guard portable != local else { return false }
         try verifyDiskIsCurrent()
         var draft = document

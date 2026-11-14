@@ -78,9 +78,10 @@ extension BaseTerminalController {
         let toWorkspace = window.flatMap { workspaces.workspace(forTab: $0.stableTabIdentifier)?.id }
             ?? workspaces.activeWorkspaceId
         do {
-            try appearance.carryMovedPaneStyle(session: from.window?.stableTabIdentifier,
-                                               workspace: fromWorkspace == toWorkspace ? nil : fromWorkspace,
-                                               toPane: source.id)
+            try appearance.carryMovedPaneStyle(
+                from: (workspace: fromWorkspace, session: from.window?.stableTabIdentifier),
+                to: (workspace: toWorkspace, session: window?.stableTabIdentifier),
+                toPane: source.id)
         } catch {
             throw MovePaneError(description: "the pane's appearance could not be kept, so it was not moved: \(error.localizedDescription)")
         }
@@ -90,7 +91,13 @@ extension BaseTerminalController {
         }
 
         let leavingFocus = from.focusedSurface === source
-        let sourceInFront = from.window.map { Tako.CustomTabGroup.group(for: $0).selectedWindow === $0 } ?? false
+        // In front for the user: the selected tab of the key window of the
+        // active app, on screen. A selected tab in a background, hidden or
+        // minimized window only gets its logical focus moved, nothing marked seen.
+        let sourceInFront = from.window.map { window in
+            NSApp.isActive && window.isKeyWindow && window.isVisible && !window.isMiniaturized
+                && Tako.CustomTabGroup.group(for: window).selectedWindow === window
+        } ?? false
         let next = leavingFocus ? from.findNextFocusTargetAfterClosing(node: node) : nil
 
         // Out of its tab first, so the view leaves the old hierarchy before
@@ -102,7 +109,7 @@ extension BaseTerminalController {
             if let next, sourceInFront, !select {
                 from.focus(next)
             } else {
-                from.focusedSurface = next
+                from.setFocusedSurfaceUnseen(next)
             }
         }
         if leftover.isEmpty, let tab = from as? TerminalController {

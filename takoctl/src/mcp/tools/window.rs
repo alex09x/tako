@@ -132,9 +132,9 @@ pub fn build(
                 req.insert("state".into(), json!(pane_state(&state)?));
             }
             if action == "move" {
-                // A present but malformed field is refused, never read as
-                // absent: that would open a new window instead.
-                let present = |key: &str| args.get(key).is_some_and(|v| !v.is_null());
+                // A present but malformed field (null included) is refused,
+                // never read as absent: that would open a new window instead.
+                let present = |key: &str| args.get(key).is_some();
                 if present("into") {
                     let into = text("into")
                         .filter(|s| !s.is_empty())

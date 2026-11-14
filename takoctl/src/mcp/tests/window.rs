@@ -60,6 +60,9 @@ fn pane_window_and_config_tools_build_the_cli_requests() {
     // Malformed or misplaced into/split is refused, never read as a new-window move.
     for bad in [
         json!({"action": "move", "into": 42}),
+        json!({"action": "move", "into": null}),
+        json!({"action": "move", "into": "pane-2", "split": null}),
+        json!({"action": "move", "split": null}),
         json!({"action": "move", "into": ""}),
         json!({"action": "move", "into": "pane-2", "split": 7}),
         json!({"action": "move", "split": "left"}),
