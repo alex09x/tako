@@ -13,7 +13,8 @@ import SwiftUI
 
 /// A row's name in the sidebar: the name, or -- while this sidebar is
 /// renaming the row (SidebarRenameEditor) -- a field holding the draft.
-/// Double-clicking the name starts renaming where the row can be renamed.
+/// Double-clicking the row starts renaming where the row can be renamed
+/// (`renameIfDoubleClick`, asked by the row's own click handler).
 struct SidebarRowTitle: View {
     let item: SessionSidebarItem
     let targetWindow: NSWindow?
@@ -29,23 +30,25 @@ struct SidebarRowTitle: View {
                 .font(Font(font))
                 .foregroundColor(color)
                 .lineLimit(1)
-                .truncationMode(.tail)        }
+                .truncationMode(.tail)
+        }
     }
 
-    /// The second click of a double click on the row starts renaming it.
-    /// The row's own click handler asks after selecting. No gesture of its
-    /// own on the name: a `TapGesture(count: 2)` there made SwiftUI hold every
-    /// single click on the name for the double-click interval (~0.5 s) before
-    /// the row switched tabs, and a single tap there took the click from the row.
+    /// Clicks on sidebar rows, for telling a double click on one row apart.
+    @MainActor static var clicks = SidebarDoubleClick()
+
+    /// The second click of a double click on this same row, in the same
+    /// window, starts renaming it; the row's own click handler asks after
+    /// selecting. No gesture of its own on the name: a `TapGesture(count: 2)`
+    /// there made SwiftUI hold every single click on the name for the
+    /// double-click interval (~0.5 s) before the row switched tabs, and a
+    /// single tap there took the click from the row.
     static func renameIfDoubleClick(_ item: SessionSidebarItem, in targetWindow: NSWindow?,
-                                    event: NSEvent? = NSApp.currentEvent) {
-        guard isDoubleClick(event) else { return }
+                                    event: NSEvent? = NSApp.currentEvent,
+                                    interval: TimeInterval = NSEvent.doubleClickInterval) {
+        guard let (click, count) = SidebarDoubleClick.click(on: item.id, in: targetWindow, event: event),
+              clicks.isSecond(click, clickCount: count, interval: interval) else { return }
         SidebarRenameEditor.shared.begin(item, in: targetWindow, store: .shared)
-    }
-
-    static func isDoubleClick(_ event: NSEvent?) -> Bool {
-        guard let event, [.leftMouseUp, .leftMouseDown].contains(event.type) else { return false }
-        return event.clickCount == 2
     }
 }
 

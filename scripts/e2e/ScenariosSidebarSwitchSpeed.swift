@@ -31,15 +31,27 @@ func runSidebarSwitchSpeedScenario(_ d: Driver) throws {
     d.environment["HISTFILE"] = home + "/.shell_history"
     d.environment["TAKO_SESSIONS_HOME"] = sessions
     defer { d.environment = saved }
+    let owner = NSHomeDirectory()
+    let ownerHistory = [".local/share/fish/fish_history", ".bash_history", ".zsh_history"].map { owner + "/" + $0 }
+    func stamp() -> [String] {
+        ownerHistory.map { path in
+            guard let a = try? FileManager.default.attributesOfItem(atPath: path) else { return "absent \(path)" }
+            return "\(a[.size] ?? 0) \((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) \(path)"
+        }
+    }
+    let historyBefore = stamp()
     var processes = OwnedProcesses()
     var failure: Error?
-    do { try sidebarSwitchJourney(d, processes: &processes) } catch { failure = error }
+    do { try sidebarSwitchJourney(d, home: home, processes: &processes) } catch { failure = error }
     let problems = processes.cleanUp()
     print("owned processes: \(processes.owned.count) \(problems.isEmpty ? "all gone" : "PROBLEMS \(problems)")")
+    let historyKept = stamp() == historyBefore
+    print("owner history: \(historyKept ? "unchanged" : "CHANGED")")
+    if failure == nil, !historyKept { failure = Failure("the owner's shell history changed") }
     if let error = OwnedProcesses.outcome(failure: failure, problems: problems) { throw error }
 }
 
-private func sidebarSwitchJourney(_ d: Driver, processes: inout OwnedProcesses) throws {
+private func sidebarSwitchJourney(_ d: Driver, home: String, processes: inout OwnedProcesses) throws {
     try d.launch(config: "window-save-state = never\nauto-update = off\nremote-control = on\nmacos-titlebar-style = tabs\n"
                  + "session-persistence = false\n", settleTerminal: false)
     d.setPosition(CGPoint(x: 100, y: 410))
@@ -48,6 +60,10 @@ private func sidebarSwitchJourney(_ d: Driver, processes: inout OwnedProcesses) 
     usleep(800_000)
     let ctl = "'\(d.appURL.path)/Contents/MacOS/takoctl' --bundle-id \(d.bundleID)"
     guard let first = try d.focusedPaneId() else { throw Failure("no first pane") }
+    // Checked from inside the shell: the fixture's own HOME, data and history.
+    try d.run("echo \"$HOME|$XDG_DATA_HOME|$HISTFILE\" > \(d.path("switch_env"))")
+    let seen = try d.file("switch_env").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard seen == "\(home)|\(home)/.local/share|\(home)/.shell_history" else { throw Failure("the shell is not private: \(seen)") }
     let names = ["SwA", "SwB", "SwC", "SwD", "SwE"]
     var panes = [first]
     for _ in names.dropFirst() {
