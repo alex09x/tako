@@ -162,6 +162,21 @@ struct FloatingPaneHeaderView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 1) {
+                // «Move to Tab ▸»: join another tab, or leave a split for a new one.
+                FloatingHeaderIconButton(
+                    symbolName: "rectangle.portrait.and.arrow.right",
+                    identifier: "FloatingPaneMoveToTab-\(uuidKey)",
+                    label: "Move to Tab",
+                    value: nil,
+                    helpText: "Move to Tab — join another tab, or take this terminal into a new one",
+                    isProminent: controlsProminent,
+                    palette: palette,
+                    isHovered: hoveredControlId == "move",
+                    onHoverStateChange: { updateControlHover(id: "move", hovering: $0) },
+                    action: {},
+                    menu: { [weak surface = surfaceView] in surface.map(MovePaneToTab.buttonMenu) }
+                )
+
                 // One compact system icon (reference m15226): pressed while floating.
                 FloatingHeaderIconButton(
                     symbolName: "rectangle.on.rectangle",
@@ -247,6 +262,8 @@ private struct FloatingHeaderIconButton: View {
     var isClose: Bool = false
     let onHoverStateChange: (Bool) -> Void
     let action: () -> Void
+    /// A menu button: opens this on the press instead of running `action`.
+    var menu: (() -> NSMenu?)? = nil
 
     private typealias T = Tako.LivingTokens
 
@@ -272,7 +289,8 @@ private struct FloatingHeaderIconButton: View {
                 helpText: helpText,
                 isSelected: isPressed,
                 onHoverChange: onHoverStateChange,
-                action: action
+                action: action,
+                menu: menu
             )
         }
         .frame(width: size, height: size)

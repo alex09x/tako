@@ -4776,7 +4776,7 @@ let scenarios: [Scenario] = [
     ("sidebar-rename", "Sidebar rename by real input: menu, double-click and F2 open the field; Return keeps, Esc and clicking away leave, automatic name resets; a session and a terminal; a status regroup keeps the draft", { d in
         try runSidebarRenameScenario(d)
     }),
-    ("move-pane-to-tab", "Move to Tab by real input: the pane header's menu moves a live pane beside another tab's pane, the same process keeps running and takes the keyboard, the emptied tab closes", { d in
+    ("move-pane-to-tab", "Move to Tab by real input: the pane header's menu moves a live pane beside another tab's pane, the same process keeps running and takes the keyboard, the emptied tab closes; the header's button, New Tab, takes it out again; the sidebar row's Move to Tab merges the session back", { d in
         try runMovePaneToTabScenario(d)
     }),
     ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended", { _ in

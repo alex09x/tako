@@ -207,7 +207,7 @@ struct FloatingRexPolishTests {
             let paneRectInWin = paneView.convert(paneView.bounds, to: nil)
 
             var controlRects: [CGRect] = []
-            for prefix in ["FloatingPaneMinimize-", "FloatingPaneMaximize-", "FloatingPaneClose-"] {
+            for prefix in ["FloatingPaneMoveToTab-", "FloatingPaneMinimize-", "FloatingPaneMaximize-", "FloatingPaneClose-"] {
                 let btn = try #require(findView(identifier: "\(prefix)\(key)", in: contentView))
                 let r = btn.convert(btn.bounds, to: nil)
                 #expect(abs(r.width - 22) <= 0.5 && abs(r.height - 22) <= 0.5,

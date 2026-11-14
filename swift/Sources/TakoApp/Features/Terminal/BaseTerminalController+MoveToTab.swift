@@ -56,7 +56,7 @@ extension BaseTerminalController {
             }
             replaceSurfaceTree(newTree, moveFocusTo: select ? source : nil,
                                moveFocusFrom: select ? focusedSurface : nil, undoAction: "Move Split")
-            if select { reveal(source, workspaces: workspaces) }
+            if select { revealMovedPane(source, workspaces: workspaces) }
             return
         }
 
@@ -90,36 +90,41 @@ extension BaseTerminalController {
             controller.undoManager?.removeAllActions(withTarget: controller)
         }
 
-        let leavingFocus = from.focusedSurface === source
-        // In front for the user: the selected tab of the key window of the
-        // active app, on screen. A selected tab in a background, hidden or
-        // minimized window only gets its logical focus moved, nothing marked seen.
-        let sourceInFront = from.window.map { window in
-            NSApp.isActive && window.isKeyWindow && window.isVisible && !window.isMiniaturized
-                && Tako.CustomTabGroup.group(for: window).selectedWindow === window
-        } ?? false
-        let next = leavingFocus ? from.findNextFocusTargetAfterClosing(node: node) : nil
-
         // Out of its tab first, so the view leaves the old hierarchy before
         // it joins the new one. Its subagent links and prompts stay: it lives on.
-        from.surfaceTree = leftover
+        from.takeOutMovedPane(source, node: node, leaving: leftover, select: select)
         surfaceTree = newTree
 
-        if leavingFocus {
-            if let next, sourceInFront, !select {
-                from.focus(next)
-            } else {
-                from.setFocusedSurfaceUnseen(next)
-            }
-        }
         if leftover.isEmpty, let tab = from as? TerminalController {
             tab.closeTabImmediately(registerRedo: false)
         }
-        if select { reveal(source, workspaces: workspaces) }
+        if select { revealMovedPane(source, workspaces: workspaces) }
+    }
+
+    /// Sets this tab's tree to `leftover`, `source`'s tree without it. If
+    /// `source` had the focus, it goes to what is left. Only a tab in front
+    /// for the user (the selected tab of the key window of the active app,
+    /// on screen) that stays in front (`select: false`) gets real focus; any
+    /// other only gets its logical focus moved, nothing marked seen.
+    func takeOutMovedPane(_ source: Tako.SurfaceView, node: SplitTree<Tako.SurfaceView>.Node,
+                          leaving leftover: SplitTree<Tako.SurfaceView>, select: Bool) {
+        let leavingFocus = focusedSurface === source
+        let inFront = window.map { window in
+            NSApp.isActive && window.isKeyWindow && window.isVisible && !window.isMiniaturized
+                && Tako.CustomTabGroup.group(for: window).selectedWindow === window
+        } ?? false
+        let next = leavingFocus ? findNextFocusTargetAfterClosing(node: node) : nil
+        surfaceTree = leftover
+        guard leavingFocus else { return }
+        if let next, inFront, !select {
+            focusMovedPane(next)
+        } else {
+            setFocusedSurfaceUnseen(next)
+        }
     }
 
     /// This tab in front, in its own workspace, with `surface` focused.
-    private func reveal(_ surface: Tako.SurfaceView, workspaces: WorkspaceStore) {
+    func revealMovedPane(_ surface: Tako.SurfaceView, workspaces: WorkspaceStore) {
         guard let window else { return }
         let tab = window.stableTabIdentifier
         if let workspace = workspaces.workspace(forTab: tab)?.id, workspace != workspaces.activeWorkspaceId {
@@ -128,11 +133,11 @@ extension BaseTerminalController {
         }
         Tako.CustomTabGroup.group(for: window).select(window)
         if !Tako.CustomTabGroup.suppressWindowOrderingForTesting { window.makeKeyAndOrderFront(nil) }
-        focus(surface)
+        focusMovedPane(surface)
     }
 
     /// Keyboard to `surface`, as closing a split moves it.
-    private func focus(_ surface: Tako.SurfaceView) {
+    func focusMovedPane(_ surface: Tako.SurfaceView) {
         if usesFloatingCanvas {
             revealAndFocusFloatingPane(surface)
         } else {

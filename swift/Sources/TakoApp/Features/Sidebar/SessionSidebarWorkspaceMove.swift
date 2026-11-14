@@ -250,6 +250,7 @@ struct SidebarWorkspaceMoveModifier: ViewModifier {
                         .disabled(workspace.id == item.workspaceId)
                 }
             }
+            SidebarMoveToTabMenu(item: item)
         }
     }
 

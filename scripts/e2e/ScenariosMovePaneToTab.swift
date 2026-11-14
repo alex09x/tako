@@ -15,7 +15,9 @@ import Foundation
 /// «Move to Tab» by real input: a right click on the pane's header, the
 /// submenu, the destination tab. The pane lands beside the destination's
 /// pane in that tab, its process (same PID, same start time) keeps running
-/// and takes the next keystrokes, and the tab it left empty closes.
+/// and takes the next keystrokes, and the tab it left empty closes. Then the
+/// header's «Move to Tab» button, «New Tab»: the pane leaves the split for a
+/// tab of its own, the same process, still taking the keyboard.
 ///
 /// Private as the sidebar rename journey is: private HOME, XDG dirs,
 /// history and session namespace, panes not kept, the owner's shell history
@@ -168,5 +170,63 @@ private func movePaneToTabJourney(_ d: Driver, home: String, processes: inout Ow
         throw Failure("the moved pane's process did not get the keystrokes: \(String(describing: try? String(contentsOfFile: witness, encoding: .utf8)))")
     }
     print("keyboard witness: moved-keys-ok reached pid \(pid)")
+
+    // Back out of the split by the header's own button: a real left click on
+    // «Move to Tab», then «New Tab». The pane gets a tab of its own again.
+    let buttonID = "FloatingPaneMoveToTab-\(moving.lowercased())"
+    guard d.wait(for: { d.element(withIdentifier: buttonID) != nil }, timeout: 5), let button = d.element(withIdentifier: buttonID) else {
+        throw Failure("no header button \(buttonID)")
+    }
+    let buttonPoint = try center(button)
+    try guarded(buttonPoint)
+    CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: buttonPoint, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(150_000)
+    try guarded(buttonPoint)
+    try d.click(at: buttonPoint)
+    try menu("New Tab")
+    guard d.wait(for: { ((try? tabs())?.tabs ?? []).contains([moving]) }, timeout: 5) else {
+        throw Failure("the pane did not get a tab of its own: \(String(describing: try? tabs().tabs))")
+    }
+    let out = try tabs()
+    print("after New Tab: tabs \(out.tabs)")
+    guard out.tabs.count == after.tabs.count + 1, out.tabs.contains([anchor]) else {
+        throw Failure("expected the destination alone and the pane alone, got \(out.tabs)")
+    }
+    guard processes.identity(pid) == .running(birth: born) else { throw Failure("the pane's process changed on New Tab") }
+    try d.type("newtab-keys-ok")
+    d.key(Key.returnKey)
+    guard d.wait(for: { ((try? String(contentsOfFile: witness, encoding: .utf8)) ?? "").contains("newtab-keys-ok") }, timeout: 5) else {
+        throw Failure("the pane's process did not get the keystrokes in its new tab")
+    }
+    print("keyboard witness: newtab-keys-ok reached pid \(pid) in its new tab")
+
+    // The sidebar: a right click on the session's row, «Move to Tab», MvDest.
+    // The whole session joins MvDest and its tab closes.
+    if !d.hasText(containing: "Sessions") { d.key(Key.s, [.maskCommand, .maskAlternate]) }
+    func sidebarRow(_ text: String) -> AXUIElement? {
+        guard let main: AXUIElement = d.attribute(AXUIElementCreateApplication(d.pid), kAXMainWindowAttribute),
+              let bar = d.element(withIdentifier: "SessionSidebar", root: main) else { return nil }
+        return d.descendants(of: bar, role: kAXStaticTextRole as String).first { (d.attribute($0, kAXValueAttribute) as String?) == text }
+    }
+    guard d.wait(for: { sidebarRow("MvSource") != nil }, timeout: 10), let row = sidebarRow("MvSource") else {
+        throw Failure("the sidebar does not list MvSource: \(d.staticTexts().prefix(40))")
+    }
+    let rowPoint = try center(row)
+    try guarded(rowPoint)
+    CGEvent(mouseEventSource: d.source, mouseType: .mouseMoved, mouseCursorPosition: rowPoint, mouseButton: .right)?.post(tap: .cghidEventTap)
+    try guarded(rowPoint)
+    CGEvent(mouseEventSource: d.source, mouseType: .rightMouseDown, mouseCursorPosition: rowPoint, mouseButton: .right)?.post(tap: .cghidEventTap)
+    usleep(20_000)
+    CGEvent(mouseEventSource: d.source, mouseType: .rightMouseUp, mouseCursorPosition: rowPoint, mouseButton: .right)?.post(tap: .cghidEventTap)
+    try menu("Move to Tab")
+    try menu("MvDest")
+    guard d.wait(for: { ((try? tabs())?.tabs ?? []).contains { $0.contains(moving) && $0.contains(anchor) } }, timeout: 5) else {
+        throw Failure("the session did not join MvDest from the sidebar: \(String(describing: try? tabs().tabs))")
+    }
+    let merged = try tabs()
+    print("after sidebar Move to Tab: tabs \(merged.tabs)")
+    guard merged.tabs.count == out.tabs.count - 1 else { throw Failure("the session's emptied tab did not close: \(merged.tabs)") }
+    guard processes.identity(pid) == .running(birth: born) else { throw Failure("the pane's process changed on the sidebar move") }
+    print("process: pid \(pid) born \(born), same after all three moves")
     guard history() else { throw Failure("the owner's shell history changed") }
 }

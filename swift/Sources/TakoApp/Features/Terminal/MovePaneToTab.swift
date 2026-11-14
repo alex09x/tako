@@ -49,30 +49,79 @@ enum MovePaneToTab {
         return title.isEmpty ? "Terminal" : title
     }
 
-    /// The submenu item; disabled when there is no other tab to join.
+    /// The tab `surface` can leave for a new tab of its own: one it shares with other panes.
+    static func splitTab(of surface: Tako.SurfaceView) -> TerminalController? {
+        guard let own = BaseTerminalController.owningController(for: surface) as? TerminalController,
+              own.surfaceTree.isSplit else { return nil }
+        return own
+    }
+
+    /// The submenu item: every other tab of the workspace, then «New Tab»
+    /// while the pane shares its tab. Disabled when neither applies.
+    /// Accessibility identifier of «New Tab»: `PaneMenuMoveToNewTab`.
     static func menuItem(for surface: Tako.SurfaceView) -> NSMenuItem {
         let item = NSMenuItem(title: "Move to Tab", action: nil, keyEquivalent: "")
         item.identifier = .init("PaneMenuMoveToTab")
-        let destinations = destinations(for: surface)
-        item.isEnabled = !destinations.isEmpty
-        guard !destinations.isEmpty else { return item }
-        let submenu = NSMenu(title: "Move to Tab")
-        submenu.autoenablesItems = false
-        for (index, controller) in destinations.enumerated() {
+        let entries = entries(for: surface)
+        item.isEnabled = !entries.isEmpty
+        guard item.isEnabled else { return item }
+        item.submenu = menu(of: entries)
+        return item
+    }
+
+    /// The header button's menu, a menu of its own (never another item's
+    /// submenu): the same choices, or a disabled line saying there is nowhere to go.
+    static func buttonMenu(for surface: Tako.SurfaceView) -> NSMenu {
+        let entries = entries(for: surface)
+        guard entries.isEmpty else { return menu(of: entries) }
+        let none = NSMenuItem(title: "No Other Tab in This Workspace", action: nil, keyEquivalent: "")
+        none.isEnabled = false
+        return menu(of: [none])
+    }
+
+    private static func menu(of items: [NSMenuItem]) -> NSMenu {
+        let menu = NSMenu(title: "Move to Tab")
+        menu.autoenablesItems = false
+        items.forEach(menu.addItem)
+        return menu
+    }
+
+    /// Every other tab of the workspace, then «New Tab» while the pane shares its tab.
+    private static func entries(for surface: Tako.SurfaceView) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        for (index, controller) in destinations(for: surface).enumerated() {
             let entry = SidebarMenuAction(title(of: controller), binding: "") { [weak surface, weak controller] in
                 guard let surface, let controller else { return }
-                do {
-                    try move(surface, into: controller)
-                } catch {
-                    Tako.logger.warning("move to tab failed: \(String(describing: error), privacy: .public)")
-                    report(error, for: surface)
-                }
+                attempt(for: surface) { try move(surface, into: controller) }
             }
             entry.identifier = .init("PaneMenuMoveToTab-\(index)")
-            submenu.addItem(entry)
+            items.append(entry)
         }
-        item.submenu = submenu
-        return item
+        if splitTab(of: surface) != nil {
+            if !items.isEmpty { items.append(.separator()) }
+            let entry = SidebarMenuAction("New Tab", binding: "") { [weak surface] in
+                guard let surface else { return }
+                attempt(for: surface) {
+                    guard let tab = splitTab(of: surface) else {
+                        throw MovePaneError(description: "the pane no longer shares its tab")
+                    }
+                    try tab.movePaneToNewTab(surface)
+                }
+            }
+            entry.identifier = .init("PaneMenuMoveToNewTab")
+            items.append(entry)
+        }
+        return items
+    }
+
+    /// Runs a move; a refusal is logged and said in the pane's window.
+    static func attempt(for surface: Tako.SurfaceView, _ body: () throws -> Void) {
+        do {
+            try body()
+        } catch {
+            Tako.logger.warning("move to tab failed: \(String(describing: error), privacy: .public)")
+            report(error, for: surface)
+        }
     }
 
     /// A refused move says why in the pane's window, as a refused session move does.

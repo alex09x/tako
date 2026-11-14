@@ -182,6 +182,8 @@ private struct FloatingMinimizedCardView: View {
 final class FloatingActionButtonNSView: NSView {
     var onAction: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
+    /// Set for a menu button: the menu it opens instead of an action.
+    var menuProvider: (() -> NSMenu?)?
 
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false
@@ -255,6 +257,12 @@ final class FloatingActionButtonNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // A menu button opens on the press, as a pop-up button does: the
+        // release then picks an item or leaves the menu open.
+        if let menu = menuProvider?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
         mouseDownPoint = convert(event.locationInWindow, from: nil)
         isTrackingPress = true
     }
@@ -283,6 +291,10 @@ final class FloatingActionButtonNSView: NSView {
     }
 
     override func accessibilityPerformPress() -> Bool {
+        if let menu = menuProvider?() {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.minY), in: self)
+            return true
+        }
         onAction?()
         return true
     }
@@ -296,6 +308,7 @@ struct FloatingActionButtonOverlay: NSViewRepresentable {
     var isSelected = false
     let onHoverChange: (Bool) -> Void
     let action: () -> Void
+    var menu: (() -> NSMenu?)? = nil
 
     func makeNSView(context: Context) -> FloatingActionButtonNSView {
         let view = FloatingActionButtonNSView(frame: .zero)
@@ -315,5 +328,6 @@ struct FloatingActionButtonOverlay: NSViewRepresentable {
         view.toolTip = helpText
         view.onHoverChange = onHoverChange
         view.onAction = action
+        view.menuProvider = menu
     }
 }
