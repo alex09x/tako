@@ -4776,6 +4776,9 @@ let scenarios: [Scenario] = [
     ("sidebar-rename", "Sidebar rename by real input: menu, double-click and F2 open the field; Return keeps, Esc and clicking away leave, automatic name resets; a session and a terminal; a status regroup keeps the draft", { d in
         try runSidebarRenameScenario(d)
     }),
+    ("move-pane-to-tab", "Move to Tab by real input: the pane header's menu moves a live pane beside another tab's pane, the same process keeps running and takes the keyboard, the emptied tab closes", { d in
+        try runMovePaneToTabScenario(d)
+    }),
     ("activity-sound-settings", "Settings › Status & Activity › Sounds by real clicks: Play sounds, a sound per event from its menu, None, ▶ and ↺, saved and applied", { d in
         try runActivitySoundSettingsScenario(d)
     }),
