@@ -52,14 +52,20 @@ extension TerminalController {
         undoManager?.removeAllActions(withTarget: self)
 
         let size = source.frame.size
-        takeOutMovedPane(source, node: node, leaving: surfaceTree.removing(node), select: select)
+        takeOutMovedPane(source, node: node, leaving: surfaceTree.removing(node), handOffInFront: !select)
         if size.width > 0, size.height > 0 { source.initialSize = size }
 
         let controller = TerminalController(tako, withSurfaceTree: SplitTree(view: source))
         controller.appliesConfiguredWindowSize = false
+        // Loading the window focuses its only pane. Nobody is looking at it
+        // yet: that first focus is logical, so its unread state survives
+        // (`select: true` marks it seen below, when it is shown).
+        controller.focusChangeMarksSeen = false
         Self.system.attachWindow(controller)
+        let loaded = controller.window
+        controller.focusChangeMarksSeen = true
         controller.isBackgroundOpaque = isBackgroundOpaque
-        guard let window = controller.window else { return controller }
+        guard let window = loaded else { return controller }
 
         let rank = workspaces.rank(ofTab: session, in: workspace).map { $0 + 1 }
         workspaces.assignTab(tabIdentifier: window.stableTabIdentifier, to: workspace, at: rank)
@@ -67,12 +73,13 @@ extension TerminalController {
         let index = group.windows.firstIndex(of: parent).map { $0 + 1 } ?? group.windows.count
         Tako.CustomTabGroup.insert(window, into: parent, at: index, select: select)
 
+        // The group is Tako's own model, current at once: no delay needed.
+        controller.relabelTabs()
         if select {
             controller.revealMovedPane(source, workspaces: workspaces)
         } else {
             controller.setFocusedSurfaceUnseen(source)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak controller] in controller?.relabelTabs() }
         return controller
     }
 }

@@ -159,4 +159,104 @@ struct MovePaneToNewTabTests {
         let empty = MovePaneToTab.buttonMenu(for: pane)
         #expect(empty.items.count == 1 && empty.items.first?.isEnabled == false)
     }
+
+    private func unread(_ surface: Tako.SurfaceView, _ tag: String) {
+        NotificationStore.shared.addNotification(id: "move-\(tag)-\(surface.id)", surfaceId: surface.id,
+                                                 paneTitle: tag, title: "done", body: "")
+    }
+
+    @Test func withNoSelectThePaneInItsNewTabStaysUnread() throws {
+        let previousSystem = TerminalController.system
+        TerminalController.system = TerminalTestSupport.injectedWindowSystem()
+        defer { TerminalController.system = previousSystem }
+        let source = try tab(split: true)
+        let moving = source.panes[1], staying = source.panes[0]
+        source.controller.focusedSurface = staying
+        unread(moving, "newtab")
+        defer { NotificationStore.shared.markRead(surfaceId: moving.id) }
+        let workspace = WorkspaceStore.shared.activeWorkspaceId
+        let (pty, pid) = try live(moving)
+        defer { pty.terminate() }
+
+        let created = try source.controller.movePaneToNewTab(moving, select: false)
+        defer { close(source.window, created.window ?? source.window) }
+        #expect(NotificationStore.shared.unreadCount(for: moving.id) == 1, "loading the new tab is not looking at it")
+        #expect(created.focusedSurface === moving, "its logical focus")
+        #expect(Tako.CustomTabGroup.group(for: source.window).selectedWindow === source.window)
+        #expect(WorkspaceStore.shared.activeWorkspaceId == workspace)
+        #expect(moving.pty === pty && pty.alive && moving.pid == pid)
+    }
+
+    @Test func aSessionMergeLeavesThePanesItPassesOverUnread() throws {
+        let previousFront = MovePaneFront.isInFront
+        defer { MovePaneFront.isInFront = previousFront }
+        let source = try tab(split: true), destination = try tab(split: false)
+        defer { close(source.window, destination.window) }
+        sameWorkspace(source, destination)
+        _ = try #require(source.controller.newSplit(at: source.panes[1], direction: .right))
+        _ = try #require(source.controller.newSplit(at: source.panes[0], direction: .down))
+        let panes = source.panes
+        let first = panes[0], last = try #require(panes.last)
+        source.controller.focusedSurface = first
+        // The pane the focus passes to when the first leaves: shown on the
+        // way only if the merge hands focus over between its steps.
+        let node = try #require(source.controller.surfaceTree.root?.node(view: first))
+        let passed = try #require(source.controller.findNextFocusTargetAfterClosing(node: node))
+        try #require(passed !== last, "the focus must pass over a pane that is not the last one")
+        // The source is the tab the user is looking at.
+        MovePaneFront.isInFront = { $0 === source.window }
+        unread(passed, "passed")
+        defer { NotificationStore.shared.markRead(surfaceId: passed.id) }
+        let ptys = try panes.map(live)
+        defer { ptys.forEach { $0.pty.terminate() } }
+        let anchor = try #require(destination.panes.first)
+
+        try MovePaneToTab.mergeTab(source.controller, into: destination.controller)
+        #expect(destination.panes.map(\.id) == [anchor.id] + panes.map(\.id))
+        #expect(NotificationStore.shared.unreadCount(for: passed.id) == 1, "passed over on the way, never shown")
+        #expect(destination.controller.focusedSurface === last, "only the last pane is focused")
+        #expect(zip(panes, ptys).allSatisfy { $0.pty === $1.pty && $0.pid == $1.pid && $1.pty.alive })
+        #expect(!TerminalController.all.contains { $0 === source.controller })
+    }
+
+    @Test func aRefusedMergeSaysHowFarItGotAndIsSaidWhereTheUserIs() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tako-merge-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("Appearance.json")
+        let styles = ScopedAppearanceStore(fileURL: file)
+        let source = try tab(split: true), destination = try tab(split: false)
+        defer { close(source.window, destination.window) }
+        sameWorkspace(source, destination)
+        // Laid out before the move, as a window the user acts in is: a test
+        // window's first layout otherwise falls in the display cycle right
+        // after a no-select move, and SwiftUI crashed the host there (signal
+        // 11/6 in TabBarController.install's isMovable KVO, mid-render).
+        for tab in [source, destination] { tab.window.contentView?.layoutSubtreeIfNeeded() }
+        let (a, b) = (source.panes[0], source.panes[1])
+        // The first pane has its own preset, so it carries nothing; the
+        // second must carry the session's look, which can no longer be written.
+        try styles.setValue("Anything", for: "theme", scope: .pane(a.id))
+        try styles.setValue("#010101", for: "background", scope: .session(source.window.stableTabIdentifier))
+        try "{\"version\": 2, \"sessions\": {}}".write(to: file, atomically: true, encoding: .utf8)  // edited outside Tako
+
+        var message = ""
+        do {
+            try MovePaneToTab.mergeTab(source.controller, into: destination.controller, select: false, appearance: styles)
+            Issue.record("the merge should have been refused")
+        } catch { message = String(describing: error) }
+        #expect(message.contains("1 of 2 panes moved") && message.contains("the other 1 stay"), "\(message)")
+        #expect(destination.panes.contains(a) && source.panes == [b])
+        #expect(TerminalController.all.contains { $0 === source.controller }, "the source keeps what did not move")
+
+        // Said in the window the action came from while it is on screen, not
+        // in the pane's own, which may be hidden or emptied.
+        // Here the destination's window stands for the one the sidebar click came from.
+        let initiating = destination.window
+        let shown: (NSWindow) -> Bool = { $0 === initiating }
+        #expect(MovePaneToTab.presenter(for: b, from: initiating, onScreen: { _ in false }) === source.window,
+                "an initiator off screen is passed over")
+        #expect(MovePaneToTab.presenter(for: b, from: initiating, onScreen: shown) === initiating)
+        #expect(MovePaneToTab.presenter(for: b, from: nil, onScreen: shown) === source.window, "else the pane's own")
+    }
 }

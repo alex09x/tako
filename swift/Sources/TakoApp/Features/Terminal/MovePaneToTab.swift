@@ -36,12 +36,14 @@ enum MovePaneToTab {
     static func move(
         _ surface: Tako.SurfaceView, into controller: BaseTerminalController,
         beside anchor: Tako.SurfaceView? = nil,
-        direction: SplitTree<Tako.SurfaceView>.NewDirection = .right, select: Bool = true
+        direction: SplitTree<Tako.SurfaceView>.NewDirection = .right, select: Bool = true,
+        batchStep: Bool = false, appearance: ScopedAppearanceStore = .shared, workspaces: WorkspaceStore = .shared
     ) throws {
         guard let anchor = anchor ?? Self.anchor(in: controller) else {
             throw MovePaneError(description: "the tab has no pane to move beside")
         }
-        try controller.movePaneHere(surface, beside: anchor, direction: direction, select: select)
+        try controller.movePaneHere(surface, beside: anchor, direction: direction, select: select,
+                                    batchStep: batchStep, appearance: appearance, workspaces: workspaces)
     }
 
     static func title(of controller: BaseTerminalController) -> String {
@@ -115,26 +117,28 @@ enum MovePaneToTab {
     }
 
     /// Runs a move; a refusal is logged and said in the pane's window.
-    static func attempt(for surface: Tako.SurfaceView, _ body: () throws -> Void) {
+    /// `initiating`: the window the action came from (a sidebar's), which
+    /// stays on screen whatever the move did to the pane's own.
+    static func attempt(for surface: Tako.SurfaceView, from initiating: NSWindow? = nil, _ body: () throws -> Void) {
+        let presenter = presenter(for: surface, from: initiating)
         do {
             try body()
         } catch {
             Tako.logger.warning("move to tab failed: \(String(describing: error), privacy: .public)")
-            report(error, for: surface)
+            report(error, in: presenter, theme: surface.theme)
         }
     }
 
-    /// A refused move says why in the pane's window, as a refused session move does.
-    private static func report(_ error: Error, for surface: Tako.SurfaceView) {
-        guard !Tako.CustomTabGroup.suppressWindowOrderingForTesting,
-              let window = surface.window ?? BaseTerminalController.owningController(for: surface)?.window else {
+    /// A refused move says why in a window on screen, as a refused session move does.
+    private static func report(_ error: Error, in presenter: NSWindow?, theme: TerminalTheme?) {
+        guard !Tako.CustomTabGroup.suppressWindowOrderingForTesting, let window = presenter else {
             NSSound.beep()
             return
         }
         Task { @MainActor in
             _ = await TerminalDialogView.choose(in: window, title: "Pane Not Moved",
                 lines: TUIText.plain(String(describing: error), width: 56),
-                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: surface.theme)
+                choices: [.init(title: "OK", kind: .normal)], cancelIndex: 0, theme: theme)
         }
     }
 }

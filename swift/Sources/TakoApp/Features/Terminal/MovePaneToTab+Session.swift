@@ -54,10 +54,14 @@ extension MovePaneToTab {
 
     /// Every pane of `source`, in order, joins `destination`: the first
     /// beside its focused pane on the right, each next one right of the one
-    /// before. The emptied tab closes. Only the last move selects. A refusal
-    /// stops there; panes already moved stay where they went.
+    /// before. The emptied tab closes. One move for the user: the source's
+    /// focus only moves logically on the way, so a pane passed over keeps
+    /// its unread state, and only the last step selects. A refusal stops
+    /// there; panes already moved stay where they went, and the error says
+    /// how many moved and how many stayed.
     static func mergeTab(_ source: BaseTerminalController, into destination: BaseTerminalController,
-                         select: Bool = true) throws {
+                         select: Bool = true, appearance: ScopedAppearanceStore = .shared,
+                         workspaces: WorkspaceStore = .shared) throws {
         guard source !== destination else { throw MovePaneError(description: "a tab cannot move into itself") }
         let panes = Array(source.surfaceTree)
         guard !panes.isEmpty else { throw MovePaneError(description: "the tab has no pane to move") }
@@ -65,9 +69,27 @@ extension MovePaneToTab {
             throw MovePaneError(description: "the tab has no pane to move beside")
         }
         for (index, pane) in panes.enumerated() {
-            try move(pane, into: destination, beside: anchor, direction: .right,
-                     select: select && index == panes.count - 1)
+            do {
+                try move(pane, into: destination, beside: anchor, direction: .right,
+                         select: select && index == panes.count - 1, batchStep: true,
+                         appearance: appearance, workspaces: workspaces)
+            } catch {
+                guard index > 0 else { throw error }
+                throw MovePaneError(description: "\(index) of \(panes.count) panes moved into «\(title(of: destination))»; "
+                    + "the other \(panes.count - index) stay in their tab: \(error)")
+            }
             anchor = pane
         }
+    }
+
+    /// Where a refusal is said: the window the action came from while it is
+    /// on screen, else the pane's own. `attempt` asks before the move runs,
+    /// so a pane's own is the one it was in when the user acted.
+    static func presenter(
+        for surface: Tako.SurfaceView, from initiating: NSWindow?,
+        onScreen: @MainActor (NSWindow) -> Bool = { $0.isVisible && !$0.isMiniaturized }
+    ) -> NSWindow? {
+        if let initiating, onScreen(initiating) { return initiating }
+        return surface.window ?? BaseTerminalController.owningController(for: surface)?.window
     }
 }

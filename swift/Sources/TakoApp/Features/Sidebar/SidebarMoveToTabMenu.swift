@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import AppKit
 import SwiftUI
 
 /// A session row merges its whole tab into another tab of its workspace; a
@@ -37,8 +38,10 @@ struct SidebarMoveToTabMenu: View {
         }
     }
 
+    /// A refusal is said in the window whose sidebar was clicked: the row's
+    /// own tab may be hidden, or emptied by the move.
     private func run(_ subject: MovePaneToTab.Subject, _ body: () throws -> Void) {
         guard let pane = subject.probe else { return }
-        MovePaneToTab.attempt(for: pane, body)
+        MovePaneToTab.attempt(for: pane, from: NSApp.keyWindow, body)
     }
 }
