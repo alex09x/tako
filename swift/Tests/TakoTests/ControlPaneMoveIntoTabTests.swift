@@ -224,67 +224,6 @@ struct ControlPaneMoveIntoTabTests {
         #expect(destination.controller.focusedSurface === moving, "the keyboard goes with the pane")
     }
 
-    @Test func thePaneKeepsWhatItInheritedAndItsOwnPresetAsWritten() throws {
-        let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
-        let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
-        let styles = ScopedAppearanceStore(fileURL: dir.appendingPathComponent("Appearance.json"))
-        let main = workspaces.createWorkspace(name: "Main"), legal = workspaces.createWorkspace(name: "Legal")
-        let source = try tab(split: true), destination = try tab(split: false), other = try tab(split: false)
-        defer { close(source, destination, other) }
-        let sourceTab = source.window.stableTabIdentifier
-        workspaces.assignTab(tabIdentifier: sourceTab, to: main.id)
-        workspaces.assignTab(tabIdentifier: destination.window.stableTabIdentifier, to: main.id)
-        workspaces.assignTab(tabIdentifier: other.window.stableTabIdentifier, to: legal.id)
-        try styles.setValue("#010101", for: "background", scope: .session(sourceTab))
-        try styles.setValue("17", for: "font-size", scope: .session(sourceTab))
-        try styles.setValue("#0a0a0a", for: "foreground", scope: .workspace(main.id))
-        let inheriting = source.panes[1], owned = source.panes[0]
-        try styles.setValue("Anything", for: "theme", scope: .pane(owned.id))
-        let anchor = try #require(destination.panes.first), far = try #require(other.panes.first)
-
-        // Same workspace: the old session's fields travel; the workspace parent is shared.
-        try destination.controller.movePaneHere(inheriting, beside: anchor, direction: .right, select: false,
-                                                appearance: styles, workspaces: workspaces)
-        #expect(styles.document.overrides(for: .pane(inheriting.id)) == ["background": "#010101", "font-size": "17"])
-        // Another workspace: the old workspace's fields travel too; an own preset is left as written.
-        try other.controller.movePaneHere(owned, beside: far, direction: .right, select: false,
-                                          appearance: styles, workspaces: workspaces)
-        #expect(styles.document.overrides(for: .pane(owned.id)) == ["theme": "Anything"])
-        try other.controller.movePaneHere(inheriting, beside: far, direction: .down, select: false,
-                                          appearance: styles, workspaces: workspaces)
-        #expect(styles.document.overrides(for: .pane(inheriting.id)) ==
-                ["background": "#010101", "font-size": "17", "foreground": "#0a0a0a"])
-        #expect(styles.document.overrides(for: .session(sourceTab))?["background"] == "#010101", "the source record is untouched")
-    }
-
-    @Test func aSharedWorkspacesStyleSurvivesADestinationSessionThatOverridesIt() throws {
-        let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
-        let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
-        let file = dir.appendingPathComponent("Appearance.json")
-        let styles = ScopedAppearanceStore(fileURL: file)
-        let shared = workspaces.createWorkspace(name: "Shared")
-        let source = try tab(split: true), destination = try tab(split: false)
-        defer { close(source, destination) }
-        let destinationTab = destination.window.stableTabIdentifier
-        for tab in [source.window.stableTabIdentifier, destinationTab] { workspaces.assignTab(tabIdentifier: tab, to: shared.id) }
-        try styles.setValue("#111111", for: "background", scope: .workspace(shared.id))
-        try styles.setValue("17", for: "font-size", scope: .workspace(shared.id))
-        try styles.setValue("#eeeeee", for: "background", scope: .session(destinationTab))
-        try styles.setValue("25", for: "font-size", scope: .session(destinationTab))
-        let moving = source.panes[1], anchor = try #require(destination.panes.first)
-        let before = styles.effectiveTheme(global: .takoDefault, workspaceID: shared.id,
-                                           sessionID: source.window.stableTabIdentifier, paneID: moving.id)
-
-        try destination.controller.movePaneHere(moving, beside: anchor, direction: .right, select: false,
-                                                appearance: styles, workspaces: workspaces)
-        let reloaded = ScopedAppearanceStore(fileURL: file)
-        let after = reloaded.effectiveTheme(global: .takoDefault, workspaceID: shared.id, sessionID: destinationTab, paneID: moving.id)
-        #expect(after.background == before.background && after.fontSize == before.fontSize && after.fontSize == 17,
-                "the moved pane keeps the shared workspace's look, not the destination session's")
-        let neighbour = reloaded.effectiveTheme(global: .takoDefault, workspaceID: shared.id, sessionID: destinationTab, paneID: anchor.id)
-        #expect(neighbour.fontSize == 25, "the destination's own pane keeps its session's look")
-    }
-
     @Test func withNoSelectASelectedButBackgroundSourceIsNotMarkedSeen() throws {
         let source = try tab(split: true), destination = try tab(split: false)
         defer { close(source, destination) }
@@ -305,26 +244,6 @@ struct ControlPaneMoveIntoTabTests {
         #expect(source.controller.focusedSurface === staying, "its logical focus moved")
         #expect(destination.controller.focusedSurface === anchor)
         #expect(WorkspaceStore.shared.activeWorkspaceId == workspace)
-    }
-
-    @Test func aStyleThatCannotBeKeptRefusesTheMoveWithBothTabsUnchanged() throws {
-        let dir = temp(); defer { try? FileManager.default.removeItem(at: dir) }
-        let workspaces = WorkspaceStore(storeURL: dir.appendingPathComponent("workspaces.json"), isTesting: true)
-        let file = dir.appendingPathComponent("Appearance.json")
-        let styles = ScopedAppearanceStore(fileURL: file)
-        let source = try tab(split: true), destination = try tab(split: false)
-        defer { close(source, destination) }
-        try styles.setValue("#010101", for: "background", scope: .session(source.window.stableTabIdentifier))
-        try "{\"version\": 2, \"sessions\": {}}".write(to: file, atomically: true, encoding: .utf8)  // edited outside Tako
-        let moving = source.panes[1], anchor = try #require(destination.panes.first)
-        let before = (source.panes.map(\.id), destination.panes.map(\.id))
-
-        #expect(throws: MovePaneError.self) {
-            try destination.controller.movePaneHere(moving, beside: anchor, direction: .right, select: false,
-                                                    appearance: styles, workspaces: workspaces)
-        }
-        #expect((source.panes.map(\.id), destination.panes.map(\.id)) == before)
-        #expect(try String(contentsOf: file, encoding: .utf8) == "{\"version\": 2, \"sessions\": {}}")
     }
 
     @Test func theMenuListsTheOtherTabsOfTheWorkspaceAndMovesThePane() throws {

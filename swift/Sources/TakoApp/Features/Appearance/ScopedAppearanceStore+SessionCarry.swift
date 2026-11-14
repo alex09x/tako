@@ -104,13 +104,13 @@ extension ScopedAppearanceStore {
     }
 
     /// Moving a pane into another tab changes its parents: the destination
-    /// session, and maybe another workspace. Every field the pane inherited
-    /// from its old parents that its new parents would state differently --
-    /// a shared workspace's value the destination session overrides
-    /// included -- goes into the pane's own record, under its explicit
-    /// fields, so it keeps its look. A pane with its own preset is left as
-    /// its owner wrote it. Boundary: a field only the new parents state,
-    /// which the pane took from the global config before, is not frozen.
+    /// session, and maybe another workspace. When the old and new parents
+    /// state anything differently, the old parents' whole portable layer --
+    /// preset and fields together, since a preset resets what came before
+    /// it -- goes into the pane's own record, under its explicit fields, so
+    /// it keeps its look. A pane with its own preset is left as its owner
+    /// wrote it. Boundary: a field only the new parents state, which the
+    /// pane took from the global config before, is not frozen.
     /// One atomic write; throws, writing nothing, when it cannot be stored.
     @discardableResult
     func carryMovedPaneStyle(from source: (workspace: UUID?, session: String?),
@@ -120,8 +120,8 @@ extension ScopedAppearanceStore {
         guard local["theme"] == nil else { return false }
         let old = parentFields(workspace: source.workspace, session: source.session)
         let new = parentFields(workspace: destination.workspace, session: destination.session)
-        let differing = old.filter { new[$0.key] != $0.value }
-        let portable = differing.merging(local) { _, own in own }
+        guard old != new else { return false }
+        let portable = old.merging(local) { _, own in own }
         guard portable != local else { return false }
         try verifyDiskIsCurrent()
         var draft = document

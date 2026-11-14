@@ -25,16 +25,8 @@ class BaseTerminalController: NSWindowController,
     let tako: Tako.App
 
     private var updatingFocusedSurfaceFromDelegate = false
-    /// False while a focus change is only logical (nobody is looking), so it marks nothing read.
-    private var focusChangeMarksSeen = true
-
-    /// Makes `surface` this tab's focused pane without marking it seen: for
-    /// a tab the user is not looking at, such as one a pane just left.
-    func setFocusedSurfaceUnseen(_ surface: Tako.SurfaceView?) {
-        focusChangeMarksSeen = false
-        defer { focusChangeMarksSeen = true }
-        focusedSurface = surface
-    }
+    /// False while a focus change is only logical (see `setFocusedSurfaceUnseen`).
+    var focusChangeMarksSeen = true
 
     /// The currently focused surface.
     var focusedSurface: Tako.SurfaceView? {
@@ -388,23 +380,5 @@ class BaseTerminalController: NSWindowController,
         focusedSurface = to
         updatingFocusedSurfaceFromDelegate = false
         bindFocusedSurfaceSubscriptions(previous: lastFocusedSurface)
-    }
-
-    private func bindFocusedSurfaceSubscriptions(previous lastFocusedSurface: Tako.SurfaceView?) {
-        if let focused = focusedSurface, focusChangeMarksSeen {
-            NotificationStore.shared.markRead(surfaceId: focused.id)
-            AttentionManager.shared.markSeen(surfaceId: focused.id)
-        }
-        SessionSidebarStore.shared.objectWillChange.send()
-        focusedSurfaceCancellables = []
-        if let titleSurface = focusedSurface ?? lastFocusedSurface, surfaceTree.contains(titleSurface) {
-            titleSurface.$titleText
-                .combineLatest(titleSurface.$bell)
-                .map { [weak self] in self?.computeTitle(title: $0, bell: $1) ?? "" }
-                .sink { [weak self] in self?.titleDidChange(to: $0) }
-                .store(in: &focusedSurfaceCancellables)
-        } else {
-            titleDidChange(to: "👻")
-        }
     }
 }
