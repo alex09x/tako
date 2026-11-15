@@ -23,6 +23,7 @@ extension TerminalController {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window else { return }
+        if let restoredTabIdentifier { window.stableTabIdentifier = restoredTabIdentifier }
         didApplyInitialWindowSize = false
 
         // I copy this because we may change the source in the future but also because

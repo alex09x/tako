@@ -248,6 +248,8 @@ enum LayoutRecorder {
                     continue
                 }
                 let controller = TerminalController(app, withSurfaceTree: state.surfaceTree)
+                // The saved identifier before the window loads (see TerminalController).
+                controller.restoredTabIdentifier = state.tabIdentifier
                 guard let window = controller.window else { continue }
                 controller.titleOverride = state.titleOverride
                 if let tabId = state.tabIdentifier { window.stableTabIdentifier = tabId }

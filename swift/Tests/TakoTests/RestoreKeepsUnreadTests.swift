@@ -73,8 +73,9 @@ struct RestoreKeepsUnreadTests {
 
         var restored: TerminalController?
         let original = TerminalWindowRestoration.system
-        TerminalWindowRestoration.system = .init(makeController: { app, _ in
+        TerminalWindowRestoration.system = .init(makeController: { app, _, tabIdentifier in
             let controller = TerminalController(app, withSurfaceTree: .init(view: view))
+            controller.restoredTabIdentifier = tabIdentifier
             let window = newWindow()
             controller.window = window
             controller.windowDidLoad()

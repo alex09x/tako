@@ -18,6 +18,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     override var supportsSessionSidebar: Bool { true }
     override var usesFloatingCanvas: Bool { true }
 
+    /// A restored tab's saved identifier, given to its window first thing as
+    /// it loads: loading already lists and draws the tab, and the first ask
+    /// files it under its workspace -- under a passing identifier, if the
+    /// window did not have its own yet.
+    var restoredTabIdentifier: String?
+
     override var windowNibName: NSNib.Name? {
         let defaultValue = "Terminal"
 
