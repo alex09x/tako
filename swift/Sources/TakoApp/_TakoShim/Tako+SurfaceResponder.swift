@@ -13,14 +13,19 @@ import AppKit
 extension Tako.SurfaceView {
     func didGainSurfaceFocus(flushTitle: Bool) {
         if flushTitle { publishCurrentTitle() }
-        (window?.windowController as? TerminalController)?.focusedSurface = self
+        let isSeen = window?.isKeyWindow == true
+        if let controller = window?.windowController as? TerminalController {
+            // Outside the key window the tab's focus moves only logically:
+            // assigning it outright would read the pane before the gate below.
+            if isSeen { controller.focusedSurface = self } else { controller.setFocusedSurfaceUnseen(self) }
+        }
         BroadcastInputStore.shared.setLeader(paneId: id)
         if isSecureInput { SecureInput.shared.setScoped(self, isSecure: true, focused: true) }
         // Seen only in the key window. A restored tab's pane takes its focus
         // back as its canvas lays out -- behind the selected tab, or in a
         // workspace not shown -- and nobody saw it; when its window becomes
         // key, `focusDidChange(true)` acknowledges it then.
-        if window?.isKeyWindow == true { acknowledgeSeen() }
+        if isSeen { acknowledgeSeen() }
         reflowToCurrentBounds(forcePtyResize: true)
     }
 

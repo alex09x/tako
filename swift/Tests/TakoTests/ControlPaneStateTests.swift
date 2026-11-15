@@ -107,6 +107,27 @@ struct ControlPaneStateTests {
         #expect(tab.controller.focusedSurface === tab.b)
     }
 
+    /// The keyboard handed on by a minimize without select is logical: the
+    /// pane it lands on was not looked at, and keeps what waits there.
+    @Test func minimizingWithoutSelectReadsNothingInThePaneTheKeyboardGoesTo() throws {
+        let tab = try tab()
+        defer { close(tab); NotificationStore.shared.markRead(surfaceId: tab.b.id) }
+        tab.controller.focusedSurface = tab.a
+        NotificationStore.shared.addNotification(id: "minimize-noselect-\(tab.b.id)", surfaceId: tab.b.id,
+                                                 paneTitle: "b", title: "done", body: "")
+        let workspace = WorkspaceStore.shared.activeWorkspaceId
+        let selected = Tako.CustomTabGroup.group(for: tab.window).selectedWindow
+        #expect(state(pane("minimize", tab.a, in: tab, ["select": .bool(false)])) == "minimized")
+        #expect(tab.controller.focusedSurface === tab.b, "the keyboard goes on to the next pane")
+        #expect(NotificationStore.shared.unreadCount(for: tab.b.id) == 1, "a minimize without select read the next pane")
+        #expect(WorkspaceStore.shared.activeWorkspaceId == workspace)
+        #expect(Tako.CustomTabGroup.group(for: tab.window).selectedWindow === selected)
+
+        // An explicit reveal is the user turning to the pane: it is read.
+        tab.controller.revealAndFocusFloatingPane(tab.b)
+        #expect(NotificationStore.shared.unreadCount(for: tab.b.id) == 0)
+    }
+
     @Test func aClickLikeChangeBringsThePaneForward() throws {
         let tab = try tab()
         defer { close(tab) }

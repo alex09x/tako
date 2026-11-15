@@ -50,6 +50,38 @@ struct RestoreKeepsUnreadTests {
         #expect(count(view) == 1, "loading a window is not looking at it")
     }
 
+    /// A pane becoming first responder in a window that is not key moves the
+    /// tab's logical focus to it, and reads nothing.
+    @Test func firstResponderInAWindowThatIsNotKeyReadsNothing() throws {
+        TerminalTestSupport.preventQuitting()
+        let (controller, window) = TerminalTestSupport.loaded()
+        defer { TerminalTestSupport.tearDown(controller, window) }
+        let a = try #require(controller.focusedSurface)
+        let b = try #require(controller.newSplit(at: a, direction: .right))
+        controller.setFocusedSurfaceUnseen(a)
+        unread(b, "responder")
+        defer { NotificationStore.shared.markRead(surfaceId: b.id) }
+        let workspace = WorkspaceStore.shared.activeWorkspaceId
+        window.setContentSize(NSSize(width: 1200, height: 700))
+        for _ in 0..<5 where b.window !== window {
+            window.contentView?.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        try #require(b.window === window, "the test needs the pane mounted in its window")
+        controller.setFocusedSurfaceUnseen(a)
+        try #require(!window.isKeyWindow, "the test needs a window that is not key")
+
+        #expect(window.makeFirstResponder(b))
+        #expect(window.firstResponder === b)
+        #expect(controller.focusedSurface === b, "the logical focus follows the responder")
+        #expect(count(b) == 1, "a responder change in a window that is not key read the pane")
+        #expect(WorkspaceStore.shared.activeWorkspaceId == workspace)
+
+        // Its window key, the user looks at it: read.
+        b.focusDidChange(true)
+        #expect(count(b) == 0)
+    }
+
     @Test func appKitRestorationLeavesTheFocusedPaneUnread() throws {
         let appDelegate = AppDelegate()
         let originalDelegate = NSApplication.shared.delegate

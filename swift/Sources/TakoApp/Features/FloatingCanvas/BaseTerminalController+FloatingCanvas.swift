@@ -138,7 +138,9 @@ extension BaseTerminalController {
             if revealNext {
                 revealAndFocusFloatingPane(next)
             } else if focusedSurface === surface {
-                focusedSurface = next
+                // Handed on without a reveal (a script's minimize without
+                // select): nobody turned to `next`, so it is not read.
+                setFocusedSurfaceUnseen(next)
             }
         } else {
             focusedSurface = nil
