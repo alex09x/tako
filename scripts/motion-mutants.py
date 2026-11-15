@@ -147,17 +147,22 @@ MUTANTS = [
      "        reduceMotion || waiting == 0\n", "        reduceMotion\n"),
     ("pill-deaf-to-bursts", "the tab bar hands a pill's layer its bursts",
      "swift/Sources/TakoApp/_TakoShim/Tako+TabBarWorkspace.swift",
-     "pulses: liveActivity(for: window)?.pulses ?? 0", "pulses: 0"),
+     "pulses: animState.statusShown ? liveActivity(for: window)?.pulses ?? 0 : 0,", "pulses: 0,"),
     ("row-never-pauses", "a row stands still while the sidebar is hidden", ROW,
      "                        paused: motionPaused,\n                        pulses: item.live?.pulses ?? 0,",
      "                        paused: false,\n                        pulses: item.live?.pulses ?? 0,"),
     ("question-dim", "a waiting row asks its question in Claw", "swift/Sources/TakoApp/Features/Sidebar/SessionSidebarRowDetails.swift",
      "return (prompt, Color(nsColor: T.claw), .tail)", "return (prompt, Color(nsColor: T.dim), .tail)"),
     ("active-bar-visible", "an active row has no orange edge", ROW,
+     # The session row's, not the pane row's: only it closes a "Session".
      ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
      "        .contentShape(Rectangle())\n"
-     "        .onPress(perform: onSelect)\n"
-     "        .padding(.horizontal, 8)",
+     "        .onHover { isHovering = $0 }\n"
+     "        .onPress {\n"
+     "            onSelect()\n"
+     "            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)\n"
+     "        }\n"
+     "        .accessibilityAction(named: Text(\"Close Session\"))",
      ".overlay(keyboardSelectionBorder(cornerRadius: radius))\n"
      "        .overlay(alignment: .leading) {\n"
      "            if isTabActive {\n"
@@ -169,12 +174,16 @@ MUTANTS = [
      "            }\n"
      "        }\n"
      "        .contentShape(Rectangle())\n"
-     "        .onPress(perform: onSelect)\n"
-     "        .padding(.horizontal, 8)"),
+     "        .onHover { isHovering = $0 }\n"
+     "        .onPress {\n"
+     "            onSelect()\n"
+     "            SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)\n"
+     "        }\n"
+     "        .accessibilityAction(named: Text(\"Close Session\"))"),
     ("row-progress-no-comet", "a row in progress runs the comet", ROW,
      "cometForProgress: true", "cometForProgress: false"),
     ("row-line-at-edge", "a row's progress line starts 8 pt in", ROW,
-     "progressInset: hasBorderBox1px ? 9 : 8", "progressInset: 0"),
+     "progressInset: 8,  // 4a `.pfill` left: 8px", "progressInset: 0,"),
     ("overview-sixty", "the Overview takes 30 frames a second at rest", "swift/Sources/TakoApp/Features/Overview/PaneOverviewMotion.swift",
      "oneOffRemaining == nil ? 1.0 / 30.0 : nil", "oneOffRemaining == nil ? 1.0 / 60.0 : nil"),
     ("done-moves-briefly", "done moves for its glint and pop, a second", "swift/Sources/TakoApp/_TakoShim/Tako+LivingMotion.swift",
