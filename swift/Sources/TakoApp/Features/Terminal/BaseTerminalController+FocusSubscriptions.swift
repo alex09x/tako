@@ -14,9 +14,12 @@ import Combine
 extension BaseTerminalController {
     /// Makes `surface` this tab's focused pane without marking it seen: for
     /// a tab the user is not looking at, such as one a pane just left.
+    /// Nests: called inside another unseen scope (New Tab loads its window
+    /// inside one), it leaves that scope's guard as it found it.
     func setFocusedSurfaceUnseen(_ surface: Tako.SurfaceView?) {
+        let outer = focusChangeMarksSeen
         focusChangeMarksSeen = false
-        defer { focusChangeMarksSeen = true }
+        defer { focusChangeMarksSeen = outer }
         focusedSurface = surface
     }
 

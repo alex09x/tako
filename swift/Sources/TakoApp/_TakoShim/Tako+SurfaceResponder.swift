@@ -16,10 +16,19 @@ extension Tako.SurfaceView {
         (window?.windowController as? TerminalController)?.focusedSurface = self
         BroadcastInputStore.shared.setLeader(paneId: id)
         if isSecureInput { SecureInput.shared.setScoped(self, isSecure: true, focused: true) }
+        // Seen only in the key window. A restored tab's pane takes its focus
+        // back as its canvas lays out -- behind the selected tab, or in a
+        // workspace not shown -- and nobody saw it; when its window becomes
+        // key, `focusDidChange(true)` acknowledges it then.
+        if window?.isKeyWindow == true { acknowledgeSeen() }
+        reflowToCurrentBounds(forcePtyResize: true)
+    }
+
+    /// The user looked at this pane: what waited for them is read.
+    func acknowledgeSeen() {
         crab.focused()
         withdrawAllProgramStatusNotifications()
         NotificationStore.shared.markRead(surfaceId: self.id)
-        reflowToCurrentBounds(forcePtyResize: true)
     }
 
     func didLoseSurfaceFocus() {

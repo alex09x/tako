@@ -135,8 +135,7 @@ extension Tako.SurfaceView {
                 SecureInput.shared.setScoped(self, isSecure: true, focused: focused)
             }
             if focused {
-                crab.focused()
-                NotificationStore.shared.markRead(surfaceId: self.id)
+                acknowledgeSeen()
                 reflowToCurrentBounds(forcePtyResize: true)
             } else {
                 crab.unfocused()

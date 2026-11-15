@@ -232,7 +232,17 @@ enum LayoutRecorder {
 
     // MARK: - Restoring
 
-    private static func restore(_ journal: LayoutJournal.Journal, app: Tako.App) {
+    /// How a journal restore gets a controller's window and brings Tako to
+    /// the front. Tests substitute it: their host has no `Terminal.xib`, and
+    /// must not take the front from whoever uses the test Mac.
+    struct Presentation {
+        var loadWindow: (TerminalController) -> NSWindow? = { $0.window }
+        var activate: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    static var presentation = Presentation()
+
+    static func restore(_ journal: LayoutJournal.Journal, app: Tako.App) {
         let decoder = JSONDecoder()
         var keyWindow: NSWindow?
         for entry in journal.windows {
@@ -250,7 +260,7 @@ enum LayoutRecorder {
                 let controller = TerminalController(app, withSurfaceTree: state.surfaceTree)
                 // The saved identifier before the window loads (see TerminalController).
                 controller.restoredTabIdentifier = state.tabIdentifier
-                guard let window = controller.window else { continue }
+                guard let window = presentation.loadWindow(controller) else { continue }
                 controller.titleOverride = state.titleOverride
                 if let tabId = state.tabIdentifier { window.stableTabIdentifier = tabId }
                 if let color = state.tabColor { (window as? TerminalWindow)?.tabColor = color }
@@ -302,7 +312,7 @@ enum LayoutRecorder {
                 ?? WorkspaceStore.defaultWorkspaceId) == WorkspaceStore.shared.activeWorkspaceId {
             keyWindow.makeKeyAndOrderFront(nil)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        presentation.activate()
     }
 
     /// Groups the windows AppKit restored as `journal` recorded them: each

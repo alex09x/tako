@@ -136,8 +136,11 @@ struct RestoreKeepsUnreadTests {
         #expect(count(views[1]) == 1, "a hidden tab is not read by being restored")
         #expect(count(views[0]) == 1, "nor is the selected one before the user focuses it")
 
-        // The positive case: the user really focuses the pane.
+        // Becoming first responder in a window that is not key is not being seen.
         views[1].didGainSurfaceFocus(flushTitle: false)
+        #expect(count(views[1]) == 1, "focus in a window that is not key reads nothing")
+        // The positive case: its window key, the user really focuses the pane.
+        views[1].focusDidChange(true)
         #expect(count(views[1]) == 0, "a real focus reads the pane")
     }
 }

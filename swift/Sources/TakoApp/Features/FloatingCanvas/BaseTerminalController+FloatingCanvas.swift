@@ -167,7 +167,8 @@ extension BaseTerminalController {
         }
 
         focusedSurface = surface
-        NotificationStore.shared.markRead(surfaceId: surface.id)
+        // Revealing a pane is the user turning to it: seen, key window or not.
+        surface.acknowledgeSeen()
         AttentionManager.shared.markSeen(surfaceId: surface.id)
 
         if let attachedWindow = surface.window, (window == nil || attachedWindow === window) {

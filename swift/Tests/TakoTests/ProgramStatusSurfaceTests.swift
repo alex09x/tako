@@ -269,7 +269,8 @@ struct ProgramStatusSurfaceTests {
         #expect(postedIds.contains(nativeReqId))
 
         // Focusing the pane withdraws the native osc7501 banner, preserves foreign-1, AND keeps blocked state intact!
-        surface.didGainSurfaceFocus(flushTitle: false)
+        // (Seen focus: the key window's `focusDidChange(true)`; this surface has no window.)
+        surface.focusDidChange(true)
         let flatAfterFocus = removedBatches.flatMap { $0 }
         #expect(flatAfterFocus.contains(nativeReqId))
         #expect(!flatAfterFocus.contains(foreignReqId))
