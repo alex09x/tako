@@ -28,6 +28,8 @@ pub(crate) mod writer;
 mod program_status_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trailer_and_budget_tests;
 
 pub use api::{
     export, export_limited, export_version, inspect, measure, measure_limited, measure_version,

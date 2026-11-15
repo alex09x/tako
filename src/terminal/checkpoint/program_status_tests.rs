@@ -20,16 +20,16 @@ use crate::terminal::{
 };
 
 #[derive(Clone)]
-struct RawPsRecord<'a> {
-    id: &'a str,
-    state: u8,
-    kind: u8,
-    progress: Option<u8>,
-    app: Option<&'a str>,
-    title: Option<&'a str>,
-    msg: Option<&'a str>,
-    revision: u64,
-    lru_tick: u64,
+pub(super) struct RawPsRecord<'a> {
+    pub(super) id: &'a str,
+    pub(super) state: u8,
+    pub(super) kind: u8,
+    pub(super) progress: Option<u8>,
+    pub(super) app: Option<&'a str>,
+    pub(super) title: Option<&'a str>,
+    pub(super) msg: Option<&'a str>,
+    pub(super) revision: u64,
+    pub(super) lru_tick: u64,
 }
 
 fn write_opt_str(w: &mut Writer, opt: Option<&str>) {
@@ -43,7 +43,7 @@ fn write_opt_str(w: &mut Writer, opt: Option<&str>) {
 
 /// Appends a custom `PS75` trailer onto a clean v7 checkpoint without `OSC 7501`
 /// state and recomputes `payload_len` and `CRC32`.
-fn craft_v7_with_ps75(
+pub(super) fn craft_v7_with_ps75(
     osc7501_active: bool,
     revision: u64,
     lru_clock: u64,
@@ -84,7 +84,7 @@ fn craft_v7_with_ps75(
     container
 }
 
-fn valid_record() -> RawPsRecord<'static> {
+pub(super) fn valid_record() -> RawPsRecord<'static> {
     RawPsRecord {
         id: "main/sub-1",
         state: 1, // Working

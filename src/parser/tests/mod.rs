@@ -9,6 +9,7 @@
  */
 
 mod batch;
+mod dcs;
 mod dispatch;
 mod osc;
 mod utf8;

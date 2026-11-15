@@ -42,6 +42,8 @@ pub use terminal::*;
 pub use types::*;
 
 #[cfg(test)]
+mod program_status_lifecycle_tests;
+#[cfg(test)]
 mod program_status_tests;
 #[cfg(test)]
 mod tests;
