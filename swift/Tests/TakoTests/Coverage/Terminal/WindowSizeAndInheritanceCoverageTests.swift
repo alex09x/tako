@@ -42,8 +42,11 @@ struct WindowSizeAndInheritanceCoverageTests {
         contentView.layoutSubtreeIfNeeded()
         controller.reflowSurfaces(forcePtyResize: true)
 
-        // A grid small enough to fit the screen without window constraints.
-        let padding = surface.theme.padding
+        // A grid small enough to fit the screen without window constraints,
+        // in the padding it really sits in: the theme's with the command-mark gutter.
+        #expect(surface.commandMarksEnabled, "command marks are on by default")
+        let padding = surface.effectivePadding
+        #expect(padding.left >= TakoTerminalNSView.commandMarkGutter)
         let expected = NSSize(
             width: surface.cellSize.width * 80 + padding.left + padding.right,
             height: surface.cellSize.height * 20 + padding.top + padding.bottom)
@@ -60,7 +63,7 @@ struct WindowSizeAndInheritanceCoverageTests {
         // accounting for the 26pt internal floating pane header above the terminal body.
         #expect(abs(surface.bounds.width - expected.width) < 1.0)
         #expect(abs(surface.bounds.height - expected.height) < 1.0)
-        let fitted = TerminalGridLayout(viewSize: surface.bounds.size, cellSize: surface.cellSize, theme: surface.theme)
+        let fitted = surface.fittedGridLayout(for: surface.bounds.size)
         #expect(fitted.cols == 80)
         #expect(fitted.rows == 20)
         #expect(surface.cols == 80)

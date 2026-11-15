@@ -57,9 +57,10 @@ extension TerminalController {
             if appliesConfiguredWindowSize, let grid = config.windowSizeInCells {
                 let cell = view.cellSize
                 if cell.width > 0, cell.height > 0 {
-                    // The cells plus the padding around them, so the grid
-                    // that fits is exactly the one asked for.
-                    let padding = view.theme.padding
+                    // The cells plus the padding around them (with the
+                    // command-mark gutter), so the grid that fits is
+                    // exactly the one asked for.
+                    let padding = view.effectivePadding
                     view.initialSize = NSSize(
                         width: cell.width * CGFloat(grid.columns) + padding.left + padding.right,
                         height: cell.height * CGFloat(grid.rows) + padding.top + padding.bottom)
