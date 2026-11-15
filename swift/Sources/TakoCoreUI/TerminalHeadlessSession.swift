@@ -187,6 +187,13 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
 
     // MARK: - Internal Delivery (Outside Locks)
 
+    /// Callbacks are captured once per delivery and run outside the lock, so
+    /// one of them may shut the session down. Each later callback in the same
+    /// delivery asks this first: nothing is delivered after `shutDown()`.
+    private var isDelivering: Bool {
+        callbackLock.withLock { !isShutDownState }
+    }
+
     private func applyProgramStatus(_ event: TerminalProgramStatusEvent) {
         let handler = callbackLock.withLock { () -> ((TerminalProgramStatusEvent) -> Void)? in
             guard !isShutDownState else { return nil }
@@ -229,13 +236,14 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
                 if batch.hasOverflowLoss {
                     handlers.overflow?(batch.overflowDroppedCount)
                 }
-                if !outcome.output.isEmpty {
+                if !outcome.output.isEmpty, isDelivering {
                     handlers.legacy?(outcome.output)
                 }
             }
 
             if let statusHandler = handlers.status {
                 for event in outcome.events {
+                    guard isDelivering else { return }
                     guard outcome.epoch == core.stateEpoch() else { break }
                     if case .programStatusChanged(let ffiUpdate, let ffiSnapshot) = event {
                         statusHandler(
@@ -246,6 +254,7 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
                         )
                     }
                 }
+                guard isDelivering else { return }
                 if outcome.epoch == core.stateEpoch(),
                    outcome.statusOverflowCoalesced,
                    let ffiResync = outcome.statusResyncSnapshot {
@@ -273,6 +282,7 @@ public final class TerminalHeadlessSession: @unchecked Sendable {
         }
         guard let handlers else { return }
         handlers.restore?(restore)
+        guard isDelivering else { return }
         handlers.status?(.restored(restoredStatus))
     }
 
