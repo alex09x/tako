@@ -15,6 +15,7 @@ pub(crate) mod execute;
 pub(crate) mod kitty_geometry;
 pub(crate) mod osc;
 pub(crate) mod osc_iterm;
+pub(crate) mod osc_iterm_size;
 pub(crate) mod osc_palette;
 pub(crate) mod osc_shell;
 pub(crate) mod params;
