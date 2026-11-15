@@ -112,7 +112,7 @@ struct PermanentSidebarLayoutTests {
         #expect(!quick.sessionSidebarIsShowing)
     }
 
-    @Test func desktopWindowHasNoTopTabBarAndRightTerminalExtendsToTopEdge() throws {
+    @Test func desktopWindowHasNoTopTabBarAndItsSoleTerminalIsTheInsetCard() throws {
         TerminalTestSupport.preventQuitting()
         let app = Tako.App()
         let controller = TerminalController(app, withBaseConfig: nil, withSurfaceTree: nil)
@@ -153,14 +153,20 @@ struct PermanentSidebarLayoutTests {
         let surfaceRect = surface.convert(surface.bounds, to: contentView)
         let contentBounds = contentView.bounds
 
-        // Right floating canvas occupies the full height right up to the top edge of the window,
-        // with the maximized pane's 26pt internal header flush at contentBounds.maxY and SurfaceView directly beneath it.
-        #expect(abs(headerRect.maxY - contentBounds.maxY) < 1.5,
-                "pane header maxY=\(headerRect.maxY) must reach contentView maxY=\(contentBounds.maxY)")
-        #expect(abs((surfaceRect.maxY + FloatingPaneGeometry.headerHeight) - contentBounds.maxY) < 1.5,
-                "terminal maxY=\(surfaceRect.maxY) + headerHeight=\(FloatingPaneGeometry.headerHeight) must reach contentView maxY=\(contentBounds.maxY)")
-        #expect(abs(surfaceRect.minY - contentBounds.minY) < 1.5)
-        #expect(surfaceRect.minX >= SessionSidebarWidth.range.lowerBound - 1.5)
+        // The canvas runs the window's full height; the tab's only terminal is the same card
+        // a terminal among several gets: inset by the canvas gap, its header on top, and the
+        // terminal inside the card's body margin.
+        let gap = DesktopCanvasMetrics.paneGap
+        let body = FloatingPaneGeometry.bodyInsets
+        #expect(abs(headerRect.maxY - (contentBounds.maxY - gap)) < 0.5,
+                "card header maxY=\(headerRect.maxY) must sit \(gap) pt below contentView maxY=\(contentBounds.maxY)")
+        #expect(abs(surfaceRect.maxY - (contentBounds.maxY - gap - FloatingPaneGeometry.headerHeight - body.top)) < 0.5,
+                "terminal maxY=\(surfaceRect.maxY) must start below the header and the body's top margin")
+        #expect(abs(surfaceRect.minY - (contentBounds.minY + gap + body.bottom)) < 0.5,
+                "terminal minY=\(surfaceRect.minY) must keep the gap and the body's bottom margin")
+        #expect(abs(surfaceRect.maxX - (contentBounds.maxX - gap - body.right)) < 0.5,
+                "terminal maxX=\(surfaceRect.maxX) must keep the gap and the body's right margin")
+        #expect(surfaceRect.minX >= SessionSidebarWidth.range.lowerBound + gap + body.left - 0.5)
 
         // Left sidebar drag strip and resize handle expose stable AppKit AX identifiers and frames.
         let dragStrip = try #require(findFirst(of: SidebarTitlebarDragView.self, in: contentView))
@@ -180,14 +186,37 @@ struct PermanentSidebarLayoutTests {
         #expect(dragRect.maxX <= surfaceRect.minX + 1.5)
 
         #expect(SessionSidebarChrome.showsTitlebarStrip(for: window) == true)
-        window.simulatedFullScreen = true
-        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
+        let dragStripMounted = { () -> Bool in
+            contentView.layoutSubtreeIfNeeded()
+            return findFirst(of: SidebarTitlebarDragView.self, in: contentView) != nil
+        }
+        func fullScreen(_ on: Bool) {
+            window.simulatedFullScreen = on
+            NotificationCenter.default.post(
+                name: on ? NSWindow.didEnterFullScreenNotification : NSWindow.didExitFullScreenNotification,
+                object: window)
+        }
+
+        // A hidden window's sidebar builds nothing and is not re-laid out on fullscreen
+        // changes; it catches up when the window is shown.
+        #expect(!window.isVisible, "this part runs while the window is hidden")
+        fullScreen(true)
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
-        contentView.layoutSubtreeIfNeeded()
-        #expect(SessionSidebarChrome.showsTitlebarStrip(for: window) == false)
         #expect(SessionSidebarChrome.topStripHeight(for: window) == 0)
-        #expect(findFirst(of: SidebarTitlebarDragView.self, in: contentView) == nil)
-        window.simulatedFullScreen = false
+        #expect(dragStripMounted(), "a hidden sidebar is not rebuilt for a fullscreen change")
+        fullScreen(false)
+
+        // Shown -- ordered in without becoming key -- the sidebar follows fullscreen both ways.
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        #expect(TerminalTestSupport.waitUntil { window.isVisible && dragStripMounted() })
+        fullScreen(true)
+        #expect(SessionSidebarChrome.showsTitlebarStrip(for: window) == false)
+        #expect(TerminalTestSupport.waitUntil { !dragStripMounted() },
+                "a shown window in fullscreen has no titlebar strip to drag")
+        fullScreen(false)
+        #expect(TerminalTestSupport.waitUntil { dragStripMounted() },
+                "leaving fullscreen brings the strip back")
     }
 
     @Test func sidebarSessionLifecycleCreateSwitchAndSingleTabClosePreservesTabGroup() throws {
