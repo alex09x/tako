@@ -65,6 +65,12 @@ struct SidebarRowMetrics {
     var showsChildTag = true
     /// A pane row's corner radius (`.kid`): 6, Compact's 4.
     var childRadius: CGFloat = 6
+    /// Outside a row (`.row`/`.kid` margin): 1 above and below, 8 at the
+    /// side; Compact's rows touch (0) and sit 6 in.
+    var rowMarginVertical: CGFloat = 1
+    var rowMarginHorizontal: CGFloat = 8
+    /// Inside a pane row at the sides (`.kid` padding): 8, Compact's 6.
+    var childHorizontalPadding: CGFloat = 8
     private let secondLine: (Tako.SurfaceState) -> Bool
 
     /// Where the second line starts: chevron 12 + gap + ring 14 (33 in the reference).
@@ -83,7 +89,8 @@ struct SidebarRowMetrics {
                      rowVerticalPadding: m.rowVerticalPadding, childVerticalPadding: m.childVerticalPadding,
                      childIndent: m.childIndent, inlineSecondLine: m.inlineSecondLine, showsTreeLines: m.showsTreeLines,
                      ringScale: m.ringScale, showsChildTag: m.showsChildTag, childRadius: m.childRadius,
-                     secondLine: m.secondLine)
+                     rowMarginVertical: m.rowMarginVertical, rowMarginHorizontal: m.rowMarginHorizontal,
+                     childHorizontalPadding: m.childHorizontalPadding, secondLine: m.secondLine)
     }
 
     static func of(_ style: SidebarStyle) -> SidebarRowMetrics {
@@ -104,10 +111,13 @@ struct SidebarRowMetrics {
                          secondLine: { $0 == .waiting || $0 == .failed || $0 == .offline })
         case .compact:
             // One small line; what is happening sits on the right, only while something happens.
+            // .row{margin 0 6; padding 2 inside the 1 pt border} .l1{18 high}: 24 a row, as Classic's 46 counts
+            // its border; .kid{margin 0 6 0 30; padding 1 6}.
             return .init(titleFont: T.monoFont(size: 11.5, weight: .medium), metaFont: T.monoFont(size: 10, weight: .regular),
-                         childFont: T.monoFont(size: 11, weight: .regular), gap: 5, titleHeight: 16, secondLineHeight: 13,
-                         rowVerticalPadding: 2, childVerticalPadding: 1, childIndent: 30,
+                         childFont: T.monoFont(size: 11, weight: .regular), gap: 5, titleHeight: 18, secondLineHeight: 13,
+                         rowVerticalPadding: 3, childVerticalPadding: 1, childIndent: 30,
                          inlineSecondLine: true, showsTreeLines: false, ringScale: 0.8, childRadius: 4,
+                         rowMarginVertical: 0, rowMarginHorizontal: 6, childHorizontalPadding: 6,
                          secondLine: { $0 != .idle })
         }
     }

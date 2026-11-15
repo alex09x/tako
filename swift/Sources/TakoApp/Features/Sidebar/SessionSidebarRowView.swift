@@ -295,8 +295,8 @@ struct SessionSidebarRowView: View {
             SidebarRowTitle.renameIfDoubleClick(item, in: targetWindow)
         }
         .accessibilityAction(named: Text("Close Session")) { onClose?() }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 1)
+        .padding(.horizontal, m.rowMarginHorizontal)
+        .padding(.vertical, m.rowMarginVertical)
     }
 
     // MARK: - Level 2: Split Pane / Subagent Row (§5.6)
@@ -305,7 +305,7 @@ struct SessionSidebarRowView: View {
         let radius = m.childRadius
         let paneEffectState: Tako.SurfaceState = (state == .working || state == .failed) ? state : .idle
         let vPad: CGFloat = m.childVerticalPadding + (paneEffectState == .working ? 1 : 0)
-        let hPad: CGFloat = (paneEffectState == .working) ? 9 : 8
+        let hPad: CGFloat = m.childHorizontalPadding + (paneEffectState == .working ? 1 : 0)
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
@@ -391,7 +391,7 @@ struct SessionSidebarRowView: View {
         }
         .accessibilityAction(named: Text(FloatingPaneCopy.close)) { onClose?() }
         .padding(.leading, m.childIndent)
-        .padding(.trailing, 8)
-        .padding(.vertical, 1)
+        .padding(.trailing, m.rowMarginHorizontal)
+        .padding(.vertical, m.rowMarginVertical)
     }
 }

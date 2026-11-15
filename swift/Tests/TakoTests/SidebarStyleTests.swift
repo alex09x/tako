@@ -41,8 +41,8 @@ struct SidebarStyleTests {
         }
     }
 
-    private func height(_ state: Tako.SurfaceState, _ style: SidebarStyle) -> CGFloat {
-        let view = SessionSidebarRowView(item: MotionSurfaceHarness.item(state, isChild: false, pulses: 0), index: 0,
+    private func height(_ state: Tako.SurfaceState, _ style: SidebarStyle, child: Bool = false) -> CGFloat {
+        let view = SessionSidebarRowView(item: MotionSurfaceHarness.item(state, isChild: child, pulses: 0), index: 0,
                                          selectedIndex: -1, targetWindow: nil, editingItemId: .constant(nil),
                                          editingDescriptionText: .constant(""), isPresented: .constant(true),
                                          now: Date(timeIntervalSinceReferenceDate: 1), reduceMotion: true, onSelect: {},
@@ -57,6 +57,24 @@ struct SidebarStyleTests {
         #expect(compact < minimal, "a compact row is the smallest: \(compact)")
         #expect(height(.waiting, .minimal) > minimal, "a waiting session shows its question in minimal")
         #expect(abs(height(.waiting, .compact) - compact) < 0.01, "compact keeps one line, the question on the right")
+    }
+
+    /// Compact as drawn in the design: a session row is its 18 pt line, 2 pt
+    /// of padding and the 1 pt border above and below (24), rows touching; a
+    /// pane row keeps 1 pt of padding and no margin where Classic has 4 and 1
+    /// (8 less, its folder line included). The padding is the same above and
+    /// below, so the title sits in the middle of the highlight.
+    @Test func compactRowsHaveTheDesignsHeightWithRoomAboveAndBelow() {
+        #expect(abs(height(.idle, .compact) - 24) < 0.01, "a compact session row: \(height(.idle, .compact))")
+        #expect(abs(height(.waiting, .compact) - 24) < 0.01)
+        let classicPane = height(.idle, .classic, child: true), compactPane = height(.idle, .compact, child: true)
+        #expect(abs(classicPane - 41) < 0.01, "Classic's pane row (with its folder line) is unchanged: \(classicPane)")
+        #expect(abs(classicPane - compactPane - 8) < 0.01, "a compact pane row: \(compactPane)")
+        let m = SidebarRowMetrics.of(.compact)
+        #expect(m.rowMarginVertical == 0 && m.rowMarginHorizontal == 6 && m.childHorizontalPadding == 6)
+        #expect(SidebarRowMetrics.of(.compact, textScale: 1.15).rowMarginHorizontal == 6, "a text size keeps the margins")
+        let c = SidebarRowMetrics.of(.classic)
+        #expect(c.rowMarginVertical == 1 && c.rowMarginHorizontal == 8 && c.childHorizontalPadding == 8)
     }
 
     @Test func textSizeAndSecondLineAreSettingsThatLeaveTodayAlone() {
