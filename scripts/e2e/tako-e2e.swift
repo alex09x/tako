@@ -4782,8 +4782,9 @@ let scenarios: [Scenario] = [
     ("sidebar-switch-speed", "Sidebar clicks switch tabs fast: real clicks on a row's name and beside it, each switch on screen within 250 ms", { d in
         try runSidebarSwitchSpeedScenario(d)
     }),
-    ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended", { _ in
+    ("owned-processes-selftest", "Fixture cleanup is fail-closed: a reused or unknown PID is never signalled, a failed signal or survivor fails the run, an earlier failure is kept; only its own process is really ended; the driver's own app cleanup checks identity the same way and keeps unproven work", { d in
         try runOwnedProcessesSelfTest()
+        try runDriverLifecycleSelfTest(app: d.appURL)
     }),
     ("activity-sound-settings", "Settings › Status & Activity › Sounds by real clicks: Play sounds, a sound per event from its menu, None, ▶ and ↺, saved and applied", { d in
         try runActivitySoundSettingsScenario(d)
@@ -4839,26 +4840,51 @@ struct TakoE2E {
             exit(2)
         }
     }
+    // The owner's shell history, by size and time only, before anything of
+    // this run starts: no scenario may touch it, and a change is reported,
+    // never repaired or put down to a scenario on a guess.
+    let historyAtStart = Driver.ownerHistoryStamp()
     for scenario in scenarios where (wanted.isEmpty && !explicitOnly.contains(scenario.name)) || wanted.contains(scenario.name) {
         // A fresh app per scenario: one that failed half way must not leave a
         // split, a zoom or a hung command behind for the next.
         do {
-            let driver = try Driver(app: URL(fileURLWithPath: appPath))
-            defer { driver.quit() }
+            // Only scripts/e2e-persist.sh's own fixture namespace is passed on;
+            // any other scenario gets a private one, never the caller's.
+            let sessionsHome = isolatedPersistence.contains(scenario.name)
+                ? ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] : nil
+            let driver = try Driver(app: URL(fileURLWithPath: appPath), sessionsHome: sessionsHome)
+            let historyBefore = Driver.ownerHistoryStamp()
+            var failure: Error?
             do {
                 try driver.launch()
                 try scenario.body(driver)
-                print("ok    \(scenario.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(scenario.why)")
-                // A failed scenario keeps its files, which are the evidence.
-                try? FileManager.default.removeItem(at: driver.work)
             } catch {
+                failure = error
+            }
+            driver.endAll()
+            var problems = driver.cleanupProblems
+            if Driver.ownerHistoryStamp() != historyBefore {
+                problems.append("the owner's shell history changed during the scenario (not attributed): \(Driver.ownerHistoryStamp())")
+            }
+            if let error = OwnedProcesses.outcome(failure: failure, problems: problems) {
                 failed += 1
                 print("FAIL  \(scenario.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(error)")
+            } else {
+                print("ok    \(scenario.name.padding(toLength: 14, withPad: " ", startingAt: 0)) \(scenario.why)")
+                // Only now may its files go: a failed scenario or an
+                // unproven cleanup keeps them, as the evidence.
+                driver.removeWorkWhenDone = true
             }
         } catch {
             failed += 1
             print("FAIL  \(scenario.name): \(error)")
         }
+    }
+    if Driver.ownerHistoryStamp() != historyAtStart {
+        failed += 1
+        print("FAIL  owner history changed since before the first launch (not attributed): \(historyAtStart) -> \(Driver.ownerHistoryStamp())")
+    } else {
+        print("owner history: unchanged since before the first launch")
     }
     print(failed == 0 ? "tako e2e: ok" : "tako e2e: \(failed) FAILED")
     if let previouslyFront, !previouslyFront.isTerminated, let bundle = previouslyFront.bundleURL {

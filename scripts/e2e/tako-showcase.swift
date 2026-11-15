@@ -231,7 +231,12 @@ struct TakoShowcaseMain {
         do {
             try ShowcaseStage.validateDisplay()
 
-            let driver = try Driver(app: URL(fileURLWithPath: appPath))
+            // The showcase records the owner-configured shell in its own
+            // session namespace (scripts/demo.sh), as before.
+            let driver = try Driver(app: URL(fileURLWithPath: appPath),
+                                    sessionsHome: ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"],
+                                    privateShell: false)
+            driver.removeWorkWhenDone = true
             defer { driver.quit() }
             try driver.launch(config: "window-save-state = always\nsession-persistence = true\nremote-control = on\nconfirm-close-surface = false\nmacos-titlebar-style = tabs\ntab-style = pill\nquick-terminal-position = center\n")
 

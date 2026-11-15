@@ -43,6 +43,12 @@ struct OwnedProcesses {
         return pid
     }
 
+    /// Records a process whose identity was taken when it started (the
+    /// driver's app, identified at launch).
+    mutating func adopt(pid: Int32, birth: String) {
+        owned.append((pid, birth))
+    }
+
     func birth(of pid: Int32) -> String? { owned.first { $0.pid == pid }?.birth }
 
     /// Ends every owned process that is still the same one; the problems
@@ -59,7 +65,7 @@ struct OwnedProcesses {
                 problems.append("pid \(process.pid) is another process now (born \(birth), ours \(process.birth)); not signalled")
             case .running:
                 let failed = signal(process.pid)
-                if failed != 0 && failed != ESRCH { problems.append("pid \(process.pid): SIGTERM failed, errno \(failed)") }
+                if failed != 0 && failed != ESRCH { problems.append("pid \(process.pid): signal failed, errno \(failed)") }
             }
         }
         settle()
@@ -131,7 +137,7 @@ func runOwnedProcessesSelfTest() throws {
     var stuck = stubbed({ _, _ in .running(birth: "A") }, signal: EPERM)
     try stuck.adopt("4244", what: "fixture")
     let stuckProblems = stuck.cleanUp()
-    try expect(signalled == [4244] && stuckProblems.contains { $0.contains("SIGTERM failed") }
+    try expect(signalled == [4244] && stuckProblems.contains { $0.contains("signal failed") }
                && stuckProblems.contains { $0.contains("still running") }, "a failed signal and a survivor are problems")
     // Already gone: nothing to do, no problem.
     var gone = stubbed { _, n in n == 1 ? .running(birth: "A") : .gone }

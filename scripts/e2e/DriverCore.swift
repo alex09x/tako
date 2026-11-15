@@ -29,24 +29,92 @@ final class Driver {
     let appURL: URL
     let bundleID: String
     let work: URL
+    /// A scenario's own variables, over `privateDefaults` at every launch.
     var environment: [String: String] = [:]
+    /// What every app this driver starts runs in unless a scenario says
+    /// otherwise: a private HOME, XDG dirs, history, session and hooks
+    /// namespace under `work`, so even the first shell of a run never
+    /// touches the owner's. Empty when the driver was made with
+    /// `privateShell: false`.
+    let privateDefaults: [String: String]
     let source = CGEventSource(stateID: .hidSystemState)
+    /// The app processes this driver started, by PID and identity (start
+    /// time and executable); cleanup signals only one still the same.
+    var ownedApps: [(pid: pid_t, birth: String)] = []
+    /// What cleanup could not confirm: a reused or unknown PID, a refused
+    /// signal, a survivor. A run with any of these has not passed.
+    var cleanupProblems: [String] = []
+    /// Set only by a scenario that passed with a proven cleanup: then the
+    /// work directory, which is otherwise the evidence, goes at the end.
+    var removeWorkWhenDone = false
+    /// Swapped by the self-test; the real ones look and signal.
+    var identify: (pid_t) -> ProcessIdentity = { Driver.appIdentity($0) }
+    var signalKill: (pid_t) -> Int32 = { kill($0, SIGKILL) == 0 ? 0 : errno }
+    var settleGone: (pid_t) -> Void = { dying in
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, kill(dying, 0) == 0 { usleep(100_000) }
+    }
 
     static let defaultConfig = "window-save-state = never\nauto-update = off\nremote-control = on\n"
 
-    init(app: URL, bundleID: String? = nil) throws {
+    /// `sessionsHome`: an owned persistence fixture's session namespace
+    /// (scripts/e2e-persist.sh makes one per case); nil gives a private one.
+    init(app: URL, bundleID: String? = nil, sessionsHome: String? = nil, privateShell: Bool = true) throws {
         self.appURL = app
         self.bundleID = bundleID
             ?? ProcessInfo.processInfo.environment["TAKO_BUNDLE_ID"]
             ?? "com.tako-core.terminal.e2e"
-        self.work = URL(fileURLWithPath: NSTemporaryDirectory())
+        let work = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("tako-driver-\(ProcessInfo.processInfo.globallyUniqueString)")
+        self.work = work
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        // Short names: the session namespace holds Unix sockets.
+        let home = work.appendingPathComponent("h").path, hooks = work.appendingPathComponent("k").path
+        var defaults: [String: String] = [:]
+        if privateShell {
+            for dir in [home, home + "/.config", home + "/.local/share", home + "/.cache", hooks] {
+                try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            }
+            defaults = ["HOME": home, "XDG_CONFIG_HOME": home + "/.config", "XDG_DATA_HOME": home + "/.local/share",
+                        "XDG_CACHE_HOME": home + "/.cache", "HISTFILE": home + "/.shell_history",
+                        "TAKO_AGENT_HOOKS_HOME": hooks, "CODEX_HOME": hooks + "/.codex"]
+        }
+        if let sessionsHome {
+            defaults["TAKO_SESSIONS_HOME"] = sessionsHome
+        } else if privateShell {
+            // Short, as scripts/e2e-persist.sh's /tmp/tkp.*: it holds Unix
+            // sockets, whose paths may not exceed 104 bytes.
+            var template = Array("/tmp/tkd.XXXXXX".utf8CString)
+            guard mkdtemp(&template) != nil else { throw Failure("no private session namespace: errno \(errno)") }
+            let sessions = String(cString: template)
+            ownedSessions = sessions
+            try sessions.write(to: work.appendingPathComponent("sessions-path"), atomically: true, encoding: .utf8)
+            defaults["TAKO_SESSIONS_HOME"] = sessions
+        }
+        self.privateDefaults = defaults
     }
+
+    /// The private session namespace this driver made, kept and removed with `work`.
+    private(set) var ownedSessions: String?
 
     deinit {
         quit()
-        try? FileManager.default.removeItem(at: work)
+        // A failed scenario's or an unproven cleanup's files are the evidence.
+        if removeWorkWhenDone && cleanupProblems.isEmpty {
+            try? FileManager.default.removeItem(at: work)
+            if let ownedSessions { try? FileManager.default.removeItem(atPath: ownedSessions) }
+        } else {
+            print("work kept: \(work.path)\(ownedSessions.map { ", sessions \($0)" } ?? "")")
+        }
+    }
+
+    /// The variables an app this driver starts gets: the private defaults,
+    /// then the scenario's own, then what the driver itself always sets.
+    func launchEnvironment() -> [String: String] {
+        var env = privateDefaults.merging(environment) { _, scenario in scenario }
+        env["TAKO_NO_UPDATE"] = "1"
+        env["TAKO_NO_LAUNCH_NOTICES"] = "1"
+        return env
     }
 
     func path(_ name: String) -> String {
@@ -88,14 +156,7 @@ final class Driver {
         try config.write(to: configURL, atomically: true, encoding: .utf8)
 
         let before = Set(running().map(\.processIdentifier))
-        let hooksHome = work.appendingPathComponent("agent-hooks-home")
-        try? FileManager.default.createDirectory(at: hooksHome, withIntermediateDirectories: true)
-        var env = environment
-        if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
-        if env["TAKO_AGENT_HOOKS_HOME"] == nil { env["TAKO_AGENT_HOOKS_HOME"] = hooksHome.path }
-        if env["CODEX_HOME"] == nil { env["CODEX_HOME"] = hooksHome.appendingPathComponent(".codex").path }
-        env["TAKO_NO_UPDATE"] = "1"
-        env["TAKO_NO_LAUNCH_NOTICES"] = "1"
+        let env = launchEnvironment()
 
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -115,6 +176,7 @@ final class Driver {
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
         guard pid != 0 else { throw Failure("Tako did not start") }
+        try own(pid, what: "the app")
 
         guard wait(for: { !self.windows().isEmpty }, timeout: 15) else {
             throw Failure("Tako started but opened no window")
@@ -126,8 +188,48 @@ final class Driver {
         if let window = self.windows().first {
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         }
-        if settleTerminal { try run("true") }
+        if settleTerminal {
+            // The first command also proves where the shell runs: in this
+            // launch's environment, never the owner's.
+            let file = "bootstrap-env-\(ownedApps.count)"
+            try run("printf '%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" > \(path(file))")
+            let want = ["HOME", "XDG_DATA_HOME", "HISTFILE", "TAKO_SESSIONS_HOME"].map { env[$0] ?? "" }.joined(separator: "|")
+            let seen = try self.file(file)
+            guard env["HOME"] == nil || seen == want else {
+                throw Failure("the first shell does not run in this launch's environment: \(seen), want \(want)")
+            }
+            print("first shell (HOME|XDG_DATA_HOME|HISTFILE|TAKO_SESSIONS_HOME): \(seen)")
+        }
         usleep(300_000)
+    }
+
+    /// The owner's shell histories by size and modification time; their
+    /// contents are never read.
+    static func ownerHistoryStamp() -> [String] {
+        let owner = NSHomeDirectory()
+        return [".local/share/fish/fish_history", ".bash_history", ".zsh_history"].map { name in
+            let path = owner + "/" + name
+            guard let a = try? FileManager.default.attributesOfItem(atPath: path) else { return "absent \(path)" }
+            return "\(a[.size] ?? 0) \((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) \(path)"
+        }
+    }
+
+    /// Records a process this driver started by its identity now.
+    func own(_ pid: pid_t, what: String) throws {
+        guard case .running(let birth) = identify(pid) else {
+            throw Failure("\(what) (pid \(pid)) cannot be identified: \(identify(pid))")
+        }
+        ownedApps.append((pid, birth))
+    }
+
+    /// The start time and executable of a PID, read fresh.
+    static func appIdentity(_ pid: pid_t) -> ProcessIdentity {
+        guard case .running(let birth) = OwnedProcesses.liveIdentity(pid) else { return OwnedProcesses.liveIdentity(pid) }
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else {
+            return kill(pid, 0) != 0 && errno == ESRCH ? .gone : .unknown("proc_pidpath errno \(errno)")
+        }
+        return .running(birth: "\(birth) \(String(cString: buffer))")
     }
 
     func activate() {
@@ -140,22 +242,44 @@ final class Driver {
         usleep(100_000)
     }
 
+    /// Ends the current app: SIGKILL, but only after its identity, read
+    /// again right now, is still the one recorded at launch.
     func quit() {
         guard pid != 0 else { return }
         let dying = pid
-        kill(dying, SIGKILL)
-        _ = wait(for: { NSRunningApplication(processIdentifier: dying) == nil }, timeout: 5)
         pid = 0
+        end([dying])
+    }
+
+    /// Ends every app this driver started that is still running, the main
+    /// one and any `launchAnother` started; what is left unproven stays in
+    /// `cleanupProblems`.
+    func endAll() {
+        pid = 0
+        end(ownedApps.map(\.pid))
+    }
+
+    private func end(_ pids: [pid_t]) {
+        var processes = OwnedProcesses()
+        processes.identity = identify
+        processes.signal = signalKill
+        processes.settle = { [settleGone] in pids.forEach(settleGone) }
+        for target in pids {
+            guard let birth = ownedApps.first(where: { $0.pid == target })?.birth else {
+                cleanupProblems.append("pid \(target): not started by this driver; not signalled")
+                continue
+            }
+            processes.adopt(pid: target, birth: birth)
+        }
+        cleanupProblems += processes.cleanUp()
+        ownedApps.removeAll { pids.contains($0.pid) }
     }
 
     func launchAnother(config: String) throws -> pid_t {
         let configURL = work.appendingPathComponent("config-another")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
         let before = Set(running().map(\.processIdentifier))
-        var env = environment
-        if let home = ProcessInfo.processInfo.environment["TAKO_SESSIONS_HOME"] { env["TAKO_SESSIONS_HOME"] = home }
-        env["TAKO_NO_UPDATE"] = "1"
-        env["TAKO_NO_LAUNCH_NOTICES"] = "1"
+        let env = launchEnvironment()
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = ["-n", "-g", "--env", "TAKO_CONFIG_PATH=\(configURL.path)"]
@@ -166,6 +290,7 @@ final class Driver {
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if let app = running().first(where: { !before.contains($0.processIdentifier) }) {
+                try own(app.processIdentifier, what: "the second instance")
                 return app.processIdentifier
             }
             usleep(100_000)
