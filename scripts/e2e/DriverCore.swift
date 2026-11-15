@@ -48,7 +48,7 @@ final class Driver {
     /// work directory, which is otherwise the evidence, goes at the end.
     var removeWorkWhenDone = false
     /// Swapped by the self-test; the real ones look and signal.
-    var identify: (pid_t) -> ProcessIdentity = { Driver.appIdentity($0) }
+    var identify: (pid_t) -> ProcessIdentity = { _ in .unknown("not set up") }
     var signalKill: (pid_t) -> Int32 = { kill($0, SIGKILL) == 0 ? 0 : errno }
     var settleGone: (pid_t) -> Void = { dying in
         let deadline = Date().addingTimeInterval(5)
@@ -70,14 +70,20 @@ final class Driver {
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         // Short names: the session namespace holds Unix sockets.
         let home = work.appendingPathComponent("h").path, hooks = work.appendingPathComponent("k").path
-        var defaults: [String: String] = [:]
+        // Agent hook and provider homes are private for every launch, as they
+        // always were -- also when the shell itself is the configured one.
+        try FileManager.default.createDirectory(atPath: hooks, withIntermediateDirectories: true)
+        var defaults: [String: String] = ["TAKO_AGENT_HOOKS_HOME": hooks, "CODEX_HOME": hooks + "/.codex"]
         if privateShell {
-            for dir in [home, home + "/.config", home + "/.local/share", home + "/.cache", hooks] {
+            for dir in [home, home + "/.config", home + "/.local/share", home + "/.cache"] {
                 try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }
-            defaults = ["HOME": home, "XDG_CONFIG_HOME": home + "/.config", "XDG_DATA_HOME": home + "/.local/share",
-                        "XDG_CACHE_HOME": home + "/.cache", "HISTFILE": home + "/.shell_history",
-                        "TAKO_AGENT_HOOKS_HOME": hooks, "CODEX_HOME": hooks + "/.codex"]
+            // ZDOTDIR too: Tako's zsh integration restores an inherited one
+            // (TAKO_ZSH_ZDOTDIR) and reads its startup files from there, so a
+            // private HOME alone would not keep zsh away from them.
+            defaults.merge(["HOME": home, "XDG_CONFIG_HOME": home + "/.config", "XDG_DATA_HOME": home + "/.local/share",
+                            "XDG_CACHE_HOME": home + "/.cache", "HISTFILE": home + "/.shell_history",
+                            "ZDOTDIR": home]) { _, new in new }
         }
         if let sessionsHome {
             defaults["TAKO_SESSIONS_HOME"] = sessionsHome
@@ -92,6 +98,20 @@ final class Driver {
             defaults["TAKO_SESSIONS_HOME"] = sessions
         }
         self.privateDefaults = defaults
+        let exe = Driver.expectedExecutable(of: app)
+        self.expectedExecutable = exe
+        identify = { Driver.appIdentity($0, expecting: exe) }
+    }
+
+    /// The full path of the app's own executable: the only one this driver
+    /// admits as its app, at launch and again before every signal.
+    let expectedExecutable: String
+
+    static func expectedExecutable(of app: URL) -> String {
+        let exe = Bundle(url: app)?.executableURL ?? app.appendingPathComponent("Contents/MacOS/Tako")
+        guard let real = realpath(exe.path, nil) else { return exe.standardizedFileURL.path }
+        defer { free(real) }
+        return String(cString: real)
     }
 
     /// The private session namespace this driver made, kept and removed with `work`.
@@ -192,13 +212,13 @@ final class Driver {
             // The first command also proves where the shell runs: in this
             // launch's environment, never the owner's.
             let file = "bootstrap-env-\(ownedApps.count)"
-            try run("printf '%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" > \(path(file))")
-            let want = ["HOME", "XDG_DATA_HOME", "HISTFILE", "TAKO_SESSIONS_HOME"].map { env[$0] ?? "" }.joined(separator: "|")
+            try run("printf '%s|%s|%s|%s|%s' \"$HOME\" \"$XDG_DATA_HOME\" \"$HISTFILE\" \"$TAKO_SESSIONS_HOME\" \"$ZDOTDIR\" > \(path(file))")
+            let want = ["HOME", "XDG_DATA_HOME", "HISTFILE", "TAKO_SESSIONS_HOME", "ZDOTDIR"].map { env[$0] ?? "" }.joined(separator: "|")
             let seen = try self.file(file)
             guard env["HOME"] == nil || seen == want else {
                 throw Failure("the first shell does not run in this launch's environment: \(seen), want \(want)")
             }
-            print("first shell (HOME|XDG_DATA_HOME|HISTFILE|TAKO_SESSIONS_HOME): \(seen)")
+            print("first shell (HOME|XDG_DATA_HOME|HISTFILE|TAKO_SESSIONS_HOME|ZDOTDIR): \(seen)")
         }
         usleep(300_000)
     }
@@ -216,20 +236,26 @@ final class Driver {
 
     /// Records a process this driver started by its identity now.
     func own(_ pid: pid_t, what: String) throws {
-        guard case .running(let birth) = identify(pid) else {
-            throw Failure("\(what) (pid \(pid)) cannot be identified: \(identify(pid))")
+        let identity = identify(pid)
+        guard case .running(let birth) = identity else {
+            throw Failure("\(what) (pid \(pid)) is not admitted: \(identity)")
         }
         ownedApps.append((pid, birth))
     }
 
-    /// The start time and executable of a PID, read fresh.
-    static func appIdentity(_ pid: pid_t) -> ProcessIdentity {
-        guard case .running(let birth) = OwnedProcesses.liveIdentity(pid) else { return OwnedProcesses.liveIdentity(pid) }
+    /// The start time and executable of a PID, read once, fresh. A process
+    /// running anything but `expected` is not this driver's: unknown, so it
+    /// is neither admitted nor ever signalled.
+    static func appIdentity(_ pid: pid_t, expecting expected: String) -> ProcessIdentity {
+        let live = OwnedProcesses.liveIdentity(pid)
+        guard case .running(let birth) = live else { return live }
         var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else {
             return kill(pid, 0) != 0 && errno == ESRCH ? .gone : .unknown("proc_pidpath errno \(errno)")
         }
-        return .running(birth: "\(birth) \(String(cString: buffer))")
+        let exe = String(cString: buffer)
+        guard exe == expected else { return .unknown("pid \(pid) runs \(exe), not \(expected)") }
+        return .running(birth: "\(birth) \(exe)")
     }
 
     func activate() {
