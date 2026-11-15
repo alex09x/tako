@@ -199,14 +199,26 @@ extension Tako {
             }
         }
 
+        /// A command's end takes its progress away, except an error an agent
+        /// reported through OSC 7501, which stays until it is seen.
+        private func clearProgressAtCommandEnd() {
+            guard !osc7501StatusActive || explicitStatus?.status != .error else { return }
+            if progress != nil { progress = nil }
+            if progressState != .none { progressState = .none }
+        }
+
         func commandEnded(exitCode: Int32?) {
             // fish reports each end more than once -- the same status again,
             // then one with none at its next prompt. Those end no started
             // command; taken as a short success they wiped a background tab's
             // "failed" or "done" a moment after it showed. An end that starts
             // nothing and says nothing new (no status, or success) is ignored;
-            // a failure is still shown.
-            if startedAt == nil && (exitCode == nil || exitCode == 0) { return }
+            // a failure is still shown. A program's progress does not outlive
+            // the command line it ran on, so any end still takes it away.
+            if startedAt == nil && (exitCode == nil || exitCode == 0) {
+                clearProgressAtCommandEnd()
+                return
+            }
             let kind = commandKind ?? .batch
             commandKind = nil
             stopLive()
@@ -216,10 +228,7 @@ extension Tako {
             let ran = startedAt.map { now().timeIntervalSince($0) }
             startedAt = nil
             if elapsed != nil { elapsed = nil }
-            if !osc7501StatusActive || explicitStatus?.status != .error {
-                if progress != nil { progress = nil }
-                if progressState != .none { progressState = .none }
-            }
+            clearProgressAtCommandEnd()
 
             if let exitCode, kind.fails(exitCode) {
                 signalStatus = .error
