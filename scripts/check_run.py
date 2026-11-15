@@ -67,7 +67,9 @@ def check_rust(name):
     build, code, _ = run(["mitts", "test", "--features", "pty,ssh", "--no-run"] + only)
     if code != 0:
         return note(f"rust:{name}", False, "build failed", build)
-    secs, code, out = run(["mitts", "test", "--features", "pty,ssh"] + target)
+    # Keep a positional test filter before the variadic feature list.
+    # Otherwise Mitts can consume it as another feature and run every test.
+    secs, code, out = run(["mitts", "test"] + target + ["--features", "pty,ssh"])
     passed = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", out))
     failed_tests = sum(int(n) for n in re.findall(r"test result: (?:ok|FAILED)\. \d+ passed; (\d+) failed", out))
     ok = code == 0 and passed > 0
