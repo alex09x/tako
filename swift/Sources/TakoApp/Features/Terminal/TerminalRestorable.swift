@@ -223,7 +223,9 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             }
 
             if let view = foundView, !c.isMinimizedInFloatingCanvas(view.id) {
-                c.focusedSurface = view
+                // Restored focus is logical: a pane is read once the user
+                // actually focuses it, not because it was focused last time.
+                c.setFocusedSurfaceUnseen(view)
                 c.floatingCanvas.requestPendingFocus(for: view.id)
                 restoreFocus(to: view, inWindow: window)
             }

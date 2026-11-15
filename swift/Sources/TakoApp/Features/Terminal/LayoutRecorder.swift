@@ -261,7 +261,8 @@ enum LayoutRecorder {
                 if let focused = state.focusedSurface,
                    let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
                    !controller.isMinimizedInFloatingCanvas(view.id) {
-                    controller.focusedSurface = view
+                    // Logical only: restoring is not reading (see TerminalRestorable).
+                    controller.setFocusedSurfaceUnseen(view)
                     controller.floatingCanvas.requestPendingFocus(for: view.id)
                 }
                 // As undoing a closed window rebuilds its tabs: shown, then
@@ -332,7 +333,7 @@ enum LayoutRecorder {
                     if let focused = state.focusedSurface,
                        let view = controller.surfaceTree.first(where: { $0.id.uuidString == focused }),
                        !controller.isMinimizedInFloatingCanvas(view.id) {
-                        controller.focusedSurface = view
+                        controller.setFocusedSurfaceUnseen(view)
                         controller.floatingCanvas.requestPendingFocus(for: view.id)
                     }
                 }

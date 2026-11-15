@@ -47,8 +47,9 @@ extension TerminalController {
         // we should resize to that default size.
         if case let .leaf(view) = surfaceTree.root {
             // If this is our first surface then our focused surface will be nil
-            // so we force the focused surface to the leaf.
-            focusedSurface = view
+            // so we force the focused surface to the leaf. Only logically:
+            // loading a window is not the user looking at it.
+            setFocusedSurfaceUnseen(view)
 
             // `window-width`/`window-height`: only a single-surface window
             // (no splits) has a terminal area to size, and only when this
