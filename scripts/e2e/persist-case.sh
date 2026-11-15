@@ -25,15 +25,19 @@ _persist_problem() { local file="$1"; shift; printf '%s\n' "$*" >> "$file"; }
 
 # persist_census LABEL EVIDENCE PATTERN...: one snapshot of every process;
 # those whose command line contains a PATTERN as a literal string (no regex),
-# as "pid<TAB>start<TAB>path" -- the path is the command line up to the end
-# of the matched executable path, so a token in the arguments is never kept. Written to
-# EVIDENCE/census-LABEL.{out,err,status}, each census its own files. Status 2
-# when the snapshot cannot be taken: then nothing is known about what runs.
+# as "pid<TAB>start<TAB>references PATTERN". Only the pattern is kept, never
+# the command line: a match says the process refers to the case's path, not
+# that the path is its executable, and its arguments may hold a token.
+# Written to EVIDENCE/census-LABEL.{out,err,status}, each census its own
+# files. Status 2 when the snapshot cannot be taken or read -- a row that is
+# not a process record, or no record at all: then nothing is known about
+# what runs.
 persist_census() {
     local label="$1" evidence="$2"; shift 2
     local out="$evidence/census-$label.out" err="$evidence/census-$label.err" st="$evidence/census-$label.status"
     local snapshot status=0
-    snapshot="$("${PERSIST_PS:-ps}" -axww -o pid=,lstart=,command= 2> "$err")" || status=$?
+    # C locale: the start time is parsed below in its English form.
+    snapshot="$(LC_ALL=C "${PERSIST_PS:-ps}" -axww -o pid=,lstart=,command= 2> "$err")" || status=$?
     # A snapshot always holds at least this shell; an empty one is a failure too.
     if [ "$status" -ne 0 ] || [ -z "$snapshot" ]; then
         : > "$out"
@@ -42,20 +46,34 @@ persist_census() {
     fi
     local IFS=$'\n'
     printf '%s\n' "$snapshot" | PERSIST_PATTERNS="$*" python3 -c '
-import os, sys
+import os, re, sys
 patterns = [p for p in os.environ["PERSIST_PATTERNS"].split("\n") if p]
-for line in sys.stdin:
-    fields = line.split(None, 6)
-    if len(fields) < 7:
+# "pid weekday month day hh:mm:ss year command": what ps -o pid=,lstart=,command= writes.
+row = re.compile(r"\s*(\d+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$")
+bad, valid = [], 0
+for number, line in enumerate(sys.stdin.read().split("\n"), 1):
+    if not line.strip():
         continue
-    pid, start, command = fields[0], " ".join(fields[1:6]), fields[6].rstrip("\n")
+    m = row.match(line)
+    if not m:
+        # Named by its number and shape only: its text may hold arguments.
+        bad.append(f"row {number}: not a process record ({len(line.split())} fields)")
+        continue
+    valid += 1
+    pid, start, command = m.group(1), " ".join(m.group(2).split()), m.group(3)
     for p in patterns:
-        at = command.find(p)
-        if at >= 0:
-            end = command.find(" ", at + len(p))
-            print(f"{pid}\t{start}\t{command if end < 0 else command[:end]}")
+        if p in command:
+            # Only the pattern that matched is kept: never the command line,
+            # whose arguments -- before the path or after it -- may hold a token.
+            print(f"{pid}\t{start}\treferences {p}")
             break
-' > "$out" 2>> "$err" || { echo "matching failed" > "$st"; return 2; }
+if bad or valid == 0:
+    for b in bad:
+        print(b, file=sys.stderr)
+    if valid == 0:
+        print("no process record in the snapshot", file=sys.stderr)
+    sys.exit(3)
+' > "$out" 2>> "$err" || { echo "snapshot unreadable: $(tr '\n' ';' < "$err")" > "$st"; return 2; }
     echo "ok $(wc -l < "$out" | tr -d ' ') match(es)" > "$st"
     # The receipt, also for a clean pass whose evidence directory goes.
     echo "census $label: $(cat "$st")$( [ -s "$out" ] && printf '; %s' "$(tr '\t\n' ' ;' < "$out")")"

@@ -108,10 +108,20 @@ check "a runtime still running from the case's registry fails the run" "$s" 7
 check "the running runtime is named after every check" "$(problem 'still running (runtimes-after-3, after 3 checks)')" 1
 check "each check of it kept files of its own" "$(ls "$evidence"/census-runtimes-after-*.out | wc -l | tr -d ' ')" 3
 check "the census saw it before the stop too" "$(wc -l < "$evidence/census-runtimes-before.out" | tr -d ' ')" 1
-check "its record is pid, start and path, not its token" \
+check "its record is pid, start and the matched path, not a token after it" \
     "$(grep -c 'TOKEN-SECRET' "$evidence"/census-*.out "$evidence/cleanup-problems.txt" | awk -F: '{s+=$NF} END {print s+0}')/$(cut -f3 "$evidence/census-runtimes-after-3.out")" \
-    "0/$tmp/h/Library/Application Support/b.$n_next+x/runtime/0.1.0-0123456789abcdef/zmx"
+    "0/references /Application Support/b.$n_next+x/runtime/"
 check "a running runtime keeps what is left" "$(kept)" kept
+# A process that names the case's path after a token -- in an argument, not
+# as its executable: it is kept as a reference, and the token is not written.
+for p in "${started[@]}"; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done; started=()
+(exec -a "/usr/bin/reader TOKEN-BEFORE $tmp/h/Library/Application Support/b.$((n + 1))+x/runtime/0.1.0-0123456789abcdef/zmx" sleep 60) &
+started+=($!); sleep 0.3
+case_run 0
+check "a process naming the case's runtime path in an argument keeps the case" "$s" 7
+check "no token before the path is written" \
+    "$(cat "$evidence"/census-* "$evidence/cleanup-problems.txt" "$tmp/c$n.out" "$tmp/c$n.err" | grep -c 'TOKEN-BEFORE')" 0
+for p in "${started[@]}"; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done; started=()
 # Literal: another case's runtime whose bundle the dot and plus would match as a regex is not this case's.
 runtime "bX$((n + 1))Ex"
 case_run 0
@@ -124,6 +134,26 @@ check "every census that failed is named" "$(problem 'failed (status 2)')" 3
 check "its error is kept" "$(grep -c 'no snapshot' "$evidence/census-runtimes-after-1.err")" 1
 check "a failed census is not retried away" "$(ls "$evidence"/census-runtimes-after-*.status | wc -l | tr -d ' ')" 1
 check "a failed snapshot keeps what is left" "$(kept)" kept
+
+# A snapshot that exits 0 but is not process records: nothing is known.
+printf '#!/bin/bash\necho "garbage GARBAGE-SECRET row"\n' > "$tmp/ps-garbage"
+# Real records with one row that is not one among them: not dropped silently.
+printf '#!/bin/bash\nps "$@" || exit\necho "12x ??? GARBAGE-SECRET"\n' > "$tmp/ps-mixed"
+chmod +x "$tmp/ps-garbage" "$tmp/ps-mixed"
+PERSIST_PS="$tmp/ps-garbage" case_run 0
+check "an all-malformed snapshot fails the run" "$s" 7
+check "it is named as unreadable, by row number only" \
+    "$(grep -c 'row 1: not a process record' "$evidence/census-runtimes-before.err")/$(cat "$evidence"/census-* "$evidence/cleanup-problems.txt" | grep -c 'GARBAGE-SECRET')" "1/0"
+check "an all-malformed snapshot keeps what is left" "$(kept)" kept
+PERSIST_PS="$tmp/ps-mixed" case_run 0
+check "a malformed row among records fails the run" "$s" 7
+check "the bad row is named, its text not kept" \
+    "$(grep -c 'not a process record' "$evidence/census-runtimes-before.err")/$(cat "$evidence"/census-* "$evidence/cleanup-problems.txt" | grep -c 'GARBAGE-SECRET')" "1/0"
+check "a malformed row is not retried away" "$(ls "$evidence"/census-runtimes-after-*.status | wc -l | tr -d ' ')" 1
+# Only blank space: no bad row, but no process record either.
+printf '#!/bin/bash\nprintf "   \\n \\n"\n' > "$tmp/ps-blank"; chmod +x "$tmp/ps-blank"
+PERSIST_PS="$tmp/ps-blank" case_run 0
+check "a snapshot with no process record fails the run" "$s/$(grep -c 'no process record' "$evidence/census-runtimes-before.err")" "7/1"
 
 # The first census fails, the later ones are clean: the first's details stay.
 for p in "${started[@]}"; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done; started=()
