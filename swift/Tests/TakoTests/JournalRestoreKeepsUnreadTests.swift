@@ -65,39 +65,54 @@ struct JournalRestoreKeepsUnreadTests {
         return (journal, panes, ids)
     }
 
-    @Test func aJournalRestoreLeavesUnseenTabsUnreadAndARealFocusReadsThem() throws {
+    /// Two relaunches in a row through the production journal restore.
+    @Test func twoJournalRestoresKeepTheStoredTabsAndLeaveUnseenTabsUnread() throws {
         TerminalTestSupport.preventQuitting()
         let hidden = store.createWorkspace(name: "journal-hidden-\(UUID().uuidString.prefix(6))").id
         let (journal, panes, tabs) = lastRun(hidden: hidden)
         panes.enumerated().forEach { unread($1, "tab\($0)") }
+        // What the last run stored; a quit leaves it as it is.
+        let records = store.workspaces
+        let stored = records.map(\.tabIdentifiers)
         let original = LayoutRecorder.presentation
         LayoutRecorder.presentation = .init(loadWindow: attach, activate: {})
         var restored: [TerminalController] = []
-        defer {
-            LayoutRecorder.presentation = original
+        func quit() {
             for c in restored {
                 c.surfaceTree.forEach { $0.pty?.terminate() }
                 if let w = c.window { Tako.CustomTabGroup.close(w); w.orderOut(nil) }
             }
+            restored = []
+            store.workspaces = records
+        }
+        defer {
+            quit()
+            LayoutRecorder.presentation = original
             tabs.forEach { store.removeTab(tabIdentifier: $0) }
             store.deleteWorkspace(id: hidden)
             panes.forEach { NotificationStore.shared.markRead(surfaceId: $0) }
         }
 
-        #expect(panes.map(count) == [1, 1, 1], "the last run left each pane one unread notification")
-        LayoutRecorder.restore(journal, app: Tako.App())
-        restored = tabs.compactMap { tab in TerminalController.all.first { $0.window?.stableTabIdentifier == tab } }
-        // The canvases lay out and hand each pane its pending focus.
-        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
-        #expect(restored.allSatisfy { $0.window?.isKeyWindow != true }, "the test host shows no key window")
+        for cycle in 1...2 {
+            #expect(panes.map(count) == [1, 1, 1], "cycle \(cycle): each pane has one unread notification")
+            let before = Set(TerminalController.all.map(ObjectIdentifier.init))
+            LayoutRecorder.restore(journal, app: Tako.App())
+            let made = TerminalController.all.filter { !before.contains(ObjectIdentifier($0)) }
+            restored = tabs.compactMap { tab in made.first { $0.window?.stableTabIdentifier == tab } }
+            // The canvases lay out and hand each pane its pending focus.
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+            #expect(restored.allSatisfy { $0.window?.isKeyWindow != true }, "the test host shows no key window")
 
-        #expect(restored.count == 3, "every tab is back under its saved identifier")
-        for (index, controller) in restored.enumerated() {
-            #expect(controller.focusedSurface?.id == panes[index], "tab \(index): its pane, same UUID, logically focused")
+            #expect(made.count == 3 && restored.count == 3, "cycle \(cycle): every tab is back under its saved identifier")
+            #expect(store.workspaces.map(\.tabIdentifiers) == stored, "cycle \(cycle): the stored tabs and their order are unchanged")
+            for (index, controller) in restored.enumerated() {
+                #expect(controller.focusedSurface?.id == panes[index], "cycle \(cycle) tab \(index): its pane, same UUID, logically focused")
+            }
+            #expect(count(panes[1]) == 1, "cycle \(cycle): a tab behind the selected one is not read by being restored")
+            #expect(count(panes[2]) == 1, "cycle \(cycle): nor a tab of a workspace that is not shown")
+            #expect(count(panes[0]) == 1, "cycle \(cycle): nor the selected one, while its window is not key")
+            if cycle < 2 { quit() }
         }
-        #expect(count(panes[1]) == 1, "a tab behind the selected one is not read by being restored")
-        #expect(count(panes[2]) == 1, "nor a tab of a workspace that is not shown")
-        #expect(count(panes[0]) == 1, "nor the selected one, while its window is not key")
 
         // The positive case: its window key, the user really looks at the pane
         // (`syncFocusToSurfaceTree` on becoming key).
