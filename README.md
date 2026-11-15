@@ -63,7 +63,9 @@ A fast, lightweight, and modern GPU-accelerated terminal for macOS 14+ and iOS 1
 
 ## Desktop Navigation
 
-The left sidebar lists workspaces and sessions and stays open. Its search button opens the session filter; Escape clears and closes the filter. <kbd>Cmd</kbd> + <kbd>T</kbd> creates a session. Inside a session, <kbd>Cmd</kbd> + <kbd>D</kbd> or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> adds a compact floating terminal over the current one. Panes can overlap: drag their headers to move them and their edges or corners to resize them.
+The left sidebar lists workspaces and sessions and stays open. Its search button opens the session filter; Escape clears and closes the filter. <kbd>Cmd</kbd> + <kbd>T</kbd> creates a session. Inside a session, <kbd>Cmd</kbd> + <kbd>D</kbd> or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> splits the current terminal: the new one joins the session grid beside it (right or below). To take a terminal out of the grid, use **Float Terminal**, a button in its header and an item of the header's right-click menu; a floating terminal moves freely above the grid (drag its header to move it, its edges or corners to resize it), and **Return to Grid** puts it back.
+
+**Move to Tab**, a button in a terminal's header, an item of the header's right-click menu and of the sidebar's context menu for a session or terminal, moves the terminal into another tab of the same workspace with its process still running. While the terminal shares its tab with others, the same menu also offers **New Tab**, which takes it out of the split into a tab of its own.
 
 Each pane has minimize, maximize/restore and close controls. Minimized panes collect as capsules at the lower right, keep their processes running and continue showing status. Click a capsule to restore its position and keyboard focus. Maximizing fills the right workspace; double-clicking the pane header also toggles maximize/restore. Transitions respect macOS Reduce Motion.
 
