@@ -581,6 +581,21 @@ def scenario(spec):
         time.sleep(0.5)
 
     if not os.path.exists(dump):
+        # Preserve the first cold-launch failure before the next scenario
+        # terminates it. Capture only this test simulator and this app's log;
+        # never upload the SSH fixture directory or its private keys.
+        diagnostics = os.path.join(out, "launch-diagnostics.log")
+        with open(diagnostics, "w") as log:
+            for label, command in (
+                ("screen", ["xcrun", "simctl", "io", DEVICE, "screenshot", os.path.join(out, "screen.png")]),
+                ("app-log", ["xcrun", "simctl", "spawn", DEVICE, "log", "show", "--style", "compact",
+                             "--last", "3m", "--predicate", 'process == "TakoCore"']),
+            ):
+                try:
+                    result = subprocess.run(command, stdout=log, stderr=log, timeout=15)
+                    log.write(f"{label} exited {result.returncode}\n")
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    log.write(f"{label}: {type(error).__name__}\n")
         return {"name": name, "why": spec["why"], "ok": False,
                 "note": "the app never wrote a dump"}
 

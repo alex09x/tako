@@ -354,6 +354,7 @@ jobs:
             target/simtest/results.json
             target/simtest/*/dump.txt
             target/simtest/*/screen.png
+            target/simtest/*/launch-diagnostics.log
             target/simtest/walkthrough-*.log
             target/simtest/walkthrough-summary.json
             target/simtest/walkthrough-status.json
