@@ -65,14 +65,15 @@ struct DesktopKeys {
     func open() throws {
         d.key(Key.comma, .maskCommand)
         guard d.wait(for: { isOpen }, timeout: 5) else { throw Failure("Cmd+, did not open Settings (no DesktopSettingsRoot)") }
-        try placeTopLeft()
+        SettingsPage(d).placeWindow()
     }
 
     /// The owned window holding Settings, moved to the top left of the
-    /// display's visible frame and raised, and proved fully inside it. A
-    /// notification alert sits at the right; at SettingsPage's bottom-left
-    /// placement the footer's Close ended up under it. Nothing foreign is
-    /// moved or dismissed, and clicks keep their ownership guards.
+    /// display's visible frame and raised, and proved fully inside it, just
+    /// before Close. A notification alert sits at the right of the test
+    /// Mac's screen: at SettingsPage's bottom-left placement Close ended up
+    /// under it, while at the top left the page's own controls do. Nothing
+    /// foreign is moved or dismissed, and clicks keep their ownership guards.
     func placeTopLeft() throws {
         guard let root = exact("DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute),
               let screen = NSScreen.screens.first, let sizeVal: AXValue = d.attribute(window, kAXSizeAttribute) else {
