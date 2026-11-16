@@ -60,14 +60,20 @@ def load_durations(path: str = DURATIONS) -> dict[str, float]:
         return {k: float(v["seconds"]) for k, v in json.load(f)["scenarios"].items()}
 
 
+def weights(default: list[str], durations: dict[str, float]) -> dict[str, float]:
+    """The seconds each default scenario is dealt by: its measured duration,
+    or the median of the measured ones when it has none."""
+    known = [durations[n] for n in default if n in durations]
+    fallback = statistics.median(known) if known else 60.0
+    return {n: durations.get(n, fallback) for n in default}
+
+
 def assign(default: list[str], durations: dict[str, float], shards: int) -> list[list[str]]:
     """Longest first onto the least loaded shard; ties by name and shard
     number, so the same inputs always give the same shards."""
     if shards < 1:
         raise ShardError("at least one shard")
-    known = [durations[n] for n in default if n in durations]
-    fallback = statistics.median(known) if known else 60.0
-    weight = {n: durations.get(n, fallback) for n in default}
+    weight = weights(default, durations)
     loads = [0.0] * shards
     out: list[list[str]] = [[] for _ in range(shards)]
     for name in sorted(default, key=lambda n: (-weight[n], n)):
@@ -124,16 +130,30 @@ def main(argv: list[str]) -> int:
     p.add_argument("--durations", default=DURATIONS)
     a = p.parse_args(argv)
     try:
+        # plan takes the shard count; assign and check one shard, I/N, so a
+        # mistyped call can never pick (or certify) some shard by default.
+        if a.cmd == "plan":
+            if a.shards is None or a.shard is not None:
+                raise ShardError("plan takes --shards N and no --shard")
+            index, total = 0, a.shards
+        else:
+            if a.shard is None or a.shards is not None:
+                raise ShardError(f"{a.cmd} takes --shard I/N and no --shards")
+            index, total = shard_arg(a.shard)
+        if a.cmd == "check" and not a.log:
+            raise ShardError("check needs --log")
         with open(a.list) as f:
             default, explicit = parse_list(f.read())
         durations = load_durations(a.durations)
-        index, total = shard_arg(a.shard) if a.shard else (0, a.shards or 0)
         shards = assign(default, durations, total)
         account(default, shards)
         if a.cmd == "plan":
+            weight = weights(default, durations)
             for i, s in enumerate(shards, 1):
-                secs = sum(durations.get(n, 0) for n in s)
-                print(f"shard {i}/{total}: {len(s)} scenarios, ~{secs / 60:.1f} min measured")
+                measured = [n for n in s if n in durations]
+                secs = sum(weight[n] for n in s)
+                print(f"shard {i}/{total}: {len(s)} scenarios, ~{secs / 60:.1f} min as dealt "
+                      f"({len(measured)} measured, {len(s) - len(measured)} at the median)")
             print(f"default {len(default)} = {sum(map(len, shards))} sharded; "
                   f"explicit-only, run elsewhere: {len(explicit)} ({', '.join(explicit)})")
         elif a.cmd == "assign":

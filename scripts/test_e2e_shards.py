@@ -86,6 +86,33 @@ class ShardTests(unittest.TestCase):
             self.assertEqual(shards.main(["check", *args[:-1], "2/2", "--log", log]), 1)
             self.assertEqual(shards.main(["assign", *args[:-1], "3/2"]), 2)
 
+    def test_the_plan_reports_the_weights_the_assignment_used(self):
+        import contextlib, io
+        with tempfile.TemporaryDirectory() as d:
+            lst, dur = os.path.join(d, "list"), os.path.join(d, "dur.json")
+            with open(lst, "w") as f:
+                f.write("default a\ndefault b\ndefault c\n")
+            with open(dur, "w") as f:
+                f.write('{"scenarios": {"a": {"seconds": 60}, "b": {"seconds": 180}}}')
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(shards.main(["plan", "--list", lst, "--durations", dur, "--shards", "1"]), 0)
+        # c is dealt at the median (120 s): 60 + 180 + 120 = 6 min, not 4.
+        self.assertIn("~6.0 min as dealt (2 measured, 1 at the median)", out.getvalue())
+
+    def test_a_shard_command_needs_exactly_its_own_arguments(self):
+        with tempfile.TemporaryDirectory() as d:
+            lst = os.path.join(d, "list")
+            with open(lst, "w") as f:
+                f.write("default a\ndefault b\n")
+            for argv in (["assign", "--list", lst, "--shards", "2"],
+                         ["check", "--list", lst, "--shards", "2", "--log", lst],
+                         ["check", "--list", lst, "--shard", "2/2"],
+                         ["assign", "--list", lst, "--shard", "1/2", "--shards", "2"],
+                         ["plan", "--list", lst],
+                         ["plan", "--list", lst, "--shard", "1/2"]):
+                self.assertEqual(shards.main(argv), 2, argv)
+
     def test_an_empty_shard_is_refused_rather_than_printed_as_nothing(self):
         with tempfile.TemporaryDirectory() as d:
             lst = os.path.join(d, "list")
