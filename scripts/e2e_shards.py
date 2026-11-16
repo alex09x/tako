@@ -137,6 +137,9 @@ def main(argv: list[str]) -> int:
             print(f"default {len(default)} = {sum(map(len, shards))} sharded; "
                   f"explicit-only, run elsewhere: {len(explicit)} ({', '.join(explicit)})")
         elif a.cmd == "assign":
+            # No names would make the runner run every default scenario.
+            if not shards[index - 1]:
+                raise ShardError(f"shard {index}/{total} has no scenarios: {len(default)} default ones for {total} shards")
             print("\n".join(shards[index - 1]))
         else:
             with open(a.log) as f:

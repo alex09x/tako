@@ -178,6 +178,31 @@ PY
             ci_require "$stage" '^ok '
             ci_require "$stage" '^tako e2e: ok$'
             ;;
+        macapp-e2e-shard)
+            # One shard (TAKO_E2E_SHARD=I/N) of the runner's default scenarios
+            # (scripts/e2e_shards.py); every assigned one must finish ok once.
+            [[ "${TAKO_E2E_SHARD:-}" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || { echo 'FAIL: TAKO_E2E_SHARD must be I/N' >&2; exit 2; }
+            export TAKO_WITH_ZMX=1 TAKO_BUNDLE_ID=com.tako-core.terminal.e2e
+            TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-e2e)"
+            export TAKO_APP_DIR
+            python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
+            ci_app_build macapp-e2e-build
+            ci_logged "$stage-runner" ./scripts/e2e-macapp.sh --compile-only
+            target/tako-e2e --list > target/e2e-registry.txt
+            python3 scripts/e2e_shards.py plan --list target/e2e-registry.txt \
+                --shards "${TAKO_E2E_SHARD#*/}" | tee target/ci-logs/$stage-plan.log
+            python3 scripts/e2e_shards.py assign --list target/e2e-registry.txt --shard "$TAKO_E2E_SHARD" \
+                > target/e2e-shard.txt
+            names=()
+            while IFS= read -r name; do [ -n "$name" ] && names+=("$name"); done < target/e2e-shard.txt
+            # An empty shard must never reach the runner: no names means all of them.
+            [ ${#names[@]} -gt 0 ] || { echo "FAIL: shard $TAKO_E2E_SHARD has no scenarios" >&2; exit 2; }
+            echo "== shard $TAKO_E2E_SHARD: ${#names[@]} scenarios: ${names[*]}"
+            ci_logged "$stage" ./scripts/e2e-macapp.sh "${names[@]}"
+            ci_logged "$stage-check" python3 scripts/e2e_shards.py check --list target/e2e-registry.txt \
+                --shard "$TAKO_E2E_SHARD" --log "target/ci-logs/$stage.log"
+            ci_require "$stage" '^tako e2e: ok$'
+            ;;
         persist-e2e-tests)
             TAKO_TEST_OLD_ZMX=$(./scripts/build-zmx.sh --legacy-test-runtime)
             export TAKO_TEST_OLD_ZMX="$PWD/$TAKO_TEST_OLD_ZMX"
@@ -287,10 +312,10 @@ sys.exit("FAIL: no available iPhone simulator")
 }
 
 script=$'set -euo pipefail\n'
-script+="$(declare -f ci_logged ci_require ci_simulator_name ci_test_stage)"
+script+="$(declare -f ci_logged ci_require ci_app_build ci_simulator_name ci_test_stage)"
 for stage in "${stages[@]}"; do
     case "$stage" in
-        prebuilt-build|engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
+        prebuilt-build|macapp-e2e-shard|engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
             script+=$'\n'
             script+="ci_test_stage $stage" ;;
         rust) script+="
@@ -332,6 +357,11 @@ echo '== uitest'
     esac
 done
 
+# The generated script itself, for scripts/test_ci_stages.py: nothing runs.
+if [ "${TAKO_CI_PRINT_SCRIPT:-}" = 1 ]; then
+    printf '%s\n' "$script"
+    exit 0
+fi
 if [ "$run_local" -eq 1 ]; then
     export PROD_CODE_LOCAL=1
     exec /bin/bash -c "$script"

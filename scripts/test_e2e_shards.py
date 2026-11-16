@@ -86,6 +86,14 @@ class ShardTests(unittest.TestCase):
             self.assertEqual(shards.main(["check", *args[:-1], "2/2", "--log", log]), 1)
             self.assertEqual(shards.main(["assign", *args[:-1], "3/2"]), 2)
 
+    def test_an_empty_shard_is_refused_rather_than_printed_as_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            lst = os.path.join(d, "list")
+            with open(lst, "w") as f:
+                f.write("default typing\ndefault split\n")
+            self.assertEqual(shards.main(["assign", "--list", lst, "--shard", "2/2"]), 0)
+            self.assertEqual(shards.main(["assign", "--list", lst, "--shard", "3/3"]), 2)
+
     def test_the_measured_durations_cover_most_of_the_default_registry(self):
         durations = shards.load_durations()
         self.assertGreaterEqual(len(durations), 60)
