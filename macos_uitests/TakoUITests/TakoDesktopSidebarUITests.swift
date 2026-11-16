@@ -27,7 +27,7 @@ final class TakoDesktopSidebarUITests: TakoDesktopDesignCase {
         ]
         let prompt = "TKUI-READY>"
         beforeDesktopLaunch = { app in
-            app.launchEnvironment["PS1"] = prompt
+            app.launchEnvironment["PS1"] = "TKUI-LOGIN>"
             app.launchEnvironment["PROMPT_COMMAND"] = ""
             app.launchEnvironment["BASH_ENV"] = ""
             app.launchEnvironment["ENV"] = ""
@@ -55,8 +55,12 @@ final class TakoDesktopSidebarUITests: TakoDesktopDesignCase {
         XCTAssertEqual(XCTWaiter.wait(for: [loginReady], timeout: 10), .completed,
                        "Wait for the private login shell's initial screen before the bootstrap input")
         terminal.click()
-        // Portable first input, interpreted only by this fixture's private login shell.
-        app.typeText("exec /bin/bash --noprofile --norc --noediting -i\n")
+        // Startup files may reset shell-specific variables. Set those at exec,
+        // without replacing the directory values whose forwarding the witness checks.
+        // Split the prompt literal so terminal echo cannot satisfy the readiness wait.
+        app.typeText("exec /usr/bin/env 'PS1=TKUI-''READY>' 'PROMPT_COMMAND=' 'BASH_ENV=' 'ENV=' "
+            + "'HISTFILE=\(home.appendingPathComponent(".shell_history").path)' "
+            + "/bin/bash --noprofile --norc --noediting -i\n")
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", prompt), object: terminal)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, "Wait for the controlled shell prompt")
         let keys = ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HISTFILE",
@@ -75,7 +79,7 @@ final class TakoDesktopSidebarUITests: TakoDesktopDesignCase {
         XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 10), .completed,
                        "The controlled Bash must receive the fixed private directories and history file")
         let observed = try String(contentsOf: witness, encoding: .utf8)
-        let metadata = XCTAttachment(string: "First input replaces the private login shell with /bin/bash --noprofile --norc --noediting -i.\n"
+        let metadata = XCTAttachment(string: "First input replaces the private login shell with sanitized Bash, setting its private history file and prompt at exec.\n"
             + "Verified fields: \(keys.joined(separator: ",")); final fields are observed BASH_VERSION and PWD.\n"
             + "Cwd is observed only, not claimed private. This case does not verify fish/zsh history policy.\n" + observed)
         metadata.name = "Controlled Bash private directory witness"

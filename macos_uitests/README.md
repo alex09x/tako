@@ -61,8 +61,9 @@ Each fixture uses an isolated config, private shell/history/XDG/provider homes, 
 test-bundle state; it does not use the installed app's bundle or default session namespace.
 `TakoDesktopSidebarUITests/testCompactSidebarHasDesignHeightInAnIsolatedShell` validates the
 actual app's private launch paths before launching. Its first input replaces that private
-login shell with a sanitized Bash; after the controlled prompt appears, the next command checks
-those directories, the effective history-file variable and the observed Bash version. It observes
+login shell with a sanitized Bash, setting Bash's private history file and prompt at exec.
+After that controlled prompt appears, the next command checks the forwarded directories,
+the effective history-file variable and the observed Bash version. It observes
 cwd without claiming a private working directory or fish/zsh history coverage. The live Compact
 row's 24 pt AX height is asserted; its screenshot is supporting evidence. Run the full required
 CI to validate the other fixture suites. The wrapper does not prune its retained run evidence.
