@@ -32,6 +32,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
 OUT = "target/simtest"
+# Off any external volume, where macOS would ask for access (app_locations.py).
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+import app_locations  # noqa: E402
+DERIVED = app_locations.app_dir("ios-sim-derived")
 FIXTURE = os.path.join(OUT, "sshd")
 BUNDLE_ID = "dev.prod.takocore"
 DEVICE = os.environ.get("TAKO_SIM_DEVICE", "iPhone 17 Pro")
@@ -281,7 +285,7 @@ def build_and_install():
     run(["xcodebuild", "-project", "ios/TakoCore.xcodeproj", "-scheme", "TakoCore",
          "-configuration", "Debug",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
-         "-derivedDataPath", "target/ios-sim-derived", "build"])
+         "-derivedDataPath", DERIVED, "build"])
 
     # Start from a freshly booted device, not whatever an earlier run (or a
     # person at the Simulator) left behind. `simctl boot` on a device that is
@@ -294,7 +298,7 @@ def build_and_install():
     subprocess.run(["xcrun", "simctl", "boot", DEVICE], capture_output=True)
     run(["xcrun", "simctl", "bootstatus", DEVICE, "-b"])
     run(["xcrun", "simctl", "install", DEVICE,
-         "target/ios-sim-derived/Build/Products/Debug-iphonesimulator/TakoCore.app"])
+         os.path.join(DERIVED, "Build/Products/Debug-iphonesimulator/TakoCore.app")])
 
 
 def container():
@@ -734,7 +738,7 @@ def run_walkthrough():
          "-project", "ios/TakoCore.xcodeproj",
          "-scheme", "TakoCore",
          "-destination", f"platform=iOS Simulator,name={DEVICE}",
-         "-derivedDataPath", "target/ios-sim-derived",
+         "-derivedDataPath", DERIVED,
          "-resultBundlePath", result,
          *only,
          "TAKO_TEST_HOST=127.0.0.1",
@@ -777,6 +781,11 @@ def main():
         for spec in SCENARIOS:
             print(f"  {spec['name']:<32} {spec['why']}")
         return
+
+    reason = app_locations.check_source("simtest")
+    if reason:
+        print(reason, file=sys.stderr)
+        sys.exit(3)
 
     unknown = [arg for arg in sys.argv[1:]
                if arg.startswith("-") and arg != "--keep"]

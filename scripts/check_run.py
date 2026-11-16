@@ -145,8 +145,11 @@ def swift_test_count(out):
 
 # Where the e2e app is built and where scripts/e2e-macapp.sh runs it from:
 # one place. Built into target/macapp while the runner took a target/macapp-e2e
-# left from an older build, every e2e check drove a stale app.
-E2E_APP_DIR = "target/macapp-e2e"
+# left from an older build, every e2e check drove a stale app. Off any
+# external volume (scripts/app_locations.py), where macOS asks on every build.
+E2E_APP_DIR = subprocess.run(
+    [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_locations.py"), "dir", "macapp-e2e"],
+    check=True, capture_output=True, text=True).stdout.strip()
 
 
 def e2e_env():

@@ -11,6 +11,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# The simulator tests read the source tree while they run (#filePath).
+python3 scripts/app_locations.py check-source ios-surface
+
 BUILD_DIR="target/ios_test_build"
 mkdir -p "$BUILD_DIR"
 trap 'rm -rf "$BUILD_DIR"' EXIT

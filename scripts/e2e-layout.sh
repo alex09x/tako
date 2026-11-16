@@ -12,8 +12,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [ $# -gt 0 ] || set -- crash-layout crash-again crash-corrupt quit-layout upgrade-crash
-export TAKO_APP_DIR=target/macapp-layout
+# Off any external volume, where macOS would ask for access on every build.
+TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-layout)"
+case "$TAKO_APP_DIR" in /*) ;; *) TAKO_APP_DIR="$PWD/$TAKO_APP_DIR" ;; esac
+export TAKO_APP_DIR
 APP="$TAKO_APP_DIR/Tako.app"
+python3 scripts/app_locations.py check-app "$APP"
 
 run_one() {
     local scenario=$1
@@ -25,7 +29,7 @@ run_one() {
         echo "FAIL  $scenario: the app could not be built" >&2
         cleanup_one; trap - EXIT; return 1
     fi
-    if [ "$(defaults read "$PWD/$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
+    if [ "$(defaults read "$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$bundle" ]; then
         echo "FAIL  $scenario: the built app is not this run's ($bundle)" >&2
         cleanup_one; trap - EXIT; return 1
     fi

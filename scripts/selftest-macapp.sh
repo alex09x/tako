@@ -23,8 +23,10 @@ case "${1:-}" in
     *) echo "usage: $0 [--scroll-only]" >&2; exit 2 ;;
 esac
 
-APP="${APP:-${TAKO_APP_DIR:-target/macapp}/Tako.app}"
+# Off any external volume, where macOS would ask for access on every build.
+APP="${APP:-${TAKO_APP_DIR:-$(python3 scripts/app_locations.py dir macapp)}/Tako.app}"
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
+python3 scripts/app_locations.py check-app "$APP"
 
 # Reports go to a directory of this run's own (the app reads
 # TAKO_SELFTEST_DIR), so two runs on one machine never read each other's.

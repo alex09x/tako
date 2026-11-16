@@ -19,8 +19,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BUNDLE=com.tako-core.terminal.motion
-DIR=target/macapp-motion
+# Off any external volume, where macOS would ask for access on every build.
+DIR="$(python3 scripts/app_locations.py dir macapp-motion)"
 APP="$DIR/Tako.app"
+python3 scripts/app_locations.py check-app "$APP"
 CTL="$APP/Contents/MacOS/takoctl"
 TITLE="motion"
 

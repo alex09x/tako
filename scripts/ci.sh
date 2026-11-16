@@ -132,14 +132,17 @@ PY
             # its pinned Zig/source and checks the toolchain checksum.
             export TAKO_WITH_ZMX=1
             export TAKO_BUNDLE_ID=com.tako-core.terminal.ci
-            export TAKO_APP_DIR=target/macapp-ci
+            # Off any external volume (scripts/app_locations.py).
+            TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-ci)"
+            export TAKO_APP_DIR
             ci_logged macapp-build python3 scripts/build-macapp.py
-            ci_logged "$stage" env APP=target/macapp-ci/Tako.app ./scripts/selftest-macapp.sh
+            ci_logged "$stage" env APP="$TAKO_APP_DIR/Tako.app" ./scripts/selftest-macapp.sh
             ci_require "$stage" '^macapp self-test: ok$'
             ;;
         macapp-e2e-tests)
             export TAKO_WITH_ZMX=1 TAKO_BUNDLE_ID=com.tako-core.terminal.e2e
-            export TAKO_APP_DIR=target/macapp-e2e
+            TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-e2e)"
+            export TAKO_APP_DIR
             ci_logged macapp-e2e-build python3 scripts/build-macapp.py
             ci_logged "$stage" ./scripts/e2e-macapp.sh
             ci_require "$stage" '^ok '
@@ -165,11 +168,13 @@ PY
             ci_require "$stage" '^tako e2e: ok$'
             ;;
         ios-surface-tests)
+            python3 scripts/app_locations.py check-source "$stage"
             ./scripts/bindings.sh
             ci_logged "$stage" ./scripts/test-ios-surface.sh
             ci_require "$stage" 'Completed [1-9][0-9]* tests with 0 failures'
             ;;
         ios-simtest)
+            python3 scripts/app_locations.py check-source "$stage"
             ./scripts/bindings.sh
             export TAKO_SIM_DEVICE="${TAKO_SIM_DEVICE:-$(ci_simulator_name)}"
             ci_logged "$stage" python3 scripts/simtest.py
@@ -181,6 +186,7 @@ PY
             # This Xcode project links the simulator archive directly. Its
             # pre-build phase builds that archive; bindings must exist when
             # Xcode plans the hosted test target's bridging header.
+            python3 scripts/app_locations.py check-source "$stage"
             ./scripts/bindings.sh
             xcodegen -s ios/project.yml -p ios --quiet
             if [ -n "${TAKO_SIM_DEVICE:-}" ]; then
@@ -207,12 +213,13 @@ sys.exit("FAIL: no available iPhone simulator")
                 -scheme TakoCore -configuration Debug -jobs 2 \
                 -destination "$destination" \
                 -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-                -derivedDataPath target/ci-ios-derived -resultBundlePath "$result_dir/tests.xcresult" \
+                -derivedDataPath "$(python3 scripts/app_locations.py dir ci-ios-derived)" -resultBundlePath "$result_dir/tests.xcresult" \
                 -only-testing:TakoCoreUnitTests CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=
             ci_require "$stage" 'Test Case .* passed'
             ci_require "$stage" '\*\* TEST SUCCEEDED \*\*'
             ;;
         macos-ui-tests)
+            python3 scripts/app_locations.py check-source "$stage"
             export TAKO_WITH_ZMX=1
             export TAKO_BUNDLE_ID=com.tako-core.terminal.uitest
             export TAKO_APP_DIR=target/macapp-uitest
@@ -271,9 +278,11 @@ python3 scripts/swift-coverage-gate.py --module TakoCoreUI --module TakoKit --mo
     --module TakoApp/App --module TakoApp/Features/Terminal" ;;
         apps) script+="
 echo '== apps'
-TAKO_BUNDLE_ID=com.tako-core.terminal.e2e TAKO_APP_DIR=target/macapp-e2e python3 scripts/build-macapp.py
-APP=target/macapp-e2e/Tako.app ./scripts/selftest-macapp.sh
-APP=target/macapp-e2e/Tako.app ./scripts/e2e-macapp.sh
+python3 scripts/app_locations.py check-source apps
+E2E_APP_DIR=\$(python3 scripts/app_locations.py dir macapp-e2e)
+TAKO_BUNDLE_ID=com.tako-core.terminal.e2e TAKO_APP_DIR=\"\$E2E_APP_DIR\" python3 scripts/build-macapp.py
+APP=\"\$E2E_APP_DIR/Tako.app\" ./scripts/selftest-macapp.sh
+APP=\"\$E2E_APP_DIR/Tako.app\" ./scripts/e2e-macapp.sh
 ./scripts/test-ios-surface.sh
 python3 scripts/simtest.py
 python3 scripts/ios-coverage-gate.py" ;;

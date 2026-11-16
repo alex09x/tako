@@ -18,11 +18,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="${APP:-${TAKO_APP_DIR:-target/macapp-e2e}/Tako.app}"
-if [ ! -d "$APP" ] && [ -d "target/macapp/Tako.app" ]; then
-    APP="target/macapp/Tako.app"
+# Test apps live where scripts/app_locations.py says: off any external
+# volume, where macOS would ask for access on every new build.
+APP="${APP:-${TAKO_APP_DIR:-$(python3 scripts/app_locations.py dir macapp-e2e)}/Tako.app}"
+fallback="$(python3 scripts/app_locations.py dir macapp)/Tako.app"
+if [ ! -d "$APP" ] && [ -d "$fallback" ]; then
+    APP="$fallback"
 fi
 [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
+python3 scripts/app_locations.py check-app "$APP"
 
 mkdir -p target
 started=$(date +%s)

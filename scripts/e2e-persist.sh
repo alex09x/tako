@@ -26,14 +26,15 @@ cd "$(dirname "$0")/.."
 . scripts/e2e/persist-case.sh
 
 [ $# -gt 0 ] || set -- persist-live persist-gone persist-close persist-cancel persist-close-asks persist-close-quit persist-second-owner persist-reflow
-# The app is built and run from the startup disk, not from the checkout:
-# every case reseals it under a bundle id of its own, so macOS sees a new
-# app each time, and one launched from an external volume (the test Mac
-# builds on one) asked anew on every case for access to that volume. One
-# directory per checkout, so two checkouts never share a build.
-PERSIST_ROOT="${TAKO_E2E_APP_ROOT:-$HOME/Library/Caches/tako-e2e}/$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-12)"
-export TAKO_APP_DIR="$PERSIST_ROOT/macapp-persist" TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
+# Every case reseals the app under a bundle id of its own, so macOS sees a
+# new app each time; launched from an external volume (the test Mac builds
+# on one) it asked anew on every case for access to that volume. The app is
+# built where scripts/app_locations.py says: off any external volume.
+TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-persist)"
+case "$TAKO_APP_DIR" in /*) ;; *) TAKO_APP_DIR="$PWD/$TAKO_APP_DIR" ;; esac
+export TAKO_APP_DIR TAKO_WITH_ZMX=1 TAKO_CODESIGN_IDENTITY=-
 APP="$TAKO_APP_DIR/Tako.app"
+python3 scripts/app_locations.py check-app "$APP"
 # Bundle identity is metadata, not a Swift compile input. Build once, then
 # reseal only that metadata per scenario; inner executable bytes stay fixed.
 TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py

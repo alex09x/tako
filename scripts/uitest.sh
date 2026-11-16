@@ -64,6 +64,12 @@ fi
 
 export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.uitest}"
 export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-uitest}"
+# The project's build phase stages the host in target/macapp-uitest and
+# copies it into DerivedData, which is what runs: the host and the runner
+# both run off any external volume (scripts/app_locations.py). Results stay
+# under target/uitest-results.
+DERIVED="${TAKO_UITEST_DERIVED:-$(python3 scripts/app_locations.py dir uitest-derived)}"
+python3 scripts/app_locations.py check-app "$DERIVED"
 
 PROJECT=macos_uitests/TakoUITests.xcodeproj
 mkdir -p target/uitest-results
@@ -88,6 +94,9 @@ else
         echo "FAIL: macOS Automation Mode is disabled; no XCUITest executed. Administrator authorization is required on the test Mac." >&2
         exit 3
     fi
+    # The tests read the source tree while they run: from an external
+    # volume that would ask for access, so refuse before anything launches.
+    python3 scripts/app_locations.py check-source uitest
     echo "==> the isolated test app will drive the screen"
 fi
 echo
@@ -99,7 +108,7 @@ python3 scripts/gui_lock.py -- python3 scripts/ci-swift-watchdog.py \
     --diagnostics-dir "$RUN_DIR/stall" -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
     -scheme "${TAKO_UI_SCHEME:-TakoUITests-Run}" \
-    -derivedDataPath target/uitest-derived \
+    -derivedDataPath "$DERIVED" \
     -destination platform=macOS \
     -parallel-testing-enabled NO \
     -resultBundlePath "$RESULT_BUNDLE" \
