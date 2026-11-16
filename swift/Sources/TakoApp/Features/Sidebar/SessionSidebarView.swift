@@ -217,6 +217,10 @@ struct SessionSidebarView: View {
             guard windowIsPresented else { return }
             store.objectWillChange.send()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .takoTabTitleDidChange)) { _ in
+            guard windowIsPresented else { return }
+            store.objectWillChange.send()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
             guard windowIsPresented else { return }
             guard let win = notif.object as? NSWindow else { return }
