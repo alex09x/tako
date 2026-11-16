@@ -18,6 +18,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+compile_only=0
+if [ "${1:-}" = "--compile-only" ]; then
+    # Only the runner, for scripts/prebuilt.py pack: no app, no screen.
+    compile_only=1
+    shift
+fi
+
 # Test apps live where scripts/app_locations.py says: off any external
 # volume, where macOS would ask for access on every new build.
 APP="${APP:-${TAKO_APP_DIR:-$(python3 scripts/app_locations.py dir macapp-e2e)}/Tako.app}"
@@ -25,8 +32,10 @@ fallback="$(python3 scripts/app_locations.py dir macapp)/Tako.app"
 if [ ! -d "$APP" ] && [ -d "$fallback" ]; then
     APP="$fallback"
 fi
-[ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
-python3 scripts/app_locations.py check-app "$APP"
+if [ $compile_only -eq 0 ]; then
+    [ -d "$APP" ] || { echo "no app at $APP; run scripts/build-macapp.py first" >&2; exit 1; }
+    python3 scripts/app_locations.py check-app "$APP"
+fi
 
 mkdir -p target
 started=$(date +%s)
@@ -42,4 +51,5 @@ if [ ! -x target/tako-e2e ] || [ "$(cat target/tako-e2e.inputs 2>/dev/null || tr
 else
     echo '[timing] e2e runner unchanged; using cached executable' >&2
 fi
+[ $compile_only -eq 0 ] || exit 0
 exec python3 scripts/gui_lock.py -- target/tako-e2e "$APP" "$@"

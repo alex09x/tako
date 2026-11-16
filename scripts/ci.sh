@@ -15,7 +15,8 @@
 #   scripts/ci.sh --local swift-tests
 #
 # Test-only stages (no coverage or clippy gate): engine-tests, cli-tests,
-# python-tests, swift-tests, macapp-tests, ios-unit-tests, macos-ui-tests,
+# python-tests, swift-tests, macapp-tests, prebuilt-build (one shared app build;
+# TAKO_PREBUILT_DIR makes macapp-, macapp-e2e- and persist-e2e-tests use it), ios-unit-tests, macos-ui-tests,
 # macapp-e2e-tests, persist-e2e-tests, ios-surface-tests, ios-simtest. They retain full
 # logs under target/ci-logs, reject empty runs, and show hardware skips.
 # They do not replace the full LAN gates or produce release artifacts.
@@ -62,6 +63,19 @@ ci_require() {
     fi
 }
 
+# The stage's app: installed from TAKO_PREBUILT_DIR (one build of this commit,
+# checked against this checkout, toolchain and SDK, resealed under the stage's
+# bundle id) or, without it, built here as before.
+ci_app_build() {
+    if [ -n "${TAKO_PREBUILT_DIR:-}" ]; then
+        ci_logged "$1" python3 scripts/prebuilt.py install "$TAKO_PREBUILT_DIR" \
+            --app-dir "$TAKO_APP_DIR" --bundle-id "$TAKO_BUNDLE_ID" --require-zmx
+        ci_require "$1" '^prebuilt: installed '
+    else
+        ci_logged "$1" python3 scripts/build-macapp.py
+    fi
+}
+
 ci_simulator_name() {
     xcrun simctl list devices available --json | python3 -c '
 import json, sys
@@ -90,6 +104,20 @@ SH
     export PATH="$PWD/target/ci-bin:$PATH"
     echo "== $stage (test-only; full LAN quality gates are separate)"
     case "$stage" in
+        prebuilt-build)
+            # The one build the app, e2e and persistence stages share: the app
+            # with takoctl and zmx under a neutral id, and the e2e runner.
+            export TAKO_WITH_ZMX=1 TAKO_BUNDLE_ID=com.tako-core.terminal.prebuilt
+            TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-prebuilt)"
+            export TAKO_APP_DIR
+            python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
+            ci_logged "$stage-app" python3 scripts/build-macapp.py
+            ci_logged "$stage-runner" ./scripts/e2e-macapp.sh --compile-only
+            rm -rf target/prebuilt
+            ci_logged "$stage" python3 scripts/prebuilt.py pack --app "$TAKO_APP_DIR/Tako.app" \
+                --runner target/tako-e2e --out target/prebuilt
+            ci_require "$stage" '^prebuilt: packed '
+            ;;
         engine-tests)
             ci_logged "$stage" mitts test --locked --no-fail-fast --features pty,ssh -- --test-threads=2
             ci_require "$stage" 'test result: ok\. [1-9][0-9]* passed'
@@ -136,7 +164,7 @@ PY
             TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-ci)"
             export TAKO_APP_DIR
             python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
-            ci_logged macapp-build python3 scripts/build-macapp.py
+            ci_app_build macapp-build
             ci_logged "$stage" env APP="$TAKO_APP_DIR/Tako.app" ./scripts/selftest-macapp.sh
             ci_require "$stage" '^macapp self-test: ok$'
             ;;
@@ -145,7 +173,7 @@ PY
             TAKO_APP_DIR="$(python3 scripts/app_locations.py dir macapp-e2e)"
             export TAKO_APP_DIR
             python3 scripts/app_locations.py check-app "$TAKO_APP_DIR/Tako.app"
-            ci_logged macapp-e2e-build python3 scripts/build-macapp.py
+            ci_app_build macapp-e2e-build
             ci_logged "$stage" ./scripts/e2e-macapp.sh
             ci_require "$stage" '^ok '
             ci_require "$stage" '^tako e2e: ok$'
@@ -262,7 +290,7 @@ script=$'set -euo pipefail\n'
 script+="$(declare -f ci_logged ci_require ci_simulator_name ci_test_stage)"
 for stage in "${stages[@]}"; do
     case "$stage" in
-        engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
+        prebuilt-build|engine-tests|cli-tests|python-tests|swift-tests|macapp-tests|ios-unit-tests|macos-ui-tests|macapp-e2e-tests|persist-e2e-tests|ios-surface-tests|ios-simtest)
             script+=$'\n'
             script+="ci_test_stage $stage" ;;
         rust) script+="

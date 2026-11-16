@@ -37,7 +37,14 @@ APP="$TAKO_APP_DIR/Tako.app"
 python3 scripts/app_locations.py check-app "$APP"
 # Bundle identity is metadata, not a Swift compile input. Build once, then
 # reseal only that metadata per scenario; inner executable bytes stay fixed.
-TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py
+# TAKO_PREBUILT_DIR: the one build of this commit (scripts/prebuilt.py),
+# checked against this checkout and toolchain, instead of a build here.
+if [ -n "${TAKO_PREBUILT_DIR:-}" ]; then
+    python3 scripts/prebuilt.py install "$TAKO_PREBUILT_DIR" --app-dir "$TAKO_APP_DIR" \
+        --bundle-id "com.tako-core.terminal.e2e-persist-build-$$" --require-zmx
+else
+    TAKO_BUNDLE_ID="com.tako-core.terminal.e2e-persist-build-$$" python3 scripts/build-macapp.py
+fi
 export PERSIST_ZMX="$APP/Contents/Helpers/zmx" PERSIST_FORGET="scripts/e2e/forget-saved-state.py"
 APPEXE="$APP/Contents/MacOS/Tako"
 
