@@ -65,7 +65,37 @@ struct DesktopKeys {
     func open() throws {
         d.key(Key.comma, .maskCommand)
         guard d.wait(for: { isOpen }, timeout: 5) else { throw Failure("Cmd+, did not open Settings (no DesktopSettingsRoot)") }
-        SettingsPage(d).placeWindow()
+        try placeTopLeft()
+    }
+
+    /// The owned window holding Settings, moved to the top left of the
+    /// display's visible frame and raised, and proved fully inside it. A
+    /// notification alert sits at the right; at SettingsPage's bottom-left
+    /// placement the footer's Close ended up under it. Nothing foreign is
+    /// moved or dismissed, and clicks keep their ownership guards.
+    func placeTopLeft() throws {
+        guard let root = exact("DesktopSettingsRoot"), let window: AXUIElement = d.attribute(root, kAXWindowAttribute),
+              let screen = NSScreen.screens.first, let sizeVal: AXValue = d.attribute(window, kAXSizeAttribute) else {
+            throw Failure("no owned Settings window to place")
+        }
+        var size = CGSize.zero
+        AXValueGetValue(sizeVal, .cgSize, &size)
+        // AX coordinates run down from the top of the primary display.
+        let visible = screen.visibleFrame, top = screen.frame.maxY
+        let area = CGRect(x: visible.minX, y: top - visible.maxY, width: visible.width, height: visible.height)
+        let margin = max(0, min(20, (area.height - size.height) / 2, (area.width - size.width) / 2))
+        var origin = CGPoint(x: area.minX + margin, y: area.minY + margin)
+        if let value = AXValueCreate(.cgPoint, &origin) { AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) }
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        usleep(400_000)
+        guard let posVal: AXValue = d.attribute(window, kAXPositionAttribute) else { throw Failure("Settings window has no position") }
+        var pos = CGPoint.zero
+        AXValueGetValue(posVal, .cgPoint, &pos)
+        let frame = CGRect(origin: pos, size: size)
+        print("settings window placed at \(frame) in visible \(area)")
+        guard area.insetBy(dx: -1, dy: -1).contains(frame) else {
+            throw Failure("the Settings window \(frame) is not fully inside the visible frame \(area)")
+        }
     }
 
     func click(_ id: String) throws {
@@ -99,6 +129,7 @@ struct DesktopKeys {
     }
 
     func close() throws {
+        try placeTopLeft()
         try click("DesktopSettingsClose")
         guard d.wait(for: { !isOpen }, timeout: 5) else { throw Failure("Close did not dismiss Settings") }
     }
@@ -114,6 +145,32 @@ extension Driver {
     }
 
     func hasSplit(_ ctl: String) throws -> Bool { try exec("\(ctl) tree --json").contains("\"split\"") }
+
+    /// The pane tree as takoctl reports it, parsed: every pane with its
+    /// window and tab, the focused pane, the selected tabs, and the tabs
+    /// whose layout is split. The raw JSON goes to `name` in the work dir.
+    func treeFacts(_ ctl: String, saveAs name: String) throws -> (panes: [String: String], focused: String?, selected: [String], split: [String]) {
+        let raw = try exec("\(ctl) tree --json")
+        try raw.write(toFile: path(name), atomically: true, encoding: .utf8)
+        guard let obj = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+              let windows = ((obj["result"] as? [String: Any]) ?? obj)["windows"] as? [[String: Any]] else {
+            throw Failure("takoctl tree is not the expected JSON: \(raw.prefix(300))")
+        }
+        var panes: [String: String] = [:], focused: String?, selected: [String] = [], split: [String] = []
+        for w in windows {
+            for t in (w["tabs"] as? [[String: Any]]) ?? [] {
+                let place = "\(w["id"] as? String ?? "?")/\(t["id"] as? String ?? "?")"
+                if t["selected"] as? Bool == true { selected.append(place) }
+                if (t["layout"] as? [String: Any])?["split"] != nil { split.append(place) }
+                for p in (t["panes"] as? [[String: Any]]) ?? [] {
+                    guard let id = p["id"] as? String else { continue }
+                    panes[id] = place
+                    if p["focused"] as? Bool == true { focused = id }
+                }
+            }
+        }
+        return (panes, focused, selected.sorted(), split.sorted())
+    }
 }
 
 func runDesktopSettingsOpenCloseScenario(_ d: Driver) throws {
@@ -269,10 +326,26 @@ func runDesktopSettingsContainmentScenario(_ d: Driver) throws {
                  timeout: 5) else {
         throw Failure("what was typed did not stay in the Settings search field")
     }
+    // What Cmd+D finds and leaves, recorded either way: which panes exist
+    // where, which pane has focus, which tab is shown and which is split,
+    // plus the window AX calls key. A split anywhere -- or a new pane -- is
+    // a leak; a split already there before would be a dirty fixture.
+    func keyWindow() -> String {
+        let w: AXUIElement? = d.attribute(d.axApp, kAXFocusedWindowAttribute)
+        let title = w.flatMap { d.attribute($0, kAXTitleAttribute) as String? } ?? "nil"
+        return "key window \(title.debugDescription), Settings open \(keys.isOpen), on-screen windows \(d.onScreenWindows().count)"
+    }
+    let before = try d.treeFacts(ctl, saveAs: "modal-tree-before.json")
+    print("[diag modal] before Cmd+D: panes \(before.panes) focused \(before.focused ?? "nil") selected \(before.selected) split \(before.split); \(keyWindow())")
+    guard before.split.isEmpty else { throw Failure("the fixture was already split before Cmd+D: \(before.split)") }
     d.key(Key.d, .maskCommand)
-    usleep(400_000)
-    guard try !d.hasSplit(ctl) else { throw Failure("Cmd+D leaked through Settings and split the pane") }
-    usleep(600_000)
+    usleep(1_000_000)
+    let after = try d.treeFacts(ctl, saveAs: "modal-tree-after.json")
+    print("[diag modal] after Cmd+D:  panes \(after.panes) focused \(after.focused ?? "nil") selected \(after.selected) split \(after.split); \(keyWindow())")
+    let added = Set(after.panes.keys).subtracting(before.panes.keys)
+    guard added.isEmpty, after.split.isEmpty else {
+        throw Failure("Cmd+D leaked through Settings: new panes \(added.sorted()) in \(added.map { after.panes[$0] ?? "?" }), split tabs \(after.split)")
+    }
     guard !FileManager.default.fileExists(atPath: leakFile) else { throw Failure("keys typed into Settings reached the shell") }
     // Recording, then Esc, cancels without closing or changing anything.
     try keys.show("new_tab")
