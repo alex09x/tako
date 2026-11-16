@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -99,10 +100,23 @@ def toolchain_facts(root: str = ROOT) -> dict:
     }
 
 
+# The build contract a consumer must share with the producer. The bundle id
+# is recorded but not part of it: every stage reseals under its own.
+CONTRACT = ("target", "mode", "cargo_features", "codesign")
+
+
+def bundle_id(app: str) -> str | None:
+    try:
+        with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
+            return plistlib.load(f).get("CFBundleIdentifier")
+    except (OSError, plistlib.InvalidFileException):
+        return None
+
+
 def build_facts(app: str, environ=os.environ) -> dict:
     return {"target": "arm64-apple-macos14.0", "mode": "release" if environ.get("RELEASE") == "1" else "debug",
             "cargo_features": "ssh", "with_zmx": os.path.isfile(os.path.join(app, "Contents/Helpers/zmx")),
-            "codesign": environ.get("TAKO_CODESIGN_IDENTITY", "")}
+            "codesign": environ.get("TAKO_CODESIGN_IDENTITY", ""), "bundle_id": bundle_id(app)}
 
 
 def pin_facts(root: str = ROOT) -> dict:
@@ -131,6 +145,10 @@ def compare(manifest: dict, current: dict, require_zmx: bool) -> None:
             if manifest[section].get(key) != current[section].get(key):
                 raise Mismatch(f"{section} {key}: built with {manifest[section].get(key)!r}, "
                                f"here {current[section].get(key)!r}")
+    for key in CONTRACT:
+        if manifest["build"].get(key) != current["build"].get(key):
+            raise Mismatch(f"build {key}: built as {manifest['build'].get(key)!r}, "
+                           f"this stage expects {current['build'].get(key)!r}")
     if require_zmx and not manifest["build"]["with_zmx"]:
         raise Mismatch("this stage needs the session runtime, and the prebuilt app has none")
 
@@ -146,6 +164,10 @@ def check_files(recorded: dict[str, str], top: str, what: str) -> None:
 
 def pack(app: str, out: str, runner: str | None, root: str = ROOT, environ=os.environ) -> dict:
     manifest = describe(app, runner, root, environ)
+    if manifest["build"]["codesign"] != "-":
+        # Every stage reseals ad hoc under its own id; a shared build signed
+        # with a real identity would change meaning when it is resealed.
+        raise Mismatch("the shared build must be signed ad hoc (TAKO_CODESIGN_IDENTITY=-)")
     os.makedirs(out, exist_ok=False)
     shutil.copytree(app, os.path.join(out, "Tako.app"), symlinks=True)
     manifest["app"] = tree_hashes(os.path.join(out, "Tako.app"))
