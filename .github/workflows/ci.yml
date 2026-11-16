@@ -1,48 +1,21 @@
-# tako — Hosted macOS CI
+# tako — Temporary hosted motion diagnosis; never a release gate
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
 # Project: https://github.com/alex09x/tako
 # SPDX-License-Identifier: MIT
-
-name: macOS CI
-
+name: RC hosted motion diagnosis
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-    inputs:
-      source_ref:
-        description: Optional source ref or commit (defaults to the event commit)
-        required: false
-        type: string
-  workflow_call:
-    inputs:
-      source_ref:
-        description: Optional source ref or commit (defaults to the event commit)
-        required: false
-        type: string
-
 permissions:
   contents: read
-
 concurrency:
-  group: hosted-macos-ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.source_ref || github.ref }}
-  cancel-in-progress: true
-
+  group: rc-hosted-motion-diagnosis
+  cancel-in-progress: false
 jobs:
-  prebuilt:
-    # One neutral app/CLI/runtime and native runner, bound to the resolved
-    # source and the producer's actual SDK/toolchain. Consumers verify it.
-    if: ${{ github.event.repository.visibility == 'public' && github.event.repository.private == false }}
-    name: Shared native test build (macOS arm64)
+  focused-motion:
     runs-on: macos-26
-    timeout-minutes: 120
-    outputs:
-      source_sha: ${{ steps.identity.outputs.source_sha }}
-      artifact_name: ${{ steps.identity.outputs.artifact_name }}
-      mitts_version: ${{ steps.mitts.outputs.version }}
+    timeout-minutes: 55
     env:
       CARGO_BUILD_JOBS: "2"
       RUST_TEST_THREADS: "2"
@@ -54,44 +27,30 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
-
-      - name: Freeze the resolved source identity
-        id: identity
-        env:
-          SOURCE_REF: ${{ inputs.source_ref }}
-          EVENT_SHA: ${{ github.sha }}
+      - name: Record source and diagnostic-only patch
         run: |
           set -euo pipefail
-          test "$(uname -m)" = arm64
-          test "$(sw_vers -productVersion | cut -d. -f1)" = 26
-          source_sha=$(git rev-parse HEAD)
-          if [ -z "$SOURCE_REF" ]; then test "$source_sha" = "$EVENT_SHA"; fi
-          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
-          printf 'artifact_name=native-test-build-%s-%s\n' "$source_sha" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-          printf 'TAKO_EXPECTED_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          mkdir -p target/motion-diagnosis
+          git rev-parse HEAD | tee target/motion-diagnosis/source.txt
+          git diff --exit-code ea3dcb37622e3a4001416f0098c12615459af91e -- swift src Cargo.toml Cargo.lock Package.swift
+          shasum -a 256 scripts/ci-motion-diagnostics.patch | tee target/motion-diagnosis/patch.sha256
+          git apply --check scripts/ci-motion-diagnostics.patch
+          git apply scripts/ci-motion-diagnostics.patch
+          git diff -- swift/Tests/TakoTests/Motion/MotionClockTests.swift > target/motion-diagnosis/applied.diff
           xcodebuild -version
           swift --version
-          rustup show
-
-      - name: Bootstrap latest stable Mitts
-        id: mitts
+          sw_vers
+      - name: Bootstrap Mitts
         run: |
           set -euo pipefail
           curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
           sh -n "$RUNNER_TEMP/mitts-install.sh"
           env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          mitts --version
-          selected_mitts=$(mitts --version | awk '{print $2}')
-          [[ "$selected_mitts" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          printf 'version=%s\n' "$selected_mitts" >> "$GITHUB_OUTPUT"
-
+          "$HOME/.local/bin/mitts" --version
       - name: Prepare Metal compiler
         run: |
           set -euo pipefail
@@ -100,254 +59,15 @@ jobs:
           fi
           xcrun --sdk macosx metal --version
           xcrun --find metallib
-
-      - name: Build and package the shared native test inputs
+      - name: Run only the failed motion scopes with diagnostics
         run: |
           set -euo pipefail
-          ./scripts/ci.sh --local prebuilt-build
-          # Keep executable modes and symlinks inside tar: the artifact
-          # service's zip transport must not change the verified tree.
-          tar -C target -cf target/native-prebuilt.tar prebuilt
-
-      - name: Retain the verified test build
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+          python3 scripts/check_run.py 'swift:MotionClockTests|MotionDelayTests|MotionCopiedFlashPixelTests|MotionOverlaySpanPixelTests|MotionOverviewCardTests|MotionRenderingTests|MotionSidebarLookTests|MotionWiringTests' 2>&1 | tee target/motion-diagnosis/focused.log
+      - name: Retain diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: ${{ steps.identity.outputs.artifact_name }}
-          path: target/native-prebuilt.tar
+          name: rc-hosted-motion-diagnosis
+          path: target/motion-diagnosis/
           if-no-files-found: error
           retention-days: 14
-
-      - name: Retain build diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: native-prebuilt-build-results-${{ github.run_attempt }}
-          path: target/ci-logs/
-          if-no-files-found: warn
-          retention-days: 14
-
-  tests:
-    # Standard public-repository arm64 runners only; no LAN or signing keys.
-    # A failed native producer must not suppress the independent engines,
-    # Python, Swift and iOS results. Native consumers fail closed below.
-    if: ${{ !cancelled() && github.event.repository.visibility == 'public' && github.event.repository.private == false }}
-    needs: prebuilt
-    name: ${{ matrix.stage }} ${{ matrix.shard && format('{0}/4', matrix.shard) || '' }} (macOS arm64)
-    runs-on: macos-26
-    timeout-minutes: ${{ matrix.stage == 'persist-e2e-tests' && 180 || 120 }}
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        # Put long stages and native shards first rather than queueing all
-        # shards after the original ten stages. Ordering is a scheduling
-        # hint; the concurrency bound and complete accounting stay fixed.
-        include:
-          - stage: persist-e2e-tests
-          - stage: ios-simtest
-          - stage: macapp-e2e-shard
-            shard: 1
-          - stage: macapp-e2e-shard
-            shard: 2
-          - stage: macapp-e2e-shard
-            shard: 3
-          - stage: macapp-e2e-shard
-            shard: 4
-          - stage: swift-tests
-          - stage: macos-ui-tests
-          - stage: ios-surface-tests
-          - stage: ios-unit-tests
-          - stage: macapp-tests
-          - stage: engine-tests
-          - stage: cli-tests
-          - stage: python-tests
-    env:
-      CARGO_BUILD_JOBS: "2"
-      RUST_TEST_THREADS: "2"
-      PROD_CODE_LOCAL: "1"
-      TAKO_CODESIGN_IDENTITY: "-"
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      MITTS_NO_SOURCE_FALLBACK: "1"
-      TAKO_EXPECTED_SOURCE_SHA: ${{ needs.prebuilt.outputs.source_sha }}
-      TAKO_E2E_SHARD: ${{ matrix.shard && format('{0}/4', matrix.shard) || '' }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          # Keep reruns on the original event commit, including PR merges.
-          ref: ${{ needs.prebuilt.outputs.source_sha || inputs.source_ref || github.sha }}
-          persist-credentials: false
-
-      - name: Require the successful producer for native consumers
-        if: ${{ matrix.stage == 'macapp-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
-        env:
-          PRODUCER_RESULT: ${{ needs.prebuilt.result }}
-          PRODUCER_SOURCE: ${{ needs.prebuilt.outputs.source_sha }}
-          PRODUCER_ARTIFACT: ${{ needs.prebuilt.outputs.artifact_name }}
-        run: |
-          set -euo pipefail
-          if [ "$PRODUCER_RESULT" != success ] || [ -z "$PRODUCER_SOURCE" ] || [ -z "$PRODUCER_ARTIFACT" ]; then
-            echo 'FAIL: the shared native build did not succeed; no native consumer was launched' >&2
-            exit 1
-          fi
-
-      - name: Download the shared native test build
-        if: ${{ matrix.stage == 'macapp-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ needs.prebuilt.outputs.artifact_name }}
-          path: target/native-prebuilt-download
-
-      - name: Extract the shared native test build
-        if: ${{ matrix.stage == 'macapp-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import tarfile
-          def checked_mode(member, destination):
-              checked = tarfile.data_filter(member, destination)
-              # data_filter also adds owner-write to read-only files. Keep
-              # the packed ordinary mode bits: the manifest checks them.
-              if checked is not None and checked.isfile():
-                  checked.mode = member.mode & 0o777
-              return checked
-          with tarfile.open('target/native-prebuilt-download/native-prebuilt.tar') as archive:
-              members = archive.getmembers()
-              if not members or any(m.name != 'prebuilt' and not m.name.startswith('prebuilt/') for m in members):
-                  raise SystemExit('FAIL: unexpected shared build archive paths')
-              archive.extractall('target', filter=checked_mode)
-          PY
-          printf 'TAKO_PREBUILT_DIR=%s/target/prebuilt\n' "$PWD" >> "$GITHUB_ENV"
-
-      - name: Require standard arm64 macOS and repository toolchain
-        run: |
-          set -euo pipefail
-          test "$(uname -m)" = arm64
-          test "$(sw_vers -productVersion | cut -d. -f1)" = 26
-          xcode-select --print-path
-          xcodebuild -version
-          swift --version
-          python3 --version
-          # rustup reads rust-toolchain.toml, including the three Apple targets.
-          rustup show
-          rustc --version
-
-      - name: Bootstrap the producer's stable Mitts version
-        if: ${{ matrix.stage != 'python-tests' }}
-        env:
-          SELECTED_MITTS_VERSION: ${{ needs.prebuilt.outputs.mitts_version }}
-        run: |
-          set -euo pipefail
-          curl -fsSL https://mittsbuild.com/install.sh -o "$RUNNER_TEMP/mitts-install.sh"
-          sh -n "$RUNNER_TEMP/mitts-install.sh"
-          if [ -n "$SELECTED_MITTS_VERSION" ]; then
-            MITTS_VERSION="$SELECTED_MITTS_VERSION" MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
-          else
-            # Independent checks still run if the producer failed before
-            # selecting its tool. Native consumers have already refused.
-            env -u MITTS_VERSION MITTS_INSTALL_ROOT="$HOME/.local" sh "$RUNNER_TEMP/mitts-install.sh"
-          fi
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          mitts --version
-
-      - name: Prepare supported Bash integration coverage
-        if: ${{ matrix.stage == 'swift-tests' || startsWith(matrix.stage, 'macapp-e2e-') }}
-        env:
-          CI_STAGE: ${{ matrix.stage }}
-        run: |
-          set -euo pipefail
-          brew install bash
-          tako_ci_bash="$(brew --prefix bash)/bin/bash"
-          "$tako_ci_bash" --version
-          "$tako_ci_bash" -c '(( BASH_VERSINFO[0] >= 4 ))'
-          printf 'TAKO_TEST_BASH=%s\n' "$tako_ci_bash" >> "$GITHUB_ENV"
-          if [[ "$CI_STAGE" == macapp-e2e-* ]]; then
-            # PTY startup reads the account record, not the launcher's SHELL.
-            # This changes only the disposable hosted runner account.
-            sudo dscl . -create "/Users/$(id -un)" UserShell "$tako_ci_bash"
-            tako_ci_actual=$(python3 -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_shell)')
-            test "$tako_ci_actual" = "$tako_ci_bash"
-            printf 'Native E2E login shell: %s\n' "$tako_ci_actual"
-          fi
-
-      - name: Prepare Metal compiler for Apple targets
-        if: ${{ matrix.stage != 'engine-tests' && matrix.stage != 'cli-tests' && matrix.stage != 'python-tests' }}
-        run: |
-          set -euo pipefail
-          if ! xcrun --sdk macosx metal -v >/dev/null 2>&1; then
-            echo 'Metal compiler missing; installing the Xcode component'
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          xcrun --sdk macosx metal --version
-          xcrun --find metallib
-
-      - name: Install iOS project generator and show available simulators
-        if: ${{ startsWith(matrix.stage, 'ios-') }}
-        run: |
-          set -euo pipefail
-          brew install xcodegen
-          xcodegen --version
-          xcrun simctl list devices available
-
-      - name: Inspect macOS UI automation
-        if: ${{ matrix.stage == 'macos-ui-tests' || startsWith(matrix.stage, 'macapp-e2e-') || matrix.stage == 'persist-e2e-tests' }}
-        run: |
-          set -euo pipefail
-          sudo /usr/sbin/DevToolsSecurity --enable
-          /usr/bin/automationmodetool
-
-      - name: Run full test-only stage locally
-        env:
-          CI_STAGE: ${{ matrix.stage }}
-        run: ./scripts/ci.sh --local "$CI_STAGE"
-
-      - name: Report native crash diagnostics on failure
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          reports = Path.home() / 'Library/Logs/DiagnosticReports'
-          for path in sorted(reports.glob('*.ips')):
-              if not any(name in path.name.lower() for name in ('tako', 'swiftpm-testing', 'xctest')):
-                  continue
-              try:
-                  text = path.read_text()
-                  decoder = json.JSONDecoder()
-                  report, end = decoder.raw_decode(text)
-                  if text[end:].strip():
-                      report, _ = decoder.raw_decode(text[end:].lstrip())
-                  print('Crash report:', path.name)
-                  for key in ('procName', 'exception', 'termination', 'asi'):
-                      print(key, json.dumps(report.get(key))[:3000])
-                  images = report.get('usedImages', [])
-                  for thread in report.get('threads', []):
-                      if thread.get('triggered'):
-                          for frame in thread.get('frames', [])[:30]:
-                              index = frame.get('imageIndex', -1)
-                              name = images[index].get('name') if 0 <= index < len(images) else '?'
-                              print(name, frame.get('symbol', '?'), frame.get('symbolLocation', ''))
-              except (ValueError, OSError, TypeError) as error:
-                  print('Could not decode', path.name, type(error).__name__)
-          PY
-
-      - name: Retain stage logs and native test results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ matrix.stage }}-${{ matrix.shard || 'full' }}-results-${{ github.run_attempt }}
-          retention-days: 14
-          if-no-files-found: warn
-          path: |
-            target/ci-logs/
-            target/ci-ui.*/
-            target/ci-ios.*/
-            target/uitest-results/
-            target/e2e-persist-evidence/
-            target/selftest-frame.png
-            target/e2e-registry.txt
-            target/e2e-shard.txt
