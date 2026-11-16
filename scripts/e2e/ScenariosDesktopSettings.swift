@@ -28,15 +28,36 @@ struct DesktopKeys {
     /// matches identifiers that merely contain it, and every row's Record
     /// button contains "DesktopShortcutRecord").
     func exact(_ id: String) -> AXUIElement? {
-        func walk(_ e: AXUIElement, _ depth: Int) -> AXUIElement? {
-            if (d.attribute(e, "AXIdentifier") as String?) == id { return e }
-            guard depth > 0 else { return nil }
-            for child in (d.attribute(e, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
-                if let hit = walk(child, depth - 1) { return hit }
-            }
-            return nil
+        d.windows().lazy.compactMap { find([id], under: $0, depth: 30) }.first
+    }
+
+    /// The first element under `root` whose identifier is exactly one of `ids`.
+    func find(_ ids: Set<String>, under root: AXUIElement, depth: Int) -> AXUIElement? {
+        if let id = d.attribute(root, "AXIdentifier") as String?, ids.contains(id) { return root }
+        guard depth > 0 else { return nil }
+        for child in (d.attribute(root, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            if let hit = find(ids, under: child, depth: depth - 1) { return hit }
         }
-        return d.windows().lazy.compactMap { walk($0, 30) }.first
+        return nil
+    }
+
+    /// The action's own Record or Reset control, looked up only inside its
+    /// row (`DesktopShortcut-<action>`): an unselected row names it
+    /// `DesktopShortcut<kind>-<action>`, the selected one plain
+    /// `DesktopShortcut<kind>`, which is never taken from another row.
+    func control(_ kind: String, of action: String) -> AXUIElement? {
+        guard let row = exact("DesktopShortcut-\(action)") else { return nil }
+        return find(["DesktopShortcut\(kind)-\(action)", "DesktopShortcut\(kind)"], under: row, depth: 12)
+    }
+
+    func clickControl(_ kind: String, of action: String) throws {
+        guard d.wait(for: { control(kind, of: action) != nil }, timeout: 5), let e = control(kind, of: action) else {
+            throw Failure("no \(kind) control in the \(action) row")
+        }
+        AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
+        usleep(300_000)
+        try d.clickElement(control(kind, of: action) ?? e)
+        usleep(300_000)
     }
 
     var isOpen: Bool { exact("DesktopSettingsRoot") != nil }
@@ -68,10 +89,11 @@ struct DesktopKeys {
 
     /// Clicks the action's shortcut, which selects it and starts recording.
     func record(_ action: String) throws {
-        try click("DesktopShortcutRecord-\(action)")
-        guard d.wait(for: { (exact("DesktopShortcutRecord").flatMap { d.attribute($0, "AXLabel") as String? }
-                              ?? exact("DesktopShortcutRecord").flatMap { d.attribute($0, kAXDescriptionAttribute) as String? })
-                              == "Recording Shortcut" }, timeout: 5) else {
+        try clickControl("Record", of: action)
+        func label() -> String? {
+            control("Record", of: action).flatMap { d.attribute($0, "AXLabel") as String? ?? d.attribute($0, kAXDescriptionAttribute) as String? }
+        }
+        guard d.wait(for: { label() == "Recording Shortcut" }, timeout: 5) else {
             throw Failure("\(action) did not start recording")
         }
     }
@@ -136,7 +158,7 @@ func runDesktopSettingsRecordScenario(_ d: Driver) throws {
     // Restore the default with ↺; the chord does nothing, Cmd+T opens a tab.
     try keys.open()
     try keys.show("new_tab")
-    try keys.click("DesktopShortcutReset-new_tab")
+    try keys.clickControl("Reset", of: "new_tab")
     guard d.wait(for: { !keys.binds("new_tab") }, timeout: 5) else { throw Failure("↺ did not restore New Tab's default: \(keys.config)") }
     try keys.close()
     d.key(Key.k, [.maskCommand, .maskAlternate, .maskControl])
@@ -208,7 +230,8 @@ func runDesktopSettingsConflictScenario(_ d: Driver) throws {
     try keys.open()
     for action in ["new_tab", "new_split:right"] {
         try keys.show(action)
-        if keys.exact("DesktopShortcutReset-\(action)") != nil { try keys.click("DesktopShortcutReset-\(action)") }
+        // Only rows that carry an override show ↺; it is looked up in that row alone.
+        if keys.control("Reset", of: action) != nil { try keys.clickControl("Reset", of: action) }
     }
     // Reassigning shadows Split Right's default with a New Tab line; removing that line brings it back.
     guard d.wait(for: { !keys.binds("new_tab") && !keys.binds("new_split:right") }, timeout: 5) else {
