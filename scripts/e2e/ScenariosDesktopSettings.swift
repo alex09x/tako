@@ -51,12 +51,24 @@ struct DesktopKeys {
     }
 
     func clickControl(_ kind: String, of action: String) throws {
-        guard d.wait(for: { control(kind, of: action) != nil }, timeout: 5), let e = control(kind, of: action) else {
-            throw Failure("no \(kind) control in the \(action) row")
-        }
+        try clickLaidOut("the \(kind) control of the \(action) row") { control(kind, of: action) }
+    }
+
+    func hasFrame(_ e: AXUIElement) -> Bool {
+        (d.attribute(e, kAXPositionAttribute) as AXValue?) != nil && (d.attribute(e, kAXSizeAttribute) as AXValue?) != nil
+    }
+
+    /// Scrolls the control into view and clicks it once it has a frame:
+    /// SwiftUI can report a control in the tree a moment before it is laid out.
+    func clickLaidOut(_ what: String, _ find: () -> AXUIElement?) throws {
+        guard d.wait(for: { find() != nil }, timeout: 5), let e = find() else { throw Failure("no \(what)") }
         AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
+        guard d.wait(for: { find().map(hasFrame) == true }, timeout: 3), let laidOut = find() else {
+            throw Failure("\(what) has no AX position/size")
+        }
         usleep(300_000)
-        try d.clickElement(control(kind, of: action) ?? e)
+        print("click \(what)")
+        try d.clickElement(find() ?? laidOut)
         usleep(300_000)
     }
 
@@ -100,11 +112,7 @@ struct DesktopKeys {
     }
 
     func click(_ id: String) throws {
-        guard d.wait(for: { exact(id) != nil }, timeout: 5), let e = exact(id) else { throw Failure("no control \(id)") }
-        AXUIElementPerformAction(e, "AXScrollToVisible" as CFString)
-        usleep(300_000)
-        try d.clickElement(exact(id) ?? e)
-        usleep(300_000)
+        try clickLaidOut(id) { exact(id) }
     }
 
     /// The Keys page, filtered by real typing to the one action.
