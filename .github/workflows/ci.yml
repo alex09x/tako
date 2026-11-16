@@ -164,3 +164,17 @@ jobs:
               except (ValueError, OSError, TypeError) as error:
                   print('Could not decode', path.name, type(error).__name__)
           PY
+
+      - name: Retain stage logs and native test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.stage }}-results-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            target/ci-logs/
+            target/ci-ui.*/
+            target/ci-ios.*/
+            target/uitest-results/
+            target/e2e-persist-evidence/
