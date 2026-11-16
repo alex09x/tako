@@ -80,7 +80,10 @@ def tree_hashes(top: str) -> dict[str, str]:
 
 def checkout_facts(root: str = ROOT, environ=os.environ) -> dict:
     head = sh(["git", "rev-parse", "HEAD"], root)
-    dirty = sh(["git", "status", "--porcelain", "--untracked-files=no"], root)
+    # Untracked but not ignored counts: build-macapp.py compiles every .swift
+    # it finds, so a new source file would be built without being in HEAD.
+    # Ignored build products (target/) do not.
+    dirty = sh(["git", "status", "--porcelain", "--untracked-files=all"], root)
     facts = {"head": head, "dirty": bool(dirty),
              "github_sha": environ.get("GITHUB_SHA", ""), "github_ref": environ.get("GITHUB_REF", "")}
     # On a pull request the checkout is the merge commit GITHUB_SHA names.

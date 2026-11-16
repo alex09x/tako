@@ -53,6 +53,8 @@ class PrebuiltTests(unittest.TestCase):
         for pin in ("rust-toolchain.toml", "Cargo.lock", "scripts/build-macapp.py"):
             with open(os.path.join(self.root, pin), "w") as f:
                 f.write(pin)
+        with open(os.path.join(self.root, ".gitignore"), "w") as f:
+            f.write("/target/\n")
         git(self.root, "init", "-q")
         git(self.root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".")
         git(self.root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x")
@@ -96,6 +98,17 @@ class PrebuiltTests(unittest.TestCase):
             f.write("edited")
         with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):
             prebuilt.pack(self.app, self.out + "2", None, self.root, ENV)
+
+    def test_an_untracked_source_counts_as_a_change_but_ignored_products_do_not(self):
+        # target/ (the app and runner themselves) is ignored and already present.
+        prebuilt.pack(self.app, self.out + "-clean", None, self.root, ENV)
+        os.makedirs(os.path.join(self.root, "swift"))
+        with open(os.path.join(self.root, "swift", "New.swift"), "w") as f:
+            f.write("let x = 1\n")
+        with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):
+            prebuilt.pack(self.app, self.out + "-new", None, self.root, ENV)
+        with self.assertRaisesRegex(prebuilt.Mismatch, "uncommitted"):
+            prebuilt.verify(self.out, False, self.root, ENV)
 
     def test_only_an_ad_hoc_build_can_be_shared(self):
         for env in ({}, {"TAKO_CODESIGN_IDENTITY": "Developer ID Application: X"}):
