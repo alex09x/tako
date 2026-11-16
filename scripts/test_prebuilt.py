@@ -124,6 +124,25 @@ class PrebuiltTests(unittest.TestCase):
         with self.assertRaisesRegex(prebuilt.Mismatch, "GITHUB_SHA"):
             prebuilt.checkout_facts(self.root, {"GITHUB_SHA": "0" * 40})
 
+    def head(self):
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip()
+
+    def test_an_explicit_source_run_binds_its_checkout_and_keeps_the_event_sha(self):
+        event = {"GITHUB_SHA": "0" * 40, "GITHUB_REF": "refs/heads/main", "TAKO_EXPECTED_SOURCE_SHA": self.head()}
+        manifest = prebuilt.pack(self.app, self.out + "-dispatch", None, self.root, {**ENV, **event})
+        self.assertEqual(manifest["checkout"]["head"], self.head())
+        self.assertEqual(manifest["checkout"]["expected_source_sha"], self.head())
+        # The event's own SHA and ref stay what the event said.
+        self.assertEqual(manifest["checkout"]["github_sha"], "0" * 40)
+        self.assertEqual(manifest["checkout"]["github_ref"], "refs/heads/main")
+
+    def test_an_expected_source_other_than_the_checkout_is_refused(self):
+        with self.assertRaisesRegex(prebuilt.Mismatch, "is not the expected source"):
+            prebuilt.checkout_facts(self.root, {"GITHUB_SHA": self.head(), "TAKO_EXPECTED_SOURCE_SHA": "1" * 40})
+        # An abbreviated id is refused as such, not compared by prefix.
+        with self.assertRaisesRegex(prebuilt.Mismatch, "full commit id"):
+            prebuilt.checkout_facts(self.root, {"TAKO_EXPECTED_SOURCE_SHA": self.head()[:12]})
+
     def test_another_sdk_or_compiler_is_refused(self):
         with self.assertRaisesRegex(prebuilt.Mismatch, "macos_sdk_build"):
             prebuilt.verify(self.out, False, self.root, ENV, self.current(macos_sdk_build="25G9"))

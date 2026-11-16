@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -84,10 +85,21 @@ def checkout_facts(root: str = ROOT, environ=os.environ) -> dict:
     # it finds, so a new source file would be built without being in HEAD.
     # Ignored build products (target/) do not.
     dirty = sh(["git", "status", "--porcelain", "--untracked-files=all"], root)
+    # The event's SHA and ref are recorded as they are, never rewritten.
     facts = {"head": head, "dirty": bool(dirty),
-             "github_sha": environ.get("GITHUB_SHA", ""), "github_ref": environ.get("GITHUB_REF", "")}
-    # On a pull request the checkout is the merge commit GITHUB_SHA names.
-    if facts["github_sha"] and facts["github_sha"] != head:
+             "github_sha": environ.get("GITHUB_SHA", ""), "github_ref": environ.get("GITHUB_REF", ""),
+             "expected_source_sha": environ.get("TAKO_EXPECTED_SOURCE_SHA", "")}
+    expected = facts["expected_source_sha"]
+    if expected:
+        # A run for an explicit source ref (workflow_dispatch / workflow_call
+        # source_ref) checks out another commit than the event's: the
+        # workflow resolves that commit and passes it here.
+        if not re.fullmatch(r"[0-9a-f]{40}", expected):
+            raise Mismatch(f"TAKO_EXPECTED_SOURCE_SHA must be a full commit id, not {expected!r}")
+        if expected != head:
+            raise Mismatch(f"checkout HEAD {head} is not the expected source {expected}")
+    elif facts["github_sha"] and facts["github_sha"] != head:
+        # Otherwise the checkout is the event's commit: on a pull request, its merge commit.
         raise Mismatch(f"checkout HEAD {head} is not GITHUB_SHA {facts['github_sha']}")
     return facts
 
