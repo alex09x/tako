@@ -41,7 +41,7 @@ extension SessionSidebarView {
                     DesktopSettingsController.showGlobal(section: .general, in: targetWindow)
                 }
                 headerIcon("plus", id: "SessionSidebarHeaderNewSession", label: "New Session or Terminal",
-                           help: "New Session or Terminal", action: showNewMenu)
+                           help: "New Session or Terminal", menu: newSessionMenu, action: showNewMenu)
             }
             .padding(.trailing, 8)
             .frame(height: barHeight)
@@ -50,9 +50,10 @@ extension SessionSidebarView {
     }
 
     private func headerIcon(_ symbol: String, id: String, label: String, help: String,
+                            menu: (() -> NSMenu?)? = nil,
                             action: @escaping () -> Void) -> some View {
         SidebarHeaderActionButton(identifier: id, label: label, value: "", helpText: help, isActive: false,
-                                  action: action) { hovering in
+                                  action: action, menu: menu) { hovering in
             Image(systemName: symbol)
                 .font(.system(size: 12.5, weight: .regular))
                 .foregroundColor(Color(nsColor: hovering ? T.textActive : T.dim))
@@ -61,10 +62,9 @@ extension SessionSidebarView {
     }
 
     /// The + menu: the registry's own actions and their real shortcuts.
-    func showNewMenu() {
+    func newSessionMenu() -> NSMenu? {
         let window = targetWindow
-        guard let content = window?.contentView,
-              let anchor = Self.newMenuAnchor(in: content) else { return }
+        guard window != nil else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(SidebarMenuAction("New Session", binding: "new_tab") { [store] in store.createNewTab(in: window) })
@@ -80,6 +80,12 @@ extension SessionSidebarView {
         }
         newWorkspace.identifier = .init("SessionSidebarNewWorkspace")
         menu.addItem(newWorkspace)
+        return menu
+    }
+
+    func showNewMenu() {
+        guard let content = targetWindow?.contentView,
+              let anchor = Self.newMenuAnchor(in: content), let menu = newSessionMenu() else { return }
         // Associate the popup with its actual control and host. A screen-only
         // popup was visible but missing from the app's accessibility tree,
         // and keyboard activation incorrectly followed the mouse position.
@@ -236,6 +242,7 @@ struct SidebarHeaderActionButton<LabelContent: View>: View {
     let helpText: String
     let isActive: Bool
     let action: () -> Void
+    var menu: (() -> NSMenu?)? = nil
     @ViewBuilder let content: (_ hovering: Bool) -> LabelContent
 
     @State private var hovering = false
@@ -249,7 +256,7 @@ struct SidebarHeaderActionButton<LabelContent: View>: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             FloatingActionButtonOverlay(identifier: identifier, label: label, value: value, helpText: helpText,
-                                        onHoverChange: { hovering = $0 }, action: action)
+                                        onHoverChange: { hovering = $0 }, action: action, menu: menu)
         }
         .fixedSize(horizontal: true, vertical: true)
     }

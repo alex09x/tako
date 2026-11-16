@@ -83,6 +83,15 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     /// The most recently focused surface, equal to `focusedSurface` when it is non-nil.
     @State private var lastFocusedSurface: Weak<Tako.SurfaceView>?
 
+    /// Canvas focus belongs to its controller; it deliberately does not
+    /// update the legacy SwiftUI focused-value state below.
+    private var commandPaletteSurface: Tako.SurfaceView? {
+        let canvasFocus = (viewModel as? BaseTerminalController)
+            .flatMap { $0.usesFloatingCanvas ? $0.focusedSurface : nil }
+        return [canvasFocus, lastFocusedSurface?.value].compactMap { $0 }
+            .first(where: { viewModel.surfaceTree.contains($0) })
+    }
+
     @State private var fullscreenRevision: Int = 0
     @StateObject private var windowPresentation = TerminalWindowPresentation()
 
@@ -189,7 +198,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         backgroundColor: tako.config.backgroundColor)
                 }
 
-                if let surfaceView = lastFocusedSurface?.value, viewModel.surfaceTree.contains(surfaceView) {
+                if let surfaceView = commandPaletteSurface {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
                         isPresented: $viewModel.commandPaletteIsShowing,
