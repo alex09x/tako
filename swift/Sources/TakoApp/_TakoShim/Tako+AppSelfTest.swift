@@ -32,8 +32,8 @@ extension Tako {
     }
 
     /// Save the pixels the renderer committed for the window, and check that
-    /// the grid is where the layout says: a red block in the first cells
-    /// must start inside the padding, with the padding itself left alone.
+    /// the grid is where the layout says using the red block's extent.
+    /// Margins follow the configured window-padding-color policy.
     /// The PNG is for the eye as much as for the script.
     @MainActor static func runFrameSelfTest() {
         guard let (window, surface) = selfTestTarget() else { return }
