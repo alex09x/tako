@@ -351,3 +351,10 @@ jobs:
             target/selftest-frame.png
             target/e2e-registry.txt
             target/e2e-shard.txt
+            target/simtest/results.json
+            target/simtest/*/dump.txt
+            target/simtest/*/screen.png
+            target/simtest/walkthrough-*.log
+            target/simtest/walkthrough-summary.json
+            target/simtest/walkthrough-status.json
+            target/simtest/walkthrough-screenshots/

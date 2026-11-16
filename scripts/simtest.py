@@ -35,6 +35,7 @@ OUT = "target/simtest"
 # Off any external volume, where macOS would ask for access (app_locations.py).
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import app_locations  # noqa: E402
+from simtest_results import walkthrough_verdict  # noqa: E402
 DERIVED = app_locations.app_dir("ios-sim-derived")
 FIXTURE = os.path.join(OUT, "sshd")
 BUNDLE_ID = "dev.prod.takocore"
@@ -753,24 +754,23 @@ def run_walkthrough():
          f"TAKO_TEST_FAULT_CONTROL_PORT={FAULT_CONTROL_PORT}",
          f"TAKO_TEST_KEY_PATH={key_path}"],
         capture_output=True, text=True, env=env)
+    for suffix, output in (("stdout.log", r.stdout), ("stderr.log", r.stderr)):
+        with open(os.path.join(OUT, "walkthrough-" + suffix), "w") as f:
+            f.write(output or "")
     summary_result = run(
         ["xcrun", "xcresulttool", "get", "test-results", "summary",
          "--path", result, "--compact"],
         check=False)
-    if summary_result.returncode == 0:
-        summary = json.loads(summary_result.stdout)
-        passed = summary["passedTests"]
-        failed = [failure["failureText"]
-                  for failure in summary.get("testFailures", [])]
-    else:
-        passed = 0
-        failed = [line.strip() for line in r.stdout.splitlines()
-                  if " error: " in line]
-        if r.returncode != 0 and not failed:
-            failed = [(r.stderr or r.stdout)[-2000:].strip()
-                      or "xcodebuild failed without diagnostic output"]
+    with open(os.path.join(OUT, "walkthrough-summary.json"), "w") as f:
+        f.write(summary_result.stdout or "")
+    with open(os.path.join(OUT, "walkthrough-summary.stderr.log"), "w") as f:
+        f.write(summary_result.stderr or "")
+    verdict = walkthrough_verdict(r, summary_result)
+    with open(os.path.join(OUT, "walkthrough-status.json"), "w") as f:
+        json.dump({**verdict, "build_rc": r.returncode,
+                   "summary_rc": summary_result.returncode}, f, indent=2)
     shots = export_walkthrough_screenshots(result)
-    return {"passed": passed, "failed": failed, "result": result,
+    return {**verdict, "result": result,
             "screenshots": shots}
 
 
