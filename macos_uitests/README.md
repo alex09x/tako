@@ -55,9 +55,17 @@ This uses the `TakoUITests-Run` scheme, which enables test discovery, holds the 
 and rejects a run with zero passed cases. The seven tests check scoped menus and containment,
 rendered theme/reset pixels, independent split panes, rendered font geometry and glyphs,
 full-preset preview/cancel, save/relaunch/reopen, invalid names and failed writes. Screenshots
-are retained in `target/uitest.xcresult` as supporting evidence. Each fixture uses an isolated
-config, defaults and test-bundle state; it restores any prior test profile and does not use the
-installed app's bundle or sessions.
+are retained in `target/uitest-results/run.*/tests.xcresult` as supporting evidence, alongside
+that run's log and stall diagnostics. Later runs do not erase earlier result bundles.
+Each fixture uses an isolated config, private shell/history/XDG/provider homes, and reserved
+test-bundle state; it does not use the installed app's bundle or default session namespace.
+`TakoDesktopSidebarUITests/testCompactSidebarHasDesignHeightInAnIsolatedShell` validates the
+actual app's private launch paths before launching. Its first input replaces that private
+login shell with a sanitized Bash; after the controlled prompt appears, the next command checks
+those directories, the effective history-file variable and the observed Bash version. It observes
+cwd without claiming a private working directory or fish/zsh history coverage. The live Compact
+row's 24 pt AX height is asserted; its screenshot is supporting evidence. Run the full required
+CI to validate the other fixture suites. The wrapper does not prune its retained run evidence.
 
 To prepare the exact runner without executing UI tests:
 

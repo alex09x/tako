@@ -28,6 +28,9 @@ class TakoCustomConfigCase: XCTestCase {
     private let sessionsHome = URL(fileURLWithPath: "/private/tmp/tkui")
         .appendingPathComponent(String(UUID().uuidString.prefix(8)))
 
+    var fixtureSessionsHome: URL { sessionsHome }
+    var fixtureShellHome: URL { sessionsHome.appendingPathComponent("home", isDirectory: true) }
+
     override func setUp() async throws {
         try await super.setUp()
         continueAfterFailure = false
@@ -122,6 +125,27 @@ class TakoCustomConfigCase: XCTestCase {
         app.launchEnvironment["TAKO_SESSIONS_HOME"] = sessionsHome.path
         app.launchEnvironment["TAKO_NO_UPDATE"] = "1"
         app.launchEnvironment["TAKO_NO_LAUNCH_NOTICES"] = "1"
+        // The real app is launched outside the runner's sandbox. Establish
+        // its shell and provider homes explicitly before its first PTY starts.
+        let home = fixtureShellHome
+        let agents = sessionsHome.appendingPathComponent("agents", isDirectory: true)
+        let environment = [
+            "HOME": home.path,
+            "XDG_CONFIG_HOME": home.appendingPathComponent(".config").path,
+            "XDG_DATA_HOME": home.appendingPathComponent(".local/share").path,
+            "XDG_CACHE_HOME": home.appendingPathComponent(".cache").path,
+            "HISTFILE": home.appendingPathComponent(".shell_history").path,
+            "ZDOTDIR": home.path,
+            "TAKO_AGENT_HOOKS_HOME": agents.path,
+            "CODEX_HOME": agents.appendingPathComponent(".codex").path,
+        ]
+        for (key, path) in environment {
+            if key != "HISTFILE" {
+                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+            }
+            app.launchEnvironment[key] = path
+        }
         return app
     }
 }

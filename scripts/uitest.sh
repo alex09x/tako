@@ -66,8 +66,10 @@ export TAKO_BUNDLE_ID="${TAKO_BUNDLE_ID:-com.tako-core.terminal.uitest}"
 export TAKO_APP_DIR="${TAKO_APP_DIR:-target/macapp-uitest}"
 
 PROJECT=macos_uitests/TakoUITests.xcodeproj
-LOG=target/uitest.log
-mkdir -p target
+mkdir -p target/uitest-results
+RUN_DIR=$(mktemp -d target/uitest-results/run.XXXXXX)
+LOG="$RUN_DIR/uitest.log"
+echo "Run evidence: $RUN_DIR"
 
 only=()
 if [ ${#TEST_ARGS[@]} -gt 0 ]; then
@@ -90,12 +92,11 @@ else
 fi
 echo
 
-RESULT_BUNDLE="target/uitest.xcresult"
-rm -rf "$RESULT_BUNDLE"
+RESULT_BUNDLE="$RUN_DIR/tests.xcresult"
 
 set +e
 python3 scripts/gui_lock.py -- python3 scripts/ci-swift-watchdog.py \
-    --diagnostics-dir target/uitest-stall -- xcodebuild "$ACTION" \
+    --diagnostics-dir "$RUN_DIR/stall" -- xcodebuild "$ACTION" \
     -project "$PROJECT" \
     -scheme "${TAKO_UI_SCHEME:-TakoUITests-Run}" \
     -derivedDataPath target/uitest-derived \

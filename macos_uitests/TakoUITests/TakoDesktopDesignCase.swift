@@ -16,6 +16,7 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         .appendingPathComponent("desktop-\(UUID().uuidString)")
 
     var designConfig: URL { designDirectory.appendingPathComponent("config") }
+    var beforeDesktopLaunch: ((XCUIApplication) throws -> Void)?
 
     override func tearDown() async throws {
         try await super.tearDown()
@@ -42,11 +43,17 @@ class TakoDesktopDesignCase: TakoFloatingTerminalCase {
         """.write(to: designConfig, atomically: true, encoding: .utf8)
         let app = try takoApplication()
         app.launchEnvironment["TAKO_CONFIG_PATH"] = designConfig.path
-        app.launchEnvironment["TAKO_AGENT_HOOKS_HOME"] = designDirectory.appendingPathComponent("agents").path
+        let agents = designDirectory.appendingPathComponent("agents", isDirectory: true)
+        let codex = agents.appendingPathComponent(".codex", isDirectory: true)
+        try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        app.launchEnvironment["TAKO_AGENT_HOOKS_HOME"] = agents.path
+        app.launchEnvironment["CODEX_HOME"] = codex.path
         if setup {
             app.launchArguments.removeAll { $0 == "--no-launch-notices" }
             app.launchEnvironment.removeValue(forKey: "TAKO_NO_LAUNCH_NOTICES")
         }
+        try beforeDesktopLaunch?(app)
         app.launch()
         XCTAssertTrue(canvas(in: app).waitForExistence(timeout: 10))
         waitForPaneCount(1, in: app)
