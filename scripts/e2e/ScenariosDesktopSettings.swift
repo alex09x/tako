@@ -283,6 +283,13 @@ func runDesktopSettingsConflictScenario(_ d: Driver) throws {
     guard d.wait(for: { keys.binds("new_tab") }, timeout: 5) else { throw Failure("Reassign did not save Cmd+D for New Tab: \(keys.config)") }
     try keys.close()
     d.activate()
+    // Where the keyboard is after Reassign and Close: printed before the
+    // next typed probe, which round 4 saw reach no shell (Screen: []).
+    let facts = try d.treeFacts(ctl, saveAs: "conf-tree-after-reassign.json")
+    let focusedEl: AXUIElement? = d.attribute(d.axApp, kAXFocusedUIElementAttribute)
+    let role = focusedEl.flatMap { d.attribute($0, kAXRoleAttribute) as String? } ?? "nil"
+    let id = focusedEl.flatMap { d.attribute($0, "AXIdentifier") as String? } ?? "nil"
+    print("[diag conflict] after Reassign+Close: panes \(facts.panes) focused \(facts.focused ?? "nil") selected \(facts.selected) split \(facts.split); AX focus role \(role) id \(id); Settings open \(keys.isOpen); on-screen windows \(d.onScreenWindows().count)")
     let base = try d.tty("conf_owner_tty1")
     d.key(Key.d, .maskCommand)
     usleep(1_500_000)
